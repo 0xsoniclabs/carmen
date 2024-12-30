@@ -12,9 +12,9 @@ package cache
 
 import (
 	"errors"
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/store"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/store"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"unsafe"
 )
 

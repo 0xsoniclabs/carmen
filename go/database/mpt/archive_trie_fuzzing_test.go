@@ -15,9 +15,9 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
-	"github.com/Fantom-foundation/Carmen/go/fuzzing"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/fuzzing"
 )
 
 // FuzzArchiveTrie_RandomAccountOps performs random operations on an archive trie account.

@@ -14,10 +14,10 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/index"
-	"github.com/Fantom-foundation/Carmen/go/backend/index/indexhash"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/index"
+	"github.com/0xSonicLabs/Carmen/go/backend/index/indexhash"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 const initCapacity = 10_000

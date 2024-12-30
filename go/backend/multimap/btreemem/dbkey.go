@@ -12,7 +12,7 @@ package btreemem
 
 import (
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // dbKey is used as a key to the BTree backed Multimap.

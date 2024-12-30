@@ -11,8 +11,8 @@
 package demo
 
 import (
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // Message is interface of any message to be exchanged between demo clients.

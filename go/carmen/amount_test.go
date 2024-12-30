@@ -14,7 +14,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 	"github.com/holiman/uint256"
 )
 

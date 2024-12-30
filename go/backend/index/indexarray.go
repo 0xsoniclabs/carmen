@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // Array wraps more instances of the index and delegates the calls to all of them.

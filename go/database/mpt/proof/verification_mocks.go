@@ -21,9 +21,9 @@ package proof
 import (
 	reflect "reflect"
 
-	common "github.com/Fantom-foundation/Carmen/go/common"
-	witness "github.com/Fantom-foundation/Carmen/go/common/witness"
-	mpt "github.com/Fantom-foundation/Carmen/go/database/mpt"
+	common "github.com/0xSonicLabs/Carmen/go/common"
+	witness "github.com/0xSonicLabs/Carmen/go/common/witness"
+	mpt "github.com/0xSonicLabs/Carmen/go/database/mpt"
 	gomock "go.uber.org/mock/gomock"
 )
 

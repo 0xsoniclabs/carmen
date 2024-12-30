@@ -18,7 +18,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 )
 
 // ----------------------------------------------------------------------------
@@ -124,7 +124,7 @@ func (b *writeBuffer) Add(id NodeId, node *shared.Shared[Node]) {
 	if b.counter > b.capacity && !b.emptyBufferSignalClosed {
 		// The option to ignore a full signal channel here is important
 		// to prevent a potential deadlock. See
-		// https://github.com/Fantom-foundation/Carmen/issues/724
+		// https://github.com/0xSonicLabs/Carmen/issues/724
 		// for more details.
 		select {
 		case b.emptyBufferSignal <- false: /* ok, a new clear-buffer operation is scheduled */

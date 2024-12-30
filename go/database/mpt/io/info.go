@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
 )
 
 type MptInfo struct {

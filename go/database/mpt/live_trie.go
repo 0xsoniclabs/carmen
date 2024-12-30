@@ -19,8 +19,8 @@ import (
 	"path"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/witness"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/witness"
 )
 
 // LiveTrie retains a single trie encoding state information with destructible

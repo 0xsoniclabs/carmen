@@ -14,8 +14,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/state"
-	"github.com/Fantom-foundation/Carmen/go/state/gostate"
+	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xSonicLabs/Carmen/go/state/gostate"
 )
 
 var testConfig = Configuration{

@@ -25,14 +25,14 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
 	"golang.org/x/exp/maps"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/utils"
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 )
 
 var stateFactories = map[string]func(string) (io.Closer, error){

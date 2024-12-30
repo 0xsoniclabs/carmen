@@ -13,9 +13,9 @@ package io
 import (
 	"bytes"
 	"context"
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
 	"path"
 	"strings"
 	"testing"

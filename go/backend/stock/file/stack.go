@@ -17,10 +17,10 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/utils"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/stock"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // stackBufferSize a constant defining the batch size of elements buffered in

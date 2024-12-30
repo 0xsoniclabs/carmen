@@ -23,12 +23,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/io"
-	"github.com/Fantom-foundation/Carmen/go/state/gostate"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/io"
+	"github.com/0xSonicLabs/Carmen/go/state/gostate"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/state"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/state"
 	"go.uber.org/mock/gomock"
 )
 

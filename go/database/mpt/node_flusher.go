@@ -12,11 +12,11 @@ package mpt
 
 import (
 	"errors"
-	"github.com/Fantom-foundation/Carmen/go/common/ticker"
+	"github.com/0xSonicLabs/Carmen/go/common/ticker"
 	"slices"
 	"time"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 )
 
 type nodeFlusher struct {

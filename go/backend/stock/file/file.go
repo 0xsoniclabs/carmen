@@ -18,10 +18,10 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/stock"
-	"github.com/Fantom-foundation/Carmen/go/backend/utils"
-	"github.com/Fantom-foundation/Carmen/go/backend/utils/checkpoint"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils/checkpoint"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 type fileStock[I stock.Index, V any] struct {

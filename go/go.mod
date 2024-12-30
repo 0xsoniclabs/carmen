@@ -8,12 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-module github.com/Fantom-foundation/Carmen/go
+module github.com/0xSonicLabs/Carmen/go
 
 go 1.20
 
 require (
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
+	github.com/holiman/uint256 v1.2.4
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/syndtr/goleveldb v1.0.0
@@ -25,7 +26,6 @@ require (
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
-	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	golang.org/x/sys v0.20.0 // indirect

@@ -13,7 +13,7 @@ package mpt
 import (
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 func TestNodeStatistics_CollectTrieStatisticsWorks(t *testing.T) {

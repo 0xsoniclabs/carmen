@@ -19,9 +19,9 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/utils"
-	"github.com/Fantom-foundation/Carmen/go/backend/utils/checkpoint"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils/checkpoint"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"go.uber.org/mock/gomock"
 )
 

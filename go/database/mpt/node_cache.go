@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 )
 
 //go:generate mockgen -source node_cache.go -destination node_cache_mocks.go -package mpt

@@ -15,9 +15,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/array"
-	"github.com/Fantom-foundation/Carmen/go/backend/array/pagedarray"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/array"
+	"github.com/0xSonicLabs/Carmen/go/backend/array/pagedarray"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 const (

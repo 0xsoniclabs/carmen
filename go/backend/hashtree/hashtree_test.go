@@ -12,12 +12,12 @@ package hashtree_test
 
 import (
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree/htfile"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree/htldb"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree/htmemory"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree/htfile"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree/htldb"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree/htmemory"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"io"
 	"testing"
 )

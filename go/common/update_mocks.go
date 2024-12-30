@@ -22,7 +22,7 @@ package common
 import (
 	reflect "reflect"
 
-	amount "github.com/Fantom-foundation/Carmen/go/common/amount"
+	amount "github.com/0xSonicLabs/Carmen/go/common/amount"
 	gomock "go.uber.org/mock/gomock"
 )
 

@@ -22,7 +22,7 @@ package mpt
 import (
 	reflect "reflect"
 
-	common "github.com/Fantom-foundation/Carmen/go/common"
+	common "github.com/0xSonicLabs/Carmen/go/common"
 	gomock "go.uber.org/mock/gomock"
 )
 

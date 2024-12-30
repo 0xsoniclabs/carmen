@@ -11,7 +11,7 @@
 package pagepool
 
 import (
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"unsafe"
 )
 

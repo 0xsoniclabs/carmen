@@ -12,7 +12,7 @@ package carmen
 
 import (
 	"bytes"
-	"github.com/Fantom-foundation/Carmen/go/common/immutable"
+	"github.com/0xSonicLabs/Carmen/go/common/immutable"
 	"golang.org/x/exp/slices"
 	"testing"
 )

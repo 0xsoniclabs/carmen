@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/carmen"
-	"github.com/Fantom-foundation/Carmen/go/carmen/experimental"
+	"github.com/0xSonicLabs/Carmen/go/carmen"
+	"github.com/0xSonicLabs/Carmen/go/carmen/experimental"
 )
 
 func TestConfigurations_ContainGoAndCppImplementations(t *testing.T) {

@@ -15,8 +15,8 @@ import (
 	"io"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/utils/checkpoint"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils/checkpoint"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"golang.org/x/exp/constraints"
 )
 

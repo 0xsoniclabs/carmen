@@ -12,12 +12,12 @@ package pagedfile
 
 import (
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/array/pagedarray"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree"
-	"github.com/Fantom-foundation/Carmen/go/backend/memsnap"
-	"github.com/Fantom-foundation/Carmen/go/backend/store"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/array/pagedarray"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree"
+	"github.com/0xSonicLabs/Carmen/go/backend/memsnap"
+	"github.com/0xSonicLabs/Carmen/go/backend/store"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"os"
 	"unsafe"
 )

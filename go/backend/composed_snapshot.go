@@ -15,7 +15,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // This file provides a snapshot utility class that enables the composition of

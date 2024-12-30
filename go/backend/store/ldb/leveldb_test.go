@@ -12,10 +12,10 @@ package ldb
 
 import (
 	"bytes"
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree/htmemory"
-	"github.com/Fantom-foundation/Carmen/go/backend/store"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree/htmemory"
+	"github.com/0xSonicLabs/Carmen/go/backend/store"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"io"
 	"testing"
 )

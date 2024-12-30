@@ -15,13 +15,13 @@ import (
 	"hash"
 	"io"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/depot"
-	"github.com/Fantom-foundation/Carmen/go/backend/index"
-	"github.com/Fantom-foundation/Carmen/go/backend/multimap"
-	"github.com/Fantom-foundation/Carmen/go/backend/store"
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/depot"
+	"github.com/0xSonicLabs/Carmen/go/backend/index"
+	"github.com/0xSonicLabs/Carmen/go/backend/multimap"
+	"github.com/0xSonicLabs/Carmen/go/backend/store"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 	"golang.org/x/crypto/sha3"
 )
 

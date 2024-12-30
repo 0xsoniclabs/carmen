@@ -13,8 +13,8 @@ package index
 import (
 	"errors"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // Index is an append-only index for a set of values, mapping each added

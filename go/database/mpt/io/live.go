@@ -19,10 +19,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
-	"github.com/Fantom-foundation/Carmen/go/common/interrupt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
 )
 
 //go:generate mockgen -source live.go -destination live_mocks.go -package io

@@ -13,9 +13,9 @@ package cache
 import (
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/index"
-	"github.com/Fantom-foundation/Carmen/go/backend/index/memory"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/index"
+	"github.com/0xSonicLabs/Carmen/go/backend/index/memory"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 var (

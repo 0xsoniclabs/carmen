@@ -13,8 +13,8 @@ package mpt
 import (
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 )
 
 func TestAccountInfo_EncodingAndDecoding(t *testing.T) {

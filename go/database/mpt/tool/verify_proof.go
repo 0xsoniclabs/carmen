@@ -12,10 +12,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/common/interrupt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/io"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/proof"
+	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/io"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/proof"
 	"github.com/urfave/cli/v2"
 	"log"
 	"math"

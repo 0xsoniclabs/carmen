@@ -15,7 +15,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // running all these options takes long, run with a longer timeout, e.g. " -timeout 360m"

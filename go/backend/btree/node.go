@@ -10,7 +10,7 @@
 
 package btree
 
-import "github.com/Fantom-foundation/Carmen/go/common"
+import "github.com/0xSonicLabs/Carmen/go/common"
 
 type node[K any] interface {
 	ForEacher[K]

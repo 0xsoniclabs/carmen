@@ -19,11 +19,11 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/stock"
-	"github.com/Fantom-foundation/Carmen/go/backend/stock/file"
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/interrupt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 	"github.com/pbnjay/memory"
 )
 

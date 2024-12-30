@@ -14,13 +14,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/index"
-	"github.com/Fantom-foundation/Carmen/go/backend/index/cache"
-	"github.com/Fantom-foundation/Carmen/go/backend/index/file"
-	"github.com/Fantom-foundation/Carmen/go/backend/index/ldb"
-	"github.com/Fantom-foundation/Carmen/go/backend/index/memory"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/index"
+	"github.com/0xSonicLabs/Carmen/go/backend/index/cache"
+	"github.com/0xSonicLabs/Carmen/go/backend/index/file"
+	"github.com/0xSonicLabs/Carmen/go/backend/index/ldb"
+	"github.com/0xSonicLabs/Carmen/go/backend/index/memory"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 func initIndexesMap() map[string]func(t *testing.T) index.Index[common.Address, uint32] {

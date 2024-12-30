@@ -2,20 +2,20 @@
 
 This directory contains the Go implementation of Carmen.
 It includes the officially supported Merkle Patricia Trie State Root Hash compatible
-implementation. 
+implementation.
 
 # Build
 
 Carmen is included in other systems as a Go library.
-The Go implementation does not need any C++ dependency, 
-i.e.; no build is required to use the library. 
+The Go implementation does not need any C++ dependency,
+i.e.; no build is required to use the library.
 
 # Integrate
 
 Carmen is added to another project simply as a dependency:
 
 ```
-go get github.com/Fantom-foundation/Carmen/go/
+go get github.com/0xSonicLabs/Carmen/go/
 ```
 
 # Development
@@ -25,25 +25,25 @@ For development purposes, it may come handy to execute all tests. It needs build
 Either install C++ build environment, see [C++ build environment instructions](../cpp/README.md),
 or have [Docker installation](https://www.docker.com)
 
-Execute in the root directory: 
+Execute in the root directory:
 ```
-make 
+make
 ```
 
-Then execute in this directory: 
+Then execute in this directory:
 ```
-go test ./...  -timeout=60m  
+go test ./...  -timeout=60m
 ```
 
 On memory constrained systems, parallelism may need to be reduced
 ```
-go test ./... -parallel=1  -timeout 600m   
+go test ./... -parallel=1  -timeout 600m
 ```
-all tests should pass. 
+all tests should pass.
 
 ## Installing gomock
 
-Tests extensively use mocks. 
+Tests extensively use mocks.
 To regenerate mocks, use the command:
 
 ```
@@ -65,11 +65,10 @@ gofmt -s -w .
 
 ## Benchmarks
 
-Some of the key parts may be exercised with benchmarks. 
+Some of the key parts may be exercised with benchmarks.
 For example, the Stores benchmark is executed as:
 ```
 go test ./backend/store -bench=BenchmarkInsert
 ```
-For more information about the running benchmarks see: 
+For more information about the running benchmarks see:
 [Go testing documentation](https://pkg.go.dev/testing#hdr-Benchmarks).
-

@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/stock"
-	"github.com/Fantom-foundation/Carmen/go/backend/utils/checkpoint"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xSonicLabs/Carmen/go/backend/utils/checkpoint"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // shadowStock is a debug utility to run two Stock implementations in parallel and compare

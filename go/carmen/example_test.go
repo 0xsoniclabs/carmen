@@ -18,8 +18,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Fantom-foundation/Carmen/go/carmen"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/io"
+	"github.com/0xSonicLabs/Carmen/go/carmen"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/io"
 	"golang.org/x/exp/maps"
 )
 

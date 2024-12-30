@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Fantom-foundation/Carmen/go/common/interrupt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
 )
 
 func TestExport_CanBeInterrupted(t *testing.T) {

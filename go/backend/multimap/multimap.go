@@ -10,7 +10,7 @@
 
 package multimap
 
-import "github.com/Fantom-foundation/Carmen/go/common"
+import "github.com/0xSonicLabs/Carmen/go/common"
 
 // MultiMap defines the interface for mapping keys to sets of multiple values.
 type MultiMap[K common.Identifier, V common.Identifier] interface {

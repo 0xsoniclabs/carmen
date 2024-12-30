@@ -21,13 +21,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 	"go.uber.org/mock/gomock"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/stock"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 func TestLiveTrie_EmptyTrieIsConsistent(t *testing.T) {

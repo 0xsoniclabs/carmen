@@ -15,11 +15,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/Fantom-foundation/Carmen/go/common/witness"
+	"github.com/0xSonicLabs/Carmen/go/common/witness"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 )
 
 // syncedState wraps a state implementation with a lock restricting the

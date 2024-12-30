@@ -22,7 +22,7 @@ package mpt
 import (
 	reflect "reflect"
 
-	shared "github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	shared "github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 	gomock "go.uber.org/mock/gomock"
 )
 

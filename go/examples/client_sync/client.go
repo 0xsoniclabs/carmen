@@ -16,9 +16,9 @@ import (
 	"log"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/state"
-	"github.com/Fantom-foundation/Carmen/go/state/gostate"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xSonicLabs/Carmen/go/state/gostate"
 )
 
 // Client is a (very) simplified implementation of a client

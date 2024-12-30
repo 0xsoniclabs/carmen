@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/io"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 

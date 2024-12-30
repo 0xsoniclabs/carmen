@@ -14,9 +14,9 @@ import (
 	"context"
 	"io"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/tribool"
-	"github.com/Fantom-foundation/Carmen/go/state"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/tribool"
+	"github.com/0xSonicLabs/Carmen/go/state"
 )
 
 //go:generate mockgen -source carmen.go -destination carmen_mock.go -package carmen

@@ -11,9 +11,9 @@
 package pagedfile
 
 import (
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree/htfile"
-	"github.com/Fantom-foundation/Carmen/go/backend/store"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree/htfile"
+	"github.com/0xSonicLabs/Carmen/go/backend/store"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"io"
 	"testing"
 )

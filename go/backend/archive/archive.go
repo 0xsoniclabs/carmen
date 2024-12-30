@@ -13,9 +13,9 @@ package archive
 //go:generate mockgen -source archive.go -destination archive_mock.go -package archive
 
 import (
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
-	"github.com/Fantom-foundation/Carmen/go/common/witness"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common/witness"
 )
 
 const (

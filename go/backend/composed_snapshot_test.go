@@ -15,7 +15,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend"
 )
 
 // This test file contains an example implementation of a data structure

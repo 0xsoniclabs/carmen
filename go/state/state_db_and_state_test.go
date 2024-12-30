@@ -19,12 +19,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
-	"github.com/Fantom-foundation/Carmen/go/state"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/state"
 
-	_ "github.com/Fantom-foundation/Carmen/go/state/cppstate"
-	_ "github.com/Fantom-foundation/Carmen/go/state/gostate"
+	_ "github.com/0xSonicLabs/Carmen/go/state/cppstate"
+	_ "github.com/0xSonicLabs/Carmen/go/state/gostate"
 )
 
 func TestCarmen_CanHandleMaximumBalance(t *testing.T) {

@@ -13,7 +13,7 @@ package mpt
 import (
 	"sync"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 // NodeHash is a utility type linking a path in an MPT to a hash. Its main

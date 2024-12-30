@@ -13,13 +13,13 @@ package memory
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/backend/depot"
-	"github.com/Fantom-foundation/Carmen/go/backend/memsnap"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/backend/depot"
+	"github.com/0xSonicLabs/Carmen/go/backend/memsnap"
 	"unsafe"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 const LengthSize = 4 // uint32

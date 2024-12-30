@@ -21,8 +21,8 @@ package io
 import (
 	reflect "reflect"
 
-	common "github.com/Fantom-foundation/Carmen/go/common"
-	mpt "github.com/Fantom-foundation/Carmen/go/database/mpt"
+	common "github.com/0xSonicLabs/Carmen/go/common"
+	mpt "github.com/0xSonicLabs/Carmen/go/database/mpt"
 	gomock "go.uber.org/mock/gomock"
 )
 

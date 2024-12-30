@@ -10,7 +10,7 @@
 
 package cppstate
 
-import "github.com/Fantom-foundation/Carmen/go/state"
+import "github.com/0xSonicLabs/Carmen/go/state"
 
 const (
 	VariantCppMemory  state.Variant = "cpp-memory"

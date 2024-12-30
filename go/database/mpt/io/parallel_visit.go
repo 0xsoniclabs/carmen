@@ -18,10 +18,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/Fantom-foundation/Carmen/go/backend/stock"
-	"github.com/Fantom-foundation/Carmen/go/backend/stock/file"
-	"github.com/Fantom-foundation/Carmen/go/common/heap"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
+	"github.com/0xSonicLabs/Carmen/go/common/heap"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
 )
 
 //go:generate mockgen -source parallel_visit.go -destination parallel_visit_mocks.go -package io

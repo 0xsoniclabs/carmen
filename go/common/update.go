@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
 )
 
 //go:generate mockgen -source update.go -destination update_mocks.go -package common

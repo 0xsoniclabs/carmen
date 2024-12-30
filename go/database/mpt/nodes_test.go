@@ -14,15 +14,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/common/tribool"
+	"github.com/0xSonicLabs/Carmen/go/common/tribool"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/common/amount"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 	gomock "go.uber.org/mock/gomock"
 )
 

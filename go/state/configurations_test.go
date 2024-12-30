@@ -17,9 +17,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/state"
-	_ "github.com/Fantom-foundation/Carmen/go/state/cppstate"
-	_ "github.com/Fantom-foundation/Carmen/go/state/gostate"
+	"github.com/0xSonicLabs/Carmen/go/state"
+	_ "github.com/0xSonicLabs/Carmen/go/state/cppstate"
+	_ "github.com/0xSonicLabs/Carmen/go/state/gostate"
 )
 
 func TestStateConfigs_ContainsConfigurations(t *testing.T) {

@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Fantom-foundation/Carmen/go/backend"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend"
+	"github.com/0xSonicLabs/Carmen/go/common"
 )
 
 func TestIndexProof_IsProof(t *testing.T) {

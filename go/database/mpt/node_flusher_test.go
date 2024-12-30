@@ -13,11 +13,11 @@ package mpt
 import (
 	"errors"
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/common/ticker"
+	"github.com/0xSonicLabs/Carmen/go/common/ticker"
 	"testing"
 	"time"
 
-	"github.com/Fantom-foundation/Carmen/go/database/mpt/shared"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
 	"go.uber.org/mock/gomock"
 )
 

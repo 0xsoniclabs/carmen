@@ -22,10 +22,10 @@ package witness
 import (
 	reflect "reflect"
 
-	common "github.com/Fantom-foundation/Carmen/go/common"
-	amount "github.com/Fantom-foundation/Carmen/go/common/amount"
-	immutable "github.com/Fantom-foundation/Carmen/go/common/immutable"
-	tribool "github.com/Fantom-foundation/Carmen/go/common/tribool"
+	common "github.com/0xSonicLabs/Carmen/go/common"
+	amount "github.com/0xSonicLabs/Carmen/go/common/amount"
+	immutable "github.com/0xSonicLabs/Carmen/go/common/immutable"
+	tribool "github.com/0xSonicLabs/Carmen/go/common/tribool"
 	gomock "go.uber.org/mock/gomock"
 )
 

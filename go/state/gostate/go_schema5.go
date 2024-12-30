@@ -14,12 +14,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Fantom-foundation/Carmen/go/common"
-	"github.com/Fantom-foundation/Carmen/go/database/mpt"
+	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/database/mpt"
 
 	"path/filepath"
 
-	"github.com/Fantom-foundation/Carmen/go/state"
+	"github.com/0xSonicLabs/Carmen/go/state"
 )
 
 // goSchema5 implements a state utilizes an MPT based data structure that

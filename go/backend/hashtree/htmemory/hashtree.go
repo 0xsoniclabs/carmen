@@ -13,8 +13,8 @@ package htmemory
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/Fantom-foundation/Carmen/go/backend/hashtree"
-	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/0xSonicLabs/Carmen/go/backend/hashtree"
+	"github.com/0xSonicLabs/Carmen/go/common"
 	"hash"
 	"unsafe"
 )
