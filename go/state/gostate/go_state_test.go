@@ -17,12 +17,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/archive"
-	"github.com/0xSonicLabs/Carmen/go/backend/index"
-	"github.com/0xSonicLabs/Carmen/go/backend/store"
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xsoniclabs/Carmen/go/backend/archive"
+	"github.com/0xsoniclabs/Carmen/go/backend/index"
+	"github.com/0xsoniclabs/Carmen/go/backend/store"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/state"
 	"go.uber.org/mock/gomock"
 )
 

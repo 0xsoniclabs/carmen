@@ -10,7 +10,7 @@
 
 package mpt
 
-import "github.com/0xSonicLabs/Carmen/go/common"
+import "github.com/0xsoniclabs/Carmen/go/common"
 
 // Nibble is a 4-bit signed integer in the range 0-F. It is a single letter
 // used to navigate in the MPT structure.

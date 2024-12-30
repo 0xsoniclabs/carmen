@@ -18,13 +18,13 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/backend/array"
-	"github.com/0xSonicLabs/Carmen/go/backend/array/pagedarray"
-	"github.com/0xSonicLabs/Carmen/go/backend/index"
-	"github.com/0xSonicLabs/Carmen/go/backend/index/indexhash"
-	"github.com/0xSonicLabs/Carmen/go/backend/pagepool"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/backend/array"
+	"github.com/0xsoniclabs/Carmen/go/backend/array/pagedarray"
+	"github.com/0xsoniclabs/Carmen/go/backend/index"
+	"github.com/0xsoniclabs/Carmen/go/backend/index/indexhash"
+	"github.com/0xsoniclabs/Carmen/go/backend/pagepool"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 const (

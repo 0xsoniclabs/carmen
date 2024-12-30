@@ -10,7 +10,7 @@
 
 package evmstore
 
-import "github.com/0xSonicLabs/Carmen/go/common"
+import "github.com/0xsoniclabs/Carmen/go/common"
 
 type EvmStore interface {
 	// SetTxPosition stores transaction block and position.

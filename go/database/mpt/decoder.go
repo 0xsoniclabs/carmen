@@ -14,9 +14,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt/rlp"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt/rlp"
 )
 
 // DecodeFromRlp decodes a node from RLP-encoded data.

@@ -12,8 +12,8 @@ package pagepool
 
 import (
 	"encoding/binary"
-	"github.com/0xSonicLabs/Carmen/go/backend/utils"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend/utils"
+	"github.com/0xsoniclabs/Carmen/go/common"
 	"testing"
 )
 

@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/backend/hashtree/htmemory"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/backend/hashtree/htmemory"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 func TestStoreProof_IsProof(t *testing.T) {

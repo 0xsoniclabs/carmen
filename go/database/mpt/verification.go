@@ -19,11 +19,11 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/stock"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
 	"github.com/pbnjay/memory"
 )
 

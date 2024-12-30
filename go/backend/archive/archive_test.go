@@ -17,14 +17,14 @@ import (
 	"io"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/archive"
-	"github.com/0xSonicLabs/Carmen/go/backend/archive/ldb"
-	"github.com/0xSonicLabs/Carmen/go/backend/archive/sqlite"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend/archive"
+	"github.com/0xsoniclabs/Carmen/go/backend/archive/ldb"
+	"github.com/0xsoniclabs/Carmen/go/backend/archive/sqlite"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 type archiveFactory struct {

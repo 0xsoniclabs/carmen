@@ -16,8 +16,8 @@ package state_test
 import (
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/state"
 )
 
 func TestStress_CanHandleLargeBlock(t *testing.T) {

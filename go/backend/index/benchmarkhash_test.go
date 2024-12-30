@@ -13,8 +13,8 @@ package index_test
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xSonicLabs/Carmen/go/backend/index/indexhash"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend/index/indexhash"
+	"github.com/0xsoniclabs/Carmen/go/common"
 	"testing"
 )
 

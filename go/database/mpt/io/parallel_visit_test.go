@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
 
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
 	"go.uber.org/mock/gomock"
 )
 

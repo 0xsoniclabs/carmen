@@ -18,10 +18,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/common/immutable"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/common/immutable"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/exp/maps"
 )

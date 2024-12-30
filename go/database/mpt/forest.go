@@ -24,12 +24,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/stock"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/memory"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/synced"
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/memory"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/synced"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
 )
 
 type StorageMode bool
@@ -1011,7 +1011,7 @@ func (s *Forest) release(ref *NodeReference) error {
 	// written/read in parallel.
 	// Furthermore, it prevents cache exhaustion when
 	// deleting many nodes in parallel.
-	// It fixes: https://github.com/0xSonicLabs/Carmen/issues/691
+	// It fixes: https://github.com/0xsoniclabs/Carmen/issues/691
 	// If this line is removed, this test fails:
 	//  go test ./database/mpt/...  -run TestForest_AsyncDelete_CacheIsNotExhausted
 	s.nodeCache.Release(ref)

@@ -10,7 +10,7 @@
 
 package pagepool
 
-import "github.com/0xSonicLabs/Carmen/go/common"
+import "github.com/0xsoniclabs/Carmen/go/common"
 
 // Page is an interface for a page that can be converted to/from bytes
 // usually to be persisted.

@@ -21,7 +21,7 @@ package io
 import (
 	reflect "reflect"
 
-	mpt "github.com/0xSonicLabs/Carmen/go/database/mpt"
+	mpt "github.com/0xsoniclabs/Carmen/go/database/mpt"
 	gomock "go.uber.org/mock/gomock"
 )
 

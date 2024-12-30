@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
-	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/Carmen/go/state"
 )
 
 // goSchema4 implements a state utilizes an MPT based data structure. However, it is

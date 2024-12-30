@@ -29,13 +29,13 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/Carmen/go/common/witness"
 
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/state"
 
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 const CodeCacheSize = 8_000 // ~ 200 MiB of memory for go-side code cache
@@ -280,7 +280,7 @@ func (cs *CppState) GetArchiveBlockHeight() (uint64, bool, error) {
 }
 
 func (cs *CppState) Check() error {
-	// TODO: implement, see https://github.com/0xSonicLabs/Carmen/issues/313
+	// TODO: implement, see https://github.com/0xsoniclabs/Carmen/issues/313
 	return nil
 }
 

@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/pagepool"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend/pagepool"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 // PageList is a data structure that maintains a list of pages. Each page maps a fixed number of Key/Value pairs.

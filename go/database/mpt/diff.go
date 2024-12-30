@@ -16,9 +16,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
 	"golang.org/x/exp/maps"
 )
 

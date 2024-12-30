@@ -15,7 +15,7 @@ i.e.; no build is required to use the library.
 Carmen is added to another project simply as a dependency:
 
 ```
-go get github.com/0xSonicLabs/Carmen/go/
+go get github.com/0xsoniclabs/Carmen/go/
 ```
 
 # Development

@@ -15,7 +15,7 @@ import (
 	"maps"
 	"time"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 // ----------------------------------------------------------------------------

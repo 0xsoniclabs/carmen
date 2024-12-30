@@ -12,8 +12,8 @@ package ldb
 
 import (
 	"encoding/binary"
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/common"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 

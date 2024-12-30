@@ -17,15 +17,15 @@ import (
 	"io"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/common/witness"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
-	mptio "github.com/0xSonicLabs/Carmen/go/database/mpt/io"
+	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
+	mptio "github.com/0xsoniclabs/Carmen/go/database/mpt/io"
 
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/backend/archive"
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/backend/archive"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/state"
 	"golang.org/x/crypto/sha3"
 )
 

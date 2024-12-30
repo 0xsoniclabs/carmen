@@ -22,8 +22,8 @@ package stock
 import (
 	reflect "reflect"
 
-	checkpoint "github.com/0xSonicLabs/Carmen/go/backend/utils/checkpoint"
-	common "github.com/0xSonicLabs/Carmen/go/common"
+	checkpoint "github.com/0xsoniclabs/Carmen/go/backend/utils/checkpoint"
+	common "github.com/0xsoniclabs/Carmen/go/common"
 	gomock "go.uber.org/mock/gomock"
 )
 

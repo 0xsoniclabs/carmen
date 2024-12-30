@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 type CachedHasher[T any] interface {

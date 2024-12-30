@@ -13,12 +13,12 @@ package ldb
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xSonicLabs/Carmen/go/backend"
-	"github.com/0xSonicLabs/Carmen/go/backend/store"
+	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/Carmen/go/backend/store"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/hashtree"
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/backend/hashtree"
+	"github.com/0xsoniclabs/Carmen/go/common"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )

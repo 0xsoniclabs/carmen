@@ -13,10 +13,10 @@ package gostate
 import (
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
-	"github.com/0xSonicLabs/Carmen/go/state"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/Carmen/go/state"
 )
 
 func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {

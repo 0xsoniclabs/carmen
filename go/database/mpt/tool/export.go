@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt/io"
+	"github.com/0xsoniclabs/Carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 

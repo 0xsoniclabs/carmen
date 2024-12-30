@@ -11,10 +11,10 @@
 package carmen
 
 import (
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/immutable"
-	"github.com/0xSonicLabs/Carmen/go/common/witness"
-	"github.com/0xSonicLabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/immutable"
+	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/Carmen/go/database/mpt"
 )
 
 // Bytes is an alias for immutable.Bytes.

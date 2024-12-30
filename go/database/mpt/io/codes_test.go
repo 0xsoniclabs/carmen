@@ -15,7 +15,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common"
 )
 
 func TestCodes_OutputIsSortedByHash(t *testing.T) {

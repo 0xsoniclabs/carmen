@@ -14,7 +14,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock"
 )
 
 func TestInMemoryStock(t *testing.T) {

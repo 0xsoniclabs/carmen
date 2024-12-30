@@ -12,8 +12,8 @@ package file
 
 import (
 	"encoding/binary"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock"
-	"github.com/0xSonicLabs/Carmen/go/fuzzing"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/Carmen/go/fuzzing"
 	"slices"
 	"strings"
 	"testing"

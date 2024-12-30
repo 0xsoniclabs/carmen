@@ -13,7 +13,7 @@ package common
 import (
 	"encoding/binary"
 
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
 )
 
 // AddressSerializer is a Serializer of the Address type

@@ -21,11 +21,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/stock"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
-	"github.com/0xSonicLabs/Carmen/go/common"
-	"github.com/0xSonicLabs/Carmen/go/common/amount"
-	"github.com/0xSonicLabs/Carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/Carmen/go/common/interrupt"
 	"go.uber.org/mock/gomock"
 )
 

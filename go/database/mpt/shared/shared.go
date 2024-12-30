@@ -278,8 +278,8 @@ func (h *WriteHandle[T]) Set(value T) {
 // shared value. Write access is preserved and must still be released. The
 // resulting read access handle must not be released.
 // TODO [cleanup]: split access permission proofs and handles
-// see: https://github.com/0xSonicLabs/Carmen/issues/719
-// See https://github.com/0xSonicLabs/Carmen/issues/719
+// see: https://github.com/0xsoniclabs/Carmen/issues/719
+// See https://github.com/0xsoniclabs/Carmen/issues/719
 func (h *WriteHandle[T]) AsReadHandle() ReadHandle[T] {
 	return ReadHandle[T]{h.handle}
 }
@@ -288,8 +288,8 @@ func (h *WriteHandle[T]) AsReadHandle() ReadHandle[T] {
 // shared value. Write access is preserved and must still be released. The
 // resulting view access handle must not be released.
 // TODO [cleanup]: split access permission proofs and handles
-// see: https://github.com/0xSonicLabs/Carmen/issues/719
-// See https://github.com/0xSonicLabs/Carmen/issues/719
+// see: https://github.com/0xsoniclabs/Carmen/issues/719
+// See https://github.com/0xsoniclabs/Carmen/issues/719
 func (h *WriteHandle[T]) AsViewHandle() ViewHandle[T] {
 	return ViewHandle[T]{h.handle}
 }

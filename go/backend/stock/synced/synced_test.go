@@ -15,9 +15,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/0xSonicLabs/Carmen/go/backend/stock"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/file"
-	"github.com/0xSonicLabs/Carmen/go/backend/stock/memory"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/Carmen/go/backend/stock/memory"
 )
 
 var configs = []stock.NamedStockFactory{
