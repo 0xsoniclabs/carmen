@@ -1,21 +1,21 @@
 # How to Build
 1. Clone the repository
    ```
-   git clone https://github.com/0xsoniclabs/Carmen
+   git clone https://github.com/0xsoniclabs/carmen
    ```
 2. Run tests
-    * [Go tests](https://github.com/0xsoniclabs/Carmen/tree/main/go#development)
-    * [C++ tests](https://github.com/0xsoniclabs/Carmen/blob/main/cpp/README.md#build-and-test)
+    * [Go tests](https://github.com/0xsoniclabs/carmen/tree/main/go#development)
+    * [C++ tests](https://github.com/0xsoniclabs/carmen/blob/main/cpp/README.md#build-and-test)
 ***
 
 # How to Integrate
 1. Get the latest `Go` version of `Carmen`
 ```
-go get -u github.com/0xsoniclabs/Carmen/go
+go get -u github.com/0xsoniclabs/carmen/go
 ```
 2. Import the public interface
 ```
-import "github.com/0xsoniclabs/Carmen/go/carmen"
+import "github.com/0xsoniclabs/carmen/go/carmen"
 ```
 
 
