@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-module github.com/0xsoniclabs/Carmen/go
+module github.com/0xsoniclabs/carmen/go
 
 go 1.20
 

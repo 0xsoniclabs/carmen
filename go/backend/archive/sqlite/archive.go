@@ -17,12 +17,12 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/common/witness"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/archive"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/backend/archive"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 	_ "github.com/mattn/go-sqlite3"
 )
 

@@ -11,7 +11,7 @@
 package mpt
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"slices"
 	"testing"
 )

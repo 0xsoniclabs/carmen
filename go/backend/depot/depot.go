@@ -11,8 +11,8 @@
 package depot
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Depot is a mutable key/value store for values of variable length.

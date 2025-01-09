@@ -10,7 +10,7 @@
 
 package hashtree
 
-import "github.com/0xsoniclabs/Carmen/go/common"
+import "github.com/0xsoniclabs/carmen/go/common"
 
 // HashTree implementation allows for computing (merkle) hash root out of set of input pages.
 type HashTree interface {

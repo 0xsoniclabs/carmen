@@ -18,12 +18,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/0xsoniclabs/Carmen/go/common/immutable"
-	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/common/immutable"
+	"github.com/0xsoniclabs/carmen/go/common/witness"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/common/tribool"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/tribool"
 	"golang.org/x/exp/maps"
 )
 

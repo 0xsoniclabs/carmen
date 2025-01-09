@@ -13,7 +13,7 @@ package carmen
 import (
 	"math/big"
 
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/holiman/uint256"
 )
 

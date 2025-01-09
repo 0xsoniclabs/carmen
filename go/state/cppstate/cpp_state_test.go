@@ -14,9 +14,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/state"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/state"
 )
 
 var (

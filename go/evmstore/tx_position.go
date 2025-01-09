@@ -12,7 +12,7 @@ package evmstore
 
 import (
 	"encoding/binary"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 type TxPosition struct {

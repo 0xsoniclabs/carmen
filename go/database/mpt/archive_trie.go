@@ -23,14 +23,14 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/archive"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils/checkpoint"
-	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/backend/archive"
+	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/0xsoniclabs/carmen/go/common/witness"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
 
 // ArchiveTrie retains a per-block history of the state trie. Each state is

@@ -15,9 +15,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/rlp"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/rlp"
 	"go.uber.org/mock/gomock"
 )
 

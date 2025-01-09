@@ -13,8 +13,8 @@ package carmen
 import (
 	"errors"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/state"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/state"
 )
 
 type queryContext struct {

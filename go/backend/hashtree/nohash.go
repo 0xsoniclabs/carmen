@@ -11,7 +11,7 @@
 package hashtree
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // NoHash is a trivial HashTree interface implementation, which does not do any hashing.

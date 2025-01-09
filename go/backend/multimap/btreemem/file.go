@@ -11,8 +11,8 @@
 package btreemem
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend/btree"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/btree"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"unsafe"
 )
 

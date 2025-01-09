@@ -11,8 +11,8 @@
 package ldb
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree/htldb"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htldb"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/syndtr/goleveldb/leveldb"
 	"unsafe"
 )

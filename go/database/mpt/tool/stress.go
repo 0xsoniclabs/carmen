@@ -20,9 +20,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/interrupt"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/urfave/cli/v2"
 )
 

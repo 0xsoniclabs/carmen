@@ -17,8 +17,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"go.uber.org/mock/gomock"
 )
 

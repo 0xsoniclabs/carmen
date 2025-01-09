@@ -15,12 +15,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend/depot"
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree/htmemory"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/depot"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htmemory"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend"
 )
 
 func TestDepotProof_IsProof(t *testing.T) {

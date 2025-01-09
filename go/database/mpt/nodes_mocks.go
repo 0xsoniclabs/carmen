@@ -22,8 +22,8 @@ import (
 	io "io"
 	reflect "reflect"
 
-	common "github.com/0xsoniclabs/Carmen/go/common"
-	shared "github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
+	common "github.com/0xsoniclabs/carmen/go/common"
+	shared "github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	gomock "go.uber.org/mock/gomock"
 )
 

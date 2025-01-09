@@ -11,9 +11,9 @@
 package cache
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree/htmemory"
-	"github.com/0xsoniclabs/Carmen/go/backend/store/memory"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htmemory"
+	"github.com/0xsoniclabs/carmen/go/backend/store/memory"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"testing"
 )
 

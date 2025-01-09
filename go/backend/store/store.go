@@ -11,8 +11,8 @@
 package store
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Store is a mutable key/value store. It provides mutation/lookup support, as well as

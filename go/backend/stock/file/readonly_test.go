@@ -13,8 +13,8 @@ package file
 import (
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"go.uber.org/mock/gomock"
 	"os"
 	"path/filepath"

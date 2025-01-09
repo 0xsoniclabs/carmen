@@ -13,7 +13,7 @@ package pagepool
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"io"
 	"os"
 	"unsafe"

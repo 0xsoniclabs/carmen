@@ -12,7 +12,7 @@ package mpt
 
 import (
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
 )
 
 // MptConfig defines a set of configuration options for customizing the MPT

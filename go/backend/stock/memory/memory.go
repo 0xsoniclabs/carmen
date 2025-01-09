@@ -18,10 +18,10 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils/checkpoint"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // inMemoryStock provides an in-memory implementation of the stock.Stock interface.

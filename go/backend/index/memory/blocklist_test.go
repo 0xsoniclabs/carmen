@@ -13,7 +13,7 @@ package memory
 import (
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 func TestBlockListIsMap(t *testing.T) {

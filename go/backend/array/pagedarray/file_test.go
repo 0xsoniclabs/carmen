@@ -11,8 +11,8 @@
 package pagedarray
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend/array"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/array"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"io"
 	"testing"
 )

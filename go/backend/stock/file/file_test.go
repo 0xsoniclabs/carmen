@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils/checkpoint"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"go.uber.org/mock/gomock"
 )
 

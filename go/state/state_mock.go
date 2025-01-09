@@ -24,10 +24,10 @@ import (
 	io "io"
 	reflect "reflect"
 
-	backend "github.com/0xsoniclabs/Carmen/go/backend"
-	common "github.com/0xsoniclabs/Carmen/go/common"
-	amount "github.com/0xsoniclabs/Carmen/go/common/amount"
-	witness "github.com/0xsoniclabs/Carmen/go/common/witness"
+	backend "github.com/0xsoniclabs/carmen/go/backend"
+	common "github.com/0xsoniclabs/carmen/go/common"
+	amount "github.com/0xsoniclabs/carmen/go/common/amount"
+	witness "github.com/0xsoniclabs/carmen/go/common/witness"
 	gomock "go.uber.org/mock/gomock"
 )
 

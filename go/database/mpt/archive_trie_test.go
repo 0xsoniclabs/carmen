@@ -27,12 +27,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/archive"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils/checkpoint"
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/carmen/go/backend/archive"
+	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/exp/maps"
 )

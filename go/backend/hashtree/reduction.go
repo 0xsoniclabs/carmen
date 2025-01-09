@@ -14,7 +14,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // ReduceHashes computes the hash of a tree with the given branching factor

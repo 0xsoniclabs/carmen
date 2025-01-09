@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"go.uber.org/mock/gomock"
 )
 

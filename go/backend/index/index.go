@@ -13,8 +13,8 @@ package index
 import (
 	"errors"
 
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Index is an append-only index for a set of values, mapping each added

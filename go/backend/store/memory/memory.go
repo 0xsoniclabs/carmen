@@ -12,13 +12,13 @@ package memory
 
 import (
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/backend/memsnap"
-	"github.com/0xsoniclabs/Carmen/go/backend/store"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend/memsnap"
+	"github.com/0xsoniclabs/carmen/go/backend/store"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Store is an in-memory store.Store implementation - it maps IDs to values

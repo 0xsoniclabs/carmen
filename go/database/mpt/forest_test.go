@@ -19,13 +19,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock/file"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock/memory"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock/shadow"
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
+	"github.com/0xsoniclabs/carmen/go/backend/stock/memory"
+	"github.com/0xsoniclabs/carmen/go/backend/stock/shadow"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"go.uber.org/mock/gomock"
 )
 
@@ -1498,10 +1498,10 @@ func testForest_WriteBufferRecoveryIsThreadSafe(t *testing.T, withConcurrentNode
 	// to concurrently update those trees, mutually pushing nodes out of
 	// the cache and recovering it.
 	// This test reproduces issue
-	// https://github.com/0xsoniclabs/Carmen/issues/687
+	// https://github.com/Fantom-foundation/Carmen/issues/687
 	//
 	// Another issue related to this was reported by
-	// https://github.com/0xsoniclabs/Carmen/issues/709
+	// https://github.com/Fantom-foundation/Carmen/issues/709
 	// In this case, parallel to the swapping of nodes between the write buffer
 	// and the cache, new nodes are created concurrently. Due to a
 	// synchronization issue in the cache this lead to a panic indicating that
@@ -1652,7 +1652,7 @@ func openFileShadowForest(directory string, mptConfig MptConfig, forestConfig Fo
 
 func TestForest_NodeHandlingDoesNotDeadlock(t *testing.T) {
 	// This test used to trigger a bug leading to a deadlock as reported in
-	// https://github.com/0xsoniclabs/Carmen/issues/724
+	// https://github.com/Fantom-foundation/Carmen/issues/724
 	//
 	// It runs a stress test on the forest's node management code with a
 	// particular focus on the transitioning of nodes between a tiny cache
@@ -1661,7 +1661,7 @@ func TestForest_NodeHandlingDoesNotDeadlock(t *testing.T) {
 	// to the write buffer is reduced to 1.
 	//
 	// For a full description of the identified deadlock see the comments of
-	// issue https://github.com/0xsoniclabs/Carmen/issues/724
+	// issue https://github.com/Fantom-foundation/Carmen/issues/724
 
 	ctrl := gomock.NewController(t)
 

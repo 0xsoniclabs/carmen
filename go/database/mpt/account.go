@@ -11,8 +11,8 @@
 package mpt
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
 
 // AccountInfo is the per-account information stored for each account in the

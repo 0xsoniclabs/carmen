@@ -12,7 +12,7 @@ package mpt
 
 import (
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"testing"
 )
 

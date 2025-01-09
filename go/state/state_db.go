@@ -14,14 +14,14 @@ package state
 import (
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"maps"
 	"math/big"
 	"sync"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
 
 //go:generate mockgen -source state_db.go -destination state_db_mock.go -package state

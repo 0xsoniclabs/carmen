@@ -21,11 +21,11 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/state"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/urfave/cli/v2"
 
-	"github.com/0xsoniclabs/Carmen/go/state/gostate"
+	"github.com/0xsoniclabs/carmen/go/state/gostate"
 )
 
 var Benchmark = cli.Command{

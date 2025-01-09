@@ -12,7 +12,7 @@ package memory
 
 import (
 	"bytes"
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree/htmemory"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htmemory"
 	"testing"
 )
 

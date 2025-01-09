@@ -15,9 +15,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // ---------------------------------- Proof -----------------------------------

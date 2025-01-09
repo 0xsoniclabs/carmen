@@ -11,7 +11,7 @@
 package array
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Array is a structure that allows to store and fetch a value to/from ordinal indexes.

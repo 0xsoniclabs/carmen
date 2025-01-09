@@ -16,10 +16,10 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/index/file"
-	"github.com/0xsoniclabs/Carmen/go/backend/index/memory"
-	"github.com/0xsoniclabs/Carmen/go/backend/pagepool"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/index/file"
+	"github.com/0xsoniclabs/carmen/go/backend/index/memory"
+	"github.com/0xsoniclabs/carmen/go/backend/pagepool"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 var inputSizes = []int{1, 10, 20, 1300, 12345}

@@ -11,7 +11,7 @@
 package memory
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"math/rand"
 	"testing"
 )

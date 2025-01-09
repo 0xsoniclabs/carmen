@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/state"
+	"github.com/0xsoniclabs/carmen/go/state"
 	"go.uber.org/mock/gomock"
 )
 

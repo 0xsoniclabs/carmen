@@ -15,11 +15,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/0xsoniclabs/Carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/common/witness"
 
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
 
 // syncedState wraps a state implementation with a lock restricting the

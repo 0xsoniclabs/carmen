@@ -18,10 +18,10 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/immutable"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/rlp"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/immutable"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/rlp"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 )
 
 // ----------------------------------------------------------------------------

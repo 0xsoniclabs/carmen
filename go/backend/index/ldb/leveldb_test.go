@@ -12,9 +12,9 @@ package ldb
 
 import (
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/backend/index"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend/index"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"testing"
 )
 

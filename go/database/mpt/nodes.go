@@ -19,9 +19,9 @@ import (
 	"io"
 	"slices"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/tribool"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt/shared"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/tribool"
+	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 )
 
 // This file defines the interface and implementation of all node types in a

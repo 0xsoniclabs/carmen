@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // The definition of the RLP encoding can be found here:

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 func TestAddressHasher_ProducesCorrectHashes(t *testing.T) {

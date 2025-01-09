@@ -13,9 +13,9 @@ package synced
 import (
 	"sync"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/stock"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils/checkpoint"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
+	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 type syncedStock[I stock.Index, V any] struct {

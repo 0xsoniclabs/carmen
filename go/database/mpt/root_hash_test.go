@@ -19,8 +19,8 @@ import (
 
 	_ "embed"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
 
 // The reference hashes in this file have been generated using Geth's MPT.

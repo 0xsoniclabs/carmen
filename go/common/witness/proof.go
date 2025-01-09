@@ -11,10 +11,10 @@
 package witness
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/common/immutable"
-	"github.com/0xsoniclabs/Carmen/go/common/tribool"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/immutable"
+	"github.com/0xsoniclabs/carmen/go/common/tribool"
 )
 
 //go:generate mockgen -source proof.go -destination proof_mocks.go -package witness

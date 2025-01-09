@@ -13,8 +13,8 @@ package depot_test
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend/depot"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/depot"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"math/rand"
 	"testing"
 )

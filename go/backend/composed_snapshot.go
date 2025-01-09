@@ -15,7 +15,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // This file provides a snapshot utility class that enables the composition of

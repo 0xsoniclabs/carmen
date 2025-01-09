@@ -15,13 +15,13 @@ import (
 	"hash"
 	"io"
 
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/backend/depot"
-	"github.com/0xsoniclabs/Carmen/go/backend/index"
-	"github.com/0xsoniclabs/Carmen/go/backend/multimap"
-	"github.com/0xsoniclabs/Carmen/go/backend/store"
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend/depot"
+	"github.com/0xsoniclabs/carmen/go/backend/index"
+	"github.com/0xsoniclabs/carmen/go/backend/multimap"
+	"github.com/0xsoniclabs/carmen/go/backend/store"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"golang.org/x/crypto/sha3"
 )
 

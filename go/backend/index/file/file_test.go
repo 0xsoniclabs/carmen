@@ -11,9 +11,9 @@
 package file
 
 import (
-	"github.com/0xsoniclabs/Carmen/go/backend/index"
-	"github.com/0xsoniclabs/Carmen/go/backend/utils"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/index"
+	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"math/rand"
 	"testing"
 )

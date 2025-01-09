@@ -22,9 +22,9 @@ package state
 import (
 	reflect "reflect"
 
-	common "github.com/0xsoniclabs/Carmen/go/common"
-	amount "github.com/0xsoniclabs/Carmen/go/common/amount"
-	witness "github.com/0xsoniclabs/Carmen/go/common/witness"
+	common "github.com/0xsoniclabs/carmen/go/common"
+	amount "github.com/0xsoniclabs/carmen/go/common/amount"
+	witness "github.com/0xsoniclabs/carmen/go/common/witness"
 	gomock "go.uber.org/mock/gomock"
 )
 

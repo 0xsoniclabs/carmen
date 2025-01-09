@@ -13,7 +13,7 @@ package stock
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/fuzzing"
+	"github.com/0xsoniclabs/carmen/go/fuzzing"
 	"go.uber.org/mock/gomock"
 	"testing"
 )

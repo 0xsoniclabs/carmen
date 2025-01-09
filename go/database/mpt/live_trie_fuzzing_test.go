@@ -13,9 +13,9 @@ package mpt
 import (
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/fuzzing"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/fuzzing"
 )
 
 // FuzzLiveTrie_RandomAccountOps is a wrapper function for fuzzLiveTrieRandomAccountOps.

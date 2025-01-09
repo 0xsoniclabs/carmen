@@ -15,9 +15,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/array"
-	"github.com/0xsoniclabs/Carmen/go/backend/array/pagedarray"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/array"
+	"github.com/0xsoniclabs/carmen/go/backend/array/pagedarray"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 const (

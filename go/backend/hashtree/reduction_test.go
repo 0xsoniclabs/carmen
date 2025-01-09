@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 func getSha256Hash(data []byte) common.Hash {

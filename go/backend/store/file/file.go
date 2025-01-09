@@ -13,15 +13,15 @@ package file
 import (
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/backend/memsnap"
-	"github.com/0xsoniclabs/Carmen/go/backend/store"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend/memsnap"
+	"github.com/0xsoniclabs/carmen/go/backend/store"
 	"io"
 	"os"
 	"unsafe"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/hashtree"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Store is a filesystem-based store.Store implementation - it stores mapping of ID to value in binary files.

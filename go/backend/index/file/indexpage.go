@@ -12,7 +12,7 @@ package file
 
 import (
 	"encoding/binary"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"unsafe"
 )
 

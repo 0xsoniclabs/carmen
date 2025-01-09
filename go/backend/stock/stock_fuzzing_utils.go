@@ -12,7 +12,7 @@ package stock
 
 import (
 	"encoding/binary"
-	"github.com/0xsoniclabs/Carmen/go/fuzzing"
+	"github.com/0xsoniclabs/carmen/go/fuzzing"
 	"strings"
 )
 

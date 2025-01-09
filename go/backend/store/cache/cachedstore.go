@@ -12,9 +12,9 @@ package cache
 
 import (
 	"errors"
-	"github.com/0xsoniclabs/Carmen/go/backend"
-	"github.com/0xsoniclabs/Carmen/go/backend/store"
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/backend"
+	"github.com/0xsoniclabs/carmen/go/backend/store"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"unsafe"
 )
 

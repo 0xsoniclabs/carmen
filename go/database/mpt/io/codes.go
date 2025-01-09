@@ -16,7 +16,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/0xsoniclabs/Carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"golang.org/x/exp/maps"
 )
 

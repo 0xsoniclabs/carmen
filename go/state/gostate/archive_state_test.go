@@ -17,12 +17,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/0xsoniclabs/Carmen/go/backend/archive"
-	"github.com/0xsoniclabs/Carmen/go/common"
-	"github.com/0xsoniclabs/Carmen/go/common/amount"
-	"github.com/0xsoniclabs/Carmen/go/common/interrupt"
-	"github.com/0xsoniclabs/Carmen/go/database/mpt"
-	"github.com/0xsoniclabs/Carmen/go/state"
+	"github.com/0xsoniclabs/carmen/go/backend/archive"
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/carmen/go/database/mpt"
+	"github.com/0xsoniclabs/carmen/go/state"
 	"go.uber.org/mock/gomock"
 )
 

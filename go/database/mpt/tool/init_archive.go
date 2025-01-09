@@ -18,7 +18,7 @@ import (
 	"io"
 	"os"
 
-	mptIo "github.com/0xsoniclabs/Carmen/go/database/mpt/io"
+	mptIo "github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
