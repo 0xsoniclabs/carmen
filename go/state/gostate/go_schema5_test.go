@@ -12,6 +12,7 @@ package gostate
 
 import (
 	"testing"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -164,10 +165,18 @@ func TestGetNodeCacheConfig(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			cfg := getNodeCacheConfig(test.cacheSize)
+			cfg := getNodeCacheConfig(test.cacheSize, 0)
 			if cfg.Capacity != test.capacity {
 				t.Errorf("unexpected capacity: %d != %d", cfg.Capacity, test.capacity)
 			}
 		})
+	}
+}
+
+func TestGetNodeCacheConfig_BackgroundFlushPeriod(t *testing.T) {
+	const expected = 123 * time.Second
+
+	if got, want := getNodeCacheConfig(0, expected).BackgroundFlushPeriod, expected; got != want {
+		t.Errorf("unexpected background flush period: %v != %v", got, want)
 	}
 }

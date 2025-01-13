@@ -24,14 +24,15 @@ import (
 
 // Parameters struct defining configuration parameters for state instances.
 type Parameters struct {
-	Variant            Variant
-	Schema             Schema
-	Archive            ArchiveType
-	Directory          string
-	LiveCache          int64 // bytes, approximate, supported only by S5 now
-	ArchiveCache       int64 // bytes, approximate, supported only by S5 now
-	CheckpointInterval int   // in blocks
-	CheckpointPeriod   time.Duration
+	Variant               Variant
+	Schema                Schema
+	Archive               ArchiveType
+	Directory             string
+	LiveCache             int64 // bytes, approximate, supported only by S5 now
+	ArchiveCache          int64 // bytes, approximate, supported only by S5 now
+	CheckpointInterval    int   // in blocks
+	CheckpointPeriod      time.Duration
+	BackgroundFlushPeriod time.Duration // the time between background flushes; a default is chosen if zero, disabled if negative
 }
 
 const (

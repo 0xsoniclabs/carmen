@@ -13,6 +13,7 @@ package gostate
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
@@ -77,7 +78,7 @@ func newS5State(params state.Parameters, mptState *mpt.MptState) (state.State, e
 	}, arch, []func(){archiveCleanup}), nil
 }
 
-func getNodeCacheConfig(cacheSize int64) mpt.NodeCacheConfig {
+func getNodeCacheConfig(cacheSize int64, backgroundFlushPeriod time.Duration) mpt.NodeCacheConfig {
 	capacity := 0
 	if cacheSize > 0 {
 		capacity = int(cacheSize / int64(mpt.EstimatePerNodeMemoryUsage()))
@@ -91,12 +92,16 @@ func getNodeCacheConfig(cacheSize int64) mpt.NodeCacheConfig {
 		}
 	}
 	return mpt.NodeCacheConfig{
-		Capacity: capacity,
+		Capacity:              capacity,
+		BackgroundFlushPeriod: backgroundFlushPeriod,
 	}
 }
 
 func newGoMemoryS5State(params state.Parameters) (state.State, error) {
-	state, err := mpt.OpenGoMemoryState(filepath.Join(params.Directory, "live"), mpt.S5LiveConfig, getNodeCacheConfig(params.LiveCache))
+	state, err := mpt.OpenGoMemoryState(filepath.Join(params.Directory, "live"), mpt.S5LiveConfig,
+		getNodeCacheConfig(params.LiveCache, params.BackgroundFlushPeriod),
+	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +109,10 @@ func newGoMemoryS5State(params state.Parameters) (state.State, error) {
 }
 
 func newGoFileS5State(params state.Parameters) (state.State, error) {
-	state, err := mpt.OpenGoFileState(filepath.Join(params.Directory, "live"), mpt.S5LiveConfig, getNodeCacheConfig(params.LiveCache))
+	state, err := mpt.OpenGoFileState(filepath.Join(params.Directory, "live"), mpt.S5LiveConfig,
+		getNodeCacheConfig(params.LiveCache, params.BackgroundFlushPeriod),
+	)
+
 	if err != nil {
 		return nil, err
 	}

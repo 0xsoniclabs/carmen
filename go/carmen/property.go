@@ -41,6 +41,8 @@ const (
 	CheckpointInterval = Property("CheckpointInterval")
 	// CheckpointPeriod determines how often (in minutes) an Archive creates checkpoints.
 	CheckpointPeriod = Property("CheckpointPeriod")
+	// BackgroundFlushPeriod sets the time in seconds between background flushes; a default is chosen if zero, disabled if negative
+	BackgroundFlushPeriod = Property("BackgroundFlushPeriod")
 )
 
 // Properties are optional settings which may influence the

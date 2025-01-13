@@ -49,16 +49,21 @@ func openDatabase(
 	if err != nil {
 		return nil, err
 	}
+	backgroundFlushPeriod, err := properties.GetInteger(BackgroundFlushPeriod, 0)
+	if err != nil {
+		return nil, err
+	}
 
 	params := state.Parameters{
-		Directory:          directory,
-		Variant:            state.Variant(configuration.Variant),
-		Schema:             state.Schema(configuration.Schema),
-		Archive:            state.ArchiveType(configuration.Archive),
-		LiveCache:          int64(liveCache),
-		ArchiveCache:       int64(archiveCache),
-		CheckpointInterval: checkpointInterval,
-		CheckpointPeriod:   time.Duration(checkpointPeriod) * time.Minute,
+		Directory:             directory,
+		Variant:               state.Variant(configuration.Variant),
+		Schema:                state.Schema(configuration.Schema),
+		Archive:               state.ArchiveType(configuration.Archive),
+		LiveCache:             int64(liveCache),
+		ArchiveCache:          int64(archiveCache),
+		CheckpointInterval:    checkpointInterval,
+		CheckpointPeriod:      time.Duration(checkpointPeriod) * time.Minute,
+		BackgroundFlushPeriod: time.Duration(backgroundFlushPeriod) * time.Second,
 	}
 	db, err := state.NewState(params)
 	if err != nil {
