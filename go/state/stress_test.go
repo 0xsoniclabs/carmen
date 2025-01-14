@@ -15,6 +15,7 @@ package state_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -120,6 +121,56 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			db.EndTransaction()
 			db.EndBlock(block)
 			block++
+
+			if err := db.Check(); err != nil {
+				t.Errorf("update failed with unexpected error: %v", err)
+			}
+
+			if err := db.Close(); err != nil {
+				t.Errorf("failed to close DB: %v", err)
+			}
+		})
+	}
+}
+
+func TestStress_Long_vs_Short_Flush_Period(t *testing.T) {
+	const N = 1_000_000 // the number of changes in a single block
+
+	tests := map[string]struct {
+		period time.Duration
+	}{
+		"short": {time.Millisecond},
+		"long":  {time.Second},
+	}
+
+	for name, config := range tests {
+		t.Run(name, func(t *testing.T) {
+
+			parameters := state.Parameters{
+				Variant:               "go-file",
+				Schema:                5,
+				Archive:               state.NoArchive,
+				BackgroundFlushPeriod: config.period,
+			}
+
+			s, err := state.NewState(parameters)
+			if err != nil {
+				t.Fatalf("failed to initialize state %s; %s", name, err)
+			}
+			db := state.CreateStateDBUsing(s)
+
+			db.BeginBlock()
+			db.BeginTransaction()
+
+			// Create a lot of accounts.
+			for i := 0; i < N; i++ {
+				addr := common.Address{byte(i), byte(i >> 8), byte(i >> 16), byte(i >> 24)}
+				db.CreateAccount(addr)
+				db.SetNonce(addr, 12)
+			}
+
+			db.EndTransaction()
+			db.EndBlock(12)
 
 			if err := db.Check(); err != nil {
 				t.Errorf("update failed with unexpected error: %v", err)
