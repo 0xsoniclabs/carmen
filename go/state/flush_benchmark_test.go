@@ -77,6 +77,7 @@ func Benchmark_Long_vs_Short_Flush_Period(b *testing.B) {
 				Variant:               "go-file",
 				Schema:                5,
 				Archive:               NoArchive,
+				LiveCache:             1 << 29, // 0.5 GB
 				BackgroundFlushPeriod: config.period,
 			}
 
