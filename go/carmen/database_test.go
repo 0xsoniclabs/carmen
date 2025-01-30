@@ -2276,3 +2276,78 @@ func TestDatabase_Export(t *testing.T) {
 		t.Fatalf("cannot close db: %v", err)
 	}
 }
+
+func TestHeadBlockContext_Can_Update_Code(t *testing.T) {
+	db, err := OpenDatabase(t.TempDir(), testNonArchiveConfig, testProperties)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close database: %v", err)
+		}
+	}()
+
+	type codes interface {
+		GetCode(Address) []byte
+		GetCodeHash(Address) Hash
+		GetCodeSize(Address) int
+	}
+
+	check := func(t *testing.T, db codes, address Address, code []byte, hash Hash) {
+		t.Helper()
+
+		if got, want := db.GetCodeHash(address), hash; got != want {
+			t.Errorf("error retrieving code hash, wanted %v, got %v", want, got)
+		}
+		if got, want := db.GetCode(address), code; !bytes.Equal(got, want) {
+			t.Errorf("error retrieving code, wanted %v, got %v", want, got)
+		}
+		if got, want := db.GetCodeSize(address), len(code); got != want {
+			t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
+		}
+	}
+
+	addr := Address{1}
+	const blocks = 11
+	const transactions = 12
+
+	// create a few blocks with transactions updating code
+	for i := 0; i < blocks; i++ {
+		code := make([]byte, i+2)
+		code[i+1] = byte(i) // code size is growing, last byte is the index of the block, first byte is txs index
+		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
+			// insert transactions updating code
+			for j := 0; j < transactions; j++ {
+				if err := context.RunTransaction(func(context TransactionContext) error {
+					code[0] = byte(j)
+					context.SetCode(addr, code)
+					// updated code must be available in the same transaction
+					check(t, context, addr, code, Hash(common.Keccak256(code)))
+					return nil
+				}); err != nil {
+					return err
+				}
+
+				// updated code must be available in the same block at the end of each transaction
+				if err := context.RunTransaction(func(context TransactionContext) error {
+					check(t, context, addr, code, Hash(common.Keccak256(code)))
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}); err != nil {
+			t.Errorf("failed to add block: %v", err)
+		}
+
+		// the last code must be available at the end of the block
+		if err := db.QueryHeadState(func(context QueryContext) {
+			check(t, context, addr, code, Hash(common.Keccak256(code)))
+		}); err != nil {
+			t.Errorf("failed to query head state: %v", err)
+		}
+	}
+}
