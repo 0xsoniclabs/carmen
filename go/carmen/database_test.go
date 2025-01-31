@@ -2351,3 +2351,70 @@ func TestHeadBlockContext_Can_Update_Code(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabase_Codes_Versioned_Archive(t *testing.T) {
+	db, err := OpenDatabase(t.TempDir(), testConfig, testProperties)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close database: %v", err)
+		}
+	}()
+
+	addr := Address{1}
+	const blocks = 11
+	const transactions = 12
+
+	codes := make([][]byte, 0, blocks)
+	codeHashes := make([]Hash, 0, blocks)
+
+	// create a few blocks with transactions updating code
+	for i := 0; i < blocks; i++ {
+		code := make([]byte, i+2)
+		code[i+1] = byte(i) // code size is growing, last byte is the index of the block, first byte is txs index
+		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
+			// insert transactions updating code
+			for j := 0; j < transactions; j++ {
+				if err := context.RunTransaction(func(context TransactionContext) error {
+					code[0] = byte(j)
+					context.SetCode(addr, code)
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
+
+			// backup expected code and hash
+			codeCopy := make([]byte, len(code))
+			copy(codeCopy, code)
+			codes = append(codes, codeCopy)
+			codeHashes = append(codeHashes, Hash(common.Keccak256(code)))
+
+			return nil
+		}); err != nil {
+			t.Errorf("failed to add block: %v", err)
+		}
+	}
+
+	if err := db.Flush(); err != nil {
+		t.Fatalf("cannot flush db: %v", err)
+	}
+
+	for i := 0; i < blocks; i++ {
+		if err := db.QueryHistoricState(uint64(i), func(context QueryContext) {
+			if got, want := context.GetCodeHash(addr), codeHashes[i]; got != want {
+				t.Errorf("error retrieving code hash, wanted %v, got %v", want, got)
+			}
+			if got, want := context.GetCode(addr), codes[i]; !bytes.Equal(got, want) {
+				t.Errorf("error retrieving code, wanted %v, got %v", want, got)
+			}
+			if got, want := context.GetCodeSize(addr), len(codes[i]); got != want {
+				t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
+			}
+		}); err != nil {
+			t.Errorf("failed to query historic state: %v", err)
+		}
+	}
+}
