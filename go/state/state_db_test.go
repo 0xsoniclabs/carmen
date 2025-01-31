@@ -2403,6 +2403,111 @@ func TestStateDB_UpdatedCodesAreStoredOnlyOnce(t *testing.T) {
 	db.EndBlock(2)
 }
 
+func TestStateDB_CodeCanBeUpdated_In_Each_Block(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Exists(address1).Return(true, nil).AnyTimes()
+	db := CreateStateDBUsing(mock)
+
+	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
+	hashes := make([]common.Hash, 0, len(codes))
+	applyCalls := make([]*gomock.Call, 0, len(codes))
+	getCodeHashCalls := make([]*gomock.Call, 0, len(codes))
+	getCodeCalls := make([]*gomock.Call, 0, len(codes))
+
+	for i, code := range codes {
+		hashes = append(hashes, common.GetKeccak256Hash(code))
+		applyCalls = append(applyCalls, mock.EXPECT().Apply(uint64(i), common.Update{
+			Codes: []common.CodeUpdate{{Account: address1, Code: code}},
+		}))
+		getCodeHashCalls = append(getCodeHashCalls, mock.EXPECT().GetCodeHash(address1).Return(hashes[i], nil))
+		getCodeCalls = append(getCodeCalls, mock.EXPECT().GetCode(address1).Return(code, nil))
+	}
+
+	gomock.InOrder(applyCalls...)
+	gomock.InOrder(getCodeCalls...)
+	gomock.InOrder(getCodeHashCalls...)
+
+	for i := 0; i < len(codes); i++ {
+		db.BeginBlock()
+		db.BeginTransaction()
+		db.SetCode(address1, codes[i])
+		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
+		db.EndTransaction()
+		checkCode(t, db, address1, codes[i], hashes[i]) // available after the transaction
+		db.EndBlock(uint64(i))
+		checkCode(t, db, address1, codes[i], hashes[i]) // available after the block
+	}
+}
+
+func TestStateDB_CodeCanBeUpdated_In_One_Block(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Exists(address1).Return(true, nil).AnyTimes()
+	db := CreateStateDBUsing(mock)
+
+	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
+	hashes := make([]common.Hash, 0, len(codes))
+
+	for _, code := range codes {
+		hashes = append(hashes, common.GetKeccak256Hash(code))
+	}
+
+	// stored to state only for the last update
+	mock.EXPECT().Apply(uint64(1), common.Update{
+		Codes: []common.CodeUpdate{{Account: address1, Code: codes[len(codes)-1]}},
+	})
+	mock.EXPECT().GetCodeHash(address1).Return(hashes[len(hashes)-1], nil)
+	mock.EXPECT().GetCode(address1).Return(codes[len(codes)-1], nil)
+
+	db.BeginBlock()
+	for i := 0; i < len(codes); i++ {
+		db.BeginTransaction()
+		db.SetCode(address1, codes[i])
+		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
+		db.EndTransaction()
+		checkCode(t, db, address1, codes[i], hashes[i]) // available after the transaction
+	}
+	db.EndBlock(uint64(1))
+	checkCode(t, db, address1, codes[len(codes)-1], hashes[len(hashes)-1]) // available after the block
+
+}
+
+func TestStateDB_CodeCanBeUpdated_In_One_Transaction(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Exists(address1).Return(true, nil).AnyTimes()
+	db := CreateStateDBUsing(mock)
+
+	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
+	hashes := make([]common.Hash, 0, len(codes))
+
+	for _, code := range codes {
+		hashes = append(hashes, common.GetKeccak256Hash(code))
+	}
+
+	// stored to state only for the last update
+	mock.EXPECT().Apply(uint64(1), common.Update{
+		Codes: []common.CodeUpdate{{Account: address1, Code: codes[len(codes)-1]}},
+	})
+	mock.EXPECT().GetCodeHash(address1).Return(hashes[len(hashes)-1], nil)
+	mock.EXPECT().GetCode(address1).Return(codes[len(codes)-1], nil)
+
+	db.BeginBlock()
+	db.BeginTransaction()
+	for i := 0; i < len(codes); i++ {
+		db.SetCode(address1, codes[i])
+		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
+	}
+	db.EndTransaction()
+	checkCode(t, db, address1, codes[len(codes)-1], hashes[len(hashes)-1]) // available after the transaction
+	db.EndBlock(uint64(1))
+	checkCode(t, db, address1, codes[len(codes)-1], hashes[len(hashes)-1]) // available after the block
+}
+
 func TestStateDB_SettingCodesCreatesAccountsImplicitly(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
@@ -4416,4 +4521,18 @@ func (m sameEffectAs) Matches(x any) bool {
 
 func (m sameEffectAs) String() string {
 	return fmt.Sprintf("Same effect as %v", m.want)
+}
+
+func checkCode(t *testing.T, db VmStateDB, address common.Address, code []byte, hash common.Hash) {
+	t.Helper()
+
+	if got, want := db.GetCodeHash(address), hash; got != want {
+		t.Errorf("error retrieving code hash, wanted %v, got %v", want, got)
+	}
+	if got, want := db.GetCode(address), code; !bytes.Equal(got, want) {
+		t.Errorf("error retrieving code, wanted %v, got %v", want, got)
+	}
+	if got, want := db.GetCodeSize(address), len(code); got != want {
+		t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
+	}
 }
