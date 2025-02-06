@@ -1,92 +1,74 @@
 # Project Carmen
 This directory contains a C++ implementation of the Carmen storage system.
 
-# Needed Tools
-To build the C++ implementation you need the following tools:
- - a C++ compiler supporting C++20 (recommended clang 14+)
- - a matching C++ standard library (e.g., on Ubuntu `libc++-14-dev` and `libstdc++-12-dev`)
- - the bazel build tool
- 
+# Required Tools
+To build the C++ implementation, you need the following tools:
+ - A C++ compiler supporting C++20 (recommended clang 14+)
+ - A matching C++ standard library (e.g., on Ubuntu `libc++-14-dev` and `libstdc++-12-dev`)
+ - The Bazel build tool
 
-## Installing bazel
-We recommend the usage of `Bazelisk` which can be installed as a Go tool using
+## Installing Bazel
+We recommend using `Bazelisk`, which can be installed as a Go tool using the following command:
 ```
 go install github.com/bazelbuild/bazelisk@latest
 ```
-Once installed, the `bazelisk` binary can be found in your go tool folder. If
-`$GOPATH` is set, the binary should be located at `$GOPATH/bin/bazelisk`. If
-not, it will default to `~/go/bin/bazelisk`.
+Once installed, the `bazelisk` binary will be located in your Go tool folder. If `$GOPATH` is set, the binary should be found at `$GOPATH/bin/bazelisk`. If not, it will default to `~/go/bin/bazelisk`.
 
-The `bazelisk` binary is a drop-in replacement for the `bazel` command which
-automatically fetches a `bazel` version according to the target project's
-requirements for you. However, to make it accessible as a `bazel` command, a
-symbolic link must be created.
+The `bazelisk` binary is a drop-in replacement for the `bazel` command that automatically fetches the required version of `bazel` according to the target project’s requirements. However, to make it accessible as the `bazel` command, you need to create a symbolic link.
 
-To do so, pick a directory that is listed in your `$PATH` environment variable
-and add a symbolic named `bazel` in this directory using
+To do so, pick a directory listed in your `$PATH` environment variable and create a symbolic link named `bazel` in this directory:
 ```
 ln -s <path_to_bazelisk> bazel
 ```
-For instance, if `~/go/bin` is in your `$PATH` environment variable any
-`bazelisk` has been installed there, run
+For example, if `~/go/bin` is in your `$PATH`, and `bazelisk` was installed there, run:
 ```
 ln -s ~/go/bin/bazelisk ~/go/bin/bazel
 ```
-to get access to `bazel` in your command line.
+This will give you access to `bazel` on the command line.
 
 ## Installing Formatting Tools
 
 ### C++ File Formatting
-Code files are required to be formatted using the rules configured for
-`clang-format` in the repository. These formatting rules are checked and
-enforced during pull requests. To install `clang-format`, please use your 
-platform specific package manager.
+Code files must be formatted according to the rules configured for `clang-format` in the repository. These formatting rules are checked and enforced during pull requests. To install `clang-format`, please use your platform-specific package manager.
 
 ### Bazel BUILD File Formatter
-We recommend the usage of `buildifier` which can be installed as a Go tool using
+We recommend using `buildifier`, which can be installed as a Go tool:
 ```
 go install github.com/bazelbuild/buildtools/buildifier@latest
 ```
-Once installed, the `buildifier` binary can be found in your go tool folder. If
-`$GOPATH` is set, the binary should be located at `$GOPATH/bin/buildifier`. If
-not, it will default to `~/go/bin/buildifier`.
+Once installed, the `buildifier` binary will be found in your Go tool folder. If `$GOPATH` is set, the binary should be located at `$GOPATH/bin/buildifier`. If not, it will default to `~/go/bin/buildifier`.
 
 # Build and Test
-To build the full project, use the following commands:
+To build the entire project, use the following command:
 ```
 bazel build //...
 ```
 
-For this to work you will have to have `bazel` installed on your system,
-as well as a C++ compiler toolchain supporting the C++20 standard. We
-recommend using clang.
+For this to work, you must have `bazel` installed on your system, as well as a C++ compiler toolchain supporting the C++20 standard. We recommend using clang.
 
-To run all unit tests, run
+To run all unit tests, use:
 ```
 bazel test //...
 ```
 
-Individual targets can be build using commands similar to
+You can build individual targets using commands like:
 ```
 bazel run //common:type_test
 ```
 
 # Profiling
-To profile and visualize profiled data, we recommend using the `pprof`.
-To install it as Go tool, run:
+To profile and visualize profiled data, we recommend using `pprof`. To install it as a Go tool, run:
 ```
 go install github.com/google/pprof@latest
 ```
 
-The binary will be installed in `$GOPATH/bin` (`$HOME/go/bin` by default). To 
-make it accessible as a `pprof` command, a symbolic link or alias must be created.
+The binary will be installed in `$GOPATH/bin` (default is `$HOME/go/bin`). To make it accessible as the `pprof` command, create a symbolic link or alias:
 ```
 alias pprof=<path_to_pprof>
 ```
-To make alias persistent, put it into your `.bashrc` or `.zshrc` file.
+To make the alias persistent, add it to your `.bashrc` or `.zshrc` file.
 
-Link profiler (`//third_party/gperftools:profiler`) into the target binary you 
-want to profile.
+Link the profiler (`//third_party/gperftools:profiler`) into the target binary you want to profile.
 
 Example:
 ```
@@ -100,22 +82,21 @@ cc_binary(
     ],
 )
 ```
-To start collection of profiling data, run the binary with the `CPUPROFILE` 
-environment variable set to the path of the output file. For example:
+To start collecting profiling data, run the binary with the `CPUPROFILE` environment variable set to the path of the output file:
 ```
 CPUPROFILE=/tmp/profile.dat bazel run -c opt //backend/store:store_benchmark -- --benchmark_filter=HashExponential.*File.*/16
 ```
 
-To visualize the collected data (`graphviz` has to be installed), run:
+To visualize the collected data (make sure `graphviz` is installed), run:
 ```
 pprof --http=":8000" /tmp/profile.dat
 ```
 
-# Setting up your IDE
-The setup of your development environment depends on the IDE of your choice.
+# Setting Up Your IDE
+The setup of your development environment depends on your choice of IDE.
 
 ## Visual Studio Code
-To set up your VS code, install the following extensions:
+To set up VS Code, install the following extensions:
  - [Bazel](https://marketplace.visualstudio.com/items?itemName=BazelBuild.vscode-bazel)
  - [bazel-stack-vscode](https://marketplace.visualstudio.com/items?itemName=StackBuild.bazel-stack-vscode)
  - [bazel-stack-vscode-cc](https://marketplace.visualstudio.com/items?itemName=StackBuild.bazel-stack-vscode-cc)
@@ -123,18 +104,14 @@ To set up your VS code, install the following extensions:
  - [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd)
  - [Clang-Format](https://marketplace.visualstudio.com/items?itemName=xaver.clang-format)
 
-To open the project, use the *cpp* directory as the project root in VS code.
+To open the project, use the *cpp* directory as the project root in VS Code.
 
-Once everything is up and running, open the command panel (Ctrl+Shift+P) and run the command
+Once everything is set up, open the command panel (Ctrl+Shift+P) and run the command:
 ```
 Bazel/C++: Generate Compilation Database
 ```
-This will generate a `compile_commands.json` file in the cpp directory listing local code
-dependencies pulled in by the bazel build system. IntelliSense is using this file to locate
-source source files of dependencies. This file is specific for your environment and should
-not be checked in into the repository.
+This will generate a `compile_commands.json` file in the `cpp` directory listing local code dependencies pulled in by the Bazel build system. IntelliSense uses this file to locate source files of dependencies. This file is specific to your environment and should not be checked into the repository.
 
-With this, VS code should be set up to support editing code with proper code completion and
-navigation.
+With this setup, VS Code should be ready to support editing code with proper code completion and navigation.
 
-If you encounter issues with this description, feel free to updated and send a pull request.
+If you encounter any issues with this description, feel free to update it and submit a pull request.
