@@ -50,6 +50,7 @@ var (
 		&Block,
 		&StressTestCmd,
 		&Reset,
+		&TotalSupplyCmd,
 	}
 )
 
