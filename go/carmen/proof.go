@@ -27,6 +27,8 @@ func CreateWitnessProofFromNodes(elements ...Bytes) WitnessProof {
 	return witnessProof{proof}
 }
 
+//go:generate mockgen -source proof.go -destination proof_mocks.go -package carmen
+
 // WitnessProof is an interface for witness proofs. A witness proof is a data structure that
 // contains a witness for a subset of the state. The witness proof can be used to
 // extract information, such as account balances, nonces, code hashes,

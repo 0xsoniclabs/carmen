@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pipeline {
-    agent { label 'db-small-ssd' }
+    agent { label 'pr' }
 
     options {
         timestamps ()
