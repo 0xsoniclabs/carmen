@@ -12,16 +12,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: "1.24"
 
-      - name: Run tests
-        run: cd go && go test -coverprofile=coverage.txt ./...
+      - name: Run test
+        working-directory: ./go
+        run: go test -coverprofile=coverage.txt ./...
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: 0xsoniclabs/carmen
+          files: ./go/coverage.txt
