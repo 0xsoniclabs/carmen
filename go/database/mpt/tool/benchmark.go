@@ -40,6 +40,7 @@ var Benchmark = cli.Command{
 		&reportIntervalFlag,
 		&tmpDirFlag,
 		&keepStateFlag,
+		&cpuProfileFlag,
 	},
 }
 
