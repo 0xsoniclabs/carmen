@@ -23,6 +23,10 @@ jobs:
         working-directory: ./go
         run: go test -coverprofile=coverage.txt ./...
 
+      - name: Build C++ libraries
+        working-directory: ./go/lib
+        run: ./build_libcarmen.sh
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
