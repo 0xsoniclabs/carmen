@@ -13,9 +13,11 @@ package common
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
@@ -139,9 +141,9 @@ func (u *Update) ApplyTo(s UpdateTarget) error {
 		}
 	}
 	for _, addr := range u.CreatedAccounts {
-		if err := s.CreateAccount(addr); err != nil {
-			return err
-		}
+		accountPool.Submit(func() error {
+			return s.CreateAccount(addr)
+		})
 	}
 	for _, change := range u.Balances {
 		if err := s.SetBalance(change.Account, change.Balance); err != nil {
@@ -149,9 +151,9 @@ func (u *Update) ApplyTo(s UpdateTarget) error {
 		}
 	}
 	for _, change := range u.Nonces {
-		if err := s.SetNonce(change.Account, change.Nonce); err != nil {
-			return err
-		}
+		accountPool.Submit(func() error {
+			return s.SetNonce(change.Account, change.Nonce)
+		})
 	}
 	for _, change := range u.Codes {
 		if err := s.SetCode(change.Account, change.Code); err != nil {
@@ -163,7 +165,65 @@ func (u *Update) ApplyTo(s UpdateTarget) error {
 			return err
 		}
 	}
+
+	if err := accountPool.Wait(); err != nil {
+		return err
+	}
+	
 	return nil
+}
+
+var accountPool = NewWorkerPool(150)
+
+// WorkerPool represents a pool of workers to execute tasks asynchronously.
+type WorkerPool struct {
+	tasks chan func() error // Channel to hold tasks
+	wg    sync.WaitGroup
+	errs  error
+}
+
+// NewWorkerPool creates a new WorkerPool with the specified number of workers.
+func NewWorkerPool(numWorkers int) *WorkerPool {
+	pool := &WorkerPool{
+		tasks: make(chan func() error, numWorkers),
+	}
+
+	// Start the worker goroutines
+	for i := 0; i < numWorkers; i++ {
+		go pool.worker()
+	}
+
+	return pool
+}
+
+// worker is the function executed by each worker goroutine.
+func (p *WorkerPool) worker() {
+	for task := range p.tasks {
+		// Execute the task
+		if err := task(); err != nil {
+			p.errs = errors.Join(p.errs, err)
+		}
+		p.wg.Done()
+	}
+}
+
+// Submit adds a task to the worker pool for execution.
+func (p *WorkerPool) Submit(task func() error) {
+	p.wg.Add(1)
+	p.tasks <- task
+}
+
+// Wait blocks until all submitted tasks are finished.
+func (p *WorkerPool) Wait() error {
+	p.wg.Wait()
+	err := p.errs
+	p.errs = nil
+	return err
+}
+
+// Close stops the worker pool and releases resources.
+func (p *WorkerPool) Close() {
+	close(p.tasks)
 }
 
 func (u *Update) String() string {
