@@ -89,7 +89,7 @@ func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) st
 		res.archiveWriterError = err
 	}
 
-	return state.WrapIntoSyncedState(res)
+	return res
 }
 
 var emptyCodeHash = common.GetHash(sha3.NewLegacyKeccak256(), []byte{})
