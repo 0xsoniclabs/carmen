@@ -253,7 +253,7 @@ func runBenchmark(
 		numBlocks, numReadsPerBlock, numInsertsPerBlock,
 	)
 
-	prefetcher := NewWorkerPool(numInsertsPerBlock)
+	prefetcher := NewWorkerPool(150, 10*numInsertsPerBlock)
 
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
@@ -360,9 +360,9 @@ type WorkerPool struct {
 }
 
 // NewWorkerPool creates a new WorkerPool with the specified number of workers.
-func NewWorkerPool(numWorkers int) *WorkerPool {
+func NewWorkerPool(numWorkers, chanSize int) *WorkerPool {
 	pool := &WorkerPool{
-		tasks: make(chan func() error, numWorkers),
+		tasks: make(chan func() error, chanSize),
 	}
 
 	// Start the worker goroutines
@@ -408,7 +408,7 @@ func (p *WorkerPool) Drain() error {
 		case <-p.tasks:
 			p.wg.Done()
 		default:
-			p.wg.Wait()
+			//p.wg.Wait()	// do not wait at the moment, just let running go-routines finish
 			p.errLock.Lock()
 			err := p.errs
 			p.errs = nil
