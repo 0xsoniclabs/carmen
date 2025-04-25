@@ -1596,10 +1596,12 @@ func createReferenceProof(t *testing.T, ctxt *nodeContext, root *NodeReference, 
 	proof := proofDb{}
 	handle := node.GetViewHandle()
 	_, err := handle.Get().Visit(ctxt, root, 0, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-		if _, ok := node.(EmptyNode); ok {
-			// nodes that are not correct terminal values are not present in the proof
-			return VisitResponseContinue
-		}
+		/*
+			if _, ok := node.(EmptyNode); ok {
+				// nodes that are not correct terminal values are not present in the proof
+				return VisitResponseContinue
+			}
+		*/
 		rlp, err := encodeToRlp(node, ctxt, []byte{})
 		if err != nil {
 			t.Fatalf("failed to encode node: %v", err)
@@ -1614,4 +1616,101 @@ func createReferenceProof(t *testing.T, ctxt *nodeContext, root *NodeReference, 
 		t.Fatalf("failed to create proof: %v", err)
 	}
 	return WitnessProof{proof}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestWitnessProof_Experimenting(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S5LiveConfig)
+
+	addr0 := toAddress(0)
+
+	// These two addresses hashed have a common prefix of 0x000000.
+	addr1 := toAddress(2951160)
+	addr2 := toAddress(8322696)
+
+	hash1 := common.Keccak256(addr1[:])
+	hash2 := common.Keccak256(addr2[:])
+	if !bytes.Equal(hash1[:3], hash2[:3]) {
+		t.Fatalf("hashes %x and %x do not have a common prefix", hash1, hash2)
+	}
+
+	nib0 := AddressToNibblePath(addr0, ctxt)
+	nib1 := AddressToNibblePath(addr1, ctxt)
+	nib2 := AddressToNibblePath(addr2, ctxt)
+
+	examples := map[string]NodeDesc{
+		"empty": &Empty{},
+		"single account": &Account{
+			address:    addr0,
+			pathLength: 64,
+			info: AccountInfo{
+				Balance: amount.New(1),
+			},
+		},
+		"branch": &Branch{children: Children{
+			nib0[0]: &Account{
+				address:    addr0,
+				pathLength: 63,
+				info: AccountInfo{
+					Nonce: common.Nonce{1},
+				},
+			},
+			nib1[0]: &Account{
+				address:    addr1,
+				pathLength: 63,
+				info: AccountInfo{
+					Nonce: common.Nonce{2},
+				},
+			},
+		}},
+		"extension": &Extension{
+			path: nib1[0:6],
+			next: &Branch{children: Children{
+				nib1[6]: &Account{
+					address:    addr1,
+					pathLength: 57,
+					info:       AccountInfo{Nonce: common.Nonce{1}},
+				},
+				nib2[6]: &Account{
+					address:    addr2,
+					pathLength: 57,
+					info:       AccountInfo{Nonce: common.Nonce{2}},
+				},
+			}},
+		},
+	}
+
+	for name, desc := range examples {
+		t.Run(name, func(t *testing.T) {
+			root, node := ctxt.Build(desc)
+			ctxt.Check(t, root)
+			proof := createReferenceProof(t, ctxt, &root, node)
+			fmt.Printf("%s proof (containing all nodes): %v\n", name, proof)
+		})
+	}
+
+	// Just here to see the print-out.
+	t.Fail()
+}
+
+func toAddress(i int) common.Address {
+	return common.Address{byte(i), byte(i >> 8), byte(i >> 16), byte(i >> 24)}
+}
+
+func TestWitnessProof_Experimenting2(t *testing.T) {
+
+	count := 0
+	for i := 0; count < 2; i++ {
+		addr := toAddress(i)
+		hash := common.Keccak256(addr[:])
+		if hash[0] == 0x00 && hash[1] == 0x00 && hash[2] == 0x00 {
+			count++
+			fmt.Printf("found %d: %d, %x\n", count, i, hash)
+		}
+	}
+
+	t.Fail()
+
 }

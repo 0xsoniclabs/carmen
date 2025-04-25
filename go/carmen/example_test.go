@@ -17,9 +17,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/carmen"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
 )
 
@@ -286,6 +289,61 @@ func ExampleDatabase_GetHistoricContext() {
 	}
 
 	// Output: Balance of [1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0] is 100
+}
+
+func TestGetProof(t *testing.T) {
+	require := require.New(t)
+	db, err := carmen.OpenDatabase(t.TempDir(), carmen.GetCarmenGoS5WithArchiveConfiguration(), nil)
+	require.NoError(err)
+
+	// These two addresses hashed have a common prefix of 0x000000.
+	addr1 := toAddress(2951160)
+	addr2 := toAddress(8322696)
+
+	key1 := carmen.Key{0x01}
+	key2 := carmen.Key{0x02}
+
+	// Add two accounts for which proofs can be queried.
+	require.NoError(db.AddBlock(1, func(context carmen.HeadBlockContext) error {
+		return context.RunTransaction(func(context carmen.TransactionContext) error {
+			context.SetNonce(addr1, 1)
+			context.SetNonce(addr2, 2)
+			context.SetState(addr1, key1, carmen.Value{0x01})
+			context.SetState(addr1, key2, carmen.Value{0x02})
+			return nil
+		})
+	}))
+	require.NoError(db.Flush())
+
+	// Fetch the proof for the first address.
+	var proof carmen.WitnessProof
+	require.NoError(db.QueryBlock(1, func(context carmen.HistoricBlockContext) error {
+		proof, err = context.GetProof(addr1, key1)
+		return err
+	}))
+
+	// Dump the proof.
+	root, err := db.GetHistoricStateHash(1)
+	require.NoError(err)
+	fmt.Printf("Proof for address %x:\n", addr1)
+	nodes, _, _ := proof.GetAccountElements(root, addr1)
+	for _, node := range nodes {
+		fmt.Printf("  %x -> %s\n", common.Keccak256(node.ToBytes()), node)
+	}
+
+	for _, key := range []carmen.Key{key1, key2} {
+		fmt.Printf("Proof for key %x:\n", key)
+		nodes, _ = proof.GetStorageElements(root, addr1, key)
+		for _, node := range nodes {
+			fmt.Printf("  %x -> %s\n", common.Keccak256(node.ToBytes()), node)
+		}
+	}
+
+	t.Fail()
+}
+
+func toAddress(i int) carmen.Address {
+	return carmen.Address{byte(i), byte(i >> 8), byte(i >> 16), byte(i >> 24)}
 }
 
 func ExampleHistoricBlockContext_GetProof() {
