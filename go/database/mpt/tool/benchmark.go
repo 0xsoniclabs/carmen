@@ -408,7 +408,7 @@ func (p *WorkerPool) Drain() error {
 		case <-p.tasks:
 			p.wg.Done()
 		default:
-			//p.wg.Wait()
+			p.wg.Wait()
 			p.errLock.Lock()
 			err := p.errs
 			p.errs = nil
