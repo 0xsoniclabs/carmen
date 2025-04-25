@@ -11,6 +11,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	_ "net/http/pprof"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"sync"
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -250,6 +252,9 @@ func runBenchmark(
 		"Simulating %d blocks with %d reads and %d inserts each",
 		numBlocks, numReadsPerBlock, numInsertsPerBlock,
 	)
+
+	prefetcher := NewWorkerPool(numInsertsPerBlock)
+
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
@@ -260,12 +265,20 @@ func runBenchmark(
 		update.CreatedAccounts = make([]common.Address, 0, numInsertsPerBlock)
 		for j := 0; j < numInsertsPerBlock; j++ {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
+			prefetcher.Submit(func() error {
+				_, err := state.GetBalance(addr) // prefetch account
+				return err
+			})
 			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++
 		}
 		if err := state.Apply(uint64(i), update); err != nil {
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
+		}
+
+		if err := prefetcher.Drain(); err != nil {
+			return res, fmt.Errorf("error draining prefetcher: %v", err)
 		}
 
 		if (i+1)%reportingInterval == 0 {
@@ -336,4 +349,76 @@ func getDirectorySize(directory string) int64 {
 		return nil
 	})
 	return sum
+}
+
+// WorkerPool represents a pool of workers to execute tasks asynchronously.
+type WorkerPool struct {
+	tasks   chan func() error // Channel to hold tasks
+	wg      sync.WaitGroup
+	errs    error
+	errLock sync.Mutex
+}
+
+// NewWorkerPool creates a new WorkerPool with the specified number of workers.
+func NewWorkerPool(numWorkers int) *WorkerPool {
+	pool := &WorkerPool{
+		tasks: make(chan func() error, numWorkers),
+	}
+
+	// Start the worker goroutines
+	for i := 0; i < numWorkers; i++ {
+		go pool.worker()
+	}
+
+	return pool
+}
+
+// worker is the function executed by each worker goroutine.
+func (p *WorkerPool) worker() {
+	for task := range p.tasks {
+		// Execute the task
+		if err := task(); err != nil {
+			p.errLock.Lock()
+			p.errs = errors.Join(p.errs, err)
+			p.errLock.Unlock()
+		}
+		p.wg.Done()
+	}
+}
+
+// Submit adds a task to the worker pool for execution.
+func (p *WorkerPool) Submit(task func() error) {
+	p.wg.Add(1)
+	p.tasks <- task
+}
+
+// Wait blocks until all submitted tasks are finished.
+func (p *WorkerPool) Wait() error {
+	p.wg.Wait()
+	p.errLock.Lock()
+	err := p.errs
+	p.errs = nil
+	p.errLock.Unlock()
+	return err
+}
+
+func (p *WorkerPool) Drain() error {
+	for {
+		select {
+		case <-p.tasks:
+			p.wg.Done()
+		default:
+			//p.wg.Wait()
+			p.errLock.Lock()
+			err := p.errs
+			p.errs = nil
+			p.errLock.Unlock()
+			return err
+		}
+	}
+}
+
+// Close stops the worker pool and releases resources.
+func (p *WorkerPool) Close() {
+	close(p.tasks)
 }
