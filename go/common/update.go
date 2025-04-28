@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -169,7 +170,7 @@ func (u *Update) ApplyTo(s UpdateTarget) error {
 	if err := accountPool.Wait(); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -198,6 +199,8 @@ func NewWorkerPool(numWorkers int) *WorkerPool {
 
 // worker is the function executed by each worker goroutine.
 func (p *WorkerPool) worker() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	for task := range p.tasks {
 		// Execute the task
 		if err := task(); err != nil {
