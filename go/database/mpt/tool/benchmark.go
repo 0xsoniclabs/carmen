@@ -273,13 +273,19 @@ func runBenchmark(
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++
 		}
+
+		// Wait for the prefetcher so that Apply can take benefit of data being in cache
+		if err := prefetcher.Wait(); err != nil {
+			return res, fmt.Errorf("error waiting for prefetcher: %v", err)
+		}
+
 		if err := state.Apply(uint64(i), update); err != nil {
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
 		}
 
-		if err := prefetcher.Drain(); err != nil {
-			return res, fmt.Errorf("error draining prefetcher: %v", err)
-		}
+		//if err := prefetcher.Drain(); err != nil {
+		//	return res, fmt.Errorf("error draining prefetcher: %v", err)
+		//}
 
 		if (i+1)%reportingInterval == 0 {
 			if tracingEnabled {
