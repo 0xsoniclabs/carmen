@@ -253,7 +253,7 @@ func runBenchmark(
 		numBlocks, numReadsPerBlock, numInsertsPerBlock,
 	)
 
-	prefetcher := NewWorkerPool(150, 150)
+	prefetcher := NewWorkerPool(128, 500)
 
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
@@ -381,6 +381,9 @@ func NewWorkerPool(numWorkers, chanSize int) *WorkerPool {
 
 // worker is the function executed by each worker goroutine.
 func (p *WorkerPool) worker() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	for task := range p.tasks {
 		// Execute the task
 		if err := task(); err != nil {
