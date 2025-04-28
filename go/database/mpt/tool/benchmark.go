@@ -381,8 +381,8 @@ func NewWorkerPool(numWorkers, chanSize int) *WorkerPool {
 
 // worker is the function executed by each worker goroutine.
 func (p *WorkerPool) worker() {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	//runtime.LockOSThread()
+	//defer runtime.UnlockOSThread()
 
 	for task := range p.tasks {
 		// Execute the task
