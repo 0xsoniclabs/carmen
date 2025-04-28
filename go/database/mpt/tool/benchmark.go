@@ -253,7 +253,7 @@ func runBenchmark(
 		numBlocks, numReadsPerBlock, numInsertsPerBlock,
 	)
 
-	prefetcher := NewWorkerPool(150, 10*numInsertsPerBlock)
+	prefetcher := NewWorkerPool(150, 150)
 
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
