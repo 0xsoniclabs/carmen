@@ -71,7 +71,8 @@ pipeline {
 
                 stage('Run Go tests') {
                     steps {
-                        sh 'cd go && go test ./... -parallel 1 -timeout 60m'
+                        sh 'cd go && go test ./... -coverprofile=coverage.txt -parallel 1 -timeout 60m'
+                        sh ('codecov upload-process -r 0xsoniclabs/carmen -f ./go/coverage.txt -t ${CODECOV_TOKEN}')
                     }
                 }
 
