@@ -8,6 +8,7 @@
 # On the date above, in accordance with the Business Source License, use of
 # this software will be governed by the GNU Lesser General Public License v3.
 
+coverage:
   range: 50..80 # below 50 is red, between 50-80 is yellow and above 80 is green
   round: down
   precision: 2
