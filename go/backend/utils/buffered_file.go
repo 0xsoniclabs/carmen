@@ -81,7 +81,7 @@ func (f *BufferedFile) WriteAt(src []byte, position int64) (int, error) {
 	}
 
 	if len(src) > bufferSize {
-		return 0, fmt.Errorf(fmt.Sprintf("writing data > %d bytes not supported so far, got %d", bufferSize, len(src)))
+		return 0, fmt.Errorf("writing data > %d bytes not supported so far, got %d", bufferSize, len(src))
 	}
 
 	if position < 0 {
