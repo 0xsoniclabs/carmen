@@ -996,3 +996,39 @@ func createState(t *testing.T, name, dir string) state.State {
 	t.Fatalf("State with name %s not found", name)
 	return nil
 }
+
+func TestHasEmptyStorage(t *testing.T) {
+	dir := t.TempDir()
+	st := createState(t, "go-file_s3_none", dir)
+	err := st.Apply(1, common.Update{
+		CreatedAccounts: []common.Address{address1},
+		Balances:        nil,
+		Nonces:          nil,
+		Codes:           nil,
+		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+	exists, err := st.Exists(address1)
+	if err != nil {
+		t.Fatalf("failed to check account: %v", err)
+	}
+	if !exists {
+		t.Fatal("account does not exist")
+	}
+	val, err := st.GetStorage(address1, key1)
+	if err != nil {
+		t.Fatalf("failed to get storage: %v", err)
+	}
+	if val != val1 {
+		t.Fatalf("storage value does not match: %v != %v", val, val1)
+	}
+	isEmpty, err := st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if isEmpty {
+		t.Errorf("state has empty storage")
+	}
+}
