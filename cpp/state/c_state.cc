@@ -331,6 +331,10 @@ void Carmen_GetStorageValue(C_State state, C_Address addr, C_Key key,
   v = *res;
 }
 
+void Carmen_HasEmptyStorage(C_State state, C_Address addr, C_bool* out_empty) {
+  std::cout << "WARNING: HasEmptyStorage is not implemented\n" << std::flush;
+}
+
 void Carmen_GetCode(C_State state, C_Address addr, C_Code out_code,
                     uint32_t* out_length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);

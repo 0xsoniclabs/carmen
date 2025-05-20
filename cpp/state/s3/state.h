@@ -91,6 +91,9 @@ class State {
   // Retrieves the hash of the code stored under the given address.
   absl::StatusOr<Hash> GetCodeHash(const Address& address) const;
 
+  // Returns whether account has empty storage.
+  absl::StatusOr<bool> HasEmptyStorage(const Address& address) const;
+
   // Applies the given block updates to this state.
   absl::Status Apply(BlockId block, const Update& update);
 
