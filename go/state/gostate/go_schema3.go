@@ -256,6 +256,7 @@ func (s *GoSchema3) GetCodeHash(address common.Address) (hash common.Hash, err e
 func (s *GoSchema3) HasEmptyStorage(addr common.Address) (bool, error) {
 	addressIdx, err := s.addressIndex.Get(addr)
 	if err != nil {
+		fmt.Println("addr", addr.String())
 		fmt.Println("error", err)
 		if errors.Is(err, index.ErrNotFound) {
 			return true, nil
