@@ -641,7 +641,23 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 func TestHasEmptyStorage(t *testing.T) {
 	dir := t.TempDir()
 	st := createState(t, "go-file_s3_none", dir)
-	st.
+	err := st.Apply(1, common.Update{
+		CreatedAccounts: []common.Address{address1},
+		Balances:        nil,
+		Nonces:          nil,
+		Codes:           nil,
+		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+	isEmpty, err := st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if isEmpty {
+		t.Errorf("state has empty storage")
+	}
 }
 
 func toVal(key uint64) common.Value {
