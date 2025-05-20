@@ -108,7 +108,7 @@ void Carmen_GetStorageValue(C_State state, C_Address addr, C_Key key,
                             C_Value out_value);
 
 // Returns whether account has empty storage.
-void Carmen_HasEmptyStorage(C_State state, C_Address addr, C_bool out_empty);
+void Carmen_HasEmptyStorage(C_State state, C_Address addr, C_bool* out_empty);
 
 // --------------------------------- Code -------------------------------------
 

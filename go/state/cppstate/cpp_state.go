@@ -289,9 +289,9 @@ func (cs *CppState) CreateWitnessProof(address common.Address, keys ...common.Ke
 }
 
 func (cs *CppState) HasEmptyStorage(addr common.Address) (bool, error) {
-	var isEmpty bool
-	C.Carmen_HasEmptyStorage(cs.state, unsafe.Pointer(&addr[0]), unsafe.Pointer(&isEmpty))
-	return isEmpty, nil
+	var out C.uint8_t
+	C.Carmen_HasEmptyStorage(cs.state, unsafe.Pointer(&addr[0]), &out)
+	return out == 0, nil
 }
 
 func (cs *CppState) Export(context.Context, io.Writer) (common.Hash, error) {
