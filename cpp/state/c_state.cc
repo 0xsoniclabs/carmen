@@ -331,7 +331,7 @@ void Carmen_GetStorageValue(C_State state, C_Address addr, C_Key key,
   v = *res;
 }
 
-void Carmen_HasEmptyStorage(C_State state, C_Address addr, C_bool* out_empty) {
+void Carmen_HasEmptyStorage(C_State state, C_Address addr, C_bool out_empty) {
   std::cout << "WARNING: HasEmptyStorage is not implemented\n" << std::flush;
 }
 
