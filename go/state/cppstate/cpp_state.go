@@ -289,7 +289,9 @@ func (cs *CppState) CreateWitnessProof(address common.Address, keys ...common.Ke
 }
 
 func (cs *CppState) HasEmptyStorage(addr common.Address) (bool, error) {
-	panic("CppState does not support HasEmptyStorage operation")
+	var isEmpty bool
+	C.Carmen_HasEmptyStorage(cs.state, unsafe.Pointer(&isEmpty))
+	return isEmpty, nil
 }
 
 func (cs *CppState) Export(context.Context, io.Writer) (common.Hash, error) {
