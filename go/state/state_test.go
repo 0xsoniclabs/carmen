@@ -1032,7 +1032,7 @@ func TestHasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to check state: %v", err)
 	}
 	if isEmpty {
-		t.Errorf("state has empty storage")
+		t.Errorf("state should not report empty storage")
 	}
 
 	// check existing storage
@@ -1049,7 +1049,7 @@ func TestHasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to check state: %v", err)
 	}
 	if !isEmpty {
-		t.Error("account exists but should have empty storage")
+		t.Error("state should report empty storage")
 	}
 
 	// check non-existent addr
@@ -1058,6 +1058,6 @@ func TestHasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to check state: %v", err)
 	}
 	if !isEmpty {
-		t.Errorf("account does not exist hence should have empty storage")
+		t.Errorf("state should report empty storage")
 	}
 }

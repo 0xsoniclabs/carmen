@@ -13,7 +13,6 @@ package gostate
 import (
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"hash"
 	"io"
 
@@ -41,16 +40,17 @@ import (
 // It allows to invalidate all slots of a deleted contract by incrementing the account reincarnation number
 // in the reincarnationsStore.
 type GoSchema3 struct {
-	addressIndex        index.Index[common.Address, uint32]
-	slotIndex           index.Index[common.SlotIdxKey[uint32], uint32]
-	accountsStore       store.Store[uint32, common.AccountState]
-	noncesStore         store.Store[uint32, common.Nonce]
-	balancesStore       store.Store[uint32, amount.Amount]
-	reincarnationsStore store.Store[uint32, common.Reincarnation]
-	valuesStore         store.Store[uint32, common.SlotReincValue]
-	codesDepot          depot.Depot[uint32]
-	codeHashesStore     store.Store[uint32, common.Hash]
-	hasher              hash.Hash
+	addressIndex         index.Index[common.Address, uint32]
+	slotIndex            index.Index[common.SlotIdxKey[uint32], uint32]
+	accountsStore        store.Store[uint32, common.AccountState]
+	noncesStore          store.Store[uint32, common.Nonce]
+	balancesStore        store.Store[uint32, amount.Amount]
+	reincarnationsStore  store.Store[uint32, common.Reincarnation]
+	valuesStore          store.Store[uint32, common.SlotReincValue]
+	codesDepot           depot.Depot[uint32]
+	codeHashesStore      store.Store[uint32, common.Hash]
+	nonEmptyStorageDepot depot.Depot[uint32]
+	hasher               hash.Hash
 }
 
 func (s *GoSchema3) CreateAccount(address common.Address) (err error) {
@@ -177,10 +177,17 @@ func (s *GoSchema3) SetStorage(address common.Address, key common.Key, value com
 	if err != nil {
 		return err
 	}
-	return s.valuesStore.Set(slotIdx, common.SlotReincValue{
+	err = s.valuesStore.Set(slotIdx, common.SlotReincValue{
 		Reincarnation: reincarnation,
 		Value:         value,
 	})
+	if err != nil {
+		return err
+	}
+	if s.nonEmptyStorageDepot == nil {
+		return nil
+	}
+	return s.nonEmptyStorageDepot.Set(addressIdx, []byte{})
 }
 
 func (s *GoSchema3) GetCode(address common.Address) (value []byte, err error) {
@@ -254,17 +261,29 @@ func (s *GoSchema3) GetCodeHash(address common.Address) (hash common.Hash, err e
 }
 
 func (s *GoSchema3) HasEmptyStorage(addr common.Address) (bool, error) {
+	if s.nonEmptyStorageDepot == nil {
+		panic("not yet implemented")
+	}
+
 	addressIdx, err := s.addressIndex.Get(addr)
 	if err != nil {
-		fmt.Println("addr", addr.String())
-		fmt.Println("error", err)
 		if errors.Is(err, index.ErrNotFound) {
 			return true, nil
 		}
-		return false, fmt.Errorf("failed to get addres index: %w", err)
+		return false, err
 	}
 
-	return s.slotIndex.Contains(common.SlotIdxKey[uint32]{AddressIdx: addressIdx}), nil
+	val, err := s.nonEmptyStorageDepot.Get(addressIdx)
+	if err != nil {
+		if errors.Is(err, index.ErrNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	if val == nil {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *GoSchema3) GetHash() (hash common.Hash, err error) {

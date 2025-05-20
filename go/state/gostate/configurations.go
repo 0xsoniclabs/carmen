@@ -232,7 +232,10 @@ func newGoMemoryState(params state.Parameters) (state.State, error) {
 		if err != nil {
 			return nil, err
 		}
-
+		nonEmptyStorageDepot, err := memory.NewDepot[uint32](64, htmemory.CreateHashTreeFactory(HashTreeFactor))
+		if err != nil {
+			return nil, err
+		}
 		live = &GoSchema3{
 			addressIndex,
 			slotIndex,
@@ -243,6 +246,7 @@ func newGoMemoryState(params state.Parameters) (state.State, error) {
 			valuesStore,
 			codesDepot,
 			codeHashesStore,
+			nonEmptyStorageDepot,
 			nil,
 		}
 	default:
@@ -413,6 +417,14 @@ func newGoFileState(params state.Parameters) (state.State, error) {
 		if err != nil {
 			return nil, err
 		}
+		nonEmptyStoragePath := storePath + string(filepath.Separator) + "non-empty-storage"
+		if err = os.MkdirAll(nonEmptyStoragePath, 0700); err != nil {
+			return nil, err
+		}
+		nonEmptyStorageDepot, err := fileDepot.NewDepot[uint32](nonEmptyStoragePath, common.Identifier32Serializer{}, htfile.CreateHashTreeFactory(nonEmptyStoragePath, HashTreeFactor), CodeHashGroupSize)
+		if err != nil {
+			return nil, err
+		}
 
 		live = &GoSchema3{
 			addressIndex,
@@ -424,6 +436,7 @@ func newGoFileState(params state.Parameters) (state.State, error) {
 			valuesStore,
 			codesDepot,
 			codeHashesStore,
+			nonEmptyStorageDepot,
 			nil,
 		}
 	default:
@@ -590,6 +603,14 @@ func newGoCachedFileState(params state.Parameters) (state.State, error) {
 		if err != nil {
 			return nil, err
 		}
+		nonEmptyStoragePath := storePath + string(filepath.Separator) + "non-empty-storage"
+		if err = os.MkdirAll(nonEmptyStoragePath, 0700); err != nil {
+			return nil, err
+		}
+		nonEmptyStorageDepot, err := fileDepot.NewDepot[uint32](nonEmptyStoragePath, common.Identifier32Serializer{}, htfile.CreateHashTreeFactory(nonEmptyStoragePath, HashTreeFactor), CodeHashGroupSize)
+		if err != nil {
+			return nil, err
+		}
 
 		live = &GoSchema3{
 			cachedIndex.NewIndex[common.Address, uint32](addressIndex, CacheCapacity),
@@ -601,6 +622,7 @@ func newGoCachedFileState(params state.Parameters) (state.State, error) {
 			cachedStore.NewStore[uint32, common.SlotReincValue](valuesStore, CacheCapacity),
 			cachedDepot.NewDepot[uint32](codesDepot, CacheCapacity, CacheCapacity),
 			cachedStore.NewStore[uint32, common.Hash](codeHashesStore, CacheCapacity),
+			cachedDepot.NewDepot[uint32](nonEmptyStorageDepot, CacheCapacity, CacheCapacity),
 			nil,
 		}
 	default:
@@ -719,7 +741,6 @@ func newGoLeveLIndexAndStoreState(params state.Parameters) (state.State, error) 
 		if err != nil {
 			return nil, err
 		}
-
 		live = &GoSchema3{
 			addressIndex,
 			slotIndex,
@@ -730,6 +751,7 @@ func newGoLeveLIndexAndStoreState(params state.Parameters) (state.State, error) 
 			valuesStore,
 			codesDepot,
 			codeHashesStore,
+			nil, // todo finish with ldbDepot
 			nil,
 		}
 	default:
@@ -859,6 +881,7 @@ func newGoCachedLeveLIndexAndStoreState(params state.Parameters) (state.State, e
 			cachedStore.NewStore[uint32, common.SlotReincValue](valuesStore, CacheCapacity),
 			cachedDepot.NewDepot[uint32](codesDepot, CacheCapacity, CacheCapacity),
 			cachedStore.NewStore[uint32, common.Hash](codeHashesStore, CacheCapacity),
+			nil, // todo finish with ldbDepot
 			nil,
 		}
 	default:
