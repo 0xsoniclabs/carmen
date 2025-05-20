@@ -638,6 +638,12 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 	}
 }
 
+func TestHasEmptyStorage(t *testing.T) {
+	dir := t.TempDir()
+	st := createState(t, "go-file_s3_none", dir)
+	st.
+}
+
 func toVal(key uint64) common.Value {
 	keyBytes := make([]byte, 32)
 	binary.BigEndian.PutUint64(keyBytes, key)

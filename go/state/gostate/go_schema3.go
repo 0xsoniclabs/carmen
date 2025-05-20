@@ -12,6 +12,8 @@ package gostate
 
 import (
 	"crypto/sha256"
+	"errors"
+	"fmt"
 	"hash"
 	"io"
 
@@ -252,7 +254,15 @@ func (s *GoSchema3) GetCodeHash(address common.Address) (hash common.Hash, err e
 }
 
 func (s *GoSchema3) HasEmptyStorage(addr common.Address) (bool, error) {
-	panic("HasEmptyStorage is not implemented for Scheme3")
+	addressIdx, err := s.addressIndex.Get(addr)
+	if err != nil {
+		if errors.Is(err, index.ErrNotFound) {
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to get addres index: %w", err)
+	}
+
+	return s.slotIndex.Contains(common.SlotIdxKey[uint32]{AddressIdx: addressIdx}), nil
 }
 
 func (s *GoSchema3) GetHash() (hash common.Hash, err error) {
