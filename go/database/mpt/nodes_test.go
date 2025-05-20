@@ -8254,7 +8254,7 @@ func (c *nodeContext) ExpectEqualTries(t *testing.T, want, got NodeReference) {
 		t.Errorf("unexpected resulting node structure")
 		t.Errorf("differences:\n")
 		for _, diff := range diffs {
-			t.Errorf("\t" + diff)
+			t.Errorf("\t%s", diff)
 		}
 	}
 }
