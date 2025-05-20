@@ -290,7 +290,7 @@ func (cs *CppState) CreateWitnessProof(address common.Address, keys ...common.Ke
 
 func (cs *CppState) HasEmptyStorage(addr common.Address) (bool, error) {
 	var isEmpty bool
-	C.Carmen_HasEmptyStorage(cs.state, addr, unsafe.Pointer(&isEmpty))
+	C.Carmen_HasEmptyStorage(cs.state, unsafe.Pointer(&addr[0]), unsafe.Pointer(&isEmpty))
 	return isEmpty, nil
 }
 
