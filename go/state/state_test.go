@@ -1001,7 +1001,7 @@ func TestHasEmptyStorage(t *testing.T) {
 	dir := t.TempDir()
 	st := createState(t, "go-file_s3_none", dir)
 	err := st.Apply(1, common.Update{
-		CreatedAccounts: []common.Address{address1},
+		CreatedAccounts: []common.Address{address1, address2},
 		Balances:        nil,
 		Nonces:          nil,
 		Codes:           nil,
@@ -1010,10 +1010,12 @@ func TestHasEmptyStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to apply state: %v", err)
 	}
+	t.Log("apply ok")
 	exists, err := st.Exists(address1)
 	if err != nil {
 		t.Fatalf("failed to check account: %v", err)
 	}
+	t.Log("exists ok")
 	if !exists {
 		t.Fatal("account does not exist")
 	}
@@ -1024,6 +1026,7 @@ func TestHasEmptyStorage(t *testing.T) {
 	if val != val1 {
 		t.Fatalf("storage value does not match: %v != %v", val, val1)
 	}
+	t.Log("storage 1 ok")
 	isEmpty, err := st.HasEmptyStorage(address1)
 	if err != nil {
 		t.Fatalf("failed to check state: %v", err)
@@ -1031,4 +1034,28 @@ func TestHasEmptyStorage(t *testing.T) {
 	if isEmpty {
 		t.Errorf("state has empty storage")
 	}
+
+	t.Log("empty 1 ok")
+	// check existing addr with empty storage
+	isEmpty, err = st.HasEmptyStorage(address2)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("state does not have empty storage")
+	}
+	t.Log("empty 2 ok")
+
+	// check non-existent addr
+	isEmpty, err = st.HasEmptyStorage(address3)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("state does not have empty storage")
+	}
+
+	t.Log("empty 3 ok")
+
+	t.Log("ok ok ok")
 }
