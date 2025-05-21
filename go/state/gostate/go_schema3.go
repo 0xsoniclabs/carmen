@@ -252,7 +252,7 @@ func (s *GoSchema3) GetCodeHash(address common.Address) (hash common.Hash, err e
 }
 
 func (s *GoSchema3) HasEmptyStorage(addr common.Address) (bool, error) {
-	panic("HasEmptyStorage is not implemented for Scheme3")
+	return true, nil
 }
 
 func (s *GoSchema3) GetHash() (hash common.Hash, err error) {
