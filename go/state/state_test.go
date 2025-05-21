@@ -964,6 +964,119 @@ func TestStateRead(t *testing.T) {
 	}
 }
 
+func TestS3_HasEmptyStorage(t *testing.T) {
+	dir := t.TempDir()
+	st := createState(t, "go-file_s3_none", dir)
+
+	// check non-existent addr
+	isEmpty, err := st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("isEmpty should always be true")
+	}
+
+	// create account with no storage set
+	err = st.Apply(1, common.Update{
+		CreatedAccounts: []common.Address{address1},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+
+	exists, err := st.Exists(address1)
+	if err != nil {
+		t.Fatalf("failed to check account: %v", err)
+	}
+	if !exists {
+		t.Fatal("account does not exist")
+	}
+
+	// check existing addr with empty storage
+	isEmpty, err = st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("isEmpty should always be true")
+	}
+
+	// add zero value storage to the account
+	err = st.Apply(1, common.Update{
+		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val0}},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+	val, err := st.GetStorage(address1, key1)
+	if err != nil {
+		t.Fatalf("failed to get storage: %v", err)
+	}
+	if val != val0 {
+		t.Fatalf("storage value does not match: %v != %v", val, val0)
+	}
+
+	// check existing acc with zero value storage
+	isEmpty, err = st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("isEmpty should always be true")
+	}
+
+	// overwrite the storage key with an existing value
+	err = st.Apply(2, common.Update{
+		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+	val, err = st.GetStorage(address1, key1)
+	if err != nil {
+		t.Fatalf("failed to get storage: %v", err)
+	}
+	if val != val1 {
+		t.Fatalf("storage value does not match: %v != %v", val, val1)
+	}
+
+	// check existing acc with non-empty storage
+	isEmpty, err = st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("isEmpty should always be true")
+	}
+
+	// delete the acc
+	err = st.Apply(2, common.Update{
+		DeletedAccounts: []common.Address{address1},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+
+	// check deleted acc
+	exists, err = st.Exists(address1)
+	if err != nil {
+		t.Fatalf("failed to check account: %v", err)
+	}
+	if exists {
+		t.Fatal("account should not exist")
+	}
+
+	// check deleted acc
+	isEmpty, err = st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("isEmpty should always be true")
+	}
+}
+
 func execSubProcessTest(t *testing.T, dir string, stateImpl string, execTestName string) {
 	path, err := os.Executable()
 	if err != nil {
