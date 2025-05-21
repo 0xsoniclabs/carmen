@@ -997,20 +997,17 @@ func createState(t *testing.T, name, dir string) state.State {
 	return nil
 }
 
-func TestHasEmptyStorage(t *testing.T) {
+func TestGoFileS3_HasEmptyStorage(t *testing.T) {
 	dir := t.TempDir()
 	st := createState(t, "go-file_s3_none", dir)
 	err := st.Apply(1, common.Update{
 		CreatedAccounts: []common.Address{address1, address2},
-		Balances:        nil,
-		Nonces:          nil,
-		Codes:           nil,
 		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 	})
 	if err != nil {
 		t.Fatalf("failed to apply state: %v", err)
 	}
-	// check existing storage
+	// check acc existance
 	exists, err := st.Exists(address1)
 	if err != nil {
 		t.Fatalf("failed to check account: %v", err)
@@ -1035,7 +1032,57 @@ func TestHasEmptyStorage(t *testing.T) {
 		t.Errorf("state should not report empty storage")
 	}
 
-	// check existing storage
+	// recreate account
+	err = st.Apply(2, common.Update{
+		CreatedAccounts: []common.Address{address1},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+
+	exists, err = st.Exists(address1)
+	if err != nil {
+		t.Fatalf("failed to check account: %v", err)
+	}
+	if !exists {
+		t.Fatal("account does not exist")
+	}
+
+	// check existing addr with non-empty storage
+	isEmpty, err = st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("state should report empty storage")
+	}
+
+	// delete account
+	err = st.Apply(2, common.Update{
+		DeletedAccounts: []common.Address{address1},
+	})
+	if err != nil {
+		t.Fatalf("failed to apply state: %v", err)
+	}
+
+	exists, err = st.Exists(address1)
+	if err != nil {
+		t.Fatalf("failed to check account: %v", err)
+	}
+	if !exists {
+		t.Fatal("account does not exist")
+	}
+
+	// check existing addr with non-empty storage
+	isEmpty, err = st.HasEmptyStorage(address1)
+	if err != nil {
+		t.Fatalf("failed to check state: %v", err)
+	}
+	if !isEmpty {
+		t.Errorf("state should report empty storage")
+	}
+
+	// check acc existance
 	exists, err = st.Exists(address2)
 	if err != nil {
 		t.Fatalf("failed to check account: %v", err)
