@@ -964,17 +964,16 @@ func TestStateRead(t *testing.T) {
 	}
 }
 
-func TestS3_HasEmptyStorage(t *testing.T) {
+func TestHasEmptyStorage_Always_Returns_True(t *testing.T) {
 	for _, config := range initStates() {
-		name := config.name()
-		if !strings.Contains(name, "s3") {
+		if config.config.Schema != 3 {
 			continue
 		}
-		t.Run(name, func(t *testing.T) {
+		t.Run(config.name(), func(t *testing.T) {
 			dir := t.TempDir()
 			st, err := config.createState(dir)
 			if err != nil {
-				t.Fatalf("Cannot init state: %s, err: %v", name, err)
+				t.Fatalf("cannot init state: %s, err: %v", config.name(), err)
 			}
 			// check non-existent addr
 			isEmpty, err := st.HasEmptyStorage(address1)
@@ -982,7 +981,7 @@ func TestS3_HasEmptyStorage(t *testing.T) {
 				t.Fatalf("failed to check state: %v", err)
 			}
 			if !isEmpty {
-				t.Errorf("isEmpty should always be true")
+				t.Errorf("HasEmptyStorage should always return true")
 			}
 
 			// create account with no storage set
@@ -1007,7 +1006,7 @@ func TestS3_HasEmptyStorage(t *testing.T) {
 				t.Fatalf("failed to check state: %v", err)
 			}
 			if !isEmpty {
-				t.Errorf("isEmpty should always be true")
+				t.Errorf("HasEmptyStorage should always return true")
 			}
 
 			// add zero value storage to the account
@@ -1031,7 +1030,7 @@ func TestS3_HasEmptyStorage(t *testing.T) {
 				t.Fatalf("failed to check state: %v", err)
 			}
 			if !isEmpty {
-				t.Errorf("isEmpty should always be true")
+				t.Errorf("HasEmptyStorage should always return true")
 			}
 
 			// overwrite the storage key with an existing value
@@ -1055,7 +1054,7 @@ func TestS3_HasEmptyStorage(t *testing.T) {
 				t.Fatalf("failed to check state: %v", err)
 			}
 			if !isEmpty {
-				t.Errorf("isEmpty should always be true")
+				t.Errorf("HasEmptyStorage should always return true")
 			}
 
 			// delete the acc
@@ -1081,7 +1080,7 @@ func TestS3_HasEmptyStorage(t *testing.T) {
 				t.Fatalf("failed to check state: %v", err)
 			}
 			if !isEmpty {
-				t.Errorf("isEmpty should always be true")
+				t.Errorf("HasEmptyStorage should always return true")
 			}
 		})
 	}
