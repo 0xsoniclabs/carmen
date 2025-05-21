@@ -81,7 +81,7 @@ var (
 	}
 	schemaFlag = cli.IntFlag{
 		Name:  "schema",
-		Usage: "database scheme to use",
+		Usage: "database scheme to use represented by its number [1..N]",
 		Value: 5,
 	}
 )
