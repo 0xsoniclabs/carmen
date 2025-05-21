@@ -290,7 +290,8 @@ func (cs *CppState) CreateWitnessProof(address common.Address, keys ...common.Ke
 
 func (cs *CppState) HasEmptyStorage(addr common.Address) (bool, error) {
 	// S3 schema is based on directly indexed files without ability to iterate
-	// over a dataset. For this reason, this method is implemented as purely returning a constant value all the time.
+	// over a dataset. For this reason, this method is implemented as purely
+	// returning a constant value all the time.
 	return true, nil
 }
 

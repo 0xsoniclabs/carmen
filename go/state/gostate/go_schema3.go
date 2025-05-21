@@ -253,7 +253,8 @@ func (s *GoSchema3) GetCodeHash(address common.Address) (hash common.Hash, err e
 
 func (s *GoSchema3) HasEmptyStorage(addr common.Address) (bool, error) {
 	// S3 schema is based on directly indexed files without ability to iterate
-	// over a dataset. For this reason, this method is implemented as purely returning a constant value all the time.
+	// over a dataset. For this reason, this method is implemented as purely
+	// returning a constant value all the time.
 	return true, nil
 }
 

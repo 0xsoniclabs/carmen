@@ -1085,8 +1085,8 @@ func TestS3_HasEmptyStorage(t *testing.T) {
 			}
 		})
 	}
-
 }
+
 func execSubProcessTest(t *testing.T, dir string, stateImpl string, execTestName string) {
 	path, err := os.Executable()
 	if err != nil {
@@ -1107,7 +1107,6 @@ func execSubProcessTest(t *testing.T, dir string, stateImpl string, execTestName
 // createState creates a state with the given name and directory
 func createState(t *testing.T, name, dir string) state.State {
 	for _, config := range initStates() {
-		fmt.Println(config.name())
 		if config.name() == name {
 			state, err := config.createState(dir)
 			if err != nil {
