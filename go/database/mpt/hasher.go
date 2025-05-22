@@ -15,6 +15,7 @@ package mpt
 import (
 	"crypto/sha256"
 	"fmt"
+	"golang.org/x/crypto/sha3"
 	"reflect"
 	"sync"
 
@@ -247,7 +248,12 @@ func makeEthereumLikeHasher() hasher {
 type ethHasher struct{}
 
 var EmptyNodeEthereumEncoding = immutable.NewBytes(rlp.Encode(rlp.String{}))
+
+// EmptyNodeEthereumHash encodes an empty RLP node, it is a node with empty string
 var EmptyNodeEthereumHash = common.Keccak256(EmptyNodeEthereumEncoding.ToBytes())
+
+// EmptyEthereumHash is a hash of zeros
+var EmptyEthereumHash = common.GetHash(sha3.NewLegacyKeccak256(), []byte{})
 
 func (h ethHasher) updateHashes(
 	ref *NodeReference,

@@ -71,13 +71,13 @@ type WitnessProof interface {
 
 	// GetNonce extracts a nonce from the witness proof for the input root hash and the address.
 	// If the witness proof contains the account for the input address, it returns its nonce.
-	// If the proof does not contain the account, it returns false.
+	// If the proof cannot prove the account, it returns false.
 	// The method may return an error if the proof is invalid.
 	GetNonce(root Hash, address Address) (uint64, bool, error)
 
 	// GetCodeHash extracts a code hash from the witness proof for the input root hash and the address.
 	// If the witness proof contains the account for the input address, it returns its code hash.
-	// If the proof does not contain the account, it returns false.
+	// If the proof cannot prove the account, it returns false.
 	// The method may return an error if the proof is invalid.
 	GetCodeHash(root Hash, address Address) (Hash, bool, error)
 

@@ -1123,13 +1123,16 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 	}
 
 	if err := db.AddBlock(0, func(context HeadBlockContext) error {
-		for j := 0; j < numAccounts; j++ {
+		for j := 1; j < numAccounts; j++ { // first account will not exist
 			if err := context.RunTransaction(func(tc TransactionContext) error {
 				addr := Address{byte(j)}
 				tc.CreateAccount(addr)
 				tc.SetNonce(addr, uint64(j))
-				for k := 0; k < numKeys; k++ {
-					tc.SetState(addr, keys[k], Value{byte(j), byte(k)})
+				if j > 1 { // the second account will have no code and state
+					tc.SetCode(addr, []byte{byte(j)})
+					for k := 0; k < numKeys; k++ {
+						tc.SetState(addr, keys[k], Value{byte(j), byte(k)})
+					}
 				}
 				return nil
 			}); err != nil {
@@ -1184,7 +1187,12 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 	t.Run("extract subproofs", func(t *testing.T) {
 		for j := 0; j < numAccounts; j++ {
 			addr := Address{byte(j)}
-			want := shadowProofs[addr]
+			wantProof := shadowProofs[addr]
+
+			want, complete := wantProof.Extract(root, addr, keys...)
+			if !complete {
+				t.Errorf("proof is not complete")
+			}
 
 			// extract subproof of an account and its storage
 			// and check it matches the shadow proof
@@ -1211,7 +1219,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 			addr := Address{byte(j)}
 
 			// extract address nodes only
-			accountElements, storageRoot, complete := recovered.GetAccountElements(root, addr)
+			accountElements, _, complete := recovered.GetAccountElements(root, addr)
 			if !complete {
 				t.Errorf("proof is not complete")
 			}
@@ -1222,23 +1230,6 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 				gotStorageElements, complete := recovered.GetStorageElements(root, addr, key)
 				if !complete {
 					t.Errorf("proof is not complete")
-				}
-
-				// first block's account has no storage, others do
-				if j == 0 {
-					if got, want := storageRoot, Hash(mpt.EmptyNodeEthereumHash); got != want {
-						t.Errorf("unexpected storage root, wanted %v (empty node RLP hahs), got %v", want, got)
-					}
-					if got, want := gotStorageElements[0], mpt.EmptyNodeEthereumEncoding; got != want {
-						t.Errorf("unexpected storage element, wanted %v (empty RLP encodiing), got %v", want, got)
-					}
-				} else {
-					if got, want := storageRoot, Hash(mpt.EmptyNodeEthereumHash); got == want {
-						t.Errorf("unexpected storage root, wanted %v, got %v", want, got)
-					}
-					if len(gotStorageElements) == 0 {
-						t.Errorf("no storage elements")
-					}
 				}
 
 				// both proofs must be distinct
@@ -1273,6 +1264,123 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("account and storage empty", func(t *testing.T) {
+		addr := Address{byte(0)}
+
+		// extract address nodes only
+		_, storageRoot, complete := recovered.GetAccountElements(root, addr)
+		if !complete {
+			t.Errorf("proof is not complete")
+		}
+
+		// code hash of empty account must be empty
+		codeHash, complete, err := recovered.GetCodeHash(root, addr)
+		if err != nil {
+			t.Errorf("cannot get code hash: %v", err)
+		}
+		if !complete {
+			t.Errorf("code hash proof is not complete")
+		}
+		if got, want := codeHash, Hash(common.Hash{}); got != want {
+			t.Errorf("unexpected code hash, wanted %v, got %v", want, got)
+		}
+
+		for _, key := range keys {
+			gotStorageElements, complete := recovered.GetStorageElements(root, addr, key)
+			if !complete {
+				t.Errorf("proof is not complete")
+			}
+
+			if got, want := storageRoot, Hash(common.Hash{}); got != want {
+				t.Errorf("unexpected storage root, wanted %v (empty node RLP hahs), got %v", want, got)
+			}
+			if got, want := gotStorageElements[0], mpt.EmptyNodeEthereumEncoding; got != want {
+				t.Errorf("unexpected storage element, wanted %v (empty RLP encodiing), got %v", want, got)
+			}
+		}
+
+	})
+
+	t.Run("account exists, storage and code empty", func(t *testing.T) {
+		addr := Address{byte(1)}
+
+		// extract address nodes only
+		_, storageRoot, complete := recovered.GetAccountElements(root, addr)
+		if !complete {
+			t.Errorf("proof is not complete")
+		}
+
+		// account exists, but code is empty --> code hash must be hash of zeros
+		codeHash, complete, err := recovered.GetCodeHash(root, addr)
+		if err != nil {
+			t.Errorf("cannot get code hash: %v", err)
+		}
+		if !complete {
+			t.Errorf("code hash proof is not complete")
+		}
+		if got, want := codeHash, Hash(mpt.EmptyEthereumHash); got != want {
+			t.Errorf("unexpected code hash, wanted %v, got %v", want, got)
+		}
+
+		for _, key := range keys {
+			gotStorageElements, complete := recovered.GetStorageElements(root, addr, key)
+			if !complete {
+				t.Errorf("proof is not complete")
+			}
+
+			// account exists, but storage is empty --> storage root must be hash of zeros
+			if got, want := storageRoot, Hash(mpt.EmptyNodeEthereumHash); got != want {
+				t.Errorf("unexpected storage root, wanted %v (empty node RLP hahs), got %v", want, got)
+			}
+			if got, want := gotStorageElements[0], mpt.EmptyNodeEthereumEncoding; got != want {
+				t.Errorf("unexpected storage element, wanted %v (empty RLP encodiing), got %v", want, got)
+			}
+		}
+	})
+
+	t.Run("account and storage exist", func(t *testing.T) {
+		for j := 2; j < numAccounts; j++ {
+			addr := Address{byte(j)}
+
+			// extract address nodes only
+			_, storageRoot, complete := recovered.GetAccountElements(root, addr)
+			if !complete {
+				t.Errorf("proof is not complete")
+			}
+
+			// code hash must exist
+			codeHash, complete, err := recovered.GetCodeHash(root, addr)
+			if err != nil {
+				t.Errorf("cannot get code hash: %v", err)
+			}
+			if !complete {
+				t.Errorf("code hash proof is not complete")
+			}
+			if got, want := codeHash, Hash(common.Keccak256([]byte{byte(j)})); got != want {
+				t.Errorf("unexpected code hash, wanted %v, got %v", want, got)
+			}
+
+			for _, key := range keys {
+				gotStorageElements, complete := recovered.GetStorageElements(root, addr, key)
+				if !complete {
+					t.Errorf("proof is not complete")
+				}
+
+				// storage cannot be empty
+				if got, want := storageRoot, Hash(mpt.EmptyNodeEthereumHash); got == want {
+					t.Errorf("unexpected storage root, wanted %v, got %v", want, got)
+				}
+				if got, want := storageRoot, Hash(common.Hash{}); got == want {
+					t.Errorf("unexpected storage root, wanted %v, got %v", want, got)
+				}
+				if len(gotStorageElements) == 0 {
+					t.Errorf("no storage elements")
+				}
+			}
+		}
+	})
+
 }
 
 func TestDatabase_CloseDB_Unfinished_Proof_CannotCloseDb(t *testing.T) {

@@ -837,7 +837,7 @@ func TestCreateWitnessProof_GetAccountElements(t *testing.T) {
 		if !complete {
 			t.Fatalf("proof is not complete")
 		}
-		if got, want := storageHash, EmptyNodeEthereumHash; got != want {
+		if got, want := storageHash, (common.Hash{}); got != want {
 			t.Errorf("unexpected storage hash: got %v, want %v", got, want)
 		}
 		reconstructed := CreateWitnessProofFromNodes(elements)
@@ -866,9 +866,12 @@ func TestCreateWitnessProof_GetAccountElements(t *testing.T) {
 		proofCopy := CreateWitnessProofFromNodes(proof.GetElements())
 		delete(proofCopy.proofDb, common.Keccak256(rlp))
 
-		_, _, complete := proofCopy.GetAccountElements(hash, address)
+		_, storageRoot, complete := proofCopy.GetAccountElements(hash, address)
 		if complete {
 			t.Errorf("proof should not be complete")
+		}
+		if got, want := storageRoot, (common.Hash{}); got != want {
+			t.Errorf("unexpected storage root hash: got %v, want %v", got, want)
 		}
 	})
 
@@ -1114,6 +1117,10 @@ func TestCreateWitnessProof_GetStorageElements(t *testing.T) {
 			t.Fatalf("proof is not complete")
 		}
 
+		if got, want := storageHash, (common.Hash{}); got != want {
+			t.Errorf("unexpected storage hash: got %v, want %v", got, want)
+		}
+
 		storageElements, complete := proof.GetStorageElements(hash, common.Address{}, common.Key{})
 		if !complete {
 			t.Fatalf("proof is not complete")
@@ -1121,10 +1128,6 @@ func TestCreateWitnessProof_GetStorageElements(t *testing.T) {
 		storageProof := CreateWitnessProofFromNodes(storageElements)
 		if !storageProof.IsValid() {
 			t.Fatalf("storage proof is not valid")
-		}
-
-		if got, want := storageHash, EmptyNodeEthereumHash; got != want {
-			t.Errorf("unexpected storage hash: got %v, want %v", got, want)
 		}
 
 		emptyStorageProof := make(proofDb)
@@ -1174,7 +1177,7 @@ func TestCreateWitnessProof_GetStorageElements(t *testing.T) {
 	})
 }
 
-func TestCreateWitnessProof_GetStorageElementsOfEmptyStorage(t *testing.T) {
+func TestCreateWitnessProof_GetStorageElementsOfEmptyStorage_IsHashOfZeros(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	address := common.Address{1}
@@ -1215,33 +1218,160 @@ func TestCreateWitnessProof_GetStorageElementsOfEmptyStorage(t *testing.T) {
 		t.Fatalf("proof is not valid")
 	}
 
-	// test correct account with empty storage, and an empty account, which has implicitly an empty storage
-	for _, address := range []common.Address{address, {2}} {
-		t.Run(fmt.Sprintf("address %v", address), func(t *testing.T) {
-			_, storageRoot, complete := proof.GetAccountElements(rootHash, address)
-			if !complete {
-				t.Fatalf("proof is not complete")
-			}
-
-			if storageRoot != EmptyNodeEthereumHash {
-				t.Errorf("unexpected storage root: got %v, want %v", storageRoot, EmptyNodeEthereumHash)
-			}
-
-			elements, complete := proof.GetStorageElements(rootHash, address, common.Key{})
-			if !complete {
-				t.Fatalf("proof is not complete")
-			}
-
-			if len(elements) != 1 {
-				t.Fatalf("unexpected number of elements: got %d, want 1", len(elements))
-			}
-
-			if got, want := common.Keccak256(elements[0].ToBytes()), EmptyNodeEthereumHash; got != want {
-				t.Errorf("invalid proof element: got %v, want %v", got, want)
-			}
-		})
+	_, storageRoot, complete := proof.GetAccountElements(rootHash, address)
+	if !complete {
+		t.Fatalf("proof is not complete")
 	}
 
+	// empty storage of an existing account is proved by hash of zeroes.
+	if storageRoot != EmptyNodeEthereumHash {
+		t.Errorf("unexpected storage root: got %v, want %v", storageRoot, EmptyNodeEthereumHash)
+	}
+
+	elements, complete := proof.GetStorageElements(rootHash, address, common.Key{})
+	if !complete {
+		t.Fatalf("proof is not complete")
+	}
+
+	if len(elements) != 1 {
+		t.Fatalf("unexpected number of elements: got %d, want 1", len(elements))
+	}
+
+	// empty storage of an existing account is proved by hash of zeroes.
+	if got, want := common.Keccak256(elements[0].ToBytes()), EmptyNodeEthereumHash; got != want {
+		t.Errorf("invalid proof element: got %v, want %v", got, want)
+	}
+}
+
+func TestCreateWitnessProof_GetStorageElementsOfEmptyAccount_IsZerosHash(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	address := common.Address{1}
+
+	ctxt := newNodeContextWithConfig(t, ctrl, S5LiveConfig)
+	desc := &Extension{}
+
+	root, _ := ctxt.Build(desc)
+	rootHash, _ := ctxt.getHashFor(&root)
+
+	proof, err := CreateWitnessProof(ctxt, &root, address, common.Key{})
+	if err != nil {
+		t.Fatalf("failed to create proof: %v", err)
+	}
+
+	if !proof.IsValid() {
+		t.Fatalf("proof is not valid")
+	}
+
+	_, storageRoot, complete := proof.GetAccountElements(rootHash, address)
+	if !complete {
+		t.Errorf("proof is not complete")
+	}
+
+	// hash of empty account (non-existing) is proven by zeroes.
+	if storageRoot != (common.Hash{}) {
+		t.Errorf("unexpected storage root: got %v, want %v", storageRoot, common.Hash{})
+	}
+
+	elements, complete := proof.GetStorageElements(rootHash, address, common.Key{})
+	if len(elements) != 1 {
+		t.Fatalf("unexpected number of elements: got %d, want 1", len(elements))
+	}
+
+	if got, want := common.Keccak256(elements[0].ToBytes()), EmptyNodeEthereumHash; got != want {
+		t.Errorf("invalid proof element: got %v, want %v", got, want)
+	}
+}
+
+func TestCreateWitnessProof_AccountEmptyCodeHash_IsHashOfZeros(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	address := common.Address{1}
+
+	ctxt := newNodeContextWithConfig(t, ctrl, S5LiveConfig)
+	addressNibbles := AddressToNibblePath(address, ctxt)
+
+	desc := &Branch{
+		children: Children{
+			addressNibbles[0]: &Branch{
+				children: Children{
+					addressNibbles[1]: &Extension{
+						path: addressNibbles[2:50],
+						next: &Tag{"A", &Account{
+							address:    address,
+							pathLength: 14,
+							info: AccountInfo{
+								Nonce:    common.Nonce{1},
+								Balance:  amount.New(1),
+								CodeHash: EmptyEthereumHash,
+							},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	root, _ := ctxt.Build(desc)
+	rootHash, _ := ctxt.getHashFor(&root)
+
+	proof, err := CreateWitnessProof(ctxt, &root, address, common.Key{})
+	if err != nil {
+		t.Fatalf("failed to create proof: %v", err)
+	}
+
+	if !proof.IsValid() {
+		t.Fatalf("proof is not valid")
+	}
+
+	codeHash, complete, err := proof.GetCodeHash(rootHash, address)
+	if err != nil {
+		t.Fatalf("failed to get code hash: %v", err)
+	}
+
+	if !complete {
+		t.Fatalf("proof should be complete")
+	}
+
+	// code of existing account without a code is proven by hash of zeroes.
+	if got, want := codeHash, EmptyEthereumHash; got != want {
+		t.Errorf("unexpected code hash: got %v, want %v", got, want)
+	}
+}
+
+func TestCreateWitnessProof_AccountNotPresentCodeHash_IsZeros(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	address := common.Address{1}
+
+	ctxt := newNodeContextWithConfig(t, ctrl, S5LiveConfig)
+	desc := &Extension{}
+
+	root, _ := ctxt.Build(desc)
+	rootHash, _ := ctxt.getHashFor(&root)
+
+	proof, err := CreateWitnessProof(ctxt, &root, address, common.Key{})
+	if err != nil {
+		t.Fatalf("failed to create proof: %v", err)
+	}
+
+	if !proof.IsValid() {
+		t.Fatalf("proof is not valid")
+	}
+
+	codeHash, complete, err := proof.GetCodeHash(rootHash, address)
+	if err != nil {
+		t.Fatalf("failed to get code hash: %v", err)
+	}
+
+	if !complete {
+		t.Fatalf("proof should be complete")
+	}
+
+	// code hash of empty account is proven by zeroes.
+	if got, want := codeHash, (common.Hash{}); got != want {
+		t.Errorf("unexpected code hash: got %v, want %v", got, want)
+	}
 }
 
 func TestWitnessProof_Access_Proof_Fields(t *testing.T) {
