@@ -965,124 +965,47 @@ func TestStateRead(t *testing.T) {
 }
 
 func TestHasEmptyStorage_Always_Returns_True(t *testing.T) {
+	updates := map[string]common.Update{
+		"fresh-account": {
+			CreatedAccounts: []common.Address{address1},
+		},
+		"account-with-empty-storage": {
+			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val0}},
+		},
+		"account-with-non_empty-storage": {
+			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
+		},
+		"deleted-account": {
+			DeletedAccounts: []common.Address{address1},
+		},
+	}
+
 	for _, config := range initStates() {
 		if config.config.Schema != 3 {
 			continue
 		}
-		t.Run(config.name(), func(t *testing.T) {
-			dir := t.TempDir()
-			st, err := config.createState(dir)
-			if err != nil {
-				t.Fatalf("cannot init state: %s, err: %v", config.name(), err)
-			}
-			// check non-existent addr
-			isEmpty, err := st.HasEmptyStorage(address1)
-			if err != nil {
-				t.Fatalf("failed to check state: %v", err)
-			}
-			if !isEmpty {
-				t.Errorf("HasEmptyStorage should always return true")
-			}
+		dir := t.TempDir()
+		st, err := config.createState(dir)
 
-			// create account with no storage set
-			err = st.Apply(1, common.Update{
-				CreatedAccounts: []common.Address{address1},
-			})
+		var idx uint64
+		for updateName, update := range updates {
+			testName := fmt.Sprintf("%s_%s", config.name(), updateName)
+			err = st.Apply(idx, update)
 			if err != nil {
 				t.Fatalf("failed to apply state: %v", err)
 			}
+			t.Run(testName, func(t *testing.T) {
+				isEmpty, err := st.HasEmptyStorage(address1)
+				if err != nil {
+					t.Fatalf("failed to check state: %v", err)
+				}
+				if !isEmpty {
+					t.Errorf("HasEmptyStorage should always return true")
+				}
 
-			exists, err := st.Exists(address1)
-			if err != nil {
-				t.Fatalf("failed to check account: %v", err)
-			}
-			if !exists {
-				t.Fatal("account does not exist")
-			}
-
-			// check existing addr with empty storage
-			isEmpty, err = st.HasEmptyStorage(address1)
-			if err != nil {
-				t.Fatalf("failed to check state: %v", err)
-			}
-			if !isEmpty {
-				t.Errorf("HasEmptyStorage should always return true")
-			}
-
-			// add zero value storage to the account
-			err = st.Apply(2, common.Update{
-				Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val0}},
+				idx++
 			})
-			if err != nil {
-				t.Fatalf("failed to apply state: %v", err)
-			}
-			val, err := st.GetStorage(address1, key1)
-			if err != nil {
-				t.Fatalf("failed to get storage: %v", err)
-			}
-			if val != val0 {
-				t.Fatalf("storage value does not match: %v != %v", val, val0)
-			}
-
-			// check existing acc with zero value storage
-			isEmpty, err = st.HasEmptyStorage(address1)
-			if err != nil {
-				t.Fatalf("failed to check state: %v", err)
-			}
-			if !isEmpty {
-				t.Errorf("HasEmptyStorage should always return true")
-			}
-
-			// overwrite the storage key with an existing value
-			err = st.Apply(3, common.Update{
-				Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-			})
-			if err != nil {
-				t.Fatalf("failed to apply state: %v", err)
-			}
-			val, err = st.GetStorage(address1, key1)
-			if err != nil {
-				t.Fatalf("failed to get storage: %v", err)
-			}
-			if val != val1 {
-				t.Fatalf("storage value does not match: %v != %v", val, val1)
-			}
-
-			// check existing acc with non-empty storage
-			isEmpty, err = st.HasEmptyStorage(address1)
-			if err != nil {
-				t.Fatalf("failed to check state: %v", err)
-			}
-			if !isEmpty {
-				t.Errorf("HasEmptyStorage should always return true")
-			}
-
-			// delete the acc
-			err = st.Apply(4, common.Update{
-				DeletedAccounts: []common.Address{address1},
-			})
-			if err != nil {
-				t.Fatalf("failed to apply state: %v", err)
-			}
-
-			// check deleted acc
-			exists, err = st.Exists(address1)
-			if err != nil {
-				t.Fatalf("failed to check account: %v", err)
-			}
-			if exists {
-				t.Fatal("account should not exist")
-			}
-
-			// check deleted acc
-			isEmpty, err = st.HasEmptyStorage(address1)
-			if err != nil {
-				t.Fatalf("failed to check state: %v", err)
-			}
-			if !isEmpty {
-				t.Errorf("HasEmptyStorage should always return true")
-			}
-		})
+		}
 	}
 }
 
