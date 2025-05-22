@@ -965,17 +965,17 @@ func TestStateRead(t *testing.T) {
 }
 
 func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
-	updates := map[string]common.Update{
-		"fresh-account": {
+	updates := []common.Update{
+		{
 			CreatedAccounts: []common.Address{address1},
 		},
-		"account-with-empty-storage": {
+		{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val0}},
 		},
-		"account-with-non_empty-storage": {
+		{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 		},
-		"deleted-account": {
+		{
 			DeletedAccounts: []common.Address{address1},
 		},
 	}
@@ -986,25 +986,22 @@ func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
 		}
 		dir := t.TempDir()
 		st, err := config.createState(dir)
-
+		if err != nil {
+			t.Fatalf("unable to create state: %v", err)
+		}
 		var idx uint64
-		for updateName, update := range updates {
-			testName := fmt.Sprintf("%s_%s", config.name(), updateName)
-			err = st.Apply(idx, update)
-			if err != nil {
+		for _, update := range updates {
+			if err = st.Apply(idx, update); err != nil {
 				t.Fatalf("failed to apply state: %v", err)
 			}
-			t.Run(testName, func(t *testing.T) {
-				isEmpty, err := st.HasEmptyStorage(address1)
-				if err != nil {
-					t.Fatalf("failed to check state: %v", err)
-				}
-				if !isEmpty {
-					t.Errorf("HasEmptyStorage should always return true")
-				}
-
-				idx++
-			})
+			isEmpty, err := st.HasEmptyStorage(address1)
+			if err != nil {
+				t.Fatalf("failed to check state: %v", err)
+			}
+			if !isEmpty {
+				t.Errorf("HasEmptyStorage should always return true")
+			}
+			idx++
 		}
 	}
 }
