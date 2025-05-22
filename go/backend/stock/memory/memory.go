@@ -223,9 +223,9 @@ func (s *inMemoryStock[I, V]) Flush() error {
 	return s.writeTo(s.directory)
 }
 
-func (s *inMemoryStock[I, V]) writeTo(dir string) error {
+func (s *inMemoryStock[I, V]) writeTo(dir string) (err error) {
 	// Create the directory if needed.
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
@@ -245,7 +245,7 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, fileNameMetadata), metadata, 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(dir, fileNameMetadata), metadata, 0600); err != nil {
 		return err
 	}
 
@@ -253,7 +253,9 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) error {
 	if f, err := os.Create(filepath.Join(dir, fileNameValues)); err != nil {
 		return err
 	} else {
-		defer f.Close()
+		defer func() {
+			err = errors.Join(err, f.Close())
+		}()
 
 		buffer := make([]byte, s.encoder.GetEncodedSize())
 		for _, v := range s.values {
@@ -276,7 +278,9 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) error {
 	if f, err := os.Create(filepath.Join(dir, fileNameFreeList)); err != nil {
 		return err
 	} else {
-		defer f.Close()
+		defer func() {
+			err = errors.Join(err, f.Close())
+		}()
 
 		buffer := make([]byte, indexSize)
 		for _, i := range s.freeList {

@@ -134,7 +134,9 @@ func testHashAfterModification(t *testing.T, mod func(s state.State)) {
 			t.Fatalf("failed to get hash of reference state: %v", err)
 		}
 		want[s] = hash
-		ref.Close()
+		if err = ref.Close(); err != nil {
+			t.Fatalf("failed to close reference state: %v", err)
+		}
 	}
 
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {

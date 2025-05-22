@@ -180,7 +180,11 @@ func createTestState(db *mpt.MptState, directory string) *stressTestState {
 
 func (s *stressTestState) ReportProgress() {
 	memUsage := getMemoryUsage()
-	used := getDirectorySize(s.directory)
+	used, err := getDirectorySize(s.directory)
+	if err != nil {
+		log.Printf("failed to get directory size: %v\n", err)
+		return
+	}
 	free, err := getFreeSpace(s.directory)
 	if err != nil {
 		log.Printf("failed to get free space: %v\n", err)

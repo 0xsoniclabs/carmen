@@ -40,7 +40,11 @@ func TestIO_ExportAndImportAsLiveDb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered DB: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close DB: %v", err)
+		}
+	}()
 
 	if exists, err := db.Exists(common.Address{1}); err != nil || !exists {
 		t.Fatalf("restored DB does not contain account 1")
@@ -72,7 +76,11 @@ func TestIO_ExportAndImportAsArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered DB: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close DB: %v", err)
+		}
+	}()
 
 	height, empty, err := db.GetBlockHeight()
 	if err != nil || empty || height != genesisBlock {
@@ -121,8 +129,12 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 			t.Fatalf("failed to fetch code: %v", err)
 		}
 		modified := append(code, []byte("extra_code")...)
-		s.SetCode(addr1, modified)
-		s.SetCode(addr1, code)
+		if err = s.SetCode(addr1, modified); err != nil {
+			t.Fatalf("cannot set code: %v", err)
+		}
+		if err = s.SetCode(addr1, code); err != nil {
+			t.Fatalf("cannot set code: %v", err)
+		}
 		codesAfter := s.GetCodes()
 		if before, after := len(codesBefore), len(codesAfter); before+1 != after {
 			t.Fatalf("modification did not had expected code-altering effect: %d -> %d", before, after)

@@ -277,7 +277,6 @@ type accountVerifyingVisitor struct {
 	logWindow    int
 	counter      int
 	numAddresses int
-	storage      map[common.Key]common.Value
 }
 
 func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {

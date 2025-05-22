@@ -332,7 +332,9 @@ func TestBlockContext_PanickingCommitsReleaseQueryLock(t *testing.T) {
 		}
 	}()
 
-	context.Commit()
+	if err := context.Commit(); err != nil {
+		t.Fatalf("unexpected error during commit: %v", err)
+	}
 }
 
 func initBlockContexts() map[string]func(t *testing.T) blockContext {

@@ -517,7 +517,9 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (err e
 	if err != nil {
 		return fmt.Errorf("failed to get exclusive access to directory: %v", err)
 	}
-	defer lock.Release()
+	defer func() {
+		err = errors.Join(err, lock.Release())
+	}()
 
 	// Check available block height -- stop recovery if there are not enough blocks.
 	checkpointHeight, err := GetCheckpointBlock(directory)

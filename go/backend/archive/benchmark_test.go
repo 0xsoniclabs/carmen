@@ -28,7 +28,11 @@ const (
 func BenchmarkAdding(b *testing.B) {
 	for _, factory := range getArchiveFactories(b) {
 		a := factory.getArchive(b.TempDir())
-		defer a.Close()
+		defer func() {
+			if err := a.Close(); err != nil {
+				b.Fatalf("failed to close archive; %s", err)
+			}
+		}()
 
 		// initialize
 		var update common.Update

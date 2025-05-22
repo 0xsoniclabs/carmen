@@ -66,7 +66,11 @@ func TestIO_Archive_ExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered Archive: %v", err)
 	}
-	defer target.Close()
+	defer func() {
+		if err = target.Close(); err != nil {
+			t.Fatalf("failed to close archive: %v", err)
+		}
+	}()
 
 	height, _, err := target.GetBlockHeight()
 	if err != nil {
@@ -132,7 +136,11 @@ func TestIO_ArchiveAndLive_ExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot open live trie: %v", err)
 	}
-	defer live.Close()
+	defer func() {
+		if err := live.Close(); err != nil {
+			t.Fatalf("cannot close live trie: %v", err)
+		}
+	}()
 	headHash, _, err := live.UpdateHashes()
 	if err != nil {
 		t.Fatalf("cannot get live trie hash: %v", err)
@@ -150,7 +158,11 @@ func TestIO_ArchiveAndLive_ExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered Archive: %v", err)
 	}
-	defer archive.Close()
+	defer func() {
+		if err = archive.Close(); err != nil {
+			t.Fatalf("failed to close archive: %v", err)
+		}
+	}()
 
 	height, _, err := archive.GetBlockHeight()
 	if err != nil {

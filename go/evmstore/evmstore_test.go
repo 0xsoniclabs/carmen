@@ -29,7 +29,11 @@ func getEvmStore(t *testing.T, dir string) EvmStore {
 func TestTxPosition(t *testing.T) {
 	dir := t.TempDir()
 	store := getEvmStore(t, dir)
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("failed to close evmstore; %v", err)
+		}
+	}()
 
 	txHash := common.Hash{0x11, 0x22, 0x33, 0x11, 0x22, 0x33, 0x11, 0x22, 0x33, 0x11, 0x22, 0x33, 0x11, 0x22, 0x33}
 	want := TxPosition{
@@ -75,7 +79,11 @@ func TestTxPosition(t *testing.T) {
 func TestReceipts(t *testing.T) {
 	dir := t.TempDir()
 	store := getEvmStore(t, dir)
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("failed to close evmstore; %v", err)
+		}
+	}()
 
 	blockNum := uint64(87564)
 	want := []byte{0x87, 0xAC, 0x34}
@@ -116,7 +124,11 @@ func TestReceipts(t *testing.T) {
 func TestTx(t *testing.T) {
 	dir := t.TempDir()
 	store := getEvmStore(t, dir)
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("failed to close evmstore; %v", err)
+		}
+	}()
 
 	txHash := common.Hash{0xAB, 0xCD}
 	want := []byte{0x87, 0xAC, 0x34}

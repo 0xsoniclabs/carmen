@@ -58,7 +58,7 @@ func FuzzBufferedFile_ReadWrite(f *testing.F) {
 		}
 		defer func() {
 			if err = file.Close(); err != nil {
-				f.Fatalf("failed to close buffered file: %v", err)
+				t.Fatalf("failed to close buffered file: %v", err)
 			}
 		}()
 

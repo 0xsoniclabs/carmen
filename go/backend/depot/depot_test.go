@@ -449,7 +449,11 @@ func TestDepotSnapshotRecovery(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			depot1 := factory.getDepot(t.TempDir())
-			defer depot1.Close()
+			defer func() {
+				if err := depot1.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			const numEntries = 32
 			for i := 0; i < numEntries; i++ {
@@ -474,7 +478,11 @@ func TestDepotSnapshotRecovery(t *testing.T) {
 			}
 
 			depot2 := factory.getDepot(t.TempDir())
-			defer depot2.Close()
+			defer func() {
+				if err := depot2.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err = depot2.Restore(snapshot1data)
 			if err != nil {
@@ -502,7 +510,11 @@ func TestDepotSnapshotRecoveryOverriding(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, 3, 2) {
 		t.Run(factory.label, func(t *testing.T) {
 			depot1 := factory.getDepot(t.TempDir())
-			defer depot1.Close()
+			defer func() {
+				if err := depot1.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			const numEntries = 32
 			for i := 0; i < numEntries; i++ {
@@ -528,7 +540,11 @@ func TestDepotSnapshotRecoveryOverriding(t *testing.T) {
 			}
 
 			depot2 := factory.getDepot(t.TempDir())
-			defer depot2.Close()
+			defer func() {
+				if err := depot2.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			// the depot2 will be filled with data before the restore - these should be removed during restore
 			for i := 0; i < numEntries+5; i++ {

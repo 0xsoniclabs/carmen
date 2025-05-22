@@ -70,7 +70,9 @@ func reset(context *cli.Context) error {
 			return fmt.Errorf("failed to unlock directory: %v", err)
 		}
 	} else {
-		lock.Release()
+		if err = lock.Release(); err != nil {
+			return fmt.Errorf("failed to release lock: %v", err)
+		}
 	}
 
 	fmt.Printf("Resetting archive in %s to block %d ...\n", dir, block)

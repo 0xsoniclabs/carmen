@@ -187,7 +187,7 @@ func runBenchmark(
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			_ = pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 			fmt.Printf("signal: interrupt")
 			os.Exit(1)
 		}
@@ -236,7 +236,13 @@ func runBenchmark(
 			observer("Failed to close state: %v", err)
 		}
 		observer("Closing state took %v", time.Since(start))
-		observer("Final disk usage: %d", getDirectorySize(path))
+		size, err := getDirectorySize(path)
+		if err != nil {
+			observer("Failed to get directory size: %v", err)
+		} else {
+			observer("Final disk usage: %d", size)
+		}
+
 	}()
 
 	// Progress tracking.
@@ -261,7 +267,10 @@ func runBenchmark(
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
-			state.GetBalance(addr)
+			if _, err = state.GetBalance(addr); err != nil {
+				return res, fmt.Errorf("error reading balance for %s: %v", addr, err)
+			}
+
 			counter++
 		}
 		update := common.Update{}
@@ -287,7 +296,10 @@ func runBenchmark(
 
 			throughput := float64(reportingInterval*numInsertsPerBlock) / startReporting.Sub(lastReportTime).Seconds()
 			memory := state.GetMemoryFootprint().Total()
-			disk := getDirectorySize(path)
+			disk, err := getDirectorySize(path)
+			if err != nil {
+				return res, err
+			}
 			observer(
 				"Reached block %d, memory %.2f GB, disk %.2f GB, %.2f inserts/second",
 				i+1,
@@ -309,10 +321,14 @@ func runBenchmark(
 
 			intervalNumber := ((i + 1) / reportingInterval) + 1
 			if profilingEnabled {
-				startCpuProfiler(fmt.Sprintf("%s_%06d", params.cpuProfilePrefix, intervalNumber))
+				if err = startCpuProfiler(fmt.Sprintf("%s_%06d", params.cpuProfilePrefix, intervalNumber)); err != nil {
+					return res, err
+				}
 			}
 			if tracingEnabled {
-				startTracer(fmt.Sprintf("%s_%06d", params.traceFilePrefix, intervalNumber))
+				if err = startTracer(fmt.Sprintf("%s_%06d", params.traceFilePrefix, intervalNumber)); err != nil {
+					return res, err
+				}
 			}
 		}
 	}
@@ -332,9 +348,9 @@ func runBenchmark(
 }
 
 // GetDirectorySize computes the size of all files in the given directory in bytes.
-func getDirectorySize(directory string) int64 {
+func getDirectorySize(directory string) (int64, error) {
 	var sum int64 = 0
-	filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
+	err := filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -343,5 +359,5 @@ func getDirectorySize(directory string) int64 {
 		}
 		return nil
 	})
-	return sum
+	return sum, err
 }

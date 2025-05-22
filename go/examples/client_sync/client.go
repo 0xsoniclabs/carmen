@@ -184,7 +184,7 @@ func (c *DemoClient) Observe(message Message) {
 			return
 		}
 		c.blockHeight = msg.block
-		c.state.Apply(msg.block, msg.update)
+		_ = c.state.Apply(msg.block, msg.update)
 	case EndOfEpochBroadcast:
 		var err error
 		c.snapshot, err = c.state.CreateSnapshot()

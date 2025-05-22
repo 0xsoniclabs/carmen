@@ -557,7 +557,9 @@ func TestGoState_FlushFlushesLiveDbAndArchive(t *testing.T) {
 	archive.EXPECT().Flush()
 
 	state := newGoState(live, archive, nil)
-	state.Flush()
+	if err := state.Flush(); err != nil {
+		t.Fatalf("failed to flush state: %v", err)
+	}
 }
 
 func TestGoState_CloseClosesLiveDbAndArchive(t *testing.T) {
@@ -575,7 +577,9 @@ func TestGoState_CloseClosesLiveDbAndArchive(t *testing.T) {
 	)
 
 	state := newGoState(live, archive, nil)
-	state.Close()
+	if err := state.Close(); err != nil {
+		t.Fatalf("failed to close state: %v", err)
+	}
 }
 
 func TestStateDB_AddBlock_Errors_Propagated_MultipleStateInstances(t *testing.T) {
