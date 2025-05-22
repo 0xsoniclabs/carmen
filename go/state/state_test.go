@@ -989,9 +989,8 @@ func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unable to create state: %v", err)
 		}
-		var idx uint64
-		for _, update := range updates {
-			if err = st.Apply(idx, update); err != nil {
+		for i, update := range updates {
+			if err = st.Apply(uint64(i), update); err != nil {
 				t.Fatalf("failed to apply state: %v", err)
 			}
 			isEmpty, err := st.HasEmptyStorage(address1)
@@ -1001,7 +1000,6 @@ func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
 			if !isEmpty {
 				t.Errorf("HasEmptyStorage should always return true")
 			}
-			idx++
 		}
 	}
 }
