@@ -964,7 +964,7 @@ func TestStateRead(t *testing.T) {
 	}
 }
 
-func TestHasEmptyStorage_Always_Returns_True(t *testing.T) {
+func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
 	updates := map[string]common.Update{
 		"fresh-account": {
 			CreatedAccounts: []common.Address{address1},
