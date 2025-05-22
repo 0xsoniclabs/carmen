@@ -30,8 +30,6 @@ var (
 	A = common.Value{0xAA}
 	B = common.Value{0xBB}
 	C = common.Value{0xCC}
-
-	table = []byte("V")
 )
 
 const (
@@ -90,7 +88,7 @@ func TestPages(t *testing.T) {
 	p1Expected = append(p1Expected, serializer.ToBytes(B)...) // position 3 in page
 	p1Expected = append(p1Expected, make([]byte, 32)...)      // position 4 in page
 
-	if bytes.Compare(p1, p1Expected) != 0 {
+	if !bytes.Equal(p1, p1Expected) {
 		t.Errorf("Page is incorrect")
 	}
 
@@ -103,7 +101,7 @@ func TestPages(t *testing.T) {
 	p2Expected = append(p2Expected, make([]byte, 32)...)      // position 3 in page
 	p2Expected = append(p2Expected, make([]byte, 32)...)      // position 4 in page
 
-	if bytes.Compare(p2, p2Expected) != 0 {
+	if !bytes.Equal(p2, p2Expected) {
 		t.Errorf("Page is incorrect")
 	}
 
@@ -116,7 +114,7 @@ func TestPages(t *testing.T) {
 	p3Expected = append(p3Expected, serializer.ToBytes(C)...) // position 4 in page
 	p3Expected = append(p3Expected, serializer.ToBytes(A)...) // position 5 in page
 
-	if bytes.Compare(p3, p3Expected) != 0 {
+	if !bytes.Equal(p3, p3Expected) {
 		t.Errorf("Page is incorrect")
 	}
 
@@ -137,7 +135,7 @@ func TestPages(t *testing.T) {
 	p4Expected = append(p4Expected, serializer.ToBytes(A)...) // position 4 in page
 	p4Expected = append(p4Expected, serializer.ToBytes(A)...) // position 5 in page
 
-	if bytes.Compare(p4, p4Expected) != 0 {
+	if !bytes.Equal(p4, p4Expected) {
 		t.Errorf("Page is incorrect")
 	}
 

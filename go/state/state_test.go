@@ -35,13 +35,11 @@ var (
 	address1 = common.Address{0x01}
 	address2 = common.Address{0x02}
 	address3 = common.Address{0x03}
-	address4 = common.Address{0x04}
 
 	key1 = common.Key{0x01}
 	key2 = common.Key{0x02}
 	key3 = common.Key{0x03}
 
-	val0 = common.Value{0x00}
 	val1 = common.Value{0x01}
 	val2 = common.Value{0x02}
 	val3 = common.Value{0x03}
@@ -104,7 +102,11 @@ func testEachConfiguration(t *testing.T, test func(t *testing.T, config *namedSt
 					t.Fatalf("failed to initialize state %s: %v", config.name(), err)
 				}
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			test(t, &config, state)
 		})
@@ -511,7 +513,12 @@ func TestArchive(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer s.Close()
+			defer func() {
+				err = s.Close()
+				if err != nil {
+					t.Fatalf("failed to close memory store; %v", err)
+				}
+			}()
 
 			balance12 := amount.New(0x12)
 			balance34 := amount.New(0x34)
@@ -630,7 +637,12 @@ func TestLastArchiveBlock(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer s.Close()
+			defer func() {
+				err = s.Close()
+				if err != nil {
+					t.Fatalf("failed to close memory store; %v", err)
+				}
+			}()
 
 			_, empty, err := s.GetArchiveBlockHeight()
 			if err != nil {

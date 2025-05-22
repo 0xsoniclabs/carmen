@@ -11,7 +11,6 @@
 package carmen
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -27,8 +26,7 @@ func TestMemoryFootprint(t *testing.T) {
 		t.Error("memory footprint returned 0 for existing open database")
 	}
 
-	s := fmt.Sprintf("%s", fp)
-
+	s := fp.String()
 	if !strings.Contains(s, "live") {
 		t.Error("memory-footprint breakdown does not contain 'live' keyword even though database contains LiveDB")
 	}

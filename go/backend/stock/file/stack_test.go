@@ -33,7 +33,11 @@ func TestStack_PushAndPop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open empty stack: %v", err)
 	}
-	defer stack.Close()
+	defer func() {
+		if err := stack.Close(); err != nil {
+			t.Fatalf("failed to close stack: %v", err)
+		}
+	}()
 
 	if err := stack.Push(12); err != nil {
 		t.Fatalf("failed to push element: %v", err)
@@ -57,7 +61,11 @@ func TestStack_LargePushAndPop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open empty stack: %v", err)
 	}
-	defer stack.Close()
+	defer func() {
+		if err := stack.Close(); err != nil {
+			t.Fatalf("failed to close stack: %v", err)
+		}
+	}()
 
 	for i := 0; i < 10*stackBufferSize; i++ {
 		if got, want := stack.Size(), i; got != want {
@@ -105,7 +113,11 @@ func TestStack_CloseAndReopen(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to re-open stack: %v", err)
 		}
-		defer stack.Close()
+		defer func() {
+			if err := stack.Close(); err != nil {
+				t.Fatalf("failed to close stack: %v", err)
+			}
+		}()
 
 		if got, want := stack.Size(), 2; got != want {
 			t.Fatalf("invalid stack size after reopening, wanted %d, got %d", want, got)
@@ -150,7 +162,11 @@ func TestStack_CloseAndReopenLarge(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to re-open stack: %v", err)
 		}
-		defer stack.Close()
+		defer func() {
+			if err := stack.Close(); err != nil {
+				t.Fatalf("failed to close stack: %v", err)
+			}
+		}()
 
 		if got, want := stack.Size(), N; got != want {
 			t.Fatalf("invalid stack size after reopening, wanted %d, got %d", want, got)

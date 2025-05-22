@@ -457,10 +457,14 @@ func TestBufferedFile_WriteAndReadAddBufferBoundary(t *testing.T) {
 	}
 
 	src := []byte{1, 2, 3, 4, 5}
-	file.WriteAt(src, 5*bufferSize-2)
+	if _, err = file.WriteAt(src, 5*bufferSize-2); err != nil {
+		t.Fatalf("cannot write; %v", err)
+	}
 
 	dst := []byte{0, 0, 0, 0, 0}
-	file.ReadAt(dst, 5*bufferSize-2)
+	if _, err = file.ReadAt(dst, 5*bufferSize-2); err != nil {
+		t.Fatalf("cannot read; %v", err)
+	}
 
 	if !bytes.Equal(src, dst) {
 		t.Errorf("failed to read data written across buffer boundary, wanted %v, got %v", src, dst)

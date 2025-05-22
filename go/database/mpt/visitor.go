@@ -13,6 +13,7 @@ package mpt
 //go:generate mockgen -source visitor.go -destination visitor_mocks.go -package mpt
 
 import (
+	"context"
 	"fmt"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
 	"strings"
@@ -54,7 +55,7 @@ const (
 // VisitForestNodes load the nodes of the forest stored in the given directory and
 // applies the visitor on each of those.
 func VisitForestNodes(directory string, config MptConfig, visitor NodeVisitor) error {
-	source, err := openVerificationNodeSource(nil, directory, config)
+	source, err := openVerificationNodeSource(context.Background(), directory, config)
 	if err != nil {
 		return err
 	}

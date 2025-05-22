@@ -12,6 +12,7 @@ package file
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -445,7 +446,9 @@ func readMetadata[I common.Identifier](path string, indexSerializer common.Seria
 	if err != nil {
 		return
 	}
-	defer metadataFile.Close()
+	defer func() {
+		err = errors.Join(err, metadataFile.Close())
+	}()
 	return parseMetadata(metadataFile, indexSerializer)
 }
 
@@ -473,7 +476,9 @@ func (m *Index[K, I]) writeMetadata() (err error) {
 	if err != nil {
 		return
 	}
-	defer metadataFile.Close()
+	defer func() {
+		err = errors.Join(err, metadataFile.Close())
+	}()
 
 	// computed new root
 	hash, err := m.GetStateHash()

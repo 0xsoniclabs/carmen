@@ -244,7 +244,7 @@ func readCodes(path string) (map[common.Hash][]byte, error) {
 
 // readCodesAndSize parses the content of the given file and returns the
 // contained collection of codes and the size of the file.
-func readCodesAndSize(path string) (map[common.Hash][]byte, uint64, error) {
+func readCodesAndSize(path string) (data map[common.Hash][]byte, size uint64, err error) {
 	// If there is no file, initialize and return an empty code collection.
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -258,9 +258,11 @@ func readCodesAndSize(path string) (map[common.Hash][]byte, uint64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	defer file.Close()
+	defer func() {
+		err = errors.Join(err, file.Close())
+	}()
 	reader := bufio.NewReader(file)
-	data, err := parseCodes(reader)
+	data, err = parseCodes(reader)
 	return data, uint64(info.Size()), err
 }
 

@@ -517,12 +517,14 @@ func (e *exportVisitor) Visit(node mpt.Node, _ mpt.NodeInfo) error {
 	return nil
 }
 
-func checkEmptyDirectory(directory string) error {
+func checkEmptyDirectory(directory string) (err error) {
 	file, err := os.Open(directory)
 	if err != nil {
 		return fmt.Errorf("failed to open directory %s: %w", directory, err)
 	}
-	defer file.Close()
+	defer func() {
+		err = errors.Join(err, file.Close())
+	}()
 	state, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to open file information for %s: %w", directory, err)

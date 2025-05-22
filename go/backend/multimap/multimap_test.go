@@ -76,7 +76,11 @@ func TestMultiMapAdd(t *testing.T) {
 	for _, factory := range getMultiMapFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			m := factory.getMultiMap(t.TempDir())
-			defer m.Close()
+			defer func() {
+				if err := m.Close(); err != nil {
+					t.Fatalf("failed to close multimap; %v", err)
+				}
+			}()
 
 			if err := m.Add(1, 11); err != nil {
 				t.Fatalf("failed to add into multimap")
@@ -114,7 +118,11 @@ func TestMultiMapRemove(t *testing.T) {
 	for _, factory := range getMultiMapFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			m := factory.getMultiMap(t.TempDir())
-			defer m.Close()
+			defer func() {
+				if err := m.Close(); err != nil {
+					t.Fatalf("failed to close multimap; %v", err)
+				}
+			}()
 
 			if err := m.Add(1, 11); err != nil {
 				t.Fatalf("failed to add into multimap")
@@ -143,7 +151,11 @@ func TestMultiMapRemoveAll(t *testing.T) {
 	for _, factory := range getMultiMapFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			m := factory.getMultiMap(t.TempDir())
-			defer m.Close()
+			defer func() {
+				if err := m.Close(); err != nil {
+					t.Fatalf("failed to close multimap; %s", err)
+				}
+			}()
 
 			if err := m.Add(1, 11); err != nil {
 				t.Fatalf("failed to add into multimap")

@@ -184,7 +184,11 @@ func TestCheckpointCoordinator_CreationFailsIfTheProvidedDirectoryLacksWritePerm
 	if err != nil {
 		t.Fatalf("failed to get directory info: %v", err)
 	}
-	defer os.Chmod(dir, info.Mode())
+	defer func() {
+		if err = os.Chmod(dir, info.Mode()); err != nil {
+			t.Fatalf("failed to chmod: %v", err)
+		}
+	}()
 
 	if err := os.Chmod(dir, 0500); err != nil {
 		t.Fatalf("failed to change permissions: %v", err)

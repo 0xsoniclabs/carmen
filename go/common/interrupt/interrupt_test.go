@@ -22,9 +22,7 @@ func Test_CatchCancelsContextWhenInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal("failed to create a SIGINT signal")
 	}
-	select {
-	case <-ctx.Done():
-	}
+	<-ctx.Done()
 }
 
 func Test_IsContextDone(t *testing.T) {

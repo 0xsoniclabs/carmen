@@ -129,7 +129,11 @@ func TestStoresInitialHash(t *testing.T) {
 	for _, factory := range getStoresFactories[common.Value](t, common.ValueSerializer{}, BranchingFactor, PageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			s := factory.getStore(t.TempDir())
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			hash, err := s.GetStateHash()
 			if err != nil {
@@ -192,7 +196,11 @@ func TestStoresHashesAgainstReferenceOutput(t *testing.T) {
 	for _, factory := range getStoresFactories[common.Value](t, common.ValueSerializer{}, BranchingFactor, PageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			s := factory.getStore(t.TempDir())
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			for i, expectedHash := range expectedHashes {
 				if err := s.Set(uint32(i), common.Value{byte(i<<4 | i)}); err != nil {
@@ -235,7 +243,11 @@ func TestStoresPaddedPages(t *testing.T) {
 	for _, factory := range getStoresFactories[common.SlotReincValue](t, serializer, BranchingFactor, pageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			s := factory.getStore(t.TempDir())
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			innerStore := s
 			wrappingStore, casted := s.(*storeClosingWrapper[common.SlotReincValue])

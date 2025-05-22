@@ -123,7 +123,6 @@ func (m *LeafNode[K]) insertAt(index int, key K, left, right node[K]) {
 		}
 	}
 	m.keys[index] = key
-	return
 }
 
 func (m *LeafNode[K]) findItem(key K) (index int, exists bool) {
@@ -162,7 +161,7 @@ func (m *LeafNode[K]) ForEach(callback func(k K)) {
 	}
 }
 
-func (m LeafNode[K]) String() string {
+func (m *LeafNode[K]) String() string {
 	var str string
 	for i, key := range m.keys {
 		str += fmt.Sprintf("%v", key)
@@ -174,7 +173,7 @@ func (m LeafNode[K]) String() string {
 	return fmt.Sprintf("[%v]", str)
 }
 
-func (m LeafNode[K]) checkProperties(treeDepth *int, currentLevel int) error {
+func (m *LeafNode[K]) checkProperties(treeDepth *int, currentLevel int) error {
 	// check depth
 	if *treeDepth == -1 {
 		*treeDepth = currentLevel

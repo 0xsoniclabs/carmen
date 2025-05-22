@@ -48,7 +48,11 @@ func TestReadJsonFile_DetectsIoError(t *testing.T) {
 	if err := os.Chmod(file, 0); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(file, 0600)
+	defer func() {
+		if err := os.Chmod(file, 0600); err != nil {
+			t.Fatalf("failed to chmod: %v", err)
+		}
+	}()
 
 	_, err := ReadJsonFile[chan bool](file)
 	if err == nil {
@@ -99,7 +103,11 @@ func TestWriteJsonFile_DetectsIoError(t *testing.T) {
 	if err := os.Chmod(file, 0); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(file, 0600)
+	defer func() {
+		if err := os.Chmod(file, 0600); err != nil {
+			t.Fatalf("failed to chmod: %v", err)
+		}
+	}()
 
 	err := WriteJsonFile(file, "test")
 	if err == nil {

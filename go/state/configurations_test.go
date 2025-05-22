@@ -93,7 +93,11 @@ func getFilesIn(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatalf("failed to open directory %s: %v", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err = file.Close(); err != nil {
+			t.Fatalf("failed to close buffered file: %v", err)
+		}
+	}()
 	_, err = file.Stat()
 	if err != nil {
 		t.Fatalf("failed to open file information for %s: %v", path, err)

@@ -59,7 +59,11 @@ func testCanBeAccessedConcurrently(t *testing.T, factory stock.NamedStockFactory
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() {
+		if err := stock.Close(); err != nil {
+			t.Fatalf("failed to close stock: %v", err)
+		}
+	}()
 
 	var wg sync.WaitGroup
 	var errors [N]error

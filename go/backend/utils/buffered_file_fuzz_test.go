@@ -56,7 +56,11 @@ func FuzzBufferedFile_ReadWrite(f *testing.F) {
 		if err != nil {
 			t.Fatalf("failed to open buffered file: %v", err)
 		}
-		defer file.Close()
+		defer func() {
+			if err = file.Close(); err != nil {
+				f.Fatalf("failed to close buffered file: %v", err)
+			}
+		}()
 
 		ops := parseUpdates(rawData)
 		for _, op := range ops {

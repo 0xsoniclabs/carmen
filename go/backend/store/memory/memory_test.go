@@ -36,7 +36,12 @@ func TestStoringIntoMemoryStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory store; %s", err)
 	}
-	defer memory.Close()
+	defer func() {
+		err = memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	err = memory.Set(0, A)
 	if err != nil {
@@ -70,7 +75,12 @@ func TestStoringToArbitraryPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory store; %s", err)
 	}
-	defer memory.Close()
+	defer func() {
+		err = memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	err = memory.Set(5, A)
 	if err != nil {
@@ -104,7 +114,12 @@ func TestHashingInMemoryStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory store; %s", err)
 	}
-	defer memory.Close()
+	defer func() {
+		err = memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	initialHast, err := memory.GetStateHash()
 	if err != nil {
@@ -130,7 +145,12 @@ func TestInMemoryStoreSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory store; %s", err)
 	}
-	defer memory.Close()
+	defer func() {
+		err = memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	err = memory.Set(1, A) // A in snapshot1
 	if err != nil {
@@ -225,7 +245,12 @@ func TestInMemoryStoreSnapshotRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory store; %s", err)
 	}
-	defer memory.Close()
+	defer func() {
+		err = memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	err = memory.Set(1, A)
 	if err != nil {
@@ -250,7 +275,12 @@ func TestInMemoryStoreSnapshotRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory store; %s", err)
 	}
-	defer memory2.Close()
+	defer func() {
+		err = memory2.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	err = memory2.Restore(snapshot1data)
 	if err != nil {

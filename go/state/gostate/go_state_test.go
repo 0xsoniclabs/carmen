@@ -30,7 +30,6 @@ var (
 	address1 = common.Address{0x01}
 	address2 = common.Address{0x02}
 	address3 = common.Address{0x03}
-	address4 = common.Address{0x04}
 
 	key1 = common.Key{0x01}
 	key2 = common.Key{0x02}
@@ -42,12 +41,8 @@ var (
 	val3 = common.Value{0x03}
 
 	balance1 = amount.New(1)
-	balance2 = amount.New(2)
-	balance3 = amount.New(3)
 
 	nonce1 = common.Nonce{0x01}
-	nonce2 = common.Nonce{0x02}
-	nonce3 = common.Nonce{0x03}
 )
 
 type namedStateConfig struct {
@@ -86,7 +81,11 @@ func TestMissingKeys(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			accountState, err := state.Exists(address1)
 			if err != nil || accountState != false {
@@ -123,7 +122,11 @@ func TestBasicOperations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			// fill-in values
 			err = state.Apply(12, common.Update{
@@ -181,7 +184,11 @@ func TestDeletingAccounts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			// fill-in values
 			update := common.Update{
@@ -220,7 +227,11 @@ func TestMoreInserts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			update := common.Update{
 				// create accounts since setting values to non-existing accounts may be ignored
@@ -269,7 +280,11 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			code1 := []byte{1, 2, 3}
 
@@ -338,20 +353,30 @@ func TestHashing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %v", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			initialHash, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
-			state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+			err = state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+			if err != nil {
+				t.Fatalf("cannot apply update; %v", err)
+			}
 			hash1, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
-			state.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
+			err = state.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
+			if err != nil {
+				t.Fatalf("cannot apply update; %v", err)
+			}
 			hash2, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -360,7 +385,10 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+			err = state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+			if err != nil {
+				t.Fatalf("cannot apply update; %v", err)
+			}
 			hash3, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -373,7 +401,10 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			state.Apply(4, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
+			err = state.Apply(4, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
+			if err != nil {
+				t.Fatalf("cannot apply update; %v", err)
+			}
 			hash4, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -484,7 +515,11 @@ func TestGetMemoryFootprint(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			memoryFootprint := state.GetMemoryFootprint()
 			str := memoryFootprint.ToString("state")
@@ -653,7 +688,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 
 	update := common.Update{
 		CreatedAccounts: []common.Address{{0xA}},
-		Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+		Balances:        []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(10)}},
 	}
 
 	// the same result many times
@@ -716,7 +751,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		update := common.Update{
 			CreatedAccounts: []common.Address{{0xA}},
-			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+			Balances:        []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(10)}},
 		}
 		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)

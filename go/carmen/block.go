@@ -48,7 +48,7 @@ func (c *headBlockContext) BeginTransaction() (TransactionContext, error) {
 		return nil, fmt.Errorf("cannot start transaction in invalid block context")
 	}
 
-	if c.transactionActive == true {
+	if c.transactionActive {
 		return nil, fmt.Errorf("another transaction is running")
 	}
 
@@ -127,7 +127,7 @@ func (c *archiveBlockContext) BeginTransaction() (TransactionContext, error) {
 		return nil, fmt.Errorf("cannot start transaction in invalid block context")
 	}
 
-	if c.transactionActive == true {
+	if c.transactionActive {
 		return nil, fmt.Errorf("another transaction is running")
 	}
 

@@ -33,7 +33,11 @@ func BenchmarkFlushGoState(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer state.Close()
+	defer func() {
+		if err := state.Close(); err != nil {
+			b.Fatalf("failed to close state %v", err)
+		}
+	}()
 
 	for n := uint64(0); n < uint64(b.N); n++ {
 		update := common.Update{}

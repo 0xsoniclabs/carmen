@@ -14,6 +14,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -374,7 +375,9 @@ func (a *Archive) getStatus(tx *sql.Tx, block uint64, account common.Address) (e
 	if err != nil {
 		return false, 0, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		err = rows.Scan(&exists, &reincarnation)
 		return exists, reincarnation, err
@@ -396,7 +399,9 @@ func (a *Archive) getLastBlock(tx *sql.Tx) (number uint64, empty bool, hash comm
 	if err != nil {
 		return 0, false, common.Hash{}, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		var hashBytes sql.RawBytes
 		err = rows.Scan(&number, &hashBytes)
@@ -416,7 +421,9 @@ func (a *Archive) GetBalance(block uint64, account common.Address) (balance amou
 	if err != nil {
 		return amount.New(), err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		var bytes sql.RawBytes
 		err = rows.Scan(&bytes)
@@ -431,7 +438,9 @@ func (a *Archive) GetCode(block uint64, account common.Address) (code []byte, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		err = rows.Scan(&code)
 		return code, err
@@ -444,7 +453,9 @@ func (a *Archive) GetNonce(block uint64, account common.Address) (nonce common.N
 	if err != nil {
 		return common.Nonce{}, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		var bytes sql.RawBytes
 		err = rows.Scan(&bytes)
@@ -464,7 +475,9 @@ func (a *Archive) GetStorage(block uint64, account common.Address, slot common.K
 	if err != nil {
 		return common.Value{}, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		var bytes sql.RawBytes
 		err = rows.Scan(&bytes)
@@ -480,7 +493,9 @@ func (a *Archive) GetHash(block uint64) (hash common.Hash, err error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		var bytes sql.RawBytes
 		err = rows.Scan(&bytes)
@@ -499,7 +514,9 @@ func (a *Archive) getAccountHash(tx *sql.Tx, block uint64, account common.Addres
 	if err != nil {
 		return common.Hash{}, err
 	}
-	defer rows.Close()
+	defer func() {
+		err = errors.Join(err, rows.Close())
+	}()
 	if rows.Next() {
 		var bytes sql.RawBytes
 		err = rows.Scan(&bytes)
