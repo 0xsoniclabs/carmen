@@ -11,6 +11,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	_ "net/http/pprof"
@@ -258,6 +259,9 @@ func runBenchmark(
 		"Simulating %d blocks with %d reads and %d inserts each",
 		numBlocks, numReadsPerBlock, numInsertsPerBlock,
 	)
+	hasher := sha256.New()
+	buffer := make([]byte, 32)
+
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
@@ -267,7 +271,14 @@ func runBenchmark(
 		update := common.Update{}
 		update.CreatedAccounts = make([]common.Address, 0, numInsertsPerBlock)
 		for j := 0; j < numInsertsPerBlock; j++ {
-			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
+			buffer[0] = byte(counter)
+			buffer[1] = byte(counter >> 8)
+			buffer[2] = byte(counter >> 16)
+			buffer[3] = byte(counter >> 24)
+			buffer[4] = byte(counter >> 32)
+			hasher.Reset()
+			
+			addr := common.Address(hasher.Sum(buffer))
 			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++
