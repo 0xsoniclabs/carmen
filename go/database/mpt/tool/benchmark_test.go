@@ -30,6 +30,7 @@ func TestBenchmark_RunExampleBenchmark(t *testing.T) {
 		reportInterval:     100,
 		cpuProfilePrefix:   dir + "/profile.dat",
 		keepState:          false,
+		schema:             5,
 	}, func(string, ...any) {})
 	end := time.Now()
 
@@ -65,7 +66,7 @@ func TestBenchmark_RunExampleBenchmark(t *testing.T) {
 			t.Errorf("invalid value for memory usage: %d", cur.memory)
 		}
 		if cur.disk <= 0 {
-			t.Errorf("invalid value for dis usage: %d", cur.disk)
+			t.Errorf("invalid value for disk usage: %d", cur.disk)
 		}
 		if cur.throughput <= 0 {
 			t.Errorf("invalid value for throughput: %f", cur.throughput)

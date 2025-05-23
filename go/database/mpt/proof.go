@@ -275,7 +275,7 @@ func (p WitnessProof) GetAccountElements(root common.Hash, address common.Addres
 	if err != nil || !complete {
 		return []immutable.Bytes{}, common.Hash{}, false
 	}
-	storageHash := EmptyNodeEthereumHash
+	var storageHash common.Hash
 	if found {
 		storageHash = visitor.visitedAccount.storageHash
 	}

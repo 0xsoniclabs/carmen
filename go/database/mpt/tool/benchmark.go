@@ -41,6 +41,7 @@ var Benchmark = cli.Command{
 		&tmpDirFlag,
 		&keepStateFlag,
 		&cpuProfileFlag,
+		&schemaFlag,
 		&diagnosticsFlag,
 	},
 }
@@ -78,6 +79,11 @@ var (
 		Name:  "keep-state",
 		Usage: "disables the deletion of temporary data at the end of the benchmark",
 	}
+	schemaFlag = cli.IntFlag{
+		Name:  "schema",
+		Usage: "database scheme to use represented by its number [1..N]",
+		Value: 5,
+	}
 )
 
 func benchmark(context *cli.Context) error {
@@ -101,6 +107,7 @@ func benchmark(context *cli.Context) error {
 			cpuProfilePrefix:   context.String(cpuProfileFlag.Name),
 			traceFilePrefix:    context.String(traceFlag.Name),
 			reportInterval:     context.Int(reportIntervalFlag.Name),
+			schema:             context.Int(schemaFlag.Name),
 		},
 		func(msg string, args ...any) {
 			delta := uint64(time.Since(start).Round(time.Second).Seconds())
@@ -131,6 +138,7 @@ type benchmarkParams struct {
 	cpuProfilePrefix   string
 	traceFilePrefix    string
 	reportInterval     int
+	schema             int
 }
 
 type benchmarkRecord struct {
@@ -216,7 +224,7 @@ func runBenchmark(
 	state, err := state.NewState(state.Parameters{
 		Directory: path,
 		Variant:   gostate.VariantGoFile,
-		Schema:    5,
+		Schema:    state.Schema(params.schema),
 		Archive:   archive,
 	})
 	if err != nil {
