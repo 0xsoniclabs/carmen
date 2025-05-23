@@ -44,9 +44,9 @@ pipeline {
                     }
                 }
 
-                stage('Check Go sources formatting') {
+                stage('Run Go lint') {
                     steps {
-                        sh 'cd go && diff=`gofmt -s -d .` && echo "$diff" && test -z "$diff"'
+                        sh 'cd go && golangci-lint run ./...'
                     }
                 }
 

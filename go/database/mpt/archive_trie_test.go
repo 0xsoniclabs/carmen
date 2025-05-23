@@ -2373,10 +2373,10 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 			update := common.Update{
 				DeletedAccounts: []common.Address{{0xA}},
 				CreatedAccounts: []common.Address{{0xB}},
-				Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(1)}},
-				Nonces:          []common.NonceUpdate{{common.Address{0xA}, common.Nonce{0x1}}},
-				Codes:           []common.CodeUpdate{{common.Address{0xA}, []byte{0x1}}},
-				Slots:           []common.SlotUpdate{{common.Address{0xA}, common.Key{0xB}, common.Value{0x1}}},
+				Balances:        []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(1)}},
+				Nonces:          []common.NonceUpdate{{Account: common.Address{0xA}, Nonce: common.Nonce{0x1}}},
+				Codes:           []common.CodeUpdate{{Account: common.Address{0xA}, Code: []byte{0x1}}},
+				Slots:           []common.SlotUpdate{{Account: common.Address{0xA}, Key: common.Key{0xB}, Value: common.Value{0x1}}},
 			}
 			if err := archive.Add(1, update, nil); !errors.Is(err, injectedErr) {
 				t.Errorf("expected failure did not happen: got: %v != want: %v", err, injectedErr)

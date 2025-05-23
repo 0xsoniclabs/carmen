@@ -34,7 +34,12 @@ func TestMemoryIndexImplements(t *testing.T) {
 
 func TestStoringIntoMemoryIndex(t *testing.T) {
 	memory := NewIndex[common.Address, uint32](common.AddressSerializer{})
-	defer memory.Close()
+	defer func() {
+		err := memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	indexA, err := memory.GetOrAdd(A)
 	if err != nil {
@@ -67,7 +72,12 @@ func TestStoringIntoMemoryIndex(t *testing.T) {
 
 func TestMultipleAssigningOfOneIndex(t *testing.T) {
 	memory := NewIndex[common.Address, uint32](common.AddressSerializer{})
-	defer memory.Close()
+	defer func() {
+		err := memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	indexA, err := memory.GetOrAdd(A)
 	if err != nil {
@@ -98,7 +108,12 @@ func TestMultipleAssigningOfOneIndex(t *testing.T) {
 
 func TestHash(t *testing.T) {
 	memory := NewIndex[common.Address, uint32](common.AddressSerializer{})
-	defer memory.Close()
+	defer func() {
+		err := memory.Close()
+		if err != nil {
+			t.Fatalf("failed to close memory store; %v", err)
+		}
+	}()
 
 	// the hash is the default one first
 	h0, _ := memory.GetStateHash()
