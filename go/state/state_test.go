@@ -964,6 +964,46 @@ func TestStateRead(t *testing.T) {
 	}
 }
 
+func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
+	updates := []common.Update{
+		{
+			CreatedAccounts: []common.Address{address1},
+		},
+		{
+			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val0}},
+		},
+		{
+			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
+		},
+		{
+			DeletedAccounts: []common.Address{address1},
+		},
+	}
+
+	for _, config := range initStates() {
+		if config.config.Schema != 3 {
+			continue
+		}
+		dir := t.TempDir()
+		st, err := config.createState(dir)
+		if err != nil {
+			t.Fatalf("unable to create state: %v", err)
+		}
+		for i, update := range updates {
+			if err = st.Apply(uint64(i), update); err != nil {
+				t.Fatalf("failed to apply state: %v", err)
+			}
+			isEmpty, err := st.HasEmptyStorage(address1)
+			if err != nil {
+				t.Fatalf("failed to check state: %v", err)
+			}
+			if !isEmpty {
+				t.Errorf("HasEmptyStorage should always return true")
+			}
+		}
+	}
+}
+
 func execSubProcessTest(t *testing.T, dir string, stateImpl string, execTestName string) {
 	path, err := os.Executable()
 	if err != nil {
