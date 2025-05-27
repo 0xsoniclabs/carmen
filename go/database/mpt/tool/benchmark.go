@@ -276,9 +276,12 @@ func runBenchmark(
 			buffer[2] = byte(counter >> 16)
 			buffer[3] = byte(counter >> 24)
 			buffer[4] = byte(counter >> 32)
+
 			hasher.Reset()
-			
-			addr := common.Address(hasher.Sum(buffer))
+			hasher.Write(buffer)
+			var addr common.Address
+			addr = common.Address(hasher.Sum(addr[0:0]))
+
 			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++
