@@ -383,7 +383,9 @@ func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 				t.Errorf("archive should be initially empty, got %t, %d", empty, block)
 			}
 
-			archive.Add(1, common.Update{}, nil)
+			if err = archive.Add(1, common.Update{}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
 			block, empty, err = archive.GetBlockHeight()
 			if err != nil {
@@ -393,7 +395,9 @@ func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 				t.Errorf("archive should be have height 1, got %t, %d", empty, block)
 			}
 
-			archive.Add(3, common.Update{}, nil)
+			if err = archive.Add(3, common.Update{}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
 			block, empty, err = archive.GetBlockHeight()
 			if err != nil {
@@ -424,18 +428,22 @@ func TestArchiveTrie_CanHandleMultipleBlocks(t *testing.T) {
 			blc1 := amount.New(1)
 			blc2 := amount.New(2)
 
-			archive.Add(1, common.Update{
+			if err = archive.Add(1, common.Update{
 				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: blc1},
 				},
-			}, nil)
+			}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
-			archive.Add(3, common.Update{
+			if err = archive.Add(3, common.Update{
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: blc2},
 				},
-			}, nil)
+			}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
 			want := []amount.Amount{blc0, blc1, blc1, blc2}
 			for i, want := range want {
@@ -1845,8 +1853,12 @@ func TestArchiveTrie_CanLoadRootsFromJunkySource(t *testing.T) {
 
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
-	storeRootsTo(writer, roots)
-	writer.Flush()
+	if err := storeRootsTo(writer, roots); err != nil {
+		t.Fatalf("error storing roots: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("error flushing buffer: %v", err)
+	}
 
 	for _, size := range []int{1, 2, 4, 1024} {
 		reader := utils.NewChunkReader(b.Bytes(), size)
@@ -2578,7 +2590,9 @@ func TestArchiveTrie_createCheckpoint_forwardsErrors(t *testing.T) {
 	tests := map[string]func(archive *ArchiveTrie) error{
 		"failing flush": func(archive *ArchiveTrie) error {
 			// Registering a pre-observed error causes the flush operation to fail.
-			archive.addError(fmt.Errorf("injected error"))
+			if err := archive.addError(fmt.Errorf("injected error")); err != nil {
+				t.Fatalf("failed to add error to archive: %v", err)
+			}
 			return nil
 		},
 		"out-of-sync components": func(archive *ArchiveTrie) error {
@@ -3135,7 +3149,9 @@ func TestRootList_LoadRoots_ForwardsIoIssues(t *testing.T) {
 				return err
 			}
 			t.Cleanup(func() {
-				os.Remove(dir)
+				if err := os.Remove(dir); err != nil {
+					t.Fatalf("failed to remove dir: %v", err)
+				}
 			})
 			return os.WriteFile(dir, []byte{}, 0700)
 		},
@@ -3568,7 +3584,11 @@ func TestRootList_Restore_FailsIfPendingCheckpointFileCanNotBeRenamed(t *testing
 	if err := os.Chmod(roots.directory, 0500); err != nil {
 		t.Fatalf("failed to make directory read-only: %v", err)
 	}
-	defer os.Chmod(roots.directory, 0700)
+	defer func() {
+		if err = os.Chmod(roots.directory, 0700); err != nil {
+			t.Fatalf("failed to restore directory permissions: %v", err)
+		}
+	}()
 
 	if err := getRootListRestorer(dir).Restore(cp); err == nil {
 		t.Errorf("expected recovery error due to read-only directory")

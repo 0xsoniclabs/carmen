@@ -122,7 +122,12 @@ func TestSetGet(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(0, A)
 			if err != nil {
@@ -170,7 +175,12 @@ func TestSetToArbitraryPosition(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(5, A)
 			if err != nil {
@@ -208,7 +218,12 @@ func TestDepotMutability(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(4, B)
 			if err != nil {
@@ -282,7 +297,12 @@ func TestHashing(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			initialHash, err := d.GetStateHash()
 			if err != nil {
@@ -312,7 +332,12 @@ func TestHashAfterChangingBack(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(0, A)
 			if err != nil {
@@ -359,7 +384,12 @@ func TestDepotPages(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			dpp, isPageProvider := d.(hashtree.PageProvider)
 			if !isPageProvider {
@@ -608,7 +638,12 @@ func TestStoresHashesAgainstReferenceOutput(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, 3, 2) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			var value []byte
 			for i, expectedHash := range expectedHashes {

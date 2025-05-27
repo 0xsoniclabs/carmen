@@ -663,7 +663,7 @@ func (s *Forest) Dump(rootRef *NodeReference) {
 		return
 	}
 	defer root.Release()
-	root.Get().Dump(os.Stdout, s, rootRef, "")
+	_ = root.Get().Dump(os.Stdout, s, rootRef, "")
 }
 
 // Check verifies internal invariants of the Trie instance. If the trie is

@@ -12,6 +12,7 @@ package pagepool
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"io"
@@ -207,7 +208,7 @@ func readMetadata(filePath string, pageSize int) (removedIDs map[int]bool, lastI
 		return removedIDs, lastID, err
 	}
 	defer func() {
-		file.Close()
+		err = errors.Join(err, file.Close())
 	}()
 
 	// data are structured as

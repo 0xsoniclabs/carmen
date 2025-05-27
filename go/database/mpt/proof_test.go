@@ -1228,7 +1228,8 @@ func TestCreateWitnessProof_GetStorageElementsOfEmptyStorage_IsHashOfZeros(t *te
 		t.Errorf("unexpected storage root: got %v, want %v", storageRoot, EmptyNodeEthereumHash)
 	}
 
-	elements, complete := proof.GetStorageElements(rootHash, address, common.Key{})
+	var elements []immutable.Bytes
+	elements, complete = proof.GetStorageElements(rootHash, address, common.Key{})
 	if !complete {
 		t.Fatalf("proof is not complete")
 	}

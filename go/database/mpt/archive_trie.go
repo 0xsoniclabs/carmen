@@ -640,7 +640,7 @@ func (l *rootList) append(r Root) {
 	l.roots = append(l.roots, r)
 }
 
-func loadRoots(archiveDirectory string) (*rootList, error) {
+func loadRoots(archiveDirectory string) (rl *rootList, err error) {
 	filename := filepath.Join(archiveDirectory, fileNameArchiveRoots)
 	directory := filepath.Join(archiveDirectory, fileNameArchiveRootsCheckpointDirectory)
 
@@ -666,7 +666,9 @@ func loadRoots(archiveDirectory string) (*rootList, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		err = errors.Join(err, f.Close())
+	}()
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err

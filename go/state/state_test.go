@@ -160,112 +160,134 @@ func TestEmptyHash(t *testing.T) {
 
 func TestAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			CreatedAccounts: []common.Address{address1},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestMultipleAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestDeletedAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
 			DeletedAccounts: []common.Address{address1, address2},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key2, Value: val3}},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestMultipleStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Slots: []common.SlotUpdate{
 				{Account: address1, Key: key2, Value: val3},
 				{Account: address2, Key: key3, Value: val1},
 				{Account: address3, Key: key1, Value: val2},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestMultipleBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 				{Account: address2, Balance: balance2},
 				{Account: address3, Balance: balance3},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestMultipleNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
 				{Account: address2, Nonce: nonce2},
 				{Account: address3, Nonce: nonce3},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestCodeUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Codes: []common.CodeUpdate{
 				{Account: address1, Code: []byte{1}},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
 func TestMultipleCodeUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(s state.State) {
-		s.Apply(12, common.Update{
+		if err := s.Apply(12, common.Update{
 			Codes: []common.CodeUpdate{
 				{Account: address1, Code: []byte{1}},
 				{Account: address2, Code: []byte{1, 2}},
 				{Account: address3, Code: []byte{1, 2, 3}},
 			},
-		})
+		}); err != nil {
+			t.Fatalf("failed to apply update: %v", err)
+		}
 	})
 }
 
@@ -767,7 +789,11 @@ func TestSnapshotCanBeCreatedAndRestored(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer original.Close()
+			defer func() {
+				if err := original.Close(); err != nil {
+					t.Fatalf("failed to close state %s; %s", config.name(), err)
+				}
+			}()
 
 			fillStateForSnapshotting(original)
 
@@ -784,7 +810,11 @@ func TestSnapshotCanBeCreatedAndRestored(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer recovered.Close()
+			defer func() {
+				if err := recovered.Close(); err != nil {
+					t.Fatalf("failed to close state %s; %s", config.name(), err)
+				}
+			}()
 
 			if err := recovered.(backend.Snapshotable).Restore(snapshot.GetData()); err != nil {
 				t.Errorf("failed to sync to snapshot: %v", err)
@@ -865,7 +895,11 @@ func TestSnapshotCanBeCreatedAndVerified(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer original.Close()
+			defer func() {
+				if err := original.Close(); err != nil {
+					t.Fatalf("failed to close state %s; %s", config.name(), err)
+				}
+			}()
 
 			fillStateForSnapshotting(original)
 

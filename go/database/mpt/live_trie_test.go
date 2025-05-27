@@ -580,8 +580,12 @@ func TestLiveTrie_SameContentProducesSameHash(t *testing.T) {
 
 			info1 := AccountInfo{Nonce: common.ToNonce(1)}
 			info2 := AccountInfo{Nonce: common.ToNonce(2)}
-			trie1.SetAccountInfo(common.Address{1}, info1)
-			trie2.SetAccountInfo(common.Address{2}, info2)
+			if err = trie1.SetAccountInfo(common.Address{1}, info1); err != nil {
+				t.Fatalf("faled to set account info: %v", err)
+			}
+			if err = trie2.SetAccountInfo(common.Address{2}, info2); err != nil {
+				t.Fatalf("faled to set account info: %v", err)
+			}
 
 			hash1, _, err = trie1.UpdateHashes()
 			if err != nil {
@@ -596,8 +600,12 @@ func TestLiveTrie_SameContentProducesSameHash(t *testing.T) {
 			}
 
 			// Update tries to contain same data.
-			trie1.SetAccountInfo(common.Address{2}, info2)
-			trie2.SetAccountInfo(common.Address{1}, info1)
+			if err = trie1.SetAccountInfo(common.Address{2}, info2); err != nil {
+				t.Fatalf("faled to set account info: %v", err)
+			}
+			if err = trie2.SetAccountInfo(common.Address{1}, info1); err != nil {
+				t.Fatalf("faled to set account info: %v", err)
+			}
 
 			hash1, _, err = trie1.UpdateHashes()
 			if err != nil {
@@ -629,8 +637,12 @@ func TestLiveTrie_ChangeInTrieSubstructureUpdatesHash(t *testing.T) {
 
 			info1 := AccountInfo{Nonce: common.ToNonce(1)}
 			info2 := AccountInfo{Nonce: common.ToNonce(2)}
-			trie.SetAccountInfo(common.Address{1}, info1)
-			trie.SetAccountInfo(common.Address{2}, info2)
+			if err = trie.SetAccountInfo(common.Address{1}, info1); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
+			if err = trie.SetAccountInfo(common.Address{2}, info2); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
 
 			hash1, _, err := trie.UpdateHashes()
 			if err != nil {
@@ -639,7 +651,9 @@ func TestLiveTrie_ChangeInTrieSubstructureUpdatesHash(t *testing.T) {
 
 			// The next update does not change anything in the root node, but the hash should
 			// still be updated.
-			trie.SetAccountInfo(common.Address{1}, info2)
+			if err = trie.SetAccountInfo(common.Address{1}, info2); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
 
 			hash2, _, err := trie.UpdateHashes()
 			if err != nil {
@@ -942,21 +956,41 @@ func TestLiveTrie_VerificationOfFreshArchivePasses(t *testing.T) {
 			}
 
 			// Add some data.
-			trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1), CodeHash: emptyCodeHash})
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2), CodeHash: emptyCodeHash})
-			trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3), CodeHash: emptyCodeHash})
+			if err = trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1), CodeHash: emptyCodeHash}); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
+			if err = trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2), CodeHash: emptyCodeHash}); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
+			if err = trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3), CodeHash: emptyCodeHash}); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
 
-			trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1})
+			if err = trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1}); err != nil {
+				t.Fatalf("failed to set value: %v", err)
+			}
 
-			trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1})
+			if err = trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1}); err != nil {
+				t.Fatalf("failed to set value: %v", err)
+			}
+			if err = trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1}); err != nil {
+				t.Fatalf("failed to set value: %v", err)
+			}
 
-			trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1})
+			if err = trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1}); err != nil {
+				t.Fatalf("failed to set value: %v", err)
+			}
+			if err = trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1}); err != nil {
+				t.Fatalf("failed to set value: %v", err)
+			}
+			if err = trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1}); err != nil {
+				t.Fatalf("failed to set value: %v", err)
+			}
 
 			// Delete some data.
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{})
+			if err = trie.SetAccountInfo(common.Address{2}, AccountInfo{}); err != nil {
+				t.Fatalf("failed to set account info: %v", err)
+			}
 
 			if err := trie.Close(); err != nil {
 				t.Fatalf("failed to close trie: %v", err)

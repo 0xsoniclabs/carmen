@@ -52,7 +52,9 @@ func TestDirectoryLock_LockIsExclusive(t *testing.T) {
 		t.Errorf("unexpected non-nil lock result in error case: %v", lockB)
 	}
 
-	lockA.Release()
+	if err = lockA.Release(); err != nil {
+		t.Fatalf("failed to release lock: %v", err)
+	}
 }
 
 func TestDirectoryLock_CannotLockFile(t *testing.T) {
