@@ -22,10 +22,9 @@ import (
 // LinearHashIndex is an in-memory implementation of index.Index.
 // It is implemented using the linear hash map implementation, instead of a build-in map
 type LinearHashIndex[K comparable, I common.Identifier] struct {
-	table           *LinearHashMap[K, I]
-	keySerializer   common.Serializer[K]
-	indexSerializer common.Serializer[I]
-	hashIndex       *indexhash.IndexHash[K]
+	table         *LinearHashMap[K, I]
+	keySerializer common.Serializer[K]
+	hashIndex     *indexhash.IndexHash[K]
 
 	maxIndex I // max index to fast compute next item
 }

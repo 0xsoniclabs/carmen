@@ -274,11 +274,9 @@ type accountVerifyingVisitor struct {
 
 	err error
 
-	logWindow      int
-	counter        int
-	numAddresses   int
-	currentAddress common.Address
-	storage        map[common.Key]common.Value
+	logWindow    int
+	counter      int
+	numAddresses int
 }
 
 func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {

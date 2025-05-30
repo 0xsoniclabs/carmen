@@ -626,7 +626,7 @@ func verifyHashesStoredWithParents[N any](
 // 2) Non-fatal checks
 // - There are no extra Code Hashes not referenced by any account
 func verifyContractCodes(directory string, source *verificationNodeSource, observer VerificationObserver) error {
-	observer.Progress(fmt.Sprintf("Checking contract codes ..."))
+	observer.Progress("Checking contract codes ...")
 
 	codeFile := filepath.Join(directory, "codes.dat")
 	codes, err := readCodes(codeFile)

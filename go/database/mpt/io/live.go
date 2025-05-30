@@ -155,10 +155,9 @@ func Export(ctx context.Context, logger *Log, directory string, out io.Writer) e
 	if err != nil {
 		return fmt.Errorf("failed to open LiveDB: %v", err)
 	}
-	defer db.Close()
 
 	_, err = ExportLive(ctx, logger, &exportableLiveTrie{db: db, directory: directory}, out)
-	return err
+	return errors.Join(err, db.Close())
 }
 
 // ExportBlockFromArchive exports LiveDB genesis for a single given block from an Archive.
@@ -178,9 +177,8 @@ func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, 
 		return err
 	}
 
-	defer archive.Close()
 	_, err = ExportLive(ctx, logger, exportableArchiveTrie{trie: archive, block: block}, out)
-	return err
+	return errors.Join(err, archive.Close())
 }
 
 // ExportBlockFromOnlineArchive exports a LiveDB dump for a single given block from an Archive.
@@ -517,12 +515,14 @@ func (e *exportVisitor) Visit(node mpt.Node, _ mpt.NodeInfo) error {
 	return nil
 }
 
-func checkEmptyDirectory(directory string) error {
+func checkEmptyDirectory(directory string) (err error) {
 	file, err := os.Open(directory)
 	if err != nil {
 		return fmt.Errorf("failed to open directory %s: %w", directory, err)
 	}
-	defer file.Close()
+	defer func() {
+		err = errors.Join(err, file.Close())
+	}()
 	state, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to open file information for %s: %w", directory, err)
