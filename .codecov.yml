@@ -1,0 +1,27 @@
+# Copyright (c) 2024 Fantom Foundation
+#
+# Use of this software is governed by the Business Source License included
+# in the LICENSE file and at fantom.foundation/bsl11.
+#
+# Change Date: 2028-4-16
+#
+# On the date above, in accordance with the Business Source License, use of
+# this software will be governed by the GNU Lesser General Public License v3.
+
+coverage:
+  range: 50..80 # below 50 is red, between 50-80 is yellow and above 80 is green
+  round: down
+  precision: 2
+  status:
+    patch:
+      default:
+        target: 80% # coverage of the changes
+        threshold: 1% # allow the coverage to drop by <threshold>%
+    project:
+      default:
+        target: 80% # coverage of the project
+ignore:
+  - "tests/"
+  - "**/*_mock.go"
+  - "**/*_test.go"
+  - "**/*.pb.go"
