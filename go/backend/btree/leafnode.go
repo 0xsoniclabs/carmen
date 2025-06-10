@@ -123,7 +123,6 @@ func (m *LeafNode[K]) insertAt(index int, key K, left, right node[K]) {
 		}
 	}
 	m.keys[index] = key
-	return
 }
 
 func (m *LeafNode[K]) findItem(key K) (index int, exists bool) {

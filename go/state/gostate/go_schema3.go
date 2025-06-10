@@ -12,6 +12,7 @@ package gostate
 
 import (
 	"crypto/sha256"
+	"errors"
 	"hash"
 	"io"
 
@@ -348,7 +349,7 @@ func (s *GoSchema3) GetSnapshotableComponents() []backend.Snapshotable {
 	}
 }
 
-func (s *GoSchema3) RunPostRestoreTasks() error {
+func (s *GoSchema3) RunPostRestoreTasks() (err error) {
 	// To complete the syncing, the hashes of codes need to be updated.
 	if s.hasher == nil {
 		s.hasher = sha3.NewLegacyKeccak256()
@@ -362,7 +363,9 @@ func (s *GoSchema3) RunPostRestoreTasks() error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() {
+		err = errors.Join(err, store.Close())
+	}()
 
 	for i := uint32(0); i < numAccounts; i++ {
 		code, err := s.codesDepot.Get(i)

@@ -62,7 +62,7 @@ func TestCache_GetOrSet(t *testing.T) {
 				t.Errorf("key 1 should exist")
 			}
 
-			val, exists, _, _, _ = c.GetOrSet(2, 22)
+			_, exists, _, _, _ = c.GetOrSet(2, 22)
 			if exists {
 				t.Errorf("key 2 should not exist")
 			}
