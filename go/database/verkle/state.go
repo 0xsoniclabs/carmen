@@ -187,34 +187,18 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 		return err
 	}
 
-	// Compute root hash
-	_, nodes := s.verkle.Commit(true)
-
 	// Propagate all nodes into the database
 	var errs []error
-	for path, node := range nodes.Nodes {
-		errs = append(errs, s.verkle.reader.Set([]byte(path), node.Blob))
-	}
-	if err := errors.Join(errs...); err != nil {
-		return err
-	}
 
-	// Tree must be reinitialized after applying updates
-	// not to grow unbound, and to persist always only nodes
-	// modified in the last commit.
-	serialised, err := s.verkle.root.Serialize()
-	if err != nil {
-		return err
-	}
+	// computes the root hash of the verkle tree, and releases in-memory nodes
+	// and propagates them to the database
+	s.verkle.root.(*verkle.InternalNode).Flush(func(path []byte, node verkle.VerkleNode) {
+		serialised, err := node.Serialize()
+		errs = append(errs, err)
+		errs = append(errs, s.verkle.reader.Set(path, serialised))
+	})
 
-	root, err := verkle.ParseNode(serialised, 0)
-	if err != nil {
-		return err
-	}
-
-	s.verkle = &VerkleTrie{root, s.verkle.cache, s.verkle.reader}
-
-	return nil
+	return errors.Join(errs...)
 }
 
 func (s *verkleState) Flush() error {
