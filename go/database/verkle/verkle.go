@@ -44,11 +44,11 @@ type VerkleTrie struct {
 }
 
 // NewVerkleTrie constructs a verkle tree based on the specified root hash.
-func NewVerkleTrie(reader NodeSource) *VerkleTrie {
+func NewVerkleTrie(reader NodeSource, cache *utils.PointCache) *VerkleTrie {
 	node := verkle.New()
 	return &VerkleTrie{
 		root:   node,
-		cache:  utils.NewPointCache(4096 * 1024), // 4MB cache
+		cache:  cache, // 4MB cache
 		reader: reader,
 	}
 }

@@ -7,7 +7,10 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/database/verkle/trienode"
+	"github.com/0xsoniclabs/carmen/go/database/verkle/utils"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/ethereum/go-verkle"
 	"io"
 )
 
@@ -21,9 +24,10 @@ func init() {
 
 func newS6State(params state.Parameters) (state.State, error) {
 	source := NewMemorySource()
+	cached := NewCachedSource(source, defaultCacheCapacity)
 	return &verkleState{
-		source: source,
-		verkle: NewVerkleTrie(source),
+		source: cached,
+		verkle: NewVerkleTrie(cached, utils.NewPointCache(4096)),
 	}, nil
 }
 
@@ -191,15 +195,30 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 	// Propagate all nodes into the database
 	var errs []error
-	for path, node := range nodes.Nodes {
+	//for path, node := range nodes.Nodes {
+	//	errs = append(errs, s.source.Set([]byte(path), node.Blob))
+	//}
+
+	var last []byte // collect serialised root
+	nodes.ForEachWithOrder(func(path string, node *trienode.Node) {
+		//fmt.Printf("%x\n", path)
 		errs = append(errs, s.source.Set([]byte(path), node.Blob))
-	}
+		last = node.Blob
+	})
+
+	// Tree must be reinitialized after applying updates
+	// not to grow unbound, and to persist always only nodes
+	// modified in the last commit.
+	root, err := verkle.ParseNode(last, 0)
+	s.verkle = &VerkleTrie{root, s.verkle.cache, s.verkle.reader}
+
+	errs = append(errs, err)
 
 	return errors.Join(errs...)
 }
 
 func (s *verkleState) Flush() error {
-	return nil
+	return s.source.Flush()
 }
 
 func (s *verkleState) Close() error {

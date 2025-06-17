@@ -27,3 +27,11 @@ func (s *memorySource) Set(path []byte, value []byte) error {
 
 	return nil
 }
+
+func (s *memorySource) Flush() error {
+	return nil
+}
+
+func (s *memorySource) Close() error {
+	return s.Flush()
+}
