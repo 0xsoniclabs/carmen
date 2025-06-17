@@ -29,7 +29,11 @@ func (s *cachedSource) Get(path []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		s.cache.Set(key, node)
+		if node == nil {
+			panic("should never happen: nil node returned from source")
+		}
+
+		return node, s.Set(path, node) // write to cache before returning
 	}
 	return node, nil
 }

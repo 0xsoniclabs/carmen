@@ -7,7 +7,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
-	"github.com/0xsoniclabs/carmen/go/database/verkle/trienode"
 	"github.com/0xsoniclabs/carmen/go/database/verkle/utils"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/ethereum/go-verkle"
@@ -26,13 +25,11 @@ func newS6State(params state.Parameters) (state.State, error) {
 	source := NewMemorySource()
 	cached := NewCachedSource(source, defaultCacheCapacity)
 	return &verkleState{
-		source: cached,
 		verkle: NewVerkleTrie(cached, utils.NewPointCache(4096)),
 	}, nil
 }
 
 type verkleState struct {
-	source NodeSource
 	verkle *VerkleTrie
 }
 
@@ -195,34 +192,37 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 	// Propagate all nodes into the database
 	var errs []error
-	//for path, node := range nodes.Nodes {
-	//	errs = append(errs, s.source.Set([]byte(path), node.Blob))
-	//}
-
-	var last []byte // collect serialised root
-	nodes.ForEachWithOrder(func(path string, node *trienode.Node) {
-		//fmt.Printf("%x\n", path)
-		errs = append(errs, s.source.Set([]byte(path), node.Blob))
-		last = node.Blob
-	})
+	for path, node := range nodes.Nodes {
+		errs = append(errs, s.verkle.reader.Set([]byte(path), node.Blob))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
 
 	// Tree must be reinitialized after applying updates
 	// not to grow unbound, and to persist always only nodes
 	// modified in the last commit.
-	root, err := verkle.ParseNode(last, 0)
+	serialised, err := s.verkle.root.Serialize()
+	if err != nil {
+		return err
+	}
+
+	root, err := verkle.ParseNode(serialised, 0)
+	if err != nil {
+		return err
+	}
+
 	s.verkle = &VerkleTrie{root, s.verkle.cache, s.verkle.reader}
 
-	errs = append(errs, err)
-
-	return errors.Join(errs...)
+	return nil
 }
 
 func (s *verkleState) Flush() error {
-	return s.source.Flush()
+	return s.verkle.reader.Flush()
 }
 
 func (s *verkleState) Close() error {
-	return nil
+	return s.verkle.reader.Close()
 }
 
 // Implement common.MemoryFootprintProvider
