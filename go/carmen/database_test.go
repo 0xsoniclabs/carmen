@@ -2294,12 +2294,14 @@ func TestDatabase_ArchiveCanBeAccessedAsync(t *testing.T) {
 
 func TestDatabase_GetMemoryFootprint(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	state := state.NewMockState(ctrl)
+	store := state.NewMockState(ctrl)
 
-	state.EXPECT().GetMemoryFootprint()
+	store.EXPECT().GetMemoryFootprint()
+	st := state.CreateStateDBUsing(store)
 
 	db := &database{
-		db: state,
+		db:    store,
+		state: st,
 	}
 
 	db.GetMemoryFootprint()
