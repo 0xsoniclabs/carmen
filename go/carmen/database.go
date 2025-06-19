@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -174,7 +175,10 @@ func (db *database) QueryBlock(block uint64, run func(HistoricBlockContext) erro
 }
 
 func (db *database) GetMemoryFootprint() MemoryFootprint {
-	return newMemoryFootprint(db.db.GetMemoryFootprint())
+	fp := common.NewMemoryFootprint(unsafe.Sizeof(*db))
+	fp.AddChild("liveState", db.state.GetMemoryFootprint())
+	fp.AddChild("database", db.db.GetMemoryFootprint())
+	return newMemoryFootprint(fp)
 }
 
 func (db *database) GetArchiveBlockHeight() (int64, error) {

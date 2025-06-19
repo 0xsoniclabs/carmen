@@ -1325,10 +1325,10 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	const addressSize = 20
 	const keySize = 32
 	const hashSize = 32
+	const valueSize = 32
 	const slotIdSize = addressSize + keySize
 
 	mf := common.NewMemoryFootprint(unsafe.Sizeof(*s))
-	mf.AddChild("state", s.state.GetMemoryFootprint())
 
 	// For account-states, balances, and nonces an over-approximation should be sufficient.
 	mf.AddChild("accounts", common.NewMemoryFootprint(uintptr(len(s.accounts))*(addressSize+unsafe.Sizeof(accountState{})+unsafe.Sizeof(common.AccountState(0)))))
@@ -1336,7 +1336,7 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	mf.AddChild("nonces", common.NewMemoryFootprint(uintptr(len(s.nonces))*(addressSize+unsafe.Sizeof(nonceValue{})+8)))
 	mf.AddChild("slots", common.NewMemoryFootprint(uintptr(s.data.Size())*(slotIdSize+unsafe.Sizeof(slotValue{}))))
 
-	var sum uintptr = 0
+	var sum uintptr
 	for _, value := range s.codes {
 		sum += addressSize
 		if value.hash != nil {
@@ -1354,6 +1354,23 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	mf.AddChild("storedDataCache", s.storedDataCache.GetMemoryFootprint(0))
 	mf.AddChild("reincarnation", common.NewMemoryFootprint(uintptr(len(s.reincarnation))*(addressSize+unsafe.Sizeof(uint64(0)))))
 	mf.AddChild("emptyCandidates", common.NewMemoryFootprint(uintptr(len(s.emptyCandidates))*(addressSize)))
+
+	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(s.transientStorage.Size())*(slotIdSize+valueSize)))
+	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(s.accountsToDelete))*(addressSize)))
+	mf.AddChild("clearedAccounts", common.NewMemoryFootprint(uintptr(len(s.clearedAccounts))*(addressSize+unsafe.Sizeof(accountClearingState(0)))))
+	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(s.createdContracts))*(addressSize)))
+
+	var logSize uintptr
+	for _, log := range s.logs {
+		logSize += unsafe.Sizeof(log) + uintptr(len(log.Topics))*hashSize + uintptr(len(log.Data))
+	}
+	mf.AddChild("logs", common.NewMemoryFootprint(logSize))
+
+	var errsSize uintptr
+	for _, err := range s.errors {
+		errsSize += unsafe.Sizeof(err) + uintptr(len(err.Error())) // Approximate size of the error message
+	}
+	mf.AddChild("errors", common.NewMemoryFootprint(errsSize))
 
 	return mf
 }

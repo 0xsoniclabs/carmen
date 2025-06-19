@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-func TestMemoryFootprint(t *testing.T) {
+func TestMemoryFootprint_Contains_Data(t *testing.T) {
 	db, err := openTestDatabase(t)
 	if err != nil {
 		t.Fatalf("cannot open test database: %v", err)
@@ -36,4 +36,9 @@ func TestMemoryFootprint(t *testing.T) {
 	if !strings.Contains(s, "archive") {
 		t.Error("memory-footprint breakdown does not contain 'archive' keyword even though database contains Archive")
 	}
+
+	if !strings.Contains(s, "liveState") {
+		t.Error("memory-footprint breakdown does not contain 'liveState' keyword for live database")
+	}
+
 }

@@ -14,12 +14,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"reflect"
-	"testing"
-
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"go.uber.org/mock/gomock"
+	"reflect"
+	"testing"
 )
 
 var (
@@ -4070,7 +4069,6 @@ func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(amount.New(10), nil)
 	mock.EXPECT().GetCode(address1).Return([]byte{1, 2, 3}, nil)
 	mock.EXPECT().GetCodeHash(address1).Return(common.Hash{3, 2, 1}, nil)
-	mock.EXPECT().GetMemoryFootprint().Return(common.NewMemoryFootprint(12))
 
 	// Make sure that there is some data in the caches.
 	db.AddBalance(address1, amount.New(12))
@@ -4090,7 +4088,6 @@ func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 		name       string
 		mayBeEmpty bool
 	}{
-		{"state", false},
 		{"accounts", false},
 		{"balances", false},
 		{"nonces", false},
@@ -4102,6 +4099,12 @@ func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 		{"storedDataCache", false},
 		{"reincarnation", true},
 		{"emptyCandidates", false},
+		{"transientStorage", true},
+		{"accountsToDelete", true},
+		{"clearedAccounts", true},
+		{"createdContracts", true},
+		{"logs", true},
+		{"errors", true},
 	}
 
 	for _, component := range components {
