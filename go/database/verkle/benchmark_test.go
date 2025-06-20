@@ -72,12 +72,14 @@ func Benchmark_VerkleTree_Commit_To_LeafNode_Update_All_Values(b *testing.B) {
 
 	var counter int
 	for i := 0; i < b.N; i++ {
-		var key common.Key
-		key[31] = byte(i % verkle.NodeWidth) // set the last byte to insert at a one value of the first leaf
-		value := common.Value{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), 0x1}
-		counter++
-		if err := root.Insert(key[:], value[:], emptyNodeResolverBenchmarkFn); err != nil {
-			b.Fatalf("failed to insert key %v: %v", key, err)
+		for j := 0; j < verkle.NodeWidth; j++ {
+			var key common.Key
+			key[31] = byte(j) // set the last byte to insert at one value of the first leaf
+			value := common.Value{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), 0x1}
+			counter++
+			if err := root.Insert(key[:], value[:], emptyNodeResolverBenchmarkFn); err != nil {
+				b.Fatalf("failed to insert key %v: %v", key, err)
+			}
 		}
 
 		root.Commit()
@@ -95,14 +97,12 @@ func Benchmark_VerkleTree_Commit_To_LeafNode_Update_Single_Value(b *testing.B) {
 
 	var counter int
 	for i := 0; i < b.N; i++ {
-		for j := 0; j < verkle.NodeWidth; j++ {
-			var key common.Key
-			key[31] = byte(j) // set the last byte to insert at one value of the first leaf
-			value := common.Value{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), 0x1}
-			counter++
-			if err := root.Insert(key[:], value[:], emptyNodeResolverBenchmarkFn); err != nil {
-				b.Fatalf("failed to insert key %v: %v", key, err)
-			}
+		var key common.Key
+		key[31] = byte(i % verkle.NodeWidth) // set the last byte to insert at a one value of the first leaf
+		value := common.Value{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), 0x1}
+		counter++
+		if err := root.Insert(key[:], value[:], emptyNodeResolverBenchmarkFn); err != nil {
+			b.Fatalf("failed to insert key %v: %v", key, err)
 		}
 
 		root.Commit()
