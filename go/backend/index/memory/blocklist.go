@@ -174,8 +174,6 @@ func (m *BlockList[K, V]) fillFromTail(item *common.SortedMap[K, V]) {
 		m.list[len(m.list)-1] = nil // allow for GC
 		m.list = m.list[0 : len(m.list)-1]
 	}
-
-	return
 }
 
 // pickTailEntry picks a random (first) value from tail.

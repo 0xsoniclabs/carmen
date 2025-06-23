@@ -45,7 +45,11 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
 			db := state.CreateStateDBUsing(store)
-			defer db.Close()
+			defer func() {
+				if err := db.Close(); err != nil {
+					t.Fatalf("failed to close state %s; %s", config.name(), err)
+				}
+			}()
 
 			// First block: set up some balances.
 			db.BeginBlock()
@@ -162,7 +166,11 @@ func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 				}
 			}
 			db := state.CreateStateDBUsing(store)
-			defer db.Close()
+			defer func() {
+				if err := db.Close(); err != nil {
+					t.Fatalf("failed to close state %s; %s", config.name(), err)
+				}
+			}()
 
 			for i := 0; i < 10; i++ {
 				load := db.StartBulkLoad(uint64(i))
@@ -191,7 +199,11 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 				}
 			}
 			db := state.CreateStateDBUsing(store)
-			defer db.Close()
+			defer func() {
+				if err := db.Close(); err != nil {
+					t.Fatalf("failed to close state %s; %s", config.name(), err)
+				}
+			}()
 
 			for i := 0; i < 5; i++ {
 				// Run a bulk-load update (creates one block)
@@ -227,7 +239,11 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 			t.Fatalf("failed to create reference state: %v", err)
 		}
 		ref := state.CreateStateDBUsing(ref_state)
-		defer ref.Close()
+		defer func() {
+			if err = ref.Close(); err != nil {
+				t.Fatalf("failed to close reference state: %v", err)
+			}
+		}()
 		mod(ref)
 		ref.EndTransaction()
 		ref.EndBlock(1)
@@ -247,8 +263,11 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 					}
 				}
 				stateDb := state.CreateStateDBUsing(store)
-				defer stateDb.Close()
-
+				defer func() {
+					if err := stateDb.Close(); err != nil {
+						t.Fatalf("failed to close state %s; %s", config.name(), err)
+					}
+				}()
 				mod(stateDb)
 				stateDb.EndTransaction()
 				stateDb.EndBlock(1)
@@ -526,7 +545,11 @@ func TestStateDBArchive(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 			stateDb := state.CreateStateDBUsing(s)
 
 			stateDb.AddBalance(address2, amount.New(22))
@@ -584,7 +607,11 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			// Have multiple goroutines access the state concurrently.
 			ready := sync.WaitGroup{}

@@ -261,6 +261,9 @@ func (ht *HashTree) commit() (hash []byte, err error) {
 
 	// fetch the number of pages at the bottom
 	numPages, err := ht.layerLength(0)
+	if err != nil {
+		return nil, err
+	}
 	if ht.maxPage > numPages {
 		numPages = ht.maxPage
 	}
