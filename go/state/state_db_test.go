@@ -4069,6 +4069,7 @@ func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(amount.New(10), nil)
 	mock.EXPECT().GetCode(address1).Return([]byte{1, 2, 3}, nil)
 	mock.EXPECT().GetCodeHash(address1).Return(common.Hash{3, 2, 1}, nil)
+	mock.EXPECT().HasEmptyStorage(address1).Return(false, fmt.Errorf("injected error"))
 
 	// Make sure that there is some data in the caches.
 	db.AddBalance(address1, amount.New(12))
@@ -4078,6 +4079,10 @@ func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 	db.GetCodeHash(address1)
 	db.SetState(address1, key2, val3)
 	db.AddSlotToAccessList(address1, key2)
+	db.AddLog(&common.Log{Address: address1})
+
+	// trigger non empty error list
+	db.HasEmptyStorage(address1)
 
 	fp := db.GetMemoryFootprint()
 	if fp == nil || fp.Total() == 0 {
