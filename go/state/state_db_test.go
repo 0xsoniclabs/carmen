@@ -429,7 +429,7 @@ func TestStateDB_StorageOfDestroyedAccountIsStillAccessibleTillEndOfTransaction(
 	db.EndTransaction()
 }
 
-func TestStateDB_StoreDataCacheIsResetAfterSuicide(t *testing.T) {
+func TestStateDB_StorageValueIsResetAfterSuicide(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
@@ -438,7 +438,11 @@ func TestStateDB_StoreDataCacheIsResetAfterSuicide(t *testing.T) {
 	// Initially the account exists and has a slot value set.
 	mock.EXPECT().Exists(address1).Return(true, nil)
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
+
+	gomock.InOrder(
+		mock.EXPECT().GetStorage(address1, key1).Return(val1, nil), // first time the value exists
+		mock.EXPECT().GetStorage(address1, key1).Return(zero, nil), // next time, the account was deleted, and the value is empty
+	)
 
 	// During the processing the account is deleted.
 	mock.EXPECT().Apply(uint64(1), common.Update{})
@@ -453,7 +457,7 @@ func TestStateDB_StoreDataCacheIsResetAfterSuicide(t *testing.T) {
 	// The second value fetched in the last block must also be retrieved from the store.
 	mock.EXPECT().GetStorage(address1, key2).Return(val2, nil)
 
-	// In the first transaction key1 is fetched, ending up in the store data cache.
+	// In the first transaction key1 is fetched.
 	db.BeginTransaction()
 	if got := db.GetState(address1, key1); got != val1 {
 		t.Errorf("unexpected value, wanted %v, got %v", val1, got)
@@ -472,9 +476,9 @@ func TestStateDB_StoreDataCacheIsResetAfterSuicide(t *testing.T) {
 	}
 	db.SetState(address1, key2, val2) // < implicitly re-creates an empty account, which should be removed at the end of the block
 	db.EndTransaction()
-	db.EndBlock(2) // < here the stored data cache is reset to forget the old state; also, key2/val2 is stored in DB
+	db.EndBlock(2) // < here the account is permanently deleted from the DB; also, key2/val2 is stored in DB
 
-	// At this point address1 should be all empty -- in the store and the caches.
+	// At this point address1 should be all empty -- in the store.
 
 	// In this block we try to read the value again. This time it is not cached
 	// in the snapshot state nor is the account marked as being cleared. The value
@@ -4099,8 +4103,6 @@ func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 		{"accessedAddresses", false},
 		{"accessedSlots", false},
 		{"writtenSlots", false},
-		{"storedDataCache", false},
-		{"reincarnation", true},
 		{"emptyCandidates", false},
 	}
 

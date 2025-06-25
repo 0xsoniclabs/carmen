@@ -230,13 +230,6 @@ type stateDB struct {
 	// A set of slots with current value (possibly) different from the committed value - for needs of committing.
 	writtenSlots map[*slotValue]bool
 
-	// A non-transactional local cache of stored storage values.
-	storedDataCache *common.LruCache[slotId, storedDataCacheValue]
-
-	// A non-transactional reincarnation counter for accounts. This is used to efficiently invalidate data in
-	// the storedDataCache upon account deletion. The maintained values are internal information only.
-	reincarnation map[common.Address]uint64
-
 	// A list of addresses, which have possibly become empty in the transaction
 	emptyCandidates []common.Address
 
@@ -439,8 +432,6 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		nonces:            map[common.Address]*nonceValue{},
 		data:              common.NewFastMap[slotId, *slotValue](slotHasher{}),
 		transientStorage:  common.NewFastMap[slotId, common.Value](slotHasher{}),
-		storedDataCache:   common.NewLruCache[slotId, storedDataCacheValue](storedDataCacheCapacity),
-		reincarnation:     map[common.Address]uint64{},
 		codes:             map[common.Address]*codeValue{},
 		refund:            0,
 		accessedAddresses: map[common.Address]bool{},
@@ -771,39 +762,26 @@ func (s *stateDB) loadStoredState(sid slotId, val *slotValue) common.Value {
 		// before the next block.
 		return common.Value{}
 	}
-	reincarnation := s.reincarnation[sid.addr]
-	var stored storedDataCacheValue
-	stored, found := s.storedDataCache.Get(sid)
-	if !found {
-		var err error
-		stored.value, err = s.state.GetStorage(sid.addr, sid.key)
-		if err != nil {
-			s.errors = append(s.errors, fmt.Errorf("failed to load storage location %v/%v: %w", sid.addr, sid.key, err))
-			return common.Value{}
-		}
-		stored.reincarnation = reincarnation
-		s.storedDataCache.Set(sid, stored)
-	}
-	// If the cached value is out-dated, the current value is zero. If the same slot would
-	// have been updated since the clearing, it would have also been updated in the cache.
-	if stored.reincarnation < reincarnation {
-		stored.value = common.Value{}
+	stored, err := s.state.GetStorage(sid.addr, sid.key)
+	if err != nil {
+		s.errors = append(s.errors, fmt.Errorf("failed to load storage location %v/%v: %w", sid.addr, sid.key, err))
+		return common.Value{}
 	}
 
 	// Remember the stored value for future accesses.
 	if val != nil {
-		val.committed, val.committedKnown = stored.value, true
-		val.stored, val.storedKnown = stored.value, true
+		val.committed, val.committedKnown = stored, true
+		val.stored, val.storedKnown = stored, true
 	} else {
 		s.data.Put(sid, &slotValue{
-			stored:         stored.value,
-			committed:      stored.value,
-			current:        stored.value,
+			stored:         stored,
+			committed:      stored,
+			current:        stored,
 			storedKnown:    true,
 			committedKnown: true,
 		})
 	}
-	return stored.value
+	return stored
 }
 
 func (s *stateDB) GetState(addr common.Address, key common.Key) common.Value {
@@ -1210,9 +1188,6 @@ func (s *stateDB) EndBlock(block uint64) {
 			} else {
 				nonExistingAccounts[addr] = true
 			}
-			// Increment the reincarnation counter of cleared addresses to invalidate
-			// cached entries in the stored data cache.
-			s.reincarnation[addr] = s.reincarnation[addr] + 1
 		}
 	}
 
@@ -1250,7 +1225,6 @@ func (s *stateDB) EndBlock(block uint64) {
 	s.data.ForEach(func(slot slotId, value *slotValue) {
 		if !value.storedKnown || value.stored != value.current {
 			update.AppendSlotUpdate(slot.addr, slot.key, value.current)
-			s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
 		}
 	})
 
@@ -1317,7 +1291,6 @@ func (s *stateDB) Close() error {
 }
 
 func (s *stateDB) StartBulkLoad(block uint64) BulkLoad {
-	s.storedDataCache.Clear()
 	return &bulkLoad{s, common.Update{}, block, nil}
 }
 
@@ -1351,8 +1324,6 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	mf.AddChild("accessedAddresses", common.NewMemoryFootprint(uintptr(len(s.accessedAddresses))*(addressSize+boolSize)))
 	mf.AddChild("accessedSlots", common.NewMemoryFootprint(uintptr(s.accessedSlots.Size())*(slotIdSize+boolSize)))
 	mf.AddChild("writtenSlots", common.NewMemoryFootprint(uintptr(len(s.writtenSlots))*(boolSize+unsafe.Sizeof(&slotValue{}))))
-	mf.AddChild("storedDataCache", s.storedDataCache.GetMemoryFootprint(0))
-	mf.AddChild("reincarnation", common.NewMemoryFootprint(uintptr(len(s.reincarnation))*(addressSize+unsafe.Sizeof(uint64(0)))))
 	mf.AddChild("emptyCandidates", common.NewMemoryFootprint(uintptr(len(s.emptyCandidates))*(addressSize)))
 
 	return mf
@@ -1393,8 +1364,6 @@ func (s *stateDB) ResetBlockContext() {
 
 func (s *stateDB) resetState(state State) {
 	s.ResetBlockContext()
-	s.storedDataCache.Clear()
-	s.reincarnation = map[common.Address]uint64{}
 	s.errors = s.errors[0:0]
 	s.state = state
 }
@@ -1480,7 +1449,6 @@ func (db *nonCommittableStateDB) Copy() NonCommittableStateDB {
 	db.data.CopyTo(cp.data)
 	maps.Copy(cp.codes, db.codes)
 	maps.Copy(cp.clearedAccounts, db.clearedAccounts)
-	maps.Copy(cp.reincarnation, db.reincarnation)
 	cp.logsInBlock = db.logsInBlock
 	// we suppose ended tx - we may skip members,
 	// which are reset at the end of every tx
