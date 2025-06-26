@@ -257,7 +257,12 @@ type NodeManager interface {
 // Nodes provided via the visitor are made available with the view privilege.
 func VisitPathToStorage(source NodeSource, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
 	path := KeyToNibblePath(key, source)
-	return visitPathTo(source, storageRoot, path, nil, &key, visitor)
+	return visitPathTo(storageRoot, path, nil, &key,
+		source.getViewAccess,
+		func(h shared.ViewHandle[Node]) { h.Release() },
+		func(h shared.ViewHandle[Node]) bool { return h.Valid() },
+		func(h shared.ViewHandle[Node]) Node { return h.Get() },
+		visitor)
 }
 
 // VisitPathToAccount visits all nodes from the input root following the input account address.
@@ -268,7 +273,44 @@ func VisitPathToStorage(source NodeSource, storageRoot *NodeReference, key commo
 // Nodes provided via the visitor are made available with the view privilege.
 func VisitPathToAccount(source NodeSource, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
 	path := AddressToNibblePath(address, source)
-	return visitPathTo(source, root, path, &address, nil, visitor)
+	return visitPathTo(root, path, &address, nil,
+		source.getViewAccess,
+		func(h shared.ViewHandle[Node]) { h.Release() },
+		func(h shared.ViewHandle[Node]) bool { return h.Valid() },
+		func(h shared.ViewHandle[Node]) Node { return h.Get() },
+		visitor)
+}
+
+// hashAccessVisitPathToStorage visits all nodes from the input storage root following the input storage key.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available on the path, the execution ends.
+// If the key does not exist, the function returns false.
+// The function returns an error if the path cannot be iterated due to error propagated from the node source.
+// Nodes provided via the visitor are made available with the hash privilege.
+func hashAccessVisitPathToStorage(source NodeManager, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
+	path := KeyToNibblePath(key, source)
+	return visitPathTo(storageRoot, path, nil, &key,
+		source.getHashAccess,
+		func(h shared.HashHandle[Node]) { h.Release() },
+		func(h shared.HashHandle[Node]) bool { return h.Valid() },
+		func(h shared.HashHandle[Node]) Node { return h.Get() },
+		visitor)
+}
+
+// hashAccessVisitPathToAccount visits all nodes from the input root following the input account address.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available on the path, the execution ends.
+// If the account address does not exist, the function returns false.
+// The function returns an error if the path cannot be iterated due to error propagated from the node source.
+// Nodes provided via the visitor are made available with the hash privilege.
+func hashAccessVisitPathToAccount(source NodeManager, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
+	path := AddressToNibblePath(address, source)
+	return visitPathTo(root, path, &address, nil,
+		source.getHashAccess,
+		func(h shared.HashHandle[Node]) { h.Release() },
+		func(h shared.HashHandle[Node]) bool { return h.Valid() },
+		func(h shared.HashHandle[Node]) Node { return h.Get() },
+		visitor)
 }
 
 // visitPathTo visits all nodes from the input root following the input path.
@@ -280,24 +322,34 @@ func VisitPathToAccount(source NodeSource, root *NodeReference, address common.A
 // If either the address or key matches the node, this function terminates.
 // It means this function can be used to find either an account node or a value node,
 // but it cannot find both at the same time.
-func visitPathTo(source NodeSource, root *NodeReference, path []Nibble, address *common.Address, key *common.Key, visitor NodeVisitor) (bool, error) {
+func visitPathTo[H any](
+	root *NodeReference,
+	path []Nibble,
+	address *common.Address,
+	key *common.Key,
+	access func(ref *NodeReference) (H, error),
+	release func(H),
+	valid func(H) bool,
+	get func(H) Node,
+	visitor NodeVisitor) (bool, error) {
+
 	nodeId := root
 
-	var last shared.ViewHandle[Node]
+	var last H
 	var found, done bool
 	var lastNodeId *NodeReference
 	var nextEmbedded, currentEmbedded bool
 	for !done {
-		handle, err := source.getViewAccess(nodeId)
-		if last.Valid() {
-			last.Release()
+		handle, err := access(nodeId)
+		if valid(last) {
+			release(last)
 		}
 		if err != nil {
 			return false, err
 		}
 		last = handle
 		lastNodeId = nodeId
-		node := handle.Get()
+		node := get(handle)
 
 		switch n := node.(type) {
 		case *ExtensionNode:
@@ -328,17 +380,17 @@ func visitPathTo(source NodeSource, root *NodeReference, path []Nibble, address 
 			}
 			done = true
 		default:
-			last.Release()
+			release(last)
 			return false, nil
 		}
 
-		if res := visitor.Visit(last.Get(), NodeInfo{Id: lastNodeId.Id(), Embedded: tribool.New(currentEmbedded)}); res != VisitResponseContinue {
+		if res := visitor.Visit(get(last), NodeInfo{Id: lastNodeId.Id(), Embedded: tribool.New(currentEmbedded)}); res != VisitResponseContinue {
 			done = true
 		}
 		currentEmbedded = nextEmbedded
 	}
 
-	last.Release()
+	release(last)
 	return found, nil
 }
 
