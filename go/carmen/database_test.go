@@ -2526,3 +2526,80 @@ func TestDatabase_Codes_Versioned_Archive(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabase_Archive_Query_Proof_While_Updating_Race_Detection(t *testing.T) {
+
+	// reopen to make sure the structure is stored on disk
+	db, err := OpenDatabase(t.TempDir(), testConfig, testProperties)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close database: %v", err)
+		}
+	}()
+
+	var run atomic.Bool
+	run.Store(true)
+	var wg sync.WaitGroup
+
+	const blocks = 10
+	const keys = 100
+	addr := Address{1} // the same address to increase the change the same path is always referenced
+
+	const workers = 100
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		// query proof in parallel to appending data to the archive
+		go func() {
+			defer wg.Done()
+			// a tight loop querying the archive
+			for run.Load() {
+				lastBlock, err := db.GetArchiveBlockHeight()
+				if err != nil {
+					t.Errorf("cannot get archive height: %v", err)
+				}
+				if lastBlock < 0 {
+					continue
+				}
+
+				if err := db.QueryBlock(uint64(lastBlock), func(context HistoricBlockContext) error {
+					for j := 0; j < keys; j++ {
+						key := Key{byte(j), byte(j >> 8), byte(lastBlock), byte(lastBlock >> 8)}
+						if _, err := context.GetProof(addr, key); err != nil {
+							return err
+						}
+					}
+
+					return nil
+				}); err != nil {
+					t.Errorf("failed to query archive state: %v", err)
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < blocks; i++ {
+		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
+			if err := context.RunTransaction(func(context TransactionContext) error {
+				context.AddBalance(addr, NewAmount(uint64(i)))
+				for j := 0; j < keys; j++ {
+					key := Key{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}
+					value := Value{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}
+					context.SetState(addr, key, value)
+				}
+				return nil
+			}); err != nil {
+				t.Fatalf("cannot commit transaction: %v", err)
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("cannot add block: %v", err)
+		}
+	}
+
+	run.Store(false) // stop the query goroutine
+	wg.Wait()
+}
