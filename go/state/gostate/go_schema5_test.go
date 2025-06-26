@@ -11,6 +11,8 @@
 package gostate
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -179,4 +181,86 @@ func TestGetNodeCacheConfig_BackgroundFlushPeriod(t *testing.T) {
 	if got, want := getNodeCacheConfig(0, expected).BackgroundFlushPeriod, expected; got != want {
 		t.Errorf("unexpected background flush period: %v != %v", got, want)
 	}
+}
+
+func TestState_Archive_Query_Proof_While_Updating_Race_Detection(t *testing.T) {
+	archiveConfig := namedStateConfig{
+		config: state.Configuration{
+			Variant: VariantGoMemory,
+			Schema:  5,
+			Archive: state.S5Archive,
+		},
+		factory: newGoMemoryState,
+	}
+
+	state, err := archiveConfig.createState(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to open test state: %v", err)
+	}
+	defer func() {
+		if err := state.Close(); err != nil {
+			t.Fatalf("failed to close state: %v", err)
+		}
+	}()
+
+	var run atomic.Bool
+	run.Store(true)
+	var wg sync.WaitGroup
+
+	const blocks = 10
+	const keys = 100
+	addr := common.Address{1} // the same address to increase the change the same path is always referenced
+
+	const workers = 100
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		// query proof in parallel to appending data to the archive
+		go func() {
+			defer wg.Done()
+			// a tight loop querying the archive
+			for run.Load() {
+				lastBlock, empty, err := state.GetArchiveBlockHeight()
+				if err != nil {
+					t.Errorf("cannot get archive height: %v", err)
+				}
+				if empty {
+					continue
+				}
+
+				archive, err := state.GetArchiveState(lastBlock)
+				if err != nil {
+					t.Errorf("cannot get archive state: %v", err)
+				}
+
+				for j := 0; j < keys; j++ {
+					key := common.Key{byte(j), byte(j >> 8), byte(lastBlock), byte(lastBlock >> 8)}
+					if _, err := archive.CreateWitnessProof(addr, key); err != nil {
+						t.Errorf("cannot get proof for key %v: %v", key, err)
+					}
+				}
+			}
+		}()
+	}
+	
+	// update the state in a loop, creating blocks, accounts and slots
+	for i := 0; i < blocks; i++ {
+		slots := make([]common.SlotUpdate, 0, keys)
+		for j := 0; j < keys; j++ {
+			key := common.Key{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}
+			value := common.Value{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}
+			slots = append(slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
+		}
+
+		if err := state.Apply(uint64(i), common.Update{
+			CreatedAccounts: []common.Address{addr},
+			Balances:        []common.BalanceUpdate{{addr, amount.New(uint64(i))}},
+			Slots:           slots,
+		}); err != nil {
+			t.Fatalf("cannot apply update: %v", err)
+		}
+	}
+
+	run.Store(false) // stop the query goroutine
+	wg.Wait()
 }
