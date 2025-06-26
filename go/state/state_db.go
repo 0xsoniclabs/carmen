@@ -1389,6 +1389,14 @@ func (s *stateDB) ResetBlockContext() {
 	s.codes = make(map[common.Address]*codeValue)
 	s.logsInBlock = 0
 	s.resetTransactionContext()
+
+	// limit the reincarnation map size not to grow indefinitely
+	// we cap the map roughly to the size of the cache, which it is used in connection with
+	// when the size reached; both structures are emptied
+	if len(s.reincarnation) > defaultStoredDataCacheSize {
+		s.reincarnation = make(map[common.Address]uint64, defaultStoredDataCacheSize)
+		s.storedDataCache.Clear()
+	}
 }
 
 func (s *stateDB) resetState(state State) {
