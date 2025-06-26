@@ -2249,6 +2249,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			db.EXPECT().hashKey(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			db.EXPECT().hashAddress(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr).MaxTimes(1)
+			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.HashHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{}, false, injectedErr).MaxTimes(1)
 			db.EXPECT().GetValue(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Value{}, injectedErr).MaxTimes(1)
 			db.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).Return(injectedErr).MaxTimes(1)
@@ -2267,7 +2268,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			nodeSource.EXPECT().hashAddress(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			nodeSource.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr).MaxTimes(1)
 
-			archive := &ArchiveTrie{forest: db, head: live, nodeSource: nodeSource, roots: &rootList{}}
+			archive := &ArchiveTrie{forest: db, head: live, roots: &rootList{}}
 			archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
 
 			// all operations must fail
@@ -2344,14 +2345,12 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 			db := NewMockDatabase(ctrl)
 			db.EXPECT().Freeze(gomock.Any()).AnyTimes()
 			db.EXPECT().CheckAll(gomock.Any()).AnyTimes()
+			db.EXPECT().getConfig().Return(S5ArchiveConfig).AnyTimes()
+			db.EXPECT().hashKey(gomock.Any()).DoAndReturn(common.Keccak256ForKey).AnyTimes()
+			db.EXPECT().hashAddress(gomock.Any()).DoAndReturn(common.Keccak256ForAddress).AnyTimes()
+			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](&EmptyNode{}).GetViewHandle(), nil).AnyTimes()
 
-			nodeSource := NewMockNodeSource(ctrl)
-			nodeSource.EXPECT().getConfig().Return(S5ArchiveConfig).AnyTimes()
-			nodeSource.EXPECT().hashKey(gomock.Any()).DoAndReturn(common.Keccak256ForKey).AnyTimes()
-			nodeSource.EXPECT().hashAddress(gomock.Any()).DoAndReturn(common.Keccak256ForAddress).AnyTimes()
-			nodeSource.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](&EmptyNode{}).GetViewHandle(), nil).AnyTimes()
-
-			archive := &ArchiveTrie{forest: db, head: liveState, nodeSource: nodeSource, roots: &rootList{}}
+			archive := &ArchiveTrie{forest: db, head: liveState, roots: &rootList{}}
 			archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
 			defer func() {
 				if err := archive.Close(); !errors.Is(err, injectedErr) {
