@@ -2446,6 +2446,12 @@ var archiveOps = map[string]func(archive *ArchiveTrie) error{
 	"visit": func(archive *ArchiveTrie) error {
 		return archive.VisitTrie(0, nil)
 	},
+	"visit accounts": func(archive *ArchiveTrie) error {
+		return archive.VisitAccounts(0, nil)
+	},
+	"visit storages": func(archive *ArchiveTrie) error {
+		return archive.VisitStorageSlots(0, common.Address{}, nil)
+	},
 }
 
 func TestArchiveTrie_VisitTrie_CorrectDataIsVisited(t *testing.T) {

@@ -477,6 +477,22 @@ func (a *ArchiveTrie) VisitAccountStorage(block uint64, address common.Address, 
 	return a.addError(view.VisitAccountStorage(address, visitor))
 }
 
+func (a *ArchiveTrie) VisitAccounts(block uint64, visitor AccountVisitor) error {
+	view, err := a.getView(block)
+	if err != nil {
+		return err
+	}
+	return a.addError(view.VisitAccounts(visitor))
+}
+
+func (a *ArchiveTrie) VisitStorageSlots(block uint64, address common.Address, visitor StorageVisitor) error {
+	view, err := a.getView(block)
+	if err != nil {
+		return err
+	}
+	return a.addError(view.VisitStorageSlots(address, visitor))
+}
+
 func (a *ArchiveTrie) Close() error {
 	return errors.Join(
 		a.CheckErrors(),
