@@ -2248,6 +2248,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			db.EXPECT().getConfig().Return(S5ArchiveConfig).AnyTimes()
 			db.EXPECT().hashKey(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			db.EXPECT().hashAddress(gomock.Any()).Return(common.Hash{}).AnyTimes()
+			db.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.HashHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{}, false, injectedErr).MaxTimes(1)

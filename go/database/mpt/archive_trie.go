@@ -361,16 +361,11 @@ func (a *ArchiveTrie) CreateWitnessProof(block uint64, address common.Address, k
 	if !a.forest.getConfig().UseHashedPaths {
 		return nil, archive.ErrWitnessProofNotSupported
 	}
-	a.rootsMutex.Lock()
-	length := uint64(a.roots.length())
-	if block >= length {
-		a.rootsMutex.Unlock()
-		return nil, fmt.Errorf("invalid block: %d >= %d", block, length)
+	view, err := a.getView(block)
+	if err != nil {
+		return nil, err
 	}
-	ref := a.roots.get(block).NodeRef
-	a.rootsMutex.Unlock()
-
-	proof, err := CreateWitnessProof(a.forest, &ref, address, keys...)
+	proof, err := view.CreateWitnessProof(address, keys...)
 	return proof, a.addError(err)
 }
 
