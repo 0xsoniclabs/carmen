@@ -51,6 +51,13 @@ type AccountVisitor interface {
 	VisitAccount(address common.Address, info AccountInfo) VisitResponse
 }
 
+// StorageVisitor defines an interface for consumers interested in visiting storage slots in a tree.
+type StorageVisitor interface {
+	// VisitStorage is called for each storage slot, providing its value.
+	// It returns a VisitResponse to control the visiting process.
+	VisitStorage(key common.Key, value common.Value) VisitResponse
+}
+
 type VisitResponse int
 
 const (
@@ -101,6 +108,19 @@ type lambdaAccountVisitor struct {
 
 func (v *lambdaAccountVisitor) VisitAccount(address common.Address, info AccountInfo) VisitResponse {
 	return v.visit(address, info)
+}
+
+// MakeStorageVisitor wraps a function into the node visitor interface.
+func MakeStorageVisitor(visit func(key common.Key, value common.Value) VisitResponse) StorageVisitor {
+	return &lambdaStorageVisitor{visit}
+}
+
+type lambdaStorageVisitor struct {
+	visit func(key common.Key, value common.Value) VisitResponse
+}
+
+func (v *lambdaStorageVisitor) VisitStorage(key common.Key, value common.Value) VisitResponse {
+	return v.visit(key, value)
 }
 
 // ----------------------------------------------------------------------------
