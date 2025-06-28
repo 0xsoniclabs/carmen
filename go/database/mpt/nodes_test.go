@@ -7166,8 +7166,8 @@ func TestVisitNodes_Error_From_Source(t *testing.T) {
 		func(h shared.ReadHandle[Node]) Node { return h.Get() },
 		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 			return VisitResponseAbort
-		})); err == nil {
-		t.Errorf("expected: %v", injectedErr)
+		})); !errors.Is(err, injectedErr) {
+		t.Errorf("expected error to be %v, got %v", injectedErr, err)
 	}
 }
 
@@ -7230,6 +7230,108 @@ func TestVisitAccounts_Visits_All_Accounts(t *testing.T) {
 
 	if !slices.Equal(expected, actual) {
 		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+	}
+}
+
+func TestVisitStorage_Visits_All_Slots(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address1 := common.Address{2 << 4}
+	key1 := common.Key{2}
+	key2 := common.Key{3}
+
+	desc := &Branch{children: Children{
+		0x1: &Empty{},
+		0x2: &Account{address: address1, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+			storage: &Extension{
+				path:         KeyToNibblePath(key1, ctxt)[0:40],
+				nextEmbedded: true,
+				next: &Branch{children: Children{
+					0x1: &Value{key: key1, length: 24, value: common.Value{1}},
+					0x2: &Value{key: key2, length: 24, value: common.Value{2}},
+				}},
+			}},
+	},
+	}
+
+	root, handle := ctxt.Build(desc)
+
+	// collect expected nodes
+	expected := make([]common.Key, 0, 2)
+	node := handle.GetReadHandle()
+	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+		if value, ok := n.(*ValueNode); ok {
+			expected = append(expected, value.key)
+		}
+		return VisitResponseContinue
+	})); err != nil {
+		t.Fatalf("unexpected error during path iteration: %v", err)
+	}
+	node.Release()
+
+	actual := make([]common.Key, 0, 2)
+	// collect actual nodes
+	if err := VisitStorages(ctxt, &root, address1,
+		MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+			actual = append(actual, key)
+			return VisitResponseContinue
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if len(actual) == 0 {
+		t.Errorf("expected at least one node, but got none")
+	}
+
+	if !slices.Equal(expected, actual) {
+		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+	}
+}
+
+func TestVisitStorage_Error_From_Source(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address1 := common.Address{2 << 4}
+	key1 := common.Key{2}
+	key2 := common.Key{3}
+
+	desc := &Branch{children: Children{
+		0x1: &Empty{},
+		0x2: &Account{address: address1, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+			storage: &Extension{
+				path:         KeyToNibblePath(key1, ctxt)[0:40],
+				nextEmbedded: true,
+				next: &Branch{children: Children{
+					0x1: &Value{key: key1, length: 24, value: common.Value{1}},
+					0x2: &Value{key: key2, length: 24, value: common.Value{2}},
+				}},
+			}},
+	},
+	}
+
+	root, _ := ctxt.Build(desc)
+
+	nodeManager := &errorInjectingNodeManager{NodeManager: ctxt, errorPosition: 9999}
+	// collect number of paths
+	if err := VisitStorages(nodeManager, &root, address1,
+		MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+			return VisitResponseContinue
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	injectedErr := errors.New("injected error")
+	loops := nodeManager.counter
+	for i := 0; i < loops; i++ {
+		nodeManager := &errorInjectingNodeManager{NodeManager: ctxt, errorPosition: i, err: injectedErr}
+		if err := VisitStorages(nodeManager, &root, address1,
+			MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+				return VisitResponseContinue
+			})); !errors.Is(err, injectedErr) {
+			t.Errorf("expected error: %v, got: %v", injectedErr, err)
+		}
 	}
 }
 

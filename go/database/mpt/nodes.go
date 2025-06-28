@@ -417,6 +417,47 @@ func VisitAccounts(source NodeSource, root *NodeReference, visitor AccountVisito
 		}))
 }
 
+// VisitStorages visits all storage slots in the MPT rooted by the input root node.
+// Each encountered slot is passed to the visitor.
+// If no more slots are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func VisitStorages(source NodeSource, root *NodeReference, address common.Address, visitor StorageVisitor) error {
+	path := AddressToNibblePath(address, source)
+	var innerError error
+	// go to the account
+	_, err := visitPathTo(root, path, &address, nil,
+		source.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			switch n := node.(type) {
+			case *AccountNode: // when an account is found, visit its storage
+				innerError = visitNodes(&n.storage,
+					source.getReadAccess,
+					func(h shared.ReadHandle[Node]) { h.Release() },
+					func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+					func(h shared.ReadHandle[Node]) Node { return h.Get() },
+					MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+						switch n := node.(type) {
+						case *ValueNode:
+							visitor.VisitStorage(n.key, n.value)
+						}
+						return VisitResponseContinue
+					}))
+				if innerError != nil {
+					return VisitResponseAbort // stop visiting, error occurred
+				}
+				return VisitResponsePrune // this account is finished, no need to continue
+			}
+			return VisitResponseContinue
+		}))
+
+	return errors.Join(err, innerError)
+}
+
 // visitAccounts visits all nodes from the input root.
 // Each encountered node is passed to the visitor.
 // If no more account is available, the execution ends.
