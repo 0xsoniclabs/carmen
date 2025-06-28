@@ -14,6 +14,7 @@ package mpt
 
 import (
 	"fmt"
+	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
 	"strings"
 )
@@ -41,6 +42,13 @@ type NodeInfo struct {
 	Id       NodeId          // the ID of the visited node
 	Depth    *int            // the nesting level of the visited node, only set for tree visits
 	Embedded tribool.Tribool // true if this node is embedded in another node, tracked in visitPathTo
+}
+
+// AccountVisitor defines an interface for consumers interested in visiting accounts in a tree.
+type AccountVisitor interface {
+	// VisitAccount is called for each account, providing account address and info.
+	// It returns a VisitResponse to control the visiting process.
+	VisitAccount(address common.Address, info AccountInfo) VisitResponse
 }
 
 type VisitResponse int
@@ -80,6 +88,19 @@ type lambdaVisitor struct {
 
 func (v *lambdaVisitor) Visit(n Node, i NodeInfo) VisitResponse {
 	return v.visit(n, i)
+}
+
+// MakeAccountVisitor wraps a function into the node visitor interface.
+func MakeAccountVisitor(visit func(address common.Address, info AccountInfo) VisitResponse) AccountVisitor {
+	return &lambdaAccountVisitor{visit}
+}
+
+type lambdaAccountVisitor struct {
+	visit func(address common.Address, info AccountInfo) VisitResponse
+}
+
+func (v *lambdaAccountVisitor) VisitAccount(address common.Address, info AccountInfo) VisitResponse {
+	return v.visit(address, info)
 }
 
 // ----------------------------------------------------------------------------
