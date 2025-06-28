@@ -394,6 +394,93 @@ func visitPathTo[H any](
 	return found, nil
 }
 
+// VisitAccounts visits all accounts in the MPT rooted by the input root node.
+// Each encountered account is passed to the visitor.
+// If no more accounts are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func VisitAccounts(source NodeSource, root *NodeReference, visitor AccountVisitor) error {
+	return visitNodes(root,
+		source.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			switch n := node.(type) {
+			case *AccountNode:
+				visitor.VisitAccount(n.Address(), n.Info())
+				return VisitResponsePrune
+			}
+
+			return VisitResponseContinue
+		}))
+}
+
+// visitAccounts visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more account is available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function allows for custom access and release functions
+// via the input callback functions.
+func visitNodes[H any](
+	root *NodeReference,
+	access func(ref *NodeReference) (H, error),
+	release func(H),
+	valid func(H) bool,
+	get func(H) Node,
+	visitor NodeVisitor) error {
+
+	type tuple struct {
+		nodeId   *NodeReference
+		embedded bool
+	}
+	tasks := []tuple{{root, false}}
+
+	var last H
+	for len(tasks) > 0 {
+		nodeInfo := tasks[0]
+		handle, err := access(nodeInfo.nodeId)
+		tasks = tasks[1:]
+		if valid(last) {
+			release(last)
+		}
+		if err != nil {
+			return err
+		}
+
+		last = handle
+		node := get(last)
+		switch res := visitor.Visit(node, NodeInfo{Id: nodeInfo.nodeId.Id(), Embedded: tribool.New(nodeInfo.embedded)}); res {
+		case VisitResponseAbort:
+			release(last)
+			return nil
+		case VisitResponsePrune:
+			continue
+		}
+
+		switch n := node.(type) {
+		case *ExtensionNode:
+			tasks = append(tasks, tuple{&n.next, n.nextIsEmbedded})
+		case *BranchNode:
+			for i := 0; i < 16; i++ {
+				child := &n.children[i]
+				if !child.Id().IsEmpty() {
+					tasks = append(tasks, tuple{child, n.isEmbedded(byte(i))})
+				}
+			}
+		case *AccountNode:
+			tasks = append(tasks, tuple{&n.storage, false})
+		default:
+			// includes EmptyNode and ValueNode
+		}
+	}
+
+	release(last)
+	return nil
+}
+
 // CheckForest evaluates invariants throughout all nodes reachable from the
 // given list of roots. Executed checks include node-specific checks like the
 // minimum number of child nodes of a BranchNode, the correct placement of
