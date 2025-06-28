@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package proof
+package io
 
 import (
 	"context"
@@ -22,16 +22,16 @@ import (
 	"math/rand"
 )
 
-//go:generate mockgen -source verification.go -destination verification_mocks.go -package proof
+//go:generate mockgen -source verification_proof.go -destination verification_proof_mocks.go -package io
 
 // ErrInvalidProof is an error returned when a witness proof is not invalid.
 const ErrInvalidProof = common.ConstError("invalid proof")
 
-// VerifyArchiveTrie verifies the consistency of witness proofs for an archive trie.
+// VerifyArchiveTrieProof verifies the consistency of witness proofs for an archive trie.
 // It reads the trie for each block within the input range.
 // It gets account and storage slots and extracts a witness proof for each account and its storage.
 // It is checked that values in the database and the proof match.
-func VerifyArchiveTrie(ctx context.Context, dir string, config mpt.MptConfig, from, to int, observer mpt.VerificationObserver) error {
+func VerifyArchiveTrieProof(ctx context.Context, dir string, config mpt.MptConfig, from, to int, observer mpt.VerificationObserver) error {
 	trie, err := mpt.OpenArchiveTrie(dir, config, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 	if err != nil {
 		return err
@@ -39,14 +39,14 @@ func VerifyArchiveTrie(ctx context.Context, dir string, config mpt.MptConfig, fr
 
 	observer.StartVerification()
 	err = errors.Join(
-		verifyArchiveTrie(ctx, trie, from, to, observer),
+		verifyArchiveTrieProof(ctx, trie, from, to, dir, config, observer),
 		trie.Close(),
 	)
 	observer.EndVerification(err)
 	return err
 }
 
-func verifyArchiveTrie(ctx context.Context, trie verifiableArchiveTrie, from, to int, observer mpt.VerificationObserver) error {
+func verifyArchiveTrieProof(ctx context.Context, trie verifiableArchiveTrie, from, to int, dir string, config mpt.MptConfig, observer mpt.VerificationObserver) error {
 	blockHeight, empty, err := trie.GetBlockHeight()
 	if err != nil {
 		return err
@@ -62,9 +62,13 @@ func verifyArchiveTrie(ctx context.Context, trie verifiableArchiveTrie, from, to
 
 	observer.Progress(fmt.Sprintf("Verifying total block range [%d;%d]", from, to))
 	for i := from; i <= to; i++ {
-		trieView := &archiveTrie{trie: trie, block: uint64(i)}
+		root, err := trie.GetBlockRoot(uint64(i))
+		if err != nil {
+			return err
+		}
+		trieView := &archiveTrieView{trie: trie, block: uint64(i)}
 		observer.Progress(fmt.Sprintf("Verifying block: %d ", i))
-		if err := verifyTrie(ctx, trieView, observer); err != nil {
+		if err := verifyTrieProof(ctx, trieView, root, dir, config, observer); err != nil {
 			return err
 		}
 	}
@@ -72,26 +76,27 @@ func verifyArchiveTrie(ctx context.Context, trie verifiableArchiveTrie, from, to
 	return nil
 }
 
-// VerifyLiveTrie verifies the consistency of witness proofs for a live trie.
+// VerifyLiveTrieProof verifies the consistency of witness proofs for a live trie.
 // It reads the trie for the head block and loads accounts and storage slots.
 // It extracts witness proofs for these accounts and its storage,
 // and checks that values in the proof and the database match.
-func VerifyLiveTrie(ctx context.Context, dir string, config mpt.MptConfig, observer mpt.VerificationObserver) error {
+func VerifyLiveTrieProof(ctx context.Context, dir string, config mpt.MptConfig, observer mpt.VerificationObserver) error {
 	trie, err := mpt.OpenFileLiveTrie(dir, config, mpt.NodeCacheConfig{})
 	if err != nil {
 		return err
 	}
 
+	root := trie.RootNodeId()
 	observer.StartVerification()
 	err = errors.Join(
-		verifyTrie(ctx, trie, observer),
+		verifyTrieProof(ctx, trie, root, dir, config, observer),
 		trie.Close(),
 	)
 	observer.EndVerification(err)
 	return err
 }
 
-func verifyTrie(ctx context.Context, trie verifiableTrie, observer mpt.VerificationObserver) error {
+func verifyTrieProof(ctx context.Context, trie verifiableTrie, root mpt.NodeId, dir string, config mpt.MptConfig, observer mpt.VerificationObserver) error {
 	rootHash, hints, err := trie.UpdateHashes()
 	if hints != nil {
 		hints.Release()
@@ -101,23 +106,26 @@ func verifyTrie(ctx context.Context, trie verifiableTrie, observer mpt.Verificat
 	}
 
 	observer.Progress("Collecting and Verifying proofs ... ")
-	visitor := accountVerifyingVisitor{
+	visitor := accountVerifyingProofVisitor{
 		ctx:       ctx,
 		rootHash:  rootHash,
 		trie:      trie,
 		observer:  observer,
+		directory: dir,
+		config:    config,
 		logWindow: 1000_000,
 	}
-	if err := trie.VisitTrie(&visitor); err != nil || visitor.err != nil {
-		return errors.Join(err, visitor.err)
+
+	if err := visitAll(dir, config, root, &visitor, true); err != nil {
+		return err
 	}
 
-	const numAddresses = 1000
-	return verifyEmptyAccount(trie, rootHash, numAddresses, observer)
+	const numAddresses = 10
+	return verifyEmptyAccountProof(trie, rootHash, numAddresses, observer)
 }
 
-// verifyEmptyAccount verifies the consistency of witness proofs for empty accounts that are not present in the trie.
-func verifyEmptyAccount(trie verifiableTrie, rootHash common.Hash, numAddresses int, observer mpt.VerificationObserver) error {
+// verifyEmptyAccountProof verifies the consistency of witness proofs for empty accounts that are not present in the trie.
+func verifyEmptyAccountProof(trie verifiableTrie, rootHash common.Hash, numAddresses int, observer mpt.VerificationObserver) error {
 	observer.Progress(fmt.Sprintf("Veryfing %d empty addresses...", numAddresses))
 	addresses, err := generateUnusedAddresses(trie, numAddresses)
 	if err != nil {
@@ -132,7 +140,7 @@ func verifyEmptyAccount(trie verifiableTrie, rootHash common.Hash, numAddresses 
 			return ErrInvalidProof
 		}
 		// expect an empty account
-		if err := verifyAccount(rootHash, proof, addr, mpt.AccountInfo{}); err != nil {
+		if err := verifyAccountProof(rootHash, proof, addr, mpt.AccountInfo{}); err != nil {
 			return err
 		}
 	}
@@ -140,8 +148,8 @@ func verifyEmptyAccount(trie verifiableTrie, rootHash common.Hash, numAddresses 
 	return nil
 }
 
-// verifyUnusedStorageSlots verifies the consistency of witness proofs for empty storage that are not present in the trie.
-func verifyUnusedStorageSlots(trie verifiableTrie, rootHash common.Hash, addr common.Address) error {
+// verifyUnusedStorageSlotsProof verifies the consistency of witness proofs for empty storage that are not present in the trie.
+func verifyUnusedStorageSlotsProof(trie verifiableTrie, rootHash common.Hash, addr common.Address) error {
 	const numKeys = 10
 	keys, err := generateUnusedKeys(trie, numKeys, addr)
 	if err != nil {
@@ -155,15 +163,15 @@ func verifyUnusedStorageSlots(trie verifiableTrie, rootHash common.Hash, addr co
 		return ErrInvalidProof
 	}
 
-	if err := verifyStorage(rootHash, proof, addr, keys, nil); err != nil {
+	if err := verifyStorageProof(rootHash, proof, addr, keys, nil); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// verifyAccount verifies the consistency between the input witness proofs and the account.
-func verifyAccount(root common.Hash, proof witness.Proof, addr common.Address, info mpt.AccountInfo) error {
+// verifyAccountProof verifies the consistency between the input witness proofs and the account.
+func verifyAccountProof(root common.Hash, proof witness.Proof, addr common.Address, info mpt.AccountInfo) error {
 	balance, complete, err := proof.GetBalance(root, addr)
 	if err != nil {
 		return err
@@ -198,8 +206,8 @@ func verifyAccount(root common.Hash, proof witness.Proof, addr common.Address, i
 	return nil
 }
 
-// verifyStorage verifies the consistency between the input witness proofs and the storage.
-func verifyStorage(root common.Hash, proof witness.Proof, addr common.Address, keys []common.Key, storage map[common.Key]common.Value) error {
+// verifyStorageProof verifies the consistency between the input witness proofs and the storage.
+func verifyStorageProof(root common.Hash, proof witness.Proof, addr common.Address, keys []common.Key, storage map[common.Key]common.Value) error {
 	for _, key := range keys {
 		proofValue, complete, err := proof.GetState(root, addr, key)
 		if err != nil {
@@ -262,27 +270,26 @@ func generateUnusedKeys(trie verifiableTrie, number int, address common.Address)
 	return res, nil
 }
 
-// accountVerifyingVisitor is a visitor that verifies the consistency of witness proofs for a live trie.
+// accountVerifyingProofVisitor is a visitor that verifies the consistency of witness proofs for a live trie.
 // It collects account and storage slots and extracts witness proofs for each account and its storage.
 // It checks that values in the database and the proof match.
 // The process can be interrupted by the input context.
-type accountVerifyingVisitor struct {
-	ctx      context.Context
-	rootHash common.Hash
-	trie     verifiableTrie
-	observer mpt.VerificationObserver
-
-	err error
+type accountVerifyingProofVisitor struct {
+	ctx       context.Context
+	rootHash  common.Hash
+	trie      verifiableTrie
+	observer  mpt.VerificationObserver
+	directory string
+	config    mpt.MptConfig
 
 	logWindow    int
 	counter      int
 	numAddresses int
 }
 
-func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {
+func (v *accountVerifyingProofVisitor) Visit(n mpt.Node, nodeInfo mpt.NodeInfo) error {
 	if v.counter%100 == 0 && interrupt.IsCancelled(v.ctx) {
-		v.err = interrupt.ErrCanceled
-		return mpt.VisitResponseAbort
+		return interrupt.ErrCanceled
 	}
 	v.counter++
 
@@ -290,43 +297,38 @@ func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitRes
 	case *mpt.AccountNode:
 		proof, err := v.trie.CreateWitnessProof(n.Address())
 		if err != nil {
-			v.err = err
-			return mpt.VisitResponseAbort
+			return err
 		}
 		if !proof.IsValid() {
-			v.err = ErrInvalidProof
-			return mpt.VisitResponseAbort
+			return ErrInvalidProof
 		}
 
-		if err := verifyAccount(v.rootHash, proof, n.Address(), n.Info()); err != nil {
-			v.err = err
-			return mpt.VisitResponseAbort
+		if err := verifyAccountProof(v.rootHash, proof, n.Address(), n.Info()); err != nil {
+			return err
 		}
 
-		storageVisitor := storageVerifyingVisitor{
+		storageVisitor := storageVerifyingProofVisitor{
 			ctx:            v.ctx,
 			rootHash:       v.rootHash,
 			trie:           v.trie,
 			currentAddress: n.Address(),
 			storage:        make(map[common.Key]common.Value)}
 
-		if err := v.trie.VisitAccountStorage(n.Address(), &storageVisitor); err != nil || storageVisitor.err != nil {
-			v.err = errors.Join(err, storageVisitor.err)
-			return mpt.VisitResponseAbort
+		// visit the storage of the account
+		if err := visitAll(v.directory, v.config, nodeInfo.Id, &storageVisitor, false); err != nil {
+			return err
 		}
 
 		// verify remaining storage if not done inside the visitor
 		if len(storageVisitor.storage) > 0 {
 			if err := storageVisitor.verifyStorage(); err != nil {
-				v.err = err
-				return mpt.VisitResponseAbort
+				return err
 			}
 		}
 
 		// add empty storages check
-		if err := verifyUnusedStorageSlots(v.trie, v.rootHash, n.Address()); err != nil {
-			v.err = err
-			return mpt.VisitResponseAbort
+		if err := verifyUnusedStorageSlotsProof(v.trie, v.rootHash, n.Address()); err != nil {
+			return err
 		}
 
 		v.numAddresses++
@@ -334,32 +336,29 @@ func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitRes
 			v.observer.Progress(fmt.Sprintf("  ... verified %d addresses", v.numAddresses))
 		}
 
-		return mpt.VisitResponsePrune // this account resolved, do not go deeper
+		return nil
 	}
 
-	return mpt.VisitResponseContinue
+	return nil
 }
 
-// storageVerifyingVisitor is a visitor that verifies the consistency of witness proofs for storage slots.
+// storageVerifyingProofVisitor is a visitor that verifies the consistency of witness proofs for storage slots.
 // It collects storage slots and extracts witness proofs for each storage slot.
 // It checks that values in the database and the proof match.
 // The process can be interrupted by the input context.
 // Storage keys are verified in batches of 10 to save on memory and allowing for responsive cancellation.
-type storageVerifyingVisitor struct {
+type storageVerifyingProofVisitor struct {
 	ctx            context.Context
 	rootHash       common.Hash
 	trie           verifiableTrie
 	counter        int
 	currentAddress common.Address
 	storage        map[common.Key]common.Value
-
-	err error
 }
 
-func (v *storageVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {
+func (v *storageVerifyingProofVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) error {
 	if v.counter%100 == 0 && interrupt.IsCancelled(v.ctx) {
-		v.err = interrupt.ErrCanceled
-		return mpt.VisitResponseAbort
+		return interrupt.ErrCanceled
 	}
 	v.counter++
 
@@ -371,16 +370,15 @@ func (v *storageVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitRes
 	// when ten keys accumulate, verify the storage
 	if len(v.storage) >= 10 {
 		if err := v.verifyStorage(); err != nil {
-			v.err = err
-			return mpt.VisitResponseAbort
+			return err
 		}
 	}
 
-	return mpt.VisitResponseContinue
+	return nil
 }
 
-// verifyStorage verifies the consistency of witness proofs for storage slots.
-func (v *storageVerifyingVisitor) verifyStorage() error {
+// verifyStorageProof verifies the consistency of witness proofs for storage slots.
+func (v *storageVerifyingProofVisitor) verifyStorage() error {
 	keys := maps.Keys(v.storage)
 
 	proof, err := v.trie.CreateWitnessProof(v.currentAddress, keys...)
@@ -391,7 +389,7 @@ func (v *storageVerifyingVisitor) verifyStorage() error {
 		return ErrInvalidProof
 	}
 
-	if err := verifyStorage(v.rootHash, proof, v.currentAddress, keys, v.storage); err != nil {
+	if err := verifyStorageProof(v.rootHash, proof, v.currentAddress, keys, v.storage); err != nil {
 		return err
 	}
 
@@ -408,12 +406,6 @@ type verifiableTrie interface {
 
 	// GetValue returns the value for the given address and key.
 	GetValue(addr common.Address, key common.Key) (common.Value, error)
-
-	//VisitTrie visits the trie nodes with the given visitor.
-	VisitTrie(visitor mpt.NodeVisitor) error
-
-	// VisitAccountStorage visits the account's storage nodes with the given visitor.
-	VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error
 
 	// UpdateHashes updates the hashes of the trie, and returns the resulting root hash.
 	UpdateHashes() (common.Hash, *mpt.NodeHashes, error)
@@ -432,12 +424,6 @@ type verifiableArchiveTrie interface {
 	// GetStorage returns the value for the given address and key at the given block.
 	GetStorage(block uint64, addr common.Address, key common.Key) (common.Value, error)
 
-	// VisitTrie visits the trie nodes with the given visitor at the given block.
-	VisitTrie(block uint64, visitor mpt.NodeVisitor) error
-
-	// VisitAccountStorage visits the account's storage nodes with the given visitor at the given block.
-	VisitAccountStorage(block uint64, address common.Address, visitor mpt.NodeVisitor) error
-
 	// GetHash returns the root hash of the trie at the given block.
 	GetHash(block uint64) (common.Hash, error)
 
@@ -446,36 +432,31 @@ type verifiableArchiveTrie interface {
 
 	// GetBlockHeight returns the block height of the trie.
 	GetBlockHeight() (uint64, bool, error)
+
+	// GetBlockRoot returns the root hash of the trie at the given block.
+	GetBlockRoot(block uint64) (mpt.NodeId, error)
 }
 
-// archiveTrie is a wrapper for an archive trie that implements the verifiableTrie interface.
+// archiveTrieView is a wrapper for an archive trie that implements the verifiableTrie interface.
 // It bounds the archive trie to a specific block.
-type archiveTrie struct {
+type archiveTrieView struct {
 	trie  verifiableArchiveTrie
 	block uint64
 }
 
-func (v *archiveTrie) GetAccountInfo(addr common.Address) (mpt.AccountInfo, bool, error) {
+func (v *archiveTrieView) GetAccountInfo(addr common.Address) (mpt.AccountInfo, bool, error) {
 	return v.trie.GetAccountInfo(v.block, addr)
 }
 
-func (v *archiveTrie) GetValue(addr common.Address, key common.Key) (common.Value, error) {
+func (v *archiveTrieView) GetValue(addr common.Address, key common.Key) (common.Value, error) {
 	return v.trie.GetStorage(v.block, addr, key)
 }
 
-func (v *archiveTrie) VisitTrie(visitor mpt.NodeVisitor) error {
-	return v.trie.VisitTrie(v.block, visitor)
-}
-
-func (v *archiveTrie) VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error {
-	return v.trie.VisitAccountStorage(v.block, address, visitor)
-}
-
-func (v *archiveTrie) UpdateHashes() (common.Hash, *mpt.NodeHashes, error) {
+func (v *archiveTrieView) UpdateHashes() (common.Hash, *mpt.NodeHashes, error) {
 	hash, err := v.trie.GetHash(v.block)
 	return hash, nil, err
 }
 
-func (v *archiveTrie) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
+func (v *archiveTrieView) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	return v.trie.CreateWitnessProof(v.block, address, keys...)
 }
