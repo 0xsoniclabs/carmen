@@ -108,7 +108,7 @@ func verifyTrie(ctx context.Context, trie verifiableTrie, observer mpt.Verificat
 		observer:  observer,
 		logWindow: 1000_000,
 	}
-	if err := trie.VisitTrie(&visitor); err != nil || visitor.err != nil {
+	if err := trie.VisitAccounts(&visitor); err != nil || visitor.err != nil {
 		return errors.Join(err, visitor.err)
 	}
 
@@ -279,62 +279,57 @@ type accountVerifyingVisitor struct {
 	numAddresses int
 }
 
-func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {
+func (v *accountVerifyingVisitor) VisitAccount(address common.Address, info mpt.AccountInfo) mpt.VisitResponse {
 	if v.counter%100 == 0 && interrupt.IsCancelled(v.ctx) {
 		v.err = interrupt.ErrCanceled
 		return mpt.VisitResponseAbort
 	}
 	v.counter++
 
-	switch n := n.(type) {
-	case *mpt.AccountNode:
-		proof, err := v.trie.CreateWitnessProof(n.Address())
-		if err != nil {
+	proof, err := v.trie.CreateWitnessProof(address)
+	if err != nil {
+		v.err = err
+		return mpt.VisitResponseAbort
+	}
+	if !proof.IsValid() {
+		v.err = ErrInvalidProof
+		return mpt.VisitResponseAbort
+	}
+
+	if err := verifyAccount(v.rootHash, proof, address, info); err != nil {
+		v.err = err
+		return mpt.VisitResponseAbort
+	}
+
+	storageVisitor := storageVerifyingVisitor{
+		ctx:            v.ctx,
+		rootHash:       v.rootHash,
+		trie:           v.trie,
+		currentAddress: address,
+		storage:        make(map[common.Key]common.Value)}
+
+	if err := v.trie.VisitStorageSlots(address, &storageVisitor); err != nil || storageVisitor.err != nil {
+		v.err = errors.Join(err, storageVisitor.err)
+		return mpt.VisitResponseAbort
+	}
+
+	// verify remaining storage if not done inside the visitor
+	if len(storageVisitor.storage) > 0 {
+		if err := storageVisitor.verifyStorage(); err != nil {
 			v.err = err
 			return mpt.VisitResponseAbort
 		}
-		if !proof.IsValid() {
-			v.err = ErrInvalidProof
-			return mpt.VisitResponseAbort
-		}
+	}
 
-		if err := verifyAccount(v.rootHash, proof, n.Address(), n.Info()); err != nil {
-			v.err = err
-			return mpt.VisitResponseAbort
-		}
+	// add empty storages check
+	if err := verifyUnusedStorageSlots(v.trie, v.rootHash, address); err != nil {
+		v.err = err
+		return mpt.VisitResponseAbort
+	}
 
-		storageVisitor := storageVerifyingVisitor{
-			ctx:            v.ctx,
-			rootHash:       v.rootHash,
-			trie:           v.trie,
-			currentAddress: n.Address(),
-			storage:        make(map[common.Key]common.Value)}
-
-		if err := v.trie.VisitAccountStorage(n.Address(), &storageVisitor); err != nil || storageVisitor.err != nil {
-			v.err = errors.Join(err, storageVisitor.err)
-			return mpt.VisitResponseAbort
-		}
-
-		// verify remaining storage if not done inside the visitor
-		if len(storageVisitor.storage) > 0 {
-			if err := storageVisitor.verifyStorage(); err != nil {
-				v.err = err
-				return mpt.VisitResponseAbort
-			}
-		}
-
-		// add empty storages check
-		if err := verifyUnusedStorageSlots(v.trie, v.rootHash, n.Address()); err != nil {
-			v.err = err
-			return mpt.VisitResponseAbort
-		}
-
-		v.numAddresses++
-		if (v.numAddresses)%v.logWindow == 0 {
-			v.observer.Progress(fmt.Sprintf("  ... verified %d addresses", v.numAddresses))
-		}
-
-		return mpt.VisitResponsePrune // this account resolved, do not go deeper
+	v.numAddresses++
+	if (v.numAddresses)%v.logWindow == 0 {
+		v.observer.Progress(fmt.Sprintf("  ... verified %d addresses", v.numAddresses))
 	}
 
 	return mpt.VisitResponseContinue
@@ -356,17 +351,13 @@ type storageVerifyingVisitor struct {
 	err error
 }
 
-func (v *storageVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {
+func (v *storageVerifyingVisitor) VisitStorage(key common.Key, value common.Value) mpt.VisitResponse {
 	if v.counter%100 == 0 && interrupt.IsCancelled(v.ctx) {
 		v.err = interrupt.ErrCanceled
 		return mpt.VisitResponseAbort
 	}
 	v.counter++
-
-	switch n := n.(type) {
-	case *mpt.ValueNode:
-		v.storage[n.Key()] = n.Value()
-	}
+	v.storage[key] = value
 
 	// when ten keys accumulate, verify the storage
 	if len(v.storage) >= 10 {
@@ -409,12 +400,6 @@ type verifiableTrie interface {
 	// GetValue returns the value for the given address and key.
 	GetValue(addr common.Address, key common.Key) (common.Value, error)
 
-	//VisitTrie visits the trie nodes with the given visitor.
-	VisitTrie(visitor mpt.NodeVisitor) error
-
-	// VisitAccountStorage visits the account's storage nodes with the given visitor.
-	VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error
-
 	// VisitAccounts visits all accounts in the trie with the given visitor.
 	VisitAccounts(visitor mpt.AccountVisitor) error
 
@@ -437,12 +422,6 @@ type verifiableArchiveTrie interface {
 
 	// GetStorage returns the value for the given address and key at the given block.
 	GetStorage(block uint64, addr common.Address, key common.Key) (common.Value, error)
-
-	// VisitTrie visits the trie nodes with the given visitor at the given block.
-	VisitTrie(block uint64, visitor mpt.NodeVisitor) error
-
-	// VisitAccountStorage visits the account's storage nodes with the given visitor at the given block.
-	VisitAccountStorage(block uint64, address common.Address, visitor mpt.NodeVisitor) error
 
 	// VisitAccounts visits all accounts in the trie with the given visitor.
 	VisitAccounts(block uint64, visitor mpt.AccountVisitor) error
@@ -473,14 +452,6 @@ func (v *archiveTrie) GetAccountInfo(addr common.Address) (mpt.AccountInfo, bool
 
 func (v *archiveTrie) GetValue(addr common.Address, key common.Key) (common.Value, error) {
 	return v.trie.GetStorage(v.block, addr, key)
-}
-
-func (v *archiveTrie) VisitTrie(visitor mpt.NodeVisitor) error {
-	return v.trie.VisitTrie(v.block, visitor)
-}
-
-func (v *archiveTrie) VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error {
-	return v.trie.VisitAccountStorage(v.block, address, visitor)
 }
 
 func (v *archiveTrie) VisitAccounts(visitor mpt.AccountVisitor) error {

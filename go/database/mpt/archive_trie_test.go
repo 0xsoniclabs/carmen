@@ -2249,6 +2249,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			db.EXPECT().hashKey(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			db.EXPECT().hashAddress(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr).MaxTimes(1)
+			db.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.HashHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{}, false, injectedErr).MaxTimes(1)
 			db.EXPECT().GetValue(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Value{}, injectedErr).MaxTimes(1)
@@ -2348,7 +2349,7 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 			db.EXPECT().getConfig().Return(S5ArchiveConfig).AnyTimes()
 			db.EXPECT().hashKey(gomock.Any()).DoAndReturn(common.Keccak256ForKey).AnyTimes()
 			db.EXPECT().hashAddress(gomock.Any()).DoAndReturn(common.Keccak256ForAddress).AnyTimes()
-			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](&EmptyNode{}).GetViewHandle(), nil).AnyTimes()
+			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.MakeShared[Node](&EmptyNode{}).GetHashHandle(), nil).AnyTimes()
 
 			archive := &ArchiveTrie{forest: db, head: liveState, roots: &rootList{}}
 			archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
