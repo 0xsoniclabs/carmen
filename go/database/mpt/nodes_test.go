@@ -6663,46 +6663,57 @@ func TestVisitPathToAccount_CanReachTerminalNodes(t *testing.T) {
 		},
 	}
 
+	testedMethods := map[string]func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error){
+		"view": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
+			return VisitPathToAccount(source, root, address, visitor)
+		},
+		"hash": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
+			return hashAccessVisitPathToAccount(source, root, address, visitor)
+		},
+	}
+
 	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			ctxt := newNiceNodeContext(t, ctrl)
+		for subname, call := range testedMethods {
+			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				ctxt := newNiceNodeContext(t, ctrl)
 
-			root, shared := ctxt.Build(test.trie)
-			accountPresent := false
-			handle := shared.GetViewHandle()
-			if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
-				if node, ok := n.(*AccountNode); ok && node.address == address {
-					accountPresent = true
-				}
-				return VisitResponseContinue
-			})); err != nil {
-				t.Fatalf("unexpected error during visit: %v", err)
-			}
-			handle.Release()
-
-			visitor := NewMockNodeVisitor(ctrl)
-			var last *gomock.Call
-			for _, label := range test.path {
-				ref, shared := ctxt.Get(label)
+				root, shared := ctxt.Build(test.trie)
+				accountPresent := false
 				handle := shared.GetViewHandle()
-				cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
-				handle.Release()
-				if last != nil {
-					cur.After(last)
+				if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+					if node, ok := n.(*AccountNode); ok && node.address == address {
+						accountPresent = true
+					}
+					return VisitResponseContinue
+				})); err != nil {
+					t.Fatalf("unexpected error during visit: %v", err)
 				}
-				last = cur
-			}
+				handle.Release()
 
-			found, err := VisitPathToAccount(ctxt, &root, address, visitor)
-			if err != nil {
-				t.Fatalf("unexpected error during path iteration: %v", err)
-			}
+				visitor := NewMockNodeVisitor(ctrl)
+				var last *gomock.Call
+				for _, label := range test.path {
+					ref, shared := ctxt.Get(label)
+					handle := shared.GetViewHandle()
+					cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
+					handle.Release()
+					if last != nil {
+						cur.After(last)
+					}
+					last = cur
+				}
 
-			if found != accountPresent {
-				t.Errorf("unexpected found result, wanted %t, got %t", accountPresent, found)
-			}
-		})
+				found, err := call(ctxt, &root, address, visitor) // test the method
+				if err != nil {
+					t.Fatalf("unexpected error during path iteration: %v", err)
+				}
+
+				if found != accountPresent {
+					t.Errorf("unexpected found result, wanted %t, got %t", accountPresent, found)
+				}
+			})
+		}
 	}
 }
 
@@ -6804,46 +6815,57 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 		},
 	}
 
+	testedMethods := map[string]func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error){
+		"view": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
+			return VisitPathToStorage(source, storageRoot, key, visitor)
+		},
+		"hash": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
+			return hashAccessVisitPathToStorage(source, storageRoot, key, visitor)
+		},
+	}
+
 	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			ctxt := newNiceNodeContext(t, ctrl)
+		for subname, call := range testedMethods {
+			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				ctxt := newNiceNodeContext(t, ctrl)
 
-			root, shared := ctxt.Build(test.trie)
-			storagePresent := false
-			handle := shared.GetViewHandle()
-			if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
-				if node, ok := n.(*ValueNode); ok && node.key == key {
-					storagePresent = true
-				}
-				return VisitResponseContinue
-			})); err != nil {
-				t.Fatalf("unexpected error during visit: %v", err)
-			}
-			handle.Release()
-
-			visitor := NewMockNodeVisitor(ctrl)
-			var last *gomock.Call
-			for _, label := range test.path {
-				ref, shared := ctxt.Get(label)
+				root, shared := ctxt.Build(test.trie)
+				storagePresent := false
 				handle := shared.GetViewHandle()
-				cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
-				handle.Release()
-				if last != nil {
-					cur.After(last)
+				if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+					if node, ok := n.(*ValueNode); ok && node.key == key {
+						storagePresent = true
+					}
+					return VisitResponseContinue
+				})); err != nil {
+					t.Fatalf("unexpected error during visit: %v", err)
 				}
-				last = cur
-			}
+				handle.Release()
 
-			found, err := VisitPathToStorage(ctxt, &root, key, visitor)
-			if err != nil {
-				t.Fatalf("unexpected error during path iteration: %v", err)
-			}
+				visitor := NewMockNodeVisitor(ctrl)
+				var last *gomock.Call
+				for _, label := range test.path {
+					ref, shared := ctxt.Get(label)
+					handle := shared.GetViewHandle()
+					cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
+					handle.Release()
+					if last != nil {
+						cur.After(last)
+					}
+					last = cur
+				}
 
-			if found != storagePresent {
-				t.Errorf("unexpected found result, wanted %t, got %t", storagePresent, found)
-			}
-		})
+				found, err := call(ctxt, &root, key, visitor) // test the method
+				if err != nil {
+					t.Fatalf("unexpected error during path iteration: %v", err)
+				}
+
+				if found != storagePresent {
+					t.Errorf("unexpected found result, wanted %t, got %t", storagePresent, found)
+				}
+			})
+		}
 	}
 }
 
@@ -6920,6 +6942,336 @@ func TestVisitPathToStorage_EmbeddedNode_Flag_Tracked(t *testing.T) {
 		})
 	}
 
+}
+
+func TestVisitNodes_Visits_All_Nodes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address := common.Address{1}
+	key := common.Key{2}
+
+	desc := &Extension{
+		path: AddressToNibblePath(address, ctxt)[0:30],
+		next: &Branch{children: Children{
+			0x1: &Empty{},
+			0x2: &Account{address: address, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+				storage: &Extension{
+					path:         KeyToNibblePath(key, ctxt)[0:40],
+					nextEmbedded: true,
+					next:         &Value{key: key, length: 24, value: common.Value{3}},
+				}},
+		},
+		},
+	}
+
+	root, handle := ctxt.Build(desc)
+
+	// collect expected nodes
+	expected := make([]NodeId, 0, 10)
+	node := handle.GetReadHandle()
+	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+		expected = append(expected, i.Id)
+		return VisitResponseContinue
+	})); err != nil {
+		t.Fatalf("unexpected error during path iteration: %v", err)
+	}
+	node.Release()
+
+	actual := make([]NodeId, 0, 10)
+	// collect actual nodes
+	if err := visitNodes(&root,
+		ctxt.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			actual = append(actual, info.Id)
+			return VisitResponseContinue
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if len(actual) == 0 {
+		t.Errorf("expected at least one node, but got none")
+	}
+
+	if !slices.Equal(expected, actual) {
+		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+	}
+}
+
+func TestVisitNodes_Visits_Nodes_Prune_Account(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address := common.Address{1}
+	key := common.Key{2}
+
+	desc := &Extension{
+		path: AddressToNibblePath(address, ctxt)[0:30],
+		next: &Branch{children: Children{
+			0x1: &Empty{},
+			0x2: &Account{address: address, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+				storage: &Extension{
+					path:         KeyToNibblePath(key, ctxt)[0:40],
+					nextEmbedded: true,
+					next:         &Value{key: key, length: 24, value: common.Value{3}},
+				}},
+		},
+		},
+	}
+
+	root, handle := ctxt.Build(desc)
+
+	// collect expected nodes
+	expected := make([]NodeId, 0, 10)
+	node := handle.GetReadHandle()
+	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+		expected = append(expected, i.Id)
+		return VisitResponsePrune
+	})); err != nil {
+		t.Fatalf("unexpected error during path iteration: %v", err)
+	}
+	node.Release()
+
+	actual := make([]NodeId, 0, 10)
+	// collect actual nodes
+	if err := visitNodes(&root,
+		ctxt.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			actual = append(actual, info.Id)
+			return VisitResponsePrune
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if len(actual) == 0 {
+		t.Errorf("expected at least one node, but got none")
+	}
+
+	if !slices.Equal(expected, actual) {
+		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+	}
+}
+
+func TestVisitNodes_Abort_Visitor(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address := common.Address{1}
+	desc := &Extension{
+		path: AddressToNibblePath(address, ctxt)[0:30],
+		next: &Empty{},
+	}
+
+	root, _ := ctxt.Build(desc)
+
+	var count int
+	// collect actual nodes
+	if err := visitNodes(&root,
+		ctxt.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			count++
+			return VisitResponseAbort
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if count != 1 {
+		t.Errorf("visitor should have been called only once, but was called %d times", count)
+	}
+}
+
+func TestVisitNodes_Error_From_Source(t *testing.T) {
+	injectedErr := errors.New("injected error")
+
+	ctrl := gomock.NewController(t)
+	mock := NewMockNodeSource(ctrl)
+	mock.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr)
+
+	root := NewNodeReference(EmptyId())
+	// collect actual nodes
+	if err := visitNodes(&root,
+		mock.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			return VisitResponseAbort
+		})); !errors.Is(err, injectedErr) {
+		t.Errorf("expected error to be %v, got %v", injectedErr, err)
+	}
+}
+
+func TestVisitAccounts_Visits_All_Accounts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address1 := common.Address{1}
+	address2 := common.Address{1}
+	key := common.Key{2}
+
+	desc := &Extension{
+		path: AddressToNibblePath(address1, ctxt)[0:30],
+		next: &Branch{children: Children{
+			0x1: &Empty{},
+			0x2: &Account{address: address1, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+				storage: &Extension{
+					path:         KeyToNibblePath(key, ctxt)[0:40],
+					nextEmbedded: true,
+					next:         &Value{key: key, length: 24, value: common.Value{3}},
+				}},
+			0x3: &Account{address: address2, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+				storage: &Extension{
+					path:         KeyToNibblePath(key, ctxt)[0:40],
+					nextEmbedded: true,
+					next:         &Value{key: key, length: 24, value: common.Value{3}},
+				}},
+		},
+		},
+	}
+
+	root, handle := ctxt.Build(desc)
+
+	// collect expected nodes
+	expected := make([]common.Address, 0, 2)
+	node := handle.GetReadHandle()
+	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+		if account, ok := n.(*AccountNode); ok {
+			expected = append(expected, account.address)
+		}
+		return VisitResponseContinue
+	})); err != nil {
+		t.Fatalf("unexpected error during path iteration: %v", err)
+	}
+	node.Release()
+
+	actual := make([]common.Address, 0, 2)
+	// collect actual nodes
+	if err := VisitAccounts(ctxt, &root,
+		MakeAccountVisitor(func(address common.Address, info AccountInfo) VisitResponse {
+			actual = append(actual, address)
+			return VisitResponseContinue
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if len(actual) == 0 {
+		t.Errorf("expected at least one node, but got none")
+	}
+
+	if !slices.Equal(expected, actual) {
+		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+	}
+}
+
+func TestVisitStorage_Visits_All_Slots(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address1 := common.Address{2 << 4}
+	key1 := common.Key{2}
+	key2 := common.Key{3}
+
+	desc := &Branch{children: Children{
+		0x1: &Empty{},
+		0x2: &Account{address: address1, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+			storage: &Extension{
+				path:         KeyToNibblePath(key1, ctxt)[0:40],
+				nextEmbedded: true,
+				next: &Branch{children: Children{
+					0x1: &Value{key: key1, length: 24, value: common.Value{1}},
+					0x2: &Value{key: key2, length: 24, value: common.Value{2}},
+				}},
+			}},
+	},
+	}
+
+	root, handle := ctxt.Build(desc)
+
+	// collect expected nodes
+	expected := make([]common.Key, 0, 2)
+	node := handle.GetReadHandle()
+	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+		if value, ok := n.(*ValueNode); ok {
+			expected = append(expected, value.key)
+		}
+		return VisitResponseContinue
+	})); err != nil {
+		t.Fatalf("unexpected error during path iteration: %v", err)
+	}
+	node.Release()
+
+	actual := make([]common.Key, 0, 2)
+	// collect actual nodes
+	if err := VisitStorages(ctxt, &root, address1,
+		MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+			actual = append(actual, key)
+			return VisitResponseContinue
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if len(actual) == 0 {
+		t.Errorf("expected at least one node, but got none")
+	}
+
+	if !slices.Equal(expected, actual) {
+		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+	}
+}
+
+func TestVisitStorage_Error_From_Source(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContextWithConfig(t, ctrl, S4LiveConfig)
+
+	address1 := common.Address{2 << 4}
+	key1 := common.Key{2}
+	key2 := common.Key{3}
+
+	desc := &Branch{children: Children{
+		0x1: &Empty{},
+		0x2: &Account{address: address1, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+			storage: &Extension{
+				path:         KeyToNibblePath(key1, ctxt)[0:40],
+				nextEmbedded: true,
+				next: &Branch{children: Children{
+					0x1: &Value{key: key1, length: 24, value: common.Value{1}},
+					0x2: &Value{key: key2, length: 24, value: common.Value{2}},
+				}},
+			}},
+	},
+	}
+
+	root, _ := ctxt.Build(desc)
+
+	nodeManager := &errorInjectingNodeManager{NodeManager: ctxt, errorPosition: 9999}
+	// collect number of paths
+	if err := VisitStorages(nodeManager, &root, address1,
+		MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+			return VisitResponseContinue
+		})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	injectedErr := errors.New("injected error")
+	loops := nodeManager.counter
+	for i := 0; i < loops; i++ {
+		nodeManager := &errorInjectingNodeManager{NodeManager: ctxt, errorPosition: i, err: injectedErr}
+		if err := VisitStorages(nodeManager, &root, address1,
+			MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+				return VisitResponseContinue
+			})); !errors.Is(err, injectedErr) {
+			t.Errorf("expected error: %v, got: %v", injectedErr, err)
+		}
+	}
 }
 
 func TestTransitions_ImmutableTransitionHaveExpectedEffect(t *testing.T) {

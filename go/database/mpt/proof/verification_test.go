@@ -247,19 +247,19 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 		count++
 		return archiveTrie.GetHash(block)
 	}).AnyTimes()
-	errorInjectingArchiveVerifiableTrieMock.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, visitor mpt.NodeVisitor) error {
+	errorInjectingArchiveVerifiableTrieMock.EXPECT().VisitAccounts(gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, visitor mpt.AccountVisitor) error {
 		if count >= threshold {
 			return injectedError
 		}
 		count++
-		return archiveTrie.VisitTrie(block, visitor)
+		return archiveTrie.VisitAccounts(block, visitor)
 	}).AnyTimes()
-	errorInjectingArchiveVerifiableTrieMock.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, address common.Address, visitor mpt.NodeVisitor) error {
+	errorInjectingArchiveVerifiableTrieMock.EXPECT().VisitStorageSlots(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, address common.Address, visitor mpt.StorageVisitor) error {
 		if count >= threshold {
 			return injectedError
 		}
 		count++
-		return archiveTrie.VisitAccountStorage(block, address, visitor)
+		return archiveTrie.VisitStorageSlots(block, address, visitor)
 	}).AnyTimes()
 	errorInjectingArchiveVerifiableTrieMock.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, addr common.Address) (mpt.AccountInfo, bool, error) {
 		if count >= threshold {
@@ -344,19 +344,19 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 		count++
 		return trie.UpdateHashes()
 	}).AnyTimes()
-	errorInjectingVerifiableTrieMock.EXPECT().VisitTrie(gomock.Any()).DoAndReturn(func(visitor mpt.NodeVisitor) error {
+	errorInjectingVerifiableTrieMock.EXPECT().VisitAccounts(gomock.Any()).DoAndReturn(func(visitor mpt.AccountVisitor) error {
 		if count >= threshold {
 			return injectedError
 		}
 		count++
-		return trie.VisitTrie(visitor)
+		return trie.VisitAccounts(visitor)
 	}).AnyTimes()
-	errorInjectingVerifiableTrieMock.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).DoAndReturn(func(address common.Address, visitor mpt.NodeVisitor) error {
+	errorInjectingVerifiableTrieMock.EXPECT().VisitStorageSlots(gomock.Any(), gomock.Any()).DoAndReturn(func(address common.Address, visitor mpt.StorageVisitor) error {
 		if count >= threshold {
 			return injectedError
 		}
 		count++
-		return trie.VisitAccountStorage(address, visitor)
+		return trie.VisitStorageSlots(address, visitor)
 	}).AnyTimes()
 	errorInjectingVerifiableTrieMock.EXPECT().GetAccountInfo(gomock.Any()).DoAndReturn(func(addr common.Address) (mpt.AccountInfo, bool, error) {
 		if count >= threshold {
@@ -460,8 +460,8 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	threshold := 1000_000
 	errorInjectingTrieMock := NewMockverifiableTrie(ctrl)
 	errorInjectingTrieMock.EXPECT().UpdateHashes().DoAndReturn(trie.UpdateHashes).AnyTimes()
-	errorInjectingTrieMock.EXPECT().VisitTrie(gomock.Any()).DoAndReturn(trie.VisitTrie).AnyTimes()
-	errorInjectingTrieMock.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).DoAndReturn(trie.VisitAccountStorage).AnyTimes()
+	errorInjectingTrieMock.EXPECT().VisitAccounts(gomock.Any()).DoAndReturn(trie.VisitAccounts).AnyTimes()
+	errorInjectingTrieMock.EXPECT().VisitStorageSlots(gomock.Any(), gomock.Any()).DoAndReturn(trie.VisitStorageSlots).AnyTimes()
 	errorInjectingTrieMock.EXPECT().GetAccountInfo(gomock.Any()).DoAndReturn(trie.GetAccountInfo).AnyTimes()
 	errorInjectingTrieMock.EXPECT().GetValue(gomock.Any(), gomock.Any()).DoAndReturn(trie.GetValue).AnyTimes()
 	errorInjectingTrieMock.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).DoAndReturn(func(address common.Address, key ...common.Key) (witness.Proof, error) {
@@ -571,6 +571,36 @@ func TestVerification_VerifyProof_Can_Cancel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	proof := witness.NewMockProof(ctrl)
+	proof.EXPECT().GetState(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Value{}, true, nil).AnyTimes()
+	proof.EXPECT().IsValid().Return(true).AnyTimes()
+
+	trie := NewMockverifiableTrie(ctrl)
+	trie.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).Return(proof, nil).AnyTimes()
+
+	ctx := newCountingWhenDoneContext(context.Background(), 10_000_000)
+	visitor := storageVerifyingVisitor{ctx: ctx, trie: trie, storage: make(map[common.Key]common.Value)}
+
+	const loops = 100
+	for i := 0; i < loops; i++ {
+		visitor.VisitStorage(common.Key{byte(i)}, common.Value{})
+	}
+
+	for i := 0; i < ctx.count; i++ {
+		ctx := newCountingWhenDoneContext(context.Background(), i)
+		visitor := storageVerifyingVisitor{ctx: ctx, trie: trie, storage: make(map[common.Key]common.Value)}
+		for i := 0; i < loops; i++ {
+			visitor.VisitStorage(common.Key{byte(i)}, common.Value{})
+		}
+		if err := visitor.err; !errors.Is(err, interrupt.ErrCanceled) {
+			t.Errorf("expected error %v, got %v", interrupt.ErrCanceled, err)
+		}
+	}
+}
+
+func TestVerification_VerifyProof_Can_AccountVisitor(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	proof := witness.NewMockProof(ctrl)
 	proof.EXPECT().GetBalance(gomock.Any(), gomock.Any()).Return(amount.New(), true, nil).AnyTimes()
 	proof.EXPECT().GetNonce(gomock.Any(), gomock.Any()).Return(common.Nonce{}, true, nil).AnyTimes()
 	proof.EXPECT().GetCodeHash(gomock.Any(), gomock.Any()).Return(common.Hash{}, true, nil).AnyTimes()
@@ -579,62 +609,26 @@ func TestVerification_VerifyProof_Can_Cancel(t *testing.T) {
 
 	trie := NewMockverifiableTrie(ctrl)
 	trie.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).Return(proof, nil).AnyTimes()
-	trie.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	trie.EXPECT().VisitStorageSlots(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	trie.EXPECT().GetValue(gomock.Any(), gomock.Any()).Return(common.Value{}, nil).AnyTimes()
 
-	tests := map[string]struct {
-		create   func(ctx context.Context) mpt.NodeVisitor
-		getError func(visitor mpt.NodeVisitor) error
-	}{
-		"account": {
-			func(ctx context.Context) mpt.NodeVisitor {
-				return &accountVerifyingVisitor{ctx: ctx, trie: trie, logWindow: 1000}
-			},
-			func(visitor mpt.NodeVisitor) error {
-				return visitor.(*accountVerifyingVisitor).err
-			},
-		},
-		"storage": {
-			func(ctx context.Context) mpt.NodeVisitor {
-				storage := make(map[common.Key]common.Value)
-				return &storageVerifyingVisitor{ctx: ctx, trie: trie, storage: storage}
-			},
-			func(visitor mpt.NodeVisitor) error {
-				return visitor.(*storageVerifyingVisitor).err
-			},
-		},
+	ctx := newCountingWhenDoneContext(context.Background(), 10_000_000)
+	visitor := accountVerifyingVisitor{ctx: ctx, trie: trie, logWindow: 1, observer: mpt.NilVerificationObserver{}}
+
+	const loops = 100
+	for i := 0; i < loops; i++ {
+		visitor.VisitAccount(common.Address{byte(i)}, mpt.AccountInfo{})
 	}
 
-	const numNodes = 100
-	nodes := make([]mpt.Node, 0, numNodes)
-	for i := 0; i < numNodes; i++ {
-		nodes = append(nodes, &mpt.ValueNode{})
-		nodes = append(nodes, &mpt.BranchNode{})
-		nodes = append(nodes, &mpt.ExtensionNode{})
-		nodes = append(nodes, &mpt.AccountNode{})
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-
-			ctx := newCountingWhenDoneContext(context.Background(), 10_000_000)
-			visitor := test.create(ctx)
-			for _, node := range nodes {
-				visitor.Visit(node, mpt.NodeInfo{})
-			}
-
-			for i := 0; i < ctx.count; i++ {
-				ctx := newCountingWhenDoneContext(context.Background(), i)
-				visitor := test.create(ctx)
-				for _, node := range nodes {
-					visitor.Visit(node, mpt.NodeInfo{})
-				}
-				if err := test.getError(visitor); !errors.Is(err, interrupt.ErrCanceled) {
-					t.Errorf("expected error %v, got %v", interrupt.ErrCanceled, err)
-				}
-
-			}
-		})
+	for i := 0; i < ctx.count; i++ {
+		ctx := newCountingWhenDoneContext(context.Background(), i)
+		visitor := accountVerifyingVisitor{ctx: ctx, trie: trie, logWindow: 1, observer: mpt.NilVerificationObserver{}}
+		for i := 0; i < loops; i++ {
+			visitor.VisitAccount(common.Address{byte(i)}, mpt.AccountInfo{})
+		}
+		if err := visitor.err; !errors.Is(err, interrupt.ErrCanceled) {
+			t.Errorf("expected error %v, got %v", interrupt.ErrCanceled, err)
+		}
 	}
 }
 
@@ -679,7 +673,6 @@ func TestVerification_Generates_ExistingKey(t *testing.T) {
 func TestVerification_Log_Processed_Accounts(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	accountNode := &mpt.AccountNode{}
 	const LogWindow = 100
 
 	observer := mpt.NewMockVerificationObserver(ctrl)
@@ -698,14 +691,14 @@ func TestVerification_Log_Processed_Accounts(t *testing.T) {
 
 	trie := NewMockverifiableTrie(ctrl)
 	trie.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).Return(proof, nil).AnyTimes()
-	trie.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	trie.EXPECT().VisitStorageSlots(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	trie.EXPECT().GetValue(gomock.Any(), gomock.Any()).Return(common.Value{}, nil).AnyTimes()
 
 	visitor := accountVerifyingVisitor{trie: trie, observer: observer, logWindow: LogWindow,
 		ctx: context.Background()}
 
 	for i := 0; i < LogWindow+1; i++ {
-		visitor.Visit(accountNode, mpt.NodeInfo{})
+		visitor.VisitAccount(common.Address{1}, mpt.AccountInfo{})
 	}
 }
 
