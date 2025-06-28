@@ -172,6 +172,14 @@ func (s *LiveTrie) VisitTrie(visitor NodeVisitor) error {
 	return s.forest.VisitTrie(&s.root, visitor)
 }
 
+func (s *LiveTrie) VisitAccounts(visitor AccountVisitor) error {
+	return VisitAccounts(s.forest, &s.root, visitor)
+}
+
+func (s *LiveTrie) VisitStorageSlots(address common.Address, visitor StorageVisitor) error {
+	return VisitStorages(s.forest, &s.root, address, visitor)
+}
+
 // VisitAccountStorage visits the storage nodes of an account with the given address.
 // The visited nodes do not contain the account node itself.
 func (s *LiveTrie) VisitAccountStorage(address common.Address, visitor NodeVisitor) error {
