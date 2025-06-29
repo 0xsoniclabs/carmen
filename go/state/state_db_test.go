@@ -4504,6 +4504,85 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 	}
 }
 
+// mockStoredDataCache implements only Clear for testing.
+type mockStoredDataCache struct {
+	cleared bool
+}
+
+func (m *mockStoredDataCache) Clear() { m.cleared = true }
+
+func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing.T) {
+	const limit = 5
+	s := &stateDB{
+		reincarnation:   make(map[common.Address]uint64),
+		storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](limit),
+	}
+
+	for i := 0; i < limit; i++ {
+		s.reincarnation[common.Address{byte(i)}] = uint64(i)
+		s.storedDataCache.Set(
+			slotId{common.Address{byte(i)}, common.Key{byte(i)}},
+			storedDataCacheValue{common.Value{byte(i)}, 1})
+	}
+
+	s.resetReincarnationWhenExceeds(limit + 1)
+
+	if got, want := len(s.reincarnation), limit; got != want {
+		t.Errorf("reincarnation size is %d, want %d", got, want)
+	}
+	isEmpty := true
+	s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
+		isEmpty = false
+		return false
+	})
+
+	if isEmpty {
+		t.Errorf("storedDataCache should not be empty")
+	}
+}
+
+func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
+	const limit = 5
+	tests := map[string]struct {
+		limit func() int
+	}{
+		"at limit":    {limit: func() int { return limit }},
+		"above limit": {limit: func() int { return limit - 1 }},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := &stateDB{
+				reincarnation:   make(map[common.Address]uint64),
+				storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](limit),
+			}
+
+			for i := 0; i < limit; i++ {
+				s.reincarnation[common.Address{byte(i)}] = uint64(i)
+				s.storedDataCache.Set(
+					slotId{common.Address{byte(i)}, common.Key{byte(i)}},
+					storedDataCacheValue{common.Value{byte(i)}, 1})
+			}
+
+			s.resetReincarnationWhenExceeds(test.limit())
+
+			if len(s.reincarnation) != 0 {
+				t.Errorf("reincarnation size is %d, want 0", len(s.reincarnation))
+			}
+
+			isEmpty := true
+			s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
+				isEmpty = false
+				return false
+			})
+
+			if !isEmpty {
+				t.Errorf("storedDataCache should not be empty")
+			}
+		})
+	}
+}
+
 type sameEffectAs struct {
 	want common.Update
 }

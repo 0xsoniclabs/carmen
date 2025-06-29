@@ -1389,11 +1389,17 @@ func (s *stateDB) ResetBlockContext() {
 	s.codes = make(map[common.Address]*codeValue)
 	s.logsInBlock = 0
 	s.resetTransactionContext()
+	s.resetReincarnationWhenExceeds(100_000_000)
+}
 
-	// limit the reincarnation map size not to grow indefinitely
-	// we cap the map to 100M items, which was experimentally assessed,
-	// when the size reached both structures are emptied
-	if len(s.reincarnation) > 100_000_000 {
+// resetReincarnationWhenExceeds limits the reincarnation map size
+// not to grow indefinitely; we cap the map to 100M items, which was
+// experimentally assessed.
+// When the size reached the limit, this structure is emptied,
+// and the stored data cache is cleared as well.
+func (s *stateDB) resetReincarnationWhenExceeds(limit int) {
+	if len(s.reincarnation) >= limit {
+		// Reset reincarnation map and stored data cache.
 		s.reincarnation = make(map[common.Address]uint64, defaultStoredDataCacheSize)
 		s.storedDataCache.Clear()
 	}
