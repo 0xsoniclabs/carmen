@@ -1398,7 +1398,7 @@ func (s *stateDB) ResetBlockContext() {
 // When the size reached the limit, this structure is emptied,
 // and the stored data cache is cleared as well.
 func (s *stateDB) resetReincarnationWhenExceeds(limit int) {
-	if len(s.reincarnation) >= limit {
+	if len(s.reincarnation) > limit {
 		// Reset reincarnation map and stored data cache.
 		s.reincarnation = make(map[common.Address]uint64, defaultStoredDataCacheSize)
 		s.storedDataCache.Clear()
