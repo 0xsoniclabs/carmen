@@ -1393,7 +1393,7 @@ func (s *stateDB) ResetBlockContext() {
 }
 
 // resetReincarnationWhenExceeds limits the reincarnation map size
-// not to grow indefinitely; we cap the map to 100M items, which was
+// not to grow indefinitely. We cap the map to 100M items, which was
 // experimentally assessed.
 // When the size reached the limit, this structure is emptied,
 // and the stored data cache is cleared as well.
