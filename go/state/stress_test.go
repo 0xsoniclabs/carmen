@@ -14,11 +14,8 @@
 package state_test
 
 import (
-	"fmt"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
-	"os"
-	"runtime/pprof"
 	"testing"
 )
 
@@ -131,30 +128,5 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 				t.Errorf("failed to close DB: %v", err)
 			}
 		})
-	}
-}
-
-func TestStateDB_Reincarnation_Capture_Memory_Size(t *testing.T) {
-	const size = 100_000_000
-	reincarnation := make(map[common.Address]uint64, size)
-
-	for i := 0; i < size; i++ {
-		addr := common.Address{byte(i), byte(i >> 8), byte(i >> 16), byte(i >> 24)}
-		reincarnation[addr] = uint64(i)
-	}
-
-	if got, want := len(reincarnation), size; got != want {
-		t.Errorf("reincarnation size is %d, want %d", got, want)
-	}
-
-	f, err := os.Create(fmt.Sprintf("reincarnation_memory_%d.prof", size))
-	if err != nil {
-		t.Fatalf("could not create memory profile: %v", err)
-	}
-	if err := pprof.WriteHeapProfile(f); err != nil {
-		t.Errorf("could not write memory profile: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("could not close memory profile file: %v", err)
 	}
 }

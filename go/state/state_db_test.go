@@ -4504,13 +4504,6 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 	}
 }
 
-// mockStoredDataCache implements only Clear for testing.
-type mockStoredDataCache struct {
-	cleared bool
-}
-
-func (m *mockStoredDataCache) Clear() { m.cleared = true }
-
 func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing.T) {
 	const limit = 5
 	s := &stateDB{
