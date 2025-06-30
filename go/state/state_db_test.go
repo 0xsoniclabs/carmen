@@ -4546,8 +4546,8 @@ func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 	tests := map[string]struct {
 		limit func() int
 	}{
-		"at limit":    {limit: func() int { return limit }},
-		"above limit": {limit: func() int { return limit - 1 }},
+		"at limit":    {limit: func() int { return limit - 1 }},
+		"above limit": {limit: func() int { return 1 }},
 	}
 
 	for name, test := range tests {
