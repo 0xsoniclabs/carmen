@@ -4537,10 +4537,10 @@ func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing
 func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 	const limit = 5
 	tests := map[string]struct {
-		limit func() int
+		limit int
 	}{
-		"at limit":    {limit: func() int { return limit - 1 }},
-		"above limit": {limit: func() int { return 1 }},
+		"at limit":    {limit: limit - 1},
+		"above limit": {limit: 1},
 	}
 
 	for name, test := range tests {
@@ -4557,7 +4557,7 @@ func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 					storedDataCacheValue{common.Value{byte(i)}, 1})
 			}
 
-			s.resetReincarnationWhenExceeds(test.limit())
+			s.resetReincarnationWhenExceeds(test.limit)
 
 			if len(s.reincarnation) != 0 {
 				t.Errorf("reincarnation size is %d, want 0", len(s.reincarnation))
