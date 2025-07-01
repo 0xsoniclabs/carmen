@@ -16,13 +16,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"github.com/0xsoniclabs/carmen/go/common/interrupt"
-	"github.com/0xsoniclabs/carmen/go/state"
 	"io"
 	"os"
 	"path"
 	"sort"
+
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/carmen/go/state"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -67,7 +68,11 @@ func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Wr
 	}
 
 	logger.Printf("opening archive: %s", directory)
-	archive, err := mpt.OpenArchiveTrie(directory, info.Config, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+	archive, err := mpt.OpenArchiveTrie(
+		directory,
+		info.Config,
+		mpt.NodeCacheConfig{Capacity: exportCacheCapacitySize},
+		mpt.ArchiveConfig{})
 	if err != nil {
 		return err
 	}
@@ -246,7 +251,8 @@ func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader) (e
 	}
 
 	// Create a live-DB updated in parallel for faster hash computation.
-	live, err := mpt.OpenGoFileState(liveDbDir, mpt.S5LiveConfig, mpt.NodeCacheConfig{})
+	live, err := mpt.OpenGoFileState(liveDbDir, mpt.S5LiveConfig,
+		mpt.NodeCacheConfig{Capacity: importNodeCacheSize})
 	if err != nil {
 		return fmt.Errorf("failed to create auxiliary live DB: %w", err)
 	}
@@ -258,7 +264,11 @@ func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader) (e
 	}()
 
 	// Create an empty archive.
-	archive, err := mpt.OpenArchiveTrie(archiveDbDir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+	archive, err := mpt.OpenArchiveTrie(
+		archiveDbDir,
+		mpt.S5ArchiveConfig,
+		mpt.NodeCacheConfig{Capacity: importNodeCacheSize},
+		mpt.ArchiveConfig{})
 	if err != nil {
 		return fmt.Errorf("failed to create empty state: %w", err)
 	}
