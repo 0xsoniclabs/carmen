@@ -254,7 +254,7 @@ func ExportLive(ctx context.Context, logger *Log, db mptStateVisitor, out io.Wri
 
 // ImportLiveDb creates a fresh StateDB in the given directory and fills it
 // with the content read from the given reader.
-func ImportLiveDb(logger *Log, directory string, in io.Reader) error {
+func ImportLiveDb(logger *Log, directory string, in io.Reader, _ int) error {
 	_, _, err := runImport(logger, directory, in, mpt.S5LiveConfig)
 	return err
 }
