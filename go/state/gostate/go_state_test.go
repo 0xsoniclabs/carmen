@@ -14,7 +14,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -846,6 +848,55 @@ func TestState_All_Archive_Operations_May_Cause_Failure(t *testing.T) {
 	if err := db.Close(); !errors.Is(err, injectedErr) {
 		t.Errorf("closing databse should fail")
 	}
+}
+
+func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
+	expected := common.Update{
+		Slots: []common.SlotUpdate{
+			{address1, key1, val1},
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	ctrl := gomock.NewController(t)
+	archive := archive.NewMockArchive(ctrl)
+	archive.EXPECT().Flush().AnyTimes()
+	archive.EXPECT().Close()
+	archive.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Do(func(_ uint64, update common.Update, _ any) {
+		if got, want := update, expected; !reflect.DeepEqual(got, want) {
+			t.Errorf("update was not normalised as expected: got %v, want %v", got, want)
+		}
+		wg.Done()
+	})
+
+	live := state.NewMockLiveDB(ctrl)
+	live.EXPECT().Flush().AnyTimes()
+	live.EXPECT().Close()
+	live.EXPECT().Apply(gomock.Any(), gomock.Any()).Do(func(_ uint64, update *common.Update) (common.Releaser, error) {
+		return nil, update.Normalize()
+	})
+
+	st := newGoState(live, archive, []func(){})
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	// this update will be normalised in certain schemas to remove duplicates
+	update := common.Update{
+		Slots: []common.SlotUpdate{
+			{address1, key1, val1},
+			{address1, key1, val1},
+		},
+	}
+
+	if err := st.Apply(1, update); err != nil {
+		t.Errorf("failed to apply update: %v", err)
+	}
+
+	wg.Wait()
 }
 
 func runAddBlock(block uint64, stateDB state.StateDB) {
