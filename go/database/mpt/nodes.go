@@ -487,7 +487,7 @@ func visitNodesWithReadAccess(source NodeSource, root *NodeReference, visitor No
 // If no more nodes are available, the execution ends.
 // The function returns an error if the tree cannot be
 // iterated due to error propagated from the node source.
-// The function accesses nodes using the Read access provided by the source.
+// The function accesses nodes using the Hash access provided by the source.
 func visitNodesWithHashAccess(source NodeManager, root *NodeReference, visitor NodeVisitor) error {
 	return visitNodes(root,
 		source.getHashAccess,
