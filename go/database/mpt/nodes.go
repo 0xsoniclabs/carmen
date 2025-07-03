@@ -281,13 +281,13 @@ func VisitPathToAccount(source NodeSource, root *NodeReference, address common.A
 		visitor)
 }
 
-// hashAccessVisitPathToStorage visits all nodes from the input storage root following the input storage key.
+// visitPathToStorageWithHashAccess visits all nodes from the input storage root following the input storage key.
 // Each encountered node is passed to the visitor.
 // If no more nodes are available on the path, the execution ends.
 // If the key does not exist, the function returns false.
 // The function returns an error if the path cannot be iterated due to error propagated from the node source.
 // Nodes provided via the visitor are made available with the hash privilege.
-func hashAccessVisitPathToStorage(source NodeManager, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
+func visitPathToStorageWithHashAccess(source NodeManager, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
 	path := KeyToNibblePath(key, source)
 	return visitPathTo(storageRoot, path, nil, &key,
 		source.getHashAccess,
@@ -297,13 +297,13 @@ func hashAccessVisitPathToStorage(source NodeManager, storageRoot *NodeReference
 		visitor)
 }
 
-// hashAccessVisitPathToAccount visits all nodes from the input root following the input account address.
+// visitPathToAccountWithHashAccess visits all nodes from the input root following the input account address.
 // Each encountered node is passed to the visitor.
 // If no more nodes are available on the path, the execution ends.
 // If the account address does not exist, the function returns false.
 // The function returns an error if the path cannot be iterated due to error propagated from the node source.
 // Nodes provided via the visitor are made available with the hash privilege.
-func hashAccessVisitPathToAccount(source NodeManager, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
+func visitPathToAccountWithHashAccess(source NodeManager, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
 	path := AddressToNibblePath(address, source)
 	return visitPathTo(root, path, &address, nil,
 		source.getHashAccess,

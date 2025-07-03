@@ -2262,12 +2262,6 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			live.EXPECT().Flush().Return(injectedErr).AnyTimes() // flush can be repeated
 			live.EXPECT().closeWithError(gomock.Any()).AnyTimes()
 
-			nodeSource := NewMockNodeSource(ctrl)
-			nodeSource.EXPECT().getConfig().Return(S5ArchiveConfig).AnyTimes()
-			nodeSource.EXPECT().hashKey(gomock.Any()).Return(common.Hash{}).AnyTimes()
-			nodeSource.EXPECT().hashAddress(gomock.Any()).Return(common.Hash{}).AnyTimes()
-			nodeSource.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr).MaxTimes(1)
-
 			archive := &ArchiveTrie{forest: db, head: live, roots: &rootList{}}
 			archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
 

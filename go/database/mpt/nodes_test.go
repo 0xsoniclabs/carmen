@@ -6668,12 +6668,12 @@ func TestVisitPathToAccount_CanReachTerminalNodes(t *testing.T) {
 			return VisitPathToAccount(source, root, address, visitor)
 		},
 		"hash": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
-			return hashAccessVisitPathToAccount(source, root, address, visitor)
+			return visitPathToAccountWithHashAccess(source, root, address, visitor)
 		},
 	}
 
 	for name, test := range tests {
-		for subname, call := range testedMethods {
+		for subname, visit := range testedMethods {
 			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
 				ctrl := gomock.NewController(t)
 				ctxt := newNiceNodeContext(t, ctrl)
@@ -6704,7 +6704,7 @@ func TestVisitPathToAccount_CanReachTerminalNodes(t *testing.T) {
 					last = cur
 				}
 
-				found, err := call(ctxt, &root, address, visitor) // test the method
+				found, err := visit(ctxt, &root, address, visitor) // test the method
 				if err != nil {
 					t.Fatalf("unexpected error during path iteration: %v", err)
 				}
@@ -6820,12 +6820,12 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 			return VisitPathToStorage(source, storageRoot, key, visitor)
 		},
 		"hash": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
-			return hashAccessVisitPathToStorage(source, storageRoot, key, visitor)
+			return visitPathToStorageWithHashAccess(source, storageRoot, key, visitor)
 		},
 	}
 
 	for name, test := range tests {
-		for subname, call := range testedMethods {
+		for subname, visit := range testedMethods {
 			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
 				ctrl := gomock.NewController(t)
 				ctxt := newNiceNodeContext(t, ctrl)
@@ -6856,7 +6856,7 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 					last = cur
 				}
 
-				found, err := call(ctxt, &root, key, visitor) // test the method
+				found, err := visit(ctxt, &root, key, visitor) // test the method
 				if err != nil {
 					t.Fatalf("unexpected error during path iteration: %v", err)
 				}
@@ -6866,6 +6866,49 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestVisitPathToStorageWithHashAccess_Nodes_Hash_Protected(t *testing.T) {
+	desc := &Extension{path: []Nibble{1, 2}, next: &Branch{children: Children{
+		0x4: &Account{
+			address: common.Address{0x12, 0x42},
+			info:    AccountInfo{Nonce: common.Nonce{1}},
+			storage: &Value{key: common.Key{0x12}, value: common.Value{1}},
+		},
+	}}}
+
+	ctrl := gomock.NewController(t)
+	ctxt := newNiceNodeContext(t, ctrl)
+
+	var pathFound bool
+	root, _ := ctxt.Build(desc)
+	if _, err := visitPathToAccountWithHashAccess(ctxt, &root, common.Address{0x12, 0x42}, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+		if account, ok := node.(*AccountNode); ok {
+			if _, err := visitPathToStorageWithHashAccess(ctxt, &account.storage, common.Key{0x12}, MakeVisitor(func(storageNode Node, storageInfo NodeInfo) VisitResponse {
+				// node cannot be accessed via view access as long as hash access is held
+				if _, ok := ctxt.getHandle(t, storageInfo.Id).TryGetViewHandle(); ok {
+					t.Errorf("expected node to be hash protected, but it is not")
+				}
+				pathFound = true
+				return VisitResponseContinue
+			})); err != nil {
+				t.Fatalf("unexpected error during visit: %v", err)
+			}
+			return VisitResponseContinue
+		}
+		
+		// node cannot be accessed via view access as long as hash access is held
+		if _, ok := ctxt.getHandle(t, info.Id).TryGetViewHandle(); ok {
+			t.Errorf("expected node to be hash protected, but it is not")
+		}
+		return VisitResponseContinue
+	})); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if !pathFound {
+		t.Errorf("expected to find storage path, but it was not found")
 	}
 }
 
@@ -8253,6 +8296,15 @@ func (c *nodeContext) tryGetNode(t *testing.T, id NodeId) shared.ReadHandle[Node
 		t.Fatalf("failed to gain read access to node %v -- forgot to release some handles?", id)
 	}
 	return handle
+}
+
+func (c *nodeContext) getHandle(t *testing.T, id NodeId) *shared.Shared[Node] {
+	entry, found := c.index[id]
+	if !found {
+		t.Fatalf("unknown node: %v", id)
+	}
+
+	return entry.node
 }
 
 func (c *nodeContext) ExpectEqualTries(t *testing.T, want, got NodeReference) {
