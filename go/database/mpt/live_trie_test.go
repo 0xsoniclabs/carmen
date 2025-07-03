@@ -191,6 +191,8 @@ func TestLiveTrie_Fail_Read_Data(t *testing.T) {
 	db.EXPECT().ClearStorage(gomock.Any(), gomock.Any()).Return(NodeReference{}, injectedErr)
 	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).Return(injectedErr)
 	db.EXPECT().updateHashesFor(gomock.Any()).Return(common.Hash{}, nil, injectedErr)
+	db.EXPECT().getConfig().Return(S4LiveConfig)
+	db.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr).AnyTimes()
 	db.EXPECT().Close()
 
 	mpt := &LiveTrie{forest: db}
@@ -218,6 +220,12 @@ func TestLiveTrie_Fail_Read_Data(t *testing.T) {
 	nodeVisitor := NewMockNodeVisitor(ctrl)
 	if err := mpt.VisitTrie(nodeVisitor); !errors.Is(err, injectedErr) {
 		t.Errorf("getting account should fail")
+	}
+	if err := mpt.VisitStorageSlots(common.Address{1}, nil); !errors.Is(err, injectedErr) {
+		t.Errorf("visiting storage slots should fail")
+	}
+	if err := mpt.VisitAccounts(nil); !errors.Is(err, injectedErr) {
+		t.Errorf("visiting accounts should fail")
 	}
 }
 
