@@ -7043,7 +7043,7 @@ func TestVisitNodes_Visits_All_Nodes(t *testing.T) {
 
 	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
 		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
-			return visitNodesWithReadAccess(source, root, visitor)
+			return visitNodesWithViewAccess(source, root, visitor)
 		},
 		"hash": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
 			return visitNodesWithHashAccess(source, root, visitor)
@@ -7121,7 +7121,7 @@ func TestVisitNodes_Visits_Nodes_Prune_Account(t *testing.T) {
 
 	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
 		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
-			return visitNodesWithReadAccess(source, root, visitor)
+			return visitNodesWithViewAccess(source, root, visitor)
 		},
 		"hash": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
 			return visitNodesWithHashAccess(source, root, visitor)
@@ -7176,7 +7176,7 @@ func TestVisitNodes_Abort_Visitor(t *testing.T) {
 
 	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
 		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
-			return visitNodesWithReadAccess(source, root, visitor)
+			return visitNodesWithViewAccess(source, root, visitor)
 		},
 		"hash": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
 			return visitNodesWithHashAccess(source, root, visitor)
