@@ -16,13 +16,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"github.com/0xsoniclabs/carmen/go/common/interrupt"
-	"github.com/0xsoniclabs/carmen/go/state"
 	"io"
 	"os"
 	"path"
 	"sort"
+
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/carmen/go/state"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -67,7 +68,11 @@ func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Wr
 	}
 
 	logger.Printf("opening archive: %s", directory)
-	archive, err := mpt.OpenArchiveTrie(directory, info.Config, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+	archive, err := mpt.OpenArchiveTrie(
+		directory,
+		info.Config,
+		mpt.NodeCacheConfig{Capacity: exportCacheCapacitySize},
+		mpt.ArchiveConfig{})
 	if err != nil {
 		return err
 	}
@@ -203,29 +208,37 @@ func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Wr
 	return archive.Close()
 }
 
-func ImportArchive(logger *Log, directory string, in io.Reader) error {
+// ImportArchive creates a fresh StateDB in the given directory and fills it
+// with the content read from the given reader.
+// The nodeCacheCapacity is used to configure the node cache of the live database.
+func ImportArchive(logger *Log, directory string, in io.Reader, nodeCacheCapacity int) error {
 	// check that the destination directory is an empty directory
 	if err := checkEmptyDirectory(directory); err != nil {
 		return err
 	}
 	liveDbDir := path.Join(directory, "tmp-live-db")
 	return errors.Join(
-		importArchive(logger, liveDbDir, directory, in),
+		importArchive(logger, liveDbDir, directory, in, nodeCacheCapacity),
 		os.RemoveAll(liveDbDir), // live db is deleted at the end
 	)
 }
 
-func ImportLiveAndArchive(logger *Log, directory string, in io.Reader) error {
+// ImportLiveAndArchive creates a fresh StateDB in the given directory and fills it
+// with the content read from the given reader.
+// The nodeCacheCapacity is used to configure the node cache of the live database.
+func ImportLiveAndArchive(logger *Log, directory string, in io.Reader, nodeCacheCapacity int) error {
 	// check that the destination directory is an empty directory
 	if err := checkEmptyDirectory(directory); err != nil {
 		return err
 	}
 	liveDbDir := path.Join(directory, "live")
 	archiveDbDir := path.Join(directory, "archive")
-	return importArchive(logger, liveDbDir, archiveDbDir, in)
+	return importArchive(logger, liveDbDir, archiveDbDir, in, nodeCacheCapacity)
 }
 
-func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader) (err error) {
+// importArchive imports an archive from the given reader into the live and archive databases.
+// nodeCacheCapacity will be used for both live and archive databases.
+func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader, nodeCacheCapacity int) (err error) {
 	// Start by checking the magic number.
 	buffer := make([]byte, len(archiveMagicNumber))
 	if _, err := io.ReadFull(in, buffer); err != nil {
@@ -246,7 +259,8 @@ func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader) (e
 	}
 
 	// Create a live-DB updated in parallel for faster hash computation.
-	live, err := mpt.OpenGoFileState(liveDbDir, mpt.S5LiveConfig, mpt.NodeCacheConfig{})
+	live, err := mpt.OpenGoFileState(liveDbDir, mpt.S5LiveConfig,
+		mpt.NodeCacheConfig{Capacity: nodeCacheCapacity})
 	if err != nil {
 		return fmt.Errorf("failed to create auxiliary live DB: %w", err)
 	}
@@ -258,7 +272,11 @@ func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader) (e
 	}()
 
 	// Create an empty archive.
-	archive, err := mpt.OpenArchiveTrie(archiveDbDir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+	archive, err := mpt.OpenArchiveTrie(
+		archiveDbDir,
+		mpt.S5ArchiveConfig,
+		mpt.NodeCacheConfig{Capacity: nodeCacheCapacity},
+		mpt.ArchiveConfig{})
 	if err != nil {
 		return fmt.Errorf("failed to create empty state: %w", err)
 	}
