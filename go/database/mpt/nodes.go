@@ -401,11 +401,7 @@ func visitPathTo[H any](
 // iterated due to error propagated from the node source.
 // The function accesses nodes using the Read access provided by the source.
 func VisitAccounts(source NodeSource, root *NodeReference, visitor AccountVisitor) error {
-	return visitNodes(root,
-		source.getReadAccess,
-		func(h shared.ReadHandle[Node]) { h.Release() },
-		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
-		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+	return visitNodesWithReadAccess(source, root,
 		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 			switch n := node.(type) {
 			case *AccountNode:
@@ -435,11 +431,7 @@ func VisitStorages(source NodeSource, root *NodeReference, address common.Addres
 		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 			switch n := node.(type) {
 			case *AccountNode: // when an account is found, visit its storage
-				innerError = visitNodes(&n.storage,
-					source.getReadAccess,
-					func(h shared.ReadHandle[Node]) { h.Release() },
-					func(h shared.ReadHandle[Node]) bool { return h.Valid() },
-					func(h shared.ReadHandle[Node]) Node { return h.Get() },
+				innerError = visitNodesWithReadAccess(source, &n.storage,
 					MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 						switch n := node.(type) {
 						case *ValueNode:
@@ -458,7 +450,71 @@ func VisitStorages(source NodeSource, root *NodeReference, address common.Addres
 	return errors.Join(err, innerError)
 }
 
-// visitAccounts visits all nodes from the input root.
+// visitNodesWithViewAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the View access provided by the source.
+func visitNodesWithViewAccess(source NodeSource, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getViewAccess,
+		func(h shared.ViewHandle[Node]) { h.Release() },
+		func(h shared.ViewHandle[Node]) bool { return h.Valid() },
+		func(h shared.ViewHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodesWithReadAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func visitNodesWithReadAccess(source NodeSource, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodesWithReadAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func visitNodesWithHashAccess(source NodeManager, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getHashAccess,
+		func(h shared.HashHandle[Node]) { h.Release() },
+		func(h shared.HashHandle[Node]) bool { return h.Valid() },
+		func(h shared.HashHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodesWithWriteAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Write access provided by the source.
+func visitNodesWithWriteAccess(source NodeManager, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getWriteAccess,
+		func(h shared.WriteHandle[Node]) { h.Release() },
+		func(h shared.WriteHandle[Node]) bool { return h.Valid() },
+		func(h shared.WriteHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodes visits all nodes from the input root.
 // Each encountered node is passed to the visitor.
 // If no more account is available, the execution ends.
 // The function returns an error if the tree cannot be

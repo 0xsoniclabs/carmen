@@ -6910,7 +6910,7 @@ func TestVisitPathToAccount_Nodes_Hash_Protected(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ctxt := newNiceNodeContext(t, ctrl)
 
-	var pathVisited bool
+var pathVisited bool
 	accountVisitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 		// node cannot be accessed via view access as long as hash access is held
 		if _, ok := ctxt.getHandle(t, info.Id).TryGetViewHandle(); ok {
@@ -7031,34 +7031,51 @@ func TestVisitNodes_Visits_All_Nodes(t *testing.T) {
 	// collect expected nodes
 	expected := make([]NodeId, 0, 10)
 	node := handle.GetReadHandle()
-	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	treeVisitor := MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		expected = append(expected, i.Id)
 		return VisitResponseContinue
-	})); err != nil {
+	})
+
+	if _, err := node.Get().Visit(ctxt, &root, 0, treeVisitor); err != nil {
 		t.Fatalf("unexpected error during path iteration: %v", err)
 	}
 	node.Release()
 
-	actual := make([]NodeId, 0, 10)
-	// collect actual nodes
-	if err := visitNodes(&root,
-		ctxt.getReadAccess,
-		func(h shared.ReadHandle[Node]) { h.Release() },
-		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
-		func(h shared.ReadHandle[Node]) Node { return h.Get() },
-		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-			actual = append(actual, info.Id)
-			return VisitResponseContinue
-		})); err != nil {
-		t.Fatalf("unexpected error during visit: %v", err)
+	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
+		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"hash": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithHashAccess(source, root, visitor)
+		},
+		"read": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"write": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithWriteAccess(source, root, visitor)
+		},
 	}
 
-	if len(actual) == 0 {
-		t.Errorf("expected at least one node, but got none")
-	}
+	for name, visit := range testMethods {
+		t.Run(name, func(t *testing.T) {
+			actual := make([]NodeId, 0, 10)
+			visitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+				actual = append(actual, info.Id)
+				return VisitResponseContinue
+			})
+			// collect actual nodes
+			if err := visit(ctxt, &root, visitor); err != nil {
+				t.Fatalf("unexpected error during visit: %v", err)
+			}
 
-	if !slices.Equal(expected, actual) {
-		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+			if len(actual) == 0 {
+				t.Errorf("expected at least one node, but got none")
+			}
+
+			if !slices.Equal(expected, actual) {
+				t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+			}
+		})
 	}
 }
 
@@ -7088,34 +7105,60 @@ func TestVisitNodes_Visits_Nodes_Prune_Account(t *testing.T) {
 	// collect expected nodes
 	expected := make([]NodeId, 0, 10)
 	node := handle.GetReadHandle()
-	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	treeVisitor := MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		expected = append(expected, i.Id)
-		return VisitResponsePrune
-	})); err != nil {
+		if _, ok := n.(*AccountNode); ok {
+			return VisitResponsePrune
+		} else {
+			return VisitResponseContinue
+		}
+	})
+
+	if _, err := node.Get().Visit(ctxt, &root, 0, treeVisitor); err != nil {
 		t.Fatalf("unexpected error during path iteration: %v", err)
 	}
 	node.Release()
 
-	actual := make([]NodeId, 0, 10)
-	// collect actual nodes
-	if err := visitNodes(&root,
-		ctxt.getReadAccess,
-		func(h shared.ReadHandle[Node]) { h.Release() },
-		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
-		func(h shared.ReadHandle[Node]) Node { return h.Get() },
-		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-			actual = append(actual, info.Id)
-			return VisitResponsePrune
-		})); err != nil {
-		t.Fatalf("unexpected error during visit: %v", err)
+	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
+		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"hash": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithHashAccess(source, root, visitor)
+		},
+		"read": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"write": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithWriteAccess(source, root, visitor)
+		},
 	}
 
-	if len(actual) == 0 {
-		t.Errorf("expected at least one node, but got none")
-	}
+	for name, visit := range testMethods {
+		t.Run(name, func(t *testing.T) {
+			actual := make([]NodeId, 0, 10)
+			visitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+				actual = append(actual, info.Id)
+				if _, ok := node.(*AccountNode); ok {
+					return VisitResponsePrune
+				} else {
+					return VisitResponseContinue
+				}
+			})
 
-	if !slices.Equal(expected, actual) {
-		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+			// collect actual nodes
+			if err := visit(ctxt, &root, visitor); err != nil {
+				t.Fatalf("unexpected error during visit: %v", err)
+			}
+
+			if len(actual) == 0 {
+				t.Errorf("expected at least one node, but got none")
+			}
+
+			if !slices.Equal(expected, actual) {
+				t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+			}
+		})
 	}
 }
 
@@ -7126,48 +7169,82 @@ func TestVisitNodes_Abort_Visitor(t *testing.T) {
 	address := common.Address{1}
 	desc := &Extension{
 		path: AddressToNibblePath(address, ctxt)[0:30],
-		next: &Empty{},
+		next: &Account{address: address, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+			storage: &Value{key: common.Key{1}, length: 24, value: common.Value{3}},
+		},
 	}
 
-	root, _ := ctxt.Build(desc)
-
-	var count int
-	// collect actual nodes
-	if err := visitNodes(&root,
-		ctxt.getReadAccess,
-		func(h shared.ReadHandle[Node]) { h.Release() },
-		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
-		func(h shared.ReadHandle[Node]) Node { return h.Get() },
-		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-			count++
-			return VisitResponseAbort
-		})); err != nil {
-		t.Fatalf("unexpected error during visit: %v", err)
+	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
+		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"hash": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithHashAccess(source, root, visitor)
+		},
+		"read": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"write": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
+			return visitNodesWithWriteAccess(source, root, visitor)
+		},
 	}
 
-	if count != 1 {
-		t.Errorf("visitor should have been called only once, but was called %d times", count)
+	for name, visit := range testMethods {
+		t.Run(name, func(t *testing.T) {
+			root, _ := ctxt.Build(desc)
+			var count int
+			// collect actual nodes
+			if err := visit(ctxt, &root, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+				count++
+				return VisitResponseAbort
+			})); err != nil {
+				t.Fatalf("unexpected error during visit: %v", err)
+			}
+
+			if count != 1 {
+				t.Errorf("visitor should have been called only once, but was called %d times", count)
+			}
+		})
 	}
 }
 
 func TestVisitNodes_Error_From_Source(t *testing.T) {
 	injectedErr := errors.New("injected error")
 
-	ctrl := gomock.NewController(t)
-	mock := NewMockNodeSource(ctrl)
-	mock.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr)
+	testMethods := map[string]func(source *MockNodeManager, root *NodeReference, visitor NodeVisitor) error{
+		"view": func(source *MockNodeManager, root *NodeReference, visitor NodeVisitor) error {
+			source.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr)
+			return visitNodesWithViewAccess(source, root, visitor)
+		},
+		"hash": func(source *MockNodeManager, root *NodeReference, visitor NodeVisitor) error {
+			source.EXPECT().getHashAccess(gomock.Any()).Return(shared.HashHandle[Node]{}, injectedErr)
+			return visitNodesWithHashAccess(source, root, visitor)
+		},
+		"read": func(source *MockNodeManager, root *NodeReference, visitor NodeVisitor) error {
+			source.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr)
+			return visitNodesWithReadAccess(source, root, visitor)
+		},
+		"write": func(source *MockNodeManager, root *NodeReference, visitor NodeVisitor) error {
+			source.EXPECT().getWriteAccess(gomock.Any()).Return(shared.WriteHandle[Node]{}, injectedErr)
+			return visitNodesWithWriteAccess(source, root, visitor)
+		},
+	}
 
-	root := NewNodeReference(EmptyId())
-	// collect actual nodes
-	if err := visitNodes(&root,
-		mock.getReadAccess,
-		func(h shared.ReadHandle[Node]) { h.Release() },
-		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
-		func(h shared.ReadHandle[Node]) Node { return h.Get() },
-		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-			return VisitResponseAbort
-		})); !errors.Is(err, injectedErr) {
-		t.Errorf("expected error to be %v, got %v", injectedErr, err)
+	for name, visit := range testMethods {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mock := NewMockNodeManager(ctrl)
+			root := NewNodeReference(EmptyId())
+
+			visitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+				return VisitResponseAbort
+			})
+
+			// collect actual nodes
+			if err := visit(mock, &root, visitor); !errors.Is(err, injectedErr) {
+				t.Errorf("expected error to be %v, got %v", injectedErr, err)
+			}
+		})
 	}
 }
 
@@ -7204,23 +7281,26 @@ func TestVisitAccounts_Visits_All_Accounts(t *testing.T) {
 	// collect expected nodes
 	expected := make([]common.Address, 0, 2)
 	node := handle.GetReadHandle()
-	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	treeVisitor := MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		if account, ok := n.(*AccountNode); ok {
 			expected = append(expected, account.address)
 		}
 		return VisitResponseContinue
-	})); err != nil {
+	})
+
+	if _, err := node.Get().Visit(ctxt, &root, 0, treeVisitor); err != nil {
 		t.Fatalf("unexpected error during path iteration: %v", err)
 	}
 	node.Release()
 
 	actual := make([]common.Address, 0, 2)
+	visitor := MakeAccountVisitor(func(address common.Address, info AccountInfo) VisitResponse {
+		actual = append(actual, address)
+		return VisitResponseContinue
+	})
+
 	// collect actual nodes
-	if err := VisitAccounts(ctxt, &root,
-		MakeAccountVisitor(func(address common.Address, info AccountInfo) VisitResponse {
-			actual = append(actual, address)
-			return VisitResponseContinue
-		})); err != nil {
+	if err := VisitAccounts(ctxt, &root, visitor); err != nil {
 		t.Fatalf("unexpected error during visit: %v", err)
 	}
 
@@ -7260,23 +7340,29 @@ func TestVisitStorage_Visits_All_Slots(t *testing.T) {
 	// collect expected nodes
 	expected := make([]common.Key, 0, 2)
 	node := handle.GetReadHandle()
-	if _, err := node.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	treeVisitor := MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		if value, ok := n.(*ValueNode); ok {
 			expected = append(expected, value.key)
 		}
 		return VisitResponseContinue
-	})); err != nil {
+	})
+	if _, err := node.Get().Visit(ctxt, &root, 0, treeVisitor); err != nil {
 		t.Fatalf("unexpected error during path iteration: %v", err)
 	}
 	node.Release()
 
+	if len(expected) != 2 {
+		t.Fatalf("unexpected number of nodes, expected %d, got %d", 2, len(expected))
+	}
+
 	actual := make([]common.Key, 0, 2)
+	visitor := MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+		actual = append(actual, key)
+		return VisitResponseContinue
+	})
+
 	// collect actual nodes
-	if err := VisitStorages(ctxt, &root, address1,
-		MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
-			actual = append(actual, key)
-			return VisitResponseContinue
-		})); err != nil {
+	if err := VisitStorages(ctxt, &root, address1, visitor); err != nil {
 		t.Fatalf("unexpected error during visit: %v", err)
 	}
 
@@ -7314,11 +7400,12 @@ func TestVisitStorage_Error_From_Source(t *testing.T) {
 	root, _ := ctxt.Build(desc)
 
 	nodeManager := &errorInjectingNodeManager{NodeManager: ctxt, errorPosition: 9999}
+	visitor := MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
+		return VisitResponseContinue
+	})
+
 	// collect number of paths
-	if err := VisitStorages(nodeManager, &root, address1,
-		MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
-			return VisitResponseContinue
-		})); err != nil {
+	if err := VisitStorages(nodeManager, &root, address1, visitor); err != nil {
 		t.Fatalf("unexpected error during visit: %v", err)
 	}
 
@@ -7326,10 +7413,7 @@ func TestVisitStorage_Error_From_Source(t *testing.T) {
 	loops := nodeManager.counter
 	for i := 0; i < loops; i++ {
 		nodeManager := &errorInjectingNodeManager{NodeManager: ctxt, errorPosition: i, err: injectedErr}
-		if err := VisitStorages(nodeManager, &root, address1,
-			MakeStorageVisitor(func(key common.Key, value common.Value) VisitResponse {
-				return VisitResponseContinue
-			})); !errors.Is(err, injectedErr) {
+		if err := VisitStorages(nodeManager, &root, address1, visitor); !errors.Is(err, injectedErr) {
 			t.Errorf("expected error: %v, got: %v", injectedErr, err)
 		}
 	}
