@@ -14,7 +14,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"runtime"
+	"runtime/pprof"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -4534,5 +4537,38 @@ func checkCode(t *testing.T, db VmStateDB, address common.Address, code []byte, 
 	}
 	if got, want := db.GetCodeSize(address), len(code); got != want {
 		t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
+	}
+}
+
+func TestStateDb_MemoryLeak(t *testing.T) {
+	for i := range 100 {
+		t.Run("MemoryUsage", func(t *testing.T) {
+			state, err := NewState(Parameters{
+				Variant:      "go-file",
+				Schema:       5,
+				Archive:      S5Archive,
+				Directory:    t.TempDir(),
+				LiveCache:    10 * 1024 * 1024, // 10 MiB
+				ArchiveCache: 10 * 1024 * 1024, // 10 MiB
+			})
+			if err != nil {
+				t.Fatalf("failed to open forest: %v", err)
+			}
+			if err := state.Close(); err != nil {
+				t.Fatalf("failed to close forest: %v", err)
+			}
+		})
+		var stats runtime.MemStats
+		runtime.ReadMemStats(&stats)
+		numGoroutines := runtime.NumGoroutine()
+		fmt.Printf("Iteration %d: %d B = %d MiB, %d go routines\n", i, stats.HeapInuse, stats.HeapInuse/(1024*1024), numGoroutines)
+
+		if stats.HeapInuse > 600*1024*1024 {
+			buffer := bytes.NewBuffer(nil)
+			pprof.WriteHeapProfile(buffer)
+			os.WriteFile("heap_profile.pprof", buffer.Bytes(), 0644)
+			t.Errorf("Memory usage exceeded 500 MiB: %d B = %d MiB", stats.HeapInuse, stats.HeapInuse/(1024*1024))
+			return
+		}
 	}
 }

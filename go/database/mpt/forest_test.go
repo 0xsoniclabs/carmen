@@ -11,10 +11,13 @@
 package mpt
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -2761,4 +2764,35 @@ func TestForest_RecoversNodesFromWriteBuffer(t *testing.T) {
 		t.Fatalf("unexpected node: got %p, want %p", restored, original)
 	}
 	handle.Release()
+}
+
+func TestForest_MemoryLeak(t *testing.T) {
+	for i := range 100 {
+		t.Run("MemoryUsage", func(t *testing.T) {
+			forest, err := OpenInMemoryForest(t.TempDir(), S5LiveConfig, ForestConfig{
+				Mode: Mutable,
+				NodeCacheConfig: NodeCacheConfig{
+					Capacity: 1000,
+				},
+			})
+			if err != nil {
+				t.Fatalf("failed to open forest: %v", err)
+			}
+			if err := forest.Close(); err != nil {
+				t.Fatalf("failed to close forest: %v", err)
+			}
+		})
+		var stats runtime.MemStats
+		runtime.ReadMemStats(&stats)
+		numGoroutines := runtime.NumGoroutine()
+		fmt.Printf("Iteration %d: %d B = %d MiB, %d go routines\n", i, stats.HeapInuse, stats.HeapInuse/(1024*1024), numGoroutines)
+
+		if stats.HeapInuse > 600*1024*1024 {
+			buffer := bytes.NewBuffer(nil)
+			pprof.WriteHeapProfile(buffer)
+			os.WriteFile("heap_profile.pprof", buffer.Bytes(), 0644)
+			t.Errorf("Memory usage exceeded 500 MiB: %d B = %d MiB", stats.HeapInuse, stats.HeapInuse/(1024*1024))
+			return
+		}
+	}
 }
