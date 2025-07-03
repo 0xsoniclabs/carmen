@@ -6869,7 +6869,36 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 	}
 }
 
-func TestVisitPathToStorageWithHashAccess_Nodes_Hash_Protected(t *testing.T) {
+func TestVisitPathToStorage_Nodes_Hash_Protected(t *testing.T) {
+	desc := &Extension{path: []Nibble{1, 2}, next: &Branch{children: Children{
+		0x4: &Value{key: common.Key{0x12}, value: common.Value{1}},
+	},
+	}}
+
+	ctrl := gomock.NewController(t)
+	ctxt := newNiceNodeContext(t, ctrl)
+
+	var storageVisited bool
+	storageVisitor := MakeVisitor(func(storageNode Node, storageInfo NodeInfo) VisitResponse {
+		// node cannot be accessed via view access as long as hash access is held
+		if _, ok := ctxt.getHandle(t, storageInfo.Id).TryGetViewHandle(); ok {
+			t.Errorf("expected node to be hash protected, but it is not")
+		}
+		storageVisited = true
+		return VisitResponseContinue
+	})
+
+	root, _ := ctxt.Build(desc)
+	if _, err := visitPathToStorageWithHashAccess(ctxt, &root, common.Key{0x12}, storageVisitor); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if !storageVisited {
+		t.Errorf("expected to find storage path, but it was not found")
+	}
+}
+
+func TestVisitPathToAccount_Nodes_Hash_Protected(t *testing.T) {
 	desc := &Extension{path: []Nibble{1, 2}, next: &Branch{children: Children{
 		0x4: &Account{
 			address: common.Address{0x12, 0x42},
@@ -6881,33 +6910,22 @@ func TestVisitPathToStorageWithHashAccess_Nodes_Hash_Protected(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ctxt := newNiceNodeContext(t, ctrl)
 
-	var pathFound bool
-	root, _ := ctxt.Build(desc)
-	if _, err := visitPathToAccountWithHashAccess(ctxt, &root, common.Address{0x12, 0x42}, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-		if account, ok := node.(*AccountNode); ok {
-			if _, err := visitPathToStorageWithHashAccess(ctxt, &account.storage, common.Key{0x12}, MakeVisitor(func(storageNode Node, storageInfo NodeInfo) VisitResponse {
-				// node cannot be accessed via view access as long as hash access is held
-				if _, ok := ctxt.getHandle(t, storageInfo.Id).TryGetViewHandle(); ok {
-					t.Errorf("expected node to be hash protected, but it is not")
-				}
-				pathFound = true
-				return VisitResponseContinue
-			})); err != nil {
-				t.Fatalf("unexpected error during visit: %v", err)
-			}
-			return VisitResponseContinue
-		}
-		
+	var pathVisited bool
+	accountVisitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 		// node cannot be accessed via view access as long as hash access is held
 		if _, ok := ctxt.getHandle(t, info.Id).TryGetViewHandle(); ok {
 			t.Errorf("expected node to be hash protected, but it is not")
 		}
+		pathVisited = true
 		return VisitResponseContinue
-	})); err != nil {
+	})
+
+	root, _ := ctxt.Build(desc)
+	if _, err := visitPathToAccountWithHashAccess(ctxt, &root, common.Address{0x12, 0x42}, accountVisitor); err != nil {
 		t.Fatalf("unexpected error during visit: %v", err)
 	}
 
-	if !pathFound {
+	if !pathVisited {
 		t.Errorf("expected to find storage path, but it was not found")
 	}
 }
@@ -8299,6 +8317,7 @@ func (c *nodeContext) tryGetNode(t *testing.T, id NodeId) shared.ReadHandle[Node
 }
 
 func (c *nodeContext) getHandle(t *testing.T, id NodeId) *shared.Shared[Node] {
+	t.Helper()
 	entry, found := c.index[id]
 	if !found {
 		t.Fatalf("unknown node: %v", id)
