@@ -712,8 +712,8 @@ func (EmptyNode) Check(NodeSource, *NodeReference, []Nibble) error {
 }
 
 func (EmptyNode) Dump(out io.Writer, _ NodeSource, thisRef *NodeReference, indent string) error {
-	fmt.Fprintf(out, "%s-empty- (ID: %v)\n", indent, thisRef.Id())
-	return nil
+	_, err := fmt.Fprintf(out, "%s-empty- (ID: %v)\n", indent, thisRef.Id())
+	return err
 }
 
 func (EmptyNode) Visit(_ NodeSource, ref *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
@@ -1012,7 +1012,7 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 	numChildren := 0
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1060,7 +1060,11 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 
 func (n *BranchNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReference, indent string) error {
 	errs := []error{}
-	fmt.Fprintf(out, "%sBranch (ID: %v, dirty: %t, frozen: %t, Dirty: %016b, Embedded: %016b, Frozen: %016b, Hash: %v, hashState: %v):\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.dirtyHashes, n.embeddedChildren, n.frozenChildren, formatHashForDump(n.hash), n.getHashStatus())
+	_, err := fmt.Fprintf(out, "%sBranch (ID: %v, dirty: %t, frozen: %t, Dirty: %016b, Embedded: %016b, Frozen: %016b, Hash: %v, hashState: %v):\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.dirtyHashes, n.embeddedChildren, n.frozenChildren, formatHashForDump(n.hash), n.getHashStatus())
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	for i, child := range n.children {
 		if child.Id().IsEmpty() {
 			continue
@@ -1071,7 +1075,11 @@ func (n *BranchNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReferen
 				errs = append(errs, err)
 			}
 		} else {
-			fmt.Fprintf(out, "%s  ERROR: unable to load node %v: %v", indent, child, err)
+			_, err = fmt.Fprintf(out, "%s  ERROR: unable to load node %v: %v", indent, child, err)
+			if err != nil {
+				errs = append(errs, err)
+			}
+
 			errs = append(errs, err)
 		}
 	}
@@ -1480,7 +1488,7 @@ func (n *ExtensionNode) Check(source NodeSource, thisRef *NodeReference, _ []Nib
 	//  - frozen flags are consistent
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1522,14 +1530,20 @@ func (n *ExtensionNode) Check(source NodeSource, thisRef *NodeReference, _ []Nib
 
 func (n *ExtensionNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReference, indent string) error {
 	errs := []error{}
-	fmt.Fprintf(out, "%sExtension (ID: %v/%t, nextHashDirty: %t, Embedded: %t, Hash: %v, hashState: %v): %v\n", indent, thisRef.Id(), n.IsFrozen(), n.nextHashDirty, n.nextIsEmbedded, formatHashForDump(n.hash), n.getHashStatus(), &n.path)
+	_, printErr := fmt.Fprintf(out, "%sExtension (ID: %v/%t, nextHashDirty: %t, Embedded: %t, Hash: %v, hashState: %v): %v\n", indent, thisRef.Id(), n.IsFrozen(), n.nextHashDirty, n.nextIsEmbedded, formatHashForDump(n.hash), n.getHashStatus(), &n.path)
+	if printErr != nil {
+		errs = append(errs, printErr)
+	}
 	if handle, err := source.getViewAccess(&n.next); err == nil {
 		defer handle.Release()
 		if err := handle.Get().Dump(out, source, &n.next, indent+"  "); err != nil {
 			errs = append(errs, err)
 		}
 	} else {
-		fmt.Fprintf(out, "%s  ERROR: unable to load node %v: %v", indent, n.next, err)
+		_, printErr = fmt.Fprintf(out, "%s  ERROR: unable to load node %v: %v", indent, n.next, err)
+		if printErr != nil {
+			errs = append(errs, printErr)
+		}
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
@@ -1723,7 +1737,10 @@ func splitLeafNode(
 	thisIsFrozen := this.IsFrozen()
 	remainingPathLength := byte(len(partialPath)-commonPrefixLength) - 1
 	if manager.getConfig().TrackSuffixLengthsInLeafNodes {
-		sibling.setPathLength(manager, siblingRef, siblingHandle, remainingPathLength)
+		_, _, err := sibling.setPathLength(manager, siblingRef, siblingHandle, remainingPathLength)
+		if err != nil {
+			return NodeReference{}, err
+		}
 		ref, _, err := this.setPathLength(manager, thisRef, thisHandle, remainingPathLength)
 		if err != nil {
 			return NodeReference{}, err
@@ -1905,7 +1922,7 @@ func (n *AccountNode) Check(source NodeSource, thisRef *NodeReference, path []Ni
 	//  - path length
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1951,7 +1968,10 @@ func (n *AccountNode) Check(source NodeSource, thisRef *NodeReference, path []Ni
 
 func (n *AccountNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReference, indent string) error {
 	errs := []error{}
-	fmt.Fprintf(out, "%sAccount (ID: %v, dirty: %t, frozen: %t, path length: %v, Hash: %v, hashState: %v): %v - %v\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.pathLength, formatHashForDump(n.hash), n.getHashStatus(), n.address, n.info)
+	_, printErr := fmt.Fprintf(out, "%sAccount (ID: %v, dirty: %t, frozen: %t, path length: %v, Hash: %v, hashState: %v): %v - %v\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.pathLength, formatHashForDump(n.hash), n.getHashStatus(), n.address, n.info)
+	if printErr != nil {
+		errs = append(errs, printErr)
+	}
 	if n.storage.Id().IsEmpty() {
 		return nil
 	}
@@ -1961,7 +1981,10 @@ func (n *AccountNode) Dump(out io.Writer, source NodeSource, thisRef *NodeRefere
 			errs = append(errs, err)
 		}
 	} else {
-		fmt.Fprintf(out, "%s  ERROR: unable to load node %v: %v", indent, n.storage, err)
+		_, printErr = fmt.Fprintf(out, "%s  ERROR: unable to load node %v: %v", indent, n.storage, err)
+		if printErr != nil {
+			errs = append(errs, printErr)
+		}
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
@@ -2140,7 +2163,7 @@ func (n *ValueNode) Check(source NodeSource, thisRef *NodeReference, path []Nibb
 	//  - the path length is correct (if enabled to be tracked)
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -2464,15 +2487,15 @@ func (AccountNodeWithPathLengthEncoderWithNodeHash) GetEncodedSize() int {
 }
 
 func (AccountNodeWithPathLengthEncoderWithNodeHash) Store(dst []byte, node *AccountNode) error {
-	AccountNodeEncoderWithNodeHash{}.Store(dst, node)
+	err := AccountNodeEncoderWithNodeHash{}.Store(dst, node)
 	dst[len(dst)-1] = node.pathLength
-	return nil
+	return err
 }
 
 func (AccountNodeWithPathLengthEncoderWithNodeHash) Load(src []byte, node *AccountNode) error {
-	AccountNodeEncoderWithNodeHash{}.Load(src, node)
+	err := AccountNodeEncoderWithNodeHash{}.Load(src, node)
 	node.pathLength = src[len(src)-1]
-	return nil
+	return err
 }
 
 type AccountNodeWithPathLengthEncoderWithChildHash struct{}
@@ -2482,15 +2505,15 @@ func (AccountNodeWithPathLengthEncoderWithChildHash) GetEncodedSize() int {
 }
 
 func (AccountNodeWithPathLengthEncoderWithChildHash) Store(dst []byte, node *AccountNode) error {
-	AccountNodeEncoderWithChildHash{}.Store(dst, node)
+	err := AccountNodeEncoderWithChildHash{}.Store(dst, node)
 	dst[len(dst)-1] = node.pathLength
-	return nil
+	return err
 }
 
 func (AccountNodeWithPathLengthEncoderWithChildHash) Load(src []byte, node *AccountNode) error {
-	AccountNodeEncoderWithChildHash{}.Load(src, node)
+	err := AccountNodeEncoderWithChildHash{}.Load(src, node)
 	node.pathLength = src[len(src)-1]
-	return nil
+	return err
 }
 
 type ValueNodeEncoderWithoutNodeHash struct{}
@@ -2527,18 +2550,18 @@ func (ValueNodeEncoderWithNodeHash) Store(dst []byte, node *ValueNode) error {
 	if !node.hasCleanHash() {
 		panic("unable to store value node with dirty hash")
 	}
-	ValueNodeEncoderWithoutNodeHash{}.Store(dst, node)
+	err := ValueNodeEncoderWithoutNodeHash{}.Store(dst, node)
 	dst = dst[ValueNodeEncoderWithoutNodeHash{}.GetEncodedSize():]
 	copy(dst, node.hash[:])
-	return nil
+	return err
 }
 
 func (ValueNodeEncoderWithNodeHash) Load(src []byte, node *ValueNode) error {
-	ValueNodeEncoderWithoutNodeHash{}.Load(src, node)
+	err := ValueNodeEncoderWithoutNodeHash{}.Load(src, node)
 	src = src[ValueNodeEncoderWithoutNodeHash{}.GetEncodedSize():]
 	copy(node.hash[:], src)
 	node.hashStatus = hashStatusClean
-	return nil
+	return err
 }
 
 type ValueNodeWithPathLengthEncoderWithoutNodeHash struct{}
@@ -2548,15 +2571,15 @@ func (ValueNodeWithPathLengthEncoderWithoutNodeHash) GetEncodedSize() int {
 }
 
 func (ValueNodeWithPathLengthEncoderWithoutNodeHash) Store(dst []byte, node *ValueNode) error {
-	ValueNodeEncoderWithoutNodeHash{}.Store(dst, node)
+	err := ValueNodeEncoderWithoutNodeHash{}.Store(dst, node)
 	dst[len(dst)-1] = node.pathLength
-	return nil
+	return err
 }
 
 func (ValueNodeWithPathLengthEncoderWithoutNodeHash) Load(src []byte, node *ValueNode) error {
-	ValueNodeEncoderWithoutNodeHash{}.Load(src, node)
+	err := ValueNodeEncoderWithoutNodeHash{}.Load(src, node)
 	node.pathLength = src[len(src)-1]
-	return nil
+	return err
 }
 
 type ValueNodeWithPathLengthEncoderWithNodeHash struct{}
@@ -2566,13 +2589,13 @@ func (ValueNodeWithPathLengthEncoderWithNodeHash) GetEncodedSize() int {
 }
 
 func (ValueNodeWithPathLengthEncoderWithNodeHash) Store(dst []byte, node *ValueNode) error {
-	ValueNodeEncoderWithNodeHash{}.Store(dst, node)
+	err := ValueNodeEncoderWithNodeHash{}.Store(dst, node)
 	dst[len(dst)-1] = node.pathLength
-	return nil
+	return err
 }
 
 func (ValueNodeWithPathLengthEncoderWithNodeHash) Load(src []byte, node *ValueNode) error {
-	ValueNodeEncoderWithNodeHash{}.Load(src, node)
+	err := ValueNodeEncoderWithNodeHash{}.Load(src, node)
 	node.pathLength = src[len(src)-1]
-	return nil
+	return err
 }

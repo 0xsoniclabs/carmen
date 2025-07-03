@@ -129,7 +129,11 @@ func TestStoresInitialHash(t *testing.T) {
 	for _, factory := range getStoresFactories[common.Value](t, common.ValueSerializer{}, BranchingFactor, PageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			s := factory.getStore(t.TempDir())
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			hash, err := s.GetStateHash()
 			if err != nil {
@@ -192,7 +196,11 @@ func TestStoresHashesAgainstReferenceOutput(t *testing.T) {
 	for _, factory := range getStoresFactories[common.Value](t, common.ValueSerializer{}, BranchingFactor, PageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			s := factory.getStore(t.TempDir())
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			for i, expectedHash := range expectedHashes {
 				if err := s.Set(uint32(i), common.Value{byte(i<<4 | i)}); err != nil {
@@ -235,7 +243,11 @@ func TestStoresPaddedPages(t *testing.T) {
 	for _, factory := range getStoresFactories[common.SlotReincValue](t, serializer, BranchingFactor, pageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			s := factory.getStore(t.TempDir())
-			defer s.Close()
+			defer func() {
+				if err := s.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			innerStore := s
 			wrappingStore, casted := s.(*storeClosingWrapper[common.SlotReincValue])
@@ -272,7 +284,11 @@ func TestStoreSnapshotRecovery(t *testing.T) {
 	for _, factory := range getStoresFactories[common.SlotReincValue](t, serializer, BranchingFactor, pageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			store1 := factory.getStore(t.TempDir())
-			defer store1.Close()
+			defer func() {
+				if err := store1.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			for i := 0; i < PoolSize*3; i++ {
 				if err := store1.Set(uint32(i), common.SlotReincValue{Reincarnation: 1, Value: common.Value{byte(i)}}); err != nil {
@@ -288,11 +304,19 @@ func TestStoreSnapshotRecovery(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create snapshot; %s", err)
 			}
-			defer snapshot1.Release()
+			defer func() {
+				if err := snapshot1.Release(); err != nil {
+					t.Errorf("failed to release a snapshot; %s", err)
+				}
+			}()
 			snapshot1data := snapshot1.GetData()
 
 			store2 := factory.getStore(t.TempDir())
-			defer store2.Close()
+			defer func() {
+				if err := store2.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			err = store2.Restore(snapshot1data)
 			if err != nil {
@@ -321,7 +345,11 @@ func TestStoreSnapshotPartsNum(t *testing.T) {
 	for _, factory := range getStoresFactories[common.SlotReincValue](t, serializer, BranchingFactor, pageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			store1 := factory.getStore(t.TempDir())
-			defer store1.Close()
+			defer func() {
+				if err := store1.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			for i := 0; i < 255; i++ {
 				if err := store1.Set(uint32(i), common.SlotReincValue{Reincarnation: 1, Value: common.Value{byte(i)}}); err != nil {
@@ -355,7 +383,11 @@ func TestStoreSnapshotRecoveryOverriding(t *testing.T) {
 	for _, factory := range getStoresFactories[common.SlotReincValue](t, serializer, BranchingFactor, pageSize, PoolSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			store1 := factory.getStore(t.TempDir())
-			defer store1.Close()
+			defer func() {
+				if err := store1.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			for i := 0; i < PoolSize*2; i++ {
 				if err := store1.Set(uint32(i), common.SlotReincValue{Reincarnation: 1, Value: common.Value{byte(i)}}); err != nil {
@@ -379,7 +411,11 @@ func TestStoreSnapshotRecoveryOverriding(t *testing.T) {
 			}
 
 			store2 := factory.getStore(t.TempDir())
-			defer store2.Close()
+			defer func() {
+				if err := store2.Close(); err != nil {
+					t.Fatalf("failed to close store; %s", err)
+				}
+			}()
 
 			// the store2 will be filled with data before the restore - these should be removed during restore
 			for i := 0; i < PoolSize*2+5; i++ {

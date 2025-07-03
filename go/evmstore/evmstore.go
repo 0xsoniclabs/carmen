@@ -11,6 +11,7 @@
 package evmstore
 
 import (
+	"errors"
 	"fmt"
 	"github.com/0xsoniclabs/carmen/go/backend/depot"
 	fileDepot "github.com/0xsoniclabs/carmen/go/backend/depot/file"
@@ -49,7 +50,7 @@ type Parameters struct {
 }
 
 // NewEvmStore provide a new EvmStore instance
-func NewEvmStore(params Parameters) (EvmStore, error) {
+func NewEvmStore(params Parameters) (s EvmStore, err error) {
 	success := false
 	txHashPath := params.Directory + string(filepath.Separator) + "txhash"
 	TxPositionPath := params.Directory + string(filepath.Separator) + "txpos"
@@ -74,7 +75,7 @@ func NewEvmStore(params Parameters) (EvmStore, error) {
 	}
 	defer func() {
 		if !success {
-			txHashIndex.Close()
+			err = errors.Join(err, txHashIndex.Close())
 		}
 	}()
 	txPositionStore, err := pagedfile.NewStore[uint64, TxPosition](TxPositionPath, TxPositionSerializer{}, common.PageSize, hashtree.GetNoHashFactory(), poolSize)
@@ -83,7 +84,7 @@ func NewEvmStore(params Parameters) (EvmStore, error) {
 	}
 	defer func() {
 		if !success {
-			txPositionStore.Close()
+			err = errors.Join(err, txPositionStore.Close())
 		}
 	}()
 	txsDepot, err := fileDepot.NewDepot[uint64](txsPath, common.Identifier64Serializer{}, hashtree.GetNoHashFactory(), txsGroupSize)
@@ -92,7 +93,7 @@ func NewEvmStore(params Parameters) (EvmStore, error) {
 	}
 	defer func() {
 		if !success {
-			txsDepot.Close()
+			err = errors.Join(err, txsDepot.Close())
 		}
 	}()
 	receiptsDepot, err := fileDepot.NewDepot[uint64](receiptsPath, common.Identifier64Serializer{}, hashtree.GetNoHashFactory(), receiptsGroupSize)

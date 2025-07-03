@@ -12,7 +12,6 @@ package immutable
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 )
 
@@ -56,7 +55,7 @@ func TestBytes_String(t *testing.T) {
 	original := []byte{1, 2, 3}
 	b := NewBytes(original)
 
-	if got, want := fmt.Sprintf("%s", b), "0x010203"; got != want {
+	if got, want := b.String(), "0x010203"; got != want {
 		t.Errorf("string failed, got %v, want %v", got, want)
 	}
 }

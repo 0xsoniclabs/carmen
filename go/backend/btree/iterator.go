@@ -66,10 +66,6 @@ func (it *Iterator[K]) pushLevel(startIndex, endIndex int, childNode node[K]) {
 	it.nestStack.push(nestCtx[K]{startIndex, endIndex, childNode})
 }
 
-func (it *Iterator[K]) popLevel() {
-	it.nestStack.pop()
-}
-
 // nestStack contains contexts of nested calls used while iterating the tree by the iterator
 // to remember properties of parent nodes.
 type nestStack[K any] []nestCtx[K]

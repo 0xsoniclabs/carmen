@@ -129,21 +129,15 @@ func (ht *HashTree) getLayerSize(layer *os.File) (size int64, err error) {
 	return info.Size(), nil
 }
 
-// getLayersCount provides the amount of hashtree layers
-func (ht *HashTree) getLayersCount() (count int, err error) {
-	files, err := os.ReadDir(ht.path)
-	return len(files), err
-}
-
 // commit updates the necessary parts of the hashing tree
 func (ht *HashTree) commit() (hash []byte, err error) {
 	var childrenLayer, parentsLayer *os.File
 	defer func() {
 		if childrenLayer != nil {
-			childrenLayer.Close()
+			err = errors.Join(err, childrenLayer.Close())
 		}
 		if parentsLayer != nil {
-			parentsLayer.Close()
+			err = errors.Join(err, parentsLayer.Close())
 		}
 	}()
 
@@ -153,7 +147,10 @@ func (ht *HashTree) commit() (hash []byte, err error) {
 
 	for layerId := 0; ; layerId++ {
 		if childrenLayer != nil {
-			childrenLayer.Close()
+			err = childrenLayer.Close()
+			if err != nil {
+				return nil, err
+			}
 		}
 		childrenLayer = parentsLayer
 		parentsLayer, err = os.OpenFile(ht.layerFile(layerId), os.O_RDWR|os.O_CREATE, 0600)
@@ -245,7 +242,9 @@ func (ht *HashTree) GetPageHash(page int) (out common.Hash, err error) {
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to open nodes layer file; %s", err)
 	}
-	defer nodesLayer.Close()
+	defer func() {
+		err = errors.Join(err, nodesLayer.Close())
+	}()
 
 	hashBytes, err := ht.readLayer(nodesLayer, int64(page)*HashLength, HashLength)
 	if err != nil {

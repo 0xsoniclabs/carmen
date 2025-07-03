@@ -11,6 +11,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
@@ -57,8 +58,10 @@ func checkLiveDB(dir string, info io.MptInfo) error {
 	if err != nil {
 		return err
 	}
-	defer live.Close()
-	return live.Check()
+	return errors.Join(
+		live.Check(), // check must be called before closing
+		live.Close(),
+	)
 }
 
 func checkArchive(dir string, info io.MptInfo) error {
@@ -66,6 +69,8 @@ func checkArchive(dir string, info io.MptInfo) error {
 	if err != nil {
 		return err
 	}
-	defer archive.Close()
-	return archive.Check()
+	return errors.Join(
+		archive.Check(), // check must be called before closing
+		archive.Close(),
+	)
 }

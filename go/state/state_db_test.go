@@ -39,12 +39,6 @@ var (
 	val3     = common.Value{0x03}
 
 	balance1 = amount.New(1)
-	balance2 = amount.New(2)
-	balance3 = amount.New(3)
-
-	nonce1 = common.Nonce{0x01}
-	nonce2 = common.Nonce{0x02}
-	nonce3 = common.Nonce{0x03}
 )
 
 func TestAccountLifeCycleState_CanBePrinted(t *testing.T) {
@@ -3924,7 +3918,9 @@ func TestStateDB_BulkLoadReachesState(t *testing.T) {
 	load.SetState(address1, key1, val1)
 	load.SetCode(address1, code)
 
-	load.Close()
+	if err := load.Close(); err != nil {
+		t.Fatalf("failed to close bulk load: %v", err)
+	}
 }
 
 func TestStateDB_BulkLoadApplyDetectsInconsistencies(t *testing.T) {
