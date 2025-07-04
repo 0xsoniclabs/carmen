@@ -15,7 +15,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
-	"github.com/0xsoniclabs/carmen/go/database/mpt/proof"
 	"github.com/urfave/cli/v2"
 	"log"
 	"math"
@@ -81,7 +80,7 @@ func verifyProof(context *cli.Context) error {
 			log.Printf("archive block range verification configured: [%d;%v]", context.Int(blockFrom.Name), toStr)
 
 		}
-		return proof.VerifyArchiveTrie(ctx, dir, info.Config, from, to, &verificationObserver{})
+		return io.VerifyArchiveTrieProof(ctx, dir, info.Config, from, to, &verificationObserver{})
 	}
 
 	if info.Config.Name == mpt.S5LiveConfig.Name {
@@ -89,7 +88,7 @@ func verifyProof(context *cli.Context) error {
 			log.Printf("WARNING: 'block-num', 'block-from' and 'block-to' flags are not supported for live trie verification, ignoring them.")
 		}
 		log.Printf("live trie verification configured")
-		return proof.VerifyLiveTrie(ctx, dir, info.Config, &verificationObserver{})
+		return io.VerifyLiveTrieProof(ctx, dir, info.Config, &verificationObserver{})
 	}
 
 	return fmt.Errorf("can only support witness proof of S5 instances, found %v in directory", info.Config.Name)

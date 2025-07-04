@@ -252,6 +252,10 @@ func (s *LiveTrie) Check() error {
 	return s.forest.Check(&s.root)
 }
 
+func (s *LiveTrie) RootNodeId() NodeId {
+	return s.root.Id()
+}
+
 // -- LiveTrie metadata --
 
 // metadata is the helper type to read and write metadata from/to the disk.

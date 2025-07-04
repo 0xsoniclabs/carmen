@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package proof
+package io
 
 import (
 	"context"
@@ -71,7 +71,7 @@ func TestVerification_VerifyProofArchiveTrie(t *testing.T) {
 			}).AnyTimes()
 			observer.EXPECT().EndVerification(nil)
 
-			if err := VerifyArchiveTrie(context.Background(), dir, config, 0, blocks, observer); err != nil {
+			if err := VerifyArchiveTrieProof(context.Background(), dir, config, 0, blocks, observer); err != nil {
 				t.Errorf("failed to verify archive trie: %v", err)
 			}
 
@@ -85,7 +85,8 @@ func TestVerification_VerifyProofArchiveTrie(t *testing.T) {
 func TestVerification_VerifyProofArchiveTrie_InvalidBlockNumber(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	archiveTrie, err := mpt.OpenArchiveTrie(t.TempDir(), mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024}, mpt.ArchiveConfig{})
+	dir := t.TempDir()
+	archiveTrie, err := mpt.OpenArchiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024}, mpt.ArchiveConfig{})
 	if err != nil {
 		t.Fatalf("failed to create empty archive, err %v", err)
 	}
@@ -105,6 +106,11 @@ func TestVerification_VerifyProofArchiveTrie_InvalidBlockNumber(t *testing.T) {
 		}
 	}
 
+	// make sure data are on disk for verification
+	if err := archiveTrie.Flush(); err != nil {
+		t.Fatalf("failed to flush archive: %v", err)
+	}
+
 	var blockAdjusted bool
 	observer := mpt.NewMockVerificationObserver(ctrl)
 	observer.EXPECT().Progress(gomock.Any()).Do(func(msg string) {
@@ -113,7 +119,7 @@ func TestVerification_VerifyProofArchiveTrie_InvalidBlockNumber(t *testing.T) {
 		}
 	}).AnyTimes()
 
-	if err := verifyArchiveTrie(context.Background(), archiveTrie, 0, 1000, observer); err != nil {
+	if err := verifyArchiveTrieProof(context.Background(), archiveTrie, 0, 1000, dir, mpt.S5ArchiveConfig, observer); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -130,7 +136,7 @@ func TestVerification_VerifyProofArchiveTrie_EmptyBlockchain(t *testing.T) {
 	// no observer will be called
 	observer := mpt.NewMockVerificationObserver(ctrl)
 
-	if err := verifyArchiveTrie(context.Background(), archiveTrie, 0, 1000, observer); err != nil {
+	if err := verifyArchiveTrieProof(context.Background(), archiveTrie, 0, 1000, "", mpt.S5ArchiveConfig, observer); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -141,12 +147,12 @@ func TestVerification_VerifyProof_Cannot_Open(t *testing.T) {
 	}{
 		"archive": {
 			func(dir string, observer mpt.VerificationObserver) error {
-				return VerifyArchiveTrie(context.Background(), dir, mpt.S5ArchiveConfig, 0, 0, observer)
+				return VerifyArchiveTrieProof(context.Background(), dir, mpt.S5ArchiveConfig, 0, 0, observer)
 			},
 		},
 		"live": {
 			func(dir string, observer mpt.VerificationObserver) error {
-				return VerifyLiveTrie(context.Background(), dir, mpt.S5LiveConfig, observer)
+				return VerifyLiveTrieProof(context.Background(), dir, mpt.S5LiveConfig, observer)
 			},
 		},
 	}
@@ -199,7 +205,7 @@ func TestVerification_VerifyProofLiveTrie(t *testing.T) {
 			observer.EXPECT().Progress(gomock.Any()).AnyTimes()
 			observer.EXPECT().EndVerification(nil)
 
-			if err := VerifyLiveTrie(context.Background(), dir, config, observer); err != nil {
+			if err := VerifyLiveTrieProof(context.Background(), dir, config, observer); err != nil {
 				t.Errorf("failed to verify live trie: %v", err)
 			}
 		})
@@ -212,7 +218,8 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 	observer.EXPECT().Progress(gomock.Any()).AnyTimes()
 
 	// init a real trie
-	archiveTrie, err := mpt.OpenArchiveTrie(t.TempDir(), mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024}, mpt.ArchiveConfig{})
+	dir := t.TempDir()
+	archiveTrie, err := mpt.OpenArchiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024}, mpt.ArchiveConfig{})
 	if err != nil {
 		t.Fatalf("failed to create empty archive, err %v", err)
 	}
@@ -229,6 +236,11 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 		t.Fatalf("failed to add block: %v", err)
 	}
 
+	// make sure data are on disk for verification
+	if err := archiveTrie.Flush(); err != nil {
+		t.Fatalf("failed to flush archive: %v", err)
+	}
+
 	injectedError := fmt.Errorf("injected error")
 	var count int
 	threshold := 1000_000
@@ -240,26 +252,19 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 		count++
 		return archiveTrie.GetBlockHeight()
 	}).AnyTimes()
+	errorInjectingArchiveVerifiableTrieMock.EXPECT().GetBlockRoot(gomock.Any()).DoAndReturn(func(uint64) (mpt.NodeId, error) {
+		if count >= threshold {
+			return 0, injectedError
+		}
+		count++
+		return archiveTrie.GetBlockRoot(0)
+	}).AnyTimes()
 	errorInjectingArchiveVerifiableTrieMock.EXPECT().GetHash(gomock.Any()).DoAndReturn(func(block uint64) (common.Hash, error) {
 		if count >= threshold {
 			return common.Hash{}, injectedError
 		}
 		count++
 		return archiveTrie.GetHash(block)
-	}).AnyTimes()
-	errorInjectingArchiveVerifiableTrieMock.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, visitor mpt.NodeVisitor) error {
-		if count >= threshold {
-			return injectedError
-		}
-		count++
-		return archiveTrie.VisitTrie(block, visitor)
-	}).AnyTimes()
-	errorInjectingArchiveVerifiableTrieMock.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, address common.Address, visitor mpt.NodeVisitor) error {
-		if count >= threshold {
-			return injectedError
-		}
-		count++
-		return archiveTrie.VisitAccountStorage(block, address, visitor)
 	}).AnyTimes()
 	errorInjectingArchiveVerifiableTrieMock.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).DoAndReturn(func(block uint64, addr common.Address) (mpt.AccountInfo, bool, error) {
 		if count >= threshold {
@@ -291,7 +296,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 	}).AnyTimes()
 
 	// count the number of executions first
-	if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer); err != nil {
+	if err := verifyArchiveTrieProof(context.Background(), errorInjectingArchiveVerifiableTrieMock, 1, 1, dir, mpt.S5ArchiveConfig, observer); err != nil {
 		t.Fatalf("failed to verify archive trie: %v", err)
 	}
 
@@ -300,7 +305,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 	for i := 0; i < loops; i++ {
 		count = 0     // reset the counter
 		threshold = i // update the threshold every loop
-		if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer); !errors.Is(err, injectedError) {
+		if err := verifyArchiveTrieProof(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, dir, mpt.S5ArchiveConfig, observer); !errors.Is(err, injectedError) {
 			t.Errorf("expected error %v, got %v", injectedError, err)
 		}
 	}
@@ -312,7 +317,8 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 	observer.EXPECT().Progress(gomock.Any()).AnyTimes()
 
 	// init a real trie
-	trie, err := mpt.OpenFileLiveTrie(t.TempDir(), mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
+	dir := t.TempDir()
+	trie, err := mpt.OpenFileLiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
 	if err != nil {
 		t.Fatalf("failed to create trie, err %v", err)
 	}
@@ -332,6 +338,11 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 		}
 	}
 
+	// make sure data are on disk for verification
+	if err := trie.Flush(); err != nil {
+		t.Fatalf("failed to flush archive: %v", err)
+	}
+
 	injectedError := fmt.Errorf("injected error")
 
 	var count int
@@ -343,20 +354,6 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 		}
 		count++
 		return trie.UpdateHashes()
-	}).AnyTimes()
-	errorInjectingVerifiableTrieMock.EXPECT().VisitTrie(gomock.Any()).DoAndReturn(func(visitor mpt.NodeVisitor) error {
-		if count >= threshold {
-			return injectedError
-		}
-		count++
-		return trie.VisitTrie(visitor)
-	}).AnyTimes()
-	errorInjectingVerifiableTrieMock.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).DoAndReturn(func(address common.Address, visitor mpt.NodeVisitor) error {
-		if count >= threshold {
-			return injectedError
-		}
-		count++
-		return trie.VisitAccountStorage(address, visitor)
 	}).AnyTimes()
 	errorInjectingVerifiableTrieMock.EXPECT().GetAccountInfo(gomock.Any()).DoAndReturn(func(addr common.Address) (mpt.AccountInfo, bool, error) {
 		if count >= threshold {
@@ -415,7 +412,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 	}).AnyTimes()
 
 	// count the number of executions first
-	if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer); err != nil {
+	if err := verifyTrieProof(context.Background(), errorInjectingVerifiableTrieMock, trie.RootNodeId(), dir, mpt.S5ArchiveConfig, observer); err != nil {
 		t.Fatalf("failed to verify archive trie: %v", err)
 	}
 
@@ -424,7 +421,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 	for i := 0; i < loops; i++ {
 		count = 0     // reset the counter
 		threshold = i // update the threshold every loop
-		if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer); !errors.Is(err, injectedError) {
+		if err := verifyTrieProof(context.Background(), errorInjectingVerifiableTrieMock, trie.RootNodeId(), dir, mpt.S5ArchiveConfig, observer); !errors.Is(err, injectedError) {
 			t.Errorf("expected error %v, got %v", injectedError, err)
 		}
 	}
@@ -436,7 +433,8 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	observer.EXPECT().Progress(gomock.Any()).AnyTimes()
 
 	// init a real trie
-	trie, err := mpt.OpenFileLiveTrie(t.TempDir(), mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
+	dir := t.TempDir()
+	trie, err := mpt.OpenFileLiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
 	if err != nil {
 		t.Fatalf("failed to create trie, err %v", err)
 	}
@@ -456,12 +454,15 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 		}
 	}
 
+	// make sure data are on disk for verification
+	if err := trie.Flush(); err != nil {
+		t.Fatalf("failed to flush archive: %v", err)
+	}
+
 	var counter int
 	threshold := 1000_000
 	errorInjectingTrieMock := NewMockverifiableTrie(ctrl)
 	errorInjectingTrieMock.EXPECT().UpdateHashes().DoAndReturn(trie.UpdateHashes).AnyTimes()
-	errorInjectingTrieMock.EXPECT().VisitTrie(gomock.Any()).DoAndReturn(trie.VisitTrie).AnyTimes()
-	errorInjectingTrieMock.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).DoAndReturn(trie.VisitAccountStorage).AnyTimes()
 	errorInjectingTrieMock.EXPECT().GetAccountInfo(gomock.Any()).DoAndReturn(trie.GetAccountInfo).AnyTimes()
 	errorInjectingTrieMock.EXPECT().GetValue(gomock.Any(), gomock.Any()).DoAndReturn(trie.GetValue).AnyTimes()
 	errorInjectingTrieMock.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).DoAndReturn(func(address common.Address, key ...common.Key) (witness.Proof, error) {
@@ -482,7 +483,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	}).AnyTimes()
 
 	// count the number of executions first
-	if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer); err != nil {
+	if err := verifyTrieProof(context.Background(), errorInjectingTrieMock, trie.RootNodeId(), dir, mpt.S5ArchiveConfig, observer); err != nil {
 		t.Fatalf("failed to verify archive trie: %v", err)
 	}
 
@@ -491,7 +492,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	for i := 0; i < loops; i++ {
 		counter = 0   // reset the counter
 		threshold = i // update the threshold every loop
-		if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer); !errors.Is(err, ErrInvalidProof) {
+		if err := verifyTrieProof(context.Background(), errorInjectingTrieMock, trie.RootNodeId(), dir, mpt.S5ArchiveConfig, observer); !errors.Is(err, ErrInvalidProof) {
 			t.Errorf("expected error %v, got %v", ErrInvalidProof, err)
 		}
 	}
@@ -546,7 +547,7 @@ func TestVerification_VerifyProof_Incomplete_Or_Empty(t *testing.T) {
 			}).AnyTimes()
 
 			// count the number of executions first
-			if err := verifyAccount(common.Hash{}, errorInjectingProofMock, address, data); err != nil {
+			if err := verifyAccountProof(common.Hash{}, errorInjectingProofMock, address, data); err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
 
@@ -555,10 +556,10 @@ func TestVerification_VerifyProof_Incomplete_Or_Empty(t *testing.T) {
 			for i := 0; i < loops; i++ {
 				count = 0     // reset the counter
 				threshold = i // update the threshold every loop
-				if err := verifyAccount(common.Hash{}, errorInjectingProofMock, address, data); err == nil {
+				if err := verifyAccountProof(common.Hash{}, errorInjectingProofMock, address, data); err == nil {
 					t.Errorf("expected error, got nil")
 				}
-				if err := verifyStorage(common.Hash{}, errorInjectingProofMock, address, []common.Key{{1}}, storage); err == nil {
+				if err := verifyStorageProof(common.Hash{}, errorInjectingProofMock, address, []common.Key{{1}}, storage); err == nil {
 					t.Errorf("expected error, got nil")
 				}
 			}
@@ -579,28 +580,20 @@ func TestVerification_VerifyProof_Can_Cancel(t *testing.T) {
 
 	trie := NewMockverifiableTrie(ctrl)
 	trie.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).Return(proof, nil).AnyTimes()
-	trie.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	trie.EXPECT().GetValue(gomock.Any(), gomock.Any()).Return(common.Value{}, nil).AnyTimes()
 
 	tests := map[string]struct {
-		create   func(ctx context.Context) mpt.NodeVisitor
-		getError func(visitor mpt.NodeVisitor) error
+		create func(ctx context.Context) noResponseNodeVisitor
 	}{
 		"account": {
-			func(ctx context.Context) mpt.NodeVisitor {
-				return &accountVerifyingVisitor{ctx: ctx, trie: trie, logWindow: 1000}
-			},
-			func(visitor mpt.NodeVisitor) error {
-				return visitor.(*accountVerifyingVisitor).err
+			func(ctx context.Context) noResponseNodeVisitor {
+				return &accountVerifyingProofVisitor{ctx: ctx, trie: trie, logWindow: 1000}
 			},
 		},
 		"storage": {
-			func(ctx context.Context) mpt.NodeVisitor {
+			func(ctx context.Context) noResponseNodeVisitor {
 				storage := make(map[common.Key]common.Value)
-				return &storageVerifyingVisitor{ctx: ctx, trie: trie, storage: storage}
-			},
-			func(visitor mpt.NodeVisitor) error {
-				return visitor.(*storageVerifyingVisitor).err
+				return &storageVerifyingProofVisitor{ctx: ctx, trie: trie, storage: storage}
 			},
 		},
 	}
@@ -626,10 +619,11 @@ func TestVerification_VerifyProof_Can_Cancel(t *testing.T) {
 			for i := 0; i < ctx.count; i++ {
 				ctx := newCountingWhenDoneContext(context.Background(), i)
 				visitor := test.create(ctx)
+				var errs []error
 				for _, node := range nodes {
-					visitor.Visit(node, mpt.NodeInfo{})
+					errs = append(errs, visitor.Visit(node, mpt.NodeInfo{}))
 				}
-				if err := test.getError(visitor); !errors.Is(err, interrupt.ErrCanceled) {
+				if err := errors.Join(errs...); !errors.Is(err, interrupt.ErrCanceled) {
 					t.Errorf("expected error %v, got %v", interrupt.ErrCanceled, err)
 				}
 
@@ -679,6 +673,23 @@ func TestVerification_Generates_ExistingKey(t *testing.T) {
 func TestVerification_Log_Processed_Accounts(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
+	// init a real trie for disk files to exist
+	dir := t.TempDir()
+	archiveTrie, err := mpt.OpenFileLiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
+	if err != nil {
+		t.Fatalf("failed to create trie, err %v", err)
+	}
+	defer func() {
+		if err := archiveTrie.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
+	}()
+
+	// make sure data are on disk for verification
+	if err := archiveTrie.Flush(); err != nil {
+		t.Fatalf("failed to flush archive: %v", err)
+	}
+
 	accountNode := &mpt.AccountNode{}
 	const LogWindow = 100
 
@@ -698,14 +709,20 @@ func TestVerification_Log_Processed_Accounts(t *testing.T) {
 
 	trie := NewMockverifiableTrie(ctrl)
 	trie.EXPECT().CreateWitnessProof(gomock.Any(), gomock.Any()).Return(proof, nil).AnyTimes()
-	trie.EXPECT().VisitAccountStorage(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	trie.EXPECT().GetValue(gomock.Any(), gomock.Any()).Return(common.Value{}, nil).AnyTimes()
 
-	visitor := accountVerifyingVisitor{trie: trie, observer: observer, logWindow: LogWindow,
-		ctx: context.Background()}
+	visitor := accountVerifyingProofVisitor{
+		trie:      trie,
+		observer:  observer,
+		logWindow: LogWindow,
+		directory: dir,
+		config:    mpt.S5ArchiveConfig,
+		ctx:       context.Background()}
 
 	for i := 0; i < LogWindow+1; i++ {
-		visitor.Visit(accountNode, mpt.NodeInfo{})
+		if err := visitor.Visit(accountNode, mpt.NodeInfo{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 }
 
