@@ -7379,6 +7379,12 @@ func TestVisitStorage_Visits_All_Slots(t *testing.T) {
 		t.Errorf("expected at least one node, but got none")
 	}
 
+	slices.SortFunc(expected, func(a, b common.Key) int {
+		return a.Compare(&b)
+	})
+	slices.SortFunc(actual, func(a, b common.Key) int {
+		return a.Compare(&b)
+	})
 	if !slices.Equal(expected, actual) {
 		t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
 	}
