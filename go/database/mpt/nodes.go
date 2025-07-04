@@ -394,6 +394,197 @@ func visitPathTo[H any](
 	return found, nil
 }
 
+// VisitAccounts visits all accounts in the MPT rooted by the input root node.
+// Each encountered account is passed to the visitor.
+// If no more accounts are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func VisitAccounts(source NodeSource, root *NodeReference, visitor AccountVisitor) error {
+	return visitNodesWithReadAccess(source, root,
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			switch n := node.(type) {
+			case *AccountNode:
+				visitor.VisitAccount(n.Address(), n.Info())
+				return VisitResponsePrune
+			}
+
+			return VisitResponseContinue
+		}))
+}
+
+// VisitStorages visits all storage slots in the MPT rooted by the input root node.
+// Each encountered slot is passed to the visitor.
+// If no more slots are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func VisitStorages(source NodeSource, root *NodeReference, address common.Address, visitor StorageVisitor) error {
+	path := AddressToNibblePath(address, source)
+	var innerError error
+	// go to the account
+	_, err := visitPathTo(root, path, &address, nil,
+		source.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+			switch n := node.(type) {
+			case *AccountNode: // when an account is found, visit its storage
+				innerError = visitNodesWithReadAccess(source, &n.storage,
+					MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+						switch n := node.(type) {
+						case *ValueNode:
+							visitor.VisitStorage(n.key, n.value)
+						}
+						return VisitResponseContinue
+					}))
+				if innerError != nil {
+					return VisitResponseAbort // stop visiting, error occurred
+				}
+				return VisitResponsePrune // this account is finished, no need to continue
+			}
+			return VisitResponseContinue
+		}))
+
+	return errors.Join(err, innerError)
+}
+
+// visitNodesWithViewAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the View access provided by the source.
+func visitNodesWithViewAccess(source NodeSource, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getViewAccess,
+		func(h shared.ViewHandle[Node]) { h.Release() },
+		func(h shared.ViewHandle[Node]) bool { return h.Valid() },
+		func(h shared.ViewHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodesWithReadAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Read access provided by the source.
+func visitNodesWithReadAccess(source NodeSource, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getReadAccess,
+		func(h shared.ReadHandle[Node]) { h.Release() },
+		func(h shared.ReadHandle[Node]) bool { return h.Valid() },
+		func(h shared.ReadHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodesWithReadAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Hash access provided by the source.
+func visitNodesWithHashAccess(source NodeManager, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getHashAccess,
+		func(h shared.HashHandle[Node]) { h.Release() },
+		func(h shared.HashHandle[Node]) bool { return h.Valid() },
+		func(h shared.HashHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodesWithWriteAccess visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more nodes are available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function accesses nodes using the Write access provided by the source.
+func visitNodesWithWriteAccess(source NodeManager, root *NodeReference, visitor NodeVisitor) error {
+	return visitNodes(root,
+		source.getWriteAccess,
+		func(h shared.WriteHandle[Node]) { h.Release() },
+		func(h shared.WriteHandle[Node]) bool { return h.Valid() },
+		func(h shared.WriteHandle[Node]) Node { return h.Get() },
+		visitor,
+	)
+}
+
+// visitNodes visits all nodes from the input root.
+// Each encountered node is passed to the visitor.
+// If no more node is available, the execution ends.
+// The function returns an error if the tree cannot be
+// iterated due to error propagated from the node source.
+// The function allows for custom access and release
+// functions via the input callback functions.
+// The access to the nodes is thread safe for selected access types.
+// However, it uses a fine-grained locking mechanism,
+// protecting always only currently accessed nodes.
+// It means that the user does not have to get a consistent view
+// of the whole tree, when the tree is modified concurrently.
+func visitNodes[H any](
+	root *NodeReference,
+	access func(ref *NodeReference) (H, error),
+	release func(H),
+	valid func(H) bool,
+	get func(H) Node,
+	visitor NodeVisitor) error {
+
+	type tuple struct {
+		nodeId   *NodeReference
+		embedded bool
+	}
+	tasks := []tuple{{root, false}}
+
+	var last H
+	for len(tasks) > 0 {
+		nodeInfo := tasks[len(tasks)-1]
+		handle, err := access(nodeInfo.nodeId)
+		tasks = tasks[0 : len(tasks)-1]
+		if valid(last) {
+			release(last)
+		}
+		if err != nil {
+			return err
+		}
+
+		last = handle
+		node := get(last)
+		switch res := visitor.Visit(node, NodeInfo{Id: nodeInfo.nodeId.Id(), Embedded: tribool.New(nodeInfo.embedded)}); res {
+		case VisitResponseAbort:
+			release(last)
+			return nil
+		case VisitResponsePrune:
+			continue
+		}
+
+		switch n := node.(type) {
+		case *ExtensionNode:
+			tasks = append(tasks, tuple{&n.next, n.nextIsEmbedded})
+		case *BranchNode:
+			for i := 0; i < 16; i++ {
+				child := &n.children[i]
+				if !child.Id().IsEmpty() {
+					tasks = append(tasks, tuple{child, n.isEmbedded(byte(i))})
+				}
+			}
+		case *AccountNode:
+			if !n.storage.Id().IsEmpty() {
+				tasks = append(tasks, tuple{&n.storage, false})
+			}
+		default:
+			// includes EmptyNode and ValueNode
+		}
+	}
+
+	release(last)
+	return nil
+}
+
 // CheckForest evaluates invariants throughout all nodes reachable from the
 // given list of roots. Executed checks include node-specific checks like the
 // minimum number of child nodes of a BranchNode, the correct placement of

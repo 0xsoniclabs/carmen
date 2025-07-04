@@ -2239,7 +2239,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 	// rotate getters to start the experiment from all existing getters.
 	for i := 0; i < len(archiveOps); i++ {
 		i := i
-		t.Run(fmt.Sprintf("rotation_%d", i), func(t *testing.T) {
+		t.Run(fmt.Sprintf("rotation_%s", names[i]), func(t *testing.T) {
 			t.Parallel()
 
 			ctrl := gomock.NewController(t)
