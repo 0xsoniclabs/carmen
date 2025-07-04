@@ -516,11 +516,16 @@ func visitNodesWithWriteAccess(source NodeManager, root *NodeReference, visitor 
 
 // visitNodes visits all nodes from the input root.
 // Each encountered node is passed to the visitor.
-// If no more account is available, the execution ends.
+// If no more node is available, the execution ends.
 // The function returns an error if the tree cannot be
 // iterated due to error propagated from the node source.
-// The function allows for custom access and release functions
-// via the input callback functions.
+// The function allows for custom access and release
+// functions via the input callback functions.
+// The access to the nodes is thread safe for selected access types.
+// However, it uses a fine-grained locking mechanism,
+// protecting always only currently accessed nodes.
+// It means that the user does not have to get a consistent view
+// of the whole tree, when the tree is modified concurrently.
 func visitNodes[H any](
 	root *NodeReference,
 	access func(ref *NodeReference) (H, error),
@@ -537,9 +542,9 @@ func visitNodes[H any](
 
 	var last H
 	for len(tasks) > 0 {
-		nodeInfo := tasks[0]
+		nodeInfo := tasks[len(tasks)-1]
 		handle, err := access(nodeInfo.nodeId)
-		tasks = tasks[1:]
+		tasks = tasks[0 : len(tasks)-1]
 		if valid(last) {
 			release(last)
 		}
@@ -568,7 +573,9 @@ func visitNodes[H any](
 				}
 			}
 		case *AccountNode:
-			tasks = append(tasks, tuple{&n.storage, false})
+			if !n.storage.Id().IsEmpty() {
+				tasks = append(tasks, tuple{&n.storage, false})
+			}
 		default:
 			// includes EmptyNode and ValueNode
 		}

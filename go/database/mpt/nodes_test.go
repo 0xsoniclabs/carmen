@@ -6910,7 +6910,7 @@ func TestVisitPathToAccount_Nodes_Hash_Protected(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ctxt := newNiceNodeContext(t, ctrl)
 
-var pathVisited bool
+	var pathVisited bool
 	accountVisitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 		// node cannot be accessed via view access as long as hash access is held
 		if _, ok := ctxt.getHandle(t, info.Id).TryGetViewHandle(); ok {
@@ -7012,34 +7012,25 @@ func TestVisitNodes_Visits_All_Nodes(t *testing.T) {
 	address := common.Address{1}
 	key := common.Key{2}
 
-	desc := &Extension{
-		path: AddressToNibblePath(address, ctxt)[0:30],
-		next: &Branch{children: Children{
-			0x1: &Empty{},
-			0x2: &Account{address: address, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
-				storage: &Extension{
-					path:         KeyToNibblePath(key, ctxt)[0:40],
-					nextEmbedded: true,
-					next:         &Value{key: key, length: 24, value: common.Value{3}},
-				}},
-		},
-		},
+	desc := map[string]NodeDesc{
+		"empty storage": &Extension{
+			path: AddressToNibblePath(address, ctxt)[0:30],
+			next: &Branch{children: Children{
+				0x1: &Empty{},
+				0x2: &Account{address: address, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}}},
+			}}},
+		"non empty storage": &Extension{
+			path: AddressToNibblePath(address, ctxt)[0:30],
+			next: &Branch{children: Children{
+				0x1: &Empty{},
+				0x2: &Account{address: address, pathLength: 33, info: AccountInfo{Nonce: common.Nonce{0x01}},
+					storage: &Extension{
+						path:         KeyToNibblePath(key, ctxt)[0:40],
+						nextEmbedded: true,
+						next:         &Value{key: key, length: 24, value: common.Value{3}},
+					}},
+			}}},
 	}
-
-	root, handle := ctxt.Build(desc)
-
-	// collect expected nodes
-	expected := make([]NodeId, 0, 10)
-	node := handle.GetReadHandle()
-	treeVisitor := MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
-		expected = append(expected, i.Id)
-		return VisitResponseContinue
-	})
-
-	if _, err := node.Get().Visit(ctxt, &root, 0, treeVisitor); err != nil {
-		t.Fatalf("unexpected error during path iteration: %v", err)
-	}
-	node.Release()
 
 	testMethods := map[string]func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error{
 		"view": func(source *nodeContext, root *NodeReference, visitor NodeVisitor) error {
@@ -7056,24 +7047,42 @@ func TestVisitNodes_Visits_All_Nodes(t *testing.T) {
 		},
 	}
 
-	for name, visit := range testMethods {
+	for name, desc := range desc {
 		t.Run(name, func(t *testing.T) {
-			actual := make([]NodeId, 0, 10)
-			visitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
-				actual = append(actual, info.Id)
+			root, handle := ctxt.Build(desc)
+			// collect expected nodes
+			expected := make([]NodeId, 0, 10)
+			node := handle.GetReadHandle()
+			treeVisitor := MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+				expected = append(expected, i.Id)
 				return VisitResponseContinue
 			})
-			// collect actual nodes
-			if err := visit(ctxt, &root, visitor); err != nil {
-				t.Fatalf("unexpected error during visit: %v", err)
-			}
 
-			if len(actual) == 0 {
-				t.Errorf("expected at least one node, but got none")
+			if _, err := node.Get().Visit(ctxt, &root, 0, treeVisitor); err != nil {
+				t.Fatalf("unexpected error during path iteration: %v", err)
 			}
+			node.Release()
 
-			if !slices.Equal(expected, actual) {
-				t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+			for name, visit := range testMethods {
+				t.Run(name, func(t *testing.T) {
+					actual := make([]NodeId, 0, 10)
+					visitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+						actual = append(actual, info.Id)
+						return VisitResponseContinue
+					})
+					// collect actual nodes
+					if err := visit(ctxt, &root, visitor); err != nil {
+						t.Fatalf("unexpected error during visit: %v", err)
+					}
+
+					if len(actual) == 0 {
+						t.Errorf("expected at least one node, but got none")
+					}
+
+					if !slices.Equal(expected, actual) {
+						t.Errorf("unexpected visit result, wanted %v, got %v", expected, actual)
+					}
+				})
 			}
 		})
 	}
