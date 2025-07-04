@@ -4483,7 +4483,7 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 	st := NewMockState(ctrl)
 
 	// state reports there are data in the storage
-	st.EXPECT().HasEmptyStorage(addr).Return(false, nil)
+	st.EXPECT().HasEmptyStorage(addr).Return(false, nil).AnyTimes()
 	st.EXPECT().Exists(addr).Return(true, nil)
 
 	statedb := stateDB{
@@ -4497,10 +4497,15 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 		t.Errorf("storage should not be empty")
 	}
 
-	statedb.Suicide(addr) // must make storage empty
+	statedb.Suicide(addr) // must mark storage to be emptied at end of transaction
 
-	if empty := statedb.HasEmptyStorage(addr); !empty {
-		t.Errorf("storage should be empty")
+	if want, got := pendingClearing, statedb.clearedAccounts[addr]; want != got {
+		t.Errorf("invalid account clearing state, want %v, got %v", want, got)
+	}
+
+	// Until the end of the transaction, the storage is still considered non-empty.
+	if empty := statedb.HasEmptyStorage(addr); empty {
+		t.Errorf("storage should not yet be empty")
 	}
 }
 
