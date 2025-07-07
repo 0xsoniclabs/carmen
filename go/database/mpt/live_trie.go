@@ -168,13 +168,17 @@ func (s *LiveTrie) setHashes(hashes *NodeHashes) error {
 	return s.forest.setHashesFor(&s.root, hashes)
 }
 
-func (s *LiveTrie) VisitTrie(visitor NodeVisitor) error {
-	return s.forest.VisitTrie(&s.root, visitor)
+func (s *LiveTrie) VisitTrie(mode AccessMode, visitor NodeVisitor) error {
+	return s.forest.VisitTrie(&s.root, mode, visitor)
 }
 
 // VisitAccountStorage visits the storage nodes of an account with the given address.
 // The visited nodes do not contain the account node itself.
-func (s *LiveTrie) VisitAccountStorage(address common.Address, visitor NodeVisitor) error {
+func (s *LiveTrie) VisitAccountStorage(
+	address common.Address,
+	mode AccessMode,
+	visitor NodeVisitor,
+) error {
 	var innerError error
 	// this visitor finds the account node with the given address
 	accountVisitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
@@ -182,7 +186,7 @@ func (s *LiveTrie) VisitAccountStorage(address common.Address, visitor NodeVisit
 		case *AccountNode:
 			if n.Address() == address {
 				// and then it sends the storage node to the visitor
-				_, innerError = n.visitStorage(s.forest, 0, visitor)
+				_, innerError = n.visitStorage(s.forest, 0, mode, visitor)
 			}
 			return VisitResponseAbort
 		}
@@ -190,7 +194,7 @@ func (s *LiveTrie) VisitAccountStorage(address common.Address, visitor NodeVisit
 		return VisitResponseContinue
 	})
 
-	_, err := VisitPathToAccount(s.forest, &s.root, address, accountVisitor)
+	_, err := VisitPathToAccount(s.forest, &s.root, address, mode, accountVisitor)
 	return errors.Join(innerError, err)
 }
 

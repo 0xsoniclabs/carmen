@@ -30,6 +30,7 @@ import (
 type MockWriteBuffer struct {
 	ctrl     *gomock.Controller
 	recorder *MockWriteBufferMockRecorder
+	isgomock struct{}
 }
 
 // MockWriteBufferMockRecorder is the mock recorder for MockWriteBuffer.
@@ -108,6 +109,7 @@ func (mr *MockWriteBufferMockRecorder) Flush() *gomock.Call {
 type MockNodeSink struct {
 	ctrl     *gomock.Controller
 	recorder *MockNodeSinkMockRecorder
+	isgomock struct{}
 }
 
 // MockNodeSinkMockRecorder is the mock recorder for MockNodeSink.

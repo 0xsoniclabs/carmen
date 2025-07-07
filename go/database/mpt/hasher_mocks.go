@@ -30,6 +30,7 @@ import (
 type Mockhasher struct {
 	ctrl     *gomock.Controller
 	recorder *MockhasherMockRecorder
+	isgomock struct{}
 }
 
 // MockhasherMockRecorder is the mock recorder for Mockhasher.

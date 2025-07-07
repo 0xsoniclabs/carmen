@@ -235,11 +235,11 @@ func TestCreateWitnessProof_CannotCreateProof_FailingNodeSources(t *testing.T) {
 
 	tests := []struct {
 		name string
-		mock func(*MockNodeSource)
+		mock func(*MockNodeManager)
 	}{
 		{
 			name: "call in account proof fails",
-			mock: func(mock *MockNodeSource) {
+			mock: func(mock *MockNodeManager) {
 				childId := NewNodeReference(ValueId(123))
 				branchNode := BranchNode{}
 				branchNode.setEmbedded(0xA, true)
@@ -250,7 +250,7 @@ func TestCreateWitnessProof_CannotCreateProof_FailingNodeSources(t *testing.T) {
 		},
 		{
 			name: "call in storage proof fails",
-			mock: func(mock *MockNodeSource) {
+			mock: func(mock *MockNodeManager) {
 				var account Node = &AccountNode{address: common.Address{0xA}}
 				gomock.InOrder(
 					mock.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared(account).GetViewHandle(), nil),
@@ -263,14 +263,14 @@ func TestCreateWitnessProof_CannotCreateProof_FailingNodeSources(t *testing.T) {
 	hash := common.Hash{0xA}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			nodeSource := NewMockNodeSource(ctrl)
-			nodeSource.EXPECT().getConfig().AnyTimes().Return(S5LiveConfig)
-			nodeSource.EXPECT().hashKey(gomock.Any()).AnyTimes().Return(hash)
-			nodeSource.EXPECT().hashAddress(gomock.Any()).AnyTimes().Return(hash)
-			test.mock(nodeSource)
+			nodeManager := NewMockNodeManager(ctrl)
+			nodeManager.EXPECT().getConfig().AnyTimes().Return(S5LiveConfig)
+			nodeManager.EXPECT().hashKey(gomock.Any()).AnyTimes().Return(hash)
+			nodeManager.EXPECT().hashAddress(gomock.Any()).AnyTimes().Return(hash)
+			test.mock(nodeManager)
 			root := NewNodeReference(EmptyId())
 
-			if _, err := CreateWitnessProof(nodeSource, &root, common.Address{0xA}, common.Key{0x1}); !errors.Is(err, injectedErr) {
+			if _, err := CreateWitnessProof(nodeManager, &root, common.Address{0xA}, common.Key{0x1}); !errors.Is(err, injectedErr) {
 				t.Errorf("getting proof should fail")
 			}
 		})
@@ -937,7 +937,7 @@ func TestCreateWitnessProof_Elements_Path_Sorted_By_Trie_Navigation(t *testing.T
 		mptNodes = append(mptNodes, immutable.NewBytes(rlp))
 		if account, ok := node.(*AccountNode); ok {
 			expectedStorageRootHash = account.storageHash
-			if _, err := VisitPathToStorage(ctxt, &account.storage, key, visitor); err != nil {
+			if _, err := VisitPathToStorage(ctxt, &account.storage, key, ReadAccess{}, visitor); err != nil {
 				t.Fatalf("failed to visit path: %v", err)
 			}
 		}
@@ -945,7 +945,7 @@ func TestCreateWitnessProof_Elements_Path_Sorted_By_Trie_Navigation(t *testing.T
 	}).AnyTimes()
 
 	// iterate over the path to get all nodes in order of the trie navigation
-	found, err := VisitPathToAccount(ctxt, &root, address, visitor)
+	found, err := VisitPathToAccount(ctxt, &root, address, ReadAccess{}, visitor)
 	if err != nil {
 		t.Fatalf("failed to visit path: %v", err)
 	}
@@ -1725,7 +1725,7 @@ func createReferenceProof(t *testing.T, ctxt *nodeContext, root *NodeReference, 
 	t.Helper()
 	proof := proofDb{}
 	handle := node.GetViewHandle()
-	_, err := handle.Get().Visit(ctxt, root, 0, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+	_, err := handle.Get().Visit(ctxt, root, 0, ViewAccess{}, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 		if _, ok := node.(EmptyNode); ok {
 			// nodes that are not correct terminal values are not present in the proof
 			return VisitResponseContinue

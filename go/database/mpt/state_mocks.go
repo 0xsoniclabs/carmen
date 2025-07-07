@@ -15,6 +15,7 @@
 //
 //	mockgen -source state.go -destination state_mocks.go -package mpt
 //
+
 // Package mpt is a generated GoMock package.
 package mpt
 
@@ -32,6 +33,7 @@ import (
 type MockDatabase struct {
 	ctrl     *gomock.Controller
 	recorder *MockDatabaseMockRecorder
+	isgomock struct{}
 }
 
 // MockDatabaseMockRecorder is the mock recorder for MockDatabase.
@@ -253,17 +255,17 @@ func (mr *MockDatabaseMockRecorder) SetValue(rootRef, addr, key, value any) *gom
 }
 
 // VisitTrie mocks base method.
-func (m *MockDatabase) VisitTrie(rootRef *NodeReference, visitor NodeVisitor) error {
+func (m *MockDatabase) VisitTrie(rootRef *NodeReference, mode AccessMode, visitor NodeVisitor) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "VisitTrie", rootRef, visitor)
+	ret := m.ctrl.Call(m, "VisitTrie", rootRef, mode, visitor)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // VisitTrie indicates an expected call of VisitTrie.
-func (mr *MockDatabaseMockRecorder) VisitTrie(rootRef, visitor any) *gomock.Call {
+func (mr *MockDatabaseMockRecorder) VisitTrie(rootRef, mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitTrie", reflect.TypeOf((*MockDatabase)(nil).VisitTrie), rootRef, visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitTrie", reflect.TypeOf((*MockDatabase)(nil).VisitTrie), rootRef, mode, visitor)
 }
 
 // createAccount mocks base method.
@@ -507,6 +509,7 @@ func (mr *MockDatabaseMockRecorder) updateHashesFor(ref any) *gomock.Call {
 type MockLiveState struct {
 	ctrl     *gomock.Controller
 	recorder *MockLiveStateMockRecorder
+	isgomock struct{}
 }
 
 // MockLiveStateMockRecorder is the mock recorder for MockLiveState.

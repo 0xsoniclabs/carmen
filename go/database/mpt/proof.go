@@ -61,23 +61,23 @@ func CreateWitnessProofFromNodes(nodes []immutable.Bytes) WitnessProof {
 // CreateWitnessProof creates a witness proof for the input account address
 // and possibly storage slots of the same account under the input storage keys.
 // This method may return an error when it occurs in the underlying database.
-func CreateWitnessProof(nodeSource NodeSource, root *NodeReference, address common.Address, keys ...common.Key) (WitnessProof, error) {
+func CreateWitnessProof(nodeManager NodeManager, root *NodeReference, address common.Address, keys ...common.Key) (WitnessProof, error) {
 	proof := proofDb{}
 	visitor := &proofExtractionVisitor{
-		nodeSource: nodeSource,
+		nodeSource: nodeManager,
 		proof:      proof,
 	}
 
 	var innerError error
 
-	_, err := VisitPathToAccount(nodeSource, root, address, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+	_, err := VisitPathToAccount(nodeManager, root, address, ViewAccess{}, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 		if res := visitor.Visit(node, info); res == VisitResponseAbort {
 			return VisitResponseAbort
 		}
 		// if account reached, prove storage keys and terminate.
 		if account, ok := node.(*AccountNode); ok {
 			for _, key := range keys {
-				_, err := VisitPathToStorage(nodeSource, &account.storage, key, visitor)
+				_, err := VisitPathToStorage(nodeManager, &account.storage, key, ViewAccess{}, visitor)
 				if err != nil || visitor.err != nil {
 					innerError = errors.Join(innerError, visitor.err, err)
 					return VisitResponseAbort
