@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -4491,7 +4491,7 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 	st := NewMockState(ctrl)
 
 	// state reports there are data in the storage
-	st.EXPECT().HasEmptyStorage(addr).Return(false, nil)
+	st.EXPECT().HasEmptyStorage(addr).Return(false, nil).AnyTimes()
 	st.EXPECT().Exists(addr).Return(true, nil)
 
 	statedb := stateDB{
@@ -4505,10 +4505,87 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 		t.Errorf("storage should not be empty")
 	}
 
-	statedb.Suicide(addr) // must make storage empty
+	statedb.Suicide(addr) // must mark storage to be emptied at end of transaction
 
-	if empty := statedb.HasEmptyStorage(addr); !empty {
-		t.Errorf("storage should be empty")
+	if want, got := pendingClearing, statedb.clearedAccounts[addr]; want != got {
+		t.Errorf("invalid account clearing state, want %v, got %v", want, got)
+	}
+
+	// Until the end of the transaction, the storage is still considered non-empty.
+	if empty := statedb.HasEmptyStorage(addr); empty {
+		t.Errorf("storage should not yet be empty")
+	}
+}
+
+func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing.T) {
+	const limit = 5
+	s := &stateDB{
+		reincarnation:   make(map[common.Address]uint64),
+		storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](limit),
+	}
+
+	for i := 0; i < limit; i++ {
+		s.reincarnation[common.Address{byte(i)}] = uint64(i)
+		s.storedDataCache.Set(
+			slotId{common.Address{byte(i)}, common.Key{byte(i)}},
+			storedDataCacheValue{common.Value{byte(i)}, 1})
+	}
+
+	s.resetReincarnationWhenExceeds(limit + 1)
+
+	if got, want := len(s.reincarnation), limit; got != want {
+		t.Errorf("reincarnation size is %d, want %d", got, want)
+	}
+	isEmpty := true
+	s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
+		isEmpty = false
+		return false
+	})
+
+	if isEmpty {
+		t.Errorf("storedDataCache should not be empty")
+	}
+}
+
+func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
+	const limit = 5
+	tests := map[string]struct {
+		limit int
+	}{
+		"at limit":    {limit: limit - 1},
+		"above limit": {limit: 1},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := &stateDB{
+				reincarnation:   make(map[common.Address]uint64),
+				storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](limit),
+			}
+
+			for i := 0; i < limit; i++ {
+				s.reincarnation[common.Address{byte(i)}] = uint64(i)
+				s.storedDataCache.Set(
+					slotId{common.Address{byte(i)}, common.Key{byte(i)}},
+					storedDataCacheValue{common.Value{byte(i)}, 1})
+			}
+
+			s.resetReincarnationWhenExceeds(test.limit)
+
+			if len(s.reincarnation) != 0 {
+				t.Errorf("reincarnation size is %d, want 0", len(s.reincarnation))
+			}
+
+			isEmpty := true
+			s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
+				isEmpty = false
+				return false
+			})
+
+			if !isEmpty {
+				t.Errorf("storedDataCache should not be empty")
+			}
+		})
 	}
 }
 

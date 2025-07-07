@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -13,7 +13,6 @@ package state
 import (
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"maps"
 	"math/big"
 	"sync"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/witness"
 )
 
 //go:generate mockgen -source state_db.go -destination state_db_mock.go -package state
@@ -876,9 +876,17 @@ func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value c
 
 func (s *stateDB) HasEmptyStorage(addr common.Address) bool {
 	if state, exists := s.accounts[addr]; exists {
-		// an account was either self-destructed or is known not to exist
-		// in these cases the storage is always considered empty
-		if state.current == accountNonExisting || state.current == accountSelfDestructed {
+		// Accounts known to not exist have empty storage.
+		if state.current == accountNonExisting {
+			return true
+		}
+	}
+
+	if state, exists := s.clearedAccounts[addr]; exists {
+		// If an account was cleared by a transaction in the current block, its
+		// storage state is also empty. Even if storage data was set in the
+		// current transaction (aka. tainted), the storage is considered empty.
+		if state == cleared || state == clearedAndTainted {
 			return true
 		}
 	}
@@ -1406,6 +1414,20 @@ func (s *stateDB) ResetBlockContext() {
 	s.codes = make(map[common.Address]*codeValue)
 	s.logsInBlock = 0
 	s.resetTransactionContext()
+	s.resetReincarnationWhenExceeds(10_000_000)
+}
+
+// resetReincarnationWhenExceeds limits the reincarnation map size
+// not to grow indefinitely. We cap the map to 100M items, which was
+// experimentally assessed.
+// When the size reached the limit, this structure is emptied,
+// and the stored data cache is cleared as well.
+func (s *stateDB) resetReincarnationWhenExceeds(limit int) {
+	if len(s.reincarnation) > limit {
+		// Reset reincarnation map and stored data cache.
+		s.reincarnation = make(map[common.Address]uint64)
+		s.storedDataCache.Clear()
+	}
 }
 
 func (s *stateDB) resetState(state State) {

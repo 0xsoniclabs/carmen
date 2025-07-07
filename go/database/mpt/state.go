@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -42,7 +42,7 @@ import (
 type Database interface {
 	common.FlushAndCloser
 	common.MemoryFootprintProvider
-	NodeSource
+	NodeManager
 
 	// GetAccountInfo retrieves account information for input root and account address.
 	GetAccountInfo(rootRef *NodeReference, addr common.Address) (AccountInfo, bool, error)

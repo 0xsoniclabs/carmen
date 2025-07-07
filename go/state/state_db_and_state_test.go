@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 
 	_ "github.com/0xsoniclabs/carmen/go/state/cppstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
@@ -636,6 +637,117 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.T) {
+	// This test covers an issue detected while replaying blocks on the
+	// Sepolia testnet, in which the same account is self-destructed and then
+	// re-created in the same block.
+	testCount := 0
+	for _, config := range initStates() {
+		if config.config.Schema < 4 {
+			continue
+		}
+		testCount++
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			s, err := config.createState(dir)
+			if err != nil {
+				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
+			}
+			defer s.Close()
+
+			db := state.CreateStateDBUsing(s)
+
+			address := common.Address{1, 2, 3}
+			key := common.Key{4, 5, 6}
+			value := common.Value{7, 8, 9}
+
+			// We start by creating an account with some non-empty state.
+			db.BeginBlock()
+			{
+				db.BeginTransaction()
+				{
+					db.CreateAccount(address)
+					db.CreateContract(address)
+					db.SetNonce(address, 1)
+					db.SetState(address, key, value)
+				}
+				db.EndTransaction()
+			}
+			db.EndBlock(1)
+
+			// In the next block we have two transactions:
+			db.BeginBlock()
+			{
+				// 1. Self-destruct the account.
+				db.BeginTransaction()
+				{
+					// At this point, the account storage is not empty.
+					require.False(t, db.HasEmptyStorage(address))
+					require.Equal(t, uint64(1), db.GetNonce(address))
+					db.Suicide(address)
+
+					// The effects of the self-destruct are only visible after the end
+					// of the transaction. So the storage root is still not empty.
+					require.False(t, db.HasEmptyStorage(address))
+					require.Equal(t, uint64(1), db.GetNonce(address))
+
+				}
+				db.EndTransaction()
+
+				// 2. Create the same account again.
+				db.BeginTransaction()
+				{
+					// The effects of the self-destruct are now visible. The storage
+					// root should be empty and the nonce should be reset to 0.
+					require.True(t, db.HasEmptyStorage(address))
+					require.Equal(t, uint64(0), db.GetNonce(address))
+
+					db.CreateAccount(address)
+					db.CreateContract(address)
+
+					// The account is still empty, even after its re-creation.
+					require.True(t, db.HasEmptyStorage(address))
+					require.Equal(t, uint64(0), db.GetNonce(address))
+
+					// Writing to the storage does not change the storage root, since it
+					// is only re-evaluated at the end of the block.
+					db.SetState(address, key, value)
+					require.True(t, db.HasEmptyStorage(address))
+
+					// Set the nonce to 1, to make sure the account is not empty and is
+					// not automatically removed at the end of the block.
+					db.SetNonce(address, 1)
+				}
+				db.EndTransaction()
+
+				// 3. The view on the re-born account after the end of the transaction.
+				db.BeginTransaction()
+				{
+					// Even here, the storage root remains empty, as the storage root is
+					// not re-evaluated until the end of the block.
+					require.True(t, db.HasEmptyStorage(address))
+				}
+				db.EndTransaction()
+
+			}
+			db.EndBlock(2)
+
+			// Check the state after the block.
+			db.BeginBlock()
+			{
+				db.BeginTransaction()
+				{
+					require.False(t, db.HasEmptyStorage(address))
+				}
+				db.EndTransaction()
+			}
+			db.EndBlock(3)
+		})
+	}
+	require.Greater(t, testCount, 0, "No tests were run, check the test setup")
 }
 
 func toVal(key uint64) common.Value {

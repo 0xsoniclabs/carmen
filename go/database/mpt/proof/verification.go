@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -223,7 +223,7 @@ func generateUnusedAddresses(trie verifiableTrie, number int) ([]common.Address,
 		j := rand.Int()
 		addr := common.Address{byte(j), byte(j >> 8), byte(j >> 16), byte(j >> 24), 1}
 
-		// if an unlikely situation happens and the address is not in the trie, skip it
+		// if an unlikely situation happens and the address is in the trie, skip it
 		_, exists, err := trie.GetAccountInfo(addr)
 		if err != nil {
 			return nil, err
@@ -274,11 +274,9 @@ type accountVerifyingVisitor struct {
 
 	err error
 
-	logWindow      int
-	counter        int
-	numAddresses   int
-	currentAddress common.Address
-	storage        map[common.Key]common.Value
+	logWindow    int
+	counter      int
+	numAddresses int
 }
 
 func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {

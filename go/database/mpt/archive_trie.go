@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -42,9 +42,8 @@ import (
 // state after each block.
 type ArchiveTrie struct {
 	directory    string
-	head         LiveState // the current head-state
-	forest       Database  // global forest with all versions of LiveState
-	nodeSource   NodeSource
+	head         LiveState  // the current head-state
+	forest       Database   // global forest with all versions of LiveState
 	roots        *rootList  // the roots of individual blocks indexed by block height
 	rootsMutex   sync.Mutex // protecting access to the roots list
 	addMutex     sync.Mutex // a mutex to make sure that at any time only one thread is adding new blocks
@@ -145,7 +144,6 @@ func OpenArchiveTrie(
 		directory:             directory,
 		head:                  state,
 		forest:                forest,
-		nodeSource:            forest,
 		roots:                 roots,
 		checkpointCoordinator: coordinator,
 		checkpointInterval:    checkpointInterval,
@@ -360,19 +358,14 @@ func (a *ArchiveTrie) GetHash(block uint64) (hash common.Hash, err error) {
 }
 
 func (a *ArchiveTrie) CreateWitnessProof(block uint64, address common.Address, keys ...common.Key) (witness.Proof, error) {
-	if !a.nodeSource.getConfig().UseHashedPaths {
+	if !a.forest.getConfig().UseHashedPaths {
 		return nil, archive.ErrWitnessProofNotSupported
 	}
-	a.rootsMutex.Lock()
-	length := uint64(a.roots.length())
-	if block >= length {
-		a.rootsMutex.Unlock()
-		return nil, fmt.Errorf("invalid block: %d >= %d", block, length)
+	view, err := a.getView(block)
+	if err != nil {
+		return nil, err
 	}
-	ref := a.roots.get(block).NodeRef
-	a.rootsMutex.Unlock()
-
-	proof, err := CreateWitnessProof(a.nodeSource, &ref, address, keys...)
+	proof, err := view.CreateWitnessProof(address, keys...)
 	return proof, a.addError(err)
 }
 
@@ -400,7 +393,7 @@ func (a *ArchiveTrie) GetDiff(srcBlock, trgBlock uint64) (Diff, error) {
 	before := a.roots.get(srcBlock).NodeRef
 	after := a.roots.get(trgBlock).NodeRef
 	a.rootsMutex.Unlock()
-	return GetDiff(a.nodeSource, &before, &after)
+	return GetDiff(a.forest, &before, &after)
 }
 
 // GetDiffForBlock computes the diff introduced by the given block compared to its
@@ -414,7 +407,7 @@ func (a *ArchiveTrie) GetDiffForBlock(block uint64) (Diff, error) {
 		}
 		after := a.roots.get(0).NodeRef
 		a.rootsMutex.Unlock()
-		return GetDiff(a.nodeSource, &emptyNodeReference, &after)
+		return GetDiff(a.forest, &emptyNodeReference, &after)
 	}
 	return a.GetDiff(block-1, block)
 }
@@ -610,7 +603,7 @@ func (a *ArchiveTrie) Directory() string {
 
 // GetConfig returns the configuration of the archive.
 func (a *ArchiveTrie) GetConfig() MptConfig {
-	return a.nodeSource.getConfig()
+	return a.forest.getConfig()
 }
 
 // ---- Reading and Writing Root Node ID Lists ----

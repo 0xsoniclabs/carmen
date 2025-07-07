@@ -1,7 +1,7 @@
-// Copyright (c) 2024 Fantom Foundation
+// Copyright (c) 2025 Sonic Operations Ltd
 //
 // Use of this software is governed by the Business Source License included
-// in the LICENSE file and at fantom.foundation/bsl11.
+// in the LICENSE file and at soniclabs.com/bsl11.
 //
 // Change Date: 2028-4-16
 //
@@ -48,7 +48,7 @@ func main() {
 	app := &cli.App{
 		Name:      "tool",
 		Usage:     "Carmen MPT toolbox",
-		Copyright: "(c) 2022-24 Fantom Foundation",
+		Copyright: "(c) 2022-25 Sonic Operations Ltd",
 		Flags: []cli.Flag{
 			&diagnosticsFlag,
 			&cpuProfileFlag,
