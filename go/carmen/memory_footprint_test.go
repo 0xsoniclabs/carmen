@@ -41,4 +41,8 @@ func TestMemoryFootprint_Contains_Data(t *testing.T) {
 		t.Error("memory-footprint breakdown does not contain 'liveState' keyword for live database")
 	}
 
+	if !strings.Contains(s, "database") {
+		t.Error("memory-footprint breakdown does not contain 'database' keyword for database")
+	}
+
 }
