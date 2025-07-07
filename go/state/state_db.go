@@ -1389,7 +1389,7 @@ func (s *stateDB) ResetBlockContext() {
 	s.codes = make(map[common.Address]*codeValue)
 	s.logsInBlock = 0
 	s.resetTransactionContext()
-	s.resetReincarnationWhenExceeds(25_000_000)
+	s.resetReincarnationWhenExceeds(10_000_000)
 }
 
 // resetReincarnationWhenExceeds limits the reincarnation map size
