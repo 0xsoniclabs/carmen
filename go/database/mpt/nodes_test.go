@@ -6663,46 +6663,57 @@ func TestVisitPathToAccount_CanReachTerminalNodes(t *testing.T) {
 		},
 	}
 
+	testedMethods := map[string]func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error){
+		"view": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
+			return VisitPathToAccount(source, root, address, visitor)
+		},
+		"hash": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
+			return visitPathToAccountWithHashAccess(source, root, address, visitor)
+		},
+	}
+
 	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			ctxt := newNiceNodeContext(t, ctrl)
+		for subname, visit := range testedMethods {
+			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				ctxt := newNiceNodeContext(t, ctrl)
 
-			root, shared := ctxt.Build(test.trie)
-			accountPresent := false
-			handle := shared.GetViewHandle()
-			if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
-				if node, ok := n.(*AccountNode); ok && node.address == address {
-					accountPresent = true
-				}
-				return VisitResponseContinue
-			})); err != nil {
-				t.Fatalf("unexpected error during visit: %v", err)
-			}
-			handle.Release()
-
-			visitor := NewMockNodeVisitor(ctrl)
-			var last *gomock.Call
-			for _, label := range test.path {
-				ref, shared := ctxt.Get(label)
+				root, shared := ctxt.Build(test.trie)
+				accountPresent := false
 				handle := shared.GetViewHandle()
-				cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
-				handle.Release()
-				if last != nil {
-					cur.After(last)
+				if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+					if node, ok := n.(*AccountNode); ok && node.address == address {
+						accountPresent = true
+					}
+					return VisitResponseContinue
+				})); err != nil {
+					t.Fatalf("unexpected error during visit: %v", err)
 				}
-				last = cur
-			}
+				handle.Release()
 
-			found, err := VisitPathToAccount(ctxt, &root, address, visitor)
-			if err != nil {
-				t.Fatalf("unexpected error during path iteration: %v", err)
-			}
+				visitor := NewMockNodeVisitor(ctrl)
+				var last *gomock.Call
+				for _, label := range test.path {
+					ref, shared := ctxt.Get(label)
+					handle := shared.GetViewHandle()
+					cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
+					handle.Release()
+					if last != nil {
+						cur.After(last)
+					}
+					last = cur
+				}
 
-			if found != accountPresent {
-				t.Errorf("unexpected found result, wanted %t, got %t", accountPresent, found)
-			}
-		})
+				found, err := visit(ctxt, &root, address, visitor) // test the method
+				if err != nil {
+					t.Fatalf("unexpected error during path iteration: %v", err)
+				}
+
+				if found != accountPresent {
+					t.Errorf("unexpected found result, wanted %t, got %t", accountPresent, found)
+				}
+			})
+		}
 	}
 }
 
@@ -6804,46 +6815,118 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 		},
 	}
 
+	testedMethods := map[string]func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error){
+		"view": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
+			return VisitPathToStorage(source, storageRoot, key, visitor)
+		},
+		"hash": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
+			return visitPathToStorageWithHashAccess(source, storageRoot, key, visitor)
+		},
+	}
+
 	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			ctxt := newNiceNodeContext(t, ctrl)
+		for subname, visit := range testedMethods {
+			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				ctxt := newNiceNodeContext(t, ctrl)
 
-			root, shared := ctxt.Build(test.trie)
-			storagePresent := false
-			handle := shared.GetViewHandle()
-			if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
-				if node, ok := n.(*ValueNode); ok && node.key == key {
-					storagePresent = true
-				}
-				return VisitResponseContinue
-			})); err != nil {
-				t.Fatalf("unexpected error during visit: %v", err)
-			}
-			handle.Release()
-
-			visitor := NewMockNodeVisitor(ctrl)
-			var last *gomock.Call
-			for _, label := range test.path {
-				ref, shared := ctxt.Get(label)
+				root, shared := ctxt.Build(test.trie)
+				storagePresent := false
 				handle := shared.GetViewHandle()
-				cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
-				handle.Release()
-				if last != nil {
-					cur.After(last)
+				if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+					if node, ok := n.(*ValueNode); ok && node.key == key {
+						storagePresent = true
+					}
+					return VisitResponseContinue
+				})); err != nil {
+					t.Fatalf("unexpected error during visit: %v", err)
 				}
-				last = cur
-			}
+				handle.Release()
 
-			found, err := VisitPathToStorage(ctxt, &root, key, visitor)
-			if err != nil {
-				t.Fatalf("unexpected error during path iteration: %v", err)
-			}
+				visitor := NewMockNodeVisitor(ctrl)
+				var last *gomock.Call
+				for _, label := range test.path {
+					ref, shared := ctxt.Get(label)
+					handle := shared.GetViewHandle()
+					cur := visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Embedded: tribool.False()})
+					handle.Release()
+					if last != nil {
+						cur.After(last)
+					}
+					last = cur
+				}
 
-			if found != storagePresent {
-				t.Errorf("unexpected found result, wanted %t, got %t", storagePresent, found)
-			}
-		})
+				found, err := visit(ctxt, &root, key, visitor) // test the method
+				if err != nil {
+					t.Fatalf("unexpected error during path iteration: %v", err)
+				}
+
+				if found != storagePresent {
+					t.Errorf("unexpected found result, wanted %t, got %t", storagePresent, found)
+				}
+			})
+		}
+	}
+}
+
+func TestVisitPathToStorage_Nodes_Hash_Protected(t *testing.T) {
+	desc := &Extension{path: []Nibble{1, 2}, next: &Branch{children: Children{
+		0x4: &Value{key: common.Key{0x12}, value: common.Value{1}},
+	},
+	}}
+
+	ctrl := gomock.NewController(t)
+	ctxt := newNiceNodeContext(t, ctrl)
+
+	var storageVisited bool
+	storageVisitor := MakeVisitor(func(storageNode Node, storageInfo NodeInfo) VisitResponse {
+		// node cannot be accessed via view access as long as hash access is held
+		if _, ok := ctxt.getHandle(t, storageInfo.Id).TryGetViewHandle(); ok {
+			t.Errorf("expected node to be hash protected, but it is not")
+		}
+		storageVisited = true
+		return VisitResponseContinue
+	})
+
+	root, _ := ctxt.Build(desc)
+	if _, err := visitPathToStorageWithHashAccess(ctxt, &root, common.Key{0x12}, storageVisitor); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if !storageVisited {
+		t.Errorf("expected to find storage path, but it was not found")
+	}
+}
+
+func TestVisitPathToAccount_Nodes_Hash_Protected(t *testing.T) {
+	desc := &Extension{path: []Nibble{1, 2}, next: &Branch{children: Children{
+		0x4: &Account{
+			address: common.Address{0x12, 0x42},
+			info:    AccountInfo{Nonce: common.Nonce{1}},
+			storage: &Value{key: common.Key{0x12}, value: common.Value{1}},
+		},
+	}}}
+
+	ctrl := gomock.NewController(t)
+	ctxt := newNiceNodeContext(t, ctrl)
+
+	var pathVisited bool
+	accountVisitor := MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+		// node cannot be accessed via view access as long as hash access is held
+		if _, ok := ctxt.getHandle(t, info.Id).TryGetViewHandle(); ok {
+			t.Errorf("expected node to be hash protected, but it is not")
+		}
+		pathVisited = true
+		return VisitResponseContinue
+	})
+
+	root, _ := ctxt.Build(desc)
+	if _, err := visitPathToAccountWithHashAccess(ctxt, &root, common.Address{0x12, 0x42}, accountVisitor); err != nil {
+		t.Fatalf("unexpected error during visit: %v", err)
+	}
+
+	if !pathVisited {
+		t.Errorf("expected to find storage path, but it was not found")
 	}
 }
 
@@ -8231,6 +8314,16 @@ func (c *nodeContext) tryGetNode(t *testing.T, id NodeId) shared.ReadHandle[Node
 		t.Fatalf("failed to gain read access to node %v -- forgot to release some handles?", id)
 	}
 	return handle
+}
+
+func (c *nodeContext) getHandle(t *testing.T, id NodeId) *shared.Shared[Node] {
+	t.Helper()
+	entry, found := c.index[id]
+	if !found {
+		t.Fatalf("unknown node: %v", id)
+	}
+
+	return entry.node
 }
 
 func (c *nodeContext) ExpectEqualTries(t *testing.T, want, got NodeReference) {
