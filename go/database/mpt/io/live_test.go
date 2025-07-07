@@ -28,7 +28,7 @@ func TestIO_ExportAndImportAsLiveDb(t *testing.T) {
 
 	buffer := bytes.NewBuffer(genesis)
 	targetDir := t.TempDir()
-	if err := ImportLiveDb(NewLog(), targetDir, buffer, 0); err != nil {
+	if err := ImportLiveDb(NewLog(), targetDir, buffer); err != nil {
 		t.Fatalf("failed to import DB: %v", err)
 	}
 
@@ -222,7 +222,7 @@ func TestImport_ImportIntoNonEmptyTargetDirectoryFails(t *testing.T) {
 		t.Fatalf("failed to create file: %v", err)
 	}
 
-	if err := ImportLiveDb(NewLog(), dir, nil, 0); err == nil || !strings.Contains(err.Error(), "is not empty") {
+	if err := ImportLiveDb(NewLog(), dir, nil); err == nil || !strings.Contains(err.Error(), "is not empty") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -336,7 +336,7 @@ func TestIO_ExportBlockFromArchive(t *testing.T) {
 
 		// Import live database.
 		targetDir := t.TempDir()
-		if err := ImportLiveDb(NewLog(), targetDir, buffer, 0); err != nil {
+		if err := ImportLiveDb(NewLog(), targetDir, buffer); err != nil {
 			t.Fatalf("failed to import DB: %v", err)
 		}
 
@@ -412,7 +412,7 @@ func TestIO_ExportBlockFromOnlineArchive(t *testing.T) {
 
 		// Import live database.
 		targetDir := t.TempDir()
-		if err := ImportLiveDb(nil, targetDir, buffer, 0); err != nil {
+		if err := ImportLiveDb(nil, targetDir, buffer); err != nil {
 			t.Fatalf("failed to import DB: %v", err)
 		}
 

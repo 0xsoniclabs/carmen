@@ -574,7 +574,7 @@ func ExampleHistoricBlockContext_Export() {
 	}
 	liveDbLocation := filepath.Join(importedDbPath, "live")
 
-	err = io.ImportLiveDb(io.NewLog(), liveDbLocation, b, 0)
+	err = io.ImportLiveDb(io.NewLog(), liveDbLocation, b)
 	if err != nil {
 		log.Fatalf("cannot import live db")
 	}
