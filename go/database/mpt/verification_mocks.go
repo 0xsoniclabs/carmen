@@ -29,6 +29,7 @@ import (
 type MockVerificationObserver struct {
 	ctrl     *gomock.Controller
 	recorder *MockVerificationObserverMockRecorder
+	isgomock struct{}
 }
 
 // MockVerificationObserverMockRecorder is the mock recorder for MockVerificationObserver.

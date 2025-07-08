@@ -453,21 +453,26 @@ func (a *ArchiveTrie) Flush() error {
 	return a.addError(err)
 }
 
-func (a *ArchiveTrie) VisitTrie(block uint64, visitor NodeVisitor) error {
+func (a *ArchiveTrie) VisitTrie(block uint64, mode AccessMode, visitor NodeVisitor) error {
 	view, err := a.getView(block)
 	if err != nil {
 		return err
 	}
-	return a.addError(view.VisitTrie(visitor))
+	return a.addError(view.VisitTrie(mode, visitor))
 }
 
-func (a *ArchiveTrie) VisitAccountStorage(block uint64, address common.Address, visitor NodeVisitor) error {
+func (a *ArchiveTrie) VisitAccountStorage(
+	block uint64,
+	address common.Address,
+	mode AccessMode,
+	visitor NodeVisitor,
+) error {
 	view, err := a.getView(block)
 	if err != nil {
 		return err
 	}
 
-	return a.addError(view.VisitAccountStorage(address, visitor))
+	return a.addError(view.VisitAccountStorage(address, mode, visitor))
 }
 
 func (a *ArchiveTrie) Close() error {

@@ -142,7 +142,7 @@ func TestNodeSource_CanRead_Nodes(t *testing.T) {
 
 				// iterate all nodes in the trie for all blocks
 				for i := uint64(0); i <= blocks; i++ {
-					if err := trie.VisitTrie(i, mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
+					if err := trie.VisitTrie(i, mpt.ViewAccess{}, mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
 						sourceNode, err := source.get(info.Id)
 						if err != nil {
 							t.Fatalf("failed to get node from source: %v", err)
@@ -197,7 +197,7 @@ func TestVisit_CanHandleSlowConsumer(t *testing.T) {
 	}
 
 	numNodes := 0
-	err = live.Visit(mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
+	err = live.Visit(mpt.ReadAccess{}, mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
 		numNodes++
 		return mpt.VisitResponseContinue
 	}))
@@ -434,7 +434,7 @@ func TestVisit_Nodes_Iterated_Deterministic(t *testing.T) {
 				// iterate all nodes in the trie for all blocks
 				for block := uint64(0); block <= blocks; block++ {
 					var nodes []mpt.NodeId
-					if err := trie.VisitTrie(block, mpt.MakeVisitor(
+					if err := trie.VisitTrie(block, mpt.ReadAccess{}, mpt.MakeVisitor(
 						func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
 							nodes = append(nodes, info.Id)
 							return mpt.VisitResponseContinue
@@ -556,7 +556,7 @@ func TestNodeSourceFactoryForLiveDB_CanRead_Nodes(t *testing.T) {
 			// collect all nodes from the live db
 			nodes := make(map[mpt.NodeId]mpt.Node)
 			// collect all nodes from the live db
-			if err := live.Visit(mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
+			if err := live.Visit(mpt.ReadAccess{}, mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
 				nodes[info.Id] = node
 				return mpt.VisitResponseContinue
 			})); err != nil {

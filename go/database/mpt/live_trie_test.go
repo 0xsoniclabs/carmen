@@ -189,7 +189,7 @@ func TestLiveTrie_Fail_Read_Data(t *testing.T) {
 	db.EXPECT().SetValue(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(NodeReference{}, injectedErr)
 	db.EXPECT().GetValue(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Value{}, injectedErr)
 	db.EXPECT().ClearStorage(gomock.Any(), gomock.Any()).Return(NodeReference{}, injectedErr)
-	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).Return(injectedErr)
+	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr)
 	db.EXPECT().updateHashesFor(gomock.Any()).Return(common.Hash{}, nil, injectedErr)
 	db.EXPECT().Close()
 
@@ -216,7 +216,7 @@ func TestLiveTrie_Fail_Read_Data(t *testing.T) {
 		t.Errorf("getting account should fail")
 	}
 	nodeVisitor := NewMockNodeVisitor(ctrl)
-	if err := mpt.VisitTrie(nodeVisitor); !errors.Is(err, injectedErr) {
+	if err := mpt.VisitTrie(ReadAccess{}, nodeVisitor); !errors.Is(err, injectedErr) {
 		t.Errorf("getting account should fail")
 	}
 }
@@ -241,7 +241,7 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			// there are no accounts at the beginning
 			for i := 0; i < Addresses; i++ {
 				addr := common.AddressFromNumber(i)
-				if err := trie.VisitAccountStorage(addr, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
+				if err := trie.VisitAccountStorage(addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 					t.Errorf("unexpected node: %v", node)
 					return VisitResponseContinue
 				})); err != nil {
@@ -259,7 +259,7 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			// there are no nodes in the accounts
 			for i := 0; i < Addresses; i++ {
 				addr := common.AddressFromNumber(i)
-				if err := trie.VisitAccountStorage(addr, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
+				if err := trie.VisitAccountStorage(addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 					t.Errorf("unexpected node: %v", node)
 					return VisitResponseContinue
 				})); err != nil {
@@ -281,7 +281,7 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			for i := 0; i < Addresses; i++ {
 				addr := common.AddressFromNumber(i)
 				visited := make(map[common.Key]common.Value)
-				if err := trie.VisitAccountStorage(addr, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
+				if err := trie.VisitAccountStorage(addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 					switch n := node.(type) {
 					case *ValueNode:
 						visited[n.Key()] = n.Value()
@@ -1093,7 +1093,7 @@ func TestLiveTrie_CreateWitnessProof(t *testing.T) {
 			}
 
 			db := NewMockDatabase(ctrl)
-			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](accountNode).GetViewHandle(), nil)
+			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.MakeShared[Node](accountNode).GetHashHandle(), nil)
 			db.EXPECT().getConfig().Return(config)
 			db.EXPECT().hashAddress(gomock.Any()).Return(common.Keccak256(addr[:])).AnyTimes()
 

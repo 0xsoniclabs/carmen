@@ -14,12 +14,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"golang.org/x/exp/maps"
-	"math/rand"
 )
 
 //go:generate mockgen -source verification.go -destination verification_mocks.go -package proof
@@ -108,7 +109,7 @@ func verifyTrie(ctx context.Context, trie verifiableTrie, observer mpt.Verificat
 		observer:  observer,
 		logWindow: 1000_000,
 	}
-	if err := trie.VisitTrie(&visitor); err != nil || visitor.err != nil {
+	if err := trie.VisitTrie(mpt.ReadAccess{}, &visitor); err != nil || visitor.err != nil {
 		return errors.Join(err, visitor.err)
 	}
 
@@ -310,7 +311,7 @@ func (v *accountVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitRes
 			currentAddress: n.Address(),
 			storage:        make(map[common.Key]common.Value)}
 
-		if err := v.trie.VisitAccountStorage(n.Address(), &storageVisitor); err != nil || storageVisitor.err != nil {
+		if err := v.trie.VisitAccountStorage(n.Address(), mpt.ReadAccess{}, &storageVisitor); err != nil || storageVisitor.err != nil {
 			v.err = errors.Join(err, storageVisitor.err)
 			return mpt.VisitResponseAbort
 		}
@@ -410,10 +411,10 @@ type verifiableTrie interface {
 	GetValue(addr common.Address, key common.Key) (common.Value, error)
 
 	//VisitTrie visits the trie nodes with the given visitor.
-	VisitTrie(visitor mpt.NodeVisitor) error
+	VisitTrie(mode mpt.AccessMode, visitor mpt.NodeVisitor) error
 
 	// VisitAccountStorage visits the account's storage nodes with the given visitor.
-	VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error
+	VisitAccountStorage(address common.Address, mode mpt.AccessMode, visitor mpt.NodeVisitor) error
 
 	// UpdateHashes updates the hashes of the trie, and returns the resulting root hash.
 	UpdateHashes() (common.Hash, *mpt.NodeHashes, error)
@@ -433,10 +434,10 @@ type verifiableArchiveTrie interface {
 	GetStorage(block uint64, addr common.Address, key common.Key) (common.Value, error)
 
 	// VisitTrie visits the trie nodes with the given visitor at the given block.
-	VisitTrie(block uint64, visitor mpt.NodeVisitor) error
+	VisitTrie(block uint64, mode mpt.AccessMode, visitor mpt.NodeVisitor) error
 
 	// VisitAccountStorage visits the account's storage nodes with the given visitor at the given block.
-	VisitAccountStorage(block uint64, address common.Address, visitor mpt.NodeVisitor) error
+	VisitAccountStorage(block uint64, address common.Address, mode mpt.AccessMode, visitor mpt.NodeVisitor) error
 
 	// GetHash returns the root hash of the trie at the given block.
 	GetHash(block uint64) (common.Hash, error)
@@ -463,12 +464,12 @@ func (v *archiveTrie) GetValue(addr common.Address, key common.Key) (common.Valu
 	return v.trie.GetStorage(v.block, addr, key)
 }
 
-func (v *archiveTrie) VisitTrie(visitor mpt.NodeVisitor) error {
-	return v.trie.VisitTrie(v.block, visitor)
+func (v *archiveTrie) VisitTrie(mode mpt.AccessMode, visitor mpt.NodeVisitor) error {
+	return v.trie.VisitTrie(v.block, mode, visitor)
 }
 
-func (v *archiveTrie) VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error {
-	return v.trie.VisitAccountStorage(v.block, address, visitor)
+func (v *archiveTrie) VisitAccountStorage(address common.Address, mode mpt.AccessMode, visitor mpt.NodeVisitor) error {
+	return v.trie.VisitAccountStorage(v.block, address, mode, visitor)
 }
 
 func (v *archiveTrie) UpdateHashes() (common.Hash, *mpt.NodeHashes, error) {

@@ -212,7 +212,9 @@ type Node interface {
 	// set. Visiting aborts if the visitor returns or prune sub-tree as
 	// requested by the visitor. The function returns whether the visiting
 	// process has been aborted and/or an error occurred.
-	Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (abort bool, err error)
+	// Nodes provided via the visitor are made available with the privileges
+	// specified by the mode parameter.
+	Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (abort bool, err error)
 }
 
 // NodeSource is an interface for any object capable of resolving NodeIds into
@@ -249,20 +251,124 @@ type NodeManager interface {
 //                               Utilities
 // ----------------------------------------------------------------------------
 
+// Handler provides a common interface for all node handles. Node handles are
+// references to nodes representing a specific access mode to a node.
+type Handle interface {
+	// Release releases the handle, thereby abandoning the access permission on
+	// the node. The handle and the referenced node must not be used after it
+	// has been released.
+	Release()
+	// Valid returns true if the handle is a valid handle.
+	Valid() bool
+	// Get returns the node referenced by the handle. This function may only be
+	// called if the handle is valid. The obtained node may only be accessed
+	// until the handle is released.
+	Get() Node
+}
+
+// AccessMode defines an interface for all access modes to nodes in the MPT.
+type AccessMode interface {
+	Access(NodeManager, *NodeReference) (Handle, error)
+	String() string
+}
+
+// ReadAccess is an access mode that provides read-only access to a node. In
+// this mode, only the content of a node may be read. Hash-data may not be read
+// and neither the content nor hash-data may be modified.
+type ReadAccess struct{}
+
+func (a ReadAccess) Access(mgr NodeManager, ref *NodeReference) (Handle, error) {
+	handle, err := mgr.getReadAccess(ref)
+	if err != nil {
+		return nil, err
+	}
+	return &handle, nil
+}
+
+func (a ReadAccess) String() string {
+	return "ReadAccess"
+}
+
+// ViewAccess is an access mode that provides read-only access to a node. In
+// this mode, the content and hash-data of a node may be read, but neither
+// the content nor hash-data may be modified.
+type ViewAccess struct{}
+
+func (a ViewAccess) Access(mgr NodeManager, ref *NodeReference) (Handle, error) {
+	handle, err := mgr.getViewAccess(ref)
+	if err != nil {
+		return nil, err
+	}
+	return &handle, nil
+}
+
+func (a ViewAccess) String() string {
+	return "ViewAccess"
+}
+
+// HashAccess is an access mode that provides read-only access to a node's
+// content and read/write access to the node's hash-data.
+type HashAccess struct{}
+
+func (a HashAccess) Access(mgr NodeManager, ref *NodeReference) (Handle, error) {
+	handle, err := mgr.getHashAccess(ref)
+	if err != nil {
+		return nil, err
+	}
+	return &handle, nil
+}
+
+func (a HashAccess) String() string {
+	return "HashAccess"
+}
+
+// WriteAccess is an access mode that provides read/write access to a node.
+// In this mode, both the content and hash-data of a node may be read and
+// modified.
+type WriteAccess struct{}
+
+func (a WriteAccess) Access(mgr NodeManager, ref *NodeReference) (Handle, error) {
+	handle, err := mgr.getWriteAccess(ref)
+	if err != nil {
+		return nil, err
+	}
+	return &handle, nil
+}
+
+func (a WriteAccess) String() string {
+	return "WriteAccess"
+}
+
+// allAccessModes returns a slice of all available access modes.
+func allAccessModes() []AccessMode {
+	return []AccessMode{
+		ReadAccess{},
+		ViewAccess{},
+		HashAccess{},
+		WriteAccess{},
+	}
+}
+
 // VisitPathToStorage visits all nodes from the input storage root following the input storage key.
 // Each encountered node is passed to the visitor.
 // If no more nodes are available on the path, the execution ends.
 // If the key does not exist, the function returns false.
 // The function returns an error if the path cannot be iterated due to error propagated from the node source.
-// Nodes provided via the visitor are made available with the view privilege.
-func VisitPathToStorage(source NodeSource, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
-	path := KeyToNibblePath(key, source)
-	return visitPathTo(storageRoot, path, nil, &key,
-		source.getViewAccess,
-		func(h shared.ViewHandle[Node]) { h.Release() },
-		func(h shared.ViewHandle[Node]) bool { return h.Valid() },
-		func(h shared.ViewHandle[Node]) Node { return h.Get() },
-		visitor)
+// Nodes provided via the visitor are made available with the privileges specified by the mode parameter.
+func VisitPathToStorage(
+	manager NodeManager,
+	storageRoot *NodeReference,
+	key common.Key,
+	mode AccessMode,
+	visitor NodeVisitor,
+) (bool, error) {
+	path := KeyToNibblePath(key, manager)
+	return visitPathTo(
+		manager, storageRoot,
+		path, nil, &key,
+		mode,
+		visitor,
+	)
 }
 
 // VisitPathToAccount visits all nodes from the input root following the input account address.
@@ -270,47 +376,21 @@ func VisitPathToStorage(source NodeSource, storageRoot *NodeReference, key commo
 // If no more nodes are available on the path, the execution ends.
 // If the account address does not exist, the function returns false.
 // The function returns an error if the path cannot be iterated due to error propagated from the node source.
-// Nodes provided via the visitor are made available with the view privilege.
-func VisitPathToAccount(source NodeSource, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
-	path := AddressToNibblePath(address, source)
-	return visitPathTo(root, path, &address, nil,
-		source.getViewAccess,
-		func(h shared.ViewHandle[Node]) { h.Release() },
-		func(h shared.ViewHandle[Node]) bool { return h.Valid() },
-		func(h shared.ViewHandle[Node]) Node { return h.Get() },
-		visitor)
-}
-
-// visitPathToStorageWithHashAccess visits all nodes from the input storage root following the input storage key.
-// Each encountered node is passed to the visitor.
-// If no more nodes are available on the path, the execution ends.
-// If the key does not exist, the function returns false.
-// The function returns an error if the path cannot be iterated due to error propagated from the node source.
-// Nodes provided via the visitor are made available with the hash privilege.
-func visitPathToStorageWithHashAccess(source NodeManager, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
-	path := KeyToNibblePath(key, source)
-	return visitPathTo(storageRoot, path, nil, &key,
-		source.getHashAccess,
-		func(h shared.HashHandle[Node]) { h.Release() },
-		func(h shared.HashHandle[Node]) bool { return h.Valid() },
-		func(h shared.HashHandle[Node]) Node { return h.Get() },
-		visitor)
-}
-
-// visitPathToAccountWithHashAccess visits all nodes from the input root following the input account address.
-// Each encountered node is passed to the visitor.
-// If no more nodes are available on the path, the execution ends.
-// If the account address does not exist, the function returns false.
-// The function returns an error if the path cannot be iterated due to error propagated from the node source.
-// Nodes provided via the visitor are made available with the hash privilege.
-func visitPathToAccountWithHashAccess(source NodeManager, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
-	path := AddressToNibblePath(address, source)
-	return visitPathTo(root, path, &address, nil,
-		source.getHashAccess,
-		func(h shared.HashHandle[Node]) { h.Release() },
-		func(h shared.HashHandle[Node]) bool { return h.Valid() },
-		func(h shared.HashHandle[Node]) Node { return h.Get() },
-		visitor)
+// Nodes provided via the visitor are made available with the privileges specified by the mode parameter.
+func VisitPathToAccount(
+	manager NodeManager,
+	root *NodeReference,
+	address common.Address,
+	mode AccessMode,
+	visitor NodeVisitor,
+) (bool, error) {
+	path := AddressToNibblePath(address, manager)
+	return visitPathTo(
+		manager, root,
+		path, &address, nil,
+		mode,
+		visitor,
+	)
 }
 
 // visitPathTo visits all nodes from the input root following the input path.
@@ -322,34 +402,35 @@ func visitPathToAccountWithHashAccess(source NodeManager, root *NodeReference, a
 // If either the address or key matches the node, this function terminates.
 // It means this function can be used to find either an account node or a value node,
 // but it cannot find both at the same time.
-func visitPathTo[H any](
+// Nodes provided via the visitor are made available with the privileges
+// specified by the mode parameter.
+func visitPathTo(
+	manager NodeManager,
 	root *NodeReference,
 	path []Nibble,
 	address *common.Address,
 	key *common.Key,
-	access func(ref *NodeReference) (H, error),
-	release func(H),
-	valid func(H) bool,
-	get func(H) Node,
-	visitor NodeVisitor) (bool, error) {
+	mode AccessMode,
+	visitor NodeVisitor,
+) (bool, error) {
 
 	nodeId := root
 
-	var last H
+	var last Handle
 	var found, done bool
 	var lastNodeId *NodeReference
 	var nextEmbedded, currentEmbedded bool
 	for !done {
-		handle, err := access(nodeId)
-		if valid(last) {
-			release(last)
+		handle, err := mode.Access(manager, nodeId)
+		if last != nil && last.Valid() {
+			last.Release()
 		}
 		if err != nil {
 			return false, err
 		}
 		last = handle
 		lastNodeId = nodeId
-		node := get(handle)
+		node := handle.Get()
 
 		switch n := node.(type) {
 		case *ExtensionNode:
@@ -380,17 +461,17 @@ func visitPathTo[H any](
 			}
 			done = true
 		default:
-			release(last)
+			last.Release()
 			return false, nil
 		}
 
-		if res := visitor.Visit(get(last), NodeInfo{Id: lastNodeId.Id(), Embedded: tribool.New(currentEmbedded)}); res != VisitResponseContinue {
+		if res := visitor.Visit(last.Get(), NodeInfo{Id: lastNodeId.Id(), Embedded: tribool.New(currentEmbedded)}); res != VisitResponseContinue {
 			done = true
 		}
 		currentEmbedded = nextEmbedded
 	}
 
-	release(last)
+	last.Release()
 	return found, nil
 }
 
@@ -716,7 +797,7 @@ func (EmptyNode) Dump(out io.Writer, _ NodeSource, thisRef *NodeReference, inden
 	return nil
 }
 
-func (EmptyNode) Visit(_ NodeSource, ref *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (EmptyNode) Visit(_ NodeManager, ref *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	return visitor.Visit(EmptyNode{}, NodeInfo{Id: ref.Id(), Depth: &depth}) == VisitResponseAbort, nil
 }
 
@@ -1078,7 +1159,7 @@ func (n *BranchNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReferen
 	return errors.Join(errs...)
 }
 
-func (b *BranchNode) Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (b *BranchNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	switch visitor.Visit(b, NodeInfo{Id: thisRef.Id(), Depth: &depth}) {
 	case VisitResponseAbort:
 		return true, nil
@@ -1091,9 +1172,9 @@ func (b *BranchNode) Visit(source NodeSource, thisRef *NodeReference, depth int,
 			continue
 		}
 
-		if handle, err := source.getViewAccess(&child); err == nil {
+		if handle, err := mode.Access(manager, &child); err == nil {
 			defer handle.Release()
-			if abort, err := handle.Get().Visit(source, &child, depth+1, visitor); abort || err != nil {
+			if abort, err := handle.Get().Visit(manager, &child, depth+1, mode, visitor); abort || err != nil {
 				return abort, err
 			}
 		} else {
@@ -1535,7 +1616,7 @@ func (n *ExtensionNode) Dump(out io.Writer, source NodeSource, thisRef *NodeRefe
 	return errors.Join(errs...)
 }
 
-func (n *ExtensionNode) Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (n *ExtensionNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	response := visitor.Visit(n, NodeInfo{Id: thisRef.Id(), Depth: &depth})
 	switch response {
 	case VisitResponseAbort:
@@ -1543,9 +1624,9 @@ func (n *ExtensionNode) Visit(source NodeSource, thisRef *NodeReference, depth i
 	case VisitResponsePrune:
 		return false, nil
 	}
-	if handle, err := source.getViewAccess(&n.next); err == nil {
+	if handle, err := mode.Access(manager, &n.next); err == nil {
 		defer handle.Release()
-		return handle.Get().Visit(source, &n.next, depth+1, visitor)
+		return handle.Get().Visit(manager, &n.next, depth+1, mode, visitor)
 	} else {
 		return false, err
 	}
@@ -1967,7 +2048,7 @@ func (n *AccountNode) Dump(out io.Writer, source NodeSource, thisRef *NodeRefere
 	return errors.Join(errs...)
 }
 
-func (n *AccountNode) Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (n *AccountNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	response := visitor.Visit(n, NodeInfo{Id: thisRef.Id(), Depth: &depth})
 	switch response {
 	case VisitResponseAbort:
@@ -1975,17 +2056,17 @@ func (n *AccountNode) Visit(source NodeSource, thisRef *NodeReference, depth int
 	case VisitResponsePrune:
 		return false, nil
 	}
-	return n.visitStorage(source, depth+1, visitor)
+	return n.visitStorage(manager, depth+1, mode, visitor)
 }
 
 // visitStorage is a helper function to visit the storage trie of an account.
-func (n *AccountNode) visitStorage(source NodeSource, depth int, visitor NodeVisitor) (bool, error) {
+func (n *AccountNode) visitStorage(manager NodeManager, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	if n.storage.Id().IsEmpty() {
 		return false, nil
 	}
-	if node, err := source.getViewAccess(&n.storage); err == nil {
+	if node, err := mode.Access(manager, &n.storage); err == nil {
 		defer node.Release()
-		return node.Get().Visit(source, &n.storage, depth, visitor)
+		return node.Get().Visit(manager, &n.storage, depth, mode, visitor)
 	} else {
 		return false, err
 	}
@@ -2171,7 +2252,7 @@ func formatHashForDump(hash common.Hash) string {
 	return fmt.Sprintf("0x%x", hash)
 }
 
-func (n *ValueNode) Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (n *ValueNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	return visitor.Visit(n, NodeInfo{Id: thisRef.Id(), Depth: &depth}) == VisitResponseAbort, nil
 }
 

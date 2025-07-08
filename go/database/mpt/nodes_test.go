@@ -14,11 +14,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/common/tribool"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/0xsoniclabs/carmen/go/common/tribool"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -218,15 +219,15 @@ func TestEmptyNode_Visit(t *testing.T) {
 	depth6 := 6
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth6}).Return(VisitResponsePrune)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 4, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 4, ViewAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 6, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 6, HashAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -1080,13 +1081,13 @@ func TestBranchNode_VisitContinue(t *testing.T) {
 	handle := node.GetWriteHandle()
 	defer handle.Release()
 
-	node1.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(false, nil)
-	node2.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(false, nil)
+	node1.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(false, nil)
+	node2.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(false, nil)
 
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseContinue)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -1110,7 +1111,7 @@ func TestBranchNode_VisitPruned(t *testing.T) {
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponsePrune)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, WriteAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -1134,7 +1135,7 @@ func TestBranchNode_VisitAbort(t *testing.T) {
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseAbort)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -1155,13 +1156,13 @@ func TestBranchNode_VisitAbortByChild(t *testing.T) {
 	handle := node.GetWriteHandle()
 	defer handle.Release()
 
-	node1.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(false, nil)
-	node2.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(true, nil) // = aborted
+	node1.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(false, nil)
+	node2.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(true, nil) // = aborted
 
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseContinue)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -2337,12 +2338,12 @@ func TestExtensionNode_VisitContinue(t *testing.T) {
 	handle := node.GetWriteHandle()
 	defer handle.Release()
 
-	next.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(false, nil)
+	next.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(false, nil)
 
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseContinue)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -2365,7 +2366,7 @@ func TestExtensionNode_VisitPrune(t *testing.T) {
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponsePrune)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -2388,7 +2389,7 @@ func TestExtensionNode_VisitAbort(t *testing.T) {
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseAbort)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -2408,12 +2409,12 @@ func TestExtensionNode_VisitAbortByChild(t *testing.T) {
 	handle := node.GetWriteHandle()
 	defer handle.Release()
 
-	next.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(true, nil) // = abort
+	next.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(true, nil) // = abort
 
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseContinue)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -3535,12 +3536,12 @@ func TestAccountNode_VisitContinue(t *testing.T) {
 	handle := node.GetWriteHandle()
 	defer handle.Release()
 
-	storage.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(false, nil)
+	storage.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(false, nil)
 
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseContinue)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -3563,7 +3564,7 @@ func TestAccountNode_VisitPrune(t *testing.T) {
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponsePrune)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -3573,7 +3574,7 @@ func TestAccountNode_visitStorage(t *testing.T) {
 	ctxt := newNodeContext(t, ctrl)
 
 	storage := NewMockNode(ctrl)
-	storage.EXPECT().Visit(gomock.Any(), gomock.Any(), 2, gomock.Any()).Return(false, nil)
+	storage.EXPECT().Visit(gomock.Any(), gomock.Any(), 2, ReadAccess{}, gomock.Any()).Return(false, nil)
 
 	_, node := ctxt.Build(&Account{
 		info:    AccountInfo{Nonce: common.Nonce{1}},
@@ -3586,7 +3587,7 @@ func TestAccountNode_visitStorage(t *testing.T) {
 	visitor := NewMockNodeVisitor(ctrl)
 
 	accountNode := handle.Get().(*AccountNode)
-	if abort, err := accountNode.visitStorage(ctxt, 2, visitor); abort || err != nil {
+	if abort, err := accountNode.visitStorage(ctxt, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -3609,7 +3610,7 @@ func TestAccountNode_VisitAbort(t *testing.T) {
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseAbort)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -3629,12 +3630,12 @@ func TestAccountNode_VisitAbortByChild(t *testing.T) {
 	handle := node.GetWriteHandle()
 	defer handle.Release()
 
-	storage.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, visitor).Return(true, nil)
+	storage.EXPECT().Visit(gomock.Any(), gomock.Any(), 3, ReadAccess{}, visitor).Return(true, nil)
 
 	depth2 := 2
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth2}).Return(VisitResponseContinue)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got(%v,%v)", abort, err)
 	}
 }
@@ -4404,15 +4405,15 @@ func TestValueNode_Visit(t *testing.T) {
 	depth6 := 6
 	visitor.EXPECT().Visit(handle.Get(), NodeInfo{Id: ref.Id(), Depth: &depth6}).Return(VisitResponsePrune)
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 2, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 2, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got (%v, %v)", abort, err)
 	}
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 4, visitor); !abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 4, ReadAccess{}, visitor); !abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (true,nil), got (%v, %v)", abort, err)
 	}
 
-	if abort, err := handle.Get().Visit(ctxt, &ref, 6, visitor); abort || err != nil {
+	if abort, err := handle.Get().Visit(ctxt, &ref, 6, ReadAccess{}, visitor); abort || err != nil {
 		t.Errorf("unexpected result of visit, wanted (false,nil), got (%v, %v)", abort, err)
 	}
 }
@@ -5014,7 +5015,7 @@ func (t *trie) Visit() error {
 		return err
 	}
 	defer handle.Release()
-	_, err = handle.Get().Visit(t.manager, &t.root, 0,
+	_, err = handle.Get().Visit(t.manager, &t.root, 0, ReadAccess{},
 		MakeVisitor(func(Node, NodeInfo) VisitResponse {
 			return VisitResponseContinue
 		}),
@@ -6520,7 +6521,7 @@ func markModifiedAsDirty(t *testing.T, ctxt *nodeContext, before, after NodeRefe
 	}
 
 	handle, _ := ctxt.getViewAccess(&after)
-	handle.Get().Visit(ctxt, &after, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	handle.Get().Visit(ctxt, &after, 0, WriteAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		// If the current node is not equivalent to a node that was present before,
 		// then it is a new node and should have a dirty hash.
 		if !isReused(n) {
@@ -6663,25 +6664,16 @@ func TestVisitPathToAccount_CanReachTerminalNodes(t *testing.T) {
 		},
 	}
 
-	testedMethods := map[string]func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error){
-		"view": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
-			return VisitPathToAccount(source, root, address, visitor)
-		},
-		"hash": func(source *nodeContext, root *NodeReference, address common.Address, visitor NodeVisitor) (bool, error) {
-			return visitPathToAccountWithHashAccess(source, root, address, visitor)
-		},
-	}
-
 	for name, test := range tests {
-		for subname, visit := range testedMethods {
-			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
+		for _, mode := range allAccessModes() {
+			t.Run(fmt.Sprintf("%s/%s", name, mode), func(t *testing.T) {
 				ctrl := gomock.NewController(t)
 				ctxt := newNiceNodeContext(t, ctrl)
 
 				root, shared := ctxt.Build(test.trie)
 				accountPresent := false
 				handle := shared.GetViewHandle()
-				if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+				if _, err := handle.Get().Visit(ctxt, &root, 0, ReadAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 					if node, ok := n.(*AccountNode); ok && node.address == address {
 						accountPresent = true
 					}
@@ -6704,7 +6696,7 @@ func TestVisitPathToAccount_CanReachTerminalNodes(t *testing.T) {
 					last = cur
 				}
 
-				found, err := visit(ctxt, &root, address, visitor) // test the method
+				found, err := VisitPathToAccount(ctxt, &root, address, mode, visitor)
 				if err != nil {
 					t.Fatalf("unexpected error during path iteration: %v", err)
 				}
@@ -6722,15 +6714,15 @@ func TestVisitPathToAccount_SourceError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	source := NewMockNodeSource(ctrl)
-	source.EXPECT().getConfig().Return(S4LiveConfig).AnyTimes()
-	source.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr)
+	manager := NewMockNodeManager(ctrl)
+	manager.EXPECT().getConfig().Return(S4LiveConfig).AnyTimes()
+	manager.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr)
 
 	nodeVisitor := NewMockNodeVisitor(ctrl)
 
 	var address common.Address
 	rootId := NewNodeReference(EmptyId())
-	if found, err := VisitPathToAccount(source, &rootId, address, nodeVisitor); found || !errors.Is(err, injectedErr) {
+	if found, err := VisitPathToAccount(manager, &rootId, address, ReadAccess{}, nodeVisitor); found || !errors.Is(err, injectedErr) {
 		t.Fatalf("expected iteration to fail")
 	}
 }
@@ -6744,7 +6736,7 @@ func TestVisitPathToAccount_VisitorAborted(t *testing.T) {
 	nodeVisitor := NewMockNodeVisitor(ctrl)
 	nodeVisitor.EXPECT().Visit(gomock.Any(), gomock.Any()).Return(VisitResponseAbort)
 
-	if found, _ := VisitPathToAccount(ctxt, &root, address, nodeVisitor); found {
+	if found, _ := VisitPathToAccount(ctxt, &root, address, ReadAccess{}, nodeVisitor); found {
 		t.Fatalf("expected iteration to fail")
 	}
 }
@@ -6815,25 +6807,16 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 		},
 	}
 
-	testedMethods := map[string]func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error){
-		"view": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
-			return VisitPathToStorage(source, storageRoot, key, visitor)
-		},
-		"hash": func(source *nodeContext, storageRoot *NodeReference, key common.Key, visitor NodeVisitor) (bool, error) {
-			return visitPathToStorageWithHashAccess(source, storageRoot, key, visitor)
-		},
-	}
-
 	for name, test := range tests {
-		for subname, visit := range testedMethods {
-			t.Run(fmt.Sprintf("%s_%s", name, subname), func(t *testing.T) {
+		for _, mode := range allAccessModes() {
+			t.Run(fmt.Sprintf("%s/%s", name, mode), func(t *testing.T) {
 				ctrl := gomock.NewController(t)
 				ctxt := newNiceNodeContext(t, ctrl)
 
 				root, shared := ctxt.Build(test.trie)
 				storagePresent := false
 				handle := shared.GetViewHandle()
-				if _, err := handle.Get().Visit(ctxt, &root, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+				if _, err := handle.Get().Visit(ctxt, &root, 0, ReadAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 					if node, ok := n.(*ValueNode); ok && node.key == key {
 						storagePresent = true
 					}
@@ -6856,7 +6839,7 @@ func TestVisitPathToStorage_CanReachTerminalNodes(t *testing.T) {
 					last = cur
 				}
 
-				found, err := visit(ctxt, &root, key, visitor) // test the method
+				found, err := VisitPathToStorage(ctxt, &root, key, mode, visitor)
 				if err != nil {
 					t.Fatalf("unexpected error during path iteration: %v", err)
 				}
@@ -6889,7 +6872,7 @@ func TestVisitPathToStorage_Nodes_Hash_Protected(t *testing.T) {
 	})
 
 	root, _ := ctxt.Build(desc)
-	if _, err := visitPathToStorageWithHashAccess(ctxt, &root, common.Key{0x12}, storageVisitor); err != nil {
+	if _, err := VisitPathToStorage(ctxt, &root, common.Key{0x12}, HashAccess{}, storageVisitor); err != nil {
 		t.Fatalf("unexpected error during visit: %v", err)
 	}
 
@@ -6921,7 +6904,7 @@ func TestVisitPathToAccount_Nodes_Hash_Protected(t *testing.T) {
 	})
 
 	root, _ := ctxt.Build(desc)
-	if _, err := visitPathToAccountWithHashAccess(ctxt, &root, common.Address{0x12, 0x42}, accountVisitor); err != nil {
+	if _, err := VisitPathToAccount(ctxt, &root, common.Address{0x12, 0x42}, HashAccess{}, accountVisitor); err != nil {
 		t.Fatalf("unexpected error during visit: %v", err)
 	}
 
@@ -6973,7 +6956,7 @@ func TestVisitPathToStorage_EmbeddedNode_Flag_Tracked(t *testing.T) {
 				wantEmbedded := tribool.False()
 				switch n := node.(type) {
 				case *AccountNode:
-					found, err := VisitPathToStorage(ctxt, &n.storage, key, visitor)
+					found, err := VisitPathToStorage(ctxt, &n.storage, key, ViewAccess{}, visitor)
 					if err != nil {
 						t.Fatalf("unexpected error during path iteration: %v", err)
 					}
@@ -6993,7 +6976,7 @@ func TestVisitPathToStorage_EmbeddedNode_Flag_Tracked(t *testing.T) {
 				return VisitResponseContinue
 			}).AnyTimes()
 
-			found, err := VisitPathToAccount(ctxt, &ref, address, visitor)
+			found, err := VisitPathToAccount(ctxt, &ref, address, ViewAccess{}, visitor)
 			if err != nil {
 				t.Fatalf("unexpected error during path iteration: %v", err)
 			}
@@ -7083,7 +7066,7 @@ func markReusedAsFrozen(t *testing.T, ctxt *nodeContext, before, after NodeRefer
 	}
 
 	handle, _ := ctxt.getViewAccess(&after)
-	handle.Get().Visit(ctxt, &after, 0, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	handle.Get().Visit(ctxt, &after, 0, WriteAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		// Update the wanted node expected to be frozen.
 		if isReused(n) {
 			n.MarkFrozen()
@@ -7107,16 +7090,16 @@ func markReusedAsFrozen(t *testing.T, ctxt *nodeContext, before, after NodeRefer
 	handle.Release()
 }
 
-func getAllReachableNodes(source NodeSource, root NodeReference) ([]Node, error) {
+func getAllReachableNodes(manager NodeManager, root NodeReference) ([]Node, error) {
 	res := []Node{}
 
-	handle, err := source.getViewAccess(&root)
+	handle, err := manager.getReadAccess(&root)
 	if err != nil {
 		return nil, err
 	}
 	defer handle.Release()
 
-	_, err = handle.Get().Visit(source, &root, 0, MakeVisitor(func(n Node, _ NodeInfo) VisitResponse {
+	_, err = handle.Get().Visit(manager, &root, 0, ReadAccess{}, MakeVisitor(func(n Node, _ NodeInfo) VisitResponse {
 		res = append(res, n)
 		return VisitResponseContinue
 	}))

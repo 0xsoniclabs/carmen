@@ -551,7 +551,7 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			for i := 0; i < Addresses; i++ {
 				addr := common.AddressFromNumber(i)
 				visited := make(map[common.Key]common.Value)
-				if err := archive.VisitAccountStorage(2, addr, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
+				if err := archive.VisitAccountStorage(2, addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 					switch n := node.(type) {
 					case *ValueNode:
 						visited[n.Key()] = n.Value()
@@ -578,7 +578,7 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			for block := uint64(0); block < 2; block++ {
 				for i := 0; i < Addresses; i++ {
 					addr := common.AddressFromNumber(i)
-					if err := archive.VisitAccountStorage(block, addr, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
+					if err := archive.VisitAccountStorage(block, addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 						t.Errorf("unexpected node: %v", node)
 						return VisitResponseContinue
 					})); err != nil {
@@ -2248,11 +2248,13 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			db.EXPECT().getConfig().Return(S5ArchiveConfig).AnyTimes()
 			db.EXPECT().hashKey(gomock.Any()).Return(common.Hash{}).AnyTimes()
 			db.EXPECT().hashAddress(gomock.Any()).Return(common.Hash{}).AnyTimes()
+			db.EXPECT().getReadAccess(gomock.Any()).Return(shared.ReadHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.ViewHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.HashHandle[Node]{}, injectedErr).MaxTimes(1)
+			db.EXPECT().getWriteAccess(gomock.Any()).Return(shared.WriteHandle[Node]{}, injectedErr).MaxTimes(1)
 			db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{}, false, injectedErr).MaxTimes(1)
 			db.EXPECT().GetValue(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Value{}, injectedErr).MaxTimes(1)
-			db.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).Return(injectedErr).MaxTimes(1)
+			db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr).MaxTimes(1)
 			db.EXPECT().HasEmptyStorage(gomock.Any(), gomock.Any()).Return(false, injectedErr).MaxTimes(1)
 
 			live := NewMockLiveState(ctrl)
@@ -2433,11 +2435,20 @@ var archiveOps = map[string]func(archive *ArchiveTrie) error{
 		_, err := archive.HasEmptyStorage(0, common.Address{})
 		return err
 	},
-	"visit account": func(archive *ArchiveTrie) error {
-		return archive.VisitAccountStorage(0, common.Address{}, nil)
+	"visit account with read permissions": func(archive *ArchiveTrie) error {
+		return archive.VisitAccountStorage(0, common.Address{}, ReadAccess{}, nil)
+	},
+	"visit account with view permissions": func(archive *ArchiveTrie) error {
+		return archive.VisitAccountStorage(0, common.Address{}, ViewAccess{}, nil)
+	},
+	"visit account with hash permissions": func(archive *ArchiveTrie) error {
+		return archive.VisitAccountStorage(0, common.Address{}, HashAccess{}, nil)
+	},
+	"visit account with write permissions": func(archive *ArchiveTrie) error {
+		return archive.VisitAccountStorage(0, common.Address{}, WriteAccess{}, nil)
 	},
 	"visit": func(archive *ArchiveTrie) error {
-		return archive.VisitTrie(0, nil)
+		return archive.VisitTrie(0, ReadAccess{}, nil)
 	},
 }
 
@@ -2512,7 +2523,7 @@ func TestArchiveTrie_VisitTrie_CorrectDataIsVisited(t *testing.T) {
 					}
 				}).MinTimes(1)
 
-				err = archive.VisitTrie(test.visitedBlock, nodeVisitor)
+				err = archive.VisitTrie(test.visitedBlock, ReadAccess{}, nodeVisitor)
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -2554,7 +2565,7 @@ func TestArchiveTrie_VisitTrie_InvalidBlock(t *testing.T) {
 				t.Fatalf("failed to add update: %v", err)
 			}
 
-			err = archive.VisitTrie(1, nodeVisitor)
+			err = archive.VisitTrie(1, ReadAccess{}, nodeVisitor)
 			if err == nil {
 				t.Fatal("error is expected")
 			}
