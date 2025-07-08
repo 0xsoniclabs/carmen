@@ -433,7 +433,7 @@ func (c *importContext) finishCurrentBlock(archive archive.Archive, live state.L
 	if !c.currentBlockHashFound {
 		return fmt.Errorf("input format error: no hash for block %d", c.currentBlock)
 	}
-	hints, err := live.Apply(c.currentBlock, c.currentUpdate)
+	hints, err := live.Apply(c.currentBlock, &c.currentUpdate)
 	if err != nil {
 		return err
 	}

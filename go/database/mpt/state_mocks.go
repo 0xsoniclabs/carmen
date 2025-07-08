@@ -530,7 +530,7 @@ func (m *MockLiveState) EXPECT() *MockLiveStateMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockLiveState) Apply(block uint64, update common.Update) (common.Releaser, error) {
+func (m *MockLiveState) Apply(block uint64, update *common.Update) (common.Releaser, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
 	ret0, _ := ret[0].(common.Releaser)

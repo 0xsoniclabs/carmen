@@ -408,7 +408,7 @@ func (m *MockLiveDB) EXPECT() *MockLiveDBMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockLiveDB) Apply(block uint64, update common.Update) (common.Releaser, error) {
+func (m *MockLiveDB) Apply(block uint64, update *common.Update) (common.Releaser, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
 	ret0, _ := ret[0].(common.Releaser)

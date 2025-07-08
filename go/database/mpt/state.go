@@ -338,7 +338,7 @@ func (s *MptState) GetHash() (hash common.Hash, err error) {
 	return hash, err
 }
 
-func (s *MptState) Apply(block uint64, update common.Update) (archiveUpdateHints common.Releaser, err error) {
+func (s *MptState) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
 	if err := update.ApplyTo(s); err != nil {
 		return nil, err
 	}

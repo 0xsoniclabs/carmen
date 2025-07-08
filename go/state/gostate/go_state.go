@@ -215,7 +215,7 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 	}
 
 	// Apply the changes to the LiveDB.
-	archiveUpdateHints, err := s.live.Apply(block, update)
+	archiveUpdateHints, err := s.live.Apply(block, &update)
 	if err != nil {
 		s.stateError = errors.Join(s.stateError, err)
 		return s.stateError
