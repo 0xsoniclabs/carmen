@@ -1093,7 +1093,7 @@ func TestLiveTrie_CreateWitnessProof(t *testing.T) {
 			}
 
 			db := NewMockDatabase(ctrl)
-			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](accountNode).GetViewHandle(), nil)
+			db.EXPECT().getHashAccess(gomock.Any()).Return(shared.MakeShared[Node](accountNode).GetHashHandle(), nil)
 			db.EXPECT().getConfig().Return(config)
 			db.EXPECT().hashAddress(gomock.Any()).Return(common.Keccak256(addr[:])).AnyTimes()
 
