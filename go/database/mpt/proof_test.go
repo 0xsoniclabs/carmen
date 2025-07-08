@@ -244,7 +244,7 @@ func TestCreateWitnessProof_CannotCreateProof_FailingNodeSources(t *testing.T) {
 				branchNode := BranchNode{}
 				branchNode.setEmbedded(0xA, true)
 				branchNode.children[0xA] = childId
-				mock.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](&branchNode).GetViewHandle(), nil)
+				mock.EXPECT().getHashAccess(gomock.Any()).Return(shared.MakeShared[Node](&branchNode).GetHashHandle(), nil)
 				mock.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared(node).GetViewHandle(), injectedErr)
 			},
 		},
@@ -253,8 +253,8 @@ func TestCreateWitnessProof_CannotCreateProof_FailingNodeSources(t *testing.T) {
 			mock: func(mock *MockNodeManager) {
 				var account Node = &AccountNode{address: common.Address{0xA}}
 				gomock.InOrder(
-					mock.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared(account).GetViewHandle(), nil),
-					mock.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared(node).GetViewHandle(), injectedErr),
+					mock.EXPECT().getHashAccess(gomock.Any()).Return(shared.MakeShared(account).GetHashHandle(), nil),
+					mock.EXPECT().getHashAccess(gomock.Any()).Return(shared.MakeShared(node).GetHashHandle(), injectedErr),
 				)
 			},
 		},

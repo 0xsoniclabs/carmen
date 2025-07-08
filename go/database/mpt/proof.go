@@ -70,14 +70,14 @@ func CreateWitnessProof(nodeManager NodeManager, root *NodeReference, address co
 
 	var innerError error
 
-	_, err := VisitPathToAccount(nodeManager, root, address, ViewAccess{}, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+	_, err := VisitPathToAccount(nodeManager, root, address, HashAccess{}, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
 		if res := visitor.Visit(node, info); res == VisitResponseAbort {
 			return VisitResponseAbort
 		}
 		// if account reached, prove storage keys and terminate.
 		if account, ok := node.(*AccountNode); ok {
 			for _, key := range keys {
-				_, err := VisitPathToStorage(nodeManager, &account.storage, key, ViewAccess{}, visitor)
+				_, err := VisitPathToStorage(nodeManager, &account.storage, key, HashAccess{}, visitor)
 				if err != nil || visitor.err != nil {
 					innerError = errors.Join(innerError, visitor.err, err)
 					return VisitResponseAbort
