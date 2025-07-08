@@ -296,7 +296,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 	db.EXPECT().SetAccountInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(NodeReference{}, injectedErr).AnyTimes()
 	db.EXPECT().GetValue(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Value{}, injectedErr).AnyTimes()
 	db.EXPECT().SetValue(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(NodeReference{}, injectedErr).AnyTimes()
-	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).Return(injectedErr)
+	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr)
 	db.EXPECT().CheckErrors()
 	db.EXPECT().Close()
 
@@ -357,7 +357,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Errorf("accessing data should fail")
 	}
 	nodeVisitor := NewMockNodeVisitor(ctrl)
-	if err := state.Visit(nodeVisitor); !errors.Is(err, injectedErr) {
+	if err := state.Visit(ReadAccess{}, nodeVisitor); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}
 }

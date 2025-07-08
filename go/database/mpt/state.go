@@ -65,8 +65,8 @@ type Database interface {
 	// Freeze seals current trie, preventing further updates to it.
 	Freeze(ref *NodeReference) error
 
-	// VisitTrie allows for travertines the whole trie under the input root
-	VisitTrie(rootRef *NodeReference, visitor NodeVisitor) error
+	// VisitTrie allows for traversing the whole trie under the input root
+	VisitTrie(rootRef *NodeReference, mode AccessMode, visitor NodeVisitor) error
 
 	// Dump provides a debug print of the whole trie under the input root
 	Dump(rootRef *NodeReference)
@@ -346,8 +346,8 @@ func (s *MptState) Apply(block uint64, update *common.Update) (archiveUpdateHint
 	return hints, err
 }
 
-func (s *MptState) Visit(visitor NodeVisitor) error {
-	return s.trie.VisitTrie(visitor)
+func (s *MptState) Visit(mode AccessMode, visitor NodeVisitor) error {
+	return s.trie.VisitTrie(mode, visitor)
 }
 
 func (s *MptState) GetCodes() map[common.Hash][]byte {

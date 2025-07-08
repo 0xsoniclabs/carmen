@@ -15,6 +15,7 @@
 //
 //	mockgen -source node_cache.go -destination node_cache_mocks.go -package mpt
 //
+
 // Package mpt is a generated GoMock package.
 package mpt
 
@@ -30,6 +31,7 @@ import (
 type MockNodeCache struct {
 	ctrl     *gomock.Controller
 	recorder *MockNodeCacheMockRecorder
+	isgomock struct{}
 }
 
 // MockNodeCacheMockRecorder is the mock recorder for MockNodeCache.

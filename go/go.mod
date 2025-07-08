@@ -17,6 +17,7 @@ require (
 	github.com/holiman/uint256 v1.2.4
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
+	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/mock v0.2.0
@@ -26,7 +27,10 @@ require (
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	golang.org/x/sys v0.30.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

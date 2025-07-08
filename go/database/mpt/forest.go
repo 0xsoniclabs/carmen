@@ -422,7 +422,7 @@ func (s *Forest) HasEmptyStorage(rootRef *NodeReference, addr common.Address) (i
 		}
 		return VisitResponseContinue
 	})
-	exists, err := VisitPathToAccount(s, rootRef, addr, v)
+	exists, err := VisitPathToAccount(s, rootRef, addr, ReadAccess{}, v)
 	if err != nil {
 		err = fmt.Errorf("failed to check storage for account %v: %w", addr, err)
 		s.errors = append(s.errors, err)
@@ -448,15 +448,15 @@ func (s *Forest) ClearStorage(rootRef *NodeReference, addr common.Address) (Node
 	return newRoot, err
 }
 
-func (s *Forest) VisitTrie(rootRef *NodeReference, visitor NodeVisitor) error {
-	root, err := s.getViewAccess(rootRef)
+func (s *Forest) VisitTrie(rootRef *NodeReference, mode AccessMode, visitor NodeVisitor) error {
+	root, err := mode.Access(s, rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain view access to node %v: %w", rootRef.Id(), err)
 		s.errors = append(s.errors, err)
 		return err
 	}
 	defer root.Release()
-	_, err = root.Get().Visit(s, rootRef, 0, visitor)
+	_, err = root.Get().Visit(s, rootRef, 0, mode, visitor)
 	if err != nil {
 		err = fmt.Errorf("error during trie visit: %w", err)
 		s.errors = append(s.errors, err)

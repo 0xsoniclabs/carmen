@@ -15,6 +15,7 @@
 //
 //	mockgen -source nodes.go -destination nodes_mocks.go -package mpt
 //
+
 // Package mpt is a generated GoMock package.
 package mpt
 
@@ -31,6 +32,7 @@ import (
 type MockNode struct {
 	ctrl     *gomock.Controller
 	recorder *MockNodeMockRecorder
+	isgomock struct{}
 }
 
 // MockNodeMockRecorder is the mock recorder for MockNode.
@@ -298,24 +300,25 @@ func (mr *MockNodeMockRecorder) SetValue(manager, thisRef, this, key, path, valu
 }
 
 // Visit mocks base method.
-func (m *MockNode) Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (m *MockNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Visit", source, thisRef, depth, visitor)
+	ret := m.ctrl.Call(m, "Visit", manager, thisRef, depth, mode, visitor)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Visit indicates an expected call of Visit.
-func (mr *MockNodeMockRecorder) Visit(source, thisRef, depth, visitor any) *gomock.Call {
+func (mr *MockNodeMockRecorder) Visit(manager, thisRef, depth, mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Visit", reflect.TypeOf((*MockNode)(nil).Visit), source, thisRef, depth, visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Visit", reflect.TypeOf((*MockNode)(nil).Visit), manager, thisRef, depth, mode, visitor)
 }
 
 // MockNodeSource is a mock of NodeSource interface.
 type MockNodeSource struct {
 	ctrl     *gomock.Controller
 	recorder *MockNodeSourceMockRecorder
+	isgomock struct{}
 }
 
 // MockNodeSourceMockRecorder is the mock recorder for MockNodeSource.
@@ -426,6 +429,7 @@ func (mr *MockNodeSourceMockRecorder) hashKey(arg0 any) *gomock.Call {
 type MockNodeManager struct {
 	ctrl     *gomock.Controller
 	recorder *MockNodeManagerMockRecorder
+	isgomock struct{}
 }
 
 // MockNodeManagerMockRecorder is the mock recorder for MockNodeManager.
@@ -652,10 +656,128 @@ func (mr *MockNodeManagerMockRecorder) releaseTrieAsynchronous(arg0 any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "releaseTrieAsynchronous", reflect.TypeOf((*MockNodeManager)(nil).releaseTrieAsynchronous), arg0)
 }
 
+// MockHandle is a mock of Handle interface.
+type MockHandle struct {
+	ctrl     *gomock.Controller
+	recorder *MockHandleMockRecorder
+	isgomock struct{}
+}
+
+// MockHandleMockRecorder is the mock recorder for MockHandle.
+type MockHandleMockRecorder struct {
+	mock *MockHandle
+}
+
+// NewMockHandle creates a new mock instance.
+func NewMockHandle(ctrl *gomock.Controller) *MockHandle {
+	mock := &MockHandle{ctrl: ctrl}
+	mock.recorder = &MockHandleMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockHandle) EXPECT() *MockHandleMockRecorder {
+	return m.recorder
+}
+
+// Get mocks base method.
+func (m *MockHandle) Get() Node {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get")
+	ret0, _ := ret[0].(Node)
+	return ret0
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockHandleMockRecorder) Get() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockHandle)(nil).Get))
+}
+
+// Release mocks base method.
+func (m *MockHandle) Release() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Release")
+}
+
+// Release indicates an expected call of Release.
+func (mr *MockHandleMockRecorder) Release() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Release", reflect.TypeOf((*MockHandle)(nil).Release))
+}
+
+// Valid mocks base method.
+func (m *MockHandle) Valid() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Valid")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// Valid indicates an expected call of Valid.
+func (mr *MockHandleMockRecorder) Valid() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Valid", reflect.TypeOf((*MockHandle)(nil).Valid))
+}
+
+// MockAccessMode is a mock of AccessMode interface.
+type MockAccessMode struct {
+	ctrl     *gomock.Controller
+	recorder *MockAccessModeMockRecorder
+	isgomock struct{}
+}
+
+// MockAccessModeMockRecorder is the mock recorder for MockAccessMode.
+type MockAccessModeMockRecorder struct {
+	mock *MockAccessMode
+}
+
+// NewMockAccessMode creates a new mock instance.
+func NewMockAccessMode(ctrl *gomock.Controller) *MockAccessMode {
+	mock := &MockAccessMode{ctrl: ctrl}
+	mock.recorder = &MockAccessModeMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAccessMode) EXPECT() *MockAccessModeMockRecorder {
+	return m.recorder
+}
+
+// Access mocks base method.
+func (m *MockAccessMode) Access(arg0 NodeManager, arg1 *NodeReference) (Handle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Access", arg0, arg1)
+	ret0, _ := ret[0].(Handle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Access indicates an expected call of Access.
+func (mr *MockAccessModeMockRecorder) Access(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Access", reflect.TypeOf((*MockAccessMode)(nil).Access), arg0, arg1)
+}
+
+// String mocks base method.
+func (m *MockAccessMode) String() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "String")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// String indicates an expected call of String.
+func (mr *MockAccessModeMockRecorder) String() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "String", reflect.TypeOf((*MockAccessMode)(nil).String))
+}
+
 // MockleafNode is a mock of leafNode interface.
 type MockleafNode struct {
 	ctrl     *gomock.Controller
 	recorder *MockleafNodeMockRecorder
+	isgomock struct{}
 }
 
 // MockleafNodeMockRecorder is the mock recorder for MockleafNode.
@@ -923,18 +1045,18 @@ func (mr *MockleafNodeMockRecorder) SetValue(manager, thisRef, this, key, path, 
 }
 
 // Visit mocks base method.
-func (m *MockleafNode) Visit(source NodeSource, thisRef *NodeReference, depth int, visitor NodeVisitor) (bool, error) {
+func (m *MockleafNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Visit", source, thisRef, depth, visitor)
+	ret := m.ctrl.Call(m, "Visit", manager, thisRef, depth, mode, visitor)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Visit indicates an expected call of Visit.
-func (mr *MockleafNodeMockRecorder) Visit(source, thisRef, depth, visitor any) *gomock.Call {
+func (mr *MockleafNodeMockRecorder) Visit(manager, thisRef, depth, mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Visit", reflect.TypeOf((*MockleafNode)(nil).Visit), source, thisRef, depth, visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Visit", reflect.TypeOf((*MockleafNode)(nil).Visit), manager, thisRef, depth, mode, visitor)
 }
 
 // setPathLength mocks base method.

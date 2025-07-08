@@ -15,6 +15,7 @@
 //
 //	mockgen -source verification.go -destination verification_mocks.go -package proof
 //
+
 // Package proof is a generated GoMock package.
 package proof
 
@@ -31,6 +32,7 @@ import (
 type MockverifiableTrie struct {
 	ctrl     *gomock.Controller
 	recorder *MockverifiableTrieMockRecorder
+	isgomock struct{}
 }
 
 // MockverifiableTrieMockRecorder is the mock recorder for MockverifiableTrie.
@@ -118,37 +120,38 @@ func (mr *MockverifiableTrieMockRecorder) UpdateHashes() *gomock.Call {
 }
 
 // VisitAccountStorage mocks base method.
-func (m *MockverifiableTrie) VisitAccountStorage(address common.Address, visitor mpt.NodeVisitor) error {
+func (m *MockverifiableTrie) VisitAccountStorage(address common.Address, mode mpt.AccessMode, visitor mpt.NodeVisitor) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "VisitAccountStorage", address, visitor)
+	ret := m.ctrl.Call(m, "VisitAccountStorage", address, mode, visitor)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // VisitAccountStorage indicates an expected call of VisitAccountStorage.
-func (mr *MockverifiableTrieMockRecorder) VisitAccountStorage(address, visitor any) *gomock.Call {
+func (mr *MockverifiableTrieMockRecorder) VisitAccountStorage(address, mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitAccountStorage", reflect.TypeOf((*MockverifiableTrie)(nil).VisitAccountStorage), address, visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitAccountStorage", reflect.TypeOf((*MockverifiableTrie)(nil).VisitAccountStorage), address, mode, visitor)
 }
 
 // VisitTrie mocks base method.
-func (m *MockverifiableTrie) VisitTrie(visitor mpt.NodeVisitor) error {
+func (m *MockverifiableTrie) VisitTrie(mode mpt.AccessMode, visitor mpt.NodeVisitor) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "VisitTrie", visitor)
+	ret := m.ctrl.Call(m, "VisitTrie", mode, visitor)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // VisitTrie indicates an expected call of VisitTrie.
-func (mr *MockverifiableTrieMockRecorder) VisitTrie(visitor any) *gomock.Call {
+func (mr *MockverifiableTrieMockRecorder) VisitTrie(mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitTrie", reflect.TypeOf((*MockverifiableTrie)(nil).VisitTrie), visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitTrie", reflect.TypeOf((*MockverifiableTrie)(nil).VisitTrie), mode, visitor)
 }
 
 // MockverifiableArchiveTrie is a mock of verifiableArchiveTrie interface.
 type MockverifiableArchiveTrie struct {
 	ctrl     *gomock.Controller
 	recorder *MockverifiableArchiveTrieMockRecorder
+	isgomock struct{}
 }
 
 // MockverifiableArchiveTrieMockRecorder is the mock recorder for MockverifiableArchiveTrie.
@@ -251,29 +254,29 @@ func (mr *MockverifiableArchiveTrieMockRecorder) GetStorage(block, addr, key any
 }
 
 // VisitAccountStorage mocks base method.
-func (m *MockverifiableArchiveTrie) VisitAccountStorage(block uint64, address common.Address, visitor mpt.NodeVisitor) error {
+func (m *MockverifiableArchiveTrie) VisitAccountStorage(block uint64, address common.Address, mode mpt.AccessMode, visitor mpt.NodeVisitor) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "VisitAccountStorage", block, address, visitor)
+	ret := m.ctrl.Call(m, "VisitAccountStorage", block, address, mode, visitor)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // VisitAccountStorage indicates an expected call of VisitAccountStorage.
-func (mr *MockverifiableArchiveTrieMockRecorder) VisitAccountStorage(block, address, visitor any) *gomock.Call {
+func (mr *MockverifiableArchiveTrieMockRecorder) VisitAccountStorage(block, address, mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitAccountStorage", reflect.TypeOf((*MockverifiableArchiveTrie)(nil).VisitAccountStorage), block, address, visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitAccountStorage", reflect.TypeOf((*MockverifiableArchiveTrie)(nil).VisitAccountStorage), block, address, mode, visitor)
 }
 
 // VisitTrie mocks base method.
-func (m *MockverifiableArchiveTrie) VisitTrie(block uint64, visitor mpt.NodeVisitor) error {
+func (m *MockverifiableArchiveTrie) VisitTrie(block uint64, mode mpt.AccessMode, visitor mpt.NodeVisitor) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "VisitTrie", block, visitor)
+	ret := m.ctrl.Call(m, "VisitTrie", block, mode, visitor)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // VisitTrie indicates an expected call of VisitTrie.
-func (mr *MockverifiableArchiveTrieMockRecorder) VisitTrie(block, visitor any) *gomock.Call {
+func (mr *MockverifiableArchiveTrieMockRecorder) VisitTrie(block, mode, visitor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitTrie", reflect.TypeOf((*MockverifiableArchiveTrie)(nil).VisitTrie), block, visitor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitTrie", reflect.TypeOf((*MockverifiableArchiveTrie)(nil).VisitTrie), block, mode, visitor)
 }

@@ -15,6 +15,7 @@
 //
 //	mockgen -source proof.go -destination proof_mocks.go -package mpt
 //
+
 // Package mpt is a generated GoMock package.
 package mpt
 
@@ -29,6 +30,7 @@ import (
 type MockwitnessProofVisitor struct {
 	ctrl     *gomock.Controller
 	recorder *MockwitnessProofVisitorMockRecorder
+	isgomock struct{}
 }
 
 // MockwitnessProofVisitorMockRecorder is the mock recorder for MockwitnessProofVisitor.

@@ -240,7 +240,7 @@ func TestForest_GettingAccountInfo_Fails(t *testing.T) {
 						t.Errorf("getting account should fail")
 					}
 					nodeVisitor := NewMockNodeVisitor(ctrl)
-					if err := forest.VisitTrie(&root, nodeVisitor); !errors.Is(err, injectedErr) {
+					if err := forest.VisitTrie(&root, ReadAccess{}, nodeVisitor); !errors.Is(err, injectedErr) {
 						t.Errorf("getting account should fail")
 					}
 				})
@@ -1965,13 +1965,13 @@ func TestForest_ErrorsAreForwardedAndCollected(t *testing.T) {
 		"VisitTrie-Failed-RootLookup": {
 			prepareRootLookupFailure,
 			func(f *Forest) error {
-				return f.VisitTrie(&rootRef, nil)
+				return f.VisitTrie(&rootRef, ReadAccess{}, nil)
 			},
 		},
 		"VisitTrie-Failed-TreeNavigation": {
 			prepareTreeNavigationFailure,
 			func(f *Forest) error {
-				return f.VisitTrie(&rootRef, MakeVisitor(func(Node, NodeInfo) VisitResponse { return VisitResponseContinue }))
+				return f.VisitTrie(&rootRef, ReadAccess{}, MakeVisitor(func(Node, NodeInfo) VisitResponse { return VisitResponseContinue }))
 			},
 		},
 		"updateHashesFor-Failed-RootLookup": {
@@ -2385,7 +2385,7 @@ func TestForest_VisitPathToAccount(t *testing.T) {
 
 					for i, addr := range addresses {
 						lastNode = nil
-						if found, err := VisitPathToAccount(forest, &rootRef, addr, nodeVisitor); err != nil || !found {
+						if found, err := VisitPathToAccount(forest, &rootRef, addr, ReadAccess{}, nodeVisitor); err != nil || !found {
 							t.Errorf("failed to iterate nodes by address: %v", err)
 						}
 						switch account := lastNode.(type) {
@@ -2456,7 +2456,7 @@ func TestForest_VisitPathToStorage(t *testing.T) {
 
 					for _, address := range addresses {
 						// find out account node to start storage search from it.
-						if found, err := VisitPathToAccount(forest, &rootRef, address, nodeVisitor); err != nil || !found {
+						if found, err := VisitPathToAccount(forest, &rootRef, address, ReadAccess{}, nodeVisitor); err != nil || !found {
 							t.Errorf("failed to iterate nodes by address: %v", err)
 						}
 					}
@@ -2679,7 +2679,7 @@ func testVisitPathToStorage(t *testing.T, forest *Forest, keys []common.Key, sto
 
 	for i, key := range keys {
 		lastNode = nil
-		if found, err := VisitPathToStorage(forest, &storageRoot, key, nodeVisitor); err != nil || !found {
+		if found, err := VisitPathToStorage(forest, &storageRoot, key, ReadAccess{}, nodeVisitor); err != nil || !found {
 			t.Errorf("failed to iterate nodes by address: %v", err)
 		}
 		switch value := lastNode.(type) {

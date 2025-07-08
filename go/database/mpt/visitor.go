@@ -14,8 +14,9 @@ package mpt
 
 import (
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/common/tribool"
 	"strings"
+
+	"github.com/0xsoniclabs/carmen/go/common/tribool"
 )
 
 // ----------------------------------------------------------------------------
@@ -89,7 +90,7 @@ func (v *lambdaVisitor) Visit(n Node, i NodeInfo) VisitResponse {
 // GetTrieNodeStatistics computes node statistics for the given Trie.
 func GetTrieNodeStatistics(trie *LiveTrie) (NodeStatistic, error) {
 	collector := &nodeStatisticsCollector{}
-	if err := trie.VisitTrie(collector); err != nil {
+	if err := trie.VisitTrie(ReadAccess{}, collector); err != nil {
 		return NodeStatistic{}, err
 	}
 	return collector.stats, nil
