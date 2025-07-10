@@ -187,13 +187,13 @@ func (u *Update) String() string {
 	if len(u.Balances) > 0 {
 		builder.WriteString("\tBalances:\n")
 		for _, change := range u.Balances {
-			builder.WriteString(fmt.Sprintf("\t\t%v: %x\n", change.Account, change.Balance))
+			builder.WriteString(fmt.Sprintf("\t\t%v: %v\n", change.Account, change.Balance))
 		}
 	}
 	if len(u.Nonces) > 0 {
 		builder.WriteString("\tNonces:\n")
 		for _, change := range u.Nonces {
-			builder.WriteString(fmt.Sprintf("\t\t%v: %x\n", change.Account, change.Nonce))
+			builder.WriteString(fmt.Sprintf("\t\t%v: %d\n", change.Account, change.Nonce.ToUint64()))
 		}
 	}
 	if len(u.Codes) > 0 {

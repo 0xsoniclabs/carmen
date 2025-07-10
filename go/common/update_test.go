@@ -551,7 +551,7 @@ func TestUpdate_Print(t *testing.T) {
 	update.AppendDeleteAccount(Address{1})
 	update.AppendCreateAccount(Address{2})
 	update.AppendBalanceUpdate(Address{3}, amount.New(1))
-	update.AppendNonceUpdate(Address{4}, Nonce{2})
+	update.AppendNonceUpdate(Address{4}, ToNonce(2))
 	update.AppendCodeUpdate(Address{5}, []byte{1, 2, 3})
 	update.AppendSlotUpdate(Address{6}, Key{1}, Value{2})
 
@@ -563,6 +563,8 @@ func TestUpdate_Print(t *testing.T) {
 		"Balances:",
 		"Nonces:",
 		"Slots:",
+		"0300000000000000000000000000000000000000: 1", // decimal balance
+		"0400000000000000000000000000000000000000: 2", // decimal nonce
 	}
 
 	for _, expectation := range expectations {
