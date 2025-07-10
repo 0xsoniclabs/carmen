@@ -43,7 +43,7 @@ func newS5State(params state.Parameters, mptState *mpt.MptState) (state.State, e
 
 	if params.Archive == state.S5Archive {
 		// We can ignore archiveCleanup because it is not used for S5Archive,
-		// it is used for leveldb only
+		// it is used for LevelDB only
 		archiveBlockHeight, empty, err := arch.GetBlockHeight()
 		if err != nil {
 			return nil, errors.Join(err, arch.Close(), mptState.Close())

@@ -11,6 +11,7 @@
 package gostate
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 )
 
 func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
@@ -56,6 +58,11 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 		t.Fatalf("cannot close database: %v", err)
 	}
 
+	// move the archive to a backup file
+	archivePath := getArchivePath(state.Parameters{Directory: dir})
+	backup := archivePath + ".backup"
+	require.NoError(t, os.Rename(archivePath, backup))
+
 	// open as non-archive
 	noArchiveConfig := namedStateConfig{
 		config: state.Configuration{
@@ -78,6 +85,9 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("cannot close database: %v", err)
 	}
+
+	// restore the backup
+	require.NoError(t, os.Rename(backup, archivePath))
 
 	// opening archive should fail as archive and non-archive is not in-sync
 	if _, err := archiveConfig.createState(dir); err == nil {

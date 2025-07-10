@@ -11,6 +11,7 @@
 package gostate
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
@@ -142,7 +143,7 @@ func init() {
 // newGoMemoryState creates in memory implementation
 // (path parameter for compatibility with other state factories, can be left empty)
 func newGoMemoryState(params state.Parameters) (state.State, error) {
-	_, err := getLiveDbPath(params)
+	_, err := prepareLiveDbDirectory(params)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +261,7 @@ func newGoMemoryState(params state.Parameters) (state.State, error) {
 
 // newGoFileState creates File based Index and Store implementations
 func newGoFileState(params state.Parameters) (state.State, error) {
-	path, err := getLiveDbPath(params)
+	path, err := prepareLiveDbDirectory(params)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +442,7 @@ func newGoFileState(params state.Parameters) (state.State, error) {
 
 // newGoCachedFileState creates File based Index and Store implementations
 func newGoCachedFileState(params state.Parameters) (state.State, error) {
-	path, err := getLiveDbPath(params)
+	path, err := prepareLiveDbDirectory(params)
 	if err != nil {
 		return nil, err
 	}
@@ -896,12 +897,16 @@ func cleanUpByClosing(db io.Closer) func() {
 	}
 }
 
-func getLiveDbPath(params state.Parameters) (string, error) {
+func prepareLiveDbDirectory(params state.Parameters) (string, error) {
 	path := filepath.Join(params.Directory, "live")
 	return path, os.MkdirAll(path, 0700)
 }
 
-func getArchivePath(params state.Parameters) (string, error) {
+func getArchivePath(params state.Parameters) string {
+	return filepath.Join(params.Directory, "archive")
+}
+
+func prepareArchiveDirectory(params state.Parameters) (string, error) {
 	path := filepath.Join(params.Directory, "archive")
 	return path, os.MkdirAll(path, 0700)
 }
@@ -910,10 +915,22 @@ func openArchive(params state.Parameters) (archive archive.Archive, cleanup func
 	switch params.Archive {
 
 	case state.ArchiveType(""), state.NoArchive:
+		// Check that the archive directory does not exist or is empty.
+		path := getArchivePath(params)
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			return nil, nil, nil
+		}
+		content, err := os.ReadDir(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(content) > 0 {
+			return nil, nil, fmt.Errorf("opening DB with no archive would ignore existing archive at %s", path)
+		}
 		return nil, nil, nil
 
 	case state.LevelDbArchive:
-		path, err := getArchivePath(params)
+		path, err := prepareArchiveDirectory(params)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -926,7 +943,7 @@ func openArchive(params state.Parameters) (archive archive.Archive, cleanup func
 		return arch, cleanup, err
 
 	case state.SqliteArchive:
-		path, err := getArchivePath(params)
+		path, err := prepareArchiveDirectory(params)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -934,7 +951,7 @@ func openArchive(params state.Parameters) (archive archive.Archive, cleanup func
 		return arch, nil, err
 
 	case state.S4Archive:
-		path, err := getArchivePath(params)
+		path, err := prepareArchiveDirectory(params)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -945,7 +962,7 @@ func openArchive(params state.Parameters) (archive archive.Archive, cleanup func
 		return arch, nil, err
 
 	case state.S5Archive:
-		path, err := getArchivePath(params)
+		path, err := prepareArchiveDirectory(params)
 		if err != nil {
 			return nil, nil, err
 		}
