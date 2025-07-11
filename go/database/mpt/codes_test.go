@@ -56,7 +56,9 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change directory permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(dir, stat.Mode())
+				if err := os.Chmod(dir, stat.Mode()); err != nil {
+					t.Fatalf("failed to chmod: %v", err)
+				}
 			})
 			return dir
 		},
@@ -74,7 +76,9 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change directory permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(dir, stat.Mode())
+				if err := os.Chmod(dir, stat.Mode()); err != nil {
+					t.Fatalf("failed to chmod: %v", err)
+				}
 			})
 			return dir
 		},

@@ -258,8 +258,7 @@ func (r OpsFactoryRegistry[T, C]) ReadNextOp(raw *[]byte) (T, Operation[C]) {
 	if rec.deserialize == nil {
 		op = rec.opFactory(nil)
 	} else {
-		var payload any
-		payload = rec.deserialize(raw)
+		payload := rec.deserialize(raw)
 		op = rec.opFactory(payload)
 	}
 
