@@ -90,7 +90,7 @@ func (c Commitment) Update(position byte, old, new Value) Commitment {
 	// difference between the old and the new vector -- which is zero
 	// everywhere, except at the position of the change.
 	//
-	// It then uses the additive homomorphism property of the Pederson commit:
+	// It then uses the additive homomorphism property of the Pedersen commit:
 	//   Commit(A+B) = Commit(A) + Commit(B)
 	// for vectors A and B, where + is the point addition.
 	values := [VectorSize]Value{}
