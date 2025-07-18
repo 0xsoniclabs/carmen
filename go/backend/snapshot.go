@@ -21,7 +21,7 @@ import "errors"
 // calling the snapshot's `Release` method.
 //
 // Logically, each snapshot describes a range of `Parts`, where each part
-// describes a chunk of data of the data structure's forzen state. Parts can
+// describes a chunk of data of the data structure's frozen state. Parts can
 // be retrieved individually, to facilitate streaming of snapshots, potentially
 // even from multiple sources.
 //
