@@ -15,6 +15,7 @@ use crate::{error::Error, types::*};
 mod error;
 mod ffi;
 mod types;
+mod verkle_trie;
 
 /// Opens a new [CarmenS6Db] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
