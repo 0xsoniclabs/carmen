@@ -16,7 +16,9 @@ use std::{
     sync::Arc,
 };
 
-use carmen_rust::storage::file::{FileBackend, NoSeekFile, PageCachedFile, SeekFile};
+use carmen_rust::storage::file::{FileBackend, NoSeekFile, SeekFile};
+#[cfg(unix)]
+use carmen_rust::storage::file::{MultiPageCachedFile, PageCachedFile};
 use criterion::{
     BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput, criterion_group,
     criterion_main, measurement::Measurement,
@@ -171,6 +173,58 @@ pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
                         "PageCachedFile<NoSeekFile, false>",
                     )
                 })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <MultiPageCachedFile<8, SeekFile, true> as FileBackend>::open(path, options).map(
+                    |f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "MultiPageCachedFile<8, SeekFile, true>",
+                        )
+                    },
+                )
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <MultiPageCachedFile<8, NoSeekFile, true> as FileBackend>::open(path, options).map(
+                    |f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "MultiPageCachedFile<8, NoSeekFile, true>",
+                        )
+                    },
+                )
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <MultiPageCachedFile<8, SeekFile, false> as FileBackend>::open(path, options).map(
+                    |f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "MultiPageCachedFile<8, SeekFile, false>",
+                        )
+                    },
+                )
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <MultiPageCachedFile<8, NoSeekFile, false> as FileBackend>::open(path, options).map(
+                    |f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "MultiPageCachedFile<8, NoSeekFile, false>",
+                        )
+                    },
+                )
             }) as BackendOpenFn
         },
     ]
