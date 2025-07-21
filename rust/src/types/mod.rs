@@ -49,5 +49,7 @@ pub type Nonce = [u8; 8];
 /// An account state.
 pub type AccountState = u8;
 
+#[allow(unused)]
 pub const ACCOUNT_STATE_UNKNOWN: AccountState = 0;
+#[allow(unused)]
 pub const ACCOUNT_STATE_EXISTS: AccountState = 1;
