@@ -128,13 +128,16 @@ mod tests {
         fs::{File, OpenOptions},
         io::{Read, Write},
         sync::{
-            Arc,
+            Arc, Barrier,
             atomic::{AtomicU64, Ordering},
         },
     };
 
     use super::*;
-    use crate::utils::test_dir::{Permissions, TestDir};
+    use crate::{
+        storage::file::PageCachedFile,
+        utils::test_dir::{Permissions, TestDir},
+    };
 
     fn open_backends()
     -> impl Iterator<Item = fn(&Path, OpenOptions) -> std::io::Result<Arc<dyn FileBackend>>> {
@@ -145,6 +148,14 @@ mod tests {
             }) as fn(&Path, OpenOptions) -> _,
             (|path, options| {
                 <NoSeekFile as FileBackend>::open(path, options)
+                    .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+            }) as fn(&Path, OpenOptions) -> _,
+            (|path, options| {
+                <PageCachedFile<SeekFile> as FileBackend>::open(path, options)
+                    .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+            }) as fn(&Path, OpenOptions) -> _,
+            (|path, options| {
+                <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
                     .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
             }) as fn(&Path, OpenOptions) -> _,
         ]
@@ -256,6 +267,66 @@ mod tests {
     }
 
     #[test]
+    fn write_all_at_can_write_across_pages() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+
+        let data = [1; 4096 * 3];
+        let offset = 0;
+
+        for (i, backend) in open_backends().enumerate() {
+            let path = dir.join(format!("test_file_{i}.bin"));
+
+            {
+                let file = backend(path.as_path(), options.clone()).unwrap();
+                file.write_all_at(&data, offset).unwrap();
+            }
+
+            let file = File::open(path).unwrap();
+            assert_eq!(file.metadata().unwrap().len(), data.len() as u64);
+            let mut buf = vec![0; 4096 * 3];
+            file.read_exact_at(&mut buf, offset).unwrap();
+            assert_eq!(buf, data);
+        }
+    }
+
+    #[test]
+    fn write_all_at_can_write_data_to_different_pages() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+
+        let data = [1];
+        let offset1 = 0;
+        let offset2 = 10000;
+
+        for (i, backend) in open_backends().enumerate() {
+            let path = dir.join(format!("test_file_{i}.bin"));
+
+            {
+                let file = backend(path.as_path(), options.clone()).unwrap();
+                file.write_all_at(&data, offset1).unwrap();
+                file.write_all_at(&data, offset2).unwrap();
+            }
+
+            let mut file = File::open(path).unwrap();
+            assert_eq!(file.metadata().unwrap().len(), offset2 + 1);
+            let mut buf = [0; 1];
+            file.seek(SeekFrom::Start(offset1)).unwrap();
+            file.read_exact(&mut buf).unwrap();
+            assert_eq!(buf, data);
+            file.seek(SeekFrom::Start(offset2)).unwrap();
+            file.read_exact(&mut buf).unwrap();
+            assert_eq!(buf, data);
+        }
+    }
+
+    #[test]
     fn read_exact_at_fills_whole_buffer_by_reading_at_offset() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
@@ -285,6 +356,64 @@ mod tests {
     }
 
     #[test]
+    fn read_exact_at_can_read_across_pages() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+
+        let data = [1; 4096 * 3];
+        let offset = 0;
+
+        for (i, backend) in open_backends().enumerate() {
+            let path = dir.join(format!("test_file_{i}.bin"));
+
+            {
+                let mut file = File::create(path.as_path()).unwrap();
+                file.write_all(&data).unwrap();
+            }
+
+            let file = backend(path.as_path(), options.clone()).unwrap();
+            let mut buf = [0; 4096 * 3];
+            file.read_exact_at(&mut buf, offset).unwrap();
+            assert_eq!(buf, data);
+        }
+    }
+
+    #[test]
+    fn read_exact_at_can_read_data_from_different_pages() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+
+        let data = [1];
+        let offset1 = 0;
+        let offset2 = 10000;
+
+        for (i, backend) in open_backends().enumerate() {
+            let path = dir.join(format!("test_file_{i}.bin"));
+
+            {
+                let mut file = File::create(path.as_path()).unwrap();
+                file.seek(SeekFrom::Start(offset1)).unwrap();
+                file.write_all(&data).unwrap();
+                file.seek(SeekFrom::Start(offset2)).unwrap();
+                file.write_all(&data).unwrap();
+            }
+
+            let file = backend(path.as_path(), options.clone()).unwrap();
+            let mut buf = [1];
+            file.read_exact_at(&mut buf, offset1).unwrap();
+            assert_eq!(buf, data);
+            file.read_exact_at(&mut buf, offset2).unwrap();
+            assert_eq!(buf, data);
+        }
+    }
+
+    #[test]
     fn read_exact_at_fails_when_out_of_bounds() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
@@ -303,6 +432,50 @@ mod tests {
             let mut buf = [0; 5];
             let res = file.read_exact_at(&mut buf, 5);
             assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+    }
+
+    #[test]
+    fn access_same_page_in_parallel_does_not_deadlock() {
+        const THREADS: usize = 128;
+        const PAGES: usize = 100;
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+
+        let data = vec![1; 4096 * PAGES];
+
+        for (i, backend) in open_backends().enumerate() {
+            let path = dir.join(format!("test_file_{i}.bin"));
+
+            {
+                let mut file = File::create(path.as_path()).unwrap();
+                file.write_all(&data).unwrap();
+            }
+
+            let file = backend(path.as_path(), options.clone()).unwrap();
+
+            let barrier = Barrier::new(THREADS);
+
+            std::thread::scope(|s| {
+                for t in 0..THREADS {
+                    let barrier = &barrier;
+                    let file = Arc::clone(&file);
+                    s.spawn(move || {
+                        const BUF_LEN: usize = 4096 / THREADS;
+                        let mut buf = [0; BUF_LEN];
+                        barrier.wait(); // ensure that all threads have at least been spawned before any starts performing I/O
+                        for page in 0..PAGES {
+                            file.read_exact_at(&mut buf, (page * 4096 + t * BUF_LEN) as u64)
+                                .unwrap();
+                            assert_eq!(buf, [1; BUF_LEN]);
+                        }
+                    });
+                }
+            });
         }
     }
 
