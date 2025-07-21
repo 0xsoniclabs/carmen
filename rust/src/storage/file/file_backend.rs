@@ -125,7 +125,7 @@ impl FileBackend for NoSeekFile {
 #[cfg(test)]
 mod tests {
     use std::{
-        fs::{File, OpenOptions},
+        fs::{self, File, OpenOptions},
         io::{Read, Write},
         sync::{
             Arc, Barrier,
@@ -135,7 +135,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{PageCachedFile, page_utils::Page},
+        storage::file::{MultiPageCachedFile, PageCachedFile, page_utils::Page},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -161,6 +161,20 @@ mod tests {
             {
                 (|path, options| {
                     <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
+                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                }) as fn(&Path, OpenOptions) -> _
+            },
+            #[cfg(unix)]
+            {
+                (|path, options| {
+                    <MultiPageCachedFile<8, SeekFile> as FileBackend>::open(path, options)
+                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                }) as fn(&Path, OpenOptions) -> _
+            },
+            #[cfg(unix)]
+            {
+                (|path, options| {
+                    <MultiPageCachedFile<8, NoSeekFile> as FileBackend>::open(path, options)
                         .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
                 }) as fn(&Path, OpenOptions) -> _
             },
@@ -257,6 +271,7 @@ mod tests {
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
+            fs::write(path.as_path(), vec![0; offset as usize + data.len()]).unwrap();
 
             {
                 let file = backend(path.as_path(), options.clone()).unwrap();
@@ -265,10 +280,10 @@ mod tests {
             // file: [_, _, _, _, _, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
             let mut file = File::open(path).unwrap();
-            assert_eq!(file.metadata().unwrap().len(), 15);
-            let mut buf = vec![0; 15];
+            assert_eq!(file.metadata().unwrap().len(), offset + data.len() as u64);
+            let mut buf = vec![0; offset as usize + data.len()];
             file.read_exact(&mut buf).unwrap();
-            assert_eq!(buf[5..], data);
+            assert_eq!(buf[offset as usize..], data);
         }
     }
 
@@ -285,6 +300,7 @@ mod tests {
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
+            fs::write(path.as_path(), vec![0; offset as usize + data.len()]).unwrap();
 
             {
                 let file = backend(path.as_path(), options.clone()).unwrap();
@@ -313,6 +329,7 @@ mod tests {
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
+            fs::write(path.as_path(), vec![0; offset2 as usize + data.len()]).unwrap();
 
             {
                 let file = backend(path.as_path(), options.clone()).unwrap();
@@ -330,6 +347,30 @@ mod tests {
             file.seek(SeekFrom::Start(offset2)).unwrap();
             file.read_exact(&mut buf).unwrap();
             assert_eq!(buf, data);
+        }
+    }
+
+    #[test]
+    fn write_all_at_can_write_past_end_of_file() {
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let dir = tempdir.path();
+
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+
+        for (i, backend) in open_backends().enumerate() {
+            let path = dir.join(format!("test_file_{i}.bin"));
+
+            // the file does not exist yet, so after creating it, its length is 0
+            let file = backend(path.as_path(), options.clone()).unwrap();
+
+            // write at a possibly cached offset
+            let buf = [0; 5];
+            file.write_all_at(&buf, 5).unwrap();
+
+            // write at a non-cached offset
+            let buf = [0; 5];
+            file.write_all_at(&buf, 10 * Page::SIZE as u64 + 5).unwrap();
         }
     }
 
@@ -375,11 +416,7 @@ mod tests {
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
-
-            {
-                let mut file = File::create(path.as_path()).unwrap();
-                file.write_all(&data).unwrap();
-            }
+            fs::write(path.as_path(), data).unwrap();
 
             let file = backend(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; Page::SIZE * 3];
@@ -421,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn read_exact_at_fails_when_out_of_bounds() {
+    fn read_exact_at_fails_when_reading_past_end_of_file() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
@@ -431,10 +468,7 @@ mod tests {
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            {
-                File::create(path.as_path()).unwrap();
-            }
-
+            // the file does not exist yet, so after creating it, its length is 0
             let file = backend(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; 5];
             let res = file.read_exact_at(&mut buf, 5);
@@ -457,11 +491,7 @@ mod tests {
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
-
-            {
-                let mut file = File::create(path.as_path()).unwrap();
-                file.write_all(&data).unwrap();
-            }
+            fs::write(path.as_path(), &data).unwrap();
 
             let file = backend(path.as_path(), options.clone()).unwrap();
 
