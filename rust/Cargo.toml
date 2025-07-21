@@ -18,6 +18,8 @@ publish = false
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+# unsafe utils
+zerocopy = { version = "0.8.26", features = ["derive"] }
 
 [build-dependencies]
 # FFI

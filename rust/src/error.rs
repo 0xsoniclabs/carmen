@@ -7,8 +7,7 @@
 //
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
-#![allow(unused)]
 
-mod error;
-mod ffi;
-mod types;
+/// The top level error type for Carmen S6.
+/// This type is returned to the ffi interface and converted there.
+pub struct Error;
