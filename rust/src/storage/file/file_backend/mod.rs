@@ -10,6 +10,8 @@
 
 use std::{fs::OpenOptions, path::Path};
 
+#[cfg(unix)]
+mod multi_page_cached_file;
 mod no_seek_file;
 #[cfg(unix)]
 mod page_cached_file;
@@ -18,6 +20,8 @@ mod page_utils;
 #[cfg(unix)]
 mod seek_file;
 
+#[cfg(unix)]
+pub use multi_page_cached_file::MultiPageCachedFile;
 #[cfg(unix)]
 pub use no_seek_file::NoSeekFile;
 #[cfg(unix)]
@@ -64,7 +68,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{PageCachedFile, file_backend::page_utils::Page},
+        storage::file::{MultiPageCachedFile, PageCachedFile, file_backend::page_utils::Page},
         sync::{
             Arc, Barrier,
             atomic::{AtomicU64, Ordering},
@@ -109,6 +113,30 @@ mod tests {
     #[case::page_cached_file__no_seek_file__no_direct_io(
         (|path, options| {
             <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__seek_file__direct_io(
+        (|path, options| {
+            <MultiPageCachedFile<8, SeekFile, true> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__no_seek_file__direct_io(
+        (|path, options| {
+            <MultiPageCachedFile<8, NoSeekFile, true> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__seek_file__no_direct_io(
+        (|path, options| {
+            <MultiPageCachedFile<8, SeekFile, false> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__no_seek_file__no_direct_io(
+        (|path, options| {
+            <MultiPageCachedFile<8, NoSeekFile, false> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]

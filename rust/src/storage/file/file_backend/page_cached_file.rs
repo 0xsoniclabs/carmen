@@ -203,33 +203,30 @@ mod tests {
 
         let file = PageCachedFile::<_, true>(Mutex::new(InnerPageCachedFile {
             file,
-            file_len: 4096,
+            file_len: Page::SIZE as u64,
             page: Page::zeroed(),
             page_index: 0,
             page_dirty: false,
         }));
 
-        let data = vec![1u8; 4096];
+        let data = vec![1u8; Page::SIZE];
         file.write_all_at(&data, 0).unwrap();
 
         // Read the data back, which should hit the cache and not trigger any I/O operations.
-        let mut read_data = vec![0u8; 4096];
+        let mut read_data = vec![0u8; Page::SIZE];
         file.read_exact_at(&mut read_data, 0).unwrap();
         assert_eq!(data, read_data);
-
-        // Prevent the destructor from running, which would trigger a flush.
-        std::mem::forget(file);
     }
 
     #[test]
     fn access_non_cached_data_triggers_write_of_old_and_read_of_new_page() {
         let mut file = MockFileBackend::new();
         file.expect_write_all_at()
-            .with(eq([0; 4096]), eq(0))
+            .with(eq([0; Page::SIZE]), eq(0))
             .times(1)
             .returning(|_, _| Ok(()));
         file.expect_read_exact_at()
-            .with(always(), eq(4096))
+            .with(always(), eq(Page::SIZE as u64))
             .times(1)
             .returning(|buf, _| {
                 buf.fill(1);
@@ -246,8 +243,9 @@ mod tests {
 
         // Access data outside of the cached page, which should trigger a write of the old page and
         // a read of the new page.
-        let mut read_data = vec![0u8; 4096];
-        file.read_exact_at(&mut read_data, 4096).unwrap();
-        assert_eq!(read_data, vec![1u8; 4096]);
+        let mut read_data = vec![0u8; Page::SIZE];
+        file.read_exact_at(&mut read_data, Page::SIZE as u64)
+            .unwrap();
+        assert_eq!(read_data, vec![1u8; Page::SIZE]);
     }
 }
