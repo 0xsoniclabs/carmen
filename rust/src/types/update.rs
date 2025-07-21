@@ -483,7 +483,7 @@ mod tests {
                         .as_slice(),
                 );
             },
-            |encoded_update: &mut Vec<u8>, update| {
+            |_encoded_update: &mut Vec<u8>, _update| {
                 // This closure corresponds to the last read in Update::from_encoded. If we would
                 // put a write operation here and also call it, Update::from_encoded will succeed.
                 // But this test is only supposed to test the cases where parsing fails so we make
