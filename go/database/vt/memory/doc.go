@@ -11,7 +11,7 @@
 // Package memory implements a simple reference Verkle trie (S6) for the Carmen
 // project providing
 //   - a proof-of-concept implementation of the Verkle trie in Carmen
-//   - a executable specification for developers
+//   - an executable specification for developers
 //   - a light-weight reference implementation for testing of other components
 //
 // The implementation is maintained to be suitable for testing purposes for all
