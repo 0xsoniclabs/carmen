@@ -20,7 +20,7 @@ type Key [32]byte
 // Value is a fixed-size byte array used to represent data stored in the trie.
 type Value [32]byte
 
-// Trie implements a all-in-memory version of a Verkle trie as specified by
+// Trie implements an all-in-memory version of a Verkle trie as specified by
 // Ethereum. It provides a basic key-value store with fixed-length keys and
 // values and the ability to provide a cryptographic commitment of the trie's
 // state using Pedersen commitments.
