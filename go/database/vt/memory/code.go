@@ -10,7 +10,7 @@
 
 package memory
 
-// chunk is a 31-byte chunk of come EVM code prefixed by the number of bytes
+// chunk is a 31-byte chunk of some EVM code prefixed by the number of bytes
 // in the prefix of the chunk that is part of the data section of a push
 // instruction.
 type chunk [32]byte
