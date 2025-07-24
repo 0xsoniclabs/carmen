@@ -13,6 +13,7 @@ package geth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -66,8 +67,7 @@ type verkleState struct {
 }
 
 func (s *verkleState) DeleteAccount(address common.Address) error {
-	account := types.NewEmptyStateAccount()
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
+	return fmt.Errorf("not supported: verkle trie does not support deleting accounts")
 }
 
 func (s *verkleState) SetNonce(address common.Address, nonce common.Nonce) error {
@@ -127,11 +127,13 @@ func (s *verkleState) GetNonce(address common.Address) (common.Nonce, error) {
 
 func (s *verkleState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
 	value, err := s.verkle.GetStorage(ethcommon.Address(address), key[:])
-	if value == nil || err != nil {
+	if err != nil {
 		return common.Value{}, err
 	}
 
-	return common.Value(value), nil
+	var commonValue common.Value
+	copy(commonValue[:], value)
+	return commonValue, nil
 }
 
 func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
@@ -280,7 +282,10 @@ func (s *verkleState) Flush() error {
 }
 
 func (s *verkleState) Close() error {
-	return s.source.get().Close()
+	return errors.Join(
+		s.Flush(),
+		s.source.get().Close(),
+	)
 }
 
 func (s *verkleState) getAccount(address common.Address) (*types.StateAccount, error) {

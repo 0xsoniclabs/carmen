@@ -11,6 +11,7 @@
 package geth
 
 import (
+	"bytes"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -30,16 +31,13 @@ func TestCreateAccounts_Many_Updates_Success(t *testing.T) {
 
 	const numBlocks = 10
 	const numInsertsPerBlock = 100
-	var counter int
 	for i := 0; i < numBlocks; i++ {
 		update := common.Update{}
-		update.CreatedAccounts = make([]common.Address, 0, numInsertsPerBlock)
 		for j := 0; j < numInsertsPerBlock; j++ {
-			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
+			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
 			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
-			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(counter))})
-			counter++
+			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 		}
 		if err := state.Apply(uint64(i), update); err != nil {
 			t.Errorf("failed to apply block %d: %v", i, err)
@@ -47,31 +45,229 @@ func TestCreateAccounts_Many_Updates_Success(t *testing.T) {
 	}
 
 	// read values
-	for i := 0; i < numBlocks*numInsertsPerBlock; i++ {
-		addr := common.Address{byte(i), byte(i >> 8), byte(i >> 16), byte(i >> 24), byte(i >> 32)}
-		exists, err := state.Exists(addr)
-		if err != nil {
-			t.Errorf("failed to check existence of account %s: %v", addr, err)
+	for i := 0; i < numBlocks; i++ {
+		for j := 0; j < numInsertsPerBlock; j++ {
+			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
+			exists, err := state.Exists(addr)
+			if err != nil {
+				t.Errorf("failed to check existence of account %s: %v", addr, err)
+			}
+			if !exists {
+				t.Fatalf("account %s should exist but does not", addr)
+			}
+
+			balance, err := state.GetBalance(addr)
+			if err != nil {
+				t.Errorf("failed to get balance for account %s: %v", addr, err)
+			}
+			expectedBalance := amount.New(uint64(i * j))
+			if balance.ToBig().Cmp(expectedBalance.ToBig()) != 0 {
+				t.Errorf("unexpected balance for account %s: got %s, want %s", addr, balance, expectedBalance)
+			}
+
+			nonce, err := state.GetNonce(addr)
+			if err != nil {
+				t.Errorf("failed to get nonce for account %s: %v", addr, err)
+			}
+			if nonce != common.ToNonce(1) {
+				t.Errorf("unexpected nonce for account %s: got %d, want %d", addr, nonce, common.ToNonce(1))
+			}
 		}
-		if !exists {
-			t.Fatalf("account %s should exist but does not", addr)
+	}
+
+}
+
+func TestUpdate_And_Get_Code_Success(t *testing.T) {
+	state, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := state.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	code := make([]byte, 4096)
+	for i := 0; i < len(code); i++ {
+		code[i] = byte(i)
+	}
+
+	const numOfCodes = 100
+	expectedCodes := [numOfCodes][]byte{}
+	update := common.Update{}
+	for i := 0; i < numOfCodes; i++ {
+		addr := common.Address{byte(i), byte(i >> 8)}
+		update.Codes = append(update.Codes, common.CodeUpdate{
+			Account: addr,
+			Code:    code,
+		})
+		expectedCodes[i] = code
+		code = append(code, byte(i))
+	}
+
+	if err := state.Apply(0, update); err != nil {
+		t.Errorf("failed to apply update: %v", err)
+	}
+
+	// read codes
+	for i := 0; i < numOfCodes; i++ {
+		addr := common.Address{byte(i), byte(i >> 8)}
+
+		code, err := state.GetCode(addr)
+		if err != nil {
+			t.Fatalf("failed to get code for account %s: %v", addr, err)
 		}
 
-		balance, err := state.GetBalance(addr)
-		if err != nil {
-			t.Errorf("failed to get balance for account %s: %v", addr, err)
-		}
-		expectedBalance := amount.New(uint64(i))
-		if balance.ToBig().Cmp(expectedBalance.ToBig()) != 0 {
-			t.Errorf("unexpected balance for account %s: got %s, want %s", addr, balance, expectedBalance)
+		if got, want := code, expectedCodes[i]; !bytes.Equal(got, want) {
+			t.Errorf("unexpected code for account %s: got %v, want %v", addr, got, want)
 		}
 
-		nonce, err := state.GetNonce(addr)
+		codeHash, err := state.GetCodeHash(addr)
 		if err != nil {
-			t.Errorf("failed to get nonce for account %s: %v", addr, err)
+			t.Fatalf("failed to get code hash for account %s: %v", addr, err)
 		}
-		if nonce != common.ToNonce(1) {
-			t.Errorf("unexpected nonce for account %s: got %d, want %d", addr, nonce, common.ToNonce(1))
+
+		if got, want := codeHash, common.Keccak256(expectedCodes[i]); got != want {
+			t.Errorf("unexpected code hash for account %s: got %s, want %s", addr, got, want)
 		}
+
+		codeLen, err := state.GetCodeSize(addr)
+		if err != nil {
+			t.Fatalf("failed to get code size for account %s: %v", addr, err)
+		}
+
+		if got, want := codeLen, len(expectedCodes[i]); got != want {
+			t.Errorf("unexpected code size for account %s: got %d, want %d", addr, got, want)
+		}
+	}
+}
+
+func TestSet_And_Get_Storage_Success(t *testing.T) {
+	state, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := state.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	update := common.Update{}
+	const numOfKeys = 100
+	const numOfAddresses = 100
+	for i := 0; i < numOfAddresses; i++ {
+		addr := common.Address{byte(i), byte(i >> 8)}
+		for j := 0; j < numOfKeys; j++ {
+			key := common.Key{byte(j), byte(j >> 8)}
+			value := common.Value{byte(i + j), byte((i + j) >> 8)}
+			update.Slots = append(update.Slots, common.SlotUpdate{
+				Account: addr,
+				Key:     key,
+				Value:   value,
+			})
+		}
+	}
+	if err := state.Apply(0, update); err != nil {
+		t.Errorf("failed to apply: %v", err)
+	}
+
+	// read values
+	for i := 0; i < numOfAddresses; i++ {
+		addr := common.Address{byte(i), byte(i >> 8)}
+		for j := 0; j < numOfKeys; j++ {
+			key := common.Key{byte(j), byte(j >> 8)}
+			value, err := state.GetStorage(addr, key)
+			if err != nil {
+				t.Fatalf("failed to get storage for account %s: %v", addr, err)
+			}
+
+			if got, want := value, (common.Value{byte(i + j), byte((i + j) >> 8)}); got != want {
+				t.Errorf("unexpected storage value for account %s, key %s: got %v, want %v", addr, key, got, want)
+			}
+		}
+	}
+}
+
+func TestGetBalance_Account_Empty(t *testing.T) {
+	state, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := state.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	balance, err := state.GetBalance(common.Address{})
+	if err != nil {
+		t.Fatalf("failed to get balance for empty account: %v", err)
+	}
+
+	if !balance.IsZero() {
+		t.Errorf("expected zero balance for empty account, got %s", balance)
+	}
+}
+
+func TestGetStorage_Empty(t *testing.T) {
+	state, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := state.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	value, err := state.GetStorage(common.Address{}, common.Key{})
+	if err != nil {
+		t.Fatalf("failed to get storage for empty account: %v", err)
+	}
+
+	if got, want := value, (common.Value{}); got != want {
+		t.Errorf("unexpected storage value for empty account: got %v, want %v", got, want)
+	}
+}
+
+func TestGetHash_Is_Updated_Each_Block(t *testing.T) {
+	state, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := state.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	var prevHash common.Hash
+
+	const numBlocks = 10
+	const numInsertsPerBlock = 100
+	for i := 0; i < numBlocks; i++ {
+		update := common.Update{}
+		for j := 0; j < numInsertsPerBlock; j++ {
+			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
+			update.CreatedAccounts = append(update.CreatedAccounts, addr)
+			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
+		}
+		if err := state.Apply(uint64(i), update); err != nil {
+			t.Errorf("failed to apply block %d: %v", i, err)
+		}
+
+		hash, err := state.GetHash()
+		if err != nil {
+			t.Fatalf("failed to get block %d: %v", i, err)
+		}
+
+		if hash == prevHash {
+			t.Errorf("hash did not changed")
+		}
+
+		prevHash = hash
 	}
 }
