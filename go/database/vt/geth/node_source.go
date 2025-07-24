@@ -26,7 +26,7 @@ type NodeSource interface {
 	database.NodeReader
 
 	// Set sets the node at the given path.
-	// The input is navigation path in three and the serialised node.
+	// The input is navigation path in tree and the serialised node.
 	Set(path []byte, value []byte) error
 }
 
