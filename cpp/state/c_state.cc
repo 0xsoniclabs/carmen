@@ -235,7 +235,7 @@ WorldState* Open(const std::filesystem::path& directory, std::uint8_t schema,
 
 extern "C" {
 
-C_State CPP_Carmen_OpenState(C_Schema schema, StateImpl state,
+C_State Carmen_Cpp_OpenState(C_Schema schema, StateImpl state,
                              ArchiveImpl archive, const char* directory,
                              int length) {
   std::string_view dir(directory, length);
@@ -250,7 +250,7 @@ C_State CPP_Carmen_OpenState(C_Schema schema, StateImpl state,
   return nullptr;
 }
 
-void CPP_Carmen_Flush(C_State state) {
+void Carmen_Cpp_Flush(C_State state) {
   auto res = reinterpret_cast<carmen::WorldState*>(state)->Flush();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to flush state: " << res << "\n"
@@ -258,7 +258,7 @@ void CPP_Carmen_Flush(C_State state) {
   }
 }
 
-void CPP_Carmen_Close(C_State state) {
+void Carmen_Cpp_Close(C_State state) {
   auto res = reinterpret_cast<carmen::WorldState*>(state)->Close();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to close state: " << res << "\n"
@@ -266,16 +266,16 @@ void CPP_Carmen_Close(C_State state) {
   }
 }
 
-void CPP_Carmen_ReleaseState(C_State state) {
+void Carmen_Cpp_ReleaseState(C_State state) {
   delete reinterpret_cast<carmen::WorldState*>(state);
 }
 
-C_State CPP_Carmen_GetArchiveState(C_State state, uint64_t block) {
+C_State Carmen_Cpp_GetArchiveState(C_State state, uint64_t block) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   return s.GetArchiveState(block);
 }
 
-void CPP_Carmen_GetAccountState(C_State state, C_Address addr,
+void Carmen_Cpp_GetAccountState(C_State state, C_Address addr,
                                 C_AccountState out_state) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
@@ -290,7 +290,7 @@ void CPP_Carmen_GetAccountState(C_State state, C_Address addr,
   r = *res;
 }
 
-void CPP_Carmen_GetBalance(C_State state, C_Address addr,
+void Carmen_Cpp_GetBalance(C_State state, C_Address addr,
                            C_Balance out_balance) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
@@ -304,7 +304,7 @@ void CPP_Carmen_GetBalance(C_State state, C_Address addr,
   b = *res;
 }
 
-void CPP_Carmen_GetNonce(C_State state, C_Address addr, C_Nonce out_nonce) {
+void Carmen_Cpp_GetNonce(C_State state, C_Address addr, C_Nonce out_nonce) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& n = *reinterpret_cast<carmen::Nonce*>(out_nonce);
@@ -317,7 +317,7 @@ void CPP_Carmen_GetNonce(C_State state, C_Address addr, C_Nonce out_nonce) {
   n = *res;
 }
 
-void CPP_Carmen_GetStorageValue(C_State state, C_Address addr, C_Key key,
+void Carmen_Cpp_GetStorageValue(C_State state, C_Address addr, C_Key key,
                                 C_Value out_value) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
@@ -333,7 +333,7 @@ void CPP_Carmen_GetStorageValue(C_State state, C_Address addr, C_Key key,
   v = *res;
 }
 
-void CPP_Carmen_GetCode(C_State state, C_Address addr, C_Code out_code,
+void Carmen_Cpp_GetCode(C_State state, C_Address addr, C_Code out_code,
                         uint32_t* out_length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
@@ -354,7 +354,7 @@ void CPP_Carmen_GetCode(C_State state, C_Address addr, C_Code out_code,
   memcpy(out_code, code->Data(), code->Size());
 }
 
-void CPP_Carmen_GetCodeHash(C_State state, C_Address addr, C_Hash out_hash) {
+void Carmen_Cpp_GetCodeHash(C_State state, C_Address addr, C_Hash out_hash) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& h = *reinterpret_cast<carmen::Hash*>(out_hash);
@@ -367,7 +367,7 @@ void CPP_Carmen_GetCodeHash(C_State state, C_Address addr, C_Hash out_hash) {
   h = *res;
 }
 
-void CPP_Carmen_GetCodeSize(C_State state, C_Address addr,
+void Carmen_Cpp_GetCodeSize(C_State state, C_Address addr,
                             uint32_t* out_length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
@@ -380,7 +380,7 @@ void CPP_Carmen_GetCodeSize(C_State state, C_Address addr,
   *out_length = *res;
 }
 
-void CPP_Carmen_Apply(C_State state, uint64_t block, C_Update update,
+void Carmen_Cpp_Apply(C_State state, uint64_t block, C_Update update,
                       uint64_t length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   std::span<const std::byte> data(reinterpret_cast<const std::byte*>(update),
@@ -399,7 +399,7 @@ void CPP_Carmen_Apply(C_State state, uint64_t block, C_Update update,
   }
 }
 
-void CPP_Carmen_GetHash(C_State state, C_Hash out_hash) {
+void Carmen_Cpp_GetHash(C_State state, C_Hash out_hash) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& h = *reinterpret_cast<carmen::Hash*>(out_hash);
   auto res = s.GetHash();
@@ -411,7 +411,7 @@ void CPP_Carmen_GetHash(C_State state, C_Hash out_hash) {
   h = *res;
 }
 
-void CPP_Carmen_GetMemoryFootprint(C_State state, char** out,
+void Carmen_Cpp_GetMemoryFootprint(C_State state, char** out,
                                    uint64_t* out_length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto fp = s.GetMemoryFootprint();
@@ -423,6 +423,6 @@ void CPP_Carmen_GetMemoryFootprint(C_State state, char** out,
   std::memcpy(*out, data.data(), data.size());
 }
 
-void CPP_Carmen_ReleaseMemoryFootprintBuffer(char* buf, uint64_t) { free(buf); }
+void Carmen_Cpp_ReleaseMemoryFootprintBuffer(char* buf, uint64_t) { free(buf); }
 
 }  // extern "C"

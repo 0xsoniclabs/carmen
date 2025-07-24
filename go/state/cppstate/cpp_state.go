@@ -68,7 +68,7 @@ func newState(impl C.enum_StateImpl, params state.Parameters) (state.State, erro
 		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
 	}
 
-	st := C.CPP_Carmen_OpenState(C.C_Schema(params.Schema), impl, C.enum_StateImpl(archive), dir, C.int(len(params.Directory)))
+	st := C.Carmen_Cpp_OpenState(C.C_Schema(params.Schema), impl, C.enum_StateImpl(archive), dir, C.int(len(params.Directory)))
 	if st == unsafe.Pointer(nil) {
 		return nil, fmt.Errorf("%w: failed to create C++ state instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
@@ -99,7 +99,7 @@ func (cs *CppState) CreateAccount(address common.Address) error {
 
 func (cs *CppState) Exists(address common.Address) (bool, error) {
 	var res common.AccountState
-	C.CPP_Carmen_GetAccountState(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
+	C.Carmen_Cpp_GetAccountState(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
 	return res == common.Exists, nil
 }
 
@@ -111,7 +111,7 @@ func (cs *CppState) DeleteAccount(address common.Address) error {
 
 func (cs *CppState) GetBalance(address common.Address) (amount.Amount, error) {
 	var balance [amount.BytesLength]byte
-	C.CPP_Carmen_GetBalance(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))
+	C.Carmen_Cpp_GetBalance(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))
 	return amount.NewFromBytes(balance[:]...), nil
 }
 
@@ -123,7 +123,7 @@ func (cs *CppState) SetBalance(address common.Address, balance amount.Amount) er
 
 func (cs *CppState) GetNonce(address common.Address) (common.Nonce, error) {
 	var nonce common.Nonce
-	C.CPP_Carmen_GetNonce(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&nonce[0]))
+	C.Carmen_Cpp_GetNonce(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&nonce[0]))
 	return nonce, nil
 }
 
@@ -135,7 +135,7 @@ func (cs *CppState) SetNonce(address common.Address, nonce common.Nonce) error {
 
 func (cs *CppState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
 	var value common.Value
-	C.CPP_Carmen_GetStorageValue(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
+	C.Carmen_Cpp_GetStorageValue(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
 	return value, nil
 }
 
@@ -155,7 +155,7 @@ func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
 	// Load the code from C++
 	code = make([]byte, CodeMaxSize)
 	var size C.uint32_t = CodeMaxSize
-	C.CPP_Carmen_GetCode(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
+	C.Carmen_Cpp_GetCode(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
 	if size >= CodeMaxSize {
 		return nil, fmt.Errorf("unable to load contract exceeding maximum capacity of %d", CodeMaxSize)
 	}
@@ -176,19 +176,19 @@ func (cs *CppState) SetCode(address common.Address, code []byte) error {
 
 func (cs *CppState) GetCodeHash(address common.Address) (common.Hash, error) {
 	var hash common.Hash
-	C.CPP_Carmen_GetCodeHash(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&hash[0]))
+	C.Carmen_Cpp_GetCodeHash(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&hash[0]))
 	return hash, nil
 }
 
 func (cs *CppState) GetCodeSize(address common.Address) (int, error) {
 	var size C.uint32_t
-	C.CPP_Carmen_GetCodeSize(cs.state, unsafe.Pointer(&address[0]), &size)
+	C.Carmen_Cpp_GetCodeSize(cs.state, unsafe.Pointer(&address[0]), &size)
 	return int(size), nil
 }
 
 func (cs *CppState) GetHash() (common.Hash, error) {
 	var hash common.Hash
-	C.CPP_Carmen_GetHash(cs.state, unsafe.Pointer(&hash[0]))
+	C.Carmen_Cpp_GetHash(cs.state, unsafe.Pointer(&hash[0]))
 	return hash, nil
 }
 
@@ -201,7 +201,7 @@ func (cs *CppState) Apply(block uint64, update common.Update) error {
 	}
 	data := update.ToBytes()
 	dataPtr := unsafe.Pointer(&data[0])
-	C.CPP_Carmen_Apply(cs.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
+	C.Carmen_Cpp_Apply(cs.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
 	// Apply code changes to Go-sided code cache.
 	for _, change := range update.Codes {
 		cs.codeCache.Set(change.Account, change.Code)
@@ -210,14 +210,14 @@ func (cs *CppState) Apply(block uint64, update common.Update) error {
 }
 
 func (cs *CppState) Flush() error {
-	C.CPP_Carmen_Flush(cs.state)
+	C.Carmen_Cpp_Flush(cs.state)
 	return nil
 }
 
 func (cs *CppState) Close() error {
 	if cs.state != nil {
-		C.CPP_Carmen_Close(cs.state)
-		C.CPP_Carmen_ReleaseState(cs.state)
+		C.Carmen_Cpp_Close(cs.state)
+		C.Carmen_Cpp_ReleaseState(cs.state)
 		cs.state = nil
 	}
 	return nil
@@ -247,9 +247,9 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 	// Fetch footprint data from C++.
 	var buffer *C.char
 	var size C.uint64_t
-	C.CPP_Carmen_GetMemoryFootprint(cs.state, &buffer, &size)
+	C.Carmen_Cpp_GetMemoryFootprint(cs.state, &buffer, &size)
 	defer func() {
-		C.CPP_Carmen_ReleaseMemoryFootprintBuffer(buffer, size)
+		C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
 	}()
 
 	data := C.GoBytes(unsafe.Pointer(buffer), C.int(size))
@@ -270,7 +270,7 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 
 func (cs *CppState) GetArchiveState(block uint64) (state.State, error) {
 	return &CppState{
-		state:     C.CPP_Carmen_GetArchiveState(cs.state, C.uint64_t(block)),
+		state:     C.Carmen_Cpp_GetArchiveState(cs.state, C.uint64_t(block)),
 		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
 	}, nil
 }

@@ -57,53 +57,53 @@ struct Config {
 
 // Wrapper functions for updating individual elements.
 
-void CPP_Carmen_CreateAccount(C_State state, C_Address addr) {
+void Carmen_Cpp_CreateAccount(C_State state, C_Address addr) {
   Update update;
   update.Create(*reinterpret_cast<const Address*>(addr));
   auto data = update.ToBytes();
-  CPP_Carmen_Apply(state, 0, data->data(), data->size());
+  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
 }
 
-void CPP_Carmen_DeleteAccount(C_State state, C_Address addr) {
+void Carmen_Cpp_DeleteAccount(C_State state, C_Address addr) {
   Update update;
   update.Delete(*reinterpret_cast<const Address*>(addr));
   auto data = update.ToBytes();
-  CPP_Carmen_Apply(state, 0, data->data(), data->size());
+  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
 }
 
-void CPP_Carmen_SetBalance(C_State state, C_Address addr, C_Balance balance) {
+void Carmen_Cpp_SetBalance(C_State state, C_Address addr, C_Balance balance) {
   Update update;
   update.Set(*reinterpret_cast<const Address*>(addr),
              *reinterpret_cast<const Balance*>(balance));
   auto data = update.ToBytes();
-  CPP_Carmen_Apply(state, 0, data->data(), data->size());
+  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
 }
 
-void CPP_Carmen_SetCode(C_State state, C_Address addr, C_Code code,
+void Carmen_Cpp_SetCode(C_State state, C_Address addr, C_Code code,
                         uint32_t length) {
   Update update;
   update.Set(*reinterpret_cast<const Address*>(addr),
              Code(std::span(reinterpret_cast<const std::byte*>(code), length)));
   auto data = update.ToBytes();
-  CPP_Carmen_Apply(state, 0, data->data(), data->size());
+  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
 }
 
-void CPP_Carmen_SetNonce(C_State state, C_Address addr, C_Nonce nonce) {
+void Carmen_Cpp_SetNonce(C_State state, C_Address addr, C_Nonce nonce) {
   Update update;
   update.Set(*reinterpret_cast<const Address*>(addr),
              *reinterpret_cast<const Nonce*>(nonce));
   auto data = update.ToBytes();
-  CPP_Carmen_Apply(state, 0, data->data(), data->size());
+  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
 }
 
-void CPP_Carmen_SetStorageValue(C_State state, C_Address addr, C_Key key,
+void Carmen_Cpp_SetStorageValue(C_State state, C_Address addr, C_Key key,
                                 C_Value value) {
   Update update;
   update.Set(*reinterpret_cast<const Address*>(addr),
              *reinterpret_cast<const Key*>(key),
              *reinterpret_cast<const Value*>(value));
   auto data = update.ToBytes();
-  CPP_Carmen_Apply(state, 0, data->data(), data->size());
+  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
 }
 
 class CStateTest : public testing::TestWithParam<Config> {
@@ -112,13 +112,13 @@ class CStateTest : public testing::TestWithParam<Config> {
     dir_ = std::make_unique<TempDir>();
     auto path = dir_->GetPath().string();
     const Config& config = GetParam();
-    state_ = CPP_Carmen_OpenState(config.schema, config.state, config.archive,
+    state_ = Carmen_Cpp_OpenState(config.schema, config.state, config.archive,
                                   path.c_str(), path.size());
     ASSERT_NE(state_, nullptr);
   }
 
   void TearDown() override {
-    CPP_Carmen_ReleaseState(state_);
+    Carmen_Cpp_ReleaseState(state_);
     state_ = nullptr;
   }
 
@@ -138,7 +138,7 @@ TEST_P(CStateTest, AccountsInitiallyDoNotExist) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  CPP_Carmen_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_GetAccountState(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
 }
 
@@ -146,10 +146,10 @@ TEST_P(CStateTest, AccountsCanBeCreated) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  CPP_Carmen_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_GetAccountState(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
-  CPP_Carmen_CreateAccount(state, &addr);
-  CPP_Carmen_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_CreateAccount(state, &addr);
+  Carmen_Cpp_GetAccountState(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kExists);
 }
 
@@ -157,11 +157,11 @@ TEST_P(CStateTest, AccountsCanBeDeleted) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  CPP_Carmen_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_GetAccountState(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
-  CPP_Carmen_CreateAccount(state, &addr);
-  CPP_Carmen_DeleteAccount(state, &addr);
-  CPP_Carmen_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_CreateAccount(state, &addr);
+  Carmen_Cpp_DeleteAccount(state, &addr);
+  Carmen_Cpp_GetAccountState(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
 }
 
@@ -171,7 +171,7 @@ TEST_P(CStateTest, BalancesAreInitiallyZero) {
 
   Address addr{0x01};
   Balance balance{0x02};
-  CPP_Carmen_GetBalance(state, &addr, &balance);
+  Carmen_Cpp_GetBalance(state, &addr, &balance);
   EXPECT_EQ(Balance{}, balance);
 }
 
@@ -181,13 +181,13 @@ TEST_P(CStateTest, BalancesCanBeUpdated) {
 
   Address addr{0x01};
   Balance balance{0x02};
-  CPP_Carmen_GetBalance(state, &addr, &balance);
+  Carmen_Cpp_GetBalance(state, &addr, &balance);
   EXPECT_EQ(Balance{}, balance);
 
   balance = Balance{0x03};
-  CPP_Carmen_SetBalance(state, &addr, &balance);
+  Carmen_Cpp_SetBalance(state, &addr, &balance);
   balance = Balance{};
-  CPP_Carmen_GetBalance(state, &addr, &balance);
+  Carmen_Cpp_GetBalance(state, &addr, &balance);
   EXPECT_EQ(Balance{0x03}, balance);
 }
 
@@ -197,7 +197,7 @@ TEST_P(CStateTest, NoncesAreInitiallyZero) {
 
   Address addr{0x01};
   Nonce nonce{0x02};
-  CPP_Carmen_GetNonce(state, &addr, &nonce);
+  Carmen_Cpp_GetNonce(state, &addr, &nonce);
   EXPECT_EQ(Nonce{}, nonce);
 }
 
@@ -207,13 +207,13 @@ TEST_P(CStateTest, NoncesCanBeUpdated) {
 
   Address addr{0x01};
   Nonce nonce{0x02};
-  CPP_Carmen_GetNonce(state, &addr, &nonce);
+  Carmen_Cpp_GetNonce(state, &addr, &nonce);
   EXPECT_EQ(Nonce{}, nonce);
 
   nonce = Nonce{0x03};
-  CPP_Carmen_SetNonce(state, &addr, &nonce);
+  Carmen_Cpp_SetNonce(state, &addr, &nonce);
   nonce = Nonce{};
-  CPP_Carmen_GetNonce(state, &addr, &nonce);
+  Carmen_Cpp_GetNonce(state, &addr, &nonce);
   EXPECT_EQ(Nonce{0x03}, nonce);
 }
 
@@ -224,7 +224,7 @@ TEST_P(CStateTest, StorageLocationsAreInitiallyZero) {
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  CPP_Carmen_GetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_GetStorageValue(state, &addr, &key, &value);
   EXPECT_EQ(Value{}, value);
 }
 
@@ -235,13 +235,13 @@ TEST_P(CStateTest, StorageLocationsCanBeUpdated) {
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  CPP_Carmen_GetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_GetStorageValue(state, &addr, &key, &value);
   EXPECT_EQ(Value{}, value);
 
   value = Value{0x04};
-  CPP_Carmen_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
   value = Value{};
-  CPP_Carmen_GetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_GetStorageValue(state, &addr, &key, &value);
   EXPECT_EQ(Value{0x04}, value);
 }
 
@@ -250,7 +250,7 @@ TEST_P(CStateTest, StateHashesCanBeObtained) {
   ASSERT_NE(state, nullptr);
 
   Hash hash;
-  CPP_Carmen_GetHash(state, &hash);
+  Carmen_Cpp_GetHash(state, &hash);
   EXPECT_NE(Hash{}, hash);
 }
 
@@ -259,15 +259,15 @@ TEST_P(CStateTest, HashesChangeOnUpdates) {
   ASSERT_NE(state, nullptr);
 
   Hash initial_hash;
-  CPP_Carmen_GetHash(state, &initial_hash);
+  Carmen_Cpp_GetHash(state, &initial_hash);
 
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  CPP_Carmen_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
 
   Hash new_hash;
-  CPP_Carmen_GetHash(state, &new_hash);
+  Carmen_Cpp_GetHash(state, &new_hash);
 
   EXPECT_NE(initial_hash, new_hash);
 }
@@ -279,7 +279,7 @@ TEST_P(CStateTest, CodesAreInitiallyEmpty) {
   Address addr{0x01};
   std::vector<std::byte> code(10);
   uint32_t size = code.size();
-  CPP_Carmen_GetCode(state, &addr, code.data(), &size);
+  Carmen_Cpp_GetCode(state, &addr, code.data(), &size);
   EXPECT_EQ(size, 0);
 }
 
@@ -289,11 +289,11 @@ TEST_P(CStateTest, CodesCanBeSetAndRetrieved) {
 
   Address addr{0x01};
   std::vector<std::byte> code({std::byte{12}, std::byte{14}});
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
 
   std::vector<std::byte> restored(10);
   uint32_t size = restored.size();
-  CPP_Carmen_GetCode(state, &addr, restored.data(), &size);
+  Carmen_Cpp_GetCode(state, &addr, restored.data(), &size);
   ASSERT_EQ(size, 2);
   restored.resize(size);
   EXPECT_EQ(code, restored);
@@ -305,11 +305,11 @@ TEST_P(CStateTest, GetCodeFailsIfBufferIsTooSmall) {
 
   Address addr{0x01};
   std::vector<std::byte> code({std::byte{12}, std::byte{14}});
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
 
   std::vector<std::byte> restored({std::byte{10}});
   uint32_t size = restored.size();
-  CPP_Carmen_GetCode(state, &addr, restored.data(), &size);
+  Carmen_Cpp_GetCode(state, &addr, restored.data(), &size);
   EXPECT_EQ(size, 2);
   EXPECT_THAT(restored, ElementsAre(std::byte{10}));
 }
@@ -319,20 +319,20 @@ TEST_P(CStateTest, CodesAffectHashes) {
   ASSERT_NE(state, nullptr);
 
   Hash initial;
-  CPP_Carmen_GetHash(state, &initial);
+  Carmen_Cpp_GetHash(state, &initial);
 
   Address addr{0x01};
   std::vector<std::byte> code({std::byte{12}, std::byte{14}});
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
 
   Hash first_update;
-  CPP_Carmen_GetHash(state, &first_update);
+  Carmen_Cpp_GetHash(state, &first_update);
 
   code.push_back(std::byte{16});
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
 
   Hash second_update;
-  CPP_Carmen_GetHash(state, &second_update);
+  Carmen_Cpp_GetHash(state, &second_update);
 
   EXPECT_NE(initial, first_update);
   EXPECT_NE(initial, second_update);
@@ -346,17 +346,17 @@ TEST_P(CStateTest, CodeHashesMatchCodes) {
 
   Address addr{0x01};
   Hash hash;
-  CPP_Carmen_GetCodeHash(state, &addr, &hash);
+  Carmen_Cpp_GetCodeHash(state, &addr, &hash);
   EXPECT_EQ(hash, hash_of_empty_code);
 
   std::vector<std::byte> code({std::byte{12}, std::byte{14}});
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
-  CPP_Carmen_GetCodeHash(state, &addr, &hash);
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_GetCodeHash(state, &addr, &hash);
   EXPECT_EQ(hash, GetKeccak256Hash(std::span(code)));
 
   code.clear();
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
-  CPP_Carmen_GetCodeHash(state, &addr, &hash);
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_GetCodeHash(state, &addr, &hash);
   EXPECT_EQ(hash, hash_of_empty_code);
 }
 
@@ -366,23 +366,23 @@ TEST_P(CStateTest, CodeSizesMatchCodes) {
 
   Address addr{0x01};
   std::vector<std::byte> code({std::byte{12}, std::byte{14}});
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
 
   std::uint32_t size;
-  CPP_Carmen_GetCodeSize(state, &addr, &size);
+  Carmen_Cpp_GetCodeSize(state, &addr, &size);
   EXPECT_EQ(size, 2);
 
   code.clear();
-  CPP_Carmen_SetCode(state, &addr, code.data(), code.size());
-  CPP_Carmen_GetCodeSize(state, &addr, &size);
+  Carmen_Cpp_SetCode(state, &addr, code.data(), code.size());
+  Carmen_Cpp_GetCodeSize(state, &addr, &size);
   EXPECT_EQ(size, 0);
 }
 
 TEST_P(CStateTest, ArchiveCanBeAccessedIfEnabled) {
   auto state = GetState();
-  auto archive = CPP_Carmen_GetArchiveState(state, 0);
+  auto archive = Carmen_Cpp_GetArchiveState(state, 0);
   EXPECT_EQ(archive != nullptr, GetParam().archive != kArchive_None);
-  CPP_Carmen_ReleaseState(archive);
+  Carmen_Cpp_ReleaseState(archive);
 }
 
 TEST_P(CStateTest, ArchiveCanBeQueried) {
@@ -406,7 +406,7 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   update.Set(addr, key, value);
 
   ASSERT_OK_AND_ASSIGN(auto data, update.ToBytes());
-  CPP_Carmen_Apply(state, 1, data.data(), data.size());
+  Carmen_Cpp_Apply(state, 1, data.data(), data.size());
 
   Balance balance_restored{0x99};
   Nonce nonce_restored{0x99};
@@ -414,40 +414,40 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   Hash hash{0x99};
 
   // Check archive state at block 0.
-  auto archive0 = CPP_Carmen_GetArchiveState(state, 0);
+  auto archive0 = Carmen_Cpp_GetArchiveState(state, 0);
   ASSERT_TRUE(archive0);
 
   AccountState account_state;
-  CPP_Carmen_GetAccountState(archive0, &addr, &account_state);
+  Carmen_Cpp_GetAccountState(archive0, &addr, &account_state);
   EXPECT_EQ(account_state, AccountState::kUnknown);
-  CPP_Carmen_GetBalance(archive0, &addr, &balance_restored);
+  Carmen_Cpp_GetBalance(archive0, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, Balance{});
-  CPP_Carmen_GetNonce(archive0, &addr, &nonce_restored);
+  Carmen_Cpp_GetNonce(archive0, &addr, &nonce_restored);
   EXPECT_EQ(nonce_restored, Nonce{});
-  CPP_Carmen_GetStorageValue(archive0, &addr, &key, &value_restored);
+  Carmen_Cpp_GetStorageValue(archive0, &addr, &key, &value_restored);
   EXPECT_EQ(value_restored, Value{});
-  CPP_Carmen_GetHash(archive0, &hash);
+  Carmen_Cpp_GetHash(archive0, &hash);
   EXPECT_EQ(hash, Hash{});
 
   std::vector<std::byte> restored_code;
   restored_code.resize(100);
   uint32_t size = restored_code.size();
-  CPP_Carmen_GetCode(archive0, &addr, restored_code.data(), &size);
+  Carmen_Cpp_GetCode(archive0, &addr, restored_code.data(), &size);
   restored_code.resize(size);
   EXPECT_EQ(Code{restored_code}, Code{});
 
   // Check archive state at block 1.
-  auto archive1 = CPP_Carmen_GetArchiveState(archive0, 1);
+  auto archive1 = Carmen_Cpp_GetArchiveState(archive0, 1);
   ASSERT_TRUE(archive1);
-  CPP_Carmen_GetAccountState(archive1, &addr, &account_state);
+  Carmen_Cpp_GetAccountState(archive1, &addr, &account_state);
   EXPECT_EQ(account_state, AccountState::kExists);
-  CPP_Carmen_GetBalance(archive1, &addr, &balance_restored);
+  Carmen_Cpp_GetBalance(archive1, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, balance);
-  CPP_Carmen_GetNonce(archive1, &addr, &nonce_restored);
+  Carmen_Cpp_GetNonce(archive1, &addr, &nonce_restored);
   EXPECT_EQ(nonce_restored, nonce);
-  CPP_Carmen_GetStorageValue(archive1, &addr, &key, &value_restored);
+  Carmen_Cpp_GetStorageValue(archive1, &addr, &key, &value_restored);
   EXPECT_EQ(value_restored, value);
-  CPP_Carmen_GetHash(archive1, &hash);
+  Carmen_Cpp_GetHash(archive1, &hash);
   EXPECT_EQ(
       testing::PrintToString(hash),
       "0x2b527ad4da1618171e2ebc65f87fdaf6de89d144d193838e2b4a018119e581bc");
@@ -455,12 +455,12 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   restored_code.clear();
   restored_code.resize(100);
   size = restored_code.size();
-  CPP_Carmen_GetCode(archive1, &addr, restored_code.data(), &size);
+  Carmen_Cpp_GetCode(archive1, &addr, restored_code.data(), &size);
   restored_code.resize(size);
   EXPECT_EQ(Code{restored_code}, code);
 
-  CPP_Carmen_ReleaseState(archive0);
-  CPP_Carmen_ReleaseState(archive1);
+  Carmen_Cpp_ReleaseState(archive0);
+  Carmen_Cpp_ReleaseState(archive1);
 }
 
 TEST_P(CStateTest, StateCanBeFlushed) {
@@ -469,9 +469,9 @@ TEST_P(CStateTest, StateCanBeFlushed) {
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  CPP_Carmen_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
 
-  CPP_Carmen_Flush(state);
+  Carmen_Cpp_Flush(state);
 }
 
 TEST_P(CStateTest, StateCanBeFlushedMoreThanOnce) {
@@ -480,21 +480,21 @@ TEST_P(CStateTest, StateCanBeFlushedMoreThanOnce) {
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  CPP_Carmen_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
 
-  CPP_Carmen_Flush(state);
+  Carmen_Cpp_Flush(state);
 
   value = Value{0x04};
-  CPP_Carmen_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
 
-  CPP_Carmen_Flush(state);
-  CPP_Carmen_Flush(state);
+  Carmen_Cpp_Flush(state);
+  Carmen_Cpp_Flush(state);
 }
 
 TEST_P(CStateTest, StateCanBeClosed) {
   auto state = GetState();
   ASSERT_NE(state, nullptr);
-  CPP_Carmen_Close(state);
+  Carmen_Cpp_Close(state);
 }
 
 TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
@@ -502,7 +502,7 @@ TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
   ASSERT_NE(state, nullptr);
   char* data = nullptr;
   uint64_t length;
-  CPP_Carmen_GetMemoryFootprint(state, &data, &length);
+  Carmen_Cpp_GetMemoryFootprint(state, &data, &length);
   EXPECT_NE(data, nullptr);
   EXPECT_GT(length, 0);
   free(data);
@@ -517,31 +517,31 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
   auto path = dir.GetPath().string();
   Hash hash;
   {
-    auto state = CPP_Carmen_OpenState(
+    auto state = Carmen_Cpp_OpenState(
         config.schema, config.state, config.archive, path.c_str(), path.size());
     ASSERT_NE(state, nullptr);
 
     Address addr{0x01};
     Key key{0x02};
     Value value{0x03};
-    CPP_Carmen_SetStorageValue(state, &addr, &key, &value);
-    CPP_Carmen_GetHash(state, &hash);
-    CPP_Carmen_ReleaseState(state);
+    Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
+    Carmen_Cpp_GetHash(state, &hash);
+    Carmen_Cpp_ReleaseState(state);
   }
   {
-    auto state = CPP_Carmen_OpenState(
+    auto state = Carmen_Cpp_OpenState(
         config.schema, config.state, config.archive, path.c_str(), path.size());
     ASSERT_NE(state, nullptr);
 
     Address addr{0x01};
     Key key{0x02};
     Value value{};
-    CPP_Carmen_GetStorageValue(state, &addr, &key, &value);
+    Carmen_Cpp_GetStorageValue(state, &addr, &key, &value);
     EXPECT_EQ(value, Value{0x03});
     Hash recovered;
-    CPP_Carmen_GetHash(state, &recovered);
+    Carmen_Cpp_GetHash(state, &recovered);
     EXPECT_EQ(hash, recovered);
-    CPP_Carmen_ReleaseState(state);
+    Carmen_Cpp_ReleaseState(state);
   }
 }
 

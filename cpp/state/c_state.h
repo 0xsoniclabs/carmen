@@ -19,8 +19,8 @@ extern "C" {
 
 // Macro to duplicate function declarations for Rust and CPP
 #define DUPLICATE_FOR_LANGS(ret_type, fn) \
-  ret_type Rust_##fn;                     \
-  ret_type CPP_##fn;
+  ret_type Carmen_Rust_##fn;              \
+  ret_type Carmen_Cpp_##fn;
 
 // The C interface for the storage system is designed to minimize overhead
 // between Go and C. All data is passed as pointers and the memory management
@@ -65,95 +65,93 @@ enum ArchiveImpl {
 //
 // The function returns an opaque pointer to a state object that can be used
 // with the remaining functions in this file. Ownership is transferred to the
-// caller, which is required for releasing it eventually using Carmen_Release().
+// caller, which is required for releasing it eventually using Release().
 // If for some reason the creation of the state instance failed, a nullptr is
 // returned.
-DUPLICATE_FOR_LANGS(C_State,
-                    Carmen_OpenState(C_Schema schema, enum StateImpl state,
-                                     enum ArchiveImpl archive,
-                                     const char* directory, int length));
+DUPLICATE_FOR_LANGS(C_State, OpenState(C_Schema schema, enum StateImpl state,
+                                       enum ArchiveImpl archive,
+                                       const char* directory, int length));
 
 // Flushes all committed state information to disk to guarantee permanent
 // storage. All internally cached modifications is synced to disk.
-DUPLICATE_FOR_LANGS(void, Carmen_Flush(C_State state));
+DUPLICATE_FOR_LANGS(void, Flush(C_State state));
 
 // Closes this state, releasing all IO handles and locks on external resources.
-DUPLICATE_FOR_LANGS(void, Carmen_Close(C_State state));
+DUPLICATE_FOR_LANGS(void, Close(C_State state));
 
 // Releases a state object, thereby causing its destruction. After releasing it,
 // no more operations may be applied on it.
-DUPLICATE_FOR_LANGS(void, Carmen_ReleaseState(C_State state));
+DUPLICATE_FOR_LANGS(void, ReleaseState(C_State state));
 
 // ----------------------------- Archive State --------------------------------
 
 // Creates a state snapshot reflecting the state at the given block height. The
 // resulting state must be released and must not outlive the life time of the
 // provided state.
-DUPLICATE_FOR_LANGS(C_State,
-                    Carmen_GetArchiveState(C_State state, uint64_t block));
+DUPLICATE_FOR_LANGS(C_State, GetArchiveState(C_State state, uint64_t block));
 
 // ------------------------------- Accounts -----------------------------------
 
 // Gets the current state of the given account.
-DUPLICATE_FOR_LANGS(void, Carmen_GetAccountState(C_State state, C_Address addr,
-                                                 C_AccountState out_state));
+DUPLICATE_FOR_LANGS(void, GetAccountState(C_State state, C_Address addr,
+                                          C_AccountState out_state));
 
 // -------------------------------- Balance -----------------------------------
 
 // Retrieves the balance of the given account.
-DUPLICATE_FOR_LANGS(void, Carmen_GetBalance(C_State state, C_Address addr,
-                                            C_Balance out_balance));
+DUPLICATE_FOR_LANGS(void, GetBalance(C_State state, C_Address addr,
+                                     C_Balance out_balance));
 
 // --------------------------------- Nonce ------------------------------------
 
 // Retrieves the nonce of the given account.
-DUPLICATE_FOR_LANGS(void, Carmen_GetNonce(C_State state, C_Address addr,
-                                          C_Nonce out_nonce));
+DUPLICATE_FOR_LANGS(void,
+                    GetNonce(C_State state, C_Address addr, C_Nonce out_nonce));
 
 // -------------------------------- Storage -----------------------------------
 
 // Retrieves the value of storage location (addr,key) in the given state.
-DUPLICATE_FOR_LANGS(void, Carmen_GetStorageValue(C_State state, C_Address addr,
-                                                 C_Key key, C_Value out_value));
+DUPLICATE_FOR_LANGS(void, GetStorageValue(C_State state, C_Address addr,
+                                          C_Key key, C_Value out_value));
 
 // --------------------------------- Code -------------------------------------
 
 // Retrieves the code stored under the given address.
-DUPLICATE_FOR_LANGS(void,
-                    Carmen_GetCode(C_State state, C_Address addr,
-                                   C_Code out_code, uint32_t* out_length));
+DUPLICATE_FOR_LANGS(void, GetCode(C_State state, C_Address addr,
+                                  C_Code out_code, uint32_t* out_length));
 
 // Retrieves the hash of the code stored under the given address.
-DUPLICATE_FOR_LANGS(void, Carmen_GetCodeHash(C_State state, C_Address addr,
-                                             C_Hash out_hash));
+DUPLICATE_FOR_LANGS(void, GetCodeHash(C_State state, C_Address addr,
+                                      C_Hash out_hash));
 
 // Retrieves the code length stored under the given address.
-DUPLICATE_FOR_LANGS(void, Carmen_GetCodeSize(C_State state, C_Address addr,
-                                             uint32_t* out_length));
+DUPLICATE_FOR_LANGS(void, GetCodeSize(C_State state, C_Address addr,
+                                      uint32_t* out_length));
 
 // -------------------------------- Update ------------------------------------
 
 // Applies the provided block update to the maintained state.
-DUPLICATE_FOR_LANGS(void, Carmen_Apply(C_State state, uint64_t block,
-                                       C_Update update, uint64_t length));
+DUPLICATE_FOR_LANGS(void, Apply(C_State state, uint64_t block, C_Update update,
+                                uint64_t length));
 
 // ------------------------------ Global Hash ---------------------------------
 
 // Retrieves a global state hash of the given state.
-DUPLICATE_FOR_LANGS(void, Carmen_GetHash(C_State state, C_Hash out_hash));
+DUPLICATE_FOR_LANGS(void, GetHash(C_State state, C_Hash out_hash));
 
 // --------------------------- Memory Footprint -------------------------------
 
 // Retrieves a summary of the used memory. After the call the out variable will
 // point to a buffer with a serialized summary that needs to be freed by the
 // caller.
-DUPLICATE_FOR_LANGS(void, Carmen_GetMemoryFootprint(C_State state, char** out,
-                                                    uint64_t* out_length));
+DUPLICATE_FOR_LANGS(void, GetMemoryFootprint(C_State state, char** out,
+                                             uint64_t* out_length));
 
-// Releases the buffer returned by Carmen_GetMemoryFootprint.
-DUPLICATE_FOR_LANGS(void,
-                    Carmen_ReleaseMemoryFootprintBuffer(char* buf,
-                                                        uint64_t buf_length));
+// Releases the buffer returned by GetMemoryFootprint.
+DUPLICATE_FOR_LANGS(void, ReleaseMemoryFootprintBuffer(char* buf,
+                                                       uint64_t buf_length));
+
+#undef DUPLICATE_FOR_LANGS
 
 #if __cplusplus
 }
