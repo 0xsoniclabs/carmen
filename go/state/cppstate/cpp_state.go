@@ -249,7 +249,7 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 	var size C.uint64_t
 	C.Carmen_GetMemoryFootprint(cs.state, &buffer, &size)
 	defer func() {
-		C.free(unsafe.Pointer(buffer))
+		C.Carmen_ReleaseMemoryFootprintBuffer(buffer, size)
 	}()
 
 	data := C.GoBytes(unsafe.Pointer(buffer), C.int(size))

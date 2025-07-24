@@ -59,7 +59,7 @@ enum ArchiveImpl {
 // state information, the information is loaded.
 //
 // The function returns an opaque pointer to a state object that can be used
-// with the remaining functions in this file. Ownership is transfered to the
+// with the remaining functions in this file. Ownership is transferred to the
 // caller, which is required for releasing it eventually using Carmen_Release().
 // If for some reason the creation of the state instance failed, a nullptr is
 // returned.
@@ -80,7 +80,7 @@ void Carmen_ReleaseState(C_State state);
 
 // ----------------------------- Archive State --------------------------------
 
-// Creates a  state snapshot reflecting the state at the given block height. The
+// Creates a state snapshot reflecting the state at the given block height. The
 // resulting state must be released and must not outlive the life time of the
 // provided state.
 C_State Carmen_GetArchiveState(C_State state, uint64_t block);
@@ -136,6 +136,9 @@ void Carmen_GetHash(C_State state, C_Hash out_hash);
 // point to a buffer with a serialized summary that needs to be freed by the
 // caller.
 void Carmen_GetMemoryFootprint(C_State state, char** out, uint64_t* out_length);
+
+// Releases the buffer returned by Carmen_GetMemoryFootprint.
+void Carmen_ReleaseMemoryFootprintBuffer(char* buf, uint64_t buf_length);
 
 #if __cplusplus
 }

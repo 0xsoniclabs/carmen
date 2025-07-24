@@ -420,4 +420,6 @@ void Carmen_GetMemoryFootprint(C_State state, char** out,
   std::memcpy(*out, data.data(), data.size());
 }
 
+void Carmen_ReleaseMemoryFootprintBuffer(char* buf, uint64_t) { free(buf); }
+
 }  // extern "C"
