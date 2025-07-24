@@ -31,7 +31,7 @@ type NodeSource interface {
 }
 
 // singletonNodeReader is a wrapper around a single NodeReader.
-// When method NodeReader is called, it returns always the same NodeReader.
+// When the method NodeReader is called, it returns always the same NodeReader.
 type singletonNodeReader struct {
 	source NodeSource
 }
