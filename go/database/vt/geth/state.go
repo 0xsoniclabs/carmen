@@ -78,7 +78,13 @@ func (s *verkleState) SetNonce(address common.Address, nonce common.Nonce) error
 	}
 
 	account.Nonce = nonce.ToUint64()
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0) // TODO codeLen must be set
+
+	size, err := s.GetCodeSize(address)
+	if err != nil {
+		return err
+	}
+
+	return s.verkle.UpdateAccount(ethcommon.Address(address), account, size)
 }
 
 func (s *verkleState) SetStorage(address common.Address, key common.Key, value common.Value) error {
@@ -194,7 +200,12 @@ func (s *verkleState) SetBalance(address common.Address, balance amount.Amount) 
 	val := balance.Uint256()
 	account.Balance = &val
 
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0) // TODO codeLen must be set
+	size, err := s.GetCodeSize(address)
+	if err != nil {
+		return err
+	}
+
+	return s.verkle.UpdateAccount(ethcommon.Address(address), account, size)
 }
 
 func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) {
