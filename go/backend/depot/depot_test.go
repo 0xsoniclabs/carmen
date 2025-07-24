@@ -122,7 +122,12 @@ func TestSetGet(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(0, A)
 			if err != nil {
@@ -170,7 +175,12 @@ func TestSetToArbitraryPosition(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(5, A)
 			if err != nil {
@@ -208,7 +218,12 @@ func TestDepotMutability(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(4, B)
 			if err != nil {
@@ -282,7 +297,12 @@ func TestHashing(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			initialHash, err := d.GetStateHash()
 			if err != nil {
@@ -312,7 +332,12 @@ func TestHashAfterChangingBack(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err := d.Set(0, A)
 			if err != nil {
@@ -359,7 +384,12 @@ func TestDepotPages(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			dpp, isPageProvider := d.(hashtree.PageProvider)
 			if !isPageProvider {
@@ -449,7 +479,11 @@ func TestDepotSnapshotRecovery(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
 			depot1 := factory.getDepot(t.TempDir())
-			defer depot1.Close()
+			defer func() {
+				if err := depot1.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			const numEntries = 32
 			for i := 0; i < numEntries; i++ {
@@ -474,7 +508,11 @@ func TestDepotSnapshotRecovery(t *testing.T) {
 			}
 
 			depot2 := factory.getDepot(t.TempDir())
-			defer depot2.Close()
+			defer func() {
+				if err := depot2.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			err = depot2.Restore(snapshot1data)
 			if err != nil {
@@ -502,7 +540,11 @@ func TestDepotSnapshotRecoveryOverriding(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, 3, 2) {
 		t.Run(factory.label, func(t *testing.T) {
 			depot1 := factory.getDepot(t.TempDir())
-			defer depot1.Close()
+			defer func() {
+				if err := depot1.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			const numEntries = 32
 			for i := 0; i < numEntries; i++ {
@@ -528,7 +570,11 @@ func TestDepotSnapshotRecoveryOverriding(t *testing.T) {
 			}
 
 			depot2 := factory.getDepot(t.TempDir())
-			defer depot2.Close()
+			defer func() {
+				if err := depot2.Close(); err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			// the depot2 will be filled with data before the restore - these should be removed during restore
 			for i := 0; i < numEntries+5; i++ {
@@ -592,7 +638,12 @@ func TestStoresHashesAgainstReferenceOutput(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, 3, 2) {
 		t.Run(factory.label, func(t *testing.T) {
 			d := factory.getDepot(t.TempDir())
-			defer d.Close()
+			defer func() {
+				err := d.Close()
+				if err != nil {
+					t.Fatalf("failed to close depot; %s", err)
+				}
+			}()
 
 			var value []byte
 			for i, expectedHash := range expectedHashes {

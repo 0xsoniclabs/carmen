@@ -12,6 +12,7 @@ package memory
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -45,7 +46,7 @@ const (
 	fileNamePreparedCheckpoint  = "prepare.json"
 )
 
-func OpenStock[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string) (stock.Stock[I, V], error) {
+func OpenStock[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string) (s stock.Stock[I, V], err error) {
 	res := &inMemoryStock[I, V]{
 		values:    make([]V, 0, 10),
 		freeList:  make([]I, 0, 10),
@@ -104,7 +105,9 @@ func OpenStock[I stock.Index, V any](encoder stock.ValueEncoder[V], directory st
 		if err != nil {
 			return nil, err
 		}
-		defer file.Close()
+		defer func() {
+			err = errors.Join(err, file.Close())
+		}()
 		for i := 0; i < meta.ValueListLength; i++ {
 			_, err := io.ReadFull(file, buffer)
 			if err != nil {
@@ -132,7 +135,9 @@ func OpenStock[I stock.Index, V any](encoder stock.ValueEncoder[V], directory st
 		if err != nil {
 			return nil, err
 		}
-		defer file.Close()
+		defer func() {
+			err = errors.Join(err, file.Close())
+		}()
 		for i := 0; i < meta.FreeListLength; i++ {
 			_, err := io.ReadFull(file, buffer)
 			if err != nil {
@@ -218,9 +223,9 @@ func (s *inMemoryStock[I, V]) Flush() error {
 	return s.writeTo(s.directory)
 }
 
-func (s *inMemoryStock[I, V]) writeTo(dir string) error {
+func (s *inMemoryStock[I, V]) writeTo(dir string) (err error) {
 	// Create the directory if needed.
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
@@ -240,7 +245,7 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, fileNameMetadata), metadata, 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(dir, fileNameMetadata), metadata, 0600); err != nil {
 		return err
 	}
 
@@ -248,11 +253,16 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) error {
 	if f, err := os.Create(filepath.Join(dir, fileNameValues)); err != nil {
 		return err
 	} else {
-		defer f.Close()
+		defer func() {
+			err = errors.Join(err, f.Close())
+		}()
 
 		buffer := make([]byte, s.encoder.GetEncodedSize())
 		for _, v := range s.values {
-			s.encoder.Store(buffer, &v)
+			err = s.encoder.Store(buffer, &v)
+			if err != nil {
+				return err
+			}
 			_, err := f.Write(buffer)
 			if err != nil {
 				return err
@@ -268,7 +278,9 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) error {
 	if f, err := os.Create(filepath.Join(dir, fileNameFreeList)); err != nil {
 		return err
 	} else {
-		defer f.Close()
+		defer func() {
+			err = errors.Join(err, f.Close())
+		}()
 
 		buffer := make([]byte, indexSize)
 		for _, i := range s.freeList {

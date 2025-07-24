@@ -4617,9 +4617,13 @@ func TestAccountNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := AccountNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := AccountNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.storageHashDirty = true
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4638,9 +4642,13 @@ func TestAccountNodeEncoderWithChildHash(t *testing.T) {
 	}
 	encoder := AccountNodeEncoderWithChildHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := AccountNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4662,9 +4670,13 @@ func TestAccountNodeWithPathLengthEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := AccountNodeWithPathLengthEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := AccountNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.storageHashDirty = true
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4696,9 +4708,13 @@ func TestBranchNodeEncoderWithChildHashes(t *testing.T) {
 	}
 	encoder := BranchNodeEncoderWithChildHashes{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := BranchNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4733,9 +4749,13 @@ func TestBranchNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := BranchNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := BranchNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.dirtyHashes = ^uint16(0)
 	node.embeddedChildren = 0
 	if !reflect.DeepEqual(node, recovered) {
@@ -4755,9 +4775,13 @@ func TestExtensionNodeEncoderWithChildHash(t *testing.T) {
 	}
 	encoder := ExtensionNodeEncoderWithChildHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := ExtensionNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4778,9 +4802,13 @@ func TestExtensionNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := ExtensionNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := ExtensionNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.nextHashDirty = true
 	node.nextIsEmbedded = false
 	if !reflect.DeepEqual(node, recovered) {
@@ -4795,9 +4823,13 @@ func TestValueNodeEncoderWithoutNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeEncoderWithoutNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4815,9 +4847,13 @@ func TestValueNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
 	}
@@ -4831,9 +4867,13 @@ func TestValueNodeWithPathLengthEncoderWithoutNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeWithPathLengthEncoderWithoutNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4852,9 +4892,13 @@ func TestValueNodeWithPathLengthEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeWithPathLengthEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	if err := encoder.Store(buffer, &node); err != nil {
+		t.Fatalf("failed to store node into encoder: %v", err)
+	}
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	if err := encoder.Load(buffer, &recovered); err != nil {
+		t.Fatalf("failed to load node from encoder: %v", err)
+	}
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
 	}
@@ -7929,7 +7973,7 @@ type Branch struct {
 func (b *Branch) Build(ctx *nodeContext) (NodeReference, *shared.Shared[Node]) {
 	ref := NewNodeReference(BranchId(ctx.nextIndex()))
 	res := &BranchNode{}
-	res.nodeBase.clean = !b.dirty
+	res.clean = !b.dirty
 	res.frozen = b.frozen
 	for i, desc := range b.children {
 		ref, _ := ctx.Build(desc)
@@ -7973,7 +8017,7 @@ type Extension struct {
 func (e *Extension) Build(ctx *nodeContext) (NodeReference, *shared.Shared[Node]) {
 	ref := NewNodeReference(ExtensionId(ctx.nextIndex()))
 	res := &ExtensionNode{}
-	res.nodeBase.clean = !e.dirty
+	res.clean = !e.dirty
 	res.frozen = e.frozen
 	res.path = CreatePathFromNibbles(e.path)
 	res.next, _ = ctx.Build(e.next)

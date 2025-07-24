@@ -2186,13 +2186,17 @@ func TestDatabase_ActiveHeadQueryBlockDataBaseClose(t *testing.T) {
 
 	queryStarted := make(chan bool)
 	done := &atomic.Bool{}
-	go db.QueryHeadState(func(QueryContext) {
-		defer wg.Done()
-		queryStarted <- true
-		// keep this alive to block the closing of the database
-		time.Sleep(time.Second)
-		done.Store(true)
-	})
+	var syncErr *error
+	go func() {
+		goErr := db.QueryHeadState(func(QueryContext) {
+			defer wg.Done()
+			queryStarted <- true
+			// keep this alive to block the closing of the database
+			time.Sleep(time.Second)
+			done.Store(true)
+		})
+		syncErr = &goErr
+	}()
 
 	go func() {
 		defer wg.Done()
@@ -2207,6 +2211,9 @@ func TestDatabase_ActiveHeadQueryBlockDataBaseClose(t *testing.T) {
 	}()
 
 	wg.Wait()
+	if syncErr != nil {
+		t.Errorf("query failed: %v", *syncErr)
+	}
 }
 
 func TestDatabase_QueryCannotBeStartedOnClosedDatabase(t *testing.T) {
