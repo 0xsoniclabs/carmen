@@ -12,6 +12,8 @@ package geth
 
 import (
 	"bytes"
+	"errors"
+	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -74,7 +76,6 @@ func TestCreateAccounts_Many_Updates_Success(t *testing.T) {
 			}
 		}
 	}
-
 }
 
 func TestUpdate_And_Get_Code_Success(t *testing.T) {
@@ -269,5 +270,116 @@ func TestGetHash_Is_Updated_Each_Block(t *testing.T) {
 		}
 
 		prevHash = hash
+	}
+}
+
+func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
+	st, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	if _, err := st.GetArchiveState(0); !errors.Is(err, state.NoArchiveError) {
+		t.Errorf("expected noarchive error, got %v", err)
+	}
+}
+
+func TestState_GetArchiveBlockHeight_ReturnsNoArchiveError(t *testing.T) {
+	st, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	if _, _, err := st.GetArchiveBlockHeight(); !errors.Is(err, state.NoArchiveError) {
+		t.Errorf("expected noarchive error, got %v", err)
+	}
+}
+
+func TestState_DeletedAccount_Unsupported(t *testing.T) {
+	st, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	update := common.Update{}
+	update.DeletedAccounts = append(update.DeletedAccounts, common.Address{})
+
+	if err := st.Apply(0, update); err == nil {
+		t.Errorf("expected error when applying update with deleted accounts, got nil")
+	}
+}
+
+func TestState_HasEmptyStorage_Unsupported(t *testing.T) {
+	st, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	if _, err := st.HasEmptyStorage(common.Address{}); err == nil {
+		t.Errorf("expected error when checking empty storage, got nil")
+	}
+}
+
+func TestState_Snapshot_Unsupported(t *testing.T) {
+	st, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	if _, err := st.GetProof(); !errors.Is(err, backend.ErrSnapshotNotSupported) {
+		t.Errorf("expected snapshot not supported error, got %v", err)
+	}
+
+	if _, err := st.CreateSnapshot(); !errors.Is(err, backend.ErrSnapshotNotSupported) {
+		t.Errorf("expected snapshot not supported error, got %v", err)
+	}
+
+	if err := st.Restore(nil); !errors.Is(err, backend.ErrSnapshotNotSupported) {
+		t.Errorf("expected snapshot not supported error, got %v", err)
+	}
+
+	if _, err := st.GetSnapshotVerifier(nil); !errors.Is(err, backend.ErrSnapshotNotSupported) {
+		t.Errorf("expected snapshot not supported error, got %v", err)
+	}
+}
+
+func TestState_Export_Unsupported(t *testing.T) {
+	st, err := NewState(state.Parameters{})
+	if err != nil {
+		t.Fatalf("failed to create vt state: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("failed to close state: %v", err)
+		}
+	}()
+
+	if _, err := st.Export(nil, nil); err == nil {
+		t.Errorf("expected error when exporting nil, got nil")
 	}
 }

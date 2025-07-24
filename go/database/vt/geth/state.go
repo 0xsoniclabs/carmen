@@ -160,7 +160,7 @@ func (s *verkleState) GetCodeHash(address common.Address) (common.Hash, error) {
 }
 
 func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
-	return false, nil
+	return false, fmt.Errorf("not supported: verkle trie does not support has empty storage")
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
@@ -176,7 +176,7 @@ func (s *verkleState) GetArchiveState(block uint64) (state.State, error) {
 }
 
 func (s *verkleState) GetArchiveBlockHeight() (height uint64, empty bool, err error) {
-	return 0, true, nil
+	return 0, true, state.NoArchiveError
 }
 
 func (s *verkleState) CreateAccount(address common.Address) error {
@@ -242,7 +242,7 @@ func (s *verkleState) CreateWitnessProof(address common.Address, keys ...common.
 //
 
 func (s *verkleState) GetProof() (backend.Proof, error) {
-	return nil, archive.ErrWitnessProofNotSupported // not supported at the moment, will be implemented later
+	return nil, backend.ErrSnapshotNotSupported // not supported at the moment, will be implemented later
 }
 
 func (s *verkleState) CreateSnapshot() (backend.Snapshot, error) {
@@ -262,15 +262,11 @@ func (s *verkleState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVeri
 //
 
 func (s *verkleState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
-	return common.Hash{}, nil
+	return common.Hash{}, fmt.Errorf("not supported: verkle trie does not support export")
 }
 
 func (s *verkleState) Check() error {
 	return nil
-}
-
-func (s *verkleState) MemoryFootprint() uint64 {
-	return 0
 }
 
 //
