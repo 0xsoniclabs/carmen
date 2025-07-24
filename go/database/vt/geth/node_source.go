@@ -19,7 +19,7 @@ import (
 
 // NodeSource is an interface for a source of verkle nodes.
 // It provides methods to get and set nodes at specific paths.
-// It is implemented to support implementation of verkle trie
+// It supports the adaptation for Geth's Verkle trie implementation.
 // adopted from Geth implementation.
 type NodeSource interface {
 	common.FlushAndCloser
