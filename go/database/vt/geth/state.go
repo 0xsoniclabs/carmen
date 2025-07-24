@@ -11,6 +11,7 @@
 package geth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -42,11 +43,11 @@ func init() {
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
 func NewState(params state.Parameters) (state.State, error) {
-	source := singletonNodeReader{source: NewMemorySource()}
+	source := singleNodeReader{source: newMemorySource()}
 	pointCache := utils.NewPointCache(4096)
 	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, source, pointCache)
 	if err != nil {
-		return nil, errors.Join(source.get().Close(), err)
+		return nil, errors.Join(source.getSource().Close(), err)
 	}
 	return &verkleState{
 		pointCache: pointCache,
@@ -62,7 +63,7 @@ func NewState(params state.Parameters) (state.State, error) {
 type verkleState struct {
 	pointCache *utils.PointCache
 	verkle     *trie.VerkleTrie
-	source     singletonNodeReader
+	source     singleNodeReader
 	codes      map[common.Address][]byte // current Verkle Trie does not support code retrieval, so we use a map to store codes
 }
 
@@ -77,7 +78,7 @@ func (s *verkleState) SetNonce(address common.Address, nonce common.Nonce) error
 	}
 
 	account.Nonce = nonce.ToUint64()
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
+	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0) // TODO codeLen must be set
 }
 
 func (s *verkleState) SetStorage(address common.Address, key common.Key, value common.Value) error {
@@ -103,7 +104,7 @@ func (s *verkleState) SetCode(address common.Address, code []byte) error {
 	}
 
 	// put in the local map for retrieval
-	s.codes[address] = code
+	s.codes[address] = bytes.Clone(code)
 	return nil
 }
 
@@ -193,7 +194,7 @@ func (s *verkleState) SetBalance(address common.Address, balance amount.Amount) 
 	val := balance.Uint256()
 	account.Balance = &val
 
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
+	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0) // TODO codeLen must be set
 }
 
 func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) {
@@ -215,7 +216,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 	rootHash, nodeSet := s.verkle.Commit(false)
 	for path, node := range nodeSet.Nodes {
-		errs = append(errs, s.source.get().Set([]byte(path), node.Blob))
+		errs = append(errs, s.source.getSource().set([]byte(path), node.Blob))
 	}
 
 	if err := errors.Join(errs...); err != nil {
@@ -224,9 +225,13 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 	// recreate the verkle trie to flush the in-memory nodes
 	vt, err := trie.NewVerkleTrie(rootHash, s.source, s.pointCache)
+	if err != nil {
+		return err
+	}
+
 	s.verkle = vt
 
-	return err
+	return nil
 }
 
 //
@@ -274,13 +279,13 @@ func (s *verkleState) Check() error {
 //
 
 func (s *verkleState) Flush() error {
-	return s.source.get().Flush()
+	return s.source.getSource().Flush()
 }
 
 func (s *verkleState) Close() error {
 	return errors.Join(
 		s.Flush(),
-		s.source.get().Close(),
+		s.source.getSource().Close(),
 	)
 }
 

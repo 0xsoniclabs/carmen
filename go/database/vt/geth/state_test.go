@@ -210,6 +210,30 @@ func TestGetBalance_Account_Empty(t *testing.T) {
 	if !balance.IsZero() {
 		t.Errorf("expected zero balance for empty account, got %s", balance)
 	}
+
+	nonce, err := state.GetNonce(common.Address{})
+	if err != nil {
+		t.Fatalf("failed to get nonce for empty account: %v", err)
+	}
+	if nonce != common.ToNonce(0) {
+		t.Errorf("expected nonce 0 for empty account, got %d", nonce)
+	}
+
+	value, err := state.GetCodeHash(common.Address{})
+	if err != nil {
+		t.Fatalf("failed to get code hash for empty account: %v", err)
+	}
+	if value != common.Keccak256([]byte{}) {
+		t.Errorf("expected empty code hash for empty account, got %s", value)
+	}
+
+	code, err := state.GetCode(common.Address{})
+	if err != nil {
+		t.Fatalf("failed to get code for empty account: %v", err)
+	}
+	if len(code) != 0 {
+		t.Errorf("expected empty code for empty account, got %d bytes", len(code))
+	}
 }
 
 func TestGetStorage_Empty(t *testing.T) {

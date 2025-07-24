@@ -21,26 +21,26 @@ import (
 // It provides methods to get and set nodes at specific paths.
 // It supports the adaptation for Geth's Verkle trie implementation.
 // adopted from Geth implementation.
-type NodeSource interface {
+type nodeSource interface {
 	common.FlushAndCloser
 	database.NodeReader
 
 	// Set sets the node at the given path.
 	// The input is navigation path in tree and the serialised node.
-	Set(path []byte, value []byte) error
+	set(path []byte, value []byte) error
 }
 
-// singletonNodeReader is a wrapper around a single NodeReader.
+// singleNodeReader is a wrapper around a single NodeReader.
 // When the method NodeReader is called, it returns always the same NodeReader.
-type singletonNodeReader struct {
-	source NodeSource
+type singleNodeReader struct {
+	source nodeSource
 }
 
-func (r singletonNodeReader) NodeReader(stateRoot ethcommon.Hash) (database.NodeReader, error) {
+func (r singleNodeReader) NodeReader(stateRoot ethcommon.Hash) (database.NodeReader, error) {
 	return r.source, nil
 }
 
 // get is a convenience method to retrieve the underlying NodeSource.
-func (r singletonNodeReader) get() NodeSource {
+func (r singleNodeReader) getSource() nodeSource {
 	return r.source
 }

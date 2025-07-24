@@ -21,22 +21,26 @@ import (
 // It is itself not intended for real-life usage, as the amount of memory
 // would quickly grow to an unmanageable size.
 type memorySource struct {
-	nodes map[immutable.Bytes][]byte
+	nodes map[immutable.Bytes]immutable.Bytes
 }
 
-func NewMemorySource() NodeSource {
+func newMemorySource() nodeSource {
 	return &memorySource{
-		nodes: make(map[immutable.Bytes][]byte),
+		nodes: make(map[immutable.Bytes]immutable.Bytes),
 	}
 }
 
 func (s *memorySource) Node(owner common.Hash, path []byte, hash common.Hash) ([]byte, error) {
 	key := immutable.NewBytes(path)
-	return s.nodes[key], nil
+	bytes, exists := s.nodes[key]
+	if !exists {
+		return nil, nil
+	}
+	return bytes.ToBytes(), nil
 }
 
-func (s *memorySource) Set(path []byte, value []byte) error {
-	s.nodes[immutable.NewBytes(path)] = value
+func (s *memorySource) set(path []byte, value []byte) error {
+	s.nodes[immutable.NewBytes(path)] = immutable.NewBytes(value)
 
 	return nil
 }
