@@ -63,7 +63,7 @@ type verkleState struct {
 	pointCache *utils.PointCache
 	verkle     *trie.VerkleTrie
 	source     singletonNodeReader
-	codes      map[common.Address][]byte // current Verkle Trie does not support code storage, so we use a map to store codes
+	codes      map[common.Address][]byte // current Verkle Trie does not support code retrieval, so we use a map to store codes
 }
 
 func (s *verkleState) DeleteAccount(address common.Address) error {
