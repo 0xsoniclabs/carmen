@@ -32,10 +32,7 @@ func NewMemorySource() NodeSource {
 
 func (s *memorySource) Node(owner common.Hash, path []byte, hash common.Hash) ([]byte, error) {
 	key := immutable.NewBytes(path)
-	if node, exists := s.nodes[key]; exists {
-		return node, nil
-	}
-	return nil, nil
+	return s.nodes[key], nil
 }
 
 func (s *memorySource) Set(path []byte, value []byte) error {
