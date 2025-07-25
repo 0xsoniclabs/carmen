@@ -7,11 +7,14 @@
 //
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
+
 package geth
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMemorySource_SetAndGetNode(t *testing.T) {
@@ -23,32 +26,18 @@ func TestMemorySource_SetAndGetNode(t *testing.T) {
 
 	// Initially, Node should return nil
 	got, err := src.Node(owner, path, hash)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Errorf("expected nil, got %v", got)
-	}
+	require.NoError(t, err, "unexpected error")
+	require.Nil(t, got, "expected nil")
 
 	// Set value and retrieve
-	if err := src.set(path, value); err != nil {
-		t.Fatalf("set failed: %v", err)
-	}
+	require.NoError(t, src.set(path, value), "set failed")
 	got, err = src.Node(owner, path, hash)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if string(got) != string(value) {
-		t.Errorf("expected %v, got %v", value, got)
-	}
+	require.NoError(t, err, "unexpected error")
+	require.Equal(t, value, got, "unexpected value")
 }
 
 func TestMemorySource_FlushAndClose(t *testing.T) {
 	src := newMemorySource()
-	if err := src.Flush(); err != nil {
-		t.Errorf("Flush should not error, got %v", err)
-	}
-	if err := src.Close(); err != nil {
-		t.Errorf("Close should not error, got %v", err)
-	}
+	require.NoError(t, src.Flush(), "Flush should not error")
+	require.NoError(t, src.Close(), "Close should not error")
 }
