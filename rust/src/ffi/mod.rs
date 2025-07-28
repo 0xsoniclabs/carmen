@@ -8,4 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod ffi;
+mod exported;
+
+#[allow(non_upper_case_globals, non_camel_case_types, non_snake_case, unused)]
+mod bindings {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
