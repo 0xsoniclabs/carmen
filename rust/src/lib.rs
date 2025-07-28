@@ -16,6 +16,7 @@ mod error;
 mod ffi;
 mod storage;
 pub mod types;
+pub mod vt;
 
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
