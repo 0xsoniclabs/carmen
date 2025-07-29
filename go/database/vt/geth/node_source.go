@@ -39,7 +39,7 @@ func (r singleNodeReader) NodeReader(stateRoot ethcommon.Hash) (database.NodeRea
 	return r.source, nil
 }
 
-// get is a convenience method to retrieve the underlying NodeSource.
+// getSource is a convenience method to retrieve the underlying NodeSource.
 func (r singleNodeReader) getSource() nodeSource {
 	return r.source
 }
