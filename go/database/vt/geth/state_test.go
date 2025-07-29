@@ -139,7 +139,7 @@ func TestSet_And_Get_Storage_Success(t *testing.T) {
 	}
 }
 
-func TestGetBalance_Account_Empty(t *testing.T) {
+func TestState_GetBalance_InitialEmptyTrie_AllAccountPropertiesAreZero(t *testing.T) {
 	state, err := NewState(state.Parameters{})
 	require.NoError(t, err, "failed to create vt state")
 	defer func() {
