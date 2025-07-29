@@ -66,11 +66,11 @@ enum NodeRef<'a> {
 type Id = u64;
 
 trait Storage {
-    fn read(&mut self, id: Id) -> Result<Node, Error>;
+    fn read(&self, id: Id) -> Result<Node, Error>;
 
-    fn create(&mut self, node: &Node) -> Result<Id, Error>;
+    fn create(&self, node: &Node) -> Result<Id, Error>;
 
-    fn flush(&mut self) -> Result<(), Error>;
+    fn flush(&self) -> Result<(), Error>;
 }
 
 // struct MmapStorage {

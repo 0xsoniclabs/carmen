@@ -60,7 +60,7 @@ impl FileStorageManager {
 }
 
 impl Storage for FileStorageManager {
-    fn read(&mut self, id: Id) -> Result<Node, Error> {
+    fn read(&self, id: Id) -> Result<Node, Error> {
         let idx = id & !Self::PREFIX_MASK;
         match id & Self::PREFIX_MASK {
             Self::INNER_NODE_PREFIX => {
@@ -79,7 +79,7 @@ impl Storage for FileStorageManager {
         }
     }
 
-    fn create(&mut self, node: &Node) -> Result<Id, Error> {
+    fn create(&self, node: &Node) -> Result<Id, Error> {
         match node {
             Node::Inner(inner_node) => {
                 let idx = self.inner_nodes.create(inner_node)?;
@@ -103,7 +103,7 @@ impl Storage for FileStorageManager {
         }
     }
 
-    fn flush(&mut self) -> Result<(), Error> {
+    fn flush(&self) -> Result<(), Error> {
         self.inner_nodes.flush()?;
         self.two_children_leaf_nodes.flush()?;
         self.all_children_leaf_nodes.flush()
@@ -129,24 +129,24 @@ impl<T: FromBytes + IntoBytes + Immutable> NodeFileStorage<T> {
         })
     }
 
-    fn read(&mut self, idx: Id) -> Result<T, Error> {
+    fn read(&self, idx: Id) -> Result<T, Error> {
         let offset = idx * size_of::<T>() as u64;
         if self.file.metadata()?.len() < offset + size_of::<T>() as u64 {
             return Err(Error::NotFound);
         }
-        self.file.seek(SeekFrom::Start(offset))?;
-        let node = T::read_from_io(&mut self.file)?;
+        (&self.file).seek(SeekFrom::Start(offset))?;
+        let node = T::read_from_io(&self.file)?;
         Ok(node)
     }
 
-    fn create(&mut self, node: &T) -> Result<Id, Error> {
-        let len = self.file.seek(SeekFrom::End(0))?;
-        node.write_to_io(&mut self.file)?;
+    fn create(&self, node: &T) -> Result<Id, Error> {
+        let len = (&self.file).seek(SeekFrom::End(0))?;
+        node.write_to_io(&self.file)?;
         let idx = len / size_of::<T>() as u64;
         Ok(idx)
     }
 
-    fn flush(&mut self) -> Result<(), Error> {
+    fn flush(&self) -> Result<(), Error> {
         self.file.sync_data()?;
         Ok(())
     }
@@ -154,6 +154,8 @@ impl<T: FromBytes + IntoBytes + Immutable> NodeFileStorage<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, time::Duration};
+
     use super::*;
 
     #[test]
@@ -174,7 +176,7 @@ mod tests {
     #[test]
     fn read_write() {
         let dir = tempfile::tempdir().unwrap();
-        let mut storage = FileStorageManager::new_in_dir(dir).unwrap();
+        let storage = FileStorageManager::new_in_dir(dir).unwrap();
 
         let node_1 = Node::Inner(Box::new(InnerNode {
             values: [[1; 32]; 256],
@@ -213,7 +215,7 @@ mod tests {
     #[test]
     fn read_non_existent_node_returns_not_found_error() {
         let dir = tempfile::tempdir().unwrap();
-        let mut storage = FileStorageManager::new_in_dir(dir).unwrap();
+        let storage = FileStorageManager::new_in_dir(dir).unwrap();
 
         assert!(matches!(storage.read(0), Err(Error::NotFound)));
 
@@ -223,5 +225,44 @@ mod tests {
         let id = storage.create(&node).unwrap();
         assert_eq!(storage.read(id).unwrap(), node);
         assert!(matches!(storage.read(id + 1), Err(Error::NotFound)));
+    }
+
+    #[test]
+    fn read_write_multiple_fds_concurrently() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let storage =
+            NodeFileStorage::<InnerNode>::new(dir.path().join("test_storage.bin")).unwrap();
+        let storage = Arc::new(storage);
+
+        let node_1 = Box::new(InnerNode {
+            values: [[1; 32]; 256],
+        });
+        let node_2 = Box::new(InnerNode {
+            values: [[2; 32]; 256],
+        });
+
+        std::thread::spawn({
+            let storage = Arc::clone(&storage);
+            let node_1 = node_1.clone();
+            let node_2 = node_2.clone();
+            move || {
+                let idx_1 = storage.create(&node_1).unwrap();
+                assert_eq!(&storage.read(idx_1).unwrap(), &*node_1);
+
+                std::thread::sleep(Duration::from_millis(100));
+                assert_eq!(&storage.read(idx_1 + 1).unwrap(), &*node_2);
+            }
+        });
+        std::thread::spawn({
+            let storage = Arc::clone(&storage);
+            move || {
+                let idx_2 = storage.create(&node_2).unwrap();
+                assert_eq!(&storage.read(idx_2).unwrap(), &*node_2);
+
+                std::thread::sleep(Duration::from_millis(100));
+                assert_eq!(&storage.read(idx_2 - 1).unwrap(), &*node_1);
+            }
+        });
     }
 }
