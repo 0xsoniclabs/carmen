@@ -484,16 +484,11 @@ mod tests {
                 );
             },
             |encoded_update: &mut Vec<u8>, update| {
-                encoded_update.extend_from_slice(
-                    update
-                        .slots
-                        .iter()
-                        .flat_map(|b| {
-                            [b.addr.as_slice(), b.key.as_slice(), b.value.as_slice()].concat()
-                        })
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                );
+                // This closure corresponds to the last read in Update::from_encoded. If we would
+                // put a write operation here and also call it, Update::from_encoded will succeed.
+                // But this test is only supposed to test the cases where parsing fails so we make
+                // sure this closure is never called.
+                panic!("this closure should never be called");
             },
         ];
 
