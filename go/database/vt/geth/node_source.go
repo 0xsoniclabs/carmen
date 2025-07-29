@@ -24,7 +24,7 @@ type nodeSource interface {
 	common.FlushAndCloser
 	database.NodeReader
 
-	// Set sets the node at the given path.
+	// set sets the node at the given path.
 	// The input is navigation path in tree and the serialised node.
 	set(path []byte, value []byte) error
 }
