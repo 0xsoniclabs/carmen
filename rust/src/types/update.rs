@@ -365,6 +365,8 @@ mod tests {
         assert_eq!(decoded_update, Err("invalid version number: 1".to_owned()));
     }
 
+    /// This test checks for every read operation in `Update::from_encoded` that in the case the
+    /// read fails because the buffer is too short, an error is returned.
     #[test]
     fn update_from_encoded_returns_error_when_buffer_too_short() {
         let update = Update {
@@ -414,6 +416,7 @@ mod tests {
             ],
         };
 
+        // This is a list of all writes that mirror all reads in `Update::from_encoded`.
         let writes = [
             (|encoded_update: &mut Vec<u8>, _update| encoded_update.push(VERSION_0))
                 as fn(&mut Vec<u8>, &Update<'_>),
@@ -494,6 +497,11 @@ mod tests {
             },
         ];
 
+        // To let every read operation in `Update::from_encoded` fail, we execute only 0
+        // writes and then run `Update::from_encoded`, then we execute 1 write and run
+        // `Update::from_encoded`, and so on, until we have executed all but the last writes.
+        // This way the first read operation will fail, then the first will succeed but the second
+        // will fail, and so on until all succeed except for the last one.
         for write_count in 0..writes.len() {
             let mut encoded_update = Vec::new();
 
