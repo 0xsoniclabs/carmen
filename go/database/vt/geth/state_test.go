@@ -21,9 +21,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateAccounts_Many_Updates_Success(t *testing.T) {
+func TestState_CreateAccounts_Many_Updates_Success(t *testing.T) {
 	state, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, state.Close(), "failed to close state")
 	}()
@@ -45,24 +45,24 @@ func TestCreateAccounts_Many_Updates_Success(t *testing.T) {
 		for j := 0; j < numInsertsPerBlock; j++ {
 			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
 			exists, err := state.Exists(addr)
-			require.NoError(t, err, "failed to check existence of account %s", addr)
-			require.True(t, exists, "account %s should exist but does not", addr)
+			require.NoError(t, err, "failed to check existence of account %x", addr)
+			require.True(t, exists, "account %x should exist but does not", addr)
 
 			balance, err := state.GetBalance(addr)
-			require.NoError(t, err, "failed to get balance for account %s", addr)
+			require.NoError(t, err, "failed to get balance for account %x", addr)
 			expectedBalance := amount.New(uint64(i * j))
-			require.Equal(t, 0, balance.ToBig().Cmp(expectedBalance.ToBig()), "unexpected balance for account %s: got %s, want %s", addr, balance, expectedBalance)
+			require.Equal(t, 0, balance.ToBig().Cmp(expectedBalance.ToBig()), "unexpected balance for account %x: got %s, want %s", addr, balance, expectedBalance)
 
 			nonce, err := state.GetNonce(addr)
-			require.NoError(t, err, "failed to get nonce for account %s", addr)
-			require.Equal(t, common.ToNonce(1), nonce, "unexpected nonce for account %s", addr)
+			require.NoError(t, err, "failed to get nonce for account %x", addr)
+			require.Equal(t, common.ToNonce(1), nonce, "unexpected nonce for account %x", addr)
 		}
 	}
 }
 
-func TestUpdate_And_Get_Code_Success(t *testing.T) {
+func TestState_Update_And_Get_Code_Success(t *testing.T) {
 	state, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, state.Close(), "failed to close state")
 	}()
@@ -91,22 +91,22 @@ func TestUpdate_And_Get_Code_Success(t *testing.T) {
 		addr := common.Address{byte(i), byte(i >> 8)}
 
 		code, err := state.GetCode(addr)
-		require.NoError(t, err, "failed to get code for account %s", addr)
-		require.True(t, bytes.Equal(code, expectedCodes[i]), "unexpected code for account %s: got %v, want %v", addr, code, expectedCodes[i])
+		require.NoError(t, err, "failed to get code for account %x", addr)
+		require.True(t, bytes.Equal(code, expectedCodes[i]), "unexpected code for account %x: got %v, want %v", addr, code, expectedCodes[i])
 
 		codeHash, err := state.GetCodeHash(addr)
-		require.NoError(t, err, "failed to get code hash for account %s", addr)
-		require.Equal(t, common.Keccak256(expectedCodes[i]), codeHash, "unexpected code hash for account %s", addr)
+		require.NoError(t, err, "failed to get code hash for account %x", addr)
+		require.Equal(t, common.Keccak256(expectedCodes[i]), codeHash, "unexpected code hash for account %x", addr)
 
 		codeLen, err := state.GetCodeSize(addr)
-		require.NoError(t, err, "failed to get code size for account %s", addr)
-		require.Equal(t, len(expectedCodes[i]), codeLen, "unexpected code size for account %s", addr)
+		require.NoError(t, err, "failed to get code size for account %x", addr)
+		require.Equal(t, len(expectedCodes[i]), codeLen, "unexpected code size for account %x", addr)
 	}
 }
 
-func TestSet_And_Get_Storage_Success(t *testing.T) {
+func TestState_Set_And_Get_Storage_Success(t *testing.T) {
 	state, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, state.Close(), "failed to close state")
 	}()
@@ -133,15 +133,15 @@ func TestSet_And_Get_Storage_Success(t *testing.T) {
 		for j := 0; j < numOfKeys; j++ {
 			key := common.Key{byte(j), byte(j >> 8)}
 			value, err := state.GetStorage(addr, key)
-			require.NoError(t, err, "failed to get storage for account %s", addr)
-			require.Equal(t, common.Value{byte(i + j), byte((i + j) >> 8)}, value, "unexpected storage value for account %s, key %s", addr, key)
+			require.NoError(t, err, "failed to get storage for account %x", addr)
+			require.Equal(t, common.Value{byte(i + j), byte((i + j) >> 8)}, value, "unexpected storage value for account %x, key %x", addr, key)
 		}
 	}
 }
 
 func TestState_GetBalance_InitialEmptyTrie_AllAccountPropertiesAreZero(t *testing.T) {
 	state, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, state.Close(), "failed to close state")
 	}()
@@ -163,9 +163,9 @@ func TestState_GetBalance_InitialEmptyTrie_AllAccountPropertiesAreZero(t *testin
 	require.Equal(t, 0, len(code), "expected empty code for empty account, got %d bytes", len(code))
 }
 
-func TestGetStorage_Empty(t *testing.T) {
+func TestState_GetStorage_Empty_Returns_Empty_Value(t *testing.T) {
 	state, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, state.Close(), "failed to close state")
 	}()
@@ -175,7 +175,7 @@ func TestGetStorage_Empty(t *testing.T) {
 	require.Equal(t, common.Value{}, value, "unexpected storage value for empty account")
 }
 
-func TestGetHash_Is_Updated_Each_Block(t *testing.T) {
+func TestState_GetHash_Is_Updated_Each_Block(t *testing.T) {
 	state, err := NewState(state.Parameters{})
 	require.NoError(t, err, "failed to create vt state")
 	defer func() {
@@ -197,7 +197,7 @@ func TestGetHash_Is_Updated_Each_Block(t *testing.T) {
 		require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
 
 		hash, err := state.GetHash()
-		require.NoError(t, err, "failed to get block %d", i)
+		require.NoError(t, err, "failed to get hash for block %d", i)
 		require.NotEqual(t, prevHash, hash, "hash did not change")
 		prevHash = hash
 	}
@@ -205,7 +205,7 @@ func TestGetHash_Is_Updated_Each_Block(t *testing.T) {
 
 func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
 	st, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, st.Close(), "failed to close state")
 	}()
@@ -216,7 +216,7 @@ func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
 
 func TestState_GetArchiveBlockHeight_ReturnsNoArchiveError(t *testing.T) {
 	st, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, st.Close(), "failed to close state")
 	}()
@@ -241,18 +241,18 @@ func TestState_DeletedAccount_Unsupported(t *testing.T) {
 
 func TestState_HasEmptyStorage_Unsupported(t *testing.T) {
 	st, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, st.Close(), "failed to close state")
 	}()
 
 	_, err = st.HasEmptyStorage(common.Address{})
-	require.Error(t, err, "expected error when checking empty storage")
+	require.ErrorContains(t, err, "not supported", "expected error containing 'not supported'")
 }
 
 func TestState_Snapshot_Unsupported(t *testing.T) {
 	st, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, st.Close(), "failed to close state")
 	}()
@@ -272,11 +272,11 @@ func TestState_Snapshot_Unsupported(t *testing.T) {
 
 func TestState_Export_Unsupported(t *testing.T) {
 	st, err := NewState(state.Parameters{})
-	require.NoError(t, err, "failed to create vt state")
+	require.NoError(t, err, "failed to create state")
 	defer func() {
 		require.NoError(t, st.Close(), "failed to close state")
 	}()
 
 	_, err = st.Export(nil, nil)
-	require.Error(t, err, "expected error when exporting nil")
+	require.ErrorContains(t, err, "not supported", "expected error containing 'not supported'")
 }
