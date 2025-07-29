@@ -9,10 +9,12 @@ on:
     branches: [ main ]
     paths:
     - "rust/**"
+    - "cpp/state/c_state.h"
   pull_request:
     branches: [ main ]
     paths:
     - "rust/**"
+    - "cpp/state/c_state.h"
 
 env:
   CARGO_TERM_COLOR: always
