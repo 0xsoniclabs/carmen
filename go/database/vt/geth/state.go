@@ -39,7 +39,7 @@ func init() {
 }
 
 // NewState creates a new verkle state using an in-memory source.
-// It uses Verkle Trie from the Ethereum Geth implementation.
+// It uses the Verkle Trie from the Ethereum Geth implementation.
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
 func NewState(params state.Parameters) (state.State, error) {
