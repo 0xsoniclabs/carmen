@@ -154,7 +154,7 @@ impl<T: FromBytes + IntoBytes + Immutable> NodeFileStorage<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{io::Write, sync::Arc, time::Duration};
 
     use super::*;
 
@@ -228,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn read_write_multiple_fds_concurrently() {
+    fn read_write_concurrently() {
         let dir = tempfile::tempdir().unwrap();
 
         let storage =
@@ -242,7 +242,7 @@ mod tests {
             values: [[2; 32]; 256],
         });
 
-        std::thread::spawn({
+        let t1 = std::thread::spawn({
             let storage = Arc::clone(&storage);
             let node_1 = node_1.clone();
             let node_2 = node_2.clone();
@@ -250,19 +250,96 @@ mod tests {
                 let idx_1 = storage.create(&node_1).unwrap();
                 assert_eq!(&storage.read(idx_1).unwrap(), &*node_1);
 
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(200));
                 assert_eq!(&storage.read(idx_1 + 1).unwrap(), &*node_2);
             }
         });
-        std::thread::spawn({
+        let t2 = std::thread::spawn({
             let storage = Arc::clone(&storage);
             move || {
+                std::thread::sleep(Duration::from_millis(100));
                 let idx_2 = storage.create(&node_2).unwrap();
                 assert_eq!(&storage.read(idx_2).unwrap(), &*node_2);
 
                 std::thread::sleep(Duration::from_millis(100));
                 assert_eq!(&storage.read(idx_2 - 1).unwrap(), &*node_1);
             }
+        });
+        t1.join().unwrap();
+        t2.join().unwrap();
+    }
+
+    #[test]
+    fn cursor_is_shared() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(dir.path().join("test_storage.bin"))
+            .unwrap();
+        let file = Arc::new(file);
+        let t1 = std::thread::spawn({
+            let file = Arc::clone(&file);
+            move || {
+                assert_eq!(file.metadata().unwrap().len(), 0);
+                std::thread::sleep(Duration::from_millis(100));
+                (&*file).write_all([1; 32].as_slice()).unwrap();
+                assert_eq!(file.metadata().unwrap().len(), 32);
+            }
+        });
+        let t2 = std::thread::spawn({
+            let file = Arc::clone(&file);
+            move || {
+                assert_eq!(file.metadata().unwrap().len(), 0);
+                std::thread::sleep(Duration::from_millis(200));
+                assert_eq!(file.metadata().unwrap().len(), 32);
+            }
+        });
+        t1.join().unwrap();
+        t2.join().unwrap();
+    }
+
+    #[test]
+    fn read_write_multiple_fds_interleaved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_storage.bin");
+
+        let node_1 = Box::new(InnerNode {
+            values: [[1; 32]; 256],
+        });
+        let node_2 = Box::new(InnerNode {
+            values: [[2; 32]; 256],
+        });
+
+        std::thread::scope(|s| {
+            s.spawn({
+                let path = path.clone();
+                let node_1 = node_1.clone();
+                let node_2 = node_2.clone();
+                move || {
+                    let storage = NodeFileStorage::<InnerNode>::new(path).unwrap();
+
+                    let idx_1 = storage.create(&node_1).unwrap();
+                    assert_eq!(&storage.read(idx_1).unwrap(), &*node_1);
+
+                    std::thread::sleep(Duration::from_millis(200));
+                    assert_eq!(&storage.read(idx_1 + 1).unwrap(), &*node_2);
+                }
+            });
+            s.spawn({
+                move || {
+                    let storage = NodeFileStorage::<InnerNode>::new(path).unwrap();
+
+                    std::thread::sleep(Duration::from_millis(100));
+                    let idx_2 = storage.create(&node_2).unwrap();
+                    assert_eq!(&storage.read(idx_2).unwrap(), &*node_2);
+
+                    std::thread::sleep(Duration::from_millis(100));
+                    assert_eq!(&storage.read(idx_2 - 1).unwrap(), &*node_1);
+                }
+            });
         });
     }
 }
