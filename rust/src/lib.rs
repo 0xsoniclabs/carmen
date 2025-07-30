@@ -1,3 +1,4 @@
+use ark_ff::{BigInteger, fields::PrimeField};
 use banderwagon::{Element, Fr};
 use ipa_multipoint::{
     committer::{Committer, DefaultCommitter},
@@ -7,7 +8,9 @@ use ipa_multipoint::{
 };
 use verkle_trie::constants::{CRS, PRECOMPUTED_WEIGHTS, new_crs};
 
-#[derive(Clone)]
+pub mod trie;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Value {
     scalar: Fr,
 }
@@ -18,8 +21,28 @@ impl Value {
             scalar: Fr::from(scalar),
         }
     }
+
+    pub fn from_le_bytes(bytes: &[u8]) -> Self {
+        // TODO: Handle longer slices
+        let mut arr = [0u8; 32];
+        arr[0..bytes.len()].copy_from_slice(bytes);
+        Value {
+            // TODO: Is _mod_order what we want?
+            scalar: Fr::from_le_bytes_mod_order(&arr),
+        }
+    }
+
+    pub fn set_bit128(&mut self) {
+        let mut bytes = self.scalar.into_bigint().to_bytes_be();
+        bytes[15] |= 0x01;
+        self.scalar = Fr::from_be_bytes_mod_order(&bytes);
+    }
 }
 
+// TODO: Implement default value - should be the same (I think?!) than Commitment::default().to_value()
+//  => Use in place of the latter in trie.rs
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commitment {
     point: Element,
 }
@@ -58,6 +81,16 @@ impl Commitment {
 
     pub fn compress(&self) -> [u8; 32] {
         self.point.to_bytes()
+    }
+}
+
+// TODO: Add test
+impl Default for Commitment {
+    fn default() -> Self {
+        Commitment {
+            // TODO: Does this make sense?
+            point: Element::zero(),
+        }
     }
 }
 
@@ -101,7 +134,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn foo() {
+    fn value_from_le_bytes_uses_little_endian_and_right_zero_padding() {
+        let value = Value::from_le_bytes(&[]);
+        assert_eq!(value, Value::new(0));
+
+        let value = Value::from_le_bytes(&[0x01]);
+        assert_eq!(value, Value::new(1));
+
+        let value = Value::from_le_bytes(&[0x01, 0x02]);
+        assert_eq!(value, Value::new(0x0201));
+
+        let value = Value::from_le_bytes(&[0x01, 0x02, 0x03]);
+        assert_eq!(value, Value::new(0x030201));
+    }
+
+    #[test]
+    fn value_set_bit128_sets_correct_bit() {
+        // Starting from zero
+        let mut value = Value::new(0);
+        assert_eq!(value.scalar.into_bigint().to_bytes_be(), &[0; 32]);
+
+        value.set_bit128();
+        let mut expected = [0; 32];
+        expected[15] = 0x01;
+        assert_eq!(value.scalar.into_bigint().to_bytes_be(), expected);
+
+        value.set_bit128();
+        assert_eq!(value.scalar.into_bigint().to_bytes_be(), expected);
+
+        // Starting from non-zero value
+        let mut value = Value::new(0xf1f2f3f4f5f6f7f8);
+        let mut expected = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xf1, 0xf2,
+            0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
+        ];
+        assert_eq!(value.scalar.into_bigint().to_bytes_be(), expected);
+
+        value.set_bit128();
+        expected[15] = 0x01;
+        assert_eq!(value.scalar.into_bigint().to_bytes_be(), expected);
+
+        value.set_bit128();
+        assert_eq!(value.scalar.into_bigint().to_bytes_be(), expected);
+    }
+
+    #[test]
+    fn commitment_committed_values_can_be_used_to_proof_values() {
         let mut values = Vec::with_capacity(256);
         for i in 0..256 {
             values.push(Value::new(i + 1));

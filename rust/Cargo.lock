@@ -190,6 +190,7 @@ dependencies = [
 name = "carmen"
 version = "0.1.0"
 dependencies = [
+ "ark-ff",
  "banderwagon",
  "ipa-multipoint",
  "verkle-db",
