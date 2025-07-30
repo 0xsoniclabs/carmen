@@ -35,13 +35,6 @@ type Trie struct {
 	root node
 }
 
-// NewTrie creates a new empty Verkle trie.
-// The root node is initialized to an empty
-// inner node.
-func NewTrie() *Trie {
-	return &Trie{root: &inner{}}
-}
-
 // Get retrieves the value associated with the given key from the trie. All keys
 // that have not been set will return the zero value.
 func (t *Trie) Get(key Key) Value {
@@ -55,7 +48,7 @@ func (t *Trie) Get(key Key) Value {
 // already exists, its value will be updated.
 func (t *Trie) Set(key Key, value Value) {
 	if t.root == nil {
-		t.root = newLeaf(key)
+		t.root = &inner{}
 	}
 	t.root = t.root.set(key, 0, value)
 }
