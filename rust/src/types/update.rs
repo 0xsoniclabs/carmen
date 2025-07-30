@@ -182,8 +182,8 @@ mod tests {
     #[test]
     fn read_array_returns_array_of_requested_length_and_advances_buffer() {
         let mut bytes = [1, 2, 3, 4, 5].as_slice();
-        let slice = read_array(&mut bytes);
-        assert_eq!(slice, Ok([1, 2, 3]));
+        let array = read_array(&mut bytes);
+        assert_eq!(array, Ok([1, 2, 3]));
         assert_eq!(bytes, [4, 5]);
     }
 
