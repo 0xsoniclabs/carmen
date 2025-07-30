@@ -33,7 +33,7 @@ type State struct {
 // NewState creates a new, empty in-memory state instance.
 func NewState() *State {
 	return &State{
-		trie: &trie.Trie{},
+		trie: trie.NewTrie(),
 	}
 }
 

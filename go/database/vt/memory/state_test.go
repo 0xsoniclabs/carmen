@@ -13,6 +13,7 @@ package memory
 import (
 	"bytes"
 	"crypto/rand"
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
@@ -24,7 +25,6 @@ import (
 	geth_trie "github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb/database"
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
 
@@ -464,6 +464,42 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 
 		require.Equal(want, hash)
 	}
+}
+
+func TestState_NonEmptyAccount_EmptyStorage_Matching_Commitment(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+		Nonces: []common.NonceUpdate{
+			{Account: addr1, Nonce: common.ToNonce(1)},
+		},
+		Codes: []common.CodeUpdate{
+			{Account: addr1, Code: []byte{0x01, 0x02}},
+		},
+	}
+
+	state := NewState()
+	state.Apply(0, update)
+
+	codeLen, err := state.GetCodeSize(addr1)
+	require.NoError(err)
+	require.Equal(2, codeLen, "Code size should be zero for empty code")
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	reference.Apply(0, update)
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
 }
 
 // --- reference implementation from geth ---
