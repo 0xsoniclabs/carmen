@@ -8,8 +8,28 @@ pub struct Trie {
     root: Node,
 }
 
+impl Trie {
+    pub fn new() -> Self {
+        Trie { root: Node::Empty }
+    }
+
+    pub fn get(&self, key: &TrieKey) -> TrieValue {
+        self.root.get(key, 0)
+    }
+
+    pub fn set(&mut self, key: &TrieKey, value: &TrieValue) {
+        let root = std::mem::replace(&mut self.root, Node::Empty);
+        self.root = root.set(key, 0, value);
+    }
+
+    pub fn commit(&mut self) -> Commitment {
+        self.root.commit()
+    }
+}
+
 #[derive(Debug)]
 pub enum Node {
+    Empty,
     Inner(InnerNode),
     Leaf(LeafNode),
 }
@@ -17,6 +37,7 @@ pub enum Node {
 impl Node {
     pub fn get(&self, key: &TrieKey, depth: u8) -> TrieValue {
         match self {
+            Node::Empty => TrieValue::default(),
             Node::Inner(inner) => inner.get(key, depth),
             Node::Leaf(leaf) => leaf.get(key, depth),
         }
@@ -24,6 +45,10 @@ impl Node {
 
     pub fn set(self, key: &TrieKey, depth: u8, value: &TrieValue) -> Node {
         match self {
+            Node::Empty => {
+                let leaf = LeafNode::new(key);
+                leaf.set(key, depth, value)
+            }
             Node::Inner(inner) => inner.set(key, depth, value),
             Node::Leaf(leaf) => leaf.set(key, depth, value),
         }
@@ -33,6 +58,7 @@ impl Node {
     // TODO: Can we make this use internal mutability to not require &mut self?
     pub fn commit(&mut self) -> Commitment {
         match self {
+            Node::Empty => Commitment::default(),
             Node::Inner(inner) => inner.commit(),
             Node::Leaf(leaf) => leaf.commit(),
         }
@@ -538,5 +564,92 @@ mod tests {
         assert!(leaf.commitment_clean);
 
         assert_ne!(first, third);
+    }
+
+    #[test]
+    fn trie_new_creates_empty_trie() {
+        let trie = Trie::new();
+        assert_eq!(trie.get(&make_key(&[1])), TrieValue::default());
+        assert_eq!(trie.get(&make_key(&[2])), TrieValue::default());
+        assert_eq!(trie.get(&make_key(&[3])), TrieValue::default());
+    }
+
+    #[test]
+    fn trie_values_can_be_set_and_retrieved() {
+        let mut trie = Trie::new();
+
+        assert_eq!(trie.get(&make_key(&[1])), TrieValue::default());
+        assert_eq!(trie.get(&make_key(&[2])), TrieValue::default());
+        assert_eq!(trie.get(&make_leaf_key(&[0], 1)), TrieValue::default());
+        assert_eq!(trie.get(&make_leaf_key(&[0], 2)), TrieValue::default());
+
+        trie.set(&make_key(&[1]), &make_value(1));
+
+        assert_eq!(trie.get(&make_key(&[1])), make_value(1));
+        assert_eq!(trie.get(&make_key(&[2])), TrieValue::default());
+        assert_eq!(trie.get(&make_leaf_key(&[0], 1)), TrieValue::default());
+        assert_eq!(trie.get(&make_leaf_key(&[0], 2)), TrieValue::default());
+
+        trie.set(&make_key(&[2]), &make_value(2));
+
+        assert_eq!(trie.get(&make_key(&[1])), make_value(1));
+        assert_eq!(trie.get(&make_key(&[2])), make_value(2));
+        assert_eq!(trie.get(&make_leaf_key(&[0], 1)), TrieValue::default());
+        assert_eq!(trie.get(&make_leaf_key(&[0], 2)), TrieValue::default());
+
+        trie.set(&make_leaf_key(&[0], 1), &make_value(3));
+
+        assert_eq!(trie.get(&make_key(&[1])), make_value(1));
+        assert_eq!(trie.get(&make_key(&[2])), make_value(2));
+        assert_eq!(trie.get(&make_leaf_key(&[0], 1)), make_value(3));
+        assert_eq!(trie.get(&make_leaf_key(&[0], 2)), TrieValue::default());
+
+        trie.set(&make_leaf_key(&[0], 2), &make_value(4));
+
+        assert_eq!(trie.get(&make_key(&[1])), make_value(1));
+        assert_eq!(trie.get(&make_key(&[2])), make_value(2));
+        assert_eq!(trie.get(&make_leaf_key(&[0], 1)), make_value(3));
+        assert_eq!(trie.get(&make_leaf_key(&[0], 2)), make_value(4));
+    }
+
+    #[test]
+    fn trie_values_can_be_updated() {
+        let mut trie = Trie::new();
+
+        let key = make_key(&[1]);
+        assert_eq!(trie.get(&key), TrieValue::default());
+        trie.set(&key, &make_value(1));
+        assert_eq!(trie.get(&key), make_value(1));
+        trie.set(&key, &make_value(2));
+        assert_eq!(trie.get(&key), make_value(2));
+        trie.set(&key, &make_value(3));
+        assert_eq!(trie.get(&key), make_value(3));
+    }
+
+    #[test]
+    fn trie_many_values_can_be_set_and_retrieved() {
+        const N: u32 = 1000;
+
+        let to_key = |i: u32| {
+            make_leaf_key(
+                &[(i >> 8 & 0x0F) as u8, (i >> 4 & 0x0F) as u8],
+                (i & 0x0F) as u8,
+            )
+        };
+
+        let mut trie = Trie::new();
+
+        for i in 0..N {
+            for j in 0..N {
+                let want = if j < i {
+                    make_value(j as u64)
+                } else {
+                    TrieValue::default()
+                };
+                let got = trie.get(&to_key(j));
+                assert_eq!(got, want, "Mismatch for key: {:?}", to_key(j));
+            }
+            trie.set(&to_key(i), &make_value(i as u64));
+        }
     }
 }
