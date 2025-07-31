@@ -139,6 +139,33 @@ func TestState_Set_And_Get_Storage_Success(t *testing.T) {
 	}
 }
 
+func TestState_Set_And_Get_Storage_Success_Padded_Right(t *testing.T) {
+	state, err := NewState(state.Parameters{})
+	require.NoError(t, err, "failed to create state")
+	defer func() {
+		require.NoError(t, state.Close(), "failed to close state")
+	}()
+
+	// keys and values are prepended with zeros
+	// Geth stores these values without leading zeros,
+	// and thus when retrieving, we must add correct padding
+	update := common.Update{}
+	addr := common.Address{0, 0, 1}
+	key := common.Key{0, 0, 2}
+	value := common.Value{0, 0, 3}
+	update.Slots = append(update.Slots, common.SlotUpdate{
+		Account: addr,
+		Key:     key,
+		Value:   value,
+	})
+
+	require.NoError(t, state.Apply(0, update), "failed to apply")
+
+	gotValue, err := state.GetStorage(addr, key)
+	require.NoError(t, err, "failed to get storage for account %x", addr)
+	require.Equal(t, value, gotValue, "unexpected storage value for account %x, key %x", addr, key)
+}
+
 func TestState_GetBalance_InitialEmptyTrie_AllAccountPropertiesAreZero(t *testing.T) {
 	state, err := NewState(state.Parameters{})
 	require.NoError(t, err, "failed to create state")

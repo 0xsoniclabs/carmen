@@ -139,7 +139,7 @@ func (s *verkleState) GetStorage(address common.Address, key common.Key) (common
 	}
 
 	var commonValue common.Value
-	copy(commonValue[:], value)
+	copy(commonValue[32-len(value):], value)
 	return commonValue, nil
 }
 
