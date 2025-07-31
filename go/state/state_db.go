@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math/big"
 	"sync"
 	"unsafe"
 
@@ -612,12 +611,6 @@ func (s *stateDB) HasSuicided(addr common.Address) bool {
 func (s *stateDB) Empty(addr common.Address) bool {
 	// Defined as balance == nonce == code == 0
 	return s.GetBalance(addr).IsZero() && s.GetNonce(addr) == 0 && s.GetCodeSize(addr) == 0
-}
-
-func clone(val *big.Int) *big.Int {
-	res := new(big.Int)
-	res.Set(val)
-	return res
 }
 
 func (s *stateDB) GetBalance(addr common.Address) amount.Amount {

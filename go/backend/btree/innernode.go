@@ -369,7 +369,7 @@ func (m *InnerNode[K]) next(iterator *Iterator[K]) (k K) {
 	return
 }
 
-func (m InnerNode[K]) String() string {
+func (m *InnerNode[K]) String() string {
 	var str string
 	for i, child := range m.children {
 		str += fmt.Sprintf("%v", child)
@@ -386,7 +386,7 @@ func (m InnerNode[K]) String() string {
 	return fmt.Sprintf("[%v]", str)
 }
 
-func (m InnerNode[K]) checkProperties(treeDepth *int, currentLevel int) error {
+func (m *InnerNode[K]) checkProperties(treeDepth *int, currentLevel int) error {
 	for _, child := range m.children {
 		if err := child.checkProperties(treeDepth, currentLevel+1); err != nil {
 			return err

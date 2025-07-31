@@ -214,7 +214,7 @@ type LevelDbMemoryFootprintWrapper struct {
 
 func (wrapper *LevelDbMemoryFootprintWrapper) GetMemoryFootprint() *common.MemoryFootprint {
 	var ldbStats leveldb.DBStats
-	err := wrapper.DB.Stats(&ldbStats)
+	err := wrapper.Stats(&ldbStats)
 	if err != nil {
 		panic(fmt.Errorf("failed to get LevelDB Stats; %s", err))
 	}

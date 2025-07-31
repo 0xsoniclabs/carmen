@@ -703,7 +703,7 @@ func TestVerification_CanInterrupt(t *testing.T) {
 			}
 
 			// Make sure database was released
-			ns, err := openVerificationNodeSource(nil, dir, config)
+			ns, err := openVerificationNodeSource(context.Background(), dir, config)
 			if err != nil {
 				t.Fatalf("%v: failed open node source: %v", name, err)
 			}
