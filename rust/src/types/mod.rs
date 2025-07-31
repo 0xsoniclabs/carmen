@@ -12,14 +12,14 @@ pub use update::Update;
 
 mod update;
 
-/// The Carmen S6 database state implementation.
+/// The Carmen database state implementation.
 pub enum StateImpl {
     Memory = 0,
     File = 1,
     LevelDb = 2,
 }
 
-/// The Carmen S6 archive implementation.
+/// The Carmen archive state implementation.
 pub enum ArchiveImpl {
     None = 0,
     LevelDb = 1,

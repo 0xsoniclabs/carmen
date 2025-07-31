@@ -46,7 +46,7 @@ pub struct SlotUpdate {
 }
 
 /// A block update.
-/// This update contains all changes to the state of the Carmen S6 database
+/// This update contains all changes to the state of the Carmen database
 /// that happened in a single block.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Update<'d> {

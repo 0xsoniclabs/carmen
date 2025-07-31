@@ -16,25 +16,28 @@ mod error;
 mod ffi;
 mod types;
 
-/// Opens a new [CarmenS6Db] database object based on the provided implementation maintaining
+/// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
 /// created. If it is empty, a new, empty state is initialized. If it contains
 /// state information, the information is loaded.
-pub fn open_carmen_s6_db(
-    _schema: u8,
+pub fn open_carmen_db(
+    schema: u8,
     _state: StateImpl,
     _archive: ArchiveImpl,
     _directory: &[u8],
-) -> Result<Box<dyn CarmenS6Db>, Error> {
-    // here we would choose the specific implementation of CarmenS6Db based on the state and
-    // archive.
-    Ok(Box::new(DbState))
+) -> Result<Box<dyn CarmenDb>, Error> {
+    if schema != 6 {
+        return Err(Error::UnsupportedSchema(schema));
+    }
+    // here we would open the specific live and archive implementations of CarmenDb based on the
+    // state and archive impls.
+    Ok(Box::new(CarmenS6Db))
 }
 
-/// The safe Carmen S6 interface.
+/// The safe Carmen interface.
 /// This is the safe interface which gets called from the exported FFI functions.
 #[cfg_attr(test, mockall::automock)]
-pub trait CarmenS6Db {
+pub trait CarmenDb {
     /// Flushes all committed state information to disk to guarantee permanent
     /// storage. All internally cached modifications are synced to disk.
     fn flush(&mut self) -> Result<(), Error>;
@@ -45,7 +48,7 @@ pub trait CarmenS6Db {
     /// Creates a state snapshot reflecting the state at the given block height. The
     /// resulting state must be released and must not outlive the life time of the
     /// provided state.
-    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenS6Db>, Error>;
+    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error>;
 
     /// Returns the current state of the given account.
     fn get_account_state(&mut self, addr: &Address) -> Result<AccountState, Error>;
@@ -57,7 +60,7 @@ pub trait CarmenS6Db {
     fn get_nonce(&mut self, addr: &Address) -> Result<u64, Error>;
 
     /// Returns the value of storage location (addr,key) in the given state.
-    fn get_storage_value(&mut self, addr: &Address, key: &mut Key) -> Result<Value, Error>;
+    fn get_storage_value(&mut self, addr: &Address, key: &Key) -> Result<Value, Error>;
 
     /// Returns the code stored under the given address.
     fn get_code(
@@ -83,11 +86,11 @@ pub trait CarmenS6Db {
     fn apply_block_update<'u>(&mut self, block: u64, update: Update<'u>) -> Result<(), Error>;
 }
 
-/// The main implementation of [`CarmenS6Db`].
-pub struct DbState;
+/// The `S6` implementation of [`CarmenDb`].
+pub struct CarmenS6Db;
 
 #[allow(unused_variables)]
-impl CarmenS6Db for DbState {
+impl CarmenDb for CarmenS6Db {
     fn flush(&mut self) -> Result<(), Error> {
         unimplemented!()
     }
@@ -96,7 +99,7 @@ impl CarmenS6Db for DbState {
         unimplemented!()
     }
 
-    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenS6Db>, Error> {
+    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error> {
         unimplemented!()
     }
 
@@ -112,7 +115,7 @@ impl CarmenS6Db for DbState {
         unimplemented!()
     }
 
-    fn get_storage_value(&mut self, addr: &Address, key: &mut Key) -> Result<Value, Error> {
+    fn get_storage_value(&mut self, addr: &Address, key: &Key) -> Result<Value, Error> {
         unimplemented!()
     }
 
