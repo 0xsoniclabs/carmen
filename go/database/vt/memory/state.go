@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types"
 	"io"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
@@ -85,8 +86,11 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *State) Apply(block uint64, update common.Update) error {
+	
+	maybeEmptyCodeAccounts := make(map[common.Address]struct{})
 
 	for _, update := range update.Nonces {
+		maybeEmptyCodeAccounts[update.Account] = struct{}{}
 		key := getBasicDataKey(update.Account)
 		value := s.trie.Get(key)
 		copy(value[8:16], update.Nonce[:])
@@ -94,6 +98,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 	}
 
 	for _, update := range update.Balances {
+		maybeEmptyCodeAccounts[update.Account] = struct{}{}
 		key := getBasicDataKey(update.Account)
 		value := s.trie.Get(key)
 		amount := update.Balance.Bytes32()
@@ -101,7 +106,14 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		s.trie.Set(key, value)
 	}
 
+	for _, update := range update.Slots {
+		maybeEmptyCodeAccounts[update.Account] = struct{}{}
+		key := getStorageKey(update.Account, update.Key)
+		s.trie.Set(key, trie.Value(update.Value))
+	}
+
 	for _, update := range update.Codes {
+		delete(maybeEmptyCodeAccounts, update.Account) // does not have empty code
 		// Store the code length.
 		key := getBasicDataKey(update.Account)
 		value := s.trie.Get(key)
@@ -122,9 +134,13 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		}
 	}
 
-	for _, update := range update.Slots {
-		key := getStorageKey(update.Account, update.Key)
-		s.trie.Set(key, trie.Value(update.Value))
+	// init potentially empty accounts with empty code hash
+	for address := range maybeEmptyCodeAccounts {
+		key := getCodeHashKey(address)
+		payload := s.trie.Get(key)
+		if payload == (trie.Value{}) {
+			s.trie.Set(key, trie.Value(types.EmptyCodeHash))
+		}
 	}
 
 	return nil
