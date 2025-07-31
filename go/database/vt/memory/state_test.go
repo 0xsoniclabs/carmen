@@ -24,7 +24,6 @@ import (
 	geth_trie "github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb/database"
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
 
@@ -466,6 +465,36 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 	}
 }
 
+func TestState_EoAccount_CodeHash_Is_Eth_Empty_Hash(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := NewState()
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.Equal(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
 // --- reference implementation from geth ---
 
 type refState struct {
@@ -495,9 +524,7 @@ func (s *refState) Apply(block uint64, update common.Update) error {
 				panic(err)
 			}
 			if s == nil {
-				s = &types.StateAccount{
-					Balance: uint256.NewInt(0),
-				}
+				s = types.NewEmptyStateAccount()
 			}
 			accountStates[addr] = s
 			state = s
