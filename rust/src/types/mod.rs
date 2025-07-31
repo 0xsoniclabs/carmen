@@ -12,8 +12,8 @@ pub use update::Update;
 
 mod update;
 
-/// The Carmen database state implementation.
-pub enum StateImpl {
+/// The Carmen live state implementation.
+pub enum LiveImpl {
     Memory = 0,
     File = 1,
     LevelDb = 2,
@@ -45,11 +45,3 @@ pub type U256 = [u8; 32];
 /// Carmen does not do any numeric operations on nonce. By using [`[u8; 8]`] instead of [`u64`], we
 /// don't require 8 byte alignment.
 pub type Nonce = [u8; 8];
-
-/// An account state.
-pub type AccountState = u8;
-
-#[allow(unused)]
-pub const ACCOUNT_STATE_UNKNOWN: AccountState = 0;
-#[allow(unused)]
-pub const ACCOUNT_STATE_EXISTS: AccountState = 1;

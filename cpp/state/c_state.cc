@@ -37,7 +37,7 @@ class WorldState {
  public:
   virtual ~WorldState() {}
 
-  virtual absl::StatusOr<AccountState> GetAccountState(const Address&) = 0;
+  virtual absl::StatusOr<AccountState> AccountExists(const Address&) = 0;
 
   virtual absl::StatusOr<Balance> GetBalance(const Address&) = 0;
 
@@ -70,7 +70,7 @@ class WorldStateWrapper : public WorldState {
  public:
   WorldStateWrapper(State state) : state_(std::move(state)) {}
 
-  absl::StatusOr<AccountState> GetAccountState(const Address& addr) override {
+  absl::StatusOr<AccountState> AccountExists(const Address& addr) override {
     return state_.GetAccountState(addr);
   }
 
@@ -129,7 +129,7 @@ class WorldStateWrapper : public WorldState {
     ArchiveState(Archive& archive, BlockId block)
         : archive_(archive), block_(block) {}
 
-    absl::StatusOr<AccountState> GetAccountState(const Address& addr) override {
+    absl::StatusOr<AccountState> AccountExists(const Address& addr) override {
       ASSIGN_OR_RETURN(bool exists, archive_.Exists(block_, addr));
       return exists ? AccountState::kExists : AccountState::kUnknown;
     }
@@ -235,16 +235,16 @@ WorldState* Open(const std::filesystem::path& directory, std::uint8_t schema,
 
 extern "C" {
 
-C_State Carmen_Cpp_OpenState(C_Schema schema, StateImpl state,
+C_State Carmen_Cpp_OpenState(C_Schema schema, LiveImpl state,
                              ArchiveImpl archive, const char* directory,
                              int length) {
   std::string_view dir(directory, length);
   switch (state) {
-    case kState_Memory:
+    case kLive_Memory:
       return carmen::Open<carmen::InMemoryConfig>(dir, schema, archive);
-    case kState_File:
+    case kLive_File:
       return carmen::Open<carmen::FileBasedConfig>(dir, schema, archive);
-    case kState_LevelDb:
+    case kLive_LevelDb:
       return carmen::Open<carmen::LevelDbBasedConfig>(dir, schema, archive);
   }
   return nullptr;
@@ -275,12 +275,12 @@ C_State Carmen_Cpp_GetArchiveState(C_State state, uint64_t block) {
   return s.GetArchiveState(block);
 }
 
-void Carmen_Cpp_GetAccountState(C_State state, C_Address addr,
-                                C_AccountState out_state) {
+void Carmen_Cpp_AccountExists(C_State state, C_Address addr,
+                              C_AccountState out_state) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& r = *reinterpret_cast<carmen::AccountState*>(out_state);
-  auto res = s.GetAccountState(a);
+  auto res = s.AccountExists(a);
   if (!res.ok()) {
     std::cout << "WARNING: Failed to get account state: " << res.status()
               << "\n"

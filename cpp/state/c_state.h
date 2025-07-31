@@ -46,10 +46,10 @@ extern "C" {
 #define C_Hash void*
 #define C_AccountState void*
 
-// An enumeration of supported state implementations.
-enum StateImpl { kState_Memory = 0, kState_File = 1, kState_LevelDb = 2 };
+// An enumeration of supported live state implementations.
+enum LiveImpl { kLive_Memory = 0, kLive_File = 1, kLive_LevelDb = 2 };
 
-// An enumeration of supported archive implementations.
+// An enumeration of supported archive state implementations.
 enum ArchiveImpl {
   kArchive_None = 0,
   kArchive_LevelDb = 1,
@@ -68,8 +68,8 @@ enum ArchiveImpl {
 // caller, which is required for releasing it eventually using Release().
 // If for some reason the creation of the state instance failed, a nullptr is
 // returned.
-DUPLICATE_FOR_LANGS(C_State, OpenState(C_Schema schema, enum StateImpl state,
-                                       enum ArchiveImpl archive,
+DUPLICATE_FOR_LANGS(C_State, OpenState(C_Schema schema, enum LiveImpl live_impl,
+                                       enum ArchiveImpl archive_impl,
                                        const char* directory, int length));
 
 // Flushes all committed state information to disk to guarantee permanent
@@ -92,9 +92,9 @@ DUPLICATE_FOR_LANGS(C_State, GetArchiveState(C_State state, uint64_t block));
 
 // ------------------------------- Accounts -----------------------------------
 
-// Gets the current state of the given account.
-DUPLICATE_FOR_LANGS(void, GetAccountState(C_State state, C_Address addr,
-                                          C_AccountState out_state));
+// Checks if the given account exists.
+DUPLICATE_FOR_LANGS(void, AccountExists(C_State state, C_Address addr,
+                                        C_AccountState out_state));
 
 // -------------------------------- Balance -----------------------------------
 

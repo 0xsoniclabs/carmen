@@ -22,8 +22,8 @@ mod types;
 /// state information, the information is loaded.
 pub fn open_carmen_db(
     schema: u8,
-    _state: StateImpl,
-    _archive: ArchiveImpl,
+    _live_impl: LiveImpl,
+    _archive_impl: ArchiveImpl,
     _directory: &[u8],
 ) -> Result<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
@@ -50,8 +50,8 @@ pub trait CarmenDb {
     /// provided state.
     fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error>;
 
-    /// Returns the current state of the given account.
-    fn get_account_state(&mut self, addr: &Address) -> Result<AccountState, Error>;
+    /// Checks if the given account exists.
+    fn account_exists(&mut self, addr: &Address) -> Result<bool, Error>;
 
     /// Returns the balance of the given account.
     fn get_balance(&mut self, addr: &Address) -> Result<U256, Error>;
@@ -103,7 +103,7 @@ impl CarmenDb for CarmenS6Db {
         unimplemented!()
     }
 
-    fn get_account_state(&mut self, addr: &Address) -> Result<AccountState, Error> {
+    fn account_exists(&mut self, addr: &Address) -> Result<bool, Error> {
         unimplemented!()
     }
 

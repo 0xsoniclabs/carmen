@@ -49,7 +49,7 @@ type CppState struct {
 	codeCache *common.LruCache[common.Address, []byte]
 }
 
-func newState(impl C.enum_StateImpl, params state.Parameters) (state.State, error) {
+func newState(impl C.enum_LiveImpl, params state.Parameters) (state.State, error) {
 	if err := os.MkdirAll(filepath.Join(params.Directory, "live"), 0700); err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func newState(impl C.enum_StateImpl, params state.Parameters) (state.State, erro
 		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
 	}
 
-	st := C.Carmen_Cpp_OpenState(C.C_Schema(params.Schema), impl, C.enum_StateImpl(archive), dir, C.int(len(params.Directory)))
+	st := C.Carmen_Cpp_OpenState(C.C_Schema(params.Schema), impl, C.enum_LiveImpl(archive), dir, C.int(len(params.Directory)))
 	if st == unsafe.Pointer(nil) {
 		return nil, fmt.Errorf("%w: failed to create C++ state instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
@@ -80,15 +80,15 @@ func newState(impl C.enum_StateImpl, params state.Parameters) (state.State, erro
 }
 
 func newInMemoryState(params state.Parameters) (state.State, error) {
-	return newState(C.kState_Memory, params)
+	return newState(C.kLive_Memory, params)
 }
 
 func newFileBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kState_File, params)
+	return newState(C.kLive_File, params)
 }
 
 func newLevelDbBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kState_LevelDb, params)
+	return newState(C.kLive_LevelDb, params)
 }
 
 func (cs *CppState) CreateAccount(address common.Address) error {
@@ -99,7 +99,7 @@ func (cs *CppState) CreateAccount(address common.Address) error {
 
 func (cs *CppState) Exists(address common.Address) (bool, error) {
 	var res common.AccountState
-	C.Carmen_Cpp_GetAccountState(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
+	C.Carmen_Cpp_AccountExists(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
 	return res == common.Exists, nil
 }
 
