@@ -17,7 +17,7 @@ use crate::{
     CarmenDb,
     ffi::bindings,
     open_carmen_db,
-    types::{Address, ArchiveImpl, Hash, Key, StateImpl, U256, Update, Value},
+    types::{Address, ArchiveImpl, Hash, Key, LiveImpl, U256, Update, Value},
 };
 
 /// The size of the buffer that gets passed to `Carmen_Rust_GetCode`.
@@ -44,8 +44,8 @@ const MAX_CODE_SIZE: usize = if cfg!(miri) { 25 } else { 25000 };
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_OpenState(
     schema: u8,
-    state: bindings::StateImpl,
-    archive: bindings::ArchiveImpl,
+    live_impl: bindings::LiveImpl,
+    archive_impl: bindings::ArchiveImpl,
     directory: *const c_char,
     length: c_int,
 ) -> *mut c_void {
@@ -53,16 +53,16 @@ unsafe extern "C" fn Carmen_Rust_OpenState(
     if directory.is_null() || length <= 0 {
         return std::ptr::null_mut();
     }
-    let state = match state {
-        0 => StateImpl::Memory,
-        1 => StateImpl::File,
-        2 => StateImpl::LevelDb,
+    let live_impl = match live_impl {
+        bindings::LiveImpl_kLive_Memory => LiveImpl::Memory,
+        bindings::LiveImpl_kLive_File => LiveImpl::File,
+        bindings::LiveImpl_kLive_LevelDb => LiveImpl::LevelDb,
         _ => return std::ptr::null_mut(),
     };
-    let archive = match archive {
-        0 => ArchiveImpl::None,
-        1 => ArchiveImpl::LevelDb,
-        2 => ArchiveImpl::Sqlite,
+    let archive_impl = match archive_impl {
+        bindings::ArchiveImpl_kArchive_None => ArchiveImpl::None,
+        bindings::ArchiveImpl_kArchive_LevelDb => ArchiveImpl::LevelDb,
+        bindings::ArchiveImpl_kArchive_Sqlite => ArchiveImpl::Sqlite,
         _ => return std::ptr::null_mut(),
     };
     // SAFETY:
@@ -71,7 +71,7 @@ unsafe extern "C" fn Carmen_Rust_OpenState(
     // - `directory` is not mutated for the duration of the call (precondition)
     let directory =
         unsafe { slice_from_raw_parts_scoped(directory as *const u8, length as usize, &token) };
-    let db_state = open_carmen_db(schema, state, archive, directory);
+    let db_state = open_carmen_db(schema, live_impl, archive_impl, directory);
     match db_state {
         Ok(db_state) => {
             Box::into_raw(Box::new(StateWrapper::from_db_state(db_state))) as *mut c_void
@@ -226,7 +226,7 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(state: *mut c_void, block: u64)
     }
 }
 
-/// Gets the current state of the given account.
+/// Checks if the given account exists.
 ///
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
@@ -242,7 +242,7 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(state: *mut c_void, block: u64)
 /// - `out_state` must be a valid pointer to a `u8`
 /// - `out_state` must be valid for writes for the duration of the call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_GetAccountState(
+unsafe extern "C" fn Carmen_Rust_AccountExists(
     state: *mut c_void,
     addr: *mut c_void,
     out_state: *mut c_void,
@@ -267,12 +267,12 @@ unsafe extern "C" fn Carmen_Rust_GetAccountState(
     // - `addr` is valid for reads for the duration of the call (precondition)
     // - `addr` is not mutated for the duration of the call (precondition)
     let addr = unsafe { ref_from_ptr_scoped(addr as *mut Address, &token) };
-    match db_state.get_account_state(addr) {
-        Ok(account_state) => {
+    match db_state.account_exists(addr) {
+        Ok(exists) => {
             // SAFETY:
             // - `out_state` is a valid pointer to a `u8` (precondition)
             // - `out_state` is valid for writes for the duration of the call (precondition)
-            unsafe { std::ptr::write(out_state as *mut u8, account_state) };
+            unsafe { std::ptr::write(out_state as *mut u8, exists as u8) };
         }
         Err(_) => unimplemented!(),
     }
@@ -913,8 +913,8 @@ const COMPILE_TIME_CHECK_THAT_SIGNATURES_MATCH_SIGNATURES_GENERATED_FROM_C_HEADE
         bindings::Carmen_Rust_ReleaseState,
     );
     assert_same_signature(
-        Carmen_Rust_GetAccountState as unsafe extern "C" fn(_, _, _),
-        bindings::Carmen_Rust_GetAccountState,
+        Carmen_Rust_AccountExists as unsafe extern "C" fn(_, _, _),
+        bindings::Carmen_Rust_AccountExists,
     );
     assert_same_signature(
         Carmen_Rust_GetBalance as unsafe extern "C" fn(_, _, _),
@@ -980,7 +980,7 @@ mod tests {
             let dir = "dir";
             let state = Carmen_Rust_OpenState(
                 6,
-                StateImpl::Memory as u8 as u32,
+                LiveImpl::Memory as u8 as u32,
                 ArchiveImpl::LevelDb as u8 as u32,
                 dir.as_ptr() as *const c_char,
                 dir.len() as i32,
@@ -1035,13 +1035,13 @@ mod tests {
     }
 
     #[test]
-    fn carmen_rust_get_account_state_returns_value_from_carmen_s6_db() {
+    fn carmen_rust_account_exists_returns_value_from_carmen_s6_db() {
         let addr = [1; 20];
-        let expected_account_state = 1;
+        let expected_account_state = true;
         create_state_then_call_fn_then_release_state(
             move |mock_db| {
                 mock_db
-                    .expect_get_account_state()
+                    .expect_account_exists()
                     .withf(move |a| a == &addr)
                     .returning(move |_| Ok(expected_account_state));
             },
@@ -1049,13 +1049,13 @@ mod tests {
                 let mut addr = addr;
                 let mut out_state = 0u8;
                 unsafe {
-                    Carmen_Rust_GetAccountState(
+                    Carmen_Rust_AccountExists(
                         state,
                         &mut addr as *mut Address as *mut c_void,
                         &mut out_state as *mut u8 as *mut c_void,
                     );
                 }
-                assert_eq!(out_state, expected_account_state);
+                assert_eq!(out_state, expected_account_state as u8);
             },
         );
     }

@@ -24,13 +24,13 @@ namespace {
 
 using ::testing::ElementsAre;
 
-std::string ToString(StateImpl c) {
+std::string ToString(LiveImpl c) {
   switch (c) {
-    case kState_Memory:
+    case kLive_Memory:
       return "Memory";
-    case kState_File:
+    case kLive_File:
       return "File";
-    case kState_LevelDb:
+    case kLive_LevelDb:
       return "LevelDb";
   }
   return "Unknown";
@@ -51,7 +51,7 @@ std::string ToString(ArchiveImpl c) {
 // A configuration struct for the parameterized test below.
 struct Config {
   int schema;
-  StateImpl state;
+  LiveImpl state;
   ArchiveImpl archive;
 };
 
@@ -138,7 +138,7 @@ TEST_P(CStateTest, AccountsInitiallyDoNotExist) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
 }
 
@@ -146,10 +146,10 @@ TEST_P(CStateTest, AccountsCanBeCreated) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
   Carmen_Cpp_CreateAccount(state, &addr);
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kExists);
 }
 
@@ -157,11 +157,11 @@ TEST_P(CStateTest, AccountsCanBeDeleted) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
   Carmen_Cpp_CreateAccount(state, &addr);
   Carmen_Cpp_DeleteAccount(state, &addr);
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
 }
 
@@ -418,7 +418,7 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   ASSERT_TRUE(archive0);
 
   AccountState account_state;
-  Carmen_Cpp_GetAccountState(archive0, &addr, &account_state);
+  Carmen_Cpp_AccountExists(archive0, &addr, &account_state);
   EXPECT_EQ(account_state, AccountState::kUnknown);
   Carmen_Cpp_GetBalance(archive0, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, Balance{});
@@ -439,7 +439,7 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   // Check archive state at block 1.
   auto archive1 = Carmen_Cpp_GetArchiveState(archive0, 1);
   ASSERT_TRUE(archive1);
-  Carmen_Cpp_GetAccountState(archive1, &addr, &account_state);
+  Carmen_Cpp_AccountExists(archive1, &addr, &account_state);
   EXPECT_EQ(account_state, AccountState::kExists);
   Carmen_Cpp_GetBalance(archive1, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, balance);
@@ -510,7 +510,7 @@ TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
 
 TEST_P(CStateTest, CanBeStoredAndReloaded) {
   const Config& config = GetParam();
-  if (config.state == kState_Memory) {
+  if (config.state == kLive_Memory) {
     return;  // In-memory state is by definition not persistent.
   }
   TempDir dir;
@@ -548,17 +548,17 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
 INSTANTIATE_TEST_SUITE_P(
     All, CStateTest,
     // Tests each schema with each config, and all 3 archive modes.
-    testing::Values(Config{1, kState_Memory, kArchive_None},
-                    Config{2, kState_File, kArchive_None},
-                    Config{3, kState_LevelDb, kArchive_None},
+    testing::Values(Config{1, kLive_Memory, kArchive_None},
+                    Config{2, kLive_File, kArchive_None},
+                    Config{3, kLive_LevelDb, kArchive_None},
 
-                    Config{2, kState_Memory, kArchive_LevelDb},
-                    Config{3, kState_File, kArchive_LevelDb},
-                    Config{1, kState_LevelDb, kArchive_LevelDb},
+                    Config{2, kLive_Memory, kArchive_LevelDb},
+                    Config{3, kLive_File, kArchive_LevelDb},
+                    Config{1, kLive_LevelDb, kArchive_LevelDb},
 
-                    Config{3, kState_Memory, kArchive_Sqlite},
-                    Config{1, kState_File, kArchive_Sqlite},
-                    Config{2, kState_LevelDb, kArchive_Sqlite}),
+                    Config{3, kLive_Memory, kArchive_Sqlite},
+                    Config{1, kLive_File, kArchive_Sqlite},
+                    Config{2, kLive_LevelDb, kArchive_Sqlite}),
     [](const testing::TestParamInfo<CStateTest::ParamType>& info) {
       return "schema_" + std::to_string(info.param.schema) + "_impl_" +
              ToString(info.param.state) + "_archive_" +
