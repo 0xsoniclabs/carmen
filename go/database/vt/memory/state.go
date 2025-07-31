@@ -11,6 +11,7 @@
 package memory
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/database/vt/memory/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // State is an in-memory implementation of a chain-state tracking account and
@@ -93,6 +95,18 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 
 func (s *State) Apply(block uint64, update common.Update) error {
 
+	// init potentially empty accounts with empty code hash,
+	for _, address := range update.CreatedAccounts {
+		accountKey := getBasicDataKey(address)
+		value := s.trie.Get(accountKey)
+		var empty [28]byte
+		// empty accnout has empty code size, nonce, and balance
+		if bytes.Equal(value[4:32], empty[:]) {
+			codeHashKey := getCodeHashKey(address)
+			s.trie.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
+		}
+	}
+
 	for _, update := range update.Nonces {
 		key := getBasicDataKey(update.Account)
 		value := s.trie.Get(key)
@@ -106,6 +120,11 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		amount := update.Balance.Bytes32()
 		copy(value[16:32], amount[16:])
 		s.trie.Set(key, value)
+	}
+
+	for _, update := range update.Slots {
+		key := getStorageKey(update.Account, update.Key)
+		s.trie.Set(key, trie.Value(update.Value))
 	}
 
 	for _, update := range update.Codes {
@@ -127,11 +146,6 @@ func (s *State) Apply(block uint64, update common.Update) error {
 			key := getCodeChunkKey(update.Account, i)
 			s.trie.Set(key, trie.Value(chunk))
 		}
-	}
-
-	for _, update := range update.Slots {
-		key := getStorageKey(update.Account, update.Key)
-		s.trie.Set(key, trie.Value(update.Value))
 	}
 
 	return nil
