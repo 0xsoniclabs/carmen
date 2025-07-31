@@ -24,7 +24,6 @@ import (
 	geth_trie "github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb/database"
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
 
@@ -475,6 +474,7 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	addr1 := common.Address{1}
 
 	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
 		},
@@ -490,6 +490,192 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
 	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := NewState()
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.Equal(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		Codes: []common.CodeUpdate{{Account: addr1, Code: []byte{1, 2, 3}}},
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := NewState()
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+
+	// Recreate the account, which should not empty the code hash
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	codeHash, err = state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err = state.GetHash()
+	require.NoError(err)
+
+	require.NoError(reference.Apply(0, update2))
+	want, err = reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := NewState()
+	require.NoError(state.Apply(0, update))
+
+	balance, err := state.GetBalance(addr1)
+	require.NoError(err)
+	require.Equal(amount.New(1), balance)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+
+	// Recreate the account, which should not empty the code hash
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	// The balance should remain the same
+	balance, err = state.GetBalance(addr1)
+	require.NoError(err)
+	require.Equal(amount.New(1), balance)
+
+	hash, err = state.GetHash()
+	require.NoError(err)
+
+	require.NoError(reference.Apply(0, update2))
+	want, err = reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Nonces: []common.NonceUpdate{
+			{Account: addr1, Nonce: common.ToNonce(1)},
+		},
+	}
+
+	state := NewState()
+	require.NoError(state.Apply(0, update))
+
+	nonce, err := state.GetNonce(addr1)
+	require.NoError(err)
+	require.Equal(common.ToNonce(1), nonce)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+
+	// Recreate the account, which should not empty the nonce
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	// The nonce should remain the same
+	nonce, err = state.GetNonce(addr1)
+	require.NoError(err)
+	require.Equal(common.ToNonce(1), nonce)
+
+	hash, err = state.GetHash()
+	require.NoError(err)
+
+	require.NoError(reference.Apply(0, update2))
+	want, err = reference.GetHash()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -524,9 +710,7 @@ func (s *refState) Apply(block uint64, update common.Update) error {
 				panic(err)
 			}
 			if s == nil {
-				s = &types.StateAccount{
-					Balance: uint256.NewInt(0),
-				}
+				s = types.NewEmptyStateAccount()
 			}
 			accountStates[addr] = s
 			state = s
