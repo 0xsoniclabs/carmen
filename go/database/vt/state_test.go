@@ -267,6 +267,32 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
 	}
 }
 
+func TestState_Storage_Leading_Zeros_HashesMatch(t *testing.T) {
+	addr1 := common.Address{0, 0, 0, 1}
+	value := common.Value{0, 0, 0, 1}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+		Slots: []common.SlotUpdate{
+			{Account: addr1, Key: common.Key{0, 0, 0, 1}, Value: value},
+		},
+	}
+
+	state, err := initTestedStates(t)
+	require.NoError(t, err, "failed to initialize tested states")
+	defer func() {
+		require.NoError(t, state.Close(), "failed to close state")
+	}()
+
+	require.NoError(t, state.Apply(0, update))
+
+	hash, err := state.GetHash()
+	require.NoError(t, err)
+	require.NotEmpty(t, hash, "hash should not be empty")
+}
+
 // initTestedStates initializes a comparingState instance
 // for all State instances under test.
 func initTestedStates(t *testing.T) (*comparingState, error) {
