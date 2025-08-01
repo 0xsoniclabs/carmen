@@ -187,8 +187,9 @@ func (s *verkleState) GetArchiveBlockHeight() (height uint64, empty bool, err er
 }
 
 func (s *verkleState) CreateAccount(address common.Address) error {
-	account := types.NewEmptyStateAccount()
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
+	//account := types.NewEmptyStateAccount()
+	//return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
+	return nil
 }
 
 func (s *verkleState) SetBalance(address common.Address, balance amount.Amount) error {
