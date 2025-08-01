@@ -8,6 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-/// The top level error type for Carmen S6.
+/// The top level error type for Carmen .
 /// This type is returned to the ffi interface and converted there.
-pub struct Error;
+pub enum Error {
+    /// An unsupported schema version was provided.
+    UnsupportedSchema(u8),
+}

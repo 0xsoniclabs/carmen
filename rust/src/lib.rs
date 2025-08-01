@@ -7,8 +7,143 @@
 //
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
-#![allow(unused)]
+
+use std::mem::MaybeUninit;
+
+use crate::{error::Error, types::*};
 
 mod error;
 mod ffi;
 mod types;
+
+/// Opens a new [CarmenDb] database object based on the provided implementation maintaining
+/// its data in the given directory. If the directory does not exist, it is
+/// created. If it is empty, a new, empty state is initialized. If it contains
+/// state information, the information is loaded.
+pub fn open_carmen_db(
+    schema: u8,
+    _state: StateImpl,
+    _archive: ArchiveImpl,
+    _directory: &[u8],
+) -> Result<Box<dyn CarmenDb>, Error> {
+    if schema != 6 {
+        return Err(Error::UnsupportedSchema(schema));
+    }
+    // here we would open the specific live and archive implementations of CarmenDb based on the
+    // state and archive impls.
+    Ok(Box::new(CarmenS6Db))
+}
+
+/// The safe Carmen interface.
+/// This is the safe interface which gets called from the exported FFI functions.
+#[cfg_attr(test, mockall::automock)]
+pub trait CarmenDb {
+    /// Flushes all committed state information to disk to guarantee permanent
+    /// storage. All internally cached modifications are synced to disk.
+    fn flush(&mut self) -> Result<(), Error>;
+
+    /// Closes this state, releasing all IO handles and locks on external resources.
+    fn close(&mut self) -> Result<(), Error>;
+
+    /// Creates a state snapshot reflecting the state at the given block height. The
+    /// resulting state must be released and must not outlive the life time of the
+    /// provided state.
+    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error>;
+
+    /// Returns the current state of the given account.
+    fn get_account_state(&mut self, addr: &Address) -> Result<AccountState, Error>;
+
+    /// Returns the balance of the given account.
+    fn get_balance(&mut self, addr: &Address) -> Result<U256, Error>;
+
+    /// Returns the nonce of the given account.
+    fn get_nonce(&mut self, addr: &Address) -> Result<u64, Error>;
+
+    /// Returns the value of storage location (addr,key) in the given state.
+    fn get_storage_value(&mut self, addr: &Address, key: &Key) -> Result<Value, Error>;
+
+    /// Returns the code stored under the given address.
+    fn get_code(
+        &mut self,
+        addr: &Address,
+        code_buf: &mut [MaybeUninit<u8>],
+    ) -> Result<usize, Error>;
+
+    /// Returns the hash of the code stored under the given address.
+    fn get_code_hash(&mut self, addr: &Address) -> Result<Hash, Error>;
+
+    /// Returns the code length stored under the given address.
+    fn get_code_len(&mut self, addr: &Address) -> Result<u32, Error>;
+
+    /// Returns a global state hash of the given state.
+    fn get_hash(&mut self) -> Result<Hash, Error>;
+
+    /// Returns a summary of the used memory.
+    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error>;
+
+    /// Applies the provided block update to the maintained state.
+    #[allow(clippy::needless_lifetimes)] // using an elided lifetime here breaks automock
+    fn apply_block_update<'u>(&mut self, block: u64, update: Update<'u>) -> Result<(), Error>;
+}
+
+/// The `S6` implementation of [`CarmenDb`].
+pub struct CarmenS6Db;
+
+#[allow(unused_variables)]
+impl CarmenDb for CarmenS6Db {
+    fn flush(&mut self) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    fn close(&mut self) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error> {
+        unimplemented!()
+    }
+
+    fn get_account_state(&mut self, addr: &Address) -> Result<AccountState, Error> {
+        unimplemented!()
+    }
+
+    fn get_balance(&mut self, addr: &Address) -> Result<U256, Error> {
+        unimplemented!()
+    }
+
+    fn get_nonce(&mut self, addr: &Address) -> Result<u64, Error> {
+        unimplemented!()
+    }
+
+    fn get_storage_value(&mut self, addr: &Address, key: &Key) -> Result<Value, Error> {
+        unimplemented!()
+    }
+
+    fn get_code(
+        &mut self,
+        addr: &Address,
+        code_buf: &mut [MaybeUninit<u8>],
+    ) -> Result<usize, Error> {
+        unimplemented!()
+    }
+
+    fn get_code_hash(&mut self, addr: &Address) -> Result<Hash, Error> {
+        unimplemented!()
+    }
+
+    fn get_code_len(&mut self, addr: &Address) -> Result<u32, Error> {
+        unimplemented!()
+    }
+
+    fn get_hash(&mut self) -> Result<Hash, Error> {
+        unimplemented!()
+    }
+
+    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error> {
+        unimplemented!()
+    }
+
+    fn apply_block_update(&mut self, block: u64, update: Update) -> Result<(), Error> {
+        unimplemented!()
+    }
+}
