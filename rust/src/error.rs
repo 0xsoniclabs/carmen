@@ -13,4 +13,6 @@
 pub enum Error {
     /// An unsupported schema version was provided.
     UnsupportedSchema(u8),
+    /// An unsupported operation was attempted.
+    UnsupportedOperation(String),
 }

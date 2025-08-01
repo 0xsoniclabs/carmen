@@ -235,9 +235,9 @@ WorldState* Open(const std::filesystem::path& directory, std::uint8_t schema,
 
 extern "C" {
 
-C_State Carmen_Cpp_OpenState(C_Schema schema, LiveImpl state,
-                             ArchiveImpl archive, const char* directory,
-                             int length) {
+C_State Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
+                                ArchiveImpl archive, const char* directory,
+                                int length) {
   std::string_view dir(directory, length);
   switch (state) {
     case kLive_Memory:
@@ -250,28 +250,37 @@ C_State Carmen_Cpp_OpenState(C_Schema schema, LiveImpl state,
   return nullptr;
 }
 
-void Carmen_Cpp_Flush(C_State state) {
-  auto res = reinterpret_cast<carmen::WorldState*>(state)->Flush();
+void Carmen_Cpp_Flush(C_Database db) {
+  auto res = reinterpret_cast<carmen::WorldState*>(db)->Flush();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to flush state: " << res << "\n"
               << std::flush;
   }
 }
 
-void Carmen_Cpp_Close(C_State state) {
-  auto res = reinterpret_cast<carmen::WorldState*>(state)->Close();
+void Carmen_Cpp_Close(C_Database db) {
+  auto res = reinterpret_cast<carmen::WorldState*>(db)->Close();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to close state: " << res << "\n"
               << std::flush;
   }
 }
 
+void Carmen_Cpp_ReleaseDatabase(C_Database db) {
+  delete reinterpret_cast<carmen::WorldState*>(db);
+}
+
 void Carmen_Cpp_ReleaseState(C_State state) {
   delete reinterpret_cast<carmen::WorldState*>(state);
 }
 
-C_State Carmen_Cpp_GetArchiveState(C_State state, uint64_t block) {
-  auto& s = *reinterpret_cast<carmen::WorldState*>(state);
+C_State Carmen_Cpp_GetLiveState(C_Database db) {
+  // TODO
+  return nullptr;
+}
+
+C_State Carmen_Cpp_GetArchiveState(C_Database db, uint64_t block) {
+  auto& s = *reinterpret_cast<carmen::WorldState*>(db);
   return s.GetArchiveState(block);
 }
 
