@@ -466,6 +466,32 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 	}
 }
 
+func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := NewState()
+	require.NoError(state.Apply(0, update))
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
 // --- reference implementation from geth ---
 
 type refState struct {
