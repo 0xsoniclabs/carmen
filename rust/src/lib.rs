@@ -34,7 +34,7 @@ pub fn open_carmen_db(
     Ok(Box::new(CarmenS6Db))
 }
 
-/// The safe Carmen interface.
+/// The safe Carmen database interface.
 /// This is the safe interface which gets called from the exported FFI functions.
 #[cfg_attr(test, mockall::automock)]
 pub trait CarmenDb {
@@ -45,11 +45,20 @@ pub trait CarmenDb {
     /// Closes this state, releasing all IO handles and locks on external resources.
     fn close(&mut self) -> Result<(), Error>;
 
-    /// Creates a state snapshot reflecting the state at the given block height. The
+    /// Returns a handle to the live state. The resulting state must be released and must not
+    /// outlive the life time of the database.
+    fn get_live_state(&mut self) -> Result<Box<dyn CarmenState>, Error>;
+
+    /// Returns a handle to an archive state reflecting the state at the given block height. The
     /// resulting state must be released and must not outlive the life time of the
     /// provided state.
-    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error>;
+    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenState>, Error>;
+}
 
+/// The safe Carmen state interface.
+/// This is the safe interface which gets called from the exported FFI functions.
+#[cfg_attr(test, mockall::automock)]
+pub trait CarmenState {
     /// Checks if the given account exists.
     fn account_exists(&mut self, addr: &Address) -> Result<bool, Error>;
 
@@ -99,10 +108,20 @@ impl CarmenDb for CarmenS6Db {
         unimplemented!()
     }
 
-    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenDb>, Error> {
+    fn get_live_state(&mut self) -> Result<Box<dyn CarmenState>, Error> {
         unimplemented!()
     }
 
+    fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenState>, Error> {
+        unimplemented!()
+    }
+}
+
+/// The `S6` live state implementation of [`CarmenState`].
+pub struct LiveState;
+
+#[allow(unused_variables)]
+impl CarmenState for LiveState {
     fn account_exists(&mut self, addr: &Address) -> Result<bool, Error> {
         unimplemented!()
     }
@@ -145,5 +164,57 @@ impl CarmenDb for CarmenS6Db {
 
     fn apply_block_update(&mut self, block: u64, update: Update) -> Result<(), Error> {
         unimplemented!()
+    }
+}
+
+/// The `S6` archive state implementation of [`CarmenState`].
+pub struct ArchiveState;
+
+#[allow(unused_variables)]
+impl CarmenState for ArchiveState {
+    fn account_exists(&mut self, addr: &Address) -> Result<bool, Error> {
+        unimplemented!()
+    }
+
+    fn get_balance(&mut self, addr: &Address) -> Result<U256, Error> {
+        unimplemented!()
+    }
+
+    fn get_nonce(&mut self, addr: &Address) -> Result<u64, Error> {
+        unimplemented!()
+    }
+
+    fn get_storage_value(&mut self, addr: &Address, key: &Key) -> Result<Value, Error> {
+        unimplemented!()
+    }
+
+    fn get_code(
+        &mut self,
+        addr: &Address,
+        code_buf: &mut [MaybeUninit<u8>],
+    ) -> Result<usize, Error> {
+        unimplemented!()
+    }
+
+    fn get_code_hash(&mut self, addr: &Address) -> Result<Hash, Error> {
+        unimplemented!()
+    }
+
+    fn get_code_len(&mut self, addr: &Address) -> Result<u32, Error> {
+        unimplemented!()
+    }
+
+    fn get_hash(&mut self) -> Result<Hash, Error> {
+        unimplemented!()
+    }
+
+    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error> {
+        unimplemented!()
+    }
+
+    fn apply_block_update(&mut self, block: u64, update: Update) -> Result<(), Error> {
+        Err(Error::UnsupportedOperation(
+            "Archive state does not support applying block updates".to_string(),
+        ))
     }
 }
