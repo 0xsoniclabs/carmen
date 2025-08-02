@@ -86,7 +86,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *State) Apply(block uint64, update common.Update) error {
-
+	
 	maybeEmptyCodeAccounts := make(map[common.Address]struct{})
 
 	for _, update := range update.Nonces {

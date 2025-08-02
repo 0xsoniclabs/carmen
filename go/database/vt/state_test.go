@@ -13,7 +13,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/vt/geth"
 	"github.com/0xsoniclabs/carmen/go/database/vt/memory"
 	"github.com/0xsoniclabs/carmen/go/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
 	"io"
@@ -72,9 +71,9 @@ func TestState_Insert_Single_Values_Repeat_Various_Updates(t *testing.T) {
 	var lastNonce common.Nonce
 	var lastBalance amount.Amount
 	var lastValue common.Value
-	//var lastCode []byte
+	var lastCode []byte
 	var lastCodeLen int
-	var lastCodeHash = common.Hash(types.EmptyCodeHash)
+	var lastCodeHash common.Hash
 
 	ops := map[string]func(update *common.Update, counter int){
 		"nonce": func(update *common.Update, counter int) {
@@ -85,22 +84,22 @@ func TestState_Insert_Single_Values_Repeat_Various_Updates(t *testing.T) {
 			lastBalance = amount.New(uint64(counter))
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: lastBalance})
 		},
+		"storage": func(update *common.Update, counter int) {
+			lastValue = common.Value{byte(counter), byte(counter >> 8)}
+			update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: lastValue})
+		},
 		"create": func(update *common.Update, counter int) {
 			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 		},
-		//"code": func(update *common.Update, counter int) {
-		//	lastCode = make([]byte, 1024+counter)
-		//	for i := 0; i < len(lastCode); i++ {
-		//		lastCode[i] = byte(i + counter)
-		//	}
-		//	lastCodeLen = len(lastCode)
-		//	lastCodeHash = common.Keccak256(lastCode)
-		//	update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: lastCode})
-		//},
-		//"storage": func(update *common.Update, counter int) {
-		//	lastValue = common.Value{byte(counter), byte(counter >> 8)}
-		//	update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: lastValue})
-		//},
+		"code": func(update *common.Update, counter int) {
+			lastCode = make([]byte, 1024+counter)
+			for i := 0; i < len(lastCode); i++ {
+				lastCode[i] = byte(i + counter)
+			}
+			lastCodeLen = len(lastCode)
+			lastCodeHash = common.Keccak256(lastCode)
+			update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: lastCode})
+		},
 	}
 
 	const numOps = 1000
@@ -112,15 +111,20 @@ func TestState_Insert_Single_Values_Repeat_Various_Updates(t *testing.T) {
 		opName := keys[i%len(keys)]
 		ops[opName](&update, i)
 
-		require.NoError(t, state.Apply(0, update), "failed to apply update for operation %s at iteration %d", opName, i)
+		require.NoError(t, state.Apply(uint64(i), update), "failed to apply update for operation %s at iteration %d", opName, i)
+
+		// check hash consistency
+		hash, err := state.GetHash()
+		require.NoError(t, err, "failed to get hash for operation %s at iteration %d", opName, i)
+		require.NotEmpty(t, hash, "hash should not be empty for operation %s at iteration %d", opName, i)
 
 		nonce, err := state.GetNonce(addr)
 		require.NoError(t, err, "failed to get nonce for account %x", addr)
-		require.Equal(t, lastNonce, nonce, "nonce mismatch for account %x", addr)
+		require.Equal(t, common.ToNonce(1), nonce, "nonce mismatch for account %x", addr)
 
 		balance, err := state.GetBalance(addr)
 		require.NoError(t, err, "failed to get balance for account %x", addr)
-		require.Equal(t, lastBalance, balance, "balance mismatch for account %x", addr)
+		require.Equal(t, amount.New(1), balance, "balance mismatch for account %x", addr)
 
 		value, err := state.GetStorage(addr, key)
 		require.NoError(t, err, "failed to get storage for account %x and key %x", addr, key)
@@ -134,11 +138,6 @@ func TestState_Insert_Single_Values_Repeat_Various_Updates(t *testing.T) {
 		require.NoError(t, err, "failed to get code hash for account %x", addr)
 		require.Equal(t, lastCodeHash, codeHash, "code hash mismatch for account %x", addr)
 	}
-
-	// check hash consistency
-	hash, err := state.GetHash()
-	require.NoError(t, err, "failed to get hash for final state")
-	require.NotEmpty(t, hash, "hash should not be empty for final state")
 }
 
 func TestState_CreateAccounts_In_Blocks_Properties_Available(t *testing.T) {
@@ -195,8 +194,6 @@ func TestState_Storage_Can_Set_And_Receive(t *testing.T) {
 		for j := 0; j < numKeysPerAddress; j++ {
 			key := common.Key{byte(i), byte(i >> 8), byte(j), byte(j >> 8)}
 			value := common.Value{byte(i), byte(i >> 8), byte(j), byte(j >> 8)}
-			// storage is in-practice available only for smart contracts
-			update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: []byte{byte(j)}})
 			update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
 		}
 	}
