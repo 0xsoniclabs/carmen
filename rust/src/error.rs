@@ -10,7 +10,15 @@
 
 /// The top level error type for Carmen .
 /// This type is returned to the ffi interface and converted there.
+#[derive(Debug)]
 pub enum Error {
     /// An unsupported schema version was provided.
     UnsupportedSchema(u8),
+    Custom(String),
+}
+
+impl From<String> for Error {
+    fn from(err: String) -> Self {
+        Error::Custom(err)
+    }
 }

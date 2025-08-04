@@ -12,6 +12,7 @@ use std::mem::MaybeUninit;
 
 use crate::{error::Error, types::*};
 
+mod cache;
 mod error;
 mod ffi;
 mod types;
