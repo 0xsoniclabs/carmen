@@ -32,6 +32,22 @@
 namespace carmen {
 namespace {
 
+class WorldState;
+
+// An abstract interface definition of a database instance.
+class Database {
+ public:
+  virtual ~Database() {}
+
+  virtual WorldState* GetLiveState() = 0;
+  virtual WorldState* GetArchiveState(std::uint64_t block) = 0;
+
+  virtual MemoryFootprint GetMemoryFootprint() const = 0;
+
+  virtual absl::Status Flush() = 0;
+  virtual absl::Status Close() = 0;
+};
+
 // An abstract interface definition of WorldState instances.
 class WorldState {
  public:
@@ -51,56 +67,18 @@ class WorldState {
 
   virtual absl::Status Apply(std::uint64_t block, const Update&) = 0;
 
-  virtual WorldState* GetArchiveState(std::uint64_t block) = 0;
-
   virtual absl::StatusOr<Hash> GetHash() = 0;
-
-  virtual MemoryFootprint GetMemoryFootprint() const = 0;
-
-  virtual absl::Status Flush() = 0;
-  virtual absl::Status Close() = 0;
 };
 
-// A generic implementation of the WorldState interface forwarding member
-// function calls to an owned state instance. This class is the adapter between
-// the static template based state implementations and the polymorph virtual
-// WorldState interface.
+// A generic implementation of the Database interface owning a state instance.
+// This type is managing the lifetime of the state and provides a polymorphic
+// interface to access the live and archive states.
 template <State State>
-class WorldStateWrapper : public WorldState {
+class DatabaseWrapper : public Database {
  public:
-  WorldStateWrapper(State state) : state_(std::move(state)) {}
+  explicit DatabaseWrapper(State state) : state_(std::move(state)) {}
 
-  absl::StatusOr<AccountState> AccountExists(const Address& addr) override {
-    return state_.GetAccountState(addr);
-  }
-
-  absl::StatusOr<Balance> GetBalance(const Address& address) override {
-    return state_.GetBalance(address);
-  }
-
-  absl::StatusOr<Nonce> GetNonce(const Address& addr) override {
-    return state_.GetNonce(addr);
-  }
-
-  absl::StatusOr<Value> GetValue(const Address& addr, const Key& key) override {
-    return state_.GetStorageValue(addr, key);
-  }
-
-  absl::StatusOr<Code> GetCode(const Address& addr) override {
-    return state_.GetCode(addr);
-  }
-
-  absl::StatusOr<std::uint32_t> GetCodeSize(const Address& addr) override {
-    return state_.GetCodeSize(addr);
-  }
-
-  absl::StatusOr<Hash> GetCodeHash(const Address& addr) override {
-    return state_.GetCodeHash(addr);
-  }
-
-  absl::Status Apply(std::uint64_t block, const Update& update) override {
-    return state_.Apply(block, update);
-  }
+  WorldState* GetLiveState() override { return new LiveState(state_); }
 
   WorldState* GetArchiveState(std::uint64_t block) override {
     auto archive = state_.GetArchive();
@@ -108,20 +86,61 @@ class WorldStateWrapper : public WorldState {
     return new ArchiveState(*archive, block);
   }
 
-  absl::StatusOr<Hash> GetHash() override { return state_.GetHash(); }
+  MemoryFootprint GetMemoryFootprint() const override {
+    return state_.GetMemoryFootprint();
+  }
 
   absl::Status Flush() override { return state_.Flush(); }
 
   absl::Status Close() override { return state_.Close(); }
 
-  MemoryFootprint GetMemoryFootprint() const override {
-    return state_.GetMemoryFootprint();
-  }
-
  protected:
   State state_;
 
  private:
+  class LiveState : public WorldState {
+   public:
+    explicit LiveState(State& state) : state_(state) {}
+
+    absl::StatusOr<AccountState> AccountExists(const Address& addr) override {
+      return state_.GetAccountState(addr);
+    }
+
+    absl::StatusOr<Balance> GetBalance(const Address& address) override {
+      return state_.GetBalance(address);
+    }
+
+    absl::StatusOr<Nonce> GetNonce(const Address& addr) override {
+      return state_.GetNonce(addr);
+    }
+
+    absl::StatusOr<Value> GetValue(const Address& addr,
+                                   const Key& key) override {
+      return state_.GetStorageValue(addr, key);
+    }
+
+    absl::StatusOr<Code> GetCode(const Address& addr) override {
+      return state_.GetCode(addr);
+    }
+
+    absl::StatusOr<std::uint32_t> GetCodeSize(const Address& addr) override {
+      return state_.GetCodeSize(addr);
+    }
+
+    absl::StatusOr<Hash> GetCodeHash(const Address& addr) override {
+      return state_.GetCodeHash(addr);
+    }
+
+    absl::Status Apply(std::uint64_t block, const Update& update) override {
+      return state_.Apply(block, update);
+    }
+
+    absl::StatusOr<Hash> GetHash() override { return state_.GetHash(); }
+
+   private:
+    State& state_;
+  };
+
   using Archive = typename State::Archive;
 
   class ArchiveState : public WorldState {
@@ -165,19 +184,7 @@ class WorldStateWrapper : public WorldState {
       return absl::InvalidArgumentError("Cannot apply update on archive");
     }
 
-    WorldState* GetArchiveState(std::uint64_t block) override {
-      return new ArchiveState(archive_, block);
-    }
-
     absl::StatusOr<Hash> GetHash() override { return archive_.GetHash(block_); }
-
-    absl::Status Flush() override { return absl::OkStatus(); }
-
-    absl::Status Close() override { return absl::OkStatus(); }
-
-    MemoryFootprint GetMemoryFootprint() const override {
-      return MemoryFootprint(*this);
-    }
 
    private:
     Archive& archive_;
@@ -186,38 +193,38 @@ class WorldStateWrapper : public WorldState {
 };
 
 template <typename State>
-WorldState* OpenState(const std::filesystem::path& directory,
-                      bool with_archive) {
+Database* OpenDatabase(const std::filesystem::path& directory,
+                       bool with_archive) {
   auto state = State::Open(directory, with_archive);
   if (!state.ok()) {
     std::cout << "WARNING: Failed to open state: " << state.status() << "\n"
               << std::flush;
     return nullptr;
   }
-  return new WorldStateWrapper<State>(*std::move(state));
+  return new DatabaseWrapper<State>(*std::move(state));
 }
 
 template <template <class A> class Config, template <typename C> class State>
-WorldState* Open(const std::filesystem::path& directory, ArchiveImpl archive) {
+Database* Open(const std::filesystem::path& directory, ArchiveImpl archive) {
   switch (archive) {
     case kArchive_None:
       // We have no none-archive implementation, so we take the LevelDB one and
       // disable it.
-      return OpenState<State<Config<archive::leveldb::LevelDbArchive>>>(
+      return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
           directory, false);
     case kArchive_LevelDb:
-      return OpenState<State<Config<archive::leveldb::LevelDbArchive>>>(
+      return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
           directory, true);
     case kArchive_Sqlite:
-      return OpenState<State<Config<archive::sqlite::SqliteArchive>>>(directory,
-                                                                      true);
+      return OpenDatabase<State<Config<archive::sqlite::SqliteArchive>>>(
+          directory, true);
   }
   return nullptr;
 }
 
 template <template <class A> class Config>
-WorldState* Open(const std::filesystem::path& directory, std::uint8_t schema,
-                 ArchiveImpl archive) {
+Database* Open(const std::filesystem::path& directory, std::uint8_t schema,
+               ArchiveImpl archive) {
   switch (schema) {
     case 0:  // default option is schema 1, fall-through
     case 1:
@@ -235,9 +242,9 @@ WorldState* Open(const std::filesystem::path& directory, std::uint8_t schema,
 
 extern "C" {
 
-C_State Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
-                                ArchiveImpl archive, const char* directory,
-                                int length) {
+C_Database Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
+                                   ArchiveImpl archive, const char* directory,
+                                   int length) {
   std::string_view dir(directory, length);
   switch (state) {
     case kLive_Memory:
@@ -251,7 +258,7 @@ C_State Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
 }
 
 void Carmen_Cpp_Flush(C_Database db) {
-  auto res = reinterpret_cast<carmen::WorldState*>(db)->Flush();
+  auto res = reinterpret_cast<carmen::Database*>(db)->Flush();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to flush state: " << res << "\n"
               << std::flush;
@@ -259,7 +266,7 @@ void Carmen_Cpp_Flush(C_Database db) {
 }
 
 void Carmen_Cpp_Close(C_Database db) {
-  auto res = reinterpret_cast<carmen::WorldState*>(db)->Close();
+  auto res = reinterpret_cast<carmen::Database*>(db)->Close();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to close state: " << res << "\n"
               << std::flush;
@@ -267,7 +274,7 @@ void Carmen_Cpp_Close(C_Database db) {
 }
 
 void Carmen_Cpp_ReleaseDatabase(C_Database db) {
-  delete reinterpret_cast<carmen::WorldState*>(db);
+  delete reinterpret_cast<carmen::Database*>(db);
 }
 
 void Carmen_Cpp_ReleaseState(C_State state) {
@@ -275,12 +282,12 @@ void Carmen_Cpp_ReleaseState(C_State state) {
 }
 
 C_State Carmen_Cpp_GetLiveState(C_Database db) {
-  // TODO
-  return nullptr;
+  auto& s = *reinterpret_cast<carmen::Database*>(db);
+  return s.GetLiveState();
 }
 
 C_State Carmen_Cpp_GetArchiveState(C_Database db, uint64_t block) {
-  auto& s = *reinterpret_cast<carmen::WorldState*>(db);
+  auto& s = *reinterpret_cast<carmen::Database*>(db);
   return s.GetArchiveState(block);
 }
 
@@ -420,9 +427,9 @@ void Carmen_Cpp_GetHash(C_State state, C_Hash out_hash) {
   h = *res;
 }
 
-void Carmen_Cpp_GetMemoryFootprint(C_State state, char** out,
+void Carmen_Cpp_GetMemoryFootprint(C_Database db, char** out,
                                    uint64_t* out_length) {
-  auto& s = *reinterpret_cast<carmen::WorldState*>(state);
+  auto& s = *reinterpret_cast<carmen::Database*>(db);
   auto fp = s.GetMemoryFootprint();
   std::stringstream buffer;
   fp.WriteTo(buffer);

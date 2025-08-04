@@ -57,9 +57,11 @@ class Reader {
   absl::StatusOr<std::vector<std::byte>> ReadBytes(int length) {
     RETURN_IF_ERROR(CheckEnd(length));
     std::vector<std::byte> result;
-    result.resize(length);
-    std::memcpy(result.data(), data_.data() + pos_, length);
-    pos_ += length;
+    if (length > 0) {
+      result.resize(length);
+      std::memcpy(result.data(), data_.data() + pos_, length);
+      pos_ += length;
+    }
     return result;
   }
 
