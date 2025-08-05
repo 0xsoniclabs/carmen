@@ -233,16 +233,6 @@ func TestAccountDeleteCreate(t *testing.T) {
 				t.Fatalf("failed to add block 9; %s", err)
 			}
 
-			if exists, err := a.Exists(1, addr1); err != nil || exists != true {
-				t.Errorf("unexpected existence status at block 1: %t; %v", exists, err)
-			}
-			if exists, err := a.Exists(5, addr1); err != nil || exists != false {
-				t.Errorf("unexpected existence status at block 1: %t; %v", exists, err)
-			}
-			if exists, err := a.Exists(9, addr1); err != nil || exists != true {
-				t.Errorf("unexpected existence status at block 1: %t; %v", exists, err)
-			}
-
 			if value, err := a.GetStorage(1, addr1, common.Key{0x05}); err != nil || value != (common.Value{0x47}) {
 				t.Errorf("unexpected value at block 1: %x; %v", value, err)
 			}
@@ -368,33 +358,6 @@ func TestArchive_HasEmptyStorage(t *testing.T) {
 						t.Errorf("unexpected empty storage; got: %t, want: %t", got, want)
 					}
 				}
-			}
-		})
-	}
-}
-
-func TestAccountStatusOnly(t *testing.T) {
-	for _, factory := range getArchiveFactories(t) {
-		t.Run(factory.label, func(t *testing.T) {
-			a := factory.getArchive(t.TempDir())
-			defer a.Close()
-
-			if err := a.Add(1, common.Update{
-				Nonces: []common.NonceUpdate{
-					{Account: addr1, Nonce: common.Nonce{0x01}},
-				},
-			}, nil); err != nil {
-				t.Fatalf("failed to add block 1; %s", err)
-			}
-			if err := a.Add(2, common.Update{}, nil); err != nil {
-				t.Fatalf("failed to add block 2; %s", err)
-			}
-
-			if exists, err := a.Exists(1, addr1); err != nil || !exists {
-				t.Errorf("unexpected account status at block 1: %t; %s", exists, err)
-			}
-			if exists, err := a.Exists(2, addr1); err != nil || !exists {
-				t.Errorf("unexpected account status at block 2: %t; %s", exists, err)
 			}
 		})
 	}
@@ -596,12 +559,6 @@ func TestZeroBlock(t *testing.T) {
 				t.Fatalf("failed to add block 1; %s", err)
 			}
 
-			if exists, err := a.Exists(0, addr1); err != nil || !exists {
-				t.Errorf("unexpected account status at block 0: %t; %s", exists, err)
-			}
-			if exists, err := a.Exists(1, addr1); err != nil || !exists {
-				t.Errorf("unexpected account status at block 1: %t; %s", exists, err)
-			}
 			if balance, err := a.GetBalance(0, addr1); err != nil || balance != balance1 {
 				t.Errorf("unexpected balance at block 0: %v; %s", balance, err)
 			}

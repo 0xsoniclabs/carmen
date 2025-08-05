@@ -485,10 +485,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 
 	var opSet = func(_ archiveStorageOpType, value archiveAccountStoragePayload, t fuzzing.TestingT, c *archiveTrieAccountStorageFuzzingContext) {
 		update := common.Update{}
-		// slot update does not include account creation, i.e., create the account if it does not exist.
-		if !c.AccountExists(value.address) {
-			update.AppendCreateAccount(value.address.GetAddress())
-		}
 		update.AppendSlotUpdate(value.address.GetAddress(), value.key.GetKey(), value.value)
 
 		// Apply change to the archive trie
@@ -545,7 +541,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 
 	var opCreateAccount = func(_ archiveStorageOpType, value archiveAccountStoragePayload, t fuzzing.TestingT, c *archiveTrieAccountStorageFuzzingContext) {
 		update := common.Update{}
-		update.AppendCreateAccount(value.address.GetAddress())
 		if err := c.archiveTrie.Add(uint64(c.GetNextBlock()), update, nil); err != nil {
 			t.Errorf("error to delete account: %v,  block: %d", value.address, c.GetCurrentBlock())
 		}

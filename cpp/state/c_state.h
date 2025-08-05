@@ -90,12 +90,6 @@ DUPLICATE_FOR_LANGS(void, ReleaseState(C_State state));
 // provided state.
 DUPLICATE_FOR_LANGS(C_State, GetArchiveState(C_State state, uint64_t block));
 
-// ------------------------------- Accounts -----------------------------------
-
-// Checks if the given account exists.
-DUPLICATE_FOR_LANGS(void, AccountExists(C_State state, C_Address addr,
-                                        C_AccountState out_state));
-
 // -------------------------------- Balance -----------------------------------
 
 // Retrieves the balance of the given account.

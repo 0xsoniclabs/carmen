@@ -95,7 +95,6 @@ type State interface {
 }
 
 type LiveDB interface {
-	Exists(address common.Address) (bool, error)
 	GetBalance(address common.Address) (balance amount.Amount, err error)
 	GetNonce(address common.Address) (nonce common.Nonce, err error)
 	GetStorage(address common.Address, key common.Key) (value common.Value, err error)

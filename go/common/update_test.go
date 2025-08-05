@@ -423,9 +423,6 @@ func TestUpdate_ApplyTo(t *testing.T) {
 	gomock.InOrder(
 		target.EXPECT().DeleteAccount(Address{0xA1}),
 		target.EXPECT().DeleteAccount(Address{0xA2}),
-		target.EXPECT().CreateAccount(Address{0xB1}),
-		target.EXPECT().CreateAccount(Address{0xB2}),
-		target.EXPECT().CreateAccount(Address{0xB3}),
 		target.EXPECT().SetBalance(Address{0xC1}, amount.New(1<<56, 0, 0, 0)),
 		target.EXPECT().SetBalance(Address{0xC2}, amount.New(2<<56, 0, 0, 0)),
 		target.EXPECT().SetNonce(Address{0xD1}, Nonce{0x03}),
@@ -445,9 +442,8 @@ func TestUpdate_ApplyTo(t *testing.T) {
 }
 
 func TestUpdate_ApplyTo_Failures(t *testing.T) {
-	const calls = 6
-	for i := 0; i < calls; i++ {
-		i := i
+	const calls = 5
+	for i := range calls {
 		t.Run(fmt.Sprintf("applyTo_failure_at_%d", i), func(t *testing.T) {
 			t.Parallel()
 			returns := make([]error, calls)
@@ -456,11 +452,10 @@ func TestUpdate_ApplyTo_Failures(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			target := NewMockUpdateTarget(ctrl)
 			target.EXPECT().DeleteAccount(gomock.Any()).AnyTimes().Return(returns[0])
-			target.EXPECT().CreateAccount(gomock.Any()).AnyTimes().Return(returns[1])
-			target.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[2])
-			target.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[3])
-			target.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[4])
-			target.EXPECT().SetStorage(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(returns[5])
+			target.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[1])
+			target.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[2])
+			target.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[3])
+			target.EXPECT().SetStorage(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(returns[4])
 
 			update := getExampleUpdate()
 			if err := update.ApplyTo(target); !errors.Is(err, returns[i]) {
@@ -487,12 +482,11 @@ func TestUpdate_Print(t *testing.T) {
 
 	expectations := []string{
 		"Deleted Accounts:",
-		"Created Accounts:",
 		"Balances:",
 		"Nonces:",
 		"Slots:",
-		"0300000000000000000000000000000000000000: 1", // decimal balance
-		"0400000000000000000000000000000000000000: 2", // decimal nonce
+		"0200000000000000000000000000000000000000: 1", // decimal balance
+		"0300000000000000000000000000000000000000: 2", // decimal nonce
 	}
 
 	for _, expectation := range expectations {

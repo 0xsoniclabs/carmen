@@ -46,10 +46,9 @@ func TestVerification_VerifyProofArchiveTrie(t *testing.T) {
 				}
 
 				update := common.Update{
-					CreatedAccounts: []common.Address{addr},
-					Nonces:          []common.NonceUpdate{{Account: addr, Nonce: common.Nonce{byte(i)}}},
-					Balances:        []common.BalanceUpdate{{Account: addr, Balance: amount.New(uint64(i))}},
-					Slots:           slotUpdates,
+					Nonces:   []common.NonceUpdate{{Account: addr, Nonce: common.Nonce{byte(i)}}},
+					Balances: []common.BalanceUpdate{{Account: addr, Balance: amount.New(uint64(i))}},
+					Slots:    slotUpdates,
 				}
 
 				if err := archive.Add(uint64(i), update, nil); err != nil {
@@ -99,8 +98,7 @@ func TestVerification_VerifyProofArchiveTrie_InvalidBlockNumber(t *testing.T) {
 	const Blocks = 3
 	for i := 0; i <= Blocks; i++ {
 		if err := archiveTrie.Add(uint64(i), common.Update{
-			CreatedAccounts: []common.Address{{byte(i)}},
-			Balances:        []common.BalanceUpdate{{Account: common.Address{byte(i)}, Balance: amount.New(12)}},
+			Balances: []common.BalanceUpdate{{Account: common.Address{byte(i)}, Balance: amount.New(12)}},
 		}, nil); err != nil {
 			t.Fatalf("failed to add block: %v", err)
 		}
@@ -224,8 +222,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 	}()
 
 	if err := archiveTrie.Add(1, common.Update{
-		CreatedAccounts: []common.Address{{1}},
-		Balances:        []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(12)}},
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(12)}},
 	}, nil); err != nil {
 		t.Fatalf("failed to add block: %v", err)
 	}

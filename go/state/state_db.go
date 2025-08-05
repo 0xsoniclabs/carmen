@@ -168,6 +168,7 @@ type NonCommittableStateDB interface {
 
 // BulkLoad serves as the public interface for loading preset data into the state DB.
 type BulkLoad interface {
+	// Deprecated: this function has no effect, please remove all calls to it.
 	CreateAccount(common.Address)
 	SetBalance(common.Address, amount.Amount)
 	SetNonce(common.Address, uint64)
@@ -473,7 +474,7 @@ func (s *stateDB) Exist(addr common.Address) bool {
 	if val, exists := s.accounts[addr]; exists {
 		return val.current == accountExists || val.current == accountSelfDestructed // self-destructed accounts still exist till the end of the transaction.
 	}
-	exists, err := s.state.Exists(addr)
+	exists, err := s.accountExists(addr)
 	if err != nil {
 		s.errors = append(s.errors, fmt.Errorf("failed to get account state for %v: %w", addr, err))
 		return false
@@ -487,6 +488,25 @@ func (s *stateDB) Exist(addr common.Address) bool {
 		current:  state,
 	}
 	return exists
+}
+
+func (s *stateDB) accountExists(addr common.Address) (bool, error) {
+	balance, err := s.state.GetBalance(addr)
+	if err != nil {
+		return false, fmt.Errorf("failed to get account balance for %v: %w", addr, err)
+	}
+	if balance != (amount.Amount{}) {
+		return true, nil
+	}
+	nonce, err := s.state.GetNonce(addr)
+	if err != nil {
+		return false, fmt.Errorf("failed to get account nonce for %v: %w",
+			addr, err)
+	}
+	if nonce != (common.Nonce{}) {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *stateDB) CreateAccount(addr common.Address) {
@@ -1228,7 +1248,6 @@ func (s *stateDB) EndBlock(block uint64) {
 	for addr, value := range s.accounts {
 		if value.original != value.current {
 			if value.current == accountExists {
-				update.AppendCreateAccount(addr)
 				delete(nonExistingAccounts, addr)
 			}
 		}
@@ -1446,7 +1465,7 @@ type bulkLoad struct {
 }
 
 func (l *bulkLoad) CreateAccount(addr common.Address) {
-	l.update.AppendCreateAccount(addr)
+	// no-op
 }
 
 func (l *bulkLoad) SetBalance(addr common.Address, balance amount.Amount) {

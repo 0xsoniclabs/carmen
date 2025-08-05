@@ -27,25 +27,7 @@ var (
 	val1     = common.Value{0x01}
 )
 
-func TestAccountsAreInitiallyUnknown(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
-		account_state, _ := state.Exists(address1)
-		if account_state != false {
-			t.Errorf("Initial account is not unknown, got %v", account_state)
-		}
-	})
-}
-
-func TestAccountsCanBeCreated(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
-		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
-		account_state, _ := state.Exists(address1)
-		if account_state != true {
-			t.Errorf("Created account does not exist, got %v", account_state)
-		}
-	})
-}
-
+/*
 func TestAccountsCanBeDeleted(t *testing.T) {
 	runForEachCppConfig(t, func(t *testing.T, state state.State) {
 		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
@@ -56,6 +38,7 @@ func TestAccountsCanBeDeleted(t *testing.T) {
 		}
 	})
 }
+*/
 
 func TestReadUninitializedBalance(t *testing.T) {
 	runForEachCppConfig(t, func(t *testing.T, state state.State) {

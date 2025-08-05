@@ -36,18 +36,6 @@ type ArchiveState struct {
 	archiveError error
 }
 
-func (s *ArchiveState) Exists(address common.Address) (bool, error) {
-	if err := s.archiveError; err != nil {
-		return false, err
-	}
-
-	exists, err := s.archive.Exists(s.block, address)
-	if err != nil {
-		s.archiveError = errors.Join(s.archiveError, err)
-	}
-	return exists, s.archiveError
-}
-
 func (s *ArchiveState) GetBalance(address common.Address) (amount.Amount, error) {
 	if err := s.archiveError; err != nil {
 		return amount.New(), err

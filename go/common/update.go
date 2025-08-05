@@ -193,9 +193,6 @@ func (u *Update) String() string {
 // and to be utilized by implementations to avoid the need of duplicating
 // the implementation of LiveDB's Apply function.
 type UpdateTarget interface {
-	// CreateAccount creates a new account with the given address.
-	CreateAccount(address Address) error
-
 	// DeleteAccount deletes the account with the given address.
 	DeleteAccount(address Address) error
 

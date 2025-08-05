@@ -352,7 +352,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Errorf("accessing data should fail")
 	}
 	update := common.Update{}
-	update.CreatedAccounts = []common.Address{{1}}
+	update.DeletedAccounts = []common.Address{{1}}
 	if _, err := state.Apply(0, &update); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}

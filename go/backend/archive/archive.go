@@ -41,9 +41,6 @@ type Archive interface {
 	// is no block in the archive, the empty flag is set instead.
 	GetBlockHeight() (block uint64, empty bool, err error)
 
-	// Exists allows to fetch a historic existence status of a given account.
-	Exists(block uint64, account common.Address) (exists bool, err error)
-
 	// GetBalance allows to fetch a historic balance values for a given account.
 	GetBalance(block uint64, account common.Address) (balance amount.Amount, err error)
 

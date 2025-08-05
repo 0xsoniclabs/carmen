@@ -652,7 +652,6 @@ func createArchive(t *testing.T, dir string, config mpt.MptConfig) *mpt.ArchiveT
 		for j := 0; j < Accounts; j++ {
 			newAddr := common.AddressFromNumber(j)
 
-			update.CreatedAccounts = append(update.CreatedAccounts, newAddr)
 			update.Balances = append(update.Balances, common.BalanceUpdate{
 				Account: newAddr, Balance: amount.New(u + 1)})
 			update.Nonces = append(update.Nonces, common.NonceUpdate{

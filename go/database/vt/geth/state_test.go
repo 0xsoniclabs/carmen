@@ -34,7 +34,6 @@ func TestState_CreateAccounts_Many_Updates_Success(t *testing.T) {
 		update := common.Update{}
 		for j := 0; j < numInsertsPerBlock; j++ {
 			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
-			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 		}
@@ -44,9 +43,6 @@ func TestState_CreateAccounts_Many_Updates_Success(t *testing.T) {
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numInsertsPerBlock; j++ {
 			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
-			exists, err := state.Exists(addr)
-			require.NoError(t, err, "failed to check existence of account %x", addr)
-			require.True(t, exists, "account %x should exist but does not", addr)
 
 			balance, err := state.GetBalance(addr)
 			require.NoError(t, err, "failed to get balance for account %x", addr)
@@ -190,7 +186,6 @@ func TestState_GetHash_Is_Updated_Each_Block(t *testing.T) {
 		update := common.Update{}
 		for j := 0; j < numInsertsPerBlock; j++ {
 			addr := common.Address{byte(j), byte(i), byte(i >> 8)}
-			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 		}

@@ -15,6 +15,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -24,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"io"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
@@ -114,15 +115,6 @@ func (s *verkleState) SetCode(address common.Address, code []byte) error {
 	return nil
 }
 
-func (s *verkleState) Exists(address common.Address) (bool, error) {
-	account, err := s.getAccount(address)
-	if err != nil {
-		return false, err
-	}
-
-	return account.Nonce != 0 || account.Balance.Uint64() != 0, nil
-}
-
 func (s *verkleState) GetNonce(address common.Address) (common.Nonce, error) {
 	account, err := s.getAccount(address)
 	if err != nil {
@@ -184,11 +176,6 @@ func (s *verkleState) GetArchiveState(block uint64) (state.State, error) {
 
 func (s *verkleState) GetArchiveBlockHeight() (height uint64, empty bool, err error) {
 	return 0, true, state.NoArchiveError
-}
-
-func (s *verkleState) CreateAccount(address common.Address) error {
-	account := types.NewEmptyStateAccount()
-	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
 }
 
 func (s *verkleState) SetBalance(address common.Address, balance amount.Amount) error {

@@ -425,7 +425,6 @@ func TestArchiveTrie_CanHandleMultipleBlocks(t *testing.T) {
 			blc2 := amount.New(2)
 
 			archive.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: blc1},
 				},
@@ -463,7 +462,6 @@ func TestArchiveTrie_GetAccountInfo(t *testing.T) {
 
 			addr1 := common.Address{1}
 			if err := archive.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: amount.New(1)},
 				},
@@ -516,7 +514,6 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			)
 
 			// insert growing number of keys in several accounts
-			accounts := make([]common.Address, 0, Addresses)
 			nonces := make([]common.NonceUpdate, 0, Addresses)
 			slotUpdates := make([]common.SlotUpdate, 0, Addresses*Addresses)
 			for i := 0; i < Addresses; i++ {
@@ -525,24 +522,21 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 				for j := 0; j < i+1; j++ {
 					slots = append(slots, common.SlotUpdate{Account: addr, Key: common.Key{byte(j)}, Value: common.Value{byte(j)}})
 				}
-				accounts = append(accounts, addr)
 				nonces = append(nonces, common.NonceUpdate{Account: addr, Nonce: common.Nonce{1}})
 				slotUpdates = append(slotUpdates, slots...)
 			}
 
 			// create a block with all accounts but empty slots
 			if err := archive.Add(1, common.Update{
-				CreatedAccounts: accounts,
-				Nonces:          nonces,
+				Nonces: nonces,
 			}, nil); err != nil {
 				t.Fatalf("failed to add block: %v", err)
 			}
 
 			// create a block with all accounts and slots
 			if err := archive.Add(2, common.Update{
-				CreatedAccounts: accounts,
-				Nonces:          nonces,
-				Slots:           slotUpdates,
+				Nonces: nonces,
+				Slots:  slotUpdates,
 			}, nil); err != nil {
 				t.Fatalf("failed to add block: %v", err)
 			}
@@ -608,7 +602,6 @@ func TestArchiveTrie_CanHandleEmptyBlocks(t *testing.T) {
 
 			// Block 1 adds an actual change.
 			err = archive.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr},
 				Balances: []common.BalanceUpdate{
 					{Account: addr, Balance: balance},
 				},
@@ -683,7 +676,6 @@ func TestArchiveTrie_CanProcessPrecomputedHashes(t *testing.T) {
 
 			// Block 1
 			update := common.Update{
-				CreatedAccounts: []common.Address{addr1, addr2},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: blc1},
 					{Account: addr2, Balance: blc2},
@@ -723,7 +715,6 @@ func TestArchiveTrie_CanProcessPrecomputedHashes(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to update live db: %v", err)
 				}
-				update.CreatedAccounts = append(update.CreatedAccounts, addr)
 				update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: blc1})
 			}
 			hints, err = live.Apply(4, &update)
@@ -767,7 +758,6 @@ func TestArchiveTrie_VerificationOfFreshArchivePasses(t *testing.T) {
 			}
 
 			err = archive.Add(2, common.Update{
-				CreatedAccounts: []common.Address{{1}, {2}},
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
 					{Account: common.Address{2}, Nonce: common.ToNonce(2)},
@@ -783,7 +773,6 @@ func TestArchiveTrie_VerificationOfFreshArchivePasses(t *testing.T) {
 			}
 
 			err = archive.Add(4, common.Update{
-				CreatedAccounts: []common.Address{{3}},
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{3}, Nonce: common.ToNonce(3)},
 				},
@@ -823,13 +812,17 @@ func TestArchiveTrie_Add_DuplicatedBlock(t *testing.T) {
 			}()
 
 			if err = archive.Add(2, common.Update{
-				CreatedAccounts: []common.Address{{1}, {2}},
+				Nonces: []common.NonceUpdate{
+					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+				},
 			}, nil); err != nil {
 				t.Fatalf("failed to update archive: %v", err)
 			}
 
 			if err = archive.Add(2, common.Update{
-				CreatedAccounts: []common.Address{{1}, {2}},
+				Nonces: []common.NonceUpdate{
+					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+				},
 			}, nil); err == nil {
 				t.Errorf("adding duplicate block should fail")
 			}
@@ -1120,7 +1113,9 @@ func TestArchiveTrie_Add_LiveStateFailsHashing(t *testing.T) {
 
 	// fails for computing missing blocks
 	if err := archive.Add(20, common.Update{
-		CreatedAccounts: []common.Address{{1}, {2}},
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+		},
 	}, nil); !errors.Is(err, injectedError) {
 		t.Errorf("applying update should fail")
 	}
@@ -1144,7 +1139,9 @@ func TestArchiveTrie_Add_LiveStateFailsCreateAccount(t *testing.T) {
 
 	// fails for computing this block
 	if err := archive.Add(0, common.Update{
-		CreatedAccounts: []common.Address{{1}, {2}},
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+		},
 	}, nil); !errors.Is(err, injectedError) {
 		t.Errorf("applying update should fail")
 	}
@@ -1230,7 +1227,6 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 			code1 := []byte{1, 2, 3}
 			code2 := []byte{4, 5}
 			if err = archive.Add(0, common.Update{
-				CreatedAccounts: []common.Address{addr1, addr2},
 				Codes: []common.CodeUpdate{
 					{Account: addr1, Code: code1},
 					{Account: addr2, Code: code2},
@@ -1269,7 +1265,9 @@ func TestArchiveTrie_GetHash(t *testing.T) {
 				}
 
 				if err = archive.Add(0, common.Update{
-					CreatedAccounts: []common.Address{{1}},
+					Nonces: []common.NonceUpdate{
+						{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+					},
 				}, nil); err != nil {
 					t.Fatalf("cannot apply update: %s", err)
 				}
@@ -1340,7 +1338,6 @@ func TestArchiveTrie_CreateWitnessProof(t *testing.T) {
 			}()
 
 			if err := arch.Add(1, common.Update{
-				CreatedAccounts: []common.Address{{1}},
 				Balances: []common.BalanceUpdate{
 					{Account: common.Address{1}, Balance: amount.New(12)},
 				},
@@ -1406,7 +1403,6 @@ func TestArchiveTrie_HasEmptyStorage(t *testing.T) {
 			const blocks = 10
 			for i := uint64(1); i <= blocks; i++ {
 				if err := arch.Add(i, common.Update{
-					CreatedAccounts: []common.Address{{1, 2}},
 					Balances: []common.BalanceUpdate{
 						{Account: common.Address{1}, Balance: amount.New(12)},
 						{Account: common.Address{2}, Balance: amount.New(12)},
@@ -1475,16 +1471,14 @@ func TestArchiveTrie_GetDiffProducesValidResults(t *testing.T) {
 			nonce2 := common.Nonce{2}
 
 			err = archive.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
-				Nonces:          []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
+				Nonces: []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
 			}, nil)
 			if err != nil {
 				t.Fatalf("failed to create block in archive: %v", err)
 			}
 
 			err = archive.Add(3, common.Update{
-				CreatedAccounts: []common.Address{addr2},
-				Nonces:          []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
+				Nonces: []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
 			}, nil)
 			if err != nil {
 				t.Fatalf("failed to create block in archive: %v", err)
@@ -1578,16 +1572,14 @@ func TestArchiveTrie_GetDiffDetectsInvalidInput(t *testing.T) {
 			nonce2 := common.Nonce{2}
 
 			err = archive.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
-				Nonces:          []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
+				Nonces: []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
 			}, nil)
 			if err != nil {
 				t.Fatalf("failed to create block in archive: %v", err)
 			}
 
 			err = archive.Add(3, common.Update{
-				CreatedAccounts: []common.Address{addr2},
-				Nonces:          []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
+				Nonces: []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
 			}, nil)
 			if err != nil {
 				t.Fatalf("failed to create block in archive: %v", err)
@@ -1633,16 +1625,14 @@ func TestArchiveTrie_GetDiffForBlockProducesValidResults(t *testing.T) {
 			nonce2 := common.Nonce{2}
 
 			err = archive.Add(0, common.Update{
-				CreatedAccounts: []common.Address{addr1},
-				Nonces:          []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
+				Nonces: []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
 			}, nil)
 			if err != nil {
 				t.Fatalf("failed to create block in archive: %v", err)
 			}
 
 			err = archive.Add(2, common.Update{
-				CreatedAccounts: []common.Address{addr2},
-				Nonces:          []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
+				Nonces: []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
 			}, nil)
 			if err != nil {
 				t.Fatalf("failed to create block in archive: %v", err)
@@ -1739,7 +1729,9 @@ func TestArchiveTrie_Dump(t *testing.T) {
 			}()
 
 			if err = archive.Add(0, common.Update{
-				CreatedAccounts: []common.Address{{1}},
+				Nonces: []common.NonceUpdate{
+					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+				},
 			}, nil); err != nil {
 				t.Fatalf("cannot apply update: %s", err)
 			}
@@ -1759,7 +1751,6 @@ func TestArchiveTrie_VerificationOfArchiveWithMissingFileFails(t *testing.T) {
 			}
 
 			err = archive.Add(2, common.Update{
-				CreatedAccounts: []common.Address{{1}, {2}},
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
 					{Account: common.Address{2}, Nonce: common.ToNonce(2)},
@@ -1799,7 +1790,6 @@ func TestArchiveTrie_VerificationOfArchiveWithCorruptedFileFails(t *testing.T) {
 			}
 
 			err = archive.Add(2, common.Update{
-				CreatedAccounts: []common.Address{{1}, {2}},
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
 					{Account: common.Address{2}, Nonce: common.ToNonce(2)},
@@ -2061,6 +2051,7 @@ func TestRootList_CanParticipateToCheckpointOperations(t *testing.T) {
 	}
 }
 
+/*
 func TestArchiveTrie_RecreateAccount_ClearStorage(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
@@ -2112,6 +2103,7 @@ func TestArchiveTrie_RecreateAccount_ClearStorage(t *testing.T) {
 		})
 	}
 }
+*/
 
 func TestArchiveTrie_QueryLoadTest(t *testing.T) {
 	// Goal: stress-test an archive with a limited node cache.
@@ -2126,9 +2118,6 @@ func TestArchiveTrie_QueryLoadTest(t *testing.T) {
 		update := common.Update{}
 		for a := 0; a < N; a++ {
 			addr := common.Address{byte(a)}
-			if b == 0 {
-				update.AppendCreateAccount(addr)
-			}
 			for k := 0; k < N; k++ {
 				update.AppendSlotUpdate(addr, common.Key{byte(k)}, common.Value{byte(b), byte(a), byte(k)})
 			}
@@ -2276,7 +2265,9 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 
 			// adding an update as well as all flush and close checks must fail
 			update := common.Update{
-				CreatedAccounts: []common.Address{{0xB}},
+				Nonces: []common.NonceUpdate{
+					{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+				},
 			}
 
 			if err := archive.Add(0, update, nil); !errors.Is(err, injectedErr) {
@@ -2367,7 +2358,6 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 			// trigger error from the livedb
 			update := common.Update{
 				DeletedAccounts: []common.Address{{0xA}},
-				CreatedAccounts: []common.Address{{0xB}},
 				Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(1)}},
 				Nonces:          []common.NonceUpdate{{common.Address{0xA}, common.Nonce{0x1}}},
 				Codes:           []common.CodeUpdate{{common.Address{0xA}, []byte{0x1}}},
@@ -2504,7 +2494,6 @@ func TestArchiveTrie_VisitTrie_CorrectDataIsVisited(t *testing.T) {
 				}()
 
 				err = archive.Add(1, common.Update{
-					CreatedAccounts: []common.Address{addr},
 					Nonces: []common.NonceUpdate{
 						{Account: addr, Nonce: common.ToNonce(1)},
 					},
@@ -2556,7 +2545,6 @@ func TestArchiveTrie_VisitTrie_InvalidBlock(t *testing.T) {
 			addr := common.Address{1}
 
 			err = archive.Add(0, common.Update{
-				CreatedAccounts: []common.Address{addr},
 				Nonces: []common.NonceUpdate{
 					{Account: addr, Nonce: common.ToNonce(1)},
 				},
@@ -2666,7 +2654,6 @@ func TestArchiveTrie_RestoreBlockHeight(t *testing.T) {
 	addBlocks := func(archive *ArchiveTrie, from int, to int) error {
 		for i := from; i < to; i++ {
 			err := archive.Add(uint64(i), common.Update{
-				CreatedAccounts: []common.Address{{byte(i)}},
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{byte(i)}, Nonce: common.Nonce{byte(i)}},
 				},
@@ -3023,7 +3010,6 @@ func TestArchiveTrie_RestoredTrieCanBeReused(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		counter++
 		err := archive.Add(uint64(i), common.Update{
-			CreatedAccounts: []common.Address{address},
 			Nonces: []common.NonceUpdate{
 				{Account: address, Nonce: common.Nonce{byte(counter)}},
 			},
@@ -3071,7 +3057,6 @@ func TestArchiveTrie_RestoredTrieCanBeReused(t *testing.T) {
 	for i := 51; i < 150; i++ {
 		counter++
 		err := archive.Add(uint64(i), common.Update{
-			CreatedAccounts: []common.Address{address},
 			Nonces: []common.NonceUpdate{
 				{Account: address, Nonce: common.Nonce{byte(counter)}},
 			},

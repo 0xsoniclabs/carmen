@@ -37,15 +37,6 @@ func TestState_ArchiveState_FailingOperation_InvalidatesArchive(t *testing.T) {
 		setup  func(archive *archive.MockArchive, injectedErr error)
 		action func(stateArchive state.State) error
 	}{
-		"exists": {
-			func(archive *archive.MockArchive, injectedErr error) {
-				archive.EXPECT().Exists(gomock.Any(), gomock.Any()).Return(false, injectedErr)
-			},
-			func(stateArchive state.State) error {
-				_, err := stateArchive.Exists(common.Address{})
-				return err
-			},
-		},
 		"balance": {
 			func(archive *archive.MockArchive, injectedErr error) {
 				archive.EXPECT().GetBalance(gomock.Any(), gomock.Any()).Return(amount.New(), injectedErr)
@@ -227,11 +218,10 @@ func TestArchiveState_Export(t *testing.T) {
 	newAmount := amount.New(1)
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{newAddr},
-		Balances:        []common.BalanceUpdate{{newAddr, newAmount}},
-		Nonces:          []common.NonceUpdate{{newAddr, common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{newAddr, []byte{0x1}}},
-		Slots:           []common.SlotUpdate{{newAddr, common.Key{byte(1)}, common.Value{byte(1)}}},
+		Balances: []common.BalanceUpdate{{newAddr, newAmount}},
+		Nonces:   []common.NonceUpdate{{newAddr, common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{newAddr, []byte{0x1}}},
+		Slots:    []common.SlotUpdate{{newAddr, common.Key{byte(1)}, common.Value{byte(1)}}},
 	}
 
 	err = trie.Add(2, update, nil)
@@ -270,11 +260,10 @@ func TestArchiveState_Export_CanBeCancelled(t *testing.T) {
 	newAmount := amount.New(1)
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{newAddr},
-		Balances:        []common.BalanceUpdate{{newAddr, newAmount}},
-		Nonces:          []common.NonceUpdate{{newAddr, common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{newAddr, []byte{0x1}}},
-		Slots:           []common.SlotUpdate{{newAddr, common.Key{byte(1)}, common.Value{byte(1)}}},
+		Balances: []common.BalanceUpdate{{newAddr, newAmount}},
+		Nonces:   []common.NonceUpdate{{newAddr, common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{newAddr, []byte{0x1}}},
+		Slots:    []common.SlotUpdate{{newAddr, common.Key{byte(1)}, common.Value{byte(1)}}},
 	}
 
 	err = trie.Add(2, update, nil)

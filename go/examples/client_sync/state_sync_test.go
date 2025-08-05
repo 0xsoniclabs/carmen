@@ -31,7 +31,6 @@ func (g *blockGenerator) GetNextBlockUpdateMessage() Message {
 	d := byte(g.nextBlock >> 24)
 
 	update := common.Update{}
-	update.AppendCreateAccount(common.Address{a, b, c, d})
 	update.AppendBalanceUpdate(common.Address{a, b, c, d}, amount.New(12))
 	update.AppendNonceUpdate(common.Address{a, b, c, d}, common.Nonce{14})
 	update.AppendCodeUpdate(common.Address{a, b, c, d}, []byte{a, b, c})

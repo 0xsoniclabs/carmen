@@ -90,10 +90,6 @@ func TestMissingKeys(t *testing.T) {
 			}
 			defer state.Close()
 
-			accountState, err := state.Exists(address1)
-			if err != nil || accountState != false {
-				t.Errorf("Account must not exist in the initial state, but it exists. err: %s", err)
-			}
 			balance, err := state.GetBalance(address1)
 			if err != nil || !balance.IsZero() {
 				t.Errorf("Balance must be empty. It is: %s, err: %s", balance, err)
@@ -129,20 +125,16 @@ func TestBasicOperations(t *testing.T) {
 
 			// fill-in values
 			err = state.Apply(12, common.Update{
-				CreatedAccounts: []common.Address{address1},
-				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
-				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
-				Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{67}}},
-				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
+				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
+				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
+				Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{67}}},
+				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			})
 			if err != nil {
 				t.Errorf("Error: %s", err)
 			}
 
 			// fetch values
-			if val, err := state.Exists(address1); err != nil || val != true {
-				t.Errorf("Created account does not exists: Val: %t, Err: %v", val, err)
-			}
 			if val, err := state.GetNonce(address1); (err != nil || val != common.Nonce{123}) {
 				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
 			}
@@ -164,9 +156,6 @@ func TestBasicOperations(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error: %s", err)
 			}
-			if val, err := state.Exists(address1); err != nil || val != false {
-				t.Errorf("Deleted account is not deleted: Val: %t, Err: %s", val, err)
-			}
 
 			// fetch wrong combinations
 			if val, err := state.GetStorage(address1, key1); (err != nil || val != common.Value{}) {
@@ -187,18 +176,17 @@ func TestDeletingAccounts(t *testing.T) {
 
 			// fill-in values
 			update := common.Update{
-				CreatedAccounts: []common.Address{address1},
-				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
-				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
-				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
+				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
+				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
+				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			}
 			if err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
 			// fetch values
-			if val, err := state.Exists(address1); err != nil || val != true {
-				t.Errorf("Created account does not exists: Val: %t, Err: %v", val, err)
+			if val, err := state.GetNonce(address1); err != nil || val != (common.Nonce{123}) {
+				t.Errorf("Created account does not have the right nonce: Val: %v, Err: %v", val, err)
 			}
 
 			// delete account
@@ -208,8 +196,8 @@ func TestDeletingAccounts(t *testing.T) {
 			if err := state.Apply(2, update); err != nil {
 				t.Errorf("failed to apply update: %v", err)
 			}
-			if val, err := state.Exists(address1); err != nil || val != false {
-				t.Errorf("Deleted account is not deleted: Val: %t, Err: %s", val, err)
+			if val, err := state.GetNonce(address1); err != nil || val != (common.Nonce{}) {
+				t.Errorf("Deleted account does not have the right nonce: Val: %v, Err: %v", val, err)
 			}
 		})
 	}
@@ -264,6 +252,7 @@ func TestMoreInserts(t *testing.T) {
 	}
 }
 
+/*
 func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
@@ -277,7 +266,6 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 
 			// create an account and set some of its properties
 			update := common.Update{
-				CreatedAccounts: []common.Address{address1},
 				Balances:        []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: nonce1}},
 				Codes:           []common.CodeUpdate{{Account: address1, Code: code1}},
@@ -285,10 +273,6 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 			}
 			if err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
-			}
-
-			if exists, err := state.Exists(address1); !exists || err != nil {
-				t.Errorf("account does not exist, err %v", err)
 			}
 
 			if got, err := state.GetBalance(address1); got != balance1 || err != nil {
@@ -331,6 +315,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 		})
 	}
 }
+*/
 
 func TestHashing(t *testing.T) {
 	var hashes = [][]common.Hash{nil, nil, nil, nil, nil, nil}
@@ -347,14 +332,8 @@ func TestHashing(t *testing.T) {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
-			state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+			state.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
 			hash1, err := state.GetHash()
-			if err != nil {
-				t.Fatalf("unable to get state hash; %v", err)
-			}
-
-			state.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
-			hash2, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
@@ -362,8 +341,8 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
-			hash3, err := state.GetHash()
+			state.Apply(2, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+			hash2, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
@@ -371,19 +350,15 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			if initialHash == hash3 || hash1 == hash3 || hash2 == hash3 {
-				t.Errorf("hash of changed state not changed")
-			}
-
-			state.Apply(4, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
-			hash4, err := state.GetHash()
+			state.Apply(3, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
+			hash3, err := state.GetHash()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
-			if initialHash == hash4 || hash3 == hash4 {
+			if initialHash == hash3 || hash2 == hash3 {
 				t.Errorf("hash of changed state not changed")
 			}
-			hashes[int(config.config.Schema)] = append(hashes[int(config.config.Schema)], hash4) // store the last hash
+			hashes[int(config.config.Schema)] = append(hashes[int(config.config.Schema)], hash3) // store the last hash
 		})
 	}
 
@@ -654,8 +629,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 	db := newGoState(liveDB, nil, []func(){})
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{{0xA}},
-		Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+		Balances: []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 	}
 
 	// the same result many times
@@ -717,8 +691,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		update := common.Update{
-			CreatedAccounts: []common.Address{{0xA}},
-			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+			Balances: []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 		}
 		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
@@ -745,7 +718,6 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			liveDB := state.NewMockLiveDB(ctrl)
-			liveDB.EXPECT().Exists(addr).Return(false, results[0]).AnyTimes()
 			liveDB.EXPECT().GetBalance(addr).Return(amount.New(), results[1]).AnyTimes()
 			liveDB.EXPECT().GetNonce(addr).Return(common.Nonce{}, results[2]).AnyTimes()
 			liveDB.EXPECT().GetStorage(addr, key).Return(common.Value{}, results[3]).AnyTimes()
@@ -762,10 +734,6 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 			// repeated calls must all fail
 			var shouldFail bool
 			for i := 0; i < 2; i++ {
-				shouldFail = shouldFail || errors.Is(results[0], injectedErr)
-				if _, err := db.Exists(addr); shouldFail && !errors.Is(err, injectedErr) {
-					t.Errorf("operation should fail")
-				}
 				shouldFail = shouldFail || errors.Is(results[1], injectedErr)
 				if _, err := db.GetBalance(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")

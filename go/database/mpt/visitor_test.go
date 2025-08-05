@@ -68,7 +68,6 @@ func TestNodeStatistics_CollectForestStatisticsWorks(t *testing.T) {
 	}
 
 	archive.Add(2, common.Update{
-		CreatedAccounts: []common.Address{{1}},
 		Nonces: []common.NonceUpdate{
 			{Account: common.Address{1}, Nonce: common.ToNonce(12)},
 		},
