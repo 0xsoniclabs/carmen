@@ -231,7 +231,11 @@ func runForEachCppConfig(t *testing.T, test func(*testing.T, state.State)) {
 			if err != nil {
 				t.Fatalf("failed to initialize configuration %v: %v", config, err)
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Fatalf("failed to close state: %v", err)
+				}
+			}()
 			test(t, state)
 		})
 	}

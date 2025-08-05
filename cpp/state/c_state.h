@@ -159,7 +159,7 @@ DUPLICATE_FOR_LANGS(void, GetHash(C_State state, C_Hash out_hash));
 // Retrieves a summary of the used memory. After the call the out variable will
 // point to a buffer with a serialized summary that needs to be freed by the
 // caller.
-DUPLICATE_FOR_LANGS(void, GetMemoryFootprint(C_State state, char** out,
+DUPLICATE_FOR_LANGS(void, GetMemoryFootprint(C_Database db, char** out,
                                              uint64_t* out_length));
 
 // Releases the buffer returned by GetMemoryFootprint.
