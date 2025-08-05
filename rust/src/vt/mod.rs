@@ -1,2 +1,2 @@
 pub mod commit;
-pub mod trie;
+pub mod memory;
