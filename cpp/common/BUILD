@@ -139,26 +139,6 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "account_state",
-    srcs = ["account_state.cc"],
-    hdrs = ["account_state.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-    ],
-)
-
-cc_test(
-    name = "account_state_test",
-    srcs = ["account_state_test.cc"],
-    deps = [
-        ":account_state",
-        ":test_util",
-        ":type",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
 cc_binary(
     name = "hash_benchmark",
     srcs = ["hash_benchmark.cc"],

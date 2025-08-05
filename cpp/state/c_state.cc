@@ -19,7 +19,6 @@
 
 #include "archive/leveldb/archive.h"
 #include "archive/sqlite/archive.h"
-#include "common/account_state.h"
 #include "common/memory_usage.h"
 #include "common/type.h"
 #include "state/configurations.h"
@@ -36,8 +35,6 @@ namespace {
 class WorldState {
  public:
   virtual ~WorldState() {}
-
-  virtual absl::StatusOr<AccountState> AccountExists(const Address&) = 0;
 
   virtual absl::StatusOr<Balance> GetBalance(const Address&) = 0;
 
@@ -69,10 +66,6 @@ template <State State>
 class WorldStateWrapper : public WorldState {
  public:
   WorldStateWrapper(State state) : state_(std::move(state)) {}
-
-  absl::StatusOr<AccountState> AccountExists(const Address& addr) override {
-    return state_.GetAccountState(addr);
-  }
 
   absl::StatusOr<Balance> GetBalance(const Address& address) override {
     return state_.GetBalance(address);
@@ -128,11 +121,6 @@ class WorldStateWrapper : public WorldState {
    public:
     ArchiveState(Archive& archive, BlockId block)
         : archive_(archive), block_(block) {}
-
-    absl::StatusOr<AccountState> AccountExists(const Address& addr) override {
-      ASSIGN_OR_RETURN(bool exists, archive_.Exists(block_, addr));
-      return exists ? AccountState::kExists : AccountState::kUnknown;
-    }
 
     absl::StatusOr<Balance> GetBalance(const Address& address) override {
       return archive_.GetBalance(block_, address);
@@ -273,21 +261,6 @@ void Carmen_Cpp_ReleaseState(C_State state) {
 C_State Carmen_Cpp_GetArchiveState(C_State state, uint64_t block) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   return s.GetArchiveState(block);
-}
-
-void Carmen_Cpp_AccountExists(C_State state, C_Address addr,
-                              C_AccountState out_state) {
-  auto& s = *reinterpret_cast<carmen::WorldState*>(state);
-  auto& a = *reinterpret_cast<carmen::Address*>(addr);
-  auto& r = *reinterpret_cast<carmen::AccountState*>(out_state);
-  auto res = s.AccountExists(a);
-  if (!res.ok()) {
-    std::cout << "WARNING: Failed to get account state: " << res.status()
-              << "\n"
-              << std::flush;
-    return;
-  }
-  r = *res;
 }
 
 void Carmen_Cpp_GetBalance(C_State state, C_Address addr,

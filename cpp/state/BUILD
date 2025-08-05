@@ -16,7 +16,6 @@ cc_library(
         ":update",
         "//archive",
         "//backend:structure",
-        "//common:account_state",
         "//common:type",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
@@ -40,7 +39,6 @@ cc_library(
         "//backend/index:test_util",
         "//backend/multimap:test_util",
         "//backend/store:test_util",
-        "//common:account_state",
         "//common:file_util",
         "//common:status_test_util",
         "//common:type",
@@ -134,7 +132,6 @@ cc_test(
     srcs = ["c_state_test.cc"],
     deps = [
         ":c_state",
-        "//common:account_state",
         "//common:file_util",
         "//common:status_test_util",
         "//common:type",

@@ -19,7 +19,6 @@
 #include "absl/status/statusor.h"
 #include "archive/archive.h"
 #include "backend/structure.h"
-#include "common/account_state.h"
 #include "common/hash.h"
 #include "common/memory_usage.h"
 #include "common/status_util.h"
@@ -69,10 +68,6 @@ class State {
 
   State() = default;
   State(State&&) = default;
-
-  absl::Status CreateAccount(const Address& address);
-
-  absl::StatusOr<AccountState> GetAccountState(const Address& address) const;
 
   absl::Status DeleteAccount(const Address& address);
 
@@ -148,7 +143,7 @@ class State {
   State(Index<Address, AddressId> address_index, Index<Key, KeyId> key_index,
         Index<Slot, SlotId> slot_index, Store<AddressId, Balance> balances,
         Store<AddressId, Nonce> nonces, Store<SlotId, Value> value_store,
-        Store<AddressId, AccountState> account_states, Depot<AddressId> codes,
+        Depot<AddressId> codes,
         Store<AddressId, Hash> code_hashes,
         MultiMap<AddressId, SlotId> address_to_slots,
         std::unique_ptr<Archive> archive);
@@ -168,9 +163,6 @@ class State {
 
   // The store retaining all values for the covered storage slots.
   Store<SlotId, Value> value_store_;
-
-  // The store retaining account state information.
-  Store<AddressId, AccountState> account_states_;
 
   // The code depot to retain account contracts.
   Depot<AddressId> codes_;
@@ -211,9 +203,6 @@ absl::StatusOr<State<Config>> State<Config>::Open(
                                     context, live_dir / "nonces")));
   ASSIGN_OR_RETURN(auto values,
                    (Store<SlotId, Value>::Open(context, live_dir / "values")));
-  ASSIGN_OR_RETURN(auto account_state,
-                   (Store<AddressId, AccountState>::Open(
-                       context, live_dir / "account_states")));
   ASSIGN_OR_RETURN(auto code_hashes, (Store<AddressId, Hash>::Open(
                                          context, live_dir / "code_hashes")));
 
@@ -244,7 +233,6 @@ State<Config>::State(Index<Address, AddressId> address_index,
                      Store<AddressId, Balance> balances,
                      Store<AddressId, Nonce> nonces,
                      Store<SlotId, Value> value_store,
-                     Store<AddressId, AccountState> account_states,
                      Depot<AddressId> codes, Store<AddressId, Hash> code_hashes,
                      MultiMap<AddressId, SlotId> address_to_slots,
                      std::unique_ptr<Archive> archive)
@@ -254,29 +242,10 @@ State<Config>::State(Index<Address, AddressId> address_index,
       balances_(std::move(balances)),
       nonces_(std::move(nonces)),
       value_store_(std::move(value_store)),
-      account_states_(std::move(account_states)),
       codes_(std::move(codes)),
       code_hashes_(std::move(code_hashes)),
       address_to_slots_(std::move(address_to_slots)),
       archive_(std::move(archive)) {}
-
-template <typename Config>
-absl::Status State<Config>::CreateAccount(const Address& address) {
-  ASSIGN_OR_RETURN(auto addr_id, address_index_.GetOrAdd(address));
-  RETURN_IF_ERROR(account_states_.Set(addr_id.first, AccountState::kExists));
-  return ClearAccount(addr_id.first);
-}
-
-template <typename Config>
-absl::StatusOr<AccountState> State<Config>::GetAccountState(
-    const Address& address) const {
-  auto addr_id = address_index_.Get(address);
-  if (absl::IsNotFound(addr_id.status())) {
-    return AccountState::kUnknown;
-  }
-  RETURN_IF_ERROR(addr_id);
-  return account_states_.Get(*addr_id);
-}
 
 template <typename Config>
 absl::Status State<Config>::DeleteAccount(const Address& address) {

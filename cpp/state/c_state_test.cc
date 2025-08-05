@@ -10,7 +10,6 @@
 
 #include "state/c_state.h"
 
-#include "common/account_state.h"
 #include "common/file_util.h"
 #include "common/hash.h"
 #include "common/status_test_util.h"
@@ -56,13 +55,6 @@ struct Config {
 };
 
 // Wrapper functions for updating individual elements.
-
-void Carmen_Cpp_CreateAccount(C_State state, C_Address addr) {
-  Update update;
-  update.Create(*reinterpret_cast<const Address*>(addr));
-  auto data = update.ToBytes();
-  Carmen_Cpp_Apply(state, 0, data->data(), data->size());
-}
 
 void Carmen_Cpp_DeleteAccount(C_State state, C_Address addr) {
   Update update;
@@ -134,35 +126,16 @@ TEST_P(CStateTest, StateCanBeCreatedAndReleased) {
   EXPECT_NE(state, nullptr);
 }
 
-TEST_P(CStateTest, AccountsInitiallyDoNotExist) {
-  auto state = GetState();
-  Address addr{0x01};
-  AccountState as = AccountState::kExists;
-  Carmen_Cpp_AccountExists(state, &addr, &as);
-  EXPECT_EQ(as, AccountState::kUnknown);
-}
-
-TEST_P(CStateTest, AccountsCanBeCreated) {
-  auto state = GetState();
-  Address addr{0x01};
-  AccountState as = AccountState::kExists;
-  Carmen_Cpp_AccountExists(state, &addr, &as);
-  EXPECT_EQ(as, AccountState::kUnknown);
-  Carmen_Cpp_CreateAccount(state, &addr);
-  Carmen_Cpp_AccountExists(state, &addr, &as);
-  EXPECT_EQ(as, AccountState::kExists);
-}
-
 TEST_P(CStateTest, AccountsCanBeDeleted) {
   auto state = GetState();
   Address addr{0x01};
-  AccountState as = AccountState::kExists;
-  Carmen_Cpp_AccountExists(state, &addr, &as);
-  EXPECT_EQ(as, AccountState::kUnknown);
-  Carmen_Cpp_CreateAccount(state, &addr);
+  Nonce nonce{0x02};
+  Carmen_Cpp_SetNonce(state, &addr, &nonce);
+  Carmen_Cpp_GetNonce(state, &addr, &nonce);
+  EXPECT_EQ(nonce, Nonce{0x02});
   Carmen_Cpp_DeleteAccount(state, &addr);
-  Carmen_Cpp_AccountExists(state, &addr, &as);
-  EXPECT_EQ(as, AccountState::kUnknown);
+  Carmen_Cpp_GetNonce(state, &addr, &nonce);
+  EXPECT_EQ(nonce, Nonce{0x00});
 }
 
 TEST_P(CStateTest, BalancesAreInitiallyZero) {
@@ -399,7 +372,6 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   Value value{0xCD};
 
   Update update;
-  update.Create(addr);
   update.Set(addr, balance);
   update.Set(addr, nonce);
   update.Set(addr, code);
@@ -417,9 +389,6 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   auto archive0 = Carmen_Cpp_GetArchiveState(state, 0);
   ASSERT_TRUE(archive0);
 
-  AccountState account_state;
-  Carmen_Cpp_AccountExists(archive0, &addr, &account_state);
-  EXPECT_EQ(account_state, AccountState::kUnknown);
   Carmen_Cpp_GetBalance(archive0, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, Balance{});
   Carmen_Cpp_GetNonce(archive0, &addr, &nonce_restored);
@@ -439,8 +408,6 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   // Check archive state at block 1.
   auto archive1 = Carmen_Cpp_GetArchiveState(archive0, 1);
   ASSERT_TRUE(archive1);
-  Carmen_Cpp_AccountExists(archive1, &addr, &account_state);
-  EXPECT_EQ(account_state, AccountState::kExists);
   Carmen_Cpp_GetBalance(archive1, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, balance);
   Carmen_Cpp_GetNonce(archive1, &addr, &nonce_restored);

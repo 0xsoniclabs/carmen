@@ -19,7 +19,6 @@
 #include "absl/status/statusor.h"
 #include "archive/archive.h"
 #include "backend/structure.h"
-#include "common/account_state.h"
 #include "common/hash.h"
 #include "common/memory_usage.h"
 #include "common/status_util.h"
@@ -56,10 +55,6 @@ class State {
 
   State() = default;
   State(State&&) = default;
-
-  absl::Status CreateAccount(const Address& address);
-
-  absl::StatusOr<AccountState> GetAccountState(const Address& address) const;
 
   absl::Status DeleteAccount(const Address& address);
 

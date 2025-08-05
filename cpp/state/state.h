@@ -38,11 +38,6 @@ concept State = requires(S s, const S c) {
             /*with_archive=*/std::declval<bool>())
     } -> std::same_as<absl::StatusOr<S>>;
 
-  // Obtains the current state of the given account.
-  {
-    c.GetAccountState(std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<AccountState>>;
-
   // Obtains the current balance of the given account.
   {
     c.GetBalance(std::declval<Address>())

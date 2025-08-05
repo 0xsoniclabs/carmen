@@ -17,7 +17,6 @@ cc_library(
     deps = [
         "//archive",
         "//backend:structure",
-        "//common:account_state",
         "//common:type",
         "//state:schema",
         "//state:update",
@@ -42,7 +41,6 @@ cc_test(
         "//backend/multimap/memory:multimap",
         "//backend/store:test_util",
         "//backend/store/memory:store",
-        "//common:account_state",
         "//common:status_test_util",
         "//common:type",
         "//state:configurations",
