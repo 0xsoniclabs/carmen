@@ -114,7 +114,6 @@ func TestAddGet(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: balance1},
 				},
@@ -204,7 +203,6 @@ func TestAccountDeleteCreate(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: balance1},
 				},
@@ -228,7 +226,9 @@ func TestAccountDeleteCreate(t *testing.T) {
 			}
 
 			if err := a.Add(9, common.Update{
-				CreatedAccounts: []common.Address{addr1},
+				Balances: []common.BalanceUpdate{
+					{Account: addr1, Balance: balance1},
+				},
 			}, nil); err != nil {
 				t.Fatalf("failed to add block 9; %s", err)
 			}
@@ -279,7 +279,6 @@ func TestArchive_CreateWitnessProof(t *testing.T) {
 			}()
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{{1}},
 				Balances: []common.BalanceUpdate{
 					{Account: common.Address{1}, Balance: amount.New(12)},
 				},
@@ -343,7 +342,6 @@ func TestArchive_HasEmptyStorage(t *testing.T) {
 			const blocks = 10
 			for i := uint64(1); i <= blocks; i++ {
 				if err := a.Add(i, common.Update{
-					CreatedAccounts: []common.Address{{1, 2}},
 					Balances: []common.BalanceUpdate{
 						{Account: common.Address{1}, Balance: amount.New(12)},
 						{Account: common.Address{2}, Balance: amount.New(12)},
@@ -382,7 +380,9 @@ func TestAccountStatusOnly(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
+				Nonces: []common.NonceUpdate{
+					{Account: addr1, Nonce: common.Nonce{0x01}},
+				},
 			}, nil); err != nil {
 				t.Fatalf("failed to add block 1; %s", err)
 			}
@@ -407,7 +407,6 @@ func TestBalanceOnly(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: balance1},
 				},
@@ -445,7 +444,6 @@ func TestStorageOnly(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Slots: []common.SlotUpdate{
 					{Account: addr1, Key: common.Key{0x37}, Value: common.Value{0x12}},
 				},
@@ -483,7 +481,6 @@ func TestPreventingBlockOverrides(t *testing.T) {
 			}
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Slots: []common.SlotUpdate{
 					{Account: addr1, Key: common.Key{0x37}, Value: common.Value{0x12}},
 				},
@@ -506,13 +503,14 @@ func TestPreventingBlockOutOfOrder(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(2, common.Update{
-				CreatedAccounts: []common.Address{addr1},
+				Nonces: []common.NonceUpdate{
+					{Account: addr1, Nonce: common.Nonce{0x01}},
+				},
 			}, nil); err != nil {
 				t.Fatalf("failed to add block 2; %s", err)
 			}
 
 			if err := a.Add(1, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Slots: []common.SlotUpdate{
 					{Account: addr1, Key: common.Key{0x37}, Value: common.Value{0x12}},
 				},
@@ -542,7 +540,9 @@ func TestEmptyBlockHash(t *testing.T) {
 			}
 
 			if err := a.Add(2, common.Update{
-				CreatedAccounts: []common.Address{addr1},
+				Nonces: []common.NonceUpdate{
+					{Account: addr1, Nonce: common.Nonce{0x01}},
+				},
 			}, nil); err != nil {
 				t.Fatalf("failed to add block 2; %v", err)
 			}
@@ -581,7 +581,6 @@ func TestZeroBlock(t *testing.T) {
 			defer a.Close()
 
 			if err := a.Add(0, common.Update{
-				CreatedAccounts: []common.Address{addr1},
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: balance1},
 				},
@@ -624,7 +623,9 @@ func TestTwinProtection(t *testing.T) {
 			}
 
 			if err := a.Add(0, common.Update{
-				CreatedAccounts: []common.Address{addr1},
+				Nonces: []common.NonceUpdate{
+					{Account: addr1, Nonce: common.Nonce{0x01}},
+				},
 			}, nil); err == nil {
 				t.Errorf("second adding of block 0 should have failed but it succeed")
 			}
@@ -669,7 +670,10 @@ func TestBlockHeight(t *testing.T) {
 			}
 
 			// Adding block 5 should raise the block height accordingly.
-			if err := a.Add(5, common.Update{CreatedAccounts: []common.Address{addr1}}, nil); err != nil {
+			if err := a.Add(5, common.Update{Nonces: []common.NonceUpdate{{
+				Account: addr1,
+				Nonce:   common.Nonce{0x01},
+			}}}, nil); err != nil {
 				t.Fatalf("failed to add block 5; %s", err)
 			}
 

@@ -185,7 +185,7 @@ class Archive {
       if (pos != reincarnation_cache_.end()) {
         return pos->second;
       }
-      ASSIGN_OR_RETURN((auto [_, r]), GetAccountState(block, addr));
+      ASSIGN_OR_RETURN((auto [r]), GetAccountState(block, addr));
       reincarnation_cache_[addr] = r;
       return r;
     };
@@ -193,15 +193,6 @@ class Archive {
     LevelDbWriteBatch batch;
     for (const auto& addr : update.GetDeletedAccounts()) {
       ASSIGN_OR_RETURN((auto state), GetAccountState(block, addr));
-      state.exists = false;
-      state.reincarnation_number++;
-      reincarnation_cache_[addr] = state.reincarnation_number;
-      batch.Put(GetAccountStateKey(addr, block), state.Encode());
-    }
-
-    for (const auto& addr : update.GetCreatedAccounts()) {
-      ASSIGN_OR_RETURN((auto state), GetAccountState(block, addr));
-      state.exists = true;
       state.reincarnation_number++;
       reincarnation_cache_[addr] = state.reincarnation_number;
       batch.Put(GetAccountStateKey(addr, block), state.Encode());
@@ -242,11 +233,6 @@ class Archive {
     return db_.Add(std::move(batch));
   }
 
-  absl::StatusOr<bool> Exists(BlockId block, const Address& address) {
-    ASSIGN_OR_RETURN((auto [exists, _]), GetAccountState(block, address));
-    return exists;
-  }
-
   absl::StatusOr<Balance> GetBalance(BlockId block, const Address& address) {
     return FindMostRecentFor<Balance>(block, GetBalanceKey(address, block));
   }
@@ -261,7 +247,7 @@ class Archive {
 
   absl::StatusOr<Value> GetStorage(BlockId block, const Address& address,
                                    const Key& key) {
-    ASSIGN_OR_RETURN((auto [_, r]), GetAccountState(block, address));
+    ASSIGN_OR_RETURN((auto [r]), GetAccountState(block, address));
     return FindMostRecentFor<Value>(block,
                                     GetStorageKey(address, r, key, block));
   }
@@ -555,17 +541,14 @@ class Archive {
 
       if (!state_iter.Finished() && *state_iter.GetBlock() == current) {
         ASSIGN_OR_RETURN(auto state, state_iter.Value());
-        if (state.exists) {
-          update.created = true;
-        } else {
-          update.deleted = true;
-        }
         auto new_reincarnation_number = state.reincarnation_number;
         if (new_reincarnation_number != reincarnation + 1) {
           return absl::InternalError(absl::StrFormat(
               "Reincarnation numbers are not incremental, at block %d the "
               "value moves from %d to %d",
               current, reincarnation, new_reincarnation_number));
+        } else {
+          update.deleted = true;
         }
         reincarnation = new_reincarnation_number;
         RETURN_IF_ERROR(state_iter.Next());
@@ -741,12 +724,6 @@ absl::StatusOr<LevelDbArchive> LevelDbArchive::Open(
 absl::Status LevelDbArchive::Add(BlockId block, const Update& update) {
   RETURN_IF_ERROR(CheckState());
   return impl_->Add(block, update);
-}
-
-absl::StatusOr<bool> LevelDbArchive::Exists(BlockId block,
-                                            const Address& account) {
-  RETURN_IF_ERROR(CheckState());
-  return impl_->Exists(block, account);
 }
 
 absl::StatusOr<Balance> LevelDbArchive::GetBalance(BlockId block,

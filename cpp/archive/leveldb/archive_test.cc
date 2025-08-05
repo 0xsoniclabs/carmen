@@ -35,7 +35,6 @@ void TestCorruption(absl::FunctionRef<void(LevelDb& db)> change,
   {
     ASSERT_OK_AND_ASSIGN(auto archive, LevelDbArchive::Open(dir));
     Update update1;
-    update1.Create(addr);
     update1.Set(addr, Balance{0x12});
     update1.Set(addr, Nonce{0x13});
     update1.Set(addr, Code{0x14});
@@ -51,7 +50,6 @@ void TestCorruption(absl::FunctionRef<void(LevelDb& db)> change,
     EXPECT_OK(archive.Add(3, update3));
 
     Update update5;
-    update5.Create(addr);
     update5.Set(addr, Balance{0x51});
     EXPECT_OK(archive.Add(5, update5));
 
@@ -136,7 +134,7 @@ TEST(LevelDbArchive, AccountVerificationDetectsModifiedStatusUpdate) {
   TestAccountCorruption(
       [](LevelDb& db) {
         ASSERT_OK(db.Add(GetAccountStateKey(Address{0x01}, 1),
-                         AccountState{false, 1}.Encode()));
+                         AccountState{1}.Encode()));
       },
       "Hash for diff at block 1 does not match.");
 }
@@ -145,7 +143,7 @@ TEST(LevelDbArchive, AccountVerificationDetectsAdditionalStatusUpdate) {
   TestAccountCorruption(
       [](LevelDb& db) {
         ASSERT_OK(db.Add(GetAccountStateKey(Address{0x01}, 2),
-                         AccountState{true, 2}.Encode()));
+                         AccountState{2}.Encode()));
       },
       "Archive contains update for block 2 but no hash for it.");
 }
@@ -154,7 +152,7 @@ TEST(LevelDbArchive, AccountVerificationDetectsModifiedReincarnationNumber) {
   TestAccountCorruption(
       [](LevelDb& db) {
         ASSERT_OK(db.Add(GetAccountStateKey(Address{0x01}, 1),
-                         AccountState{true, 2}.Encode()));
+                         AccountState{2}.Encode()));
       },
       "Reincarnation numbers are not incremental");
 }
@@ -576,7 +574,7 @@ TEST(LevelDbArchive, VerificationDetectsExtraAccountStatus) {
   TestArchiveCorruption(
       [](LevelDb& db) {
         ASSERT_OK(db.Add(GetAccountStateKey(Address{0x02}, 1),
-                         AccountState{true, 0}.Encode()));
+                         AccountState{0}.Encode()));
       },
       "Found extra key/value pair in key space `account_state`.");
 
@@ -584,7 +582,7 @@ TEST(LevelDbArchive, VerificationDetectsExtraAccountStatus) {
   TestArchiveCorruption(
       [](LevelDb& db) {
         ASSERT_OK(db.Add(GetAccountStateKey(Address{0x01}, 20),
-                         AccountState{true, 0}.Encode()));
+                         AccountState{0}.Encode()));
       },
       "Found entry of future block height in key space `account_state`.");
 }

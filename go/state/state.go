@@ -28,9 +28,6 @@ const NoArchiveError = common.ConstError("state does not maintain archive data")
 
 // State interfaces provides access to accounts and smart contract values memory.
 type State interface {
-	// Exists obtains the current state of the provided account.
-	Exists(address common.Address) (bool, error)
-
 	// GetBalance provides balance for the input account address.
 	GetBalance(address common.Address) (amount.Amount, error)
 

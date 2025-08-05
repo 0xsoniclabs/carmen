@@ -148,19 +148,6 @@ func (a *Archive) addUpdateIntoBatch(block uint64, update common.Update) error {
 		a.reincarnationNumberCache[account] = reincarnation + 1
 	}
 
-	for _, account := range update.CreatedAccounts {
-		reincarnation, err := getReincarnationNumber(account)
-		if err != nil {
-			return fmt.Errorf("failed to get status; %s", err)
-		}
-		var accountK accountBlockKey
-		accountK.set(backend.AccountArchiveKey, account, block)
-		var accountStatusV accountStatusValue
-		accountStatusV.set(true, reincarnation+1)
-		a.batch.Put(accountK[:], accountStatusV[:])
-		a.reincarnationNumberCache[account] = reincarnation + 1
-	}
-
 	for _, balanceUpdate := range update.Balances {
 		var accountK accountBlockKey
 		accountK.set(backend.BalanceArchiveKey, balanceUpdate.Account, block)

@@ -91,18 +91,6 @@ func newLevelDbBasedState(params state.Parameters) (state.State, error) {
 	return newState(C.kLive_LevelDb, params)
 }
 
-func (cs *CppState) CreateAccount(address common.Address) error {
-	update := common.Update{}
-	update.AppendCreateAccount(address)
-	return cs.Apply(0, update)
-}
-
-func (cs *CppState) Exists(address common.Address) (bool, error) {
-	var res common.AccountState
-	C.Carmen_Cpp_AccountExists(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
-	return res == common.Exists, nil
-}
-
 func (cs *CppState) DeleteAccount(address common.Address) error {
 	update := common.Update{}
 	update.AppendDeleteAccount(address)

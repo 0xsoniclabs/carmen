@@ -42,7 +42,6 @@ void TestCorruption(absl::FunctionRef<void(Sqlite& db)> change,
   {
     ASSERT_OK_AND_ASSIGN(auto archive, SqliteArchive::Open(dir));
     Update update1;
-    update1.Create(addr);
     update1.Set(addr, Balance{0x12});
     update1.Set(addr, Nonce{0x13});
     update1.Set(addr, Code{0x14});
@@ -58,7 +57,6 @@ void TestCorruption(absl::FunctionRef<void(Sqlite& db)> change,
     EXPECT_OK(archive.Add(3, update3));
 
     Update update5;
-    update5.Create(addr);
     update5.Set(addr, Balance{0x51});
     EXPECT_OK(archive.Add(5, update5));
 
@@ -99,18 +97,12 @@ TEST(SqliteArchive, AccountVerificationDetectsMissingHash) {
       "Archive contains update for block 3 but no hash for it.");
 }
 
-TEST(SqliteArchive, AccountVerificationDetectsModifiedStatusUpdate) {
-  TestAccountCorruption(
-      [](Sqlite& db) { ASSERT_OK(db.Run("UPDATE status SET exist = 0")); },
-      "Hash for diff at block 1 does not match.");
-}
-
 TEST(SqliteArchive, AccountVerificationDetectsAdditionalStatusUpdate) {
   TestAccountCorruption(
       [](Sqlite& db) {
         ASSERT_OK(
-            db.Run("INSERT INTO status(account, block, exist,reincarnation) "
-                   "VALUES (?,2,1,1)",
+            db.Run("INSERT INTO status(account, block,reincarnation) "
+                   "VALUES (?,2,1)",
                    Address{0x01}));
       },
       "Archive contains update for block 2 but no hash for it.");
@@ -323,8 +315,8 @@ TEST(SqliteArchive, VerificationDetectsExtraAccountStatus) {
   TestArchiveCorruption(
       [](Sqlite& db) {
         ASSERT_OK(
-            db.Run("INSERT INTO status(account,block,exist,reincarnation) "
-                   "VALUES (?,1,0,0)",
+            db.Run("INSERT INTO status(account,block,reincarnation) "
+                   "VALUES (?,1,0)",
                    Address{0x02}));
       },
       "Found extra row of data in table `status`.");
@@ -333,8 +325,8 @@ TEST(SqliteArchive, VerificationDetectsExtraAccountStatus) {
   TestArchiveCorruption(
       [](Sqlite& db) {
         ASSERT_OK(
-            db.Run("INSERT INTO status(account,block,exist,reincarnation) "
-                   "VALUES (?,20,0,0)",
+            db.Run("INSERT INTO status(account,block,reincarnation) "
+                   "VALUES (?,20,0)",
                    Address{0x01}));
       },
       "Found entry of future block height in `status`.");

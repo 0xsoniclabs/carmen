@@ -58,10 +58,6 @@ class Update {
   // views on deleted accounts.
   void Delete(const Address& account) { deleted_accounts_.push_back(account); }
 
-  // Adds the given account to the list of created accounts. May invalidate
-  // views on created accounts.
-  void Create(const Address& account) { created_accounts_.push_back(account); }
-
   // Adds an update to the given balance. May invalidate views on balance
   // updates aquired using GetBlances().
   void Set(const Address& account, const Balance& balance) {
@@ -95,12 +91,6 @@ class Update {
   // the end of the life cycle of this update.
   const std::vector<Address>& GetDeletedAccounts() const {
     return deleted_accounts_;
-  }
-
-  // Returns a span of created addresses, valid until the next modification or
-  // the end of the life cycle of this update.
-  const std::vector<Address>& GetCreatedAccounts() const {
-    return created_accounts_;
   }
 
   // Returns a span of balance updates, valid until the next modification or
@@ -139,10 +129,6 @@ class Update {
  private:
   // The list of accounts that should be deleted / cleared by this update.
   std::vector<Address> deleted_accounts_;
-
-  // The list of accounts that should be created by this update. Note, accounts
-  // may be deleted and (re-)created in the same update.
-  std::vector<Address> created_accounts_;
 
   // The list of balance updates.
   std::vector<BalanceUpdate> balances_;
@@ -196,7 +182,6 @@ struct AccountUpdate {
   friend std::ostream& operator<<(std::ostream& out, const AccountUpdate&);
 
   bool deleted = false;
-  bool created = false;
   std::optional<Balance> balance;
   std::optional<Nonce> nonce;
   std::optional<Code> code;

@@ -27,10 +27,7 @@ struct AccountState {
   static absl::StatusOr<AccountState> From(std::span<const char>);
 
   // Encodes the state into a character sequence.
-  std::array<char, 5> Encode() const;
-
-  // True, if the account exists, false if it never existed or was deleted.
-  bool exists = false;
+  std::array<char, 4> Encode() const;
 
   // The reincarnation counter for the account. The counter is 0 if the account
   // was never touched, and is incremented by 1 each time the account is created

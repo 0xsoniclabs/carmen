@@ -35,7 +35,6 @@ TEST(Update, IntialUpdateIsEmpty) {
   Update update;
   EXPECT_TRUE(update.Empty());
   EXPECT_THAT(update.GetDeletedAccounts(), IsEmpty());
-  EXPECT_THAT(update.GetCreatedAccounts(), IsEmpty());
   EXPECT_THAT(update.GetBalances(), IsEmpty());
   EXPECT_THAT(update.GetNonces(), IsEmpty());
   EXPECT_THAT(update.GetCodes(), IsEmpty());
@@ -52,19 +51,6 @@ TEST(Update, DeletedAccountsAreVisible) {
   EXPECT_THAT(update.GetDeletedAccounts(), ElementsAre(addr1));
   update.Delete(addr2);
   EXPECT_THAT(update.GetDeletedAccounts(), ElementsAre(addr1, addr2));
-  EXPECT_FALSE(update.Empty());
-}
-
-TEST(Update, CreatedAccountsAreVisible) {
-  Address addr1{0x01};
-  Address addr2{0x02};
-
-  Update update;
-  EXPECT_THAT(update.GetCreatedAccounts(), ElementsAre());
-  update.Create(addr1);
-  EXPECT_THAT(update.GetCreatedAccounts(), ElementsAre(addr1));
-  update.Create(addr2);
-  EXPECT_THAT(update.GetCreatedAccounts(), ElementsAre(addr1, addr2));
   EXPECT_FALSE(update.Empty());
 }
 
@@ -151,10 +137,6 @@ Update GetExampleUpdate() {
   update.Delete(Address{0xA1});
   update.Delete(Address{0xA2});
 
-  update.Create(Address{0xB1});
-  update.Create(Address{0xB2});
-  update.Create(Address{0xB3});
-
   update.Set(Address{0xC1}, Balance{0x01});
   update.Set(Address{0xC2}, Balance{0x02});
 
@@ -215,11 +197,11 @@ TEST(Update, KnownEncodings) {
   ASSERT_OK_AND_ASSIGN(auto empty, Update().GetHash());
   EXPECT_THAT(
       Print(empty),
-      "0x61126de1b795b976f3ac878f48e88fa77a87d7308ba57c7642b9e1068403a496");
+      "0xc90232586b801f9558a76f2f963eccd831d9fe6775e4c8f1446b2331aa2132f2");
   ASSERT_OK_AND_ASSIGN(auto example, GetExampleUpdate().GetHash());
   EXPECT_THAT(
       Print(example),
-      "0xd16bcf097cba34ece949ae64db100861c15f0058a1366003ad8f90a0dadf351b");
+      "0x0cc1a4b7c5eb27efd6971161aa2e5baea74d0b874ecae1661092e30d7724c85a");
 }
 
 TEST(AccountUpdate, IsNormalizedDetectsOutOfOrderSlotUpdates) {
@@ -290,26 +272,22 @@ TEST(AccountUpdate, HashOfEmptyAccountUpdateIsHashOfEmptyString) {
 TEST(AccountUpdate, HashOfAccountStateChangesAreHashesOfSingleByte) {
   AccountUpdate update;
   EXPECT_EQ(update.GetHash(), GetSha256Hash(""));
-  update.created = true;
-  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(1)));
   update.deleted = true;
-  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(3)));
-  update.created = false;
-  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(2)));
+  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(1)));
 }
 
 TEST(AccountUpdate, HashOfBalanceChangeIsHashOfBalance) {
   AccountUpdate update;
   Balance b{0x1, 0x2};
   update.balance = b;
-  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(4), b));
+  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(2), b));
 }
 
 TEST(AccountUpdate, HashOfNonceChangeIsHashOfBalance) {
   AccountUpdate update;
   Nonce n{0x1, 0x2};
   update.nonce = n;
-  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(8), n));
+  EXPECT_EQ(update.GetHash(), GetSha256Hash(std::uint8_t(4), n));
 }
 
 TEST(AccountUpdate, HashOfCodeChangeIsHashOfCode) {
@@ -317,7 +295,7 @@ TEST(AccountUpdate, HashOfCodeChangeIsHashOfCode) {
   Code c{0x1, 0x2, 0x3};
   update.code = c;
   EXPECT_EQ(update.GetHash(),
-            GetSha256Hash(std::uint8_t(16), std::uint32_t(c.Size()), c));
+            GetSha256Hash(std::uint8_t(8), std::uint32_t(c.Size()), c));
 }
 
 TEST(AccountUpdate, SlotUpdatesAreHashedInOrder) {
@@ -343,7 +321,7 @@ TEST(AccountUpdate, BlanceNonceCodeAndStorageAreHashedInOrder) {
   update.code = c;
   update.storage.push_back({k1, v1});
   EXPECT_EQ(update.GetHash(),
-            GetSha256Hash(std::uint8_t(4 + 8 + 16), b, n,
+            GetSha256Hash(std::uint8_t(2 + 4 + 8), b, n,
                           std::uint32_t(c.Size()), c, k1, v1));
 }
 

@@ -23,7 +23,6 @@ import (
 // AccountUpdate combines the updates applied to a single account in one block.
 // Its main intention is to be utilized as the diff unit for hashing incremental updates on accounts in archives.
 type AccountUpdate struct {
-	created    bool
 	deleted    bool
 	hasBalance bool
 	balance    amount.Amount
@@ -52,9 +51,6 @@ func AccountUpdatesFrom(update *common.Update) ([]common.Address, map[common.Add
 		return au
 	}
 
-	for _, address := range update.CreatedAccounts {
-		get(address).created = true
-	}
 	for _, address := range update.DeletedAccounts {
 		get(address).deleted = true
 	}
@@ -96,11 +92,10 @@ func AccountUpdatesFrom(update *common.Update) ([]common.Address, map[common.Add
 func (au *AccountUpdate) GetHash(hasher hash.Hash) common.Hash {
 	// The hash of an account update is computed by hashing a byte string composed as follows:
 	// * a byte summarizing account change events:
-	//   * bit 0 is set if the account is created,
-	//   * bit 1 is set if the account is deleted.
-	//   * bit 2 is set if the account balance is changed.
-	//   * bit 3 is set if the account nonce is changed.
-	//   * bit 4 is set if the account code is changed.
+	//   * bit 0 is set if the account is deleted.
+	//   * bit 1 is set if the account balance is changed.
+	//   * bit 2 is set if the account nonce is changed.
+	//   * bit 3 is set if the account code is changed.
 	// * the 16 byte of the updated balance, if it was updated.
 	// * the 8 byte of the updated nonce, if it was updated.
 	// * the 4 byte of the new code size followed by the new code itself, if it was updated.
@@ -108,20 +103,17 @@ func (au *AccountUpdate) GetHash(hasher hash.Hash) common.Hash {
 
 	hasher.Reset()
 	var stateChange byte
-	if au.created {
+	if au.deleted {
 		stateChange |= 1
 	}
-	if au.deleted {
+	if au.hasBalance {
 		stateChange |= 2
 	}
-	if au.hasBalance {
+	if au.hasNonce {
 		stateChange |= 4
 	}
-	if au.hasNonce {
-		stateChange |= 8
-	}
 	if au.hasCode {
-		stateChange |= 16
+		stateChange |= 8
 	}
 	hasher.Write([]byte{stateChange})
 	if au.hasBalance {

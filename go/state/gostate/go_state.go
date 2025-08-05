@@ -100,18 +100,6 @@ type archiveUpdate = struct {
 	updateHints common.Releaser // an optional field for passing update hints from the LiveDB to the Archive
 }
 
-func (s *GoState) Exists(address common.Address) (bool, error) {
-	if err := s.stateError; err != nil {
-		return false, err
-	}
-
-	exist, err := s.live.Exists(address)
-	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
-	}
-	return exist, s.stateError
-}
-
 func (s *GoState) GetBalance(address common.Address) (amount.Amount, error) {
 	if err := s.stateError; err != nil {
 		return amount.New(), err

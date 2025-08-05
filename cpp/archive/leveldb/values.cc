@@ -20,20 +20,18 @@
 namespace carmen::archive::leveldb {
 
 absl::StatusOr<AccountState> AccountState::From(std::span<const char> data) {
-  if (data.size() != 5) {
+  if (data.size() != 4) {
     return absl::InvalidArgumentError("Invalid encoding of AccountState");
   }
   AccountState res;
-  res.exists = (std::uint8_t(data[0]) != 0);
   res.reincarnation_number =
-      ReadUint32(std::span<const char, 4>(data.data() + 1, 4));
+      ReadUint32(std::span<const char, 4>(data.data(), 4));
   return res;
 }
 
-std::array<char, 1 + 4> AccountState::Encode() const {
-  std::array<char, 5> res;
-  res[0] = exists ? 1 : 0;
-  Write(reincarnation_number, std::span<char, 4>(res.data() + 1, 4));
+std::array<char, 4> AccountState::Encode() const {
+  std::array<char, 4> res;
+  Write(reincarnation_number, std::span<char, 4>(res.data(), 4));
   return res;
 }
 

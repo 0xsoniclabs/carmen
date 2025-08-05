@@ -42,9 +42,9 @@ const (
 	kGetBlockHeightStmt = "SELECT number, hash FROM block ORDER BY number DESC LIMIT 1"
 	kGetBlockHashStmt   = "SELECT hash FROM block WHERE number <= ? ORDER BY number DESC LIMIT 1"
 
-	kCreateStatusTable = "CREATE TABLE IF NOT EXISTS status (account BLOB, block INT, exist INT, reincarnation INT, PRIMARY KEY (account,block))"
-	kAddStatusStmt     = "INSERT INTO status(account,block,exist,reincarnation) VALUES (?,?,?,?)"
-	kGetStatusStmt     = "SELECT exist, reincarnation FROM status WHERE account = ? AND block <= ? ORDER BY block DESC LIMIT 1"
+	kCreateStatusTable = "CREATE TABLE IF NOT EXISTS status (account BLOB, block INT, reincarnation INT, PRIMARY KEY (account,block))"
+	kAddStatusStmt     = "INSERT INTO status(account,block,reincarnation) VALUES (?,?,?)"
+	kGetStatusStmt     = "SELECT reincarnation FROM status WHERE account = ? AND block <= ? ORDER BY block DESC LIMIT 1"
 
 	kCreateBalanceTable = "CREATE TABLE IF NOT EXISTS balance (account BLOB, block INT, value BLOB, PRIMARY KEY (account,block))"
 	kAddBalanceStmt     = "INSERT INTO balance(account,block,value) VALUES (?,?,?)"
@@ -307,18 +307,6 @@ func (a *Archive) addUpdateIntoTx(tx *sql.Tx, block uint64, update common.Update
 			return fmt.Errorf("failed to get status; %s", err)
 		}
 		_, err = stmt.Exec(account[:], block, false, reincarnation+1)
-		if err != nil {
-			return fmt.Errorf("failed to add status; %s", err)
-		}
-		a.reincarnationNumberCache[account] = reincarnation + 1
-	}
-
-	for _, account := range update.CreatedAccounts {
-		reincarnation, err := getReincarnationNumber(account)
-		if err != nil {
-			return fmt.Errorf("failed to get status; %s", err)
-		}
-		_, err = stmt.Exec(account[:], block, true, reincarnation+1)
 		if err != nil {
 			return fmt.Errorf("failed to add status; %s", err)
 		}

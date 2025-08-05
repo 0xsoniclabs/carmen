@@ -38,11 +38,6 @@ concept Archive = requires(A a, const A b) {
     a.Add(std::declval<BlockId>(), std::declval<Update>())
     } -> std::same_as<absl::Status>;
 
-  // Allows to test whether an account exists at the given block height.
-  {
-    a.Exists(std::declval<BlockId>(), std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<bool>>;
-
   // Allows to fetch a historic balance values for a given account.
   {
     a.GetBalance(std::declval<BlockId>(), std::declval<Address>())

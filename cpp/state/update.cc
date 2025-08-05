@@ -176,7 +176,7 @@ class Writer {
 absl::StatusOr<Update> Update::FromBytes(std::span<const std::byte> data) {
   // The encoding should at least have the version number and the number of
   // entries.
-  if (data.size() < 1 + 6 * 4) {
+  if (data.size() < 1 + 5 * 4) {
     return absl::InvalidArgumentError(
         "Encoded update has less than minimum length.");
   }
@@ -190,7 +190,6 @@ absl::StatusOr<Update> Update::FromBytes(std::span<const std::byte> data) {
   }
 
   ASSIGN_OR_RETURN(auto deleted_account_size, reader.ReadUint32());
-  ASSIGN_OR_RETURN(auto created_account_size, reader.ReadUint32());
   ASSIGN_OR_RETURN(auto balances_size, reader.ReadUint32());
   ASSIGN_OR_RETURN(auto codes_size, reader.ReadUint32());
   ASSIGN_OR_RETURN(auto nonces_size, reader.ReadUint32());
@@ -199,8 +198,6 @@ absl::StatusOr<Update> Update::FromBytes(std::span<const std::byte> data) {
   Update update;
   ASSIGN_OR_RETURN(update.deleted_accounts_,
                    reader.ReadList<Address>(deleted_account_size));
-  ASSIGN_OR_RETURN(update.created_accounts_,
-                   reader.ReadList<Address>(created_account_size));
   ASSIGN_OR_RETURN(update.balances_,
                    reader.ReadList<Update::BalanceUpdate>(balances_size));
   ASSIGN_OR_RETURN(update.codes_, reader.ReadCodeUpdates(codes_size));
@@ -213,7 +210,7 @@ absl::StatusOr<Update> Update::FromBytes(std::span<const std::byte> data) {
 }
 
 bool Update::Empty() const {
-  return deleted_accounts_.empty() && created_accounts_.empty() &&
+  return deleted_accounts_.empty() &&
          balances_.empty() && nonces_.empty() && codes_.empty() &&
          storage_.empty();
 }
@@ -226,9 +223,8 @@ absl::StatusOr<Hash> Update::GetHash() const {
 absl::StatusOr<std::vector<std::byte>> Update::ToBytes() const {
   // Compute the total size of required buffer.
   std::size_t size = 1;  // the version number
-  size += 6 * 4;         // 4 bytes for the length  of the respective list
+  size += 5 * 4;         // 4 bytes for the length  of the respective list
   size += deleted_accounts_.size() * sizeof(Address);
-  size += created_accounts_.size() * sizeof(Address);
   size += balances_.size() * (sizeof(Address) + sizeof(Balance));
   size += nonces_.size() * (sizeof(Address) + sizeof(Nonce));
   size += storage_.size() * (sizeof(Address) + sizeof(Key) + sizeof(Value));
@@ -242,7 +238,6 @@ absl::StatusOr<std::vector<std::byte>> Update::ToBytes() const {
   // Start by version number and length of lists.
   out.Append(kVersion0);
   out.Append(std::uint32_t(deleted_accounts_.size()));
-  out.Append(std::uint32_t(created_accounts_.size()));
   out.Append(std::uint32_t(balances_.size()));
   out.Append(std::uint32_t(codes_.size()));
   out.Append(std::uint32_t(nonces_.size()));
@@ -250,7 +245,6 @@ absl::StatusOr<std::vector<std::byte>> Update::ToBytes() const {
 
   // Followed by the serialization of the individual lists.
   out.Append(GetDeletedAccounts());
-  out.Append(GetCreatedAccounts());
   out.Append(GetBalances());
   out.Append(GetCodes());
   out.Append(GetNonces());
@@ -263,9 +257,6 @@ absl::StatusOr<std::vector<std::byte>> Update::ToBytes() const {
 absl::flat_hash_map<Address, AccountUpdate> AccountUpdate::From(
     const Update& update) {
   absl::flat_hash_map<Address, AccountUpdate> res;
-  for (const auto& address : update.GetCreatedAccounts()) {
-    res[address].created = true;
-  }
   for (const auto& address : update.GetDeletedAccounts()) {
     res[address].deleted = true;
   }
@@ -313,17 +304,18 @@ absl::Status AccountUpdate::Normalize() {
 
 Hash AccountUpdate::GetHash() const {
   // The hash of an account update is computed by hashing a byte string composed
-  // as followes:
-  //   - a byte summarizing creation/deletion events; bit 0 is set if the
-  //   account is created, bit 1 is set if the a account is deleted.
+  // as follows:
+  //   - a byte summarizing modifications; bit 0 is set if the a account is 
+  //       deleted, bit 1 is set if the balance is updated, bit 2 is set if the
+  //       nonce is updated, bit 3 is set if the code is updated
   //   - the 16 byte of the updated balance, if it was updated
   //   - the 8 byte of the updated nonce, if it was updated
   //   - the new code, if it was updated
   //   - the concatenated list of updated slots
   Sha256Hasher hasher;
   std::uint8_t state_change =
-      (created ? 1 : 0) | (deleted ? 2 : 0) | (balance.has_value() ? 4 : 0) |
-      (nonce.has_value() ? 8 : 0) | (code.has_value() ? 16 : 0);
+      (deleted ? 1 : 0) | (balance.has_value() ? 2 : 0) |
+      (nonce.has_value() ? 4 : 0) | (code.has_value() ? 8 : 0);
   hasher.Ingest(state_change);
   if (balance.has_value()) {
     hasher.Ingest(*balance);
@@ -349,9 +341,6 @@ std::ostream& operator<<(std::ostream& out,
 
 std::ostream& operator<<(std::ostream& out, const AccountUpdate& update) {
   std::cout << "Update(";
-  if (update.created) {
-    out << "Created";
-  }
   if (update.deleted) {
     out << "Deleted";
   }

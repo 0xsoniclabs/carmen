@@ -36,31 +36,6 @@ func TestUpdateEmptyUpdateCheckReportsNoErrors(t *testing.T) {
 	}
 }
 
-func TestUpdateCreatedAccountsAreSortedAndMadeUniqueByNormalizer(t *testing.T) {
-	addr1 := Address{0x01}
-	addr2 := Address{0x02}
-	addr3 := Address{0x03}
-
-	update := Update{}
-	update.AppendCreateAccount(addr2)
-	update.AppendCreateAccount(addr1)
-	update.AppendCreateAccount(addr3)
-	update.AppendCreateAccount(addr1)
-
-	if err := update.Normalize(); err != nil {
-		t.Errorf("failed to normalize update: %v", err)
-	}
-
-	want := Update{}
-	want.AppendCreateAccount(addr1)
-	want.AppendCreateAccount(addr2)
-	want.AppendCreateAccount(addr3)
-
-	if !reflect.DeepEqual(want, update) {
-		t.Errorf("failed to normalize create-account list, wanted %v, got %v", want.CreatedAccounts, update.CreatedAccounts)
-	}
-}
-
 func TestUpdateDeletedAccountsAreSortedAndMadeUniqueByNormalizer(t *testing.T) {
 	addr1 := Address{0x01}
 	addr2 := Address{0x02}
@@ -276,12 +251,6 @@ var updateValueCase = []struct {
 	appendThird  func(u *Update)
 }{
 	{
-		"CreateAccount",
-		func(u *Update) { u.AppendCreateAccount(Address{0x01}) },
-		func(u *Update) { u.AppendCreateAccount(Address{0x02}) },
-		func(u *Update) { u.AppendCreateAccount(Address{0x03}) },
-	},
-	{
 		"DeleteAccount",
 		func(u *Update) { u.AppendDeleteAccount(Address{0x01}) },
 		func(u *Update) { u.AppendDeleteAccount(Address{0x02}) },
@@ -346,42 +315,6 @@ func TestUpdateOutOfOrderUpdatesAreDetected(t *testing.T) {
 	}
 }
 
-func TestUpdateCreatingAndDeletingSameAccountIsInvalid(t *testing.T) {
-	addr := Address{0x01}
-
-	update := Update{}
-	update.AppendCreateAccount(addr)
-	if update.Check() != nil {
-		t.Errorf("just creating an account should be fine")
-	}
-	update.AppendDeleteAccount(addr)
-	if update.Check() == nil {
-		t.Errorf("creating and deleting the same account should fail")
-	}
-}
-
-func TestUpdateSingleAccountCreatedAndDeletedIsDetectedAlsoWhenPartOfAList(t *testing.T) {
-	update := Update{}
-	for i := 0; i < 10; i++ {
-		addr := Address{byte(i)}
-		if i%2 == 0 {
-			update.AppendCreateAccount(addr)
-		} else {
-			update.AppendDeleteAccount(addr)
-		}
-	}
-
-	if err := update.Check(); err != nil {
-		t.Errorf("non-overlapping create and delete list should be fine, but got: %v", err)
-	}
-
-	update.AppendCreateAccount(Address{9})
-
-	if update.Check() == nil {
-		t.Errorf("creating and deleting the same account should fail")
-	}
-}
-
 func TestUpdateEmptyUpdateCanBeSerializedAndDeserialized(t *testing.T) {
 	update := Update{}
 
@@ -400,10 +333,6 @@ func getExampleUpdate() Update {
 
 	update.AppendDeleteAccount(Address{0xA1})
 	update.AppendDeleteAccount(Address{0xA2})
-
-	update.AppendCreateAccount(Address{0xB1})
-	update.AppendCreateAccount(Address{0xB2})
-	update.AppendCreateAccount(Address{0xB3})
 
 	update.AppendBalanceUpdate(Address{0xC1}, amount.New(1<<56, 0, 0, 0))
 	update.AppendBalanceUpdate(Address{0xC2}, amount.New(2<<56, 0, 0, 0))
@@ -470,11 +399,11 @@ func TestUpdateKnownEncodings(t *testing.T) {
 	}{
 		{
 			Update{},
-			"61126de1b795b976f3ac878f48e88fa77a87d7308ba57c7642b9e1068403a496",
+			"c90232586b801f9558a76f2f963eccd831d9fe6775e4c8f1446b2331aa2132f2",
 		},
 		{
 			getExampleUpdate(),
-			"d16bcf097cba34ece949ae64db100861c15f0058a1366003ad8f90a0dadf351b",
+			"0cc1a4b7c5eb27efd6971161aa2e5baea74d0b874ecae1661092e30d7724c85a",
 		},
 	}
 	for _, test := range testCases {
@@ -549,11 +478,10 @@ func TestUpdate_Print(t *testing.T) {
 	}
 
 	update.AppendDeleteAccount(Address{1})
-	update.AppendCreateAccount(Address{2})
-	update.AppendBalanceUpdate(Address{3}, amount.New(1))
-	update.AppendNonceUpdate(Address{4}, ToNonce(2))
-	update.AppendCodeUpdate(Address{5}, []byte{1, 2, 3})
-	update.AppendSlotUpdate(Address{6}, Key{1}, Value{2})
+	update.AppendBalanceUpdate(Address{2}, amount.New(1))
+	update.AppendNonceUpdate(Address{3}, ToNonce(2))
+	update.AppendCodeUpdate(Address{4}, []byte{1, 2, 3})
+	update.AppendSlotUpdate(Address{5}, Key{1}, Value{2})
 
 	print := update.String()
 

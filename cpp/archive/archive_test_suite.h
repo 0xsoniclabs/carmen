@@ -283,79 +283,6 @@ TYPED_TEST_P(ArchiveTest, ValuesOfDifferentAccountsAreDifferentiated) {
   EXPECT_THAT(archive.GetStorage(2, addr2, key2), one);
 }
 
-TYPED_TEST_P(ArchiveTest, CreatingAnAccountUpdatesItsExistenceState) {
-  TempDir dir;
-  ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
-
-  Address addr{0x01};
-
-  Update update;
-  update.Create(addr);
-  EXPECT_OK(archive.Add(1, update));
-
-  EXPECT_THAT(archive.Exists(0, addr), IsOkAndHolds(false));
-  EXPECT_THAT(archive.Exists(1, addr), IsOkAndHolds(true));
-  EXPECT_THAT(archive.Exists(2, addr), IsOkAndHolds(true));
-}
-
-TYPED_TEST_P(ArchiveTest, DeletingAnNonExistingAccountKeepsAccountNonExisting) {
-  TempDir dir;
-  ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
-
-  Address addr{0x01};
-
-  Update update;
-  update.Delete(addr);
-  EXPECT_OK(archive.Add(1, update));
-
-  EXPECT_THAT(archive.Exists(0, addr), IsOkAndHolds(false));
-  EXPECT_THAT(archive.Exists(1, addr), IsOkAndHolds(false));
-  EXPECT_THAT(archive.Exists(2, addr), IsOkAndHolds(false));
-}
-
-TYPED_TEST_P(ArchiveTest,
-             DeletingAnExistingAccountKeepsMakesAccountNonExisting) {
-  TempDir dir;
-  ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
-
-  Address addr{0x01};
-
-  Update update1;
-  update1.Create(addr);
-  EXPECT_OK(archive.Add(1, update1));
-
-  Update update2;
-  update2.Delete(addr);
-  EXPECT_OK(archive.Add(3, update2));
-
-  EXPECT_THAT(archive.Exists(0, addr), IsOkAndHolds(false));
-  EXPECT_THAT(archive.Exists(1, addr), IsOkAndHolds(true));
-  EXPECT_THAT(archive.Exists(2, addr), IsOkAndHolds(true));
-  EXPECT_THAT(archive.Exists(3, addr), IsOkAndHolds(false));
-  EXPECT_THAT(archive.Exists(4, addr), IsOkAndHolds(false));
-}
-
-TYPED_TEST_P(ArchiveTest, AccountCanBeRecreatedWithoutDelete) {
-  TempDir dir;
-  ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
-
-  Address addr{0x01};
-
-  Update update1;
-  update1.Create(addr);
-  EXPECT_OK(archive.Add(1, update1));
-
-  Update update2;
-  update2.Create(addr);
-  EXPECT_OK(archive.Add(3, update2));
-
-  EXPECT_THAT(archive.Exists(0, addr), IsOkAndHolds(false));
-  EXPECT_THAT(archive.Exists(1, addr), IsOkAndHolds(true));
-  EXPECT_THAT(archive.Exists(2, addr), IsOkAndHolds(true));
-  EXPECT_THAT(archive.Exists(3, addr), IsOkAndHolds(true));
-  EXPECT_THAT(archive.Exists(4, addr), IsOkAndHolds(true));
-}
-
 TYPED_TEST_P(ArchiveTest, DeletingAnAccountInvalidatesStorage) {
   TempDir dir;
   ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
@@ -366,7 +293,6 @@ TYPED_TEST_P(ArchiveTest, DeletingAnAccountInvalidatesStorage) {
   Value one{0x01};
 
   Update update1;
-  update1.Create(addr);
   update1.Set(addr, key, one);
   EXPECT_OK(archive.Add(1, update1));
 
@@ -391,12 +317,12 @@ TYPED_TEST_P(ArchiveTest, RecreatingAnAccountInvalidatesStorage) {
   Value one{0x01};
 
   Update update1;
-  update1.Create(addr);
   update1.Set(addr, key, one);
   EXPECT_OK(archive.Add(1, update1));
 
   Update update2;
-  update2.Create(addr);
+  update2.Delete(addr);
+  update2.Set(addr, Balance{1}); // < implicit re-creation
   EXPECT_OK(archive.Add(3, update2));
 
   EXPECT_THAT(archive.GetStorage(0, addr, key), zero);
@@ -421,13 +347,13 @@ TYPED_TEST_P(ArchiveTest, StorageOfRecreatedAccountCanBeUpdated) {
   Value two{0x02};
 
   Update update1;
-  update1.Create(addr);
+  update1.Delete(addr);
   update1.Set(addr, key1, one);
   update1.Set(addr, key2, two);
   EXPECT_OK(archive.Add(1, update1));
 
   Update update2;
-  update2.Create(addr);
+  update2.Delete(addr);
   update2.Set(addr, key1, two);
   update2.Set(addr, key3, one);
   EXPECT_OK(archive.Add(3, update2));
@@ -486,7 +412,7 @@ TYPED_TEST_P(ArchiveTest, BlocksCannotBeAddedMoreThanOnce) {
   ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
 
   Update update;
-  update.Create(Address{});
+  update.Set(Address{}, Balance{0x01});
   EXPECT_OK(archive.Add(0, update));
   EXPECT_THAT(
       archive.Add(0, update),
@@ -501,7 +427,7 @@ TYPED_TEST_P(ArchiveTest, BlocksCanNotBeAddedOutOfOrder) {
   ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
 
   Update update;
-  update.Create(Address{});
+  update.Set(Address{}, Balance{0x01});
   EXPECT_OK(archive.Add(0, update));
   EXPECT_OK(archive.Add(2, update));
   EXPECT_THAT(
@@ -532,10 +458,10 @@ TYPED_TEST_P(ArchiveTest, AccountListIncludesAllTouchedAccounts) {
   Balance balance{0x10};
 
   Update update1;
-  update1.Create(addr1);
+  update1.Set(addr1, Balance{1});
 
   Update update3;
-  update3.Create(addr2);
+  update3.Set(addr2, Balance{2});
 
   Update update5;
   update5.Delete(addr1);
@@ -567,10 +493,9 @@ TYPED_TEST_P(ArchiveTest, AccountHashesChainUp) {
   Hash zero{};
 
   Update update1;
-  update1.Create(addr1);
+  update1.Set(addr1, Balance{1});
 
   Update update3;
-  update3.Create(addr2);
   update3.Set(addr2, balance);
 
   Update update5;
@@ -622,12 +547,10 @@ TYPED_TEST_P(ArchiveTest, AccountValidationPassesOnIncrementalUpdates) {
   Key key{0x1};
 
   Update update1;
-  update1.Create(addr1);
   update1.Set(addr1, balance1);
   update1.Set(addr1, nonce1);
 
   Update update3;
-  update3.Create(addr2);
   update3.Set(addr2, balance2);
 
   Update update5;
@@ -663,7 +586,7 @@ TYPED_TEST_P(ArchiveTest, AccountValidationCanHandleBlockZeroUpdate) {
   Address addr1{0x1};
 
   Update update0;
-  update0.Create(addr1);
+  update0.Set(addr1, Balance{0x01});
 
   Update update1;
   update1.Set(addr1, Balance{});
@@ -687,7 +610,6 @@ TYPED_TEST_P(ArchiveTest, AccountValidationCanHandleMultipleStateUpdates) {
   // primary key / key of the value store.
 
   Update update0;
-  update0.Create(addr1);
   update0.Set(addr1, key1, Value{0x01});
   update0.Set(addr1, key2, Value{0x02});
 
@@ -710,7 +632,6 @@ TYPED_TEST_P(ArchiveTest, ArchiveCanBeVerifiedOnDifferentBlockHeights) {
 
   ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
   Update update1;
-  update1.Create(addr);
   update1.Set(addr, Balance{0x12});
   update1.Set(addr, Nonce{0x13});
   update1.Set(addr, Code{0x14});
@@ -726,7 +647,6 @@ TYPED_TEST_P(ArchiveTest, ArchiveCanBeVerifiedOnDifferentBlockHeights) {
   EXPECT_OK(archive.Add(3, update3));
 
   Update update5;
-  update5.Create(addr);
   update5.Set(addr, Balance{0x51});
   EXPECT_OK(archive.Add(5, update5));
 
@@ -759,12 +679,10 @@ TYPED_TEST_P(ArchiveTest, ArchiveHashIsHashOfAccountDiffHashesChain) {
   Key key{0x1};
 
   Update update1;
-  update1.Create(addr1);
   update1.Set(addr1, balance1);
   update1.Set(addr1, nonce1);
 
   Update update3;
-  update3.Create(addr2);
   update3.Set(addr1, balance2);
   update3.Set(addr2, balance2);
 
@@ -811,12 +729,10 @@ TYPED_TEST_P(ArchiveTest, ArchiveCanBeVerifiedForCustomBlockHeight) {
   Key key{0x1};
 
   Update update1;
-  update1.Create(addr1);
   update1.Set(addr1, balance1);
   update1.Set(addr1, nonce1);
 
   Update update3;
-  update3.Create(addr2);
   update3.Set(addr2, balance2);
 
   Update update5;
@@ -841,17 +757,14 @@ REGISTER_TYPED_TEST_SUITE_P(
     AccountValidationCanHandleBlockZeroUpdate,
     AccountValidationCanHandleMultipleStateUpdates,
     AccountValidationPassesOnIncrementalUpdates,
-    AccountCanBeRecreatedWithoutDelete, AddingEmptyUpdateDoesNotChangeHash,
+    AddingEmptyUpdateDoesNotChangeHash,
     ArchiveCanBeVerifiedOnDifferentBlockHeights,
     ArchiveCanBeVerifiedForCustomBlockHeight,
     ArchiveHashIsHashOfAccountDiffHashesChain,
     BalancesOfDifferentAccountsAreDifferentiated, BlockZeroCanBeAdded,
     BlocksCanNotBeAddedOutOfOrder, BlocksCannotBeAddedMoreThanOnce,
     CodesOfDifferentAccountsAreDifferentiated,
-    CreatingAnAccountUpdatesItsExistenceState,
     DeletingAnAccountInvalidatesStorage,
-    DeletingAnExistingAccountKeepsMakesAccountNonExisting,
-    DeletingAnNonExistingAccountKeepsAccountNonExisting,
     HashOfEmptyArchiveIsZero, InAnEmptyArchiveEverythingIsZero,
     IncreasingBlockNumbersCanBeAdded, InitialAccountHashIsZero,
     MultipleBalancesOfTheSameAccountCanBeRetained,

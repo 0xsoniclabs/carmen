@@ -41,7 +41,6 @@ import (
 // Valid instances can then be forwarded to the State as a block update.
 type Update struct {
 	DeletedAccounts []Address
-	CreatedAccounts []Address
 	Balances        []BalanceUpdate
 	Nonces          []NonceUpdate
 	Codes           []CodeUpdate
@@ -51,7 +50,6 @@ type Update struct {
 // IsEmpty is true if there is no change covered by this update.
 func (u *Update) IsEmpty() bool {
 	return len(u.DeletedAccounts) == 0 &&
-		len(u.CreatedAccounts) == 0 &&
 		len(u.Balances) == 0 &&
 		len(u.Nonces) == 0 &&
 		len(u.Codes) == 0 &&
@@ -69,17 +67,6 @@ func (u *Update) AppendDeleteAccount(addr Address) {
 // AppendDeleteAccounts is the same as AppendDeleteAccount, but for a slice.
 func (u *Update) AppendDeleteAccounts(addr []Address) {
 	u.DeletedAccounts = append(u.DeletedAccounts, addr...)
-}
-
-// AppendCreateAccount registers a new account to be created in this block.
-// This takes affect after deleting the accounts listed in this update.
-func (u *Update) AppendCreateAccount(addr Address) {
-	u.AppendCreateAccounts([]Address{addr})
-}
-
-// AppendCreateAccounts is the same as AppendCreateAccount, but for a slice.
-func (u *Update) AppendCreateAccounts(addr []Address) {
-	u.CreatedAccounts = append(u.CreatedAccounts, addr...)
 }
 
 // AppendBalanceUpdate registers a balance update to be conducted.
@@ -106,7 +93,6 @@ func (u *Update) AppendSlotUpdate(addr Address, key Key, value Value) {
 func (u *Update) Normalize() error {
 
 	u.DeletedAccounts = sortUnique(u.DeletedAccounts, accountLess, accountEqual)
-	u.CreatedAccounts = sortUnique(u.CreatedAccounts, accountLess, accountEqual)
 	u.Balances = sortUnique(u.Balances, balanceLess, balanceEqual)
 	u.Codes = sortUnique(u.Codes, codeLess, codeEqual)
 	u.Nonces = sortUnique(u.Nonces, nonceLess, nonceEqual)
@@ -135,11 +121,6 @@ func (u *Update) Normalize() error {
 func (u *Update) ApplyTo(s UpdateTarget) error {
 	for _, addr := range u.DeletedAccounts {
 		if err := s.DeleteAccount(addr); err != nil {
-			return err
-		}
-	}
-	for _, addr := range u.CreatedAccounts {
-		if err := s.CreateAccount(addr); err != nil {
 			return err
 		}
 	}
@@ -175,12 +156,6 @@ func (u *Update) String() string {
 	if len(u.DeletedAccounts) > 0 {
 		builder.WriteString("\tDeleted Accounts:\n")
 		for _, account := range u.DeletedAccounts {
-			builder.WriteString(fmt.Sprintf("\t\t%v\n", account))
-		}
-	}
-	if len(u.CreatedAccounts) > 0 {
-		builder.WriteString("\tCreated Accounts:\n")
-		for _, account := range u.CreatedAccounts {
 			builder.WriteString(fmt.Sprintf("\t\t%v\n", account))
 		}
 	}
@@ -240,7 +215,7 @@ type UpdateTarget interface {
 const updateEncodingVersion byte = 0
 
 func UpdateFromBytes(data []byte) (Update, error) {
-	if len(data) < 1+6*4 {
+	if len(data) < 1+5*4 {
 		return Update{}, fmt.Errorf("invalid encoding, too few bytes")
 	}
 	if data[0] != updateEncodingVersion {
@@ -249,13 +224,12 @@ func UpdateFromBytes(data []byte) (Update, error) {
 
 	data = data[1:]
 	deletedAccountSize := readUint32(data[0:])
-	createdAccountSize := readUint32(data[4:])
-	balancesSize := readUint32(data[8:])
-	codesSize := readUint32(data[12:])
-	noncesSize := readUint32(data[16:])
-	slotsSize := readUint32(data[20:])
+	balancesSize := readUint32(data[4:])
+	codesSize := readUint32(data[8:])
+	noncesSize := readUint32(data[12:])
+	slotsSize := readUint32(data[16:])
 
-	data = data[24:]
+	data = data[20:]
 
 	res := Update{}
 
@@ -267,18 +241,6 @@ func UpdateFromBytes(data []byte) (Update, error) {
 		res.DeletedAccounts = make([]Address, deletedAccountSize)
 		for i := 0; i < int(deletedAccountSize); i++ {
 			copy(res.DeletedAccounts[i][:], data[:])
-			data = data[len(Address{}):]
-		}
-	}
-
-	// Read list of created accounts
-	if createdAccountSize > 0 {
-		if len(data) < int(createdAccountSize)*len(Address{}) {
-			return res, fmt.Errorf("invalid encoding, truncated address list")
-		}
-		res.CreatedAccounts = make([]Address, createdAccountSize)
-		for i := 0; i < int(createdAccountSize); i++ {
-			copy(res.CreatedAccounts[i][:], data[:])
 			data = data[len(Address{}):]
 		}
 	}
@@ -352,9 +314,8 @@ func UpdateFromBytes(data []byte) (Update, error) {
 
 func (u *Update) ToBytes() []byte {
 	const addrLength = len(Address{})
-	size := 1 + 6*4 // version + sizes
+	size := 1 + 5*4 // version + sizes
 	size += len(u.DeletedAccounts) * addrLength
-	size += len(u.CreatedAccounts) * addrLength
 	size += len(u.Balances) * (addrLength + amount.BytesLength)
 	size += len(u.Nonces) * (addrLength + len(Nonce{}))
 	size += len(u.Slots) * (addrLength + len(Key{}) + len(Value{}))
@@ -366,16 +327,12 @@ func (u *Update) ToBytes() []byte {
 
 	res = append(res, updateEncodingVersion)
 	res = appendUint32(res, uint32(len(u.DeletedAccounts)))
-	res = appendUint32(res, uint32(len(u.CreatedAccounts)))
 	res = appendUint32(res, uint32(len(u.Balances)))
 	res = appendUint32(res, uint32(len(u.Codes)))
 	res = appendUint32(res, uint32(len(u.Nonces)))
 	res = appendUint32(res, uint32(len(u.Slots)))
 
 	for _, addr := range u.DeletedAccounts {
-		res = append(res, addr[:]...)
-	}
-	for _, addr := range u.CreatedAccounts {
 		res = append(res, addr[:]...)
 	}
 	for _, cur := range u.Balances {
@@ -419,9 +376,6 @@ func appendUint32(data []byte, value uint32) []byte {
 
 // Check verifies that all updates are unique and in order.
 func (u *Update) Check() error {
-	if !isSortedAndUnique(u.CreatedAccounts, accountLess) {
-		return fmt.Errorf("created accounts are not in order or unique")
-	}
 	if !isSortedAndUnique(u.DeletedAccounts, accountLess) {
 		return fmt.Errorf("deleted accounts are not in order or unique")
 	}
@@ -440,19 +394,6 @@ func (u *Update) Check() error {
 
 	if !isSortedAndUnique(u.Slots, slotLess) {
 		return fmt.Errorf("storage updates are not in order or unique")
-	}
-
-	// Make sure that there is no account created and deleted.
-	for i, j := 0, 0; i < len(u.CreatedAccounts) && j < len(u.DeletedAccounts); {
-		cmp := u.CreatedAccounts[i].Compare(&u.DeletedAccounts[j])
-		if cmp == 0 {
-			return fmt.Errorf("unable to create and delete same address in update: %v", u.CreatedAccounts[i])
-		}
-		if cmp < 0 {
-			i++
-		} else {
-			j++
-		}
 	}
 
 	return nil
