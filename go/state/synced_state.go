@@ -53,12 +53,6 @@ func UnsafeUnwrapSyncedState(state State) State {
 	return state
 }
 
-func (s *syncedState) Exists(address common.Address) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state.Exists(address)
-}
-
 func (s *syncedState) GetBalance(address common.Address) (amount.Amount, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

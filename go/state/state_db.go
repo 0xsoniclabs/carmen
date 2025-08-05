@@ -473,7 +473,7 @@ func (s *stateDB) Exist(addr common.Address) bool {
 	if val, exists := s.accounts[addr]; exists {
 		return val.current == accountExists || val.current == accountSelfDestructed // self-destructed accounts still exist till the end of the transaction.
 	}
-	exists, err := s.state.Exists(addr)
+	exists, err := s.accountExists(addr)
 	if err != nil {
 		s.errors = append(s.errors, fmt.Errorf("failed to get account state for %v: %w", addr, err))
 		return false
@@ -487,6 +487,31 @@ func (s *stateDB) Exist(addr common.Address) bool {
 		current:  state,
 	}
 	return exists
+}
+
+func (s *stateDB) accountExists(addr common.Address) (bool, error) {
+	nonce, err := s.state.GetNonce(addr)
+	if err != nil {
+		return false, err
+	}
+	if nonce != (common.Nonce{}) {
+		return true, nil
+	}
+	balance, err := s.state.GetBalance(addr)
+	if err != nil {
+		return false, err
+	}
+	if balance != (amount.Amount{}) {
+		return true, nil
+	}
+	code, err := s.state.GetCode(addr)
+	if err != nil {
+		return false, err
+	}
+	if len(code) > 0 {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *stateDB) CreateAccount(addr common.Address) {
@@ -1228,7 +1253,7 @@ func (s *stateDB) EndBlock(block uint64) {
 	for addr, value := range s.accounts {
 		if value.original != value.current {
 			if value.current == accountExists {
-				update.AppendCreateAccount(addr)
+				//update.AppendCreateAccount(addr)
 				delete(nonExistingAccounts, addr)
 			}
 		}
