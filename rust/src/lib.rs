@@ -53,6 +53,9 @@ pub trait CarmenDb {
     /// resulting state must be released and must not outlive the life time of the
     /// provided state.
     fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenState>, Error>;
+
+    /// Returns a summary of the used memory.
+    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error>;
 }
 
 /// The safe Carmen state interface.
@@ -87,9 +90,6 @@ pub trait CarmenState {
     /// Returns a global state hash of the given state.
     fn get_hash(&mut self) -> Result<Hash, Error>;
 
-    /// Returns a summary of the used memory.
-    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error>;
-
     /// Applies the provided block update to the maintained state.
     #[allow(clippy::needless_lifetimes)] // using an elided lifetime here breaks automock
     fn apply_block_update<'u>(&mut self, block: u64, update: Update<'u>) -> Result<(), Error>;
@@ -113,6 +113,10 @@ impl CarmenDb for CarmenS6Db {
     }
 
     fn get_archive_state(&mut self, block: u64) -> Result<Box<dyn CarmenState>, Error> {
+        unimplemented!()
+    }
+
+    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error> {
         unimplemented!()
     }
 }
@@ -155,10 +159,6 @@ impl CarmenState for LiveState {
     }
 
     fn get_hash(&mut self) -> Result<Hash, Error> {
-        unimplemented!()
-    }
-
-    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error> {
         unimplemented!()
     }
 
@@ -205,10 +205,6 @@ impl CarmenState for ArchiveState {
     }
 
     fn get_hash(&mut self) -> Result<Hash, Error> {
-        unimplemented!()
-    }
-
-    fn get_memory_footprint(&mut self) -> Result<Box<str>, Error> {
         unimplemented!()
     }
 

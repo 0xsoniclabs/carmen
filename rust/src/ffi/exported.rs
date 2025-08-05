@@ -783,13 +783,13 @@ unsafe extern "C" fn Carmen_Rust_GetHash(state: *mut c_void, out_hash: *mut c_vo
 /// caller.
 ///
 /// # Safety
-/// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
-///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
-/// - `state` must not be mutated for the duration of the call
-/// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
-/// - `state.inner` must not be mutated for the duration of the lifetime of `token`
+/// - `db` must be a valid pointer to a `DbWrapper` object which holds a pointer to a `dyn CarmenDb`
+///   object
+/// - `db` must be valid for reads and writes for the duration of the call
+/// - `db` must not be mutated for the duration of the call
+/// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
+/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `out` must be a valid pointer to a byte array of length `out_length`
 /// - `out` must be valid for and writes for the duration of the call
 /// - `out` must not be mutated for the duration of the call
@@ -797,26 +797,26 @@ unsafe extern "C" fn Carmen_Rust_GetHash(state: *mut c_void, out_hash: *mut c_vo
 /// - `out_length` must be valid for writes for the duration of the call
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_GetMemoryFootprint(
-    state: *mut c_void,
+    db: *mut c_void,
     out: *mut *mut c_char,
     out_length: *mut u64,
 ) {
     let token = LifetimeToken;
-    if state.is_null() || out.is_null() || out_length.is_null() {
+    if db.is_null() || out.is_null() || out_length.is_null() {
         unimplemented!();
     }
     // SAFETY:
-    // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
-    // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    // - `db` is a valid pointer to a `StateWrapper` object (precondition)
+    // - `db` is valid for reads and writes for the duration of the call (precondition)
+    // - `db` is not mutated for the duration of the call (precondition)
+    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
     // SAFETY:
-    // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
+    // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
+    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
     //   (precondition)
-    // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
-    match state.get_memory_footprint() {
+    // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
+    let db = unsafe { db.inner_to_ref_mut_scoped(&token) };
+    match db.get_memory_footprint() {
         Ok(msg) => {
             // SAFETY:
             // - `out_length` is a valid pointer to a `u64` (precondition)
@@ -1414,17 +1414,17 @@ mod tests {
     #[test]
     fn carmen_rust_get_memory_footprint_returns_buffer_and_length() {
         let expected_str = "footprint";
-        create_state_then_call_fn_then_release_state(
+        create_db_then_call_fn_then_release_db(
             move |mock_db| {
                 mock_db
                     .expect_get_memory_footprint()
                     .returning(move || Ok(Box::from(expected_str)));
             },
-            |state| {
+            |db| {
                 let mut out_ptr: *mut c_char = std::ptr::null_mut();
                 let mut out_len: u64 = 0;
                 unsafe {
-                    Carmen_Rust_GetMemoryFootprint(state, &mut out_ptr, &mut out_len);
+                    Carmen_Rust_GetMemoryFootprint(db, &mut out_ptr, &mut out_len);
                 }
                 assert!(!out_ptr.is_null());
                 assert_eq!(out_len, expected_str.len() as u64);
