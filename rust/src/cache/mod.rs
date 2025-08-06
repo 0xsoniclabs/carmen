@@ -11,6 +11,9 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Copy)]
 pub struct Id(u64);
 
+pub const ROOT_ID: Id = Id(0);
+pub const EMPTY_NODE_ID: Id = Id(1);
+
 impl Id {
     fn new(id: u64) -> Self {
         Id(id)
@@ -37,7 +40,7 @@ pub trait Cache<K, V> {
 
     fn reserve(&self, node: &V) -> Id;
 
-    fn set(&mut self, id: K, node: V) -> Result<(), Error>;
+    fn set(&self, id: K, node: V) -> Result<(), Error>;
 
     fn flush(&mut self) -> Result<(), Error>;
 }
@@ -82,8 +85,8 @@ impl<V: Clone + Debug> Lifecycle<Id, Arc<Mutex<CacheEntry<V>>>> for NodeCacheLif
 
     /// Checks if the entry cannot be evicted.
     /// The only case in which is true is when the database is in update mode.
-    fn is_pinned(&self, _key: &Id, _val: &Arc<Mutex<CacheEntry<V>>>) -> bool {
-        UPDATE_MODE.load(std::sync::atomic::Ordering::Relaxed)
+    fn is_pinned(&self, _key: &Id, val: &Arc<Mutex<CacheEntry<V>>>) -> bool {
+        UPDATE_MODE.load(std::sync::atomic::Ordering::Relaxed) && Arc::strong_count(val) > 1
     }
 
     /// Type used to store state during a request.
@@ -94,8 +97,8 @@ impl<V: Clone + Debug> Lifecycle<Id, Arc<Mutex<CacheEntry<V>>>> for NodeCacheLif
 /// The dirty flag indicates if the entry has been modified while in cache and needs to be flushed to the storage when evicted.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CacheEntry<T> {
-    value: T,
-    dirty: bool,
+    pub value: T,
+    pub dirty: bool,
 }
 
 /// A cache for elements of type `T` indexed by `Id` that uses a storage backend to retrieve and persist data.
@@ -136,11 +139,17 @@ impl<T: Clone + Debug> NodeCache<T> {
 
 impl<V> Cache<Id, V> for NodeCache<V>
 where
-    V: Clone + Debug,
+    V: Clone + Debug + Default,
 {
     /// Retrieves an entry from the cache.
     /// If the entry is not in the cache, it retrieves it from the storage.
     fn get(&self, id: Id) -> Result<Arc<Mutex<CacheEntry<V>>>, Error> {
+        if id == EMPTY_NODE_ID {
+            return Ok(Arc::new(Mutex::new(CacheEntry {
+                value: V::default(), // Assuming V implements Default
+                dirty: false,
+            })));
+        }
         self.cache.get_or_insert_with(&id, || {
             let entry = self.storage.get(id)?;
             Ok(Arc::new(Mutex::new(CacheEntry {
@@ -158,7 +167,7 @@ where
 
     /// Sets a node in the cache and marks it as dirty.
     /// If the node already exists, it updates its value.
-    fn set(&mut self, id: Id, node: V) -> Result<(), Error> {
+    fn set(&self, id: Id, node: V) -> Result<(), Error> {
         match self.cache.get_value_or_guard(&id, None) {
             GuardResult::Value(entry) => {
                 let mut entry = entry.lock().unwrap();
