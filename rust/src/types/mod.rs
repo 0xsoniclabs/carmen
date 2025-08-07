@@ -19,6 +19,7 @@ mod node;
 mod update;
 
 /// The Carmen live state implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveImpl {
     Memory = 0,
     File = 1,
@@ -26,6 +27,7 @@ pub enum LiveImpl {
 }
 
 /// The Carmen archive state implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveImpl {
     None = 0,
     LevelDb = 1,
