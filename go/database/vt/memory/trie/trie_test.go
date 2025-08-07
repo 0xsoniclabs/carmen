@@ -102,6 +102,17 @@ func TestTrie_ManyValuesCanBeSetAndRetrieved(t *testing.T) {
 	}
 }
 
+func TestTrie_SettingASingleValueProducesAnInnerNode(t *testing.T) {
+	require := require.New(t)
+
+	trie := &Trie{}
+	require.Nil(trie.root)
+	trie.Set(Key{1}, Value{1})
+
+	_, ok := trie.root.(*inner)
+	require.True(ok, "Root should be an inner node after setting a value")
+}
+
 func TestTrie_CommitmentOfEmptyTrieIsIdentity(t *testing.T) {
 	require := require.New(t)
 
