@@ -14,6 +14,7 @@ use crate::{error::Error, types::*};
 
 mod error;
 mod ffi;
+mod storage;
 pub mod types;
 
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining

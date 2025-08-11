@@ -21,6 +21,9 @@ crate-type = ["rlib", "staticlib"]
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
+# error handling
+thiserror = "2.0.12"
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
