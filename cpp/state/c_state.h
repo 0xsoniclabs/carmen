@@ -32,6 +32,7 @@ extern "C" {
 // pointers used in the interface definitions below. Their main purpose is to
 // increase readability, not to enforce any type constraints.
 
+#define C_Database void*
 #define C_State void*
 #define C_Schema uint8_t
 
@@ -46,10 +47,10 @@ extern "C" {
 #define C_Hash void*
 #define C_AccountState void*
 
-// An enumeration of supported state implementations.
-enum StateImpl { kState_Memory = 0, kState_File = 1, kState_LevelDb = 2 };
+// An enumeration of supported live state implementations.
+enum LiveImpl { kLive_Memory = 0, kLive_File = 1, kLive_LevelDb = 2 };
 
-// An enumeration of supported archive implementations.
+// An enumeration of supported archive state implementations.
 enum ArchiveImpl {
   kArchive_None = 0,
   kArchive_LevelDb = 1,
@@ -58,43 +59,56 @@ enum ArchiveImpl {
 
 // ------------------------------ Life Cycle ----------------------------------
 
-// Opens a new state object based on the provided implementation maintaining
+// Opens a new database object based on the provided implementation maintaining
 // its data in the given directory. If the directory does not exist, it is
-// created. If it is empty, a new, empty state is initialized. If it contains
-// state information, the information is loaded.
+// created. If it is empty, a new, empty database is initialized. If it contains
+// information, the information is loaded.
 //
-// The function returns an opaque pointer to a state object that can be used
+// The function returns an opaque pointer to a database object that can be used
 // with the remaining functions in this file. Ownership is transferred to the
-// caller, which is required for releasing it eventually using Release().
-// If for some reason the creation of the state instance failed, a nullptr is
-// returned.
-DUPLICATE_FOR_LANGS(C_State, OpenState(C_Schema schema, enum StateImpl state,
-                                       enum ArchiveImpl archive,
-                                       const char* directory, int length));
+// caller, which is required for releasing it eventually using
+// ReleaseDatabase(). If for some reason the creation of the state instance
+// failed, a nullptr is returned.
+DUPLICATE_FOR_LANGS(C_Database,
+                    OpenDatabase(C_Schema schema, enum LiveImpl live_impl,
+                                 enum ArchiveImpl archive_impl,
+                                 const char* directory, int length));
 
-// Flushes all committed state information to disk to guarantee permanent
+// Flushes all committed database information to disk to guarantee permanent
 // storage. All internally cached modifications is synced to disk.
-DUPLICATE_FOR_LANGS(void, Flush(C_State state));
+DUPLICATE_FOR_LANGS(void, Flush(C_Database database));
 
-// Closes this state, releasing all IO handles and locks on external resources.
-DUPLICATE_FOR_LANGS(void, Close(C_State state));
+// Closes this database, releasing all IO handles and locks on external
+// resources.
+DUPLICATE_FOR_LANGS(void, Close(C_Database database));
+
+// Releases a database object, thereby causing its destruction. After releasing
+// it, no more operations may be applied on it.
+DUPLICATE_FOR_LANGS(void, ReleaseDatabase(C_Database database));
+
+// ------------------------- Live and Archive State ---------------------------
 
 // Releases a state object, thereby causing its destruction. After releasing it,
 // no more operations may be applied on it.
 DUPLICATE_FOR_LANGS(void, ReleaseState(C_State state));
 
-// ----------------------------- Archive State --------------------------------
+// Returns a handle to the live state of the database. The resulting state must
+// be released and must not outlive the life time of the provided database.
+DUPLICATE_FOR_LANGS(C_State, GetLiveState(C_Database database));
 
-// Creates a state snapshot reflecting the state at the given block height. The
-// resulting state must be released and must not outlive the life time of the
-// provided state.
-DUPLICATE_FOR_LANGS(C_State, GetArchiveState(C_State state, uint64_t block));
+// Returns a handle to an archive state reflecting the state at the given block
+// height. The resulting state must be released and must not outlive the life
+// time of the provided database.
+// This function will return an error if called with a database that was opened
+// with ArchiveImpl::kArchive_None.
+DUPLICATE_FOR_LANGS(C_State,
+                    GetArchiveState(C_Database database, uint64_t block));
 
 // ------------------------------- Accounts -----------------------------------
 
-// Gets the current state of the given account.
-DUPLICATE_FOR_LANGS(void, GetAccountState(C_State state, C_Address addr,
-                                          C_AccountState out_state));
+// Checks if the given account exists.
+DUPLICATE_FOR_LANGS(void, AccountExists(C_State state, C_Address addr,
+                                        C_AccountState out_state));
 
 // -------------------------------- Balance -----------------------------------
 
@@ -130,7 +144,8 @@ DUPLICATE_FOR_LANGS(void, GetCodeSize(C_State state, C_Address addr,
 
 // -------------------------------- Update ------------------------------------
 
-// Applies the provided block update to the maintained state.
+// Applies the provided block update to the live state. This function will
+// return an error if called with an archive state.
 DUPLICATE_FOR_LANGS(void, Apply(C_State state, uint64_t block, C_Update update,
                                 uint64_t length));
 
@@ -144,7 +159,7 @@ DUPLICATE_FOR_LANGS(void, GetHash(C_State state, C_Hash out_hash));
 // Retrieves a summary of the used memory. After the call the out variable will
 // point to a buffer with a serialized summary that needs to be freed by the
 // caller.
-DUPLICATE_FOR_LANGS(void, GetMemoryFootprint(C_State state, char** out,
+DUPLICATE_FOR_LANGS(void, GetMemoryFootprint(C_Database db, char** out,
                                              uint64_t* out_length));
 
 // Releases the buffer returned by GetMemoryFootprint.
