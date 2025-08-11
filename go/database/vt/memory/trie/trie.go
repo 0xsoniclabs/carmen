@@ -48,7 +48,7 @@ func (t *Trie) Get(key Key) Value {
 // already exists, its value will be updated.
 func (t *Trie) Set(key Key, value Value) {
 	if t.root == nil {
-		t.root = newLeaf(key)
+		t.root = &inner{}
 	}
 	t.root = t.root.set(key, 0, value)
 }

@@ -24,13 +24,13 @@ namespace {
 
 using ::testing::ElementsAre;
 
-std::string ToString(StateImpl c) {
+std::string ToString(LiveImpl c) {
   switch (c) {
-    case kState_Memory:
+    case kLive_Memory:
       return "Memory";
-    case kState_File:
+    case kLive_File:
       return "File";
-    case kState_LevelDb:
+    case kLive_LevelDb:
       return "LevelDb";
   }
   return "Unknown";
@@ -51,7 +51,7 @@ std::string ToString(ArchiveImpl c) {
 // A configuration struct for the parameterized test below.
 struct Config {
   int schema;
-  StateImpl state;
+  LiveImpl state;
   ArchiveImpl archive;
 };
 
@@ -112,20 +112,25 @@ class CStateTest : public testing::TestWithParam<Config> {
     dir_ = std::make_unique<TempDir>();
     auto path = dir_->GetPath().string();
     const Config& config = GetParam();
-    state_ = Carmen_Cpp_OpenState(config.schema, config.state, config.archive,
+    db_ = Carmen_Cpp_OpenDatabase(config.schema, config.state, config.archive,
                                   path.c_str(), path.size());
+    state_ = Carmen_Cpp_GetLiveState(db_);
     ASSERT_NE(state_, nullptr);
   }
 
   void TearDown() override {
     Carmen_Cpp_ReleaseState(state_);
     state_ = nullptr;
+    Carmen_Cpp_ReleaseDatabase(db_);
+    db_ = nullptr;
   }
 
+  C_Database GetDatabase() { return db_; }
   C_State GetState() { return state_; }
 
  private:
   std::unique_ptr<TempDir> dir_;
+  C_Database db_;
   C_State state_;
 };
 
@@ -138,7 +143,7 @@ TEST_P(CStateTest, AccountsInitiallyDoNotExist) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
 }
 
@@ -146,10 +151,10 @@ TEST_P(CStateTest, AccountsCanBeCreated) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
   Carmen_Cpp_CreateAccount(state, &addr);
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kExists);
 }
 
@@ -157,11 +162,11 @@ TEST_P(CStateTest, AccountsCanBeDeleted) {
   auto state = GetState();
   Address addr{0x01};
   AccountState as = AccountState::kExists;
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
   Carmen_Cpp_CreateAccount(state, &addr);
   Carmen_Cpp_DeleteAccount(state, &addr);
-  Carmen_Cpp_GetAccountState(state, &addr, &as);
+  Carmen_Cpp_AccountExists(state, &addr, &as);
   EXPECT_EQ(as, AccountState::kUnknown);
 }
 
@@ -379,8 +384,8 @@ TEST_P(CStateTest, CodeSizesMatchCodes) {
 }
 
 TEST_P(CStateTest, ArchiveCanBeAccessedIfEnabled) {
-  auto state = GetState();
-  auto archive = Carmen_Cpp_GetArchiveState(state, 0);
+  auto database = GetDatabase();
+  auto archive = Carmen_Cpp_GetArchiveState(database, 0);
   EXPECT_EQ(archive != nullptr, GetParam().archive != kArchive_None);
   Carmen_Cpp_ReleaseState(archive);
 }
@@ -389,7 +394,7 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   if (GetParam().archive == kArchive_None) {
     return;  // This test is only relevant when archives are enabled
   }
-  auto state = GetState();
+  auto database = GetDatabase();
 
   Address addr{0x12};
   Balance balance{0x45};
@@ -406,7 +411,9 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   update.Set(addr, key, value);
 
   ASSERT_OK_AND_ASSIGN(auto data, update.ToBytes());
-  Carmen_Cpp_Apply(state, 1, data.data(), data.size());
+  auto live = Carmen_Cpp_GetLiveState(database);
+  Carmen_Cpp_Apply(live, 1, data.data(), data.size());
+  Carmen_Cpp_ReleaseState(live);
 
   Balance balance_restored{0x99};
   Nonce nonce_restored{0x99};
@@ -414,11 +421,11 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   Hash hash{0x99};
 
   // Check archive state at block 0.
-  auto archive0 = Carmen_Cpp_GetArchiveState(state, 0);
+  auto archive0 = Carmen_Cpp_GetArchiveState(database, 0);
   ASSERT_TRUE(archive0);
 
   AccountState account_state;
-  Carmen_Cpp_GetAccountState(archive0, &addr, &account_state);
+  Carmen_Cpp_AccountExists(archive0, &addr, &account_state);
   EXPECT_EQ(account_state, AccountState::kUnknown);
   Carmen_Cpp_GetBalance(archive0, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, Balance{});
@@ -437,9 +444,9 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   EXPECT_EQ(Code{restored_code}, Code{});
 
   // Check archive state at block 1.
-  auto archive1 = Carmen_Cpp_GetArchiveState(archive0, 1);
+  auto archive1 = Carmen_Cpp_GetArchiveState(database, 1);
   ASSERT_TRUE(archive1);
-  Carmen_Cpp_GetAccountState(archive1, &addr, &account_state);
+  Carmen_Cpp_AccountExists(archive1, &addr, &account_state);
   EXPECT_EQ(account_state, AccountState::kExists);
   Carmen_Cpp_GetBalance(archive1, &addr, &balance_restored);
   EXPECT_EQ(balance_restored, balance);
@@ -463,46 +470,53 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
   Carmen_Cpp_ReleaseState(archive1);
 }
 
-TEST_P(CStateTest, StateCanBeFlushed) {
-  auto state = GetState();
-  ASSERT_NE(state, nullptr);
+TEST_P(CStateTest, DatabaseCanBeFlushed) {
+  auto database = GetDatabase();
+  ASSERT_NE(database, nullptr);
+
+  auto live = Carmen_Cpp_GetLiveState(database);
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(live, &addr, &key, &value);
+  Carmen_Cpp_ReleaseState(live);
 
-  Carmen_Cpp_Flush(state);
+  Carmen_Cpp_Flush(database);
 }
 
-TEST_P(CStateTest, StateCanBeFlushedMoreThanOnce) {
-  auto state = GetState();
-  ASSERT_NE(state, nullptr);
+TEST_P(CStateTest, DatabaseCanBeFlushedMoreThanOnce) {
+  auto database = GetDatabase();
+  ASSERT_NE(database, nullptr);
+
+  auto live = Carmen_Cpp_GetLiveState(database);
+
   Address addr{0x01};
   Key key{0x02};
   Value value{0x03};
-  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(live, &addr, &key, &value);
 
-  Carmen_Cpp_Flush(state);
+  Carmen_Cpp_Flush(database);
 
   value = Value{0x04};
-  Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
+  Carmen_Cpp_SetStorageValue(live, &addr, &key, &value);
 
-  Carmen_Cpp_Flush(state);
-  Carmen_Cpp_Flush(state);
+  Carmen_Cpp_Flush(database);
+  Carmen_Cpp_Flush(database);
+  Carmen_Cpp_ReleaseState(live);
 }
 
-TEST_P(CStateTest, StateCanBeClosed) {
-  auto state = GetState();
-  ASSERT_NE(state, nullptr);
-  Carmen_Cpp_Close(state);
+TEST_P(CStateTest, DatabaseCanBeClosed) {
+  auto database = GetDatabase();
+  ASSERT_NE(database, nullptr);
+  Carmen_Cpp_Close(database);
 }
 
 TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
-  auto state = GetState();
-  ASSERT_NE(state, nullptr);
+  auto database = GetDatabase();
+  ASSERT_NE(database, nullptr);
   char* data = nullptr;
   uint64_t length;
-  Carmen_Cpp_GetMemoryFootprint(state, &data, &length);
+  Carmen_Cpp_GetMemoryFootprint(database, &data, &length);
   EXPECT_NE(data, nullptr);
   EXPECT_GT(length, 0);
   free(data);
@@ -510,15 +524,17 @@ TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
 
 TEST_P(CStateTest, CanBeStoredAndReloaded) {
   const Config& config = GetParam();
-  if (config.state == kState_Memory) {
+  if (config.state == kLive_Memory) {
     return;  // In-memory state is by definition not persistent.
   }
   TempDir dir;
   auto path = dir.GetPath().string();
   Hash hash;
   {
-    auto state = Carmen_Cpp_OpenState(
+    auto db = Carmen_Cpp_OpenDatabase(
         config.schema, config.state, config.archive, path.c_str(), path.size());
+    ASSERT_NE(db, nullptr);
+    auto state = Carmen_Cpp_GetLiveState(db);
     ASSERT_NE(state, nullptr);
 
     Address addr{0x01};
@@ -527,10 +543,13 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
     Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
     Carmen_Cpp_GetHash(state, &hash);
     Carmen_Cpp_ReleaseState(state);
+    Carmen_Cpp_ReleaseDatabase(db);
   }
   {
-    auto state = Carmen_Cpp_OpenState(
+    auto db = Carmen_Cpp_OpenDatabase(
         config.schema, config.state, config.archive, path.c_str(), path.size());
+    ASSERT_NE(db, nullptr);
+    auto state = Carmen_Cpp_GetLiveState(db);
     ASSERT_NE(state, nullptr);
 
     Address addr{0x01};
@@ -542,23 +561,24 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
     Carmen_Cpp_GetHash(state, &recovered);
     EXPECT_EQ(hash, recovered);
     Carmen_Cpp_ReleaseState(state);
+    Carmen_Cpp_ReleaseDatabase(db);
   }
 }
 
 INSTANTIATE_TEST_SUITE_P(
     All, CStateTest,
     // Tests each schema with each config, and all 3 archive modes.
-    testing::Values(Config{1, kState_Memory, kArchive_None},
-                    Config{2, kState_File, kArchive_None},
-                    Config{3, kState_LevelDb, kArchive_None},
+    testing::Values(Config{1, kLive_Memory, kArchive_None},
+                    Config{2, kLive_File, kArchive_None},
+                    Config{3, kLive_LevelDb, kArchive_None},
 
-                    Config{2, kState_Memory, kArchive_LevelDb},
-                    Config{3, kState_File, kArchive_LevelDb},
-                    Config{1, kState_LevelDb, kArchive_LevelDb},
+                    Config{2, kLive_Memory, kArchive_LevelDb},
+                    Config{3, kLive_File, kArchive_LevelDb},
+                    Config{1, kLive_LevelDb, kArchive_LevelDb},
 
-                    Config{3, kState_Memory, kArchive_Sqlite},
-                    Config{1, kState_File, kArchive_Sqlite},
-                    Config{2, kState_LevelDb, kArchive_Sqlite}),
+                    Config{3, kLive_Memory, kArchive_Sqlite},
+                    Config{1, kLive_File, kArchive_Sqlite},
+                    Config{2, kLive_LevelDb, kArchive_Sqlite}),
     [](const testing::TestParamInfo<CStateTest::ParamType>& info) {
       return "schema_" + std::to_string(info.param.schema) + "_impl_" +
              ToString(info.param.state) + "_archive_" +
