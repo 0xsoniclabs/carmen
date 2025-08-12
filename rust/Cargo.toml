@@ -33,6 +33,9 @@ bindgen = "0.72.0"
 # mocking
 mockall = "0.13.1"
 
+# temporary files
+tempfile = "3.20.0"
+
 [lints.rust]
 macro_use_extern_crate = "warn"
 unused_unsafe = "warn"
