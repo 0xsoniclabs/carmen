@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::types::NodeType;
 
-/// An identifier for a node in a file based Verkle trie.
+/// An identifier for a node in a (file-based) Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, Unaligned)]
@@ -20,17 +20,22 @@ use crate::types::NodeType;
 pub struct NodeId([u8; 6]);
 
 impl NodeId {
-    pub const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
-    pub const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
-    pub const LEAF_NODE_2_PREFIX: u64 = 0x0000_8000_0000_0000;
-    pub const LEAF_NODE_256_PREFIX: u64 = 0x0000_C000_0000_0000;
+    // The upper 2 bits are used to encode the node type.
+    const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
+    const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
+    const LEAF_NODE_2_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_256_PREFIX: u64 = 0x0000_C000_0000_0000;
 
     const PREFIX_MASK: u64 = 0x0000_C000_0000_0000;
-    const INDEX_MASK: u64 = !Self::PREFIX_MASK;
+    const INDEX_MASK: u64 = 0x0000_3FFF_FFFF_FFFF;
 
     /// Creates a new [`NodeId`] from a [`u64`] index and a [`NodeType`].
     /// The index must be smaller than 2^46.
     pub fn from_idx_and_node_type(idx: u64, node_type: NodeType) -> Self {
+        assert!(
+            (idx & !Self::INDEX_MASK) == 0,
+            "indices can not get this large, unless we have a bug somewhere"
+        );
         let prefix = match node_type {
             NodeType::Empty => Self::EMPTY_NODE_PREFIX,
             NodeType::Inner => Self::INNER_NODE_PREFIX,
@@ -55,7 +60,7 @@ impl NodeId {
             Self::LEAF_NODE_256_PREFIX => Some(NodeType::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
-            // - Deserializing a `SerializedId` which may hold invalid prefixes in case the data was
+            // - Deserializing from a file which may hold invalid prefixes in case the data was
             //   corrupted.
             _ => None,
         }
@@ -80,8 +85,7 @@ mod tests {
 
     #[test]
     fn from_idx_and_node_type_creates_id_from_lower_6_bytes_logic_or_node_type_prefix() {
-        let idx = 0x1234_5678_90ab_cdef;
-        let lower_6_bytes_idx = 0x5678_90ab_cdef;
+        let idx = 0x0000_1234_5678_9abc;
         let cases = [
             (NodeType::Empty, 0x0000_0000_0000_0000),
             (NodeType::Inner, 0x0000_4000_0000_0000),
@@ -91,8 +95,16 @@ mod tests {
 
         for (node_type, prefix) in cases {
             let id = NodeId::from_idx_and_node_type(idx, node_type);
-            assert_eq!(id.to_u64(), lower_6_bytes_idx | prefix);
+            assert_eq!(id.to_u64(), idx | prefix);
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn from_idx_and_node_type_panics_if_index_too_large() {
+        let idx = 0x0000_f000_0000_0000;
+
+        NodeId::from_idx_and_node_type(idx, NodeType::Empty);
     }
 
     #[test]

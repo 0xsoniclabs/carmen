@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::types::{Commitment, NodeId, Value};
 
-/// A value of a leaf node in a (file based) Verkle trie with its index.
+/// A value of a leaf node in a (file-based) Verkle trie, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(
@@ -26,7 +26,7 @@ pub struct ValueWithIndex {
     pub value: Value,
 }
 
-/// A sparsely populated leaf node in a (file based) Verkle trie.
+/// A sparsely populated leaf node in a (file-based) Verkle trie.
 // NOTE: This type should NOT implement [`Clone`] because there should never be two instances
 // corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -55,7 +55,7 @@ impl<const N: usize> Default for SparseLeafNode<N> {
     }
 }
 
-/// A leaf node with 256 children in a (file based) Verkle trie.
+/// A leaf node with 256 children in a (file-based) Verkle trie.
 // NOTE: This type should NOT implement [`Clone`] because there should never be two instances
 // corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -79,7 +79,7 @@ impl Default for FullLeafNode {
     }
 }
 
-/// An inner node in a (file based) Verkle trie.
+/// An inner node in a (file-based) Verkle trie.
 // NOTE: This type should NOT implement [`Clone`] because there is never be two instances
 // corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -101,7 +101,10 @@ impl Default for InnerNode {
     }
 }
 
-/// A node in a (file based) Verkle trie.
+/// A node in a (file-based) Verkle trie.
+//
+/// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
+/// dictated by the largest variant).
 // NOTE: This type should NOT implement [`Clone`] because there should never be two instances
 // corresponding to the same logical node.
 #[derive(Debug, PartialEq, Eq)]
@@ -113,7 +116,7 @@ pub enum Node {
     Leaf256(Box<FullLeafNode>),
 }
 
-/// A node type of a node in a (file based) Verkle trie.
+/// A node type of a node in a (file-based) Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeType {
@@ -128,8 +131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sparse_leaf_node_default_returns_leaf_node_with_all_values_set_to_default_and_unique_indices()
-     {
+    fn sparse_leaf_node_default_returns_leaf_node_with_default_values_and_unique_indices() {
         const N: usize = 2;
         let node: SparseLeafNode<N> = SparseLeafNode::default();
 
