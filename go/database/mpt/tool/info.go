@@ -13,13 +13,14 @@ package main
 import (
 	"fmt"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
 var Info = cli.Command{
-	Action: addPerformanceDiagnoses(info),
+	Action: diagnostics.AddPerformanceDiagnosticsAction(info, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:   "info",
 	Usage:  "lists information about a Carmen MTP state repository",
 	Flags: []cli.Flag{

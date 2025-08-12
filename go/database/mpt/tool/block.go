@@ -14,13 +14,14 @@ import (
 	"fmt"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
 var Block = cli.Command{
-	Action:    addPerformanceDiagnoses(block),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(block, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "block",
 	Usage:     "retrieves information about a given block",
 	ArgsUsage: "<archive-director>",

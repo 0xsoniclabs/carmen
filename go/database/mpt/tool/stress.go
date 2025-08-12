@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/urfave/cli/v2"
@@ -31,7 +32,7 @@ import (
 // an MPT data base with the aim of stress-testing core components like the
 // node cache, the write buffer, and the background flush mechanism.
 var StressTestCmd = cli.Command{
-	Action: addPerformanceDiagnoses(stressTest),
+	Action: diagnostics.AddPerformanceDiagnosticsAction(stressTest, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:   "stress-test",
 	Usage:  "stress test an MPT database",
 	Flags: []cli.Flag{
