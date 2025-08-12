@@ -14,7 +14,7 @@ use crate::{error::Error, types::*};
 
 mod error;
 mod ffi;
-mod types;
+pub mod types;
 
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
