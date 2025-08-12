@@ -34,16 +34,13 @@ pub struct ValueWithIndex {
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[cfg_attr(test, derive(Clone))] // For testing purposes only
 #[repr(C)]
-pub struct SparseLeafNode<const N: usize, C: Commitment> {
-    pub commitment: C,
+pub struct SparseLeafNode<const N: usize> {
+    pub commitment: Commitment,
     pub stem: [u8; 31],
     pub values: [ValueWithIndex; N],
 }
 
-impl<const N: usize, C> Default for SparseLeafNode<N, C>
-where
-    C: Commitment + Default,
-{
+impl<const N: usize> Default for SparseLeafNode<N> {
     fn default() -> Self {
         let mut values = [ValueWithIndex::default(); N];
         values.iter_mut().enumerate().for_each(|(i, v)| {
@@ -51,7 +48,7 @@ where
         });
 
         SparseLeafNode {
-            commitment: C::default(),
+            commitment: Commitment::default(),
             stem: [0; 31],
             values,
         }
@@ -66,19 +63,16 @@ where
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[cfg_attr(test, derive(Clone))] // For testing purposes only
 #[repr(C)]
-pub struct FullLeafNode<C: Commitment> {
-    pub commitment: C,
+pub struct FullLeafNode {
+    pub commitment: Commitment,
     pub stem: [u8; 31],
     pub values: [Value; 256],
 }
 
-impl<C> Default for FullLeafNode<C>
-where
-    C: Commitment + Default,
-{
+impl Default for FullLeafNode {
     fn default() -> Self {
         FullLeafNode {
-            commitment: C::default(),
+            commitment: Commitment::default(),
             stem: [0; 31],
             values: [Value::default(); 256],
         }
@@ -93,18 +87,15 @@ where
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[cfg_attr(test, derive(Clone))] // For testing purposes only
 #[repr(C)]
-pub struct InnerNode<C: Commitment> {
-    pub commitment: C,
+pub struct InnerNode {
+    pub commitment: Commitment,
     pub values: [NodeId; 256],
 }
 
-impl<C> Default for InnerNode<C>
-where
-    C: Commitment + Default,
-{
+impl Default for InnerNode {
     fn default() -> Self {
         InnerNode {
-            commitment: C::default(),
+            commitment: Commitment::default(),
             values: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
         }
     }
@@ -115,11 +106,11 @@ where
 // corresponding to the same logical node.
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(Clone))] // For testing purposes only
-pub enum Node<C: Commitment> {
+pub enum Node {
     Empty,
-    Inner(Box<InnerNode<C>>),
-    Leaf2(Box<SparseLeafNode<2, C>>),
-    Leaf256(Box<FullLeafNode<C>>),
+    Inner(Box<InnerNode>),
+    Leaf2(Box<SparseLeafNode<2>>),
+    Leaf256(Box<FullLeafNode>),
 }
 
 /// A node type of a node in a (file based) Verkle trie.
@@ -140,12 +131,9 @@ mod tests {
     fn sparse_leaf_node_default_returns_leaf_node_with_all_values_set_to_default_and_unique_indices()
      {
         const N: usize = 2;
-        let node: SparseLeafNode<N, ()> = SparseLeafNode::default();
+        let node: SparseLeafNode<N> = SparseLeafNode::default();
 
-        #[allow(clippy::unit_cmp)]
-        {
-            assert_eq!(node.commitment, <()>::default());
-        }
+        assert_eq!(node.commitment, Commitment::default());
         assert_eq!(node.stem, [0; 31]);
 
         for (i, value) in node.values.iter().enumerate() {
@@ -156,22 +144,16 @@ mod tests {
 
     #[test]
     fn full_leaf_node_default_returns_leaf_node_with_all_values_set_to_default() {
-        let node: FullLeafNode<()> = FullLeafNode::default();
-        #[allow(clippy::unit_cmp)]
-        {
-            assert_eq!(node.commitment, <()>::default());
-        }
+        let node: FullLeafNode = FullLeafNode::default();
+        assert_eq!(node.commitment, Commitment::default());
         assert_eq!(node.stem, [0; 31]);
         assert_eq!(node.values, [Value::default(); 256]);
     }
 
     #[test]
     fn inner_node_default_returns_inner_node_with_all_values_set_to_empty_node_id() {
-        let node: InnerNode<()> = InnerNode::default();
-        #[allow(clippy::unit_cmp)]
-        {
-            assert_eq!(node.commitment, <()>::default());
-        }
+        let node: InnerNode = InnerNode::default();
+        assert_eq!(node.commitment, Commitment::default());
         assert_eq!(
             node.values,
             [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256]

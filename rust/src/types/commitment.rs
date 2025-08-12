@@ -8,10 +8,11 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-/// A Verkle trie node commitment.
-pub trait Commitment {}
+use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-/// In case we don't store an commitment, we use the unit type.
+/// A Verkle trie node commitment.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-impl Commitment for () {}
+#[derive(Debug, Clone, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+pub struct Commitment {}
