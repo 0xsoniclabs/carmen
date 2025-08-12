@@ -18,7 +18,7 @@ import (
 )
 
 // Run using
-//  go run ./database/mpt/tool <command> <flags>
+//  go run ./state/tool <command> <flags>
 
 var (
 	diagnosticsFlag = cli.IntFlag{
@@ -49,18 +49,7 @@ func main() {
 			&traceFlag,
 		},
 		Commands: []*cli.Command{
-			&Check,
-			&ExportCmd,
-			&ImportLiveDbCmd,
-			&ImportArchiveCmd,
-			&ImportLiveAndArchiveCmd,
-			&Info,
-			&InitArchive,
-			&Verify,
-			&VerifyProof,
-			&Block,
-			&StressTestCmd,
-			&Reset,
+			&Benchmark,
 		},
 	}
 
