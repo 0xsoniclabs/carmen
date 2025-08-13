@@ -18,14 +18,12 @@ use std::{
 
 /// An abstraction for concurrent file operations.
 ///
-/// Implementations of this trait are required to ensure that concurrent operations of the
-/// implementing type are safe (in that there are no data races) as long as the operations operate
-/// on non-overlapping regions of the file.
+/// Implementations of this trait are required to ensure that concurrent operations are safe (in
+/// that there are no data races) as long as they operate on non-overlapping regions of the file.
 /// When called with overlapping regions, the behavior is undefined and may lead to data corruption.
 #[cfg_attr(test, mockall::automock)]
 pub trait FileBackend {
-    /// Opens a file at the given path with the specified options and tries to acquire an advisory
-    /// file lock.
+    /// Opens a file at the given path with the specified options and tries to acquire a file lock.
     fn open(path: &Path, options: &OpenOptions) -> std::io::Result<Self>
     where
         Self: Sized;
@@ -164,8 +162,8 @@ mod tests {
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
             let file = backend(path.as_path(), &options);
-            assert!(file.is_ok());
             assert!(file.unwrap().len().unwrap() == 0);
+            assert!(std::fs::exists(path).unwrap());
         }
     }
 
@@ -180,11 +178,13 @@ mod tests {
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            File::create(path.as_path()).unwrap();
+            {
+                let mut file = File::create(path.as_path()).unwrap();
+                file.write_all(&[0; 10]).unwrap();
+            }
 
             let file = backend(path.as_path(), &options);
-            assert!(file.is_ok());
-            assert!(file.unwrap().len().unwrap() == 0);
+            assert!(file.unwrap().len().unwrap() == 10);
         }
     }
 
@@ -205,7 +205,6 @@ mod tests {
 
             // try to open it again, should fail
             let file = backend(path.as_path(), &options);
-            assert!(file.is_err());
             assert!(file.map(|_| ()).unwrap_err().kind() == std::io::ErrorKind::WouldBlock);
         }
     }
@@ -226,6 +225,9 @@ mod tests {
             let file = backend(path.as_path(), &options);
             assert!(file.is_err());
         }
+
+        // Allow cleanup
+        file.set_permissions(Permissions::from_mode(0o777)).unwrap();
     }
 
     #[test]
@@ -303,10 +305,7 @@ mod tests {
             let file = backend(path.as_path(), &options).unwrap();
             let mut buf = [0; 5];
             let res = file.read_exact_at(&mut buf, 5);
-            dbg!(&res);
-            assert!(res.is_err());
-            let err = res.unwrap_err();
-            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+            assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
         }
     }
 
@@ -398,6 +397,7 @@ mod tests {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             let file = backend(path.as_path(), &options).unwrap();
+            file.write_all_at(&[1; 200], 0).unwrap();
             file.set_len(100).unwrap();
 
             let check_file = File::open(path.as_path()).unwrap();
