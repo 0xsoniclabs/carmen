@@ -30,17 +30,20 @@ import (
 
 func TestState_ImplementsState(t *testing.T) {
 	var _ state.State = &State{}
+
+	inst, _ := NewState(state.Parameters{})
+	var _ state.State = inst
 }
 
 func TestState_NewState_CreatesEmptyState(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 	require.NotNil(state)
 	require.Zero(state.GetHash())
 }
 
 func TestState_Exists_ReturnsError(t *testing.T) {
-	state := NewState()
+	state := newState()
 	_, err := state.Exists(common.Address{1})
 	require.ErrorContains(t, err, "not supported")
 }
@@ -48,7 +51,7 @@ func TestState_Exists_ReturnsError(t *testing.T) {
 func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 
@@ -87,7 +90,7 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 
@@ -126,7 +129,7 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 
@@ -169,14 +172,14 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 }
 
 func TestState_HasEmptyStorage_ReturnsError(t *testing.T) {
-	state := NewState()
+	state := newState()
 	_, err := state.HasEmptyStorage(common.Address{1})
 	require.ErrorContains(t, err, "not supported by Verkle Tries")
 }
 
 func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 
 	random := make([]byte, 1000)
 	rand.Read(random)
@@ -213,7 +216,7 @@ func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 	key := common.Key{2}
@@ -255,27 +258,27 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 func TestState_EmptyStateHasZeroCommitment(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 	hash, err := state.GetHash()
 	require.NoError(err)
 	require.Equal(common.Hash(types.EmptyVerkleHash), hash)
 }
 
 func TestState_Check_ReturnsNoError(t *testing.T) {
-	require.NoError(t, NewState().Check())
+	require.NoError(t, newState().Check())
 }
 
 func TestState_Flush_ReturnsNoError(t *testing.T) {
-	require.NoError(t, NewState().Flush())
+	require.NoError(t, newState().Flush())
 }
 
 func TestState_Close_ReturnsNoError(t *testing.T) {
-	require.NoError(t, NewState().Close())
+	require.NoError(t, newState().Close())
 }
 
 func TestState_GetMemoryFootprint_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 	require.Panics(
 		func() { state.GetMemoryFootprint() },
 		"GetMemoryFootprint should panic as it is not implemented",
@@ -283,23 +286,23 @@ func TestState_GetMemoryFootprint_PanicsAsNotImplemented(t *testing.T) {
 }
 
 func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
-	_, err := NewState().GetArchiveState(0)
+	_, err := newState().GetArchiveState(0)
 	require.ErrorIs(t, err, state.NoArchiveError)
 }
 
 func TestState_GetArchiveBlockHeight_ReturnsNoArchiveError(t *testing.T) {
-	_, _, err := NewState().GetArchiveBlockHeight()
+	_, _, err := newState().GetArchiveBlockHeight()
 	require.ErrorIs(t, err, state.NoArchiveError)
 }
 
 func TestState_CreateWitnessProof_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().CreateWitnessProof(common.Address{1}, common.Key{2})
+	_, err := newState().CreateWitnessProof(common.Address{1}, common.Key{2})
 	require.ErrorContains(t, err, "witness proof not supported yet")
 }
 
 func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 	require.Panics(
 		func() { state.Export(nil, nil) },
 		"Export should panic as it is not implemented",
@@ -307,23 +310,23 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 }
 
 func TestState_GetProof_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().GetProof()
+	_, err := newState().GetProof()
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 func TestState_CreateSnapshot_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().CreateSnapshot()
+	_, err := newState().CreateSnapshot()
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 func TestState_Restore_ReturnsNotSupportedError(t *testing.T) {
 	var data backend.SnapshotData
-	err := NewState().Restore(data)
+	err := newState().Restore(data)
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 func TestState_GetSnapshotVerifier_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().GetSnapshotVerifier(nil)
+	_, err := newState().GetSnapshotVerifier(nil)
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
@@ -359,7 +362,7 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	state.Apply(0, update)
 
 	hash, err := state.GetHash()
@@ -449,7 +452,7 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	reference, err := newRefState()
 	require.NoError(err)
 
@@ -477,7 +480,7 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	require.NoError(state.Apply(0, update))
 
 	hash, err := state.GetHash()
