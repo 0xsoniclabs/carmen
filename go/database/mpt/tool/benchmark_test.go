@@ -13,7 +13,6 @@ package main
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,7 +27,6 @@ func TestBenchmark_RunExampleBenchmark(t *testing.T) {
 		numInsertsPerBlock: 10,
 		tmpDir:             dir,
 		reportInterval:     100,
-		cpuProfilePrefix:   dir + "/profile.dat",
 		keepState:          false,
 		schema:             5,
 	}, func(string, ...any) {})
@@ -71,9 +69,6 @@ func TestBenchmark_RunExampleBenchmark(t *testing.T) {
 		if cur.throughput <= 0 {
 			t.Errorf("invalid value for throughput: %f", cur.throughput)
 		}
-		if !exists(fmt.Sprintf(dir+"/profile.dat_%06d", i+1)) {
-			t.Errorf("missing cpu profile for interval %d", i+1)
-		}
 	}
 
 	filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
@@ -91,7 +86,6 @@ func TestBenchmark_KeepStateRetainsState(t *testing.T) {
 		numInsertsPerBlock: 10,
 		tmpDir:             dir,
 		reportInterval:     100,
-		cpuProfilePrefix:   dir + "/profile.dat",
 		keepState:          true,
 	}, func(string, ...any) {})
 
@@ -124,7 +118,6 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 				numInsertsPerBlock: 10,
 				tmpDir:             dir,
 				reportInterval:     100,
-				cpuProfilePrefix:   dir + "/profile.dat",
 				keepState:          true,
 			}, func(string, ...any) {})
 
@@ -145,9 +138,4 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 			}
 		})
 	}
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
