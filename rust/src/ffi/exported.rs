@@ -30,15 +30,18 @@ const MAX_CODE_SIZE: usize = if cfg!(miri) { 25 } else { 25000 };
 /// given directory. If the directory does not exist, it is created. If it is empty, a new, empty
 /// database is initialized. If it contains information, the information is loaded.
 ///
-/// The function returns an opaque pointer to a database object that can be used with the remaining
-/// functions in this file. Ownership is transferred to the caller, which is required for releasing
-/// it eventually using Carmen_Rust_ReleaseDatabase(). If for some reason the creation of the state
-/// instance failed, a nullptr is returned.
+/// The function writes an opaque pointer to a database object into the output parameter
+/// `out_database`, that can be used with the remaining functions in this file. Ownership is
+/// transferred to the caller, which is required for releasing it eventually using
+/// Carmen_Rust_ReleaseDatabase(). If for some reason the creation of the state instance failed, an
+/// error is returned and the output pointer is not written to.
 ///
 /// # Safety
 /// - `directory` must be a valid pointer to a byte array of length `length`
 /// - `directory` must be valid for reads for the duration of the call
 /// - `directory` must not be mutated for the duration of the call
+/// - `out_database` must be a valid pointer to a `*mut c_void`
+/// - `out_database` must be valid for writes for the duration of the call
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     schema: u8,
@@ -46,22 +49,23 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     archive_impl: bindings::ArchiveImpl,
     directory: *const c_char,
     length: c_int,
-) -> *mut c_void {
+    database_out: *mut *mut c_void,
+) -> bindings::Result {
     let token = LifetimeToken;
-    if directory.is_null() || length <= 0 {
-        return std::ptr::null_mut();
+    if directory.is_null() || length <= 0 || database_out.is_null() {
+        return bindings::Result_kResult_InvalidArguments;
     }
     let live_impl = match live_impl {
         bindings::LiveImpl_kLive_Memory => LiveImpl::Memory,
         bindings::LiveImpl_kLive_File => LiveImpl::File,
         bindings::LiveImpl_kLive_LevelDb => LiveImpl::LevelDb,
-        _ => return std::ptr::null_mut(),
+        _ => return bindings::Result_kResult_InvalidArguments,
     };
     let archive_impl = match archive_impl {
         bindings::ArchiveImpl_kArchive_None => ArchiveImpl::None,
         bindings::ArchiveImpl_kArchive_LevelDb => ArchiveImpl::LevelDb,
         bindings::ArchiveImpl_kArchive_Sqlite => ArchiveImpl::Sqlite,
-        _ => return std::ptr::null_mut(),
+        _ => return bindings::Result_kResult_InvalidArguments,
     };
     // SAFETY:
     // - `directory` is a valid pointer to a byte array of length `length` (precondition)
@@ -71,8 +75,19 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
         unsafe { slice_from_raw_parts_scoped(directory as *const u8, length as usize, &token) };
     let db = open_carmen_db(schema, live_impl, archive_impl, directory);
     match db {
-        Ok(db) => Box::into_raw(Box::new(DbWrapper::from_db(db))) as *mut c_void,
-        Err(_) => std::ptr::null_mut(),
+        Ok(db) => {
+            // SAFETY:
+            // - `out_database` is a valid pointer to a `*mut c_void` (precondition)
+            // - `out_database` is valid for writes for the duration of the call (precondition)
+            unsafe {
+                std::ptr::write(
+                    database_out,
+                    Box::into_raw(Box::new(DbWrapper::from_db(db))) as *mut c_void,
+                );
+            }
+            bindings::Result_kResult_Success
+        }
+        Err(err) => err.into(),
     }
 }
 
@@ -88,10 +103,10 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
 /// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) {
+unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     let token = LifetimeToken;
     if db.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `db` is a valid pointer to a `DbWrapper` object (precondition)
@@ -103,9 +118,9 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) {
     // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
     let db = unsafe { db.inner_to_ref_scoped(&token) };
-    #[allow(unused_variables)]
-    if let Err(error) = db.flush() {
-        unimplemented!();
+    match db.flush() {
+        Ok(_) => bindings::Result_kResult_Success,
+        Err(err) => err.into(),
     }
 }
 
@@ -120,10 +135,10 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) {
 /// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) {
+unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) -> bindings::Result {
     let token = LifetimeToken;
     if db.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
@@ -135,9 +150,9 @@ unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) {
     // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
     let db = unsafe { db.inner_to_ref_scoped(&token) };
-    #[allow(unused_variables)]
-    if let Err(error) = db.close() {
-        unimplemented!();
+    match db.close() {
+        Ok(_) => bindings::Result_kResult_Success,
+        Err(err) => err.into(),
     }
 }
 
@@ -157,10 +172,10 @@ unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) {
 /// - `db.inner` must have been allocated using the global allocator
 /// - `db.inner` must not be used after this call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) {
+unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) -> bindings::Result {
     let token = LifetimeToken;
     if db.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
@@ -181,10 +196,11 @@ unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) {
     // - `db.inner` was allocated using the global allocator (precondition)
     // - `db.inner` is not used after this call (precondition)
     let _ = unsafe { Box::from_raw(db_inner) };
+    bindings::Result_kResult_Success
 }
 
-/// Returns a handle to the live state of the database. The resulting state must be released and
-/// must not outlive the life time of the provided database.
+/// Writes a handle to the live state of the database into the output parameter `out_state`. The
+/// resulting state must be released and must not outlive the life time of the provided database.
 ///
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
@@ -194,11 +210,16 @@ unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) {
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
 /// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
+/// - `out_state` must be a valid pointer to a `*mut c_void`
+/// - `out_state` must be valid for writes for the duration of the call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_GetLiveState(db: *mut c_void) -> *mut c_void {
+unsafe extern "C" fn Carmen_Rust_GetLiveState(
+    db: *mut c_void,
+    out_state: *mut *mut c_void,
+) -> bindings::Result {
     let token = LifetimeToken;
-    if db.is_null() {
-        unimplemented!();
+    if db.is_null() || out_state.is_null() {
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
@@ -212,16 +233,25 @@ unsafe extern "C" fn Carmen_Rust_GetLiveState(db: *mut c_void) -> *mut c_void {
     let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.get_live_state() {
         Ok(live_state) => {
-            Box::into_raw(Box::new(StateWrapper::from_state(live_state))) as *mut c_void
+            // SAFETY:
+            // - `out_state` is a valid pointer to a `*mut c_void` (precondition)
+            // - `out_state` is valid for writes for the duration of the call (precondition)
+            unsafe {
+                std::ptr::write(
+                    out_state,
+                    Box::into_raw(Box::new(StateWrapper::from_state(live_state))) as *mut c_void,
+                );
+            }
+            bindings::Result_kResult_Success
         }
-        Err(_) => std::ptr::null_mut(),
+        Err(err) => err.into(),
     }
 }
 
-/// Returns a handle to an archive state reflecting the state at the given block height. The
-/// resulting state must be released and must not outlive the life time of the provided database.
-/// This function will return an error if called with a database that was opened with
-/// ArchiveImpl::kArchive_None.
+/// Writes a handle to an archive state reflecting the state at the given block height into the
+/// output parameter `out_state`. The resulting state must be released and must not outlive the life
+/// time of the provided database. This function will return an error if called with a database that
+/// was opened with ArchiveImpl::kArchive_None.
 ///
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
@@ -231,11 +261,17 @@ unsafe extern "C" fn Carmen_Rust_GetLiveState(db: *mut c_void) -> *mut c_void {
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
 /// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
+/// - `out_state` must be a valid pointer to a `*mut c_void`
+/// - `out_state` must be valid for writes for the duration of the call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_GetArchiveState(db: *mut c_void, block: u64) -> *mut c_void {
+unsafe extern "C" fn Carmen_Rust_GetArchiveState(
+    db: *mut c_void,
+    block: u64,
+    out_state: *mut *mut c_void,
+) -> bindings::Result {
     let token = LifetimeToken;
-    if db.is_null() {
-        unimplemented!();
+    if db.is_null() || out_state.is_null() {
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
@@ -249,9 +285,18 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(db: *mut c_void, block: u64) ->
     let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.get_archive_state(block) {
         Ok(archive_state) => {
-            Box::into_raw(Box::new(StateWrapper::from_state(archive_state))) as *mut c_void
+            // SAFETY:
+            // - `out_state` is a valid pointer to a `*mut c_void` (precondition)
+            // - `out_state` is valid for writes for the duration of the call (precondition)
+            unsafe {
+                std::ptr::write(
+                    out_state,
+                    Box::into_raw(Box::new(StateWrapper::from_state(archive_state))) as *mut c_void,
+                );
+            }
+            bindings::Result_kResult_Success
         }
-        Err(_) => std::ptr::null_mut(),
+        Err(err) => err.into(),
     }
 }
 
@@ -271,10 +316,10 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(db: *mut c_void, block: u64) ->
 /// - `state.inner` must have been allocated using the global allocator
 /// - `state.inner` must not be used after this call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) {
+unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -295,6 +340,7 @@ unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) {
     // - `state.inner` was allocated using the global allocator (precondition)
     // - `state.inner` is not used after this call (precondition)
     let _ = unsafe { Box::from_raw(state_inner) };
+    bindings::Result_kResult_Success
 }
 
 /// Checks if the given account exists.
@@ -317,10 +363,10 @@ unsafe extern "C" fn Carmen_Rust_AccountExists(
     state: *mut c_void,
     addr: *mut c_void,
     out_state: *mut c_void,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || out_state.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -343,8 +389,9 @@ unsafe extern "C" fn Carmen_Rust_AccountExists(
             // - `out_state` is a valid pointer to a `u8` (precondition)
             // - `out_state` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_state as *mut u8, exists as u8) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -368,10 +415,10 @@ unsafe extern "C" fn Carmen_Rust_GetBalance(
     state: *mut c_void,
     addr: *mut c_void,
     out_balance: *mut c_void,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || out_balance.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -394,8 +441,9 @@ unsafe extern "C" fn Carmen_Rust_GetBalance(
             // - `out_balance` is a valid pointer to a byte array of length 32 (precondition)
             // - `out_balance` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_balance as *mut U256, balance) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -419,10 +467,10 @@ unsafe extern "C" fn Carmen_Rust_GetNonce(
     state: *mut c_void,
     addr: *mut c_void,
     out_nonce: *mut c_void,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || out_nonce.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -445,8 +493,9 @@ unsafe extern "C" fn Carmen_Rust_GetNonce(
             // - `out_nonce` is a valid pointer to a byte array of length 32 (precondition)
             // - `out_nonce` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_nonce as *mut u64, nonce) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -474,10 +523,10 @@ unsafe extern "C" fn Carmen_Rust_GetStorageValue(
     addr: *mut c_void,
     key: *mut c_void,
     out_value: *mut c_void,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || key.is_null() || out_value.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -505,8 +554,9 @@ unsafe extern "C" fn Carmen_Rust_GetStorageValue(
             // - `out_value` is a valid pointer to a byte array of length 32 (precondition)
             // - `out_value` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_value as *mut Value, value) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -534,10 +584,10 @@ unsafe extern "C" fn Carmen_Rust_GetCode(
     addr: *mut c_void,
     out_code: *mut c_void,
     out_length: *mut u32,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || out_code.is_null() || out_length.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -567,8 +617,9 @@ unsafe extern "C" fn Carmen_Rust_GetCode(
             // - `out_length` is a valid pointer to a `u32` (precondition)
             // - `out_length` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_length, len as u32) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -592,10 +643,10 @@ unsafe extern "C" fn Carmen_Rust_GetCodeHash(
     state: *mut c_void,
     addr: *mut c_void,
     out_hash: *mut c_void,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || out_hash.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -618,8 +669,9 @@ unsafe extern "C" fn Carmen_Rust_GetCodeHash(
             // - `out_hash` is a valid pointer to a `u32` (precondition)
             // - `out_hash` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_hash as *mut Hash, code_hash) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -643,10 +695,10 @@ unsafe extern "C" fn Carmen_Rust_GetCodeSize(
     state: *mut c_void,
     addr: *mut c_void,
     out_length: *mut u32,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || addr.is_null() || out_length.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -669,8 +721,9 @@ unsafe extern "C" fn Carmen_Rust_GetCodeSize(
             // - `out_length` is a valid pointer to a `u32` (precondition)
             // - `out_length` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_length, code_size) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -694,10 +747,10 @@ unsafe extern "C" fn Carmen_Rust_Apply(
     block: u64,
     update: *mut c_void,
     length: u64,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || update.is_null() || length == 0 {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -715,14 +768,12 @@ unsafe extern "C" fn Carmen_Rust_Apply(
     // - `update` is not mutated for the duration of the call (precondition)
     let update_data =
         unsafe { slice_from_raw_parts_mut_scoped(update as *mut u8, length as usize, &token) };
-    let update = match Update::from_encoded(update_data) {
-        Ok(update) => update,
-        #[allow(unused_variables)]
-        Err(error) => unimplemented!(),
+    let Ok(update) = Update::from_encoded(update_data) else {
+        return bindings::Result_kResult_InvalidArguments; // update parsing error
     };
-    #[allow(unused_variables)]
-    if let Err(error) = state.apply_block_update(block, update) {
-        unimplemented!();
+    match state.apply_block_update(block, update) {
+        Ok(_) => bindings::Result_kResult_Success,
+        Err(err) => err.into(),
     }
 }
 
@@ -739,10 +790,13 @@ unsafe extern "C" fn Carmen_Rust_Apply(
 /// - `out_hash` must be a valid pointer to a byte array of length 32
 /// - `out_hash` must be valid for writes for the duration of the call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_GetHash(state: *mut c_void, out_hash: *mut c_void) {
+unsafe extern "C" fn Carmen_Rust_GetHash(
+    state: *mut c_void,
+    out_hash: *mut c_void,
+) -> bindings::Result {
     let token = LifetimeToken;
     if state.is_null() || out_hash.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
@@ -760,8 +814,9 @@ unsafe extern "C" fn Carmen_Rust_GetHash(state: *mut c_void, out_hash: *mut c_vo
             // - `out_hash` is a valid pointer to a byte array of length 32 (precondition)
             // - `out_hash` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out_hash as *mut Hash, hash) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -787,10 +842,10 @@ unsafe extern "C" fn Carmen_Rust_GetMemoryFootprint(
     db: *mut c_void,
     out: *mut *mut c_char,
     out_length: *mut u64,
-) {
+) -> bindings::Result {
     let token = LifetimeToken;
     if db.is_null() || out.is_null() || out_length.is_null() {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
@@ -812,8 +867,9 @@ unsafe extern "C" fn Carmen_Rust_GetMemoryFootprint(
             // - `out` is a valid pointer to a byte array of length `out_length` (precondition)
             // - `out` is valid for writes for the duration of the call (precondition)
             unsafe { std::ptr::write(out, Box::into_raw(msg) as *mut c_char) };
+            bindings::Result_kResult_Success
         }
-        Err(_) => unimplemented!(),
+        Err(err) => err.into(),
     }
 }
 
@@ -826,9 +882,12 @@ unsafe extern "C" fn Carmen_Rust_GetMemoryFootprint(
 /// - `buf` must have been allocated using the global allocator
 /// - `buf` must not be used after this call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_ReleaseMemoryFootprintBuffer(buf: *mut c_char, buf_length: u64) {
+unsafe extern "C" fn Carmen_Rust_ReleaseMemoryFootprintBuffer(
+    buf: *mut c_char,
+    buf_length: u64,
+) -> bindings::Result {
     if buf.is_null() || buf_length == 0 {
-        unimplemented!();
+        return bindings::Result_kResult_InvalidArguments;
     }
     let buf = std::ptr::slice_from_raw_parts_mut(buf as *mut u8, buf_length as usize);
     // SAFETY:
@@ -840,6 +899,7 @@ unsafe extern "C" fn Carmen_Rust_ReleaseMemoryFootprintBuffer(buf: *mut c_char, 
     unsafe {
         let _ = Box::from_raw(buf);
     }
+    bindings::Result_kResult_Success
 }
 
 /// A transparent wrapper around a pointer to a `dyn CarmenDb` object. Pointers to this wrapper
@@ -1015,75 +1075,75 @@ unsafe fn slice_from_raw_parts_mut_scoped<'s, T>(
 #[allow(unused)]
 const COMPILE_TIME_CHECK_THAT_SIGNATURES_MATCH_SIGNATURES_GENERATED_FROM_C_HEADER: () = {
     assert_same_signature(
-        Carmen_Rust_OpenDatabase as unsafe extern "C" fn(_, _, _, _, _) -> _,
+        Carmen_Rust_OpenDatabase as unsafe extern "C" fn(_, _, _, _, _, _) -> _,
         bindings::Carmen_Rust_OpenDatabase,
     );
     assert_same_signature(
-        Carmen_Rust_Flush as unsafe extern "C" fn(_),
+        Carmen_Rust_Flush as unsafe extern "C" fn(_) -> _,
         bindings::Carmen_Rust_Flush,
     );
     assert_same_signature(
-        Carmen_Rust_Close as unsafe extern "C" fn(_),
+        Carmen_Rust_Close as unsafe extern "C" fn(_) -> _,
         bindings::Carmen_Rust_Close,
     );
     assert_same_signature(
-        Carmen_Rust_ReleaseDatabase as unsafe extern "C" fn(_),
+        Carmen_Rust_ReleaseDatabase as unsafe extern "C" fn(_) -> _,
         bindings::Carmen_Rust_ReleaseDatabase,
     );
     assert_same_signature(
-        Carmen_Rust_GetLiveState as unsafe extern "C" fn(_) -> _,
+        Carmen_Rust_GetLiveState as unsafe extern "C" fn(_, _) -> _,
         bindings::Carmen_Rust_GetLiveState,
     );
     assert_same_signature(
-        Carmen_Rust_GetArchiveState as unsafe extern "C" fn(_, _) -> _,
+        Carmen_Rust_GetArchiveState as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetArchiveState,
     );
     assert_same_signature(
-        Carmen_Rust_ReleaseState as unsafe extern "C" fn(_),
+        Carmen_Rust_ReleaseState as unsafe extern "C" fn(_) -> _,
         bindings::Carmen_Rust_ReleaseState,
     );
     assert_same_signature(
-        Carmen_Rust_AccountExists as unsafe extern "C" fn(_, _, _),
+        Carmen_Rust_AccountExists as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_AccountExists,
     );
     assert_same_signature(
-        Carmen_Rust_GetBalance as unsafe extern "C" fn(_, _, _),
+        Carmen_Rust_GetBalance as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetBalance,
     );
     assert_same_signature(
-        Carmen_Rust_GetNonce as unsafe extern "C" fn(_, _, _),
+        Carmen_Rust_GetNonce as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetNonce,
     );
     assert_same_signature(
-        Carmen_Rust_GetStorageValue as unsafe extern "C" fn(_, _, _, _),
+        Carmen_Rust_GetStorageValue as unsafe extern "C" fn(_, _, _, _) -> _,
         bindings::Carmen_Rust_GetStorageValue,
     );
     assert_same_signature(
-        Carmen_Rust_GetCode as unsafe extern "C" fn(_, _, _, _),
+        Carmen_Rust_GetCode as unsafe extern "C" fn(_, _, _, _) -> _,
         bindings::Carmen_Rust_GetCode,
     );
     assert_same_signature(
-        Carmen_Rust_GetCodeHash as unsafe extern "C" fn(_, _, _),
+        Carmen_Rust_GetCodeHash as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetCodeHash,
     );
     assert_same_signature(
-        Carmen_Rust_GetCodeSize as unsafe extern "C" fn(_, _, _),
+        Carmen_Rust_GetCodeSize as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetCodeSize,
     );
     assert_same_signature(
-        Carmen_Rust_Apply as unsafe extern "C" fn(_, _, _, _),
+        Carmen_Rust_Apply as unsafe extern "C" fn(_, _, _, _) -> _,
         bindings::Carmen_Rust_Apply,
     );
     assert_same_signature(
-        Carmen_Rust_GetHash as unsafe extern "C" fn(_, _),
+        Carmen_Rust_GetHash as unsafe extern "C" fn(_, _) -> _,
         bindings::Carmen_Rust_GetHash,
     );
     assert_same_signature(
-        Carmen_Rust_GetMemoryFootprint as unsafe extern "C" fn(_, _, _),
+        Carmen_Rust_GetMemoryFootprint as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetMemoryFootprint,
     );
     assert_same_signature(
-        Carmen_Rust_ReleaseMemoryFootprintBuffer as unsafe extern "C" fn(_, _),
+        Carmen_Rust_ReleaseMemoryFootprintBuffer as unsafe extern "C" fn(_, _) -> _,
         bindings::Carmen_Rust_ReleaseMemoryFootprintBuffer,
     );
 };
@@ -1110,17 +1170,20 @@ mod tests {
     fn carmen_rust_open_database_returns_non_null_pointers() {
         unsafe {
             let dir = "dir";
-            let db = Carmen_Rust_OpenDatabase(
+            let mut out_database = std::ptr::null_mut();
+            let result = Carmen_Rust_OpenDatabase(
                 6,
                 LiveImpl::Memory as u8 as u32,
                 ArchiveImpl::LevelDb as u8 as u32,
                 dir.as_ptr() as *const c_char,
                 dir.len() as i32,
+                &mut out_database,
             );
-            assert!(!db.is_null());
-            let db_ref = &mut *(db as *mut DbWrapper);
+            assert_eq!(result, bindings::Result_kResult_Success);
+            assert!(!out_database.is_null());
+            let db_ref = &mut *(out_database as *mut DbWrapper);
             assert!(!db_ref.inner.is_null());
-            Carmen_Rust_ReleaseDatabase(db);
+            Carmen_Rust_ReleaseDatabase(out_database);
         }
     }
 
@@ -1157,9 +1220,11 @@ mod tests {
                     .returning(|| Ok(Box::new(MockCarmenState::new())));
             },
             move |db| {
-                let live_state = unsafe { Carmen_Rust_GetLiveState(db) };
-                assert!(!live_state.is_null());
-                unsafe { Carmen_Rust_ReleaseState(live_state) };
+                let mut out_state = std::ptr::null_mut();
+                let result = unsafe { Carmen_Rust_GetLiveState(db, &mut out_state) };
+                assert_eq!(result, bindings::Result_kResult_Success);
+                assert!(!out_state.is_null());
+                unsafe { Carmen_Rust_ReleaseState(out_state) };
             },
         );
     }
@@ -1175,9 +1240,11 @@ mod tests {
                     .returning(|_| Ok(Box::new(MockCarmenState::new())));
             },
             move |db| {
-                let archive_state = unsafe { Carmen_Rust_GetArchiveState(db, block) };
-                assert!(!archive_state.is_null());
-                unsafe { Carmen_Rust_ReleaseState(archive_state) };
+                let mut out_state = std::ptr::null_mut();
+                let result = unsafe { Carmen_Rust_GetArchiveState(db, block, &mut out_state) };
+                assert_eq!(result, bindings::Result_kResult_Success);
+                assert!(!out_state.is_null());
+                unsafe { Carmen_Rust_ReleaseState(out_state) };
             },
         );
     }

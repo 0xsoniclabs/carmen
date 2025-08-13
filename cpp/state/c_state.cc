@@ -242,57 +242,72 @@ Database* Open(const std::filesystem::path& directory, std::uint8_t schema,
 
 extern "C" {
 
-C_Database Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
-                                   ArchiveImpl archive, const char* directory,
-                                   int length) {
+Result Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
+                               ArchiveImpl archive, const char* directory,
+                               int length, C_Database* out_database) {
   std::string_view dir(directory, length);
   switch (state) {
     case kLive_Memory:
-      return carmen::Open<carmen::InMemoryConfig>(dir, schema, archive);
+      *out_database =
+          carmen::Open<carmen::InMemoryConfig>(dir, schema, archive);
+      return kResult_Success;
     case kLive_File:
-      return carmen::Open<carmen::FileBasedConfig>(dir, schema, archive);
+      *out_database =
+          carmen::Open<carmen::FileBasedConfig>(dir, schema, archive);
+      return kResult_Success;
     case kLive_LevelDb:
-      return carmen::Open<carmen::LevelDbBasedConfig>(dir, schema, archive);
+      *out_database =
+          carmen::Open<carmen::LevelDbBasedConfig>(dir, schema, archive);
+      return kResult_Success;
   }
-  return nullptr;
+  return kResult_InternalError;
 }
 
-void Carmen_Cpp_Flush(C_Database db) {
+Result Carmen_Cpp_Flush(C_Database db) {
   auto res = reinterpret_cast<carmen::Database*>(db)->Flush();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to flush state: " << res << "\n"
               << std::flush;
+    return kResult_InternalError;
   }
+  return kResult_Success;
 }
 
-void Carmen_Cpp_Close(C_Database db) {
+Result Carmen_Cpp_Close(C_Database db) {
   auto res = reinterpret_cast<carmen::Database*>(db)->Close();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to close state: " << res << "\n"
               << std::flush;
+    return kResult_InternalError;
   }
+  return kResult_Success;
 }
 
-void Carmen_Cpp_ReleaseDatabase(C_Database db) {
+Result Carmen_Cpp_ReleaseDatabase(C_Database db) {
   delete reinterpret_cast<carmen::Database*>(db);
+  return kResult_Success;
 }
 
-void Carmen_Cpp_ReleaseState(C_State state) {
+Result Carmen_Cpp_ReleaseState(C_State state) {
   delete reinterpret_cast<carmen::WorldState*>(state);
+  return kResult_Success;
 }
 
-C_State Carmen_Cpp_GetLiveState(C_Database db) {
+Result Carmen_Cpp_GetLiveState(C_Database db, C_State* out_state) {
   auto& s = *reinterpret_cast<carmen::Database*>(db);
-  return s.GetLiveState();
+  *out_state = s.GetLiveState();
+  return kResult_Success;
 }
 
-C_State Carmen_Cpp_GetArchiveState(C_Database db, uint64_t block) {
+Result Carmen_Cpp_GetArchiveState(C_Database db, uint64_t block,
+                                  C_State* out_state) {
   auto& s = *reinterpret_cast<carmen::Database*>(db);
-  return s.GetArchiveState(block);
+  *out_state = s.GetArchiveState(block);
+  return kResult_Success;
 }
 
-void Carmen_Cpp_AccountExists(C_State state, C_Address addr,
-                              C_AccountState out_state) {
+Result Carmen_Cpp_AccountExists(C_State state, C_Address addr,
+                                C_AccountState out_state) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& r = *reinterpret_cast<carmen::AccountState*>(out_state);
@@ -301,13 +316,14 @@ void Carmen_Cpp_AccountExists(C_State state, C_Address addr,
     std::cout << "WARNING: Failed to get account state: " << res.status()
               << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   r = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetBalance(C_State state, C_Address addr,
-                           C_Balance out_balance) {
+Result Carmen_Cpp_GetBalance(C_State state, C_Address addr,
+                             C_Balance out_balance) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& b = *reinterpret_cast<carmen::Balance*>(out_balance);
@@ -315,12 +331,13 @@ void Carmen_Cpp_GetBalance(C_State state, C_Address addr,
   if (!res.ok()) {
     std::cout << "WARNING: Failed to get balance: " << res.status() << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   b = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetNonce(C_State state, C_Address addr, C_Nonce out_nonce) {
+Result Carmen_Cpp_GetNonce(C_State state, C_Address addr, C_Nonce out_nonce) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& n = *reinterpret_cast<carmen::Nonce*>(out_nonce);
@@ -328,13 +345,14 @@ void Carmen_Cpp_GetNonce(C_State state, C_Address addr, C_Nonce out_nonce) {
   if (!res.ok()) {
     std::cout << "WARNING: Failed to get nonce: " << res.status() << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   n = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetStorageValue(C_State state, C_Address addr, C_Key key,
-                                C_Value out_value) {
+Result Carmen_Cpp_GetStorageValue(C_State state, C_Address addr, C_Key key,
+                                  C_Value out_value) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& k = *reinterpret_cast<carmen::Key*>(key);
@@ -344,20 +362,21 @@ void Carmen_Cpp_GetStorageValue(C_State state, C_Address addr, C_Key key,
     std::cout << "WARNING: Failed to get storage value: " << res.status()
               << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   v = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetCode(C_State state, C_Address addr, C_Code out_code,
-                        uint32_t* out_length) {
+Result Carmen_Cpp_GetCode(C_State state, C_Address addr, C_Code out_code,
+                          uint32_t* out_length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto code = s.GetCode(a);
   if (!code.ok()) {
     std::cout << "WARNING: Failed to get code: " << code.status() << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   auto capacity = *out_length;
   *out_length = code->Size();
@@ -365,12 +384,13 @@ void Carmen_Cpp_GetCode(C_State state, C_Address addr, C_Code out_code,
     std::cout << "WARNING: Code buffer too small: " << code->Size() << " > "
               << capacity << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   memcpy(out_code, code->Data(), code->Size());
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetCodeHash(C_State state, C_Address addr, C_Hash out_hash) {
+Result Carmen_Cpp_GetCodeHash(C_State state, C_Address addr, C_Hash out_hash) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto& h = *reinterpret_cast<carmen::Hash*>(out_hash);
@@ -378,26 +398,28 @@ void Carmen_Cpp_GetCodeHash(C_State state, C_Address addr, C_Hash out_hash) {
   if (!res.ok()) {
     std::cout << "WARNING: Failed to get code hash: " << res.status() << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   h = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetCodeSize(C_State state, C_Address addr,
-                            uint32_t* out_length) {
+Result Carmen_Cpp_GetCodeSize(C_State state, C_Address addr,
+                              uint32_t* out_length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& a = *reinterpret_cast<carmen::Address*>(addr);
   auto res = s.GetCodeSize(a);
   if (!res.ok()) {
     std::cout << "WARNING: Failed to get code size: " << res.status() << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   *out_length = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_Apply(C_State state, uint64_t block, C_Update update,
-                      uint64_t length) {
+Result Carmen_Cpp_Apply(C_State state, uint64_t block, C_Update update,
+                        uint64_t length) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   std::span<const std::byte> data(reinterpret_cast<const std::byte*>(update),
                                   length);
@@ -406,29 +428,32 @@ void Carmen_Cpp_Apply(C_State state, uint64_t block, C_Update update,
     std::cout << "WARNING: Failed to decode update: " << change.status() << "\n"
               << std::flush;
 
-    return;
+    return kResult_InternalError;
   }
   auto res = s.Apply(block, *std::move(change));
   if (!res.ok()) {
     std::cout << "WARNING: Failed to apply update: " << res << "\n"
               << std::flush;
+    return kResult_InternalError;
   }
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetHash(C_State state, C_Hash out_hash) {
+Result Carmen_Cpp_GetHash(C_State state, C_Hash out_hash) {
   auto& s = *reinterpret_cast<carmen::WorldState*>(state);
   auto& h = *reinterpret_cast<carmen::Hash*>(out_hash);
   auto res = s.GetHash();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to get hash: " << res.status() << "\n"
               << std::flush;
-    return;
+    return kResult_InternalError;
   }
   h = *res;
+  return kResult_Success;
 }
 
-void Carmen_Cpp_GetMemoryFootprint(C_Database db, char** out,
-                                   uint64_t* out_length) {
+Result Carmen_Cpp_GetMemoryFootprint(C_Database db, char** out,
+                                     uint64_t* out_length) {
   auto& s = *reinterpret_cast<carmen::Database*>(db);
   auto fp = s.GetMemoryFootprint();
   std::stringstream buffer;
@@ -437,8 +462,12 @@ void Carmen_Cpp_GetMemoryFootprint(C_Database db, char** out,
   *out_length = data.size();
   *out = reinterpret_cast<char*>(malloc(data.size()));
   std::memcpy(*out, data.data(), data.size());
+  return kResult_Success;
 }
 
-void Carmen_Cpp_ReleaseMemoryFootprintBuffer(char* buf, uint64_t) { free(buf); }
+Result Carmen_Cpp_ReleaseMemoryFootprintBuffer(char* buf, uint64_t) {
+  free(buf);
+  return kResult_Success;
+}
 
 }  // extern "C"
