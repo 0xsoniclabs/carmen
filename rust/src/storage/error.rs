@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum Error {
     #[error("not found")]
     NotFound,
-    #[error("id node type mismatch")]
+    #[error("id / node type mismatch")]
     IdNodeTypeMismatch,
     #[error("id encodes a non-existing node type")]
     InvalidId,

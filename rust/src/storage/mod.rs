@@ -15,7 +15,7 @@ pub use self::error::Error;
 
 mod error;
 
-/// A trait for storage backends that can store and retrieve nodes by their IDs.
+/// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
 /// `Id` and `Item`.
 pub trait Storage {
@@ -30,17 +30,17 @@ pub trait Storage {
     where
         Self: Sized;
 
-    /// Returns the node with the given ID.
+    /// Returns the item with the given ID.
     fn get(&self, id: Self::Id) -> Result<Self::Item, Error>;
 
-    /// Reserves a new ID for the given node.
-    /// IDs are only unique at a give point in time, but may be reused if this node is deleted.
-    fn reserve(&self, node: &Self::Item) -> Self::Id;
+    /// Reserves a new ID for the given item.
+    /// IDs are only unique at a give point in time, but may be reused if this item is deleted.
+    fn reserve(&self, item: &Self::Item) -> Self::Id;
 
-    /// Stores the node with the given ID.
-    fn set(&self, id: Self::Id, node: &Self::Item) -> Result<(), Error>;
+    /// Stores the item with the given ID.
+    fn set(&self, id: Self::Id, item: &Self::Item) -> Result<(), Error>;
 
-    /// Deletes the node with the given ID.
+    /// Deletes the item with the given ID.
     /// The ID may be reused in the future.
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
