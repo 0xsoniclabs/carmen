@@ -39,12 +39,11 @@ pub trait FileBackend {
     /// Flushes all changes to disk.
     fn flush(&self) -> std::io::Result<()>;
 
-    /// Returns the length of the file.
+    /// Returns the size of this file in bytes.
     fn len(&self) -> Result<u64, std::io::Error>;
 
-    /// Sets the length of the file to `len`.
-    /// This may truncate the file if `len` is smaller than the current length.
-    fn set_len(&self, len: u64) -> std::io::Result<()>;
+    /// Truncates or extends the underlying file, updating the size of this file to become `size`.
+    fn set_len(&self, size: u64) -> std::io::Result<()>;
 }
 
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using a mutex to ensure
