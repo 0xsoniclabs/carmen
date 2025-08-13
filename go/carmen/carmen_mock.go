@@ -20,6 +20,8 @@
 package carmen
 
 import (
+	context "context"
+	io "io"
 	reflect "reflect"
 
 	gomock "go.uber.org/mock/gomock"
@@ -29,6 +31,7 @@ import (
 type MockDatabase struct {
 	ctrl     *gomock.Controller
 	recorder *MockDatabaseMockRecorder
+	isgomock struct{}
 }
 
 // MockDatabaseMockRecorder is the mock recorder for MockDatabase.
@@ -150,6 +153,20 @@ func (mr *MockDatabaseMockRecorder) GetHistoricStateHash(block any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHistoricStateHash", reflect.TypeOf((*MockDatabase)(nil).GetHistoricStateHash), block)
 }
 
+// GetMemoryFootprint mocks base method.
+func (m *MockDatabase) GetMemoryFootprint() MemoryFootprint {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMemoryFootprint")
+	ret0, _ := ret[0].(MemoryFootprint)
+	return ret0
+}
+
+// GetMemoryFootprint indicates an expected call of GetMemoryFootprint.
+func (mr *MockDatabaseMockRecorder) GetMemoryFootprint() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMemoryFootprint", reflect.TypeOf((*MockDatabase)(nil).GetMemoryFootprint))
+}
+
 // QueryBlock mocks base method.
 func (m *MockDatabase) QueryBlock(block uint64, run func(HistoricBlockContext) error) error {
 	m.ctrl.T.Helper()
@@ -211,6 +228,7 @@ func (mr *MockDatabaseMockRecorder) StartBulkLoad(block any) *gomock.Call {
 type MockblockContext struct {
 	ctrl     *gomock.Controller
 	recorder *MockblockContextMockRecorder
+	isgomock struct{}
 }
 
 // MockblockContextMockRecorder is the mock recorder for MockblockContext.
@@ -263,6 +281,7 @@ func (mr *MockblockContextMockRecorder) RunTransaction(run any) *gomock.Call {
 type MockHeadBlockContext struct {
 	ctrl     *gomock.Controller
 	recorder *MockHeadBlockContextMockRecorder
+	isgomock struct{}
 }
 
 // MockHeadBlockContextMockRecorder is the mock recorder for MockHeadBlockContext.
@@ -343,6 +362,7 @@ func (mr *MockHeadBlockContextMockRecorder) RunTransaction(run any) *gomock.Call
 type MockHistoricBlockContext struct {
 	ctrl     *gomock.Controller
 	recorder *MockHistoricBlockContextMockRecorder
+	isgomock struct{}
 }
 
 // MockHistoricBlockContextMockRecorder is the mock recorder for MockHistoricBlockContext.
@@ -391,6 +411,41 @@ func (mr *MockHistoricBlockContextMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockHistoricBlockContext)(nil).Close))
 }
 
+// Export mocks base method.
+func (m *MockHistoricBlockContext) Export(ctx context.Context, out io.Writer) (Hash, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Export", ctx, out)
+	ret0, _ := ret[0].(Hash)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Export indicates an expected call of Export.
+func (mr *MockHistoricBlockContextMockRecorder) Export(ctx, out any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Export", reflect.TypeOf((*MockHistoricBlockContext)(nil).Export), ctx, out)
+}
+
+// GetProof mocks base method.
+func (m *MockHistoricBlockContext) GetProof(address Address, keys ...Key) (WitnessProof, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{address}
+	for _, a := range keys {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetProof", varargs...)
+	ret0, _ := ret[0].(WitnessProof)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProof indicates an expected call of GetProof.
+func (mr *MockHistoricBlockContextMockRecorder) GetProof(address any, keys ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{address}, keys...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProof", reflect.TypeOf((*MockHistoricBlockContext)(nil).GetProof), varargs...)
+}
+
 // RunTransaction mocks base method.
 func (m *MockHistoricBlockContext) RunTransaction(run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
@@ -409,6 +464,7 @@ func (mr *MockHistoricBlockContextMockRecorder) RunTransaction(run any) *gomock.
 type MockTransactionContext struct {
 	ctrl     *gomock.Controller
 	recorder *MockTransactionContextMockRecorder
+	isgomock struct{}
 }
 
 // MockTransactionContextMockRecorder is the mock recorder for MockTransactionContext.
@@ -720,6 +776,20 @@ func (mr *MockTransactionContextMockRecorder) GetTransientState(arg0, arg1 any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTransientState", reflect.TypeOf((*MockTransactionContext)(nil).GetTransientState), arg0, arg1)
 }
 
+// HasEmptyStorage mocks base method.
+func (m *MockTransactionContext) HasEmptyStorage(addr Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasEmptyStorage", addr)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// HasEmptyStorage indicates an expected call of HasEmptyStorage.
+func (mr *MockTransactionContextMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockTransactionContext)(nil).HasEmptyStorage), addr)
+}
+
 // HasSelfDestructed mocks base method.
 func (m *MockTransactionContext) HasSelfDestructed(arg0 Address) bool {
 	m.ctrl.T.Helper()
@@ -893,6 +963,7 @@ func (mr *MockTransactionContextMockRecorder) SubRefund(arg0 any) *gomock.Call {
 type MockQueryContext struct {
 	ctrl     *gomock.Controller
 	recorder *MockQueryContextMockRecorder
+	isgomock struct{}
 }
 
 // MockQueryContextMockRecorder is the mock recorder for MockQueryContext.
@@ -1010,10 +1081,25 @@ func (mr *MockQueryContextMockRecorder) GetStateHash() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStateHash", reflect.TypeOf((*MockQueryContext)(nil).GetStateHash))
 }
 
+// HasEmptyStorage mocks base method.
+func (m *MockQueryContext) HasEmptyStorage(addr Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasEmptyStorage", addr)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// HasEmptyStorage indicates an expected call of HasEmptyStorage.
+func (mr *MockQueryContextMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockQueryContext)(nil).HasEmptyStorage), addr)
+}
+
 // MockBulkLoad is a mock of BulkLoad interface.
 type MockBulkLoad struct {
 	ctrl     *gomock.Controller
 	recorder *MockBulkLoadMockRecorder
+	isgomock struct{}
 }
 
 // MockBulkLoadMockRecorder is the mock recorder for MockBulkLoad.
