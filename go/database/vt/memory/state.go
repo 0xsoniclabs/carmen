@@ -155,7 +155,7 @@ func (s *State) Close() error {
 }
 
 func (s *State) GetMemoryFootprint() *common.MemoryFootprint {
-	panic("not implemented")
+	return common.NewMemoryFootprint(1)
 }
 
 func (s *State) GetArchiveState(block uint64) (state.State, error) {
