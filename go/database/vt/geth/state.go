@@ -15,6 +15,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -24,25 +26,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"io"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
-
-func init() {
-	// Verkle Trie schemas
-	state.RegisterStateFactory(state.Configuration{
-		Variant: "geth-memory",
-		Schema:  6,
-		Archive: state.NoArchive,
-	}, NewState)
-}
 
 // NewState creates a new verkle state using an in-memory source.
 // It uses the Verkle Trie from the Ethereum Geth implementation.
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
-func NewState(params state.Parameters) (state.State, error) {
+func NewState(_ state.Parameters) (state.State, error) {
 	source := singleNodeReader{source: newMemorySource()}
 	pointCache := utils.NewPointCache(4096)
 	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, source, pointCache)
