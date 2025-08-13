@@ -103,8 +103,6 @@ func benchmark(context *cli.Context) error {
 			numInsertsPerBlock: context.Int(numInsertsPerBlockFlag.Name),
 			tmpDir:             tmpDir,
 			keepState:          context.Bool(keepStateFlag.Name),
-			cpuProfilePrefix:   context.String(cpuProfileFlag.Name),
-			traceFilePrefix:    context.String(traceFlag.Name),
 			reportInterval:     context.Int(reportIntervalFlag.Name),
 			schema:             context.Int(schemaFlag.Name),
 		},
@@ -134,8 +132,6 @@ type benchmarkParams struct {
 	numInsertsPerBlock int
 	tmpDir             string
 	keepState          bool
-	cpuProfilePrefix   string
-	traceFilePrefix    string
 	reportInterval     int
 	schema             int
 }
