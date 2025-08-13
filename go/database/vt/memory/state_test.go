@@ -279,10 +279,7 @@ func TestState_Close_ReturnsNoError(t *testing.T) {
 func TestState_GetMemoryFootprint_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
 	state := newState()
-	require.Panics(
-		func() { state.GetMemoryFootprint() },
-		"GetMemoryFootprint should panic as it is not implemented",
-	)
+	require.NotZero(state.GetMemoryFootprint())
 }
 
 func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
