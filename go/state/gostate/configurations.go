@@ -144,7 +144,7 @@ func init() {
 		Variant: "go-geth-memory",
 		Schema:  6,
 		Archive: state.NoArchive,
-	}, wrapInSyncState(vtgeth.NewState))
+	}, wrapInSyncState(vtgeth.NewMemoryState))
 
 	state.RegisterStateFactory(state.Configuration{
 		Variant: VariantGoMemory,
