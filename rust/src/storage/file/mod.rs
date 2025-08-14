@@ -9,6 +9,6 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod file_backend;
+mod node_file_storage;
 
-#[allow(unused_imports)]
 use file_backend::*;
