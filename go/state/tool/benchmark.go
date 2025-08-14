@@ -22,16 +22,17 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/urfave/cli/v2"
 
-	"github.com/0xsoniclabs/carmen/go/state/gostate"
+	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
 )
 
 var Benchmark = cli.Command{
-	Action: benchmark,
+	Action: diagnostics.AddPerformanceDiagnosticsAction(benchmark, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:   "benchmark",
-	Usage:  "benchmarks MPT performance by filling data into a fresh instance",
+	Usage:  "benchmarks State performance by filling data into a fresh instance",
 	Flags: []cli.Flag{
 		&archiveFlag,
 		&numBlocksFlag,
@@ -43,6 +44,7 @@ var Benchmark = cli.Command{
 		&cpuProfileFlag,
 		&schemaFlag,
 		&diagnosticsFlag,
+		&variantFlag,
 	},
 }
 
@@ -84,6 +86,11 @@ var (
 		Usage: "database scheme to use represented by its number [1..N]",
 		Value: 5,
 	}
+	variantFlag = cli.StringFlag{
+		Name:  "variant",
+		Usage: "database variant",
+		Value: "go-file",
+	}
 )
 
 func benchmark(context *cli.Context) error {
@@ -92,8 +99,6 @@ func benchmark(context *cli.Context) error {
 	if len(tmpDir) == 0 {
 		tmpDir = os.TempDir()
 	}
-
-	startDiagnosticServer(context.Int(diagnosticsFlag.Name))
 
 	start := time.Now()
 	results, err := runBenchmark(
@@ -104,10 +109,9 @@ func benchmark(context *cli.Context) error {
 			numInsertsPerBlock: context.Int(numInsertsPerBlockFlag.Name),
 			tmpDir:             tmpDir,
 			keepState:          context.Bool(keepStateFlag.Name),
-			cpuProfilePrefix:   context.String(cpuProfileFlag.Name),
-			traceFilePrefix:    context.String(traceFlag.Name),
 			reportInterval:     context.Int(reportIntervalFlag.Name),
 			schema:             context.Int(schemaFlag.Name),
+			variant:            context.String(variantFlag.Name),
 		},
 		func(msg string, args ...any) {
 			delta := uint64(time.Since(start).Round(time.Second).Seconds())
@@ -135,10 +139,9 @@ type benchmarkParams struct {
 	numInsertsPerBlock int
 	tmpDir             string
 	keepState          bool
-	cpuProfilePrefix   string
-	traceFilePrefix    string
 	reportInterval     int
 	schema             int
+	variant            string
 }
 
 type benchmarkRecord struct {
@@ -163,25 +166,6 @@ func runBenchmark(
 	defer runtime.UnlockOSThread()
 
 	res := benchmarkResult{}
-
-	profilingEnabled := len(params.cpuProfilePrefix) > 0
-	tracingEnabled := len(params.traceFilePrefix) > 0
-
-	// Start profiling ...
-	if profilingEnabled {
-		if err := startCpuProfiler(fmt.Sprintf("%s_%06d", params.cpuProfilePrefix, 1)); err != nil {
-			return res, err
-		}
-		defer stopCpuProfiler()
-	}
-
-	// Start tracing ...
-	if tracingEnabled {
-		if err := startTracer(fmt.Sprintf("%s_%06d", params.traceFilePrefix, 1)); err != nil {
-			return res, err
-		}
-		defer stopTracer()
-	}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -223,7 +207,7 @@ func runBenchmark(
 	}
 	state, err := state.NewState(state.Parameters{
 		Directory: path,
-		Variant:   gostate.VariantGoFile,
+		Variant:   state.Variant(params.variant),
 		Schema:    state.Schema(params.schema),
 		Archive:   archive,
 	})
@@ -275,14 +259,12 @@ func runBenchmark(
 		if err := state.Apply(uint64(i), update); err != nil {
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
 		}
+		// make sure hash/commit is computed
+		if _, err := state.GetHash(); err != nil {
+			return res, fmt.Errorf("error getting hash after applying block %d: %v", i, err)
+		}
 
 		if (i+1)%reportingInterval == 0 {
-			if tracingEnabled {
-				stopTracer()
-			}
-			if profilingEnabled {
-				stopCpuProfiler()
-			}
 			startReporting := time.Now()
 
 			throughput := float64(reportingInterval*numInsertsPerBlock) / startReporting.Sub(lastReportTime).Seconds()
@@ -306,14 +288,6 @@ func runBenchmark(
 			endReporting := time.Now()
 			reportingTime += endReporting.Sub(startReporting)
 			lastReportTime = endReporting
-
-			intervalNumber := ((i + 1) / reportingInterval) + 1
-			if profilingEnabled {
-				startCpuProfiler(fmt.Sprintf("%s_%06d", params.cpuProfilePrefix, intervalNumber))
-			}
-			if tracingEnabled {
-				startTracer(fmt.Sprintf("%s_%06d", params.traceFilePrefix, intervalNumber))
-			}
 		}
 	}
 	observer(

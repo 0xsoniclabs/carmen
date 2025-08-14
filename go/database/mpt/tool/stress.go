@@ -12,15 +12,18 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/urfave/cli/v2"
@@ -31,7 +34,7 @@ import (
 // an MPT data base with the aim of stress-testing core components like the
 // node cache, the write buffer, and the background flush mechanism.
 var StressTestCmd = cli.Command{
-	Action: addPerformanceDiagnoses(stressTest),
+	Action: diagnostics.AddPerformanceDiagnosticsAction(stressTest, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:   "stress-test",
 	Usage:  "stress test an MPT database",
 	Flags: []cli.Flag{
@@ -52,6 +55,15 @@ var (
 		Name:  "report-period",
 		Usage: "the time between reports",
 		Value: 5 * time.Second,
+	}
+	numBlocksFlag = cli.IntFlag{
+		Name:  "num-blocks",
+		Usage: "the number of blocks to be filled in",
+		Value: 10_000,
+	}
+	tmpDirFlag = cli.StringFlag{
+		Name:  "tmp-dir",
+		Usage: "the directory to place the state for running benchmarks on",
 	}
 )
 
@@ -368,4 +380,19 @@ func getMemoryUsage() uint64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m.Alloc
+}
+
+// GetDirectorySize computes the size of all files in the given directory in bytes.
+func getDirectorySize(directory string) int64 {
+	var sum int64 = 0
+	filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			sum += info.Size()
+		}
+		return nil
+	})
+	return sum
 }

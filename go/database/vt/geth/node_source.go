@@ -17,6 +17,8 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
+//go:generate mockgen -source node_source.go -destination node_source_mocks.go -package geth
+
 // nodeSource is an interface for a source of verkle nodes.
 // It provides methods to get and set nodes at specific paths.
 // It supports the adaptation for Geth's Verkle trie implementation.

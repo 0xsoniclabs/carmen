@@ -14,13 +14,14 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
 var Reset = cli.Command{
-	Action:    addPerformanceDiagnoses(reset),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(reset, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "reset",
 	Usage:     "resets the given archive to a selected block",
 	ArgsUsage: "<director> <block>",
