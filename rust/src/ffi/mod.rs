@@ -21,13 +21,15 @@ mod bindings {
             match error {
                 Error::UnsupportedSchema(version) => Result_kResult_UnsupportedSchema,
                 Error::UnsupportedOperation(op) => Result_kResult_UnsupportedOperation,
-                Error::Storage(err) => match err {
+                Error::Storage(
                     crate::storage::Error::NotFound
                     | crate::storage::Error::IdNodeTypeMismatch
-                    | crate::storage::Error::InvalidId => Result_kResult_InternalError,
-                    crate::storage::Error::DatabaseCorruption => Result_kResult_CorruptedDatabase,
-                    crate::storage::Error::Io(_) => Result_kResult_IOError,
-                },
+                    | crate::storage::Error::InvalidId,
+                ) => Result_kResult_InternalError,
+                Error::Storage(crate::storage::Error::DatabaseCorruption) => {
+                    Result_kResult_CorruptedDatabase
+                }
+                Error::Storage(crate::storage::Error::Io(_)) => Result_kResult_IOError,
             }
         }
     }
