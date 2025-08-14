@@ -259,6 +259,10 @@ func runBenchmark(
 		if err := state.Apply(uint64(i), update); err != nil {
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
 		}
+		// make sure hash/commit is computed
+		if _, err := state.GetHash(); err != nil {
+			return res, fmt.Errorf("error getting hash after applying block %d: %v", i, err)
+		}
 
 		if (i+1)%reportingInterval == 0 {
 			startReporting := time.Now()
