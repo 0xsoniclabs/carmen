@@ -13,14 +13,13 @@ package gostate
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
-
-	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/archive/sqlite"
@@ -48,6 +47,8 @@ import (
 	cachedStore "github.com/0xsoniclabs/carmen/go/backend/store/cache"
 	ldbstore "github.com/0xsoniclabs/carmen/go/backend/store/ldb"
 	storemem "github.com/0xsoniclabs/carmen/go/backend/store/memory"
+	vtgeth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
+	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/memory"
 )
 
 const HashTreeFactor = 32
@@ -137,6 +138,19 @@ func init() {
 			Archive: setup.archive,
 		}, newGoFileState)
 	}
+
+	// Verkle Trie schemas
+	state.RegisterStateFactory(state.Configuration{
+		Variant: "go-geth-memory",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}, vtgeth.NewState)
+
+	state.RegisterStateFactory(state.Configuration{
+		Variant: VariantGoMemory,
+		Schema:  6,
+		Archive: state.NoArchive,
+	}, vtmemory.NewState)
 
 }
 
