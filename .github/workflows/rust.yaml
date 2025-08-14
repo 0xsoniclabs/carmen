@@ -101,7 +101,7 @@ jobs:
     - name: load cache
       uses: Swatinem/rust-cache@v2
     - name: cargo test
-      run: cargo test --all-features --all-targets
+      run: cargo test --all-features --all-targets --no-fail-fast
   
   miri:
     name: miri
@@ -119,7 +119,7 @@ jobs:
     - name: cargo miri test
       env: 
         MIRIFLAGS: "-Zmiri-backtrace=full"
-      run: cargo +nightly miri test 
+      run: cargo +nightly miri test --no-fail-fast ffi
 
   unused-deps:
     name: unused deps
