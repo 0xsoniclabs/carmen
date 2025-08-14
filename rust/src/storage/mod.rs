@@ -16,6 +16,8 @@ pub use self::error::Error;
 mod error;
 mod file;
 
+// mod memory;
+
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
 /// `Id` and `Item`.
