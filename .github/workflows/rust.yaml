@@ -48,7 +48,7 @@ jobs:
     - name: checkout
       uses: actions/checkout@v4
     - name: install rust
-      uses: dtolnay/rust-toolchain@1.86
+      uses: dtolnay/rust-toolchain@1.89
       with:
         components: clippy
     - name: load cache
@@ -64,7 +64,7 @@ jobs:
     - name: checkout
       uses: actions/checkout@v4
     - name: install rust
-      uses: dtolnay/rust-toolchain@1.86
+      uses: dtolnay/rust-toolchain@1.89
     - name: load cache
       uses: Swatinem/rust-cache@v2
     - name: cargo doc
@@ -83,7 +83,7 @@ jobs:
     - name: checkout
       uses: actions/checkout@v4
     - name: install rust
-      uses: dtolnay/rust-toolchain@1.86
+      uses: dtolnay/rust-toolchain@1.89
     - name: load cache
       uses: Swatinem/rust-cache@v2
     - name: cargo build
@@ -97,7 +97,7 @@ jobs:
     - name: checkout
       uses: actions/checkout@v4
     - name: install rust
-      uses: dtolnay/rust-toolchain@1.86
+      uses: dtolnay/rust-toolchain@1.89
     - name: load cache
       uses: Swatinem/rust-cache@v2
     - name: cargo test
