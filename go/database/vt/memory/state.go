@@ -86,6 +86,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 
 func (s *State) Apply(block uint64, update common.Update) error {
 
+
 	for _, update := range update.Nonces {
 		key := getBasicDataKey(update.Account)
 		value := s.trie.Get(key)
