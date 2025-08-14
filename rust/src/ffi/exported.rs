@@ -82,10 +82,10 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
 /// # Safety
 /// - `db` must be a valid pointer to a `DbWrapper` object which holds a pointer to a `dyn CarmenDb`
 ///   object
-/// - `db` must be valid for reads and writes for the duration of the call
+/// - `db` must be valid for reads for the duration of the call
 /// - `db` must not be mutated for the duration of the call
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) {
@@ -95,15 +95,14 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) {
     }
     // SAFETY:
     // - `db` is a valid pointer to a `DbWrapper` object (precondition)
-    // - `db` is valid for reads and writes for the duration of the call (precondition)
+    // - `db` is valid for reads for the duration of the call (precondition)
     // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
+    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
     // SAFETY:
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_mut_scoped(&token) };
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
     #[allow(unused_variables)]
     if let Err(error) = db.flush() {
         unimplemented!();
@@ -115,10 +114,10 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) {
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenDb` object
-/// - `db` must be valid for reads and writes for the duration of the call
+/// - `db` must be valid for reads for the duration of the call
 /// - `db` must not be mutated for the duration of the call
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) {
@@ -128,15 +127,14 @@ unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) {
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `db` is valid for reads and writes for the duration of the call (precondition)
+    // - `db` is valid for reads for the duration of the call (precondition)
     // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
+    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
     // SAFETY:
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_mut_scoped(&token) };
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
     #[allow(unused_variables)]
     if let Err(error) = db.close() {
         unimplemented!();
@@ -191,10 +189,10 @@ unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) {
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenDb` object
-/// - `db` must be valid for reads and writes for the duration of the call
+/// - `db` must be valid for reads for the duration of the call
 /// - `db` must not be mutated for the duration of the call
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_GetLiveState(db: *mut c_void) -> *mut c_void {
@@ -204,15 +202,14 @@ unsafe extern "C" fn Carmen_Rust_GetLiveState(db: *mut c_void) -> *mut c_void {
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `db` is valid for reads and writes for the duration of the call (precondition)
+    // - `db` is valid for reads for the duration of the call (precondition)
     // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
+    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
     // SAFETY:
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_mut_scoped(&token) };
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.get_live_state() {
         Ok(live_state) => {
             Box::into_raw(Box::new(StateWrapper::from_state(live_state))) as *mut c_void
@@ -229,10 +226,10 @@ unsafe extern "C" fn Carmen_Rust_GetLiveState(db: *mut c_void) -> *mut c_void {
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenDb` object
-/// - `db` must be valid for reads and writes for the duration of the call
+/// - `db` must be valid for reads for the duration of the call
 /// - `db` must not be mutated for the duration of the call
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_GetArchiveState(db: *mut c_void, block: u64) -> *mut c_void {
@@ -242,15 +239,14 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(db: *mut c_void, block: u64) ->
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `db` is valid for reads and writes for the duration of the call (precondition)
+    // - `db` is valid for reads for the duration of the call (precondition)
     // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
+    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
     // SAFETY:
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_mut_scoped(&token) };
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.get_archive_state(block) {
         Ok(archive_state) => {
             Box::into_raw(Box::new(StateWrapper::from_state(archive_state))) as *mut c_void
@@ -306,10 +302,10 @@ unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) {
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -328,15 +324,14 @@ unsafe extern "C" fn Carmen_Rust_AccountExists(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -358,10 +353,10 @@ unsafe extern "C" fn Carmen_Rust_AccountExists(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -380,15 +375,14 @@ unsafe extern "C" fn Carmen_Rust_GetBalance(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -410,10 +404,10 @@ unsafe extern "C" fn Carmen_Rust_GetBalance(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -432,15 +426,14 @@ unsafe extern "C" fn Carmen_Rust_GetNonce(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -462,10 +455,10 @@ unsafe extern "C" fn Carmen_Rust_GetNonce(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -488,15 +481,14 @@ unsafe extern "C" fn Carmen_Rust_GetStorageValue(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -523,10 +515,10 @@ unsafe extern "C" fn Carmen_Rust_GetStorageValue(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -549,15 +541,14 @@ unsafe extern "C" fn Carmen_Rust_GetCode(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -586,10 +577,10 @@ unsafe extern "C" fn Carmen_Rust_GetCode(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -608,15 +599,14 @@ unsafe extern "C" fn Carmen_Rust_GetCodeHash(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -638,10 +628,10 @@ unsafe extern "C" fn Carmen_Rust_GetCodeHash(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `addr` must be a valid pointer to a byte array of length 20
 /// - `addr` must be valid for reads for the duration of the call
@@ -660,15 +650,14 @@ unsafe extern "C" fn Carmen_Rust_GetCodeSize(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `addr` is a valid pointer to a byte array of length 20 (precondition)
     // - `addr` is valid for reads for the duration of the call (precondition)
@@ -691,10 +680,10 @@ unsafe extern "C" fn Carmen_Rust_GetCodeSize(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `update` must be a valid pointer to a byte array of length `length`
 /// - `update` must be valid for reads for the duration of the call
@@ -712,15 +701,14 @@ unsafe extern "C" fn Carmen_Rust_Apply(
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     // SAFETY:
     // - `update` is a valid pointer to a byte array of length `length` (precondition)
     // - `update` is valid for reads for the duration of the call
@@ -743,10 +731,10 @@ unsafe extern "C" fn Carmen_Rust_Apply(
 /// # Safety
 /// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
 ///   CarmenState` object
-/// - `state` must be valid for reads and writes for the duration of the call
+/// - `state` must be valid for reads for the duration of the call
 /// - `state` must not be mutated for the duration of the call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `state.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `out_hash` must be a valid pointer to a byte array of length 32
 /// - `out_hash` must be valid for writes for the duration of the call
@@ -758,15 +746,14 @@ unsafe extern "C" fn Carmen_Rust_GetHash(state: *mut c_void, out_hash: *mut c_vo
     }
     // SAFETY:
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads and writes for the duration of the call (precondition)
+    // - `state` is valid for reads for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
+    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_mut_scoped(&token) };
+    let state = unsafe { state.inner_to_ref_scoped(&token) };
     match state.get_hash() {
         Ok(hash) => {
             // SAFETY:
@@ -785,10 +772,10 @@ unsafe extern "C" fn Carmen_Rust_GetHash(state: *mut c_void, out_hash: *mut c_vo
 /// # Safety
 /// - `db` must be a valid pointer to a `DbWrapper` object which holds a pointer to a `dyn CarmenDb`
 ///   object
-/// - `db` must be valid for reads and writes for the duration of the call
+/// - `db` must be valid for reads for the duration of the call
 /// - `db` must not be mutated for the duration of the call
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
+/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 /// - `out` must be a valid pointer to a byte array of length `out_length`
 /// - `out` must be valid for and writes for the duration of the call
@@ -807,15 +794,14 @@ unsafe extern "C" fn Carmen_Rust_GetMemoryFootprint(
     }
     // SAFETY:
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `db` is valid for reads and writes for the duration of the call (precondition)
+    // - `db` is valid for reads for the duration of the call (precondition)
     // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
+    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
     // SAFETY:
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
+    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_mut_scoped(&token) };
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.get_memory_footprint() {
         Ok(msg) => {
             // SAFETY:
@@ -866,8 +852,20 @@ struct DbWrapper {
 impl DbWrapper {
     /// # Safety
     /// - `self.inner` must be a valid pointer to a `dyn CarmenDb`
-    /// - `self.inner` must be valid for reads and writes for the duration of the lifetime of
-    ///   `_token`
+    /// - `self.inner` must be valid for reads for the duration of the lifetime of `_token`
+    /// - `self.inner` must not be mutated for the duration of the lifetime of `_token`
+    unsafe fn inner_to_ref_scoped<'db>(&self, _token: &'db LifetimeToken) -> &'db dyn CarmenDb {
+        // SAFETY:
+        // - `self.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
+        // - `self.inner` is valid for reads for the duration of the lifetime of `_token`
+        // (precondition)
+        // - `self.inner` is not mutated for the duration of the lifetime of `_token` (precondition)
+        unsafe { &*self.inner }
+    }
+
+    /// # Safety
+    /// - `self.inner` must be a valid pointer to a `dyn CarmenDb`
+    /// - `self.inner` must be valid for reads for the duration of the lifetime of `_token`
     /// - `self.inner` must not be mutated for the duration of the lifetime of `_token`
     #[allow(clippy::mut_from_ref)] // false positive
     unsafe fn inner_to_ref_mut_scoped<'db>(
@@ -899,8 +897,20 @@ struct StateWrapper {
 impl StateWrapper {
     /// # Safety
     /// - `self.inner` must be a valid pointer to a `dyn CarmenState`
-    /// - `self.inner` must be valid for reads and writes for the duration of the lifetime of
-    ///   `_token`
+    /// - `self.inner` must be valid for reads for the duration of the lifetime of `_token`
+    /// - `self.inner` must not be mutated for the duration of the lifetime of `_token`
+    unsafe fn inner_to_ref_scoped<'db>(&self, _token: &'db LifetimeToken) -> &'db dyn CarmenState {
+        // SAFETY:
+        // - `self.inner` is a valid pointer to a `dyn CarmenState` (precondition)
+        // - `self.inner` is valid for reads for the duration of the lifetime of `_token`
+        //   (precondition)
+        // - `self.inner` is not mutated for the duration of the lifetime of `_token` (precondition)
+        unsafe { &*self.inner }
+    }
+
+    /// # Safety
+    /// - `self.inner` must be a valid pointer to a `dyn CarmenState`
+    /// - `self.inner` must be valid for reads for the duration of the lifetime of `_token`
     /// - `self.inner` must not be mutated for the duration of the lifetime of `_token`
     #[allow(clippy::mut_from_ref)] // false positive
     unsafe fn inner_to_ref_mut_scoped<'db>(
