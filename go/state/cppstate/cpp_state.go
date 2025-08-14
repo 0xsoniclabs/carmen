@@ -71,12 +71,14 @@ func newState(impl C.enum_LiveImpl, params state.Parameters) (state.State, error
 		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
 	}
 
-	db := C.Carmen_Cpp_OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)))
+	db := unsafe.Pointer(nil)
+	C.Carmen_Cpp_OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
 	if db == unsafe.Pointer(nil) {
 		return nil, fmt.Errorf("%w: failed to create C++ database instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
-	live := C.Carmen_Cpp_GetLiveState(db)
+	live := unsafe.Pointer(nil)
+	C.Carmen_Cpp_GetLiveState(db, &live)
 	if live == unsafe.Pointer(nil) {
 		C.Carmen_Cpp_ReleaseDatabase(db)
 		return nil, fmt.Errorf("%w: failed to create C++ live state instance for parameters %v", state.UnsupportedConfiguration, params)
@@ -281,8 +283,10 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 }
 
 func (cs *CppState) GetArchiveState(block uint64) (state.State, error) {
+	state := unsafe.Pointer(nil)
+	C.Carmen_Cpp_GetArchiveState(cs.database, C.uint64_t(block), &state)
 	return &CppState{
-		state:     C.Carmen_Cpp_GetArchiveState(cs.database, C.uint64_t(block)),
+		state:     state,
 		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
 	}, nil
 }
