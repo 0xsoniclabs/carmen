@@ -1436,29 +1436,49 @@ mod tests {
         );
     }
 
+    #[derive(Clone, Copy)]
+    struct ThreadSafePtr(pub *mut c_void);
+    unsafe impl Sync for ThreadSafePtr {}
+
     #[track_caller]
     fn create_db_then_call_fn_then_release_db(
         set_expectation: impl Fn(&mut MockCarmenDb) + 'static,
-        call_ffi_fn: impl Fn(*mut c_void) + 'static,
+        call_ffi_fn: impl Fn(*mut c_void) + Sync + 'static,
     ) {
         unsafe {
             let mut mock_db = MockCarmenDb::new();
 
             set_expectation(&mut mock_db);
 
-            let state_wrapper = DbWrapper::from_db(Box::new(mock_db));
-            let state = Box::into_raw(Box::new(state_wrapper)) as *mut c_void;
+            let db_wrapper = DbWrapper::from_db(Box::new(mock_db));
+            let db = Box::into_raw(Box::new(db_wrapper)) as *mut c_void;
 
-            call_ffi_fn(state);
+            let thread_safe_db = ThreadSafePtr(db);
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    // This is needed so ensure that a reference to ThreadSafePtr is captured and
+                    // not a reference to *mut c_void which is not Sync
+                    #[allow(clippy::redundant_locals)]
+                    let thread_safe_db = thread_safe_db;
+                    call_ffi_fn(thread_safe_db.0);
+                });
+                s.spawn(|| {
+                    // This is needed so ensure that a reference to ThreadSafePtr is captured and
+                    // not a reference to *mut c_void which is not Sync
+                    #[allow(clippy::redundant_locals)]
+                    let thread_safe_db = thread_safe_db;
+                    call_ffi_fn(thread_safe_db.0);
+                });
+            });
 
-            Carmen_Rust_ReleaseDatabase(state);
+            Carmen_Rust_ReleaseDatabase(db);
         }
     }
 
     #[track_caller]
     fn create_state_then_call_fn_then_release_state(
         set_expectation: impl Fn(&mut MockCarmenState) + 'static,
-        call_ffi_fn: impl Fn(*mut c_void) + 'static,
+        call_ffi_fn: impl Fn(*mut c_void) + Sync + 'static,
     ) {
         unsafe {
             let mut mock_db = MockCarmenState::new();
@@ -1468,7 +1488,23 @@ mod tests {
             let state_wrapper = StateWrapper::from_state(Box::new(mock_db));
             let state = Box::into_raw(Box::new(state_wrapper)) as *mut c_void;
 
-            call_ffi_fn(state);
+            let thread_safe_state = ThreadSafePtr(state);
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    // This is needed so ensure that a reference to ThreadSafePtr is captured and
+                    // not a reference to *mut c_void which is not Sync
+                    #[allow(clippy::redundant_locals)]
+                    let thread_safe_state = thread_safe_state;
+                    call_ffi_fn(thread_safe_state.0);
+                });
+                s.spawn(|| {
+                    // This is needed so ensure that a reference to ThreadSafePtr is captured and
+                    // not a reference to *mut c_void which is not Sync
+                    #[allow(clippy::redundant_locals)]
+                    let thread_safe_state = thread_safe_state;
+                    call_ffi_fn(thread_safe_state.0);
+                });
+            });
 
             Carmen_Rust_ReleaseState(state);
         }
