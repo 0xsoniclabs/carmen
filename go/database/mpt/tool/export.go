@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
@@ -24,7 +25,7 @@ import (
 )
 
 var ExportCmd = cli.Command{
-	Action:    addPerformanceDiagnoses(doExport),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(doExport, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "export",
 	Usage:     "exports a LiveDB or Archive instance into a file",
 	ArgsUsage: "<db director> <target-file>",

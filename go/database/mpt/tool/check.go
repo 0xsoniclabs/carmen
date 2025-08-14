@@ -13,13 +13,14 @@ package main
 import (
 	"fmt"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
 var Check = cli.Command{
-	Action:    addPerformanceDiagnoses(check),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(check, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "check",
 	Usage:     "performs extensive invariants checks",
 	ArgsUsage: "<director>",
