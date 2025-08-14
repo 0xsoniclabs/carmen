@@ -454,7 +454,7 @@ TEST_P(CStateTest, ArchiveCanBeQueried) {
 
   // Check archive state at block 1.
   void* archive1 = nullptr;
-  result = Carmen_Cpp_GetArchiveState(database, 0, &archive1);
+  result = Carmen_Cpp_GetArchiveState(database, 1, &archive1);
   ASSERT_EQ(result, kResult_Success);
   ASSERT_TRUE(archive1);
   Carmen_Cpp_AccountExists(archive1, &addr, &account_state);
