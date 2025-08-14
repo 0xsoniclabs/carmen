@@ -9,6 +9,8 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod file_backend;
+mod file_storage_manager;
 mod node_file_storage;
 
 use file_backend::*;
+use node_file_storage::NodeFileStorage;
