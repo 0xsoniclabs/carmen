@@ -27,6 +27,8 @@ pub enum Error {
     UnsupportedOperation(String),
     #[error("storage error: {0}")]
     Storage(#[from] storage::Error),
+    #[error("Cache error: {0}")]
+    Cache(String),
 }
 
 /// A thread-safe state for storing an error.
