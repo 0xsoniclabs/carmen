@@ -34,17 +34,34 @@ import (
 // It uses the Verkle Trie from the Ethereum Geth implementation.
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
-func NewState(_ state.Parameters) (state.State, error) {
-	source := singleNodeReader{source: newMemorySource()}
-	pointCache := utils.NewPointCache(4096)
-	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, source, pointCache)
+func NewState(params state.Parameters) (state.State, error) {
+	return newState(params)
+}
+
+// NewMemoryState creates a new verkle state where the whole trie
+// is always kept in memory.
+// It uses the Verkle Trie from the Ethereum Geth implementation.
+// This state is experimental, stores data in-memory only,
+// and not intended for production use.
+func NewMemoryState(params state.Parameters) (state.State, error) {
+	vs, err := newState(params)
 	if err != nil {
-		return nil, errors.Join(source.getSource().Close(), err)
+		return nil, err
+	}
+
+	source := singleNodeReader{source: newMemorySource()}
+	return &persistentVerkleState{*vs, source}, nil
+}
+
+func newState(_ state.Parameters) (*verkleState, error) {
+	pointCache := utils.NewPointCache(4096)
+	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, nil, pointCache)
+	if err != nil {
+		return nil, errors.Join(nil, err)
 	}
 	return &verkleState{
 		pointCache: pointCache,
 		verkle:     vt,
-		source:     source,
 		codes:      make(map[common.Address][]byte),
 	}, nil
 }
@@ -55,7 +72,6 @@ func NewState(_ state.Parameters) (state.State, error) {
 type verkleState struct {
 	pointCache *utils.PointCache
 	verkle     *trie.VerkleTrie
-	source     singleNodeReader
 	codes      map[common.Address][]byte // current Verkle Trie does not support code retrieval, so we use a map to store codes
 }
 
@@ -219,26 +235,6 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 		return err
 	}
 
-	// Propagate all nodes into the database
-	var errs []error
-
-	rootHash, nodeSet := s.verkle.Commit(false)
-	for path, node := range nodeSet.Nodes {
-		errs = append(errs, s.source.getSource().set([]byte(path), node.Blob))
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return err
-	}
-
-	// recreate the verkle trie to flush the in-memory nodes
-	vt, err := trie.NewVerkleTrie(rootHash, s.source, s.pointCache)
-	if err != nil {
-		return err
-	}
-
-	s.verkle = vt
-
 	return nil
 }
 
@@ -287,14 +283,11 @@ func (s *verkleState) Check() error {
 //
 
 func (s *verkleState) Flush() error {
-	return s.source.getSource().Flush()
+	return nil
 }
 
 func (s *verkleState) Close() error {
-	return errors.Join(
-		s.Flush(),
-		s.source.getSource().Close(),
-	)
+	return nil
 }
 
 func (s *verkleState) getAccount(address common.Address) (*types.StateAccount, error) {
@@ -307,4 +300,48 @@ func (s *verkleState) getAccount(address common.Address) (*types.StateAccount, e
 	}
 
 	return account, nil
+}
+
+// persistentVerkleState is a verkleState that persists changes to a singleNodeReader source.
+// It adapts to the VerkleTrie implementation from the Ethereum Geth library.
+// This is a reference implementation to compare with the original Geth.
+type persistentVerkleState struct {
+	verkleState
+	source singleNodeReader
+}
+
+func (s *persistentVerkleState) Apply(block uint64, update common.Update) error {
+	if err := update.ApplyTo(s); err != nil {
+		return err
+	}
+
+	rootHash, nodeSet := s.verkle.Commit(false)
+	var errs []error
+	for path, node := range nodeSet.Nodes {
+		errs = append(errs, s.source.getSource().set([]byte(path), node.Blob))
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	// recreate the verkle trie to flush the in-memory nodes
+	vt, err := trie.NewVerkleTrie(rootHash, s.source, s.pointCache)
+	if err != nil {
+		return err
+	}
+	s.verkle = vt
+
+	return nil
+}
+
+func (s *persistentVerkleState) Flush() error {
+	return s.source.getSource().Flush()
+}
+
+func (s *persistentVerkleState) Close() error {
+	return errors.Join(
+		s.Flush(),
+		s.source.getSource().Close(),
+	)
 }
