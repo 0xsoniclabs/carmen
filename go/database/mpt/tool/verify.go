@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
@@ -21,7 +22,7 @@ import (
 )
 
 var Verify = cli.Command{
-	Action:    addPerformanceDiagnoses(verify),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(verify, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "verify",
 	Usage:     "verifies the consistency of an MPT",
 	ArgsUsage: "<director>",
