@@ -134,6 +134,8 @@ mod tests {
     };
 
     use super::*;
+    #[cfg(target_os = "linux")]
+    use crate::storage::file::IoUringFile;
     use crate::{
         storage::file::{PageCachedFile, page_utils::Page},
         utils::test_dir::{Permissions, TestDir},
@@ -150,6 +152,13 @@ mod tests {
                 <NoSeekFile as FileBackend>::open(path, options)
                     .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
             }) as fn(&Path, OpenOptions) -> _,
+            #[cfg(target_os = "linux")]
+            {
+                (|path, options| {
+                    <IoUringFile as FileBackend>::open(path, options)
+                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                }) as fn(&Path, OpenOptions) -> _
+            },
             #[cfg(unix)]
             {
                 (|path, options| {
@@ -161,6 +170,13 @@ mod tests {
             {
                 (|path, options| {
                     <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
+                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                }) as fn(&Path, OpenOptions) -> _
+            },
+            #[cfg(target_os = "linux")]
+            {
+                (|path, options| {
+                    <PageCachedFile<IoUringFile> as FileBackend>::open(path, options)
                         .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
                 }) as fn(&Path, OpenOptions) -> _
             },
