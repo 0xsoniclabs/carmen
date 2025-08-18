@@ -492,7 +492,7 @@ unsafe extern "C" fn Carmen_Rust_GetNonce(
             // SAFETY:
             // - `out_nonce` is a valid pointer to a byte array of length 32 (precondition)
             // - `out_nonce` is valid for writes for the duration of the call (precondition)
-            unsafe { std::ptr::write(out_nonce as *mut u64, nonce) };
+            unsafe { std::ptr::write(out_nonce as _, nonce) };
             bindings::Result_kResult_Success
         }
         Err(err) => err.into(),
@@ -1631,7 +1631,7 @@ mod tests {
     #[test]
     fn carmen_rust_get_nonce_returns_value_from_carmen_db() {
         let addr = [1u8; 20];
-        let expected_nonce = 2;
+        let expected_nonce = [2; 8];
         create_state_then_call_fn_then_release_state(
             move |mock_db| {
                 mock_db
@@ -1641,12 +1641,12 @@ mod tests {
             },
             move |state| {
                 let mut addr = addr;
-                let mut out_nonce: u64 = 0;
+                let mut out_nonce = [0; 8];
                 unsafe {
                     Carmen_Rust_GetNonce(
                         state,
                         &mut addr as *mut Address as *mut c_void,
-                        &mut out_nonce as *mut u64 as *mut c_void,
+                        &mut out_nonce as *mut [u8; 8] as *mut c_void,
                     );
                 }
                 assert_eq!(out_nonce, expected_nonce);

@@ -70,7 +70,7 @@ pub trait CarmenState: Send + Sync {
     fn get_balance(&self, addr: &Address) -> Result<U256, Error>;
 
     /// Returns the nonce of the given account.
-    fn get_nonce(&self, addr: &Address) -> Result<u64, Error>;
+    fn get_nonce(&self, addr: &Address) -> Result<Nonce, Error>;
 
     /// Returns the value of storage location (addr,key) in the given state.
     fn get_storage_value(&self, addr: &Address, key: &Key) -> Result<Value, Error>;
@@ -131,7 +131,7 @@ impl CarmenState for LiveState {
         unimplemented!()
     }
 
-    fn get_nonce(&self, addr: &Address) -> Result<u64, Error> {
+    fn get_nonce(&self, addr: &Address) -> Result<Nonce, Error> {
         unimplemented!()
     }
 
@@ -173,7 +173,7 @@ impl CarmenState for ArchiveState {
         unimplemented!()
     }
 
-    fn get_nonce(&self, addr: &Address) -> Result<u64, Error> {
+    fn get_nonce(&self, addr: &Address) -> Result<Nonce, Error> {
         unimplemented!()
     }
 
