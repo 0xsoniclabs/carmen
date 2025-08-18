@@ -23,7 +23,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, transmute_ref};
 
 use crate::storage::{Error, Storage, file::FileBackend};
 
-/// A file based storage backend for elements of type `T`.
+/// A file-based storage backend for elements of type `T`.
 ///
 /// For concurrent operations to be safe (in that there are no data races), they have to operate on
 /// different indices.
@@ -57,7 +57,7 @@ where
     type Id = u64;
     type Item = T;
 
-    /// Creates all files for a file based node storage in the specified directory.
+    /// Creates all files for a file-based node storage in the specified directory.
     /// If the directory does not exist, it will be created.
     /// If the files do not exist, they will be created.
     /// If the files exist, they will be opened and their data verified.
@@ -262,6 +262,8 @@ mod tests {
         fs::set_permissions(path, Permissions::from_mode(0o000)).unwrap();
 
         assert!(matches!(NodeFileStorage::open(path), Err(Error::Io(_))));
+
+        fs::set_permissions(path, Permissions::from_mode(0o777)).unwrap();
     }
 
     #[test]
@@ -364,6 +366,17 @@ mod tests {
         assert_eq!(&buf[size_of::<Node>() * 2..size_of::<Node>() * 3], &[4; 32]);
         // new node at index 4
         assert_eq!(&buf[size_of::<Node>() * 4..], &[5; 32]);
+    }
+
+    #[test]
+    fn set_returns_error_if_index_out_of_bounds() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let storage = NodeFileStorage::open(path).unwrap();
+        assert!(matches!(
+            storage.set(123, &[1; 32]).unwrap_err(),
+            Error::NotFound
+        ));
     }
 
     #[test]
