@@ -159,7 +159,6 @@ func (cs *CppState) GetStorage(address common.Address, key common.Key) (common.V
 	var value common.Value
 	result := C.Carmen_Cpp_GetStorageValue(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
 	if result != 0 {
-
 		return common.Value{}, fmt.Errorf("failed to get storage value for address %s and key %s (error code %v)", address, key, result)
 	}
 	return value, nil
