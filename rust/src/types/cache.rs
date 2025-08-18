@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::types::Node;
+use crate::{storage::file::WriteCertificate, types::Node};
 
 /// A [`Node`] with an associated **dirty** flag for cache storage.
 /// The **dirty** flag indicates if the entry has been modified and needs to be flushed to the
@@ -30,6 +30,13 @@ impl CachedNode {
     /// Returns whether node is dirty and needs to be flushed to storage when evicted.
     pub fn dirty(&self) -> bool {
         self.dirty
+    }
+
+    /// Sets the **dirty** flag to `false`.
+    /// To make sure this method can only be called from the EvictionCache, it takes a
+    /// [`WriteCertificate`] which can only be instantiated there.
+    pub fn set_clean(&mut self, _cert: WriteCertificate) {
+        self.dirty = false;
     }
 }
 

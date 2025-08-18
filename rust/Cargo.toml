@@ -19,6 +19,9 @@ rust-version = "1.89"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+# datastructures
+dashmap = { version = "6.1.0", features = ["inline"] }
+
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
