@@ -25,8 +25,8 @@ use crate::storage::{Error, Storage, file::FileBackend};
 
 /// A file-based storage backend for elements of type `T`.
 ///
-/// For concurrent operations to be safe (in that there are no data races), they have to operate on
-/// different indices.
+/// Concurrent operations on non-overlapping index ranges are thread safe. Concurrent access to
+/// overlapping index ranges is undefined behavior.
 #[derive(Debug)]
 pub struct NodeFileStorage<T, F>
 where
@@ -184,9 +184,9 @@ mod tests {
     use super::*;
     use crate::storage::{Error, file::SeekFile};
 
-    type Node = [u8; 32];
+    type TestNode = [u8; 32];
 
-    type NodeFileStorage = super::NodeFileStorage<Node, SeekFile>;
+    type NodeFileStorage = super::NodeFileStorage<TestNode, SeekFile>;
 
     #[test]
     fn open_creates_new_directory_and_files_for_non_existing_path() {
@@ -219,7 +219,7 @@ mod tests {
             let path = dir.path();
             fs::write(
                 path.join(NodeFileStorage::NODE_STORE_FILE),
-                [0; size_of::<Node>()],
+                [0; size_of::<TestNode>()],
             )
             .unwrap();
             fs::write(
@@ -272,8 +272,8 @@ mod tests {
         let path = dir.path();
 
         let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        node_file.write_all(&[1; size_of::<Node>()]).unwrap();
-        node_file.write_all(&[2; size_of::<Node>()]).unwrap();
+        node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
+        node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
 
         let storage = NodeFileStorage::open(path).unwrap();
 
@@ -287,8 +287,8 @@ mod tests {
         let path = dir.path();
 
         let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        node_file.write_all(&[1; size_of::<Node>()]).unwrap();
-        node_file.write_all(&[2; size_of::<Node>()]).unwrap();
+        node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
+        node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
 
         let storage = NodeFileStorage::open(path).unwrap();
 
@@ -320,7 +320,7 @@ mod tests {
         // create a single node -> index 0 is used
         fs::write(
             path.join(NodeFileStorage::NODE_STORE_FILE),
-            [0; size_of::<Node>()],
+            [0; size_of::<TestNode>()],
         )
         .unwrap();
 
@@ -337,8 +337,8 @@ mod tests {
         // prepare file: write some nodes into the file
         {
             let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-            node_file.write_all(&[1; size_of::<Node>()]).unwrap();
-            node_file.write_all(&[2; size_of::<Node>()]).unwrap();
+            node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
+            node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
         }
 
         // create storage and call set with existing and new nodes
@@ -355,17 +355,23 @@ mod tests {
         }
 
         let mut node_file = File::open(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        let mut buf = [0; size_of::<Node>() * 5];
+        let mut buf = [0; size_of::<TestNode>() * 5];
         node_file.read_exact(&mut buf).unwrap();
 
         // overwritten node
-        assert_eq!(&buf[..size_of::<Node>()], &[3; 32]);
+        assert_eq!(&buf[..size_of::<TestNode>()], &[3; 32]);
         // second node remains unchanged
-        assert_eq!(&buf[size_of::<Node>()..size_of::<Node>() * 2], &[2; 32]);
+        assert_eq!(
+            &buf[size_of::<TestNode>()..size_of::<TestNode>() * 2],
+            &[2; 32]
+        );
         // new node at index 2
-        assert_eq!(&buf[size_of::<Node>() * 2..size_of::<Node>() * 3], &[4; 32]);
+        assert_eq!(
+            &buf[size_of::<TestNode>() * 2..size_of::<TestNode>() * 3],
+            &[4; 32]
+        );
         // new node at index 4
-        assert_eq!(&buf[size_of::<Node>() * 4..], &[5; 32]);
+        assert_eq!(&buf[size_of::<TestNode>() * 4..], &[5; 32]);
     }
 
     #[test]
@@ -385,8 +391,8 @@ mod tests {
         let path = dir.path();
 
         let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        node_file.write_all(&[1; size_of::<Node>()]).unwrap();
-        node_file.write_all(&[2; size_of::<Node>()]).unwrap();
+        node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
+        node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
 
         let storage = NodeFileStorage::open(path).unwrap();
         storage.delete(0).unwrap();
