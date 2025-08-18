@@ -11,6 +11,10 @@
 mod file_backend;
 mod file_storage_manager;
 mod node_file_storage;
+mod storage_with_eviction_cache;
 
 use file_backend::*;
+#[cfg(test)]
+pub use file_storage_manager::{FileStorageManager, MockFileStorageManager};
 use node_file_storage::NodeFileStorage;
+pub use storage_with_eviction_cache::WriteCertificate;

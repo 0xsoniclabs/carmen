@@ -30,9 +30,9 @@ pub struct FileStorageManager<F: FileBackend + 'static> {
 }
 
 impl<F: FileBackend> FileStorageManager<F> {
-    const INNER_NODE_DIR: &str = "inner_node";
-    const LEAF_NODE_2_DIR: &str = "leaf_node_2";
-    const LEAF_NODE_256_DIR: &str = "leaf_node_256";
+    pub const INNER_NODE_DIR: &str = "inner_node";
+    pub const LEAF_NODE_2_DIR: &str = "leaf_node_2";
+    pub const LEAF_NODE_256_DIR: &str = "leaf_node_256";
 }
 
 #[cfg_attr(test, mockall::automock)]
