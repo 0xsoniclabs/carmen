@@ -274,7 +274,7 @@ mod tests {
         let leaf_2_count = 2;
         let leaf_256_count = 3;
 
-        // to tests that the id comes from the correct file storage, we create different number of
+        // to test that the id comes from the correct file storage, we create different number of
         // nodes for each type
         let inner_node = Box::new(InnerNode::default());
         let leaf_node_2 = Box::new(SparseLeafNode::default());
@@ -366,20 +366,20 @@ mod tests {
                 .unwrap();
         }
 
-        let reuse_list_file = path
+        let node_store_file = path
             .join(FileStorageManager::INNER_NODE_DIR)
             .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), inner_node.as_bytes());
+        assert_eq!(fs::read(node_store_file).unwrap(), inner_node.as_bytes());
 
-        let reuse_list_file = path
+        let node_store_file = path
             .join(FileStorageManager::LEAF_NODE_2_DIR)
             .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), leaf_node_2.as_bytes());
+        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_2.as_bytes());
 
-        let reuse_list_file = path
+        let node_store_file = path
             .join(FileStorageManager::LEAF_NODE_256_DIR)
             .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), leaf_node_256.as_bytes());
+        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_256.as_bytes());
     }
 
     #[test]
@@ -498,19 +498,19 @@ mod tests {
 
         storage.flush().unwrap();
 
-        let reuse_list_file = path
+        let node_store_file = path
             .join(FileStorageManager::INNER_NODE_DIR)
             .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), inner_node.as_bytes());
+        assert_eq!(fs::read(node_store_file).unwrap(), inner_node.as_bytes());
 
-        let reuse_list_file = path
+        let node_store_file = path
             .join(FileStorageManager::LEAF_NODE_2_DIR)
             .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), leaf_node_2.as_bytes());
+        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_2.as_bytes());
 
-        let reuse_list_file = path
+        let node_store_file = path
             .join(FileStorageManager::LEAF_NODE_256_DIR)
             .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), leaf_node_256.as_bytes());
+        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_256.as_bytes());
     }
 }
