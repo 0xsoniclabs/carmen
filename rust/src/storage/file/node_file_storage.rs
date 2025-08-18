@@ -167,6 +167,8 @@ where
     }
 }
 
+/// A wrapper around the file which stores the reuse list indices, which caches the indices in
+/// memory for faster access and reduces the number of file operations.
 #[derive(Debug)]
 struct CachedReuseListFile {
     file: File,
