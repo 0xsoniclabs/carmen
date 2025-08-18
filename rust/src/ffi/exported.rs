@@ -1206,6 +1206,26 @@ mod tests {
         unsafe {
             let result = Carmen_Rust_OpenDatabase(
                 6,
+                9999, // invalid
+                archive_impl,
+                dir,
+                dir_len,
+                &mut out_database,
+            );
+            assert_eq!(result, bindings::Result_kResult_InvalidArguments);
+
+            let result = Carmen_Rust_OpenDatabase(
+                6,
+                live_impl,
+                9999, // invalid
+                dir,
+                dir_len,
+                &mut out_database,
+            );
+            assert_eq!(result, bindings::Result_kResult_InvalidArguments);
+
+            let result = Carmen_Rust_OpenDatabase(
+                6,
                 live_impl,
                 archive_impl,
                 std::ptr::null(), // invalid
@@ -1220,26 +1240,6 @@ mod tests {
                 archive_impl,
                 dir,
                 0, // invalid
-                &mut out_database,
-            );
-            assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-
-            let result = Carmen_Rust_OpenDatabase(
-                6,
-                3, // invalid
-                archive_impl,
-                dir,
-                dir_len,
-                &mut out_database,
-            );
-            assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-
-            let result = Carmen_Rust_OpenDatabase(
-                6,
-                live_impl,
-                3, // invalid
-                dir,
-                dir_len,
                 &mut out_database,
             );
             assert_eq!(result, bindings::Result_kResult_InvalidArguments);
@@ -1365,22 +1365,6 @@ mod tests {
     }
 
     #[test]
-    fn carmen_rust_get_live_state_returns_error_as_int() {
-        create_db_then_call_fn_then_release_db(
-            |mock_db| {
-                mock_db
-                    .expect_get_live_state()
-                    .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            |db| {
-                let mut out_state = std::ptr::null_mut();
-                let result = unsafe { Carmen_Rust_GetLiveState(db, &mut out_state) };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
-            },
-        );
-    }
-
-    #[test]
     fn carmen_rust_get_live_state_checks_that_arguments_are_valid() {
         let result = unsafe {
             Carmen_Rust_GetLiveState(
@@ -1396,6 +1380,22 @@ mod tests {
             )
         };
         assert_eq!(result, bindings::Result_kResult_InvalidArguments);
+    }
+
+    #[test]
+    fn carmen_rust_get_live_state_returns_error_as_int() {
+        create_db_then_call_fn_then_release_db(
+            |mock_db| {
+                mock_db
+                    .expect_get_live_state()
+                    .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            |db| {
+                let mut out_state = std::ptr::null_mut();
+                let result = unsafe { Carmen_Rust_GetLiveState(db, &mut out_state) };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
     }
 
     #[test]
@@ -1419,24 +1419,6 @@ mod tests {
     }
 
     #[test]
-    fn carmen_rust_get_archive_state_returns_error_as_int() {
-        let block = 1;
-        create_db_then_call_fn_then_release_db(
-            move |mock_db| {
-                mock_db
-                    .expect_get_archive_state()
-                    .withf(move |b| *b == block)
-                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |db| {
-                let mut out_state = std::ptr::null_mut();
-                let result = unsafe { Carmen_Rust_GetArchiveState(db, block, &mut out_state) };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
-            },
-        );
-    }
-
-    #[test]
     fn carmen_rust_get_archive_state_checks_that_arguments_are_valid() {
         let result = unsafe {
             Carmen_Rust_GetArchiveState(
@@ -1454,6 +1436,24 @@ mod tests {
             )
         };
         assert_eq!(result, bindings::Result_kResult_InvalidArguments);
+    }
+
+    #[test]
+    fn carmen_rust_get_archive_state_returns_error_as_int() {
+        let block = 1;
+        create_db_then_call_fn_then_release_db(
+            move |mock_db| {
+                mock_db
+                    .expect_get_archive_state()
+                    .withf(move |b| *b == block)
+                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |db| {
+                let mut out_state = std::ptr::null_mut();
+                let result = unsafe { Carmen_Rust_GetArchiveState(db, block, &mut out_state) };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
     }
 
     #[test]
@@ -1484,31 +1484,6 @@ mod tests {
                     );
                 }
                 assert_eq!(out_state, expected_account_state as u8);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_account_exists_returns_error_as_int() {
-        let addr = [1; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_account_exists()
-                    .withf(move |a| a == &addr)
-                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_state = 0u8;
-                let result = unsafe {
-                    Carmen_Rust_AccountExists(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut out_state as *mut u8 as *mut c_void,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -1546,6 +1521,31 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_account_exists_returns_error_as_int() {
+        let addr = [1; 20];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_account_exists()
+                    .withf(move |a| a == &addr)
+                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut out_state = 0u8;
+                let result = unsafe {
+                    Carmen_Rust_AccountExists(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        &mut out_state as *mut u8 as *mut c_void,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_balance_returns_value_from_carmen_db() {
         let addr = [1; 20];
         let expected_balance = [2; 32];
@@ -1567,31 +1567,6 @@ mod tests {
                     );
                 }
                 assert_eq!(out_balance, expected_balance);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_balance_returns_error_as_int() {
-        let addr = [1; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_balance()
-                    .withf(move |a| a == &addr)
-                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_balance = [0u8; 32];
-                let result = unsafe {
-                    Carmen_Rust_GetBalance(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut out_balance as *mut U256 as *mut c_void,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -1629,6 +1604,31 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_balance_returns_error_as_int() {
+        let addr = [1; 20];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_balance()
+                    .withf(move |a| a == &addr)
+                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut out_balance = [0u8; 32];
+                let result = unsafe {
+                    Carmen_Rust_GetBalance(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        &mut out_balance as *mut U256 as *mut c_void,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_nonce_returns_value_from_carmen_db() {
         let addr = [1u8; 20];
         let expected_nonce = 2;
@@ -1650,31 +1650,6 @@ mod tests {
                     );
                 }
                 assert_eq!(out_nonce, expected_nonce);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_nonce_returns_error_as_int() {
-        let addr = [1u8; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_nonce()
-                    .withf(move |a| a == &addr)
-                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_nonce: u64 = 0;
-                let result = unsafe {
-                    Carmen_Rust_GetNonce(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut out_nonce as *mut u64 as *mut c_void,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -1712,6 +1687,31 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_nonce_returns_error_as_int() {
+        let addr = [1u8; 20];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_nonce()
+                    .withf(move |a| a == &addr)
+                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut out_nonce: u64 = 0;
+                let result = unsafe {
+                    Carmen_Rust_GetNonce(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        &mut out_nonce as *mut u64 as *mut c_void,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_storage_value_returns_value_from_carmen_db() {
         let addr = [1; 20];
         let key = [2; 32];
@@ -1736,34 +1736,6 @@ mod tests {
                     );
                 }
                 assert_eq!(out_value, expected_value);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_storage_value_returns_error_as_int() {
-        let addr = [1; 20];
-        let key = [2; 32];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_storage_value()
-                    .withf(move |a, k| a == &addr && k == &key)
-                    .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut key = key;
-                let mut out_value = [0u8; 32];
-                let result = unsafe {
-                    Carmen_Rust_GetStorageValue(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut key as *mut Key as *mut c_void,
-                        &mut out_value as *mut Value as *mut c_void,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -1815,6 +1787,34 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_storage_value_returns_error_as_int() {
+        let addr = [1; 20];
+        let key = [2; 32];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_storage_value()
+                    .withf(move |a, k| a == &addr && k == &key)
+                    .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut key = key;
+                let mut out_value = [0u8; 32];
+                let result = unsafe {
+                    Carmen_Rust_GetStorageValue(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        &mut key as *mut Key as *mut c_void,
+                        &mut out_value as *mut Value as *mut c_void,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_code_returns_code_from_carmen_db() {
         let addr = [1; 20];
         let expected_code = [2, 3, 4];
@@ -1846,33 +1846,6 @@ mod tests {
                 let code = &out_code[..out_length as usize];
                 let code = unsafe { std::mem::transmute::<&[MaybeUninit<u8>], &[u8]>(code) };
                 assert_eq!(code, expected_code);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_code_returns_error_as_int() {
-        let addr = [1; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_code()
-                    .withf(move |a, _| a == &addr)
-                    .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_code = vec![0u8; MAX_CODE_SIZE];
-                let mut out_length = 0;
-                let result = unsafe {
-                    Carmen_Rust_GetCode(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        out_code.as_mut_ptr() as *mut c_void,
-                        &mut out_length,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -1924,6 +1897,33 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_code_returns_error_as_int() {
+        let addr = [1; 20];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_code()
+                    .withf(move |a, _| a == &addr)
+                    .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut out_code = vec![0u8; MAX_CODE_SIZE];
+                let mut out_length = 0;
+                let result = unsafe {
+                    Carmen_Rust_GetCode(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        out_code.as_mut_ptr() as *mut c_void,
+                        &mut out_length,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_code_hash_returns_hash_from_carmen_db() {
         let addr = [1; 20];
         let expected_hash = [2; 32];
@@ -1945,31 +1945,6 @@ mod tests {
                     );
                 }
                 assert_eq!(out_hash, expected_hash);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_code_hash_returns_error_as_int() {
-        let addr = [1; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_code_hash()
-                    .withf(move |a| a == &addr)
-                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_hash = [0u8; 32];
-                let result = unsafe {
-                    Carmen_Rust_GetCodeHash(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut out_hash as *mut Hash as *mut c_void,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -2007,6 +1982,31 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_code_hash_returns_error_as_int() {
+        let addr = [1; 20];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_code_hash()
+                    .withf(move |a| a == &addr)
+                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut out_hash = [0u8; 32];
+                let result = unsafe {
+                    Carmen_Rust_GetCodeHash(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        &mut out_hash as *mut Hash as *mut c_void,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_code_size_returns_size_from_carmen_db() {
         let addr = [1; 20];
         let expected_size = 2;
@@ -2028,31 +2028,6 @@ mod tests {
                     );
                 }
                 assert_eq!(code_size, expected_size);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_code_size_returns_error_as_int() {
-        let addr = [1; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_code_len()
-                    .withf(move |a| a == &addr)
-                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut code_size = 0u32;
-                let result = unsafe {
-                    Carmen_Rust_GetCodeSize(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut code_size as *mut u32,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -2090,6 +2065,31 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_code_size_returns_error_as_int() {
+        let addr = [1; 20];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_code_len()
+                    .withf(move |a| a == &addr)
+                    .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut addr = addr;
+                let mut code_size = 0u32;
+                let result = unsafe {
+                    Carmen_Rust_GetCodeSize(
+                        state,
+                        &mut addr as *mut Address as *mut c_void,
+                        &mut code_size as *mut u32,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_apply_calls_apply_on_carmen_db() {
         let block: u64 = 1;
         let update_data = [0; 25]; // empty update
@@ -2110,32 +2110,6 @@ mod tests {
                         update_data.len() as u64,
                     );
                 }
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_apply_returns_error_as_int() {
-        let block: u64 = 1;
-        let update_data = [0; 25];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_apply_block_update()
-                    .withf(move |b, _| *b == block)
-                    .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut update_data = update_data;
-                let result = unsafe {
-                    Carmen_Rust_Apply(
-                        state,
-                        block,
-                        update_data.as_mut_ptr() as *mut c_void,
-                        update_data.len() as u64,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -2192,6 +2166,32 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_apply_returns_error_as_int() {
+        let block: u64 = 1;
+        let update_data = [0; 25];
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_apply_block_update()
+                    .withf(move |b, _| *b == block)
+                    .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut update_data = update_data;
+                let result = unsafe {
+                    Carmen_Rust_Apply(
+                        state,
+                        block,
+                        update_data.as_mut_ptr() as *mut c_void,
+                        update_data.len() as u64,
+                    )
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_hash_returns_hash_from_carmen_db() {
         let expected_hash = [1; 32];
         create_state_then_call_fn_then_release_state(
@@ -2206,24 +2206,6 @@ mod tests {
                     Carmen_Rust_GetHash(state, &mut out_hash as *mut Hash as *mut c_void);
                 }
                 assert_eq!(out_hash, expected_hash);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_hash_returns_error_as_int() {
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_get_hash()
-                    .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            move |state| {
-                let mut out_hash = [0u8; 32];
-                let result = unsafe {
-                    Carmen_Rust_GetHash(state, &mut out_hash as *mut Hash as *mut c_void)
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -2249,6 +2231,24 @@ mod tests {
     }
 
     #[test]
+    fn carmen_rust_get_hash_returns_error_as_int() {
+        create_state_then_call_fn_then_release_state(
+            move |mock_db| {
+                mock_db
+                    .expect_get_hash()
+                    .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            move |state| {
+                let mut out_hash = [0u8; 32];
+                let result = unsafe {
+                    Carmen_Rust_GetHash(state, &mut out_hash as *mut Hash as *mut c_void)
+                };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
+    }
+
+    #[test]
     fn carmen_rust_get_memory_footprint_returns_buffer_and_length() {
         let expected_str = "footprint";
         create_db_then_call_fn_then_release_db(
@@ -2269,24 +2269,6 @@ mod tests {
                 unsafe {
                     Carmen_Rust_ReleaseMemoryFootprintBuffer(out_ptr, out_len);
                 }
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_get_memory_footprint_returns_error_as_int() {
-        create_db_then_call_fn_then_release_db(
-            move |mock_db| {
-                mock_db
-                    .expect_get_memory_footprint()
-                    .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
-            },
-            |db| {
-                let mut out_ptr: *mut c_char = std::ptr::null_mut();
-                let mut out_len: u64 = 0;
-                let result =
-                    unsafe { Carmen_Rust_GetMemoryFootprint(db, &mut out_ptr, &mut out_len) };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );
     }
@@ -2321,6 +2303,24 @@ mod tests {
             )
         };
         assert_eq!(result, bindings::Result_kResult_InvalidArguments);
+    }
+
+    #[test]
+    fn carmen_rust_get_memory_footprint_returns_error_as_int() {
+        create_db_then_call_fn_then_release_db(
+            move |mock_db| {
+                mock_db
+                    .expect_get_memory_footprint()
+                    .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
+            },
+            |db| {
+                let mut out_ptr: *mut c_char = std::ptr::null_mut();
+                let mut out_len: u64 = 0;
+                let result =
+                    unsafe { Carmen_Rust_GetMemoryFootprint(db, &mut out_ptr, &mut out_len) };
+                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+            },
+        );
     }
 
     #[test]
