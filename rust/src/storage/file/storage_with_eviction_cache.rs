@@ -109,23 +109,26 @@ where
     }
 
     fn flush(&self) -> Result<(), Error> {
-        // busy loop until all eviction workers are done
-        // because there are no concurrent inserts, len() might only return a number that is higher
+        // Busy loop until all eviction workers are done.
+        // Because there are no concurrent inserts, len() might only return a number that is higher
         // that the actual number of items. This is however not a problem because we will wait a
-        // little bit longer
+        // little bit longer.
         while !self.cache.is_empty() {}
         self.storage.flush()
     }
 }
 
+/// A wrapper around a set of eviction worker threads that allows to shut them down gracefully.
 struct EvictionWorkers {
     workers: Vec<std::thread::JoinHandle<Result<(), Error>>>,
     shutdown: Arc<AtomicBool>, // Arc for shared ownership with eviction worker threads
 }
 
 impl EvictionWorkers {
-    const WORKER_COUNT: usize = 10;
+    const WORKER_COUNT: usize = 10; // TODO the optimal number needs to be determined based on benchmarks
 
+    /// Creates a new set of eviction workers that will process items from the eviction cache and
+    /// write them to the underlying storage layer.
     pub fn new<S>(eviction_cache: &Arc<EvictionCache>, storage: &Arc<S>) -> Self
     where
         S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
@@ -145,6 +148,8 @@ impl EvictionWorkers {
         EvictionWorkers { workers, shutdown }
     }
 
+    /// The task that each eviction worker runs. It processes items from the eviction cache
+    /// and writes them to the underlying storage layer.
     fn task<S>(
         eviction_cache: &EvictionCache,
         storage: &S,
@@ -291,7 +296,7 @@ mod tests {
         };
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Arc::new(RwLock::new(CachedNode::new_clean(Node::Inner(
+        let node = CacheEntry::new(RwLock::new(CachedNode::new_clean(Node::Inner(
             Box::default(),
         ))));
 
@@ -377,9 +382,9 @@ mod tests {
     }
 
     #[test]
-    fn set_inserts_node_into_cache() {
+    fn set_inserts_set_op_into_cache() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Arc::new(RwLock::new(CachedNode::new_clean(Node::Inner(
+        let node = CacheEntry::new(RwLock::new(CachedNode::new_clean(Node::Inner(
             Box::default(),
         ))));
 
@@ -442,7 +447,7 @@ mod tests {
 
         storage_with_eviction_cache.cache.insert(
             id,
-            Op::Set(Arc::new(RwLock::new(CachedNode::new_clean(node)))),
+            Op::Set(CacheEntry::new(RwLock::new(CachedNode::new_clean(node)))),
         );
 
         let storage_with_eviction_cache = Arc::new(storage_with_eviction_cache);
