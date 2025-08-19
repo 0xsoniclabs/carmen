@@ -44,7 +44,7 @@ impl ErrorState {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Register the error if no error has been registered yet.
     pub fn store(&self, error: Error) {
         let mut guard = self.error.lock().unwrap();
