@@ -34,7 +34,7 @@ impl CachedNode {
 
     /// Sets the **dirty** flag to `false`.
     /// To make sure this method can only be called from the EvictionCache, it takes a
-    /// [`WriteCertificate`] which can only be instantiated there.
+    /// `WriteCertificate` which can only be instantiated there.
     pub fn set_clean(&mut self, _cert: WriteCertificate) {
         self.dirty = false;
     }
