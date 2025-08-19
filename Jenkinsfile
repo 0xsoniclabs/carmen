@@ -66,6 +66,7 @@ pipeline {
                 stage('Build Rust library') {
                     steps {
                         sh 'rustup update'
+                        sh 'rustup default stable'
                         sh 'cd rust && cargo build --release'
                     }
                 }
