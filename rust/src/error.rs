@@ -30,6 +30,8 @@ pub enum Error {
 }
 
 /// A thread-safe state for storing an error.
+/// This can be used for returning errors from background threads. Only a single error can be
+/// stored, additional errors will be ignored.
 #[cfg(test)]
 #[derive(Debug, Default)]
 pub struct ErrorState {
@@ -42,9 +44,8 @@ impl ErrorState {
     pub fn new() -> Self {
         Self::default()
     }
-
     /// Register the error if no error has been registered yet.
-    pub fn register(&self, error: Error) {
+    pub fn store(&self, error: Error) {
         let mut guard = self.error.lock().unwrap();
         if guard.is_none() {
             *guard = Some(error);
@@ -64,32 +65,25 @@ mod tests {
     #[test]
     fn error_state_new_creates_state_with_no_error() {
         let state = ErrorState::new();
-        let guard = state.get();
-        assert!(guard.is_none());
+        assert!(state.get().is_none());
     }
 
     #[test]
     fn error_state_register_sets_error_if_none_exists() {
         let state = ErrorState::new();
-        state.register(Error::UnsupportedSchema(1));
+        state.store(Error::UnsupportedSchema(1));
         {
-            let guard = state.get();
-            assert!(guard.is_some());
-            assert!(matches!(
-                guard.as_ref().unwrap(),
-                Error::UnsupportedSchema(1)
-            ));
+            let err = state.get();
+            assert!(err.is_some());
+            assert!(matches!(*err, Some(Error::UnsupportedSchema(1))));
         }
 
         // Registering another error should not change the existing one
-        state.register(Error::UnsupportedOperation("test".to_string()));
+        state.store(Error::UnsupportedOperation("test".to_string()));
         {
-            let guard = state.get();
-            assert!(guard.is_some());
-            assert!(matches!(
-                guard.as_ref().unwrap(),
-                Error::UnsupportedSchema(1)
-            ));
+            let err = state.get();
+            assert!(err.is_some());
+            assert!(matches!(*err, Some(Error::UnsupportedSchema(1))));
         }
     }
 }
