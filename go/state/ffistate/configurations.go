@@ -32,17 +32,17 @@ func init() {
 				Variant: VariantCppMemory,
 				Schema:  schema,
 				Archive: archive,
-			}, newInMemoryState)
+			}, newCppInMemoryState)
 			state.RegisterStateFactory(state.Configuration{
 				Variant: VariantCppFile,
 				Schema:  schema,
 				Archive: archive,
-			}, newFileBasedState)
+			}, newCppFileBasedState)
 			state.RegisterStateFactory(state.Configuration{
 				Variant: VariantCppLevelDb,
 				Schema:  schema,
 				Archive: archive,
-			}, newLevelDbBasedState)
+			}, newCppLevelDbBasedState)
 		}
 	}
 }
