@@ -74,15 +74,22 @@ func newState(impl C.enum_LiveImpl, params state.Parameters) (state.State, error
 
 	db := unsafe.Pointer(nil)
 	result := C.Carmen_Cpp_OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
-	if result != C.kResult_Success || db == unsafe.Pointer(nil) {
-		return nil, fmt.Errorf("%w: failed to create C++ database instance for parameters %v (error code %v)", state.UnsupportedConfiguration, params, result)
+	if result != C.kResult_Success {
+		return nil, fmt.Errorf("failed to create C++ database instance for parameters %v (error code %v)", params, result)
+	}
+	if db == unsafe.Pointer(nil) {
+		return nil, fmt.Errorf("%w: failed to create C++ database instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
 	live := unsafe.Pointer(nil)
 	result = C.Carmen_Cpp_GetLiveState(db, &live)
-	if result != C.kResult_Success || live == unsafe.Pointer(nil) {
+	if result != C.kResult_Success {
 		C.Carmen_Cpp_ReleaseDatabase(db)
-		return nil, fmt.Errorf("%w: failed to create C++ live state instance for parameters %v (error code %v)", state.UnsupportedConfiguration, params, result)
+		return nil, fmt.Errorf("failed to create C++ live state instance for parameters %v (error code %v)", params, result)
+	}
+	if live == unsafe.Pointer(nil) {
+		C.Carmen_Cpp_ReleaseDatabase(db)
+		return nil, fmt.Errorf("%w: failed to create C++ live state instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
 	return state.WrapIntoSyncedState(&CppState{
