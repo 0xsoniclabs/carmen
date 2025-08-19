@@ -44,6 +44,7 @@ impl ErrorState {
     pub fn new() -> Self {
         Self::default()
     }
+    
     /// Register the error if no error has been registered yet.
     pub fn store(&self, error: Error) {
         let mut guard = self.error.lock().unwrap();
@@ -74,7 +75,6 @@ mod tests {
         state.store(Error::UnsupportedSchema(1));
         {
             let err = state.get();
-            assert!(err.is_some());
             assert!(matches!(*err, Some(Error::UnsupportedSchema(1))));
         }
 
@@ -82,7 +82,6 @@ mod tests {
         state.store(Error::UnsupportedOperation("test".to_string()));
         {
             let err = state.get();
-            assert!(err.is_some());
             assert!(matches!(*err, Some(Error::UnsupportedSchema(1))));
         }
     }
