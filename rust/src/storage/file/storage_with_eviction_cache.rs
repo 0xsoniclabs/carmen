@@ -20,7 +20,7 @@ use dashmap::DashMap;
 
 use crate::{
     storage::{Error, Storage},
-    types::{CachedNode, Node, NodeId},
+    types::{CacheEntry, CachedNode, Node, NodeId},
 };
 
 /// A storage backend that uses an eviction cache to hold updates and deletions while they get
@@ -66,7 +66,7 @@ where
     S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
 {
     type Id = NodeId;
-    type Item = Arc<RwLock<CachedNode>>;
+    type Item = CacheEntry;
 
     fn open(path: &Path) -> Result<Self, Error> {
         let storage = Arc::new(S::open(path)?);
@@ -79,7 +79,7 @@ where
         })
     }
 
-    fn get(&self, id: NodeId) -> Result<Arc<RwLock<CachedNode>>, Error> {
+    fn get(&self, id: NodeId) -> Result<Self::Item, Error> {
         match self.cache.remove(&id) {
             Some((_, Op::Set(node))) => Ok(node),
             Some((_, Op::Delete)) => Err(Error::NotFound),
@@ -89,7 +89,7 @@ where
         }
     }
 
-    fn reserve(&self, node: &Arc<RwLock<CachedNode>>) -> Self::Id {
+    fn reserve(&self, node: &Self::Item) -> Self::Id {
         let id = self.storage.reserve(&node.read().unwrap());
         // The id may have been deleted in the underlying storage layer and reassigned here, but not
         // yet removed from the eviction cache. In this case, we remove it from the eviction
@@ -98,7 +98,7 @@ where
         id
     }
 
-    fn set(&self, id: NodeId, node: &Arc<RwLock<CachedNode>>) -> Result<(), Error> {
+    fn set(&self, id: NodeId, node: &Self::Item) -> Result<(), Error> {
         self.cache.insert(id, Op::Set(node.clone()));
         Ok(())
     }
@@ -211,7 +211,7 @@ type EvictionCache = DashMap<NodeId, Op>;
 /// An element in the eviction cache that can either be a set operation or a delete operation.
 #[derive(Debug, Clone)]
 enum Op {
-    Set(Arc<RwLock<CachedNode>>),
+    Set(CacheEntry),
     Delete,
 }
 
