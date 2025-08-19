@@ -542,6 +542,7 @@ func (s *FFIState) GetArchiveState(block uint64) (state.State, error) {
 	return &FFIState{
 		state:     state,
 		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
+		ffi:       s.ffi,
 	}, nil
 }
 
