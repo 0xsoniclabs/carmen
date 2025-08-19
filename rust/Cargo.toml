@@ -16,7 +16,8 @@ publish = false
 rust-version = "1.89"
 
 [lib]
-crate-type = ["rlib", "staticlib"]
+name = "carmen_rust"
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 # datastructures

@@ -14,8 +14,8 @@ package cppstate
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../../cpp
-#cgo LDFLAGS: -L${SRCDIR}/../../lib -lcarmen
-#cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../lib
+#cgo LDFLAGS: -L${SRCDIR}/../../lib -lcarmen -L${SRCDIR}/../../../rust/target/release -lcarmen_rust
+#cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../lib -Wl,-rpath,${SRCDIR}/../../../rust/target/release
 #include <stdlib.h>
 #include "state/c_state.h"
 */
@@ -42,18 +42,198 @@ import (
 const CodeCacheSize = 8_000 // ~ 200 MiB of memory for go-side code cache
 const CodeMaxSize = 25000   // Contract limit is 24577
 
-// CppState implements the state interface by forwarding all calls to a C++
-// based implementation.
-type CppState struct {
+type FFIType int
+
+const (
+	FFITypeCpp FFIType = iota
+	FFITypeRust
+)
+
+type FFIInterface interface {
+	OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
+	Flush(database unsafe.Pointer) C.enum_Result
+	Close(database unsafe.Pointer) C.enum_Result
+	ReleaseDatabase(database unsafe.Pointer) C.enum_Result
+	ReleaseState(state unsafe.Pointer) C.enum_Result
+	GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result
+	GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result
+	AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result
+	GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result
+	GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result
+	GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result
+	GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result
+	GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result
+	GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result
+	Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result
+	GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result
+	GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result
+	ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result
+}
+
+type RustInterface struct {
+}
+
+func (r RustInterface) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
+}
+
+func (r RustInterface) Flush(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_Flush(database)
+}
+
+func (r RustInterface) Close(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_Close(database)
+}
+
+func (r RustInterface) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_ReleaseDatabase(database)
+}
+
+func (r RustInterface) ReleaseState(state unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_ReleaseState(state)
+}
+
+func (r RustInterface) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetLiveState(database, outState)
+}
+
+func (r RustInterface) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetArchiveState(database, block, outState)
+}
+
+func (r RustInterface) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_AccountExists(state, address, outExists)
+}
+
+func (r RustInterface) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetBalance(state, address, outBalance)
+}
+
+func (r RustInterface) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetNonce(state, address, outNonce)
+}
+
+func (r RustInterface) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetStorageValue(state, address, key, outValue)
+}
+
+func (r RustInterface) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+	return C.Carmen_Rust_GetCode(state, address, outCode, outSize)
+}
+
+func (r RustInterface) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetCodeHash(state, address, outHash)
+}
+
+func (r RustInterface) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+	return C.Carmen_Rust_GetCodeSize(state, address, outSize)
+}
+
+func (r RustInterface) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
+	return C.Carmen_Rust_Apply(state, block, update, updateLength)
+}
+
+func (r RustInterface) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_GetHash(state, outHash)
+}
+
+func (r RustInterface) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
+	return C.Carmen_Rust_GetMemoryFootprint(database, outBuffer, outSize)
+}
+
+func (r RustInterface) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
+	return C.Carmen_Rust_ReleaseMemoryFootprintBuffer(buffer, size)
+}
+
+type CppInterface struct {
+}
+
+func (c CppInterface) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
+}
+
+func (c CppInterface) Flush(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_Flush(database)
+}
+
+func (c CppInterface) Close(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_Close(database)
+}
+
+func (c CppInterface) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_ReleaseDatabase(database)
+}
+
+func (c CppInterface) ReleaseState(state unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_ReleaseState(state)
+}
+
+func (c CppInterface) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetLiveState(database, outState)
+}
+
+func (c CppInterface) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetArchiveState(database, block, outState)
+}
+
+func (c CppInterface) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_AccountExists(state, address, outExists)
+}
+
+func (c CppInterface) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetBalance(state, address, outBalance)
+}
+
+func (c CppInterface) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetNonce(state, address, outNonce)
+}
+
+func (c CppInterface) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetStorageValue(state, address, key, outValue)
+}
+
+func (c CppInterface) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+	return C.Carmen_Cpp_GetCode(state, address, outCode, outSize)
+}
+
+func (c CppInterface) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetCodeHash(state, address, outHash)
+}
+
+func (c CppInterface) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+	return C.Carmen_Cpp_GetCodeSize(state, address, outSize)
+}
+
+func (c CppInterface) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
+	return C.Carmen_Cpp_Apply(state, block, update, updateLength)
+}
+
+func (c CppInterface) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_GetHash(state, outHash)
+}
+
+func (c CppInterface) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
+	return C.Carmen_Cpp_GetMemoryFootprint(database, outBuffer, outSize)
+}
+
+func (c CppInterface) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
+	return C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
+}
+
+// FFIState implements the state interface by forwarding all calls to a implementation
+// in a foreign language.
+type FFIState struct {
 	// A pointer to an owned C++ object containing the actual state information.
 	database unsafe.Pointer
 	// A view on the state of the database (either live state or archive state).
 	state unsafe.Pointer
 	// cache of contract codes
 	codeCache *common.LruCache[common.Address, []byte]
+	// The foreign language implementation
+	ffi FFIInterface
 }
 
-func newState(impl C.enum_LiveImpl, params state.Parameters) (state.State, error) {
+func newState(impl C.enum_LiveImpl, params state.Parameters, ffiType FFIType) (state.State, error) {
 	if err := os.MkdirAll(filepath.Join(params.Directory, "live"), 0700); err != nil {
 		return nil, err
 	}
@@ -72,114 +252,129 @@ func newState(impl C.enum_LiveImpl, params state.Parameters) (state.State, error
 		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
 	}
 
+	var ffi FFIInterface
+
+	switch ffiType {
+	case FFITypeCpp:
+		ffi = CppInterface{}
+	case FFITypeRust:
+		ffi = RustInterface{}
+	default:
+		panic("unsupported FFI type")
+	}
+
 	db := unsafe.Pointer(nil)
-	result := C.Carmen_Cpp_OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
+	result := ffi.OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
 	if result != C.kResult_Success {
-		return nil, fmt.Errorf("failed to create C++ database instance for parameters %v (error code %v)", params, result)
+		return nil, fmt.Errorf("failed to create FFI database instance for parameters %v (error code %v)", params, result)
 	}
 	if db == unsafe.Pointer(nil) {
-		return nil, fmt.Errorf("%w: failed to create C++ database instance for parameters %v", state.UnsupportedConfiguration, params)
+		return nil, fmt.Errorf("%w: failed to create FFI database instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
 	live := unsafe.Pointer(nil)
-	result = C.Carmen_Cpp_GetLiveState(db, &live)
+	result = ffi.GetLiveState(db, &live)
 	if result != C.kResult_Success {
 		C.Carmen_Cpp_ReleaseDatabase(db)
-		return nil, fmt.Errorf("failed to create C++ live state instance for parameters %v (error code %v)", params, result)
+		return nil, fmt.Errorf("failed to create FFI live state instance for parameters %v (error code %v)", params, result)
 	}
 	if live == unsafe.Pointer(nil) {
-		C.Carmen_Cpp_ReleaseDatabase(db)
-		return nil, fmt.Errorf("%w: failed to create C++ live state instance for parameters %v", state.UnsupportedConfiguration, params)
+		ffi.ReleaseDatabase(db)
+		return nil, fmt.Errorf("%w: failed to create FFI live state instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
-	return state.WrapIntoSyncedState(&CppState{
+	return state.WrapIntoSyncedState(&FFIState{
 		database:  db,
 		state:     live,
 		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
+		ffi:       ffi,
 	}), nil
 }
 
-func newInMemoryState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_Memory, params)
+func newRustInMemoryState(params state.Parameters) (state.State, error) {
+	return newState(C.kLive_Memory, params, FFITypeRust)
 }
 
-func newFileBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_File, params)
+func newCppInMemoryState(params state.Parameters) (state.State, error) {
+	return newState(C.kLive_Memory, params, FFITypeCpp)
 }
 
-func newLevelDbBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_LevelDb, params)
+func newCppFileBasedState(params state.Parameters) (state.State, error) {
+	return newState(C.kLive_File, params, FFITypeCpp)
 }
 
-func (cs *CppState) CreateAccount(address common.Address) error {
+func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
+	return newState(C.kLive_LevelDb, params, FFITypeCpp)
+}
+
+func (s *FFIState) CreateAccount(address common.Address) error {
 	update := common.Update{}
-	update.AppendCreateAccount(address)
-	return cs.Apply(0, update)
+	return s.Apply(0, update)
 }
 
-func (cs *CppState) Exists(address common.Address) (bool, error) {
+func (s *FFIState) Exists(address common.Address) (bool, error) {
 	var res common.AccountState
-	result := C.Carmen_Cpp_AccountExists(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
+	result := s.ffi.AccountExists(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
 	if result != C.kResult_Success {
 		return false, fmt.Errorf("failed to check if account exists (error code %v)", result)
 	}
 	return res == common.Exists, nil
 }
 
-func (cs *CppState) DeleteAccount(address common.Address) error {
+func (s *FFIState) DeleteAccount(address common.Address) error {
 	update := common.Update{}
 	update.AppendDeleteAccount(address)
-	return cs.Apply(0, update)
+	return s.Apply(0, update)
 }
 
-func (cs *CppState) GetBalance(address common.Address) (amount.Amount, error) {
+func (s *FFIState) GetBalance(address common.Address) (amount.Amount, error) {
 	var balance [amount.BytesLength]byte
-	result := C.Carmen_Cpp_GetBalance(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))
+	result := s.ffi.GetBalance(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))
 	if result != C.kResult_Success {
 		return amount.Amount{}, fmt.Errorf("failed to get balance for address %s (error code %v)", address, result)
 	}
 	return amount.NewFromBytes(balance[:]...), nil
 }
 
-func (cs *CppState) SetBalance(address common.Address, balance amount.Amount) error {
+func (s *FFIState) SetBalance(address common.Address, balance amount.Amount) error {
 	update := common.Update{}
 	update.AppendBalanceUpdate(address, balance)
-	return cs.Apply(0, update)
+	return s.Apply(0, update)
 }
 
-func (cs *CppState) GetNonce(address common.Address) (common.Nonce, error) {
+func (s *FFIState) GetNonce(address common.Address) (common.Nonce, error) {
 	var nonce common.Nonce
-	result := C.Carmen_Cpp_GetNonce(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&nonce[0]))
+	result := s.ffi.GetNonce(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&nonce[0]))
 	if result != C.kResult_Success {
 		return common.Nonce{}, fmt.Errorf("failed to get nonce for address %s (error code %v)", address, result)
 	}
 	return nonce, nil
 }
 
-func (cs *CppState) SetNonce(address common.Address, nonce common.Nonce) error {
+func (s *FFIState) SetNonce(address common.Address, nonce common.Nonce) error {
 	update := common.Update{}
 	update.AppendNonceUpdate(address, nonce)
-	return cs.Apply(0, update)
+	return s.Apply(0, update)
 }
 
-func (cs *CppState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
+func (s *FFIState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
 	var value common.Value
-	result := C.Carmen_Cpp_GetStorageValue(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
+	result := s.ffi.GetStorageValue(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
 	if result != C.kResult_Success {
 		return common.Value{}, fmt.Errorf("failed to get storage value for address %s and key %s (error code %v)", address, key, result)
 	}
 	return value, nil
 }
 
-func (cs *CppState) SetStorage(address common.Address, key common.Key, value common.Value) error {
+func (s *FFIState) SetStorage(address common.Address, key common.Key, value common.Value) error {
 	update := common.Update{}
 	update.AppendSlotUpdate(address, key, value)
-	return cs.Apply(0, update)
+	return s.Apply(0, update)
 }
 
-func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
+func (s *FFIState) GetCode(address common.Address) ([]byte, error) {
 	// Try to obtain the code from the cache
-	code, exists := cs.codeCache.Get(address)
+	code, exists := s.codeCache.Get(address)
 	if exists {
 		return code, nil
 	}
@@ -187,7 +382,7 @@ func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
 	// Load the code from C++
 	code = make([]byte, CodeMaxSize)
 	var size C.uint32_t = CodeMaxSize
-	result := C.Carmen_Cpp_GetCode(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
+	result := s.ffi.GetCode(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
 	if result != C.kResult_Success {
 		return nil, fmt.Errorf("failed to get code for address %s (error code %v)", address, result)
 	}
@@ -199,44 +394,44 @@ func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
 	} else {
 		code = nil
 	}
-	cs.codeCache.Set(address, code)
+	s.codeCache.Set(address, code)
 	return code, nil
 }
 
-func (cs *CppState) SetCode(address common.Address, code []byte) error {
+func (s *FFIState) SetCode(address common.Address, code []byte) error {
 	update := common.Update{}
 	update.AppendCodeUpdate(address, code)
-	return cs.Apply(0, update)
+	return s.Apply(0, update)
 }
 
-func (cs *CppState) GetCodeHash(address common.Address) (common.Hash, error) {
+func (s *FFIState) GetCodeHash(address common.Address) (common.Hash, error) {
 	var hash common.Hash
-	result := C.Carmen_Cpp_GetCodeHash(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&hash[0]))
+	result := s.ffi.GetCodeHash(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&hash[0]))
 	if result != C.kResult_Success {
 		return common.Hash{}, fmt.Errorf("failed to get code hash for address %s (error code %v)", address, result)
 	}
 	return hash, nil
 }
 
-func (cs *CppState) GetCodeSize(address common.Address) (int, error) {
+func (s *FFIState) GetCodeSize(address common.Address) (int, error) {
 	var size C.uint32_t
-	result := C.Carmen_Cpp_GetCodeSize(cs.state, unsafe.Pointer(&address[0]), &size)
+	result := s.ffi.GetCodeSize(s.state, unsafe.Pointer(&address[0]), &size)
 	if result != C.kResult_Success {
 		return 0, fmt.Errorf("failed to get code size for address %s (error code %v)", address, result)
 	}
 	return int(size), nil
 }
 
-func (cs *CppState) GetHash() (common.Hash, error) {
+func (s *FFIState) GetHash() (common.Hash, error) {
 	var hash common.Hash
-	result := C.Carmen_Cpp_GetHash(cs.state, unsafe.Pointer(&hash[0]))
+	result := s.ffi.GetHash(s.state, unsafe.Pointer(&hash[0]))
 	if result != C.kResult_Success {
 		return common.Hash{}, fmt.Errorf("failed to get state hash (error code %v)", result)
 	}
 	return hash, nil
 }
 
-func (cs *CppState) Apply(block uint64, update common.Update) error {
+func (s *FFIState) Apply(block uint64, update common.Update) error {
 	if update.IsEmpty() {
 		return nil
 	}
@@ -245,70 +440,70 @@ func (cs *CppState) Apply(block uint64, update common.Update) error {
 	}
 	data := update.ToBytes()
 	dataPtr := unsafe.Pointer(&data[0])
-	result := C.Carmen_Cpp_Apply(cs.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
+	result := s.ffi.Apply(s.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
 	if result != C.kResult_Success {
 		return fmt.Errorf("failed to apply update at block %d (error code %v)", block, result)
 	}
 	// Apply code changes to Go-sided code cache.
 	for _, change := range update.Codes {
-		cs.codeCache.Set(change.Account, change.Code)
+		s.codeCache.Set(change.Account, change.Code)
 	}
 	return nil
 }
 
-func (cs *CppState) Flush() error {
-	result := C.Carmen_Cpp_Flush(cs.database)
+func (s *FFIState) Flush() error {
+	result := s.ffi.Flush(s.database)
 	if result != C.kResult_Success {
 		return fmt.Errorf("failed to flush state (error code %v)", result)
 	}
 	return nil
 }
 
-func (cs *CppState) Close() error {
-	if cs.state != nil {
-		result := C.Carmen_Cpp_ReleaseState(cs.state)
+func (s *FFIState) Close() error {
+	if s.state != nil {
+		result := s.ffi.ReleaseState(s.state)
 		if result != C.kResult_Success {
 			return fmt.Errorf("failed to release C++ state (error code %v)", result)
 		}
-		cs.state = nil
-		result = C.Carmen_Cpp_Close(cs.database)
+		s.state = nil
+		result = s.ffi.Close(s.database)
 		if result != C.kResult_Success {
 			return fmt.Errorf("failed to close C++ database (error code %v)", result)
 		}
-		result = C.Carmen_Cpp_ReleaseDatabase(cs.database)
+		result = s.ffi.ReleaseDatabase(s.database)
 		if result != C.kResult_Success {
 			return fmt.Errorf("failed to release C++ database (error code %v)", result)
 		}
-		cs.database = nil
+		s.database = nil
 	}
 	return nil
 }
 
-func (s *CppState) GetProof() (backend.Proof, error) {
+func (s *FFIState) GetProof() (backend.Proof, error) {
 	return nil, backend.ErrSnapshotNotSupported
 }
 
-func (s *CppState) CreateSnapshot() (backend.Snapshot, error) {
+func (s *FFIState) CreateSnapshot() (backend.Snapshot, error) {
 	return nil, backend.ErrSnapshotNotSupported
 }
 
-func (s *CppState) Restore(data backend.SnapshotData) error {
+func (s *FFIState) Restore(data backend.SnapshotData) error {
 	return backend.ErrSnapshotNotSupported
 }
 
-func (s *CppState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
+func (s *FFIState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
 	return nil, backend.ErrSnapshotNotSupported
 }
 
-func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
-	if cs.database == nil {
-		return common.NewMemoryFootprint(unsafe.Sizeof(*cs))
+func (s *FFIState) GetMemoryFootprint() *common.MemoryFootprint {
+	if s.database == nil {
+		return common.NewMemoryFootprint(unsafe.Sizeof(*s))
 	}
 
 	// Fetch footprint data from C++.
 	var buffer *C.char
 	var size C.uint64_t
-	result := C.Carmen_Cpp_GetMemoryFootprint(cs.database, &buffer, &size)
+	result := s.ffi.GetMemoryFootprint(s.database, &buffer, &size)
 	if result != C.kResult_Success {
 		res := common.NewMemoryFootprint(0)
 		res.SetNote(fmt.Sprintf("failed to get C++ memory footprint (error code %v)", result))
@@ -316,7 +511,7 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 		return res
 	}
 	defer func() {
-		result := C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
+		result := s.ffi.ReleaseMemoryFootprintBuffer(buffer, size)
 		if result != C.kResult_Success {
 			log.Printf("failed to release memory footprint buffer (error code %v)", result)
 		}
@@ -332,45 +527,45 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 		panic("Failed to consume all of the provided footprint data")
 	}
 
-	res.AddChild("goCodeCache", cs.codeCache.GetDynamicMemoryFootprint(func(code []byte) uintptr {
+	res.AddChild("goCodeCache", s.codeCache.GetDynamicMemoryFootprint(func(code []byte) uintptr {
 		return uintptr(cap(code)) // memory consumed by the code slice
 	}))
 	return res
 }
 
-func (cs *CppState) GetArchiveState(block uint64) (state.State, error) {
+func (s *FFIState) GetArchiveState(block uint64) (state.State, error) {
 	state := unsafe.Pointer(nil)
-	result := C.Carmen_Cpp_GetArchiveState(cs.database, C.uint64_t(block), &state)
+	result := s.ffi.GetArchiveState(s.database, C.uint64_t(block), &state)
 	if result != C.kResult_Success {
 		return nil, fmt.Errorf("failed to get archive state for block %d (error code %v)", block, result)
 	}
-	return &CppState{
+	return &FFIState{
 		state:     state,
 		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
 	}, nil
 }
 
-func (cs *CppState) GetArchiveBlockHeight() (uint64, bool, error) {
+func (s *FFIState) GetArchiveBlockHeight() (uint64, bool, error) {
 	return 0, false, state.NoArchiveError
 }
 
-func (cs *CppState) Check() error {
+func (s *FFIState) Check() error {
 	// TODO: implement, see https://github.com/Fantom-foundation/Carmen/issues/313
 	return nil
 }
 
-func (cs *CppState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
+func (s *FFIState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	panic("not implemented")
 }
 
-func (cs *CppState) HasEmptyStorage(addr common.Address) (bool, error) {
+func (s *FFIState) HasEmptyStorage(addr common.Address) (bool, error) {
 	// S3 schema is based on directly indexed files without ability to iterate
 	// over a dataset. For this reason, this method is implemented as purely
 	// returning a constant value all the time.
 	return true, nil
 }
 
-func (cs *CppState) Export(context.Context, io.Writer) (common.Hash, error) {
+func (s *FFIState) Export(context.Context, io.Writer) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
 }
 

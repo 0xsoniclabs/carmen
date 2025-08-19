@@ -28,7 +28,11 @@ var (
 )
 
 func TestAccountsAreInitiallyUnknown(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+		if config.Schema == 6 {
+			t.Skip("Schema 6 does not support account existence checks")
+		}
+
 		account_state, _ := state.Exists(address1)
 		if account_state != false {
 			t.Errorf("Initial account is not unknown, got %v", account_state)
@@ -37,7 +41,11 @@ func TestAccountsAreInitiallyUnknown(t *testing.T) {
 }
 
 func TestAccountsCanBeCreated(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+		if config.Schema == 6 {
+			t.Skip("Schema 6 does not support account existence checks")
+		}
+
 		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
 		if account_state != true {
@@ -47,7 +55,11 @@ func TestAccountsCanBeCreated(t *testing.T) {
 }
 
 func TestAccountsCanBeDeleted(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+		if config.Schema == 6 {
+			t.Skip("Schema 6 does not support account existence checks")
+		}
+
 		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
 		state.Apply(2, common.Update{DeletedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
@@ -58,7 +70,7 @@ func TestAccountsCanBeDeleted(t *testing.T) {
 }
 
 func TestReadUninitializedBalance(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		balance, err := state.GetBalance(address1)
 		if err != nil {
 			t.Fatalf("Error fetching balance: %v", err)
@@ -70,7 +82,7 @@ func TestReadUninitializedBalance(t *testing.T) {
 }
 
 func TestWriteAndReadBalance(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		err := state.Apply(1, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 		})
@@ -88,7 +100,7 @@ func TestWriteAndReadBalance(t *testing.T) {
 }
 
 func TestReadUninitializedNonce(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		nonce, err := state.GetNonce(address1)
 		if err != nil {
 			t.Fatalf("Error fetching nonce: %v", err)
@@ -100,7 +112,7 @@ func TestReadUninitializedNonce(t *testing.T) {
 }
 
 func TestWriteAndReadNonce(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		err := state.Apply(1, common.Update{
 			Nonces: []common.NonceUpdate{{Account: address1, Nonce: nonce1}},
 		})
@@ -118,7 +130,7 @@ func TestWriteAndReadNonce(t *testing.T) {
 }
 
 func TestReadUninitializedSlot(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		value, err := state.GetStorage(address1, key1)
 		if err != nil {
 			t.Fatalf("Error fetching storage slot: %v", err)
@@ -130,7 +142,7 @@ func TestReadUninitializedSlot(t *testing.T) {
 }
 
 func TestWriteAndReadSlot(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		err := state.Apply(1, common.Update{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 		})
@@ -168,7 +180,7 @@ func getTestCodes() [][]byte {
 }
 
 func TestSetAndGetCode(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		for i, code := range getTestCodes() {
 			err := state.Apply(uint64(i), common.Update{
 				Codes: []common.CodeUpdate{{Account: address1, Code: code}},
@@ -195,7 +207,7 @@ func TestSetAndGetCode(t *testing.T) {
 }
 
 func TestSetAndGetCodeHash(t *testing.T) {
-	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+	runForEachCppConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		for i, code := range getTestCodes() {
 			err := state.Apply(uint64(i), common.Update{
 				Codes: []common.CodeUpdate{{Account: address1, Code: code}},
@@ -215,7 +227,7 @@ func TestSetAndGetCodeHash(t *testing.T) {
 	})
 }
 
-func runForEachCppConfig(t *testing.T, test func(*testing.T, state.State)) {
+func runForEachCppConfig(t *testing.T, test func(*testing.T, state.State, state.Configuration)) {
 	for config, factory := range state.GetAllRegisteredStateFactories() {
 		config := config
 		factory := factory
@@ -236,7 +248,7 @@ func runForEachCppConfig(t *testing.T, test func(*testing.T, state.State)) {
 					t.Fatalf("failed to close state: %v", err)
 				}
 			}()
-			test(t, state)
+			test(t, state, config)
 		})
 	}
 }
