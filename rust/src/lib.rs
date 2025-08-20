@@ -12,6 +12,8 @@ use std::mem::MaybeUninit;
 
 use crate::{error::Error, types::*};
 
+#[cfg(test)]
+mod cache;
 mod error;
 mod ffi;
 mod storage;
