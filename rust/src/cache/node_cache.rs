@@ -123,7 +123,7 @@ where
             }
         };
 
-        Ok(CacheEntry(entry))
+        Ok(CacheEntry::new(entry))
     }
 
     /// Stores the node in the cache and reserves a [`NodeId`] for it.
