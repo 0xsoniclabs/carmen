@@ -25,7 +25,8 @@ mod bindings {
                     crate::storage::Error::NotFound
                     | crate::storage::Error::IdNodeTypeMismatch
                     | crate::storage::Error::InvalidId,
-                ) => Result_kResult_InternalError,
+                )
+                | Error::Cache(_) => Result_kResult_InternalError,
                 Error::Storage(crate::storage::Error::DatabaseCorruption) => {
                     Result_kResult_CorruptedDatabase
                 }

@@ -15,7 +15,20 @@ use crate::types::NodeType;
 /// An identifier for a node in a (file-based) Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    FromBytes,
+    IntoBytes,
+    Immutable,
+    Unaligned,
+    PartialOrd,
+    Ord,
+)]
 #[repr(transparent)]
 pub struct NodeId([u8; 6]);
 

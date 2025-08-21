@@ -49,8 +49,34 @@ impl DerefMut for CachedNode {
     }
 }
 
+/// Inner impl for the cache entry that holds a [`CachedNode`] wrapped in an `Arc<RwLock<>>` for
+/// thread safety.
+pub type CacheEntryImpl = Arc<RwLock<CachedNode>>;
+
 /// A node cache entry that can be safely shared across threads.
-pub type CacheEntry = Arc<RwLock<CachedNode>>;
+#[derive(Debug)]
+pub struct CacheEntry(CacheEntryImpl);
+
+impl CacheEntry {
+    /// Creates a new cache entry with the given [`CachedNode`].
+    pub fn new(value: CacheEntryImpl) -> Self {
+        Self(value)
+    }
+}
+
+impl Deref for CacheEntry {
+    type Target = Arc<RwLock<CachedNode>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for CacheEntry {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 #[cfg(test)]
 mod tests {
