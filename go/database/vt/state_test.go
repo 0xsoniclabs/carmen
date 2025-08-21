@@ -19,6 +19,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestState_CreateAccount_Hash_Matches(t *testing.T) {
+	state, err := initTestedStates(t)
+	require.NoError(t, err, "failed to initialize tested states")
+	defer func() {
+		require.NoError(t, state.Close(), "failed to close state")
+	}()
+
+	addr := common.Address{1}
+
+	update := common.Update{}
+	update.CreatedAccounts = append(update.CreatedAccounts, addr)
+
+	require.NoError(t, state.Apply(0, update), "failed to apply update")
+
+	// check hash consistency
+	hash, err := state.GetHash()
+	require.NoError(t, err, "failed to get hash")
+	require.NotEmpty(t, hash, "hash should not be empty")
+}
+
 func TestState_Insert_Single_Values_One_Account_One_Storage(t *testing.T) {
 	state, err := initTestedStates(t)
 	require.NoError(t, err, "failed to initialize tested states")
