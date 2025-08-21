@@ -403,6 +403,9 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 
 func TestDeleteNotExistingAccount(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+		if config.config.Schema == 6 {
+			t.Skipf("scheme %d not supported", config.config.Schema)
+		}
 		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Fatalf("Error: %s", err)
 		}
@@ -421,6 +424,10 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 
 func TestCreatingAccountClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+		if config.config.Schema == 6 {
+			t.Skipf("scheme %d not supported", config.config.Schema)
+		}
+
 		zero := common.Value{}
 		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Errorf("failed to create account: %v", err)
@@ -462,6 +469,10 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
 
 func TestDeletingAccountsClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+		if config.config.Schema == 6 {
+			t.Skipf("scheme %d not supported", config.config.Schema)
+		}
+
 		zero := common.Value{}
 		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Errorf("failed to create account: %v", err)

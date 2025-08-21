@@ -144,14 +144,21 @@ func init() {
 		Variant: "go-geth-memory",
 		Schema:  6,
 		Archive: state.NoArchive,
-	}, vtgeth.NewState)
+	}, wrapInSyncState(vtgeth.NewState))
 
 	state.RegisterStateFactory(state.Configuration{
 		Variant: VariantGoMemory,
 		Schema:  6,
 		Archive: state.NoArchive,
-	}, vtmemory.NewState)
+	}, wrapInSyncState(vtmemory.NewState))
+}
 
+// wrapInSyncState creates a state factory that ensures that the returned state is always wrapped in a synced state.
+func wrapInSyncState(factory state.StateFactory) state.StateFactory {
+	return func(params state.Parameters) (state.State, error) {
+		res, err := factory(params)
+		return state.WrapIntoSyncedState(res), err
+	}
 }
 
 // newGoMemoryState creates in memory implementation
