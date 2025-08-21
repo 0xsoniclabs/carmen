@@ -1,7 +1,7 @@
 use crate::error::Error;
 
+pub mod node_cache;
 /// An abstraction representing a cache.
-#[allow(dead_code)]
 pub trait Cache {
     /// The type of the ID used to identify [`Self::Item`] in the cache.
     type Key;
@@ -31,7 +31,6 @@ pub trait Cache {
 /// A utility enum to notify tests about the status of a cache deletion operation.
 /// This is useful to check if the cache is waiting for entry references to be released before
 /// deletion
-#[allow(dead_code)]
 #[cfg(test)]
 pub enum DeleteStatusMsg {
     Waiting,

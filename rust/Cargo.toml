@@ -19,6 +19,8 @@ rust-version = "1.89"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+# Cache
+quick_cache = "0.6.15"
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
@@ -32,7 +34,6 @@ bindgen = "0.72.0"
 [dev-dependencies]
 # mocking
 mockall = "0.13.1"
-
 # temporary files
 tempfile = "3.20.0"
 
