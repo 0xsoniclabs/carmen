@@ -96,6 +96,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		// empty accnout has empty code size, nonce, and balance
 		if bytes.Equal(value[4:32], empty[:]) {
 			codeHashKey := getCodeHashKey(address)
+			s.trie.Set(accountKey, value) // must be initialized to empty account
 			s.trie.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
 		}
 	}
