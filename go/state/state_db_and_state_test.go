@@ -643,14 +643,12 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 	// This test covers an issue detected while replaying blocks on the
 	// Sepolia testnet, in which the same account is self-destructed and then
 	// re-created in the same block.
-	testCount := 0
 	for _, config := range initStates() {
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			if config.config.Schema < 4 || config.config.Schema == 6 {
 				t.Skip()
 			}
-			testCount++
 			dir := t.TempDir()
 			s, err := config.createState(dir)
 			if err != nil {
@@ -747,7 +745,6 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 			db.EndBlock(3)
 		})
 	}
-	require.Greater(t, testCount, 0, "No tests were run, check the test setup")
 }
 
 func toVal(key uint64) common.Value {
