@@ -7,11 +7,11 @@ pub trait Cache {
     type Id;
     /// The type of the payload stored in the cache.
     type ItemPayload;
-    /// The type stored in the cache.
-    type StoredItem;
+    /// The type returned by the cache.
+    type Item;
 
     /// Retrieves an entry from the cache.
-    fn get(&self, id: Self::Id) -> Result<Self::StoredItem, Error>;
+    fn get(&self, id: Self::Id) -> Result<Self::Item, Error>;
 
     /// Stores the value in the cache and reserves an ID for it.
     fn set(&self, value: Self::ItemPayload) -> Result<Self::Id, Error>;
