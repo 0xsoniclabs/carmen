@@ -8,17 +8,20 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+pub use cache::*;
 pub use commitment::*;
 pub use id::*;
 pub use node::*;
 pub use update::Update;
 
+mod cache;
 mod commitment;
 mod id;
 mod node;
 mod update;
 
 /// The Carmen live state implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveImpl {
     Memory = 0,
     File = 1,
@@ -26,6 +29,7 @@ pub enum LiveImpl {
 }
 
 /// The Carmen archive state implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveImpl {
     None = 0,
     LevelDb = 1,

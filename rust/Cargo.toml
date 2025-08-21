@@ -13,6 +13,7 @@ name = "carmen"
 version = "0.1.0"
 edition = "2024"
 publish = false
+rust-version = "1.89"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
@@ -21,6 +22,9 @@ crate-type = ["rlib", "staticlib"]
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
+# error handling
+thiserror = "2.0.12"
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
@@ -28,6 +32,9 @@ bindgen = "0.72.0"
 [dev-dependencies]
 # mocking
 mockall = "0.13.1"
+
+# temporary files
+tempfile = "3.20.0"
 
 [lints.rust]
 macro_use_extern_crate = "warn"

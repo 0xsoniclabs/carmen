@@ -18,12 +18,13 @@ import (
 	"io"
 	"os"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	mptIo "github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
 var InitArchive = cli.Command{
-	Action:    addPerformanceDiagnoses(doArchiveInit),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(doArchiveInit, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "init-archive",
 	Usage:     "initializes an Archive instance from a file",
 	ArgsUsage: "<source-file> <archive target director>",

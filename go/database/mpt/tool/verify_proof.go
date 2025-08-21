@@ -12,17 +12,19 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"math"
+
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/proof"
 	"github.com/urfave/cli/v2"
-	"log"
-	"math"
 )
 
 var VerifyProof = cli.Command{
-	Action:    addPerformanceDiagnoses(verifyProof),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(verifyProof, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "verify-proof",
 	Usage:     "verifies the consistency of witness proofs",
 	ArgsUsage: "<director>",
