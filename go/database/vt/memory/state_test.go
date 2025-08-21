@@ -41,10 +41,11 @@ func TestState_NewState_CreatesEmptyState(t *testing.T) {
 	require.Zero(state.GetHash())
 }
 
-func TestState_Exists_ReturnsError(t *testing.T) {
+func TestState_Exists(t *testing.T) {
 	state := newState()
-	_, err := state.Exists(common.Address{1})
-	require.ErrorContains(t, err, "not supported")
+	exists, err := state.Exists(common.Address{1})
+	require.NoError(t, err)
+	require.False(t, exists, "Expected Exists to return false for non-existing address")
 }
 
 func TestState_CanStoreAndRestoreNonces(t *testing.T) {
@@ -275,13 +276,10 @@ func TestState_Close_ReturnsNoError(t *testing.T) {
 	require.NoError(t, newState().Close())
 }
 
-func TestState_GetMemoryFootprint_PanicsAsNotImplemented(t *testing.T) {
+func TestState_GetMemoryFootprint(t *testing.T) {
 	require := require.New(t)
 	state := newState()
-	require.Panics(
-		func() { state.GetMemoryFootprint() },
-		"GetMemoryFootprint should panic as it is not implemented",
-	)
+	require.NotNil(state.GetMemoryFootprint())
 }
 
 func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
@@ -507,7 +505,7 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	require.NoError(state.Apply(0, update))
 
 	codeHash, err := state.GetCodeHash(addr1)
@@ -538,7 +536,7 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	require.NoError(state.Apply(0, update))
 
 	codeHash, err := state.GetCodeHash(addr1)
@@ -589,7 +587,7 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	require.NoError(state.Apply(0, update))
 
 	balance, err := state.GetBalance(addr1)
@@ -641,7 +639,7 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	require.NoError(state.Apply(0, update))
 
 	nonce, err := state.GetNonce(addr1)

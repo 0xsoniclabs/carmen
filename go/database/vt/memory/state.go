@@ -47,7 +47,11 @@ func newState() *State {
 }
 
 func (s *State) Exists(address common.Address) (bool, error) {
-	return false, fmt.Errorf("this is not supported by Verkle Tries")
+	key := getBasicDataKey(address)
+	value := s.trie.Get(key)
+	var empty [24]byte // nonce and balance are layed out in bytes 8-32
+	return !bytes.Equal(value[8:32], empty[:]), nil
+
 }
 
 func (s *State) GetBalance(address common.Address) (amount.Amount, error) {
@@ -103,6 +107,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		// empty accnout has empty code size, nonce, and balance
 		if bytes.Equal(value[4:32], empty[:]) {
 			codeHashKey := getCodeHashKey(address)
+			s.trie.Set(accountKey, value) // must be initialized to empty account
 			s.trie.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
 		}
 	}
@@ -169,7 +174,7 @@ func (s *State) Close() error {
 }
 
 func (s *State) GetMemoryFootprint() *common.MemoryFootprint {
-	panic("not implemented")
+	return common.NewMemoryFootprint(1)
 }
 
 func (s *State) GetArchiveState(block uint64) (state.State, error) {
