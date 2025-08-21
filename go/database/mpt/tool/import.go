@@ -18,26 +18,27 @@ import (
 	"io"
 	"os"
 
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	mptIo "github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/urfave/cli/v2"
 )
 
 var ImportLiveDbCmd = cli.Command{
-	Action:    addPerformanceDiagnoses(doLiveDbImport),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(doLiveDbImport, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "import-live-db",
 	Usage:     "imports a LiveDB instance from a file",
 	ArgsUsage: "<source-file> <target director>",
 }
 
 var ImportArchiveCmd = cli.Command{
-	Action:    addPerformanceDiagnoses(doArchiveImport),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(doArchiveImport, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "import-archive",
 	Usage:     "imports an Archive instance from a file",
 	ArgsUsage: "<source-file> <target director>",
 }
 
 var ImportLiveAndArchiveCmd = cli.Command{
-	Action:    addPerformanceDiagnoses(doLiveAndArchiveImport),
+	Action:    diagnostics.AddPerformanceDiagnosticsAction(doLiveAndArchiveImport, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "import",
 	Usage:     "imports both LiveDB and Archive instance from a file",
 	ArgsUsage: "<source-file> <target director>",

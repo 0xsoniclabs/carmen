@@ -25,6 +25,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -71,12 +72,21 @@ func newState(impl C.enum_LiveImpl, params state.Parameters) (state.State, error
 		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
 	}
 
-	db := C.Carmen_Cpp_OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)))
+	db := unsafe.Pointer(nil)
+	result := C.Carmen_Cpp_OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
+	if result != C.kResult_Success {
+		return nil, fmt.Errorf("failed to create C++ database instance for parameters %v (error code %v)", params, result)
+	}
 	if db == unsafe.Pointer(nil) {
 		return nil, fmt.Errorf("%w: failed to create C++ database instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
-	live := C.Carmen_Cpp_GetLiveState(db)
+	live := unsafe.Pointer(nil)
+	result = C.Carmen_Cpp_GetLiveState(db, &live)
+	if result != C.kResult_Success {
+		C.Carmen_Cpp_ReleaseDatabase(db)
+		return nil, fmt.Errorf("failed to create C++ live state instance for parameters %v (error code %v)", params, result)
+	}
 	if live == unsafe.Pointer(nil) {
 		C.Carmen_Cpp_ReleaseDatabase(db)
 		return nil, fmt.Errorf("%w: failed to create C++ live state instance for parameters %v", state.UnsupportedConfiguration, params)
@@ -109,7 +119,10 @@ func (cs *CppState) CreateAccount(address common.Address) error {
 
 func (cs *CppState) Exists(address common.Address) (bool, error) {
 	var res common.AccountState
-	C.Carmen_Cpp_AccountExists(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
+	result := C.Carmen_Cpp_AccountExists(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
+	if result != C.kResult_Success {
+		return false, fmt.Errorf("failed to check if account exists (error code %v)", result)
+	}
 	return res == common.Exists, nil
 }
 
@@ -121,7 +134,10 @@ func (cs *CppState) DeleteAccount(address common.Address) error {
 
 func (cs *CppState) GetBalance(address common.Address) (amount.Amount, error) {
 	var balance [amount.BytesLength]byte
-	C.Carmen_Cpp_GetBalance(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))
+	result := C.Carmen_Cpp_GetBalance(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))
+	if result != C.kResult_Success {
+		return amount.Amount{}, fmt.Errorf("failed to get balance for address %s (error code %v)", address, result)
+	}
 	return amount.NewFromBytes(balance[:]...), nil
 }
 
@@ -133,7 +149,10 @@ func (cs *CppState) SetBalance(address common.Address, balance amount.Amount) er
 
 func (cs *CppState) GetNonce(address common.Address) (common.Nonce, error) {
 	var nonce common.Nonce
-	C.Carmen_Cpp_GetNonce(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&nonce[0]))
+	result := C.Carmen_Cpp_GetNonce(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&nonce[0]))
+	if result != C.kResult_Success {
+		return common.Nonce{}, fmt.Errorf("failed to get nonce for address %s (error code %v)", address, result)
+	}
 	return nonce, nil
 }
 
@@ -145,7 +164,10 @@ func (cs *CppState) SetNonce(address common.Address, nonce common.Nonce) error {
 
 func (cs *CppState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
 	var value common.Value
-	C.Carmen_Cpp_GetStorageValue(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
+	result := C.Carmen_Cpp_GetStorageValue(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&key[0]), unsafe.Pointer(&value[0]))
+	if result != C.kResult_Success {
+		return common.Value{}, fmt.Errorf("failed to get storage value for address %s and key %s (error code %v)", address, key, result)
+	}
 	return value, nil
 }
 
@@ -165,7 +187,10 @@ func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
 	// Load the code from C++
 	code = make([]byte, CodeMaxSize)
 	var size C.uint32_t = CodeMaxSize
-	C.Carmen_Cpp_GetCode(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
+	result := C.Carmen_Cpp_GetCode(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
+	if result != C.kResult_Success {
+		return nil, fmt.Errorf("failed to get code for address %s (error code %v)", address, result)
+	}
 	if size >= CodeMaxSize {
 		return nil, fmt.Errorf("unable to load contract exceeding maximum capacity of %d", CodeMaxSize)
 	}
@@ -186,19 +211,28 @@ func (cs *CppState) SetCode(address common.Address, code []byte) error {
 
 func (cs *CppState) GetCodeHash(address common.Address) (common.Hash, error) {
 	var hash common.Hash
-	C.Carmen_Cpp_GetCodeHash(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&hash[0]))
+	result := C.Carmen_Cpp_GetCodeHash(cs.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&hash[0]))
+	if result != C.kResult_Success {
+		return common.Hash{}, fmt.Errorf("failed to get code hash for address %s (error code %v)", address, result)
+	}
 	return hash, nil
 }
 
 func (cs *CppState) GetCodeSize(address common.Address) (int, error) {
 	var size C.uint32_t
-	C.Carmen_Cpp_GetCodeSize(cs.state, unsafe.Pointer(&address[0]), &size)
+	result := C.Carmen_Cpp_GetCodeSize(cs.state, unsafe.Pointer(&address[0]), &size)
+	if result != C.kResult_Success {
+		return 0, fmt.Errorf("failed to get code size for address %s (error code %v)", address, result)
+	}
 	return int(size), nil
 }
 
 func (cs *CppState) GetHash() (common.Hash, error) {
 	var hash common.Hash
-	C.Carmen_Cpp_GetHash(cs.state, unsafe.Pointer(&hash[0]))
+	result := C.Carmen_Cpp_GetHash(cs.state, unsafe.Pointer(&hash[0]))
+	if result != C.kResult_Success {
+		return common.Hash{}, fmt.Errorf("failed to get state hash (error code %v)", result)
+	}
 	return hash, nil
 }
 
@@ -211,7 +245,10 @@ func (cs *CppState) Apply(block uint64, update common.Update) error {
 	}
 	data := update.ToBytes()
 	dataPtr := unsafe.Pointer(&data[0])
-	C.Carmen_Cpp_Apply(cs.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
+	result := C.Carmen_Cpp_Apply(cs.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
+	if result != C.kResult_Success {
+		return fmt.Errorf("failed to apply update at block %d (error code %v)", block, result)
+	}
 	// Apply code changes to Go-sided code cache.
 	for _, change := range update.Codes {
 		cs.codeCache.Set(change.Account, change.Code)
@@ -220,16 +257,28 @@ func (cs *CppState) Apply(block uint64, update common.Update) error {
 }
 
 func (cs *CppState) Flush() error {
-	C.Carmen_Cpp_Flush(cs.database)
+	result := C.Carmen_Cpp_Flush(cs.database)
+	if result != C.kResult_Success {
+		return fmt.Errorf("failed to flush state (error code %v)", result)
+	}
 	return nil
 }
 
 func (cs *CppState) Close() error {
 	if cs.state != nil {
-		C.Carmen_Cpp_ReleaseState(cs.state)
+		result := C.Carmen_Cpp_ReleaseState(cs.state)
+		if result != C.kResult_Success {
+			return fmt.Errorf("failed to release C++ state (error code %v)", result)
+		}
 		cs.state = nil
-		C.Carmen_Cpp_Close(cs.database)
-		C.Carmen_Cpp_ReleaseDatabase(cs.database)
+		result = C.Carmen_Cpp_Close(cs.database)
+		if result != C.kResult_Success {
+			return fmt.Errorf("failed to close C++ database (error code %v)", result)
+		}
+		result = C.Carmen_Cpp_ReleaseDatabase(cs.database)
+		if result != C.kResult_Success {
+			return fmt.Errorf("failed to release C++ database (error code %v)", result)
+		}
 		cs.database = nil
 	}
 	return nil
@@ -259,9 +308,18 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 	// Fetch footprint data from C++.
 	var buffer *C.char
 	var size C.uint64_t
-	C.Carmen_Cpp_GetMemoryFootprint(cs.database, &buffer, &size)
+	result := C.Carmen_Cpp_GetMemoryFootprint(cs.database, &buffer, &size)
+	if result != C.kResult_Success {
+		res := common.NewMemoryFootprint(0)
+		res.SetNote(fmt.Sprintf("failed to get C++ memory footprint (error code %v)", result))
+		log.Printf("failed to get C++ memory footprint (error code %v)", result)
+		return res
+	}
 	defer func() {
-		C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
+		result := C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
+		if result != C.kResult_Success {
+			log.Printf("failed to release memory footprint buffer (error code %v)", result)
+		}
 	}()
 
 	data := C.GoBytes(unsafe.Pointer(buffer), C.int(size))
@@ -281,8 +339,13 @@ func (cs *CppState) GetMemoryFootprint() *common.MemoryFootprint {
 }
 
 func (cs *CppState) GetArchiveState(block uint64) (state.State, error) {
+	state := unsafe.Pointer(nil)
+	result := C.Carmen_Cpp_GetArchiveState(cs.database, C.uint64_t(block), &state)
+	if result != C.kResult_Success {
+		return nil, fmt.Errorf("failed to get archive state for block %d (error code %v)", block, result)
+	}
 	return &CppState{
-		state:     C.Carmen_Cpp_GetArchiveState(cs.database, C.uint64_t(block)),
+		state:     state,
 		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
 	}, nil
 }

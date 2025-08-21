@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/urfave/cli/v2"
 
@@ -29,7 +30,7 @@ import (
 )
 
 var Benchmark = cli.Command{
-	Action: benchmark,
+	Action: diagnostics.AddPerformanceDiagnosticsAction(benchmark, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:   "benchmark",
 	Usage:  "benchmarks MPT performance by filling data into a fresh instance",
 	Flags: []cli.Flag{
@@ -93,8 +94,6 @@ func benchmark(context *cli.Context) error {
 		tmpDir = os.TempDir()
 	}
 
-	startDiagnosticServer(context.Int(diagnosticsFlag.Name))
-
 	start := time.Now()
 	results, err := runBenchmark(
 		benchmarkParams{
@@ -104,8 +103,6 @@ func benchmark(context *cli.Context) error {
 			numInsertsPerBlock: context.Int(numInsertsPerBlockFlag.Name),
 			tmpDir:             tmpDir,
 			keepState:          context.Bool(keepStateFlag.Name),
-			cpuProfilePrefix:   context.String(cpuProfileFlag.Name),
-			traceFilePrefix:    context.String(traceFlag.Name),
 			reportInterval:     context.Int(reportIntervalFlag.Name),
 			schema:             context.Int(schemaFlag.Name),
 		},
@@ -135,8 +132,6 @@ type benchmarkParams struct {
 	numInsertsPerBlock int
 	tmpDir             string
 	keepState          bool
-	cpuProfilePrefix   string
-	traceFilePrefix    string
 	reportInterval     int
 	schema             int
 }
@@ -163,25 +158,6 @@ func runBenchmark(
 	defer runtime.UnlockOSThread()
 
 	res := benchmarkResult{}
-
-	profilingEnabled := len(params.cpuProfilePrefix) > 0
-	tracingEnabled := len(params.traceFilePrefix) > 0
-
-	// Start profiling ...
-	if profilingEnabled {
-		if err := startCpuProfiler(fmt.Sprintf("%s_%06d", params.cpuProfilePrefix, 1)); err != nil {
-			return res, err
-		}
-		defer stopCpuProfiler()
-	}
-
-	// Start tracing ...
-	if tracingEnabled {
-		if err := startTracer(fmt.Sprintf("%s_%06d", params.traceFilePrefix, 1)); err != nil {
-			return res, err
-		}
-		defer stopTracer()
-	}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -277,12 +253,6 @@ func runBenchmark(
 		}
 
 		if (i+1)%reportingInterval == 0 {
-			if tracingEnabled {
-				stopTracer()
-			}
-			if profilingEnabled {
-				stopCpuProfiler()
-			}
 			startReporting := time.Now()
 
 			throughput := float64(reportingInterval*numInsertsPerBlock) / startReporting.Sub(lastReportTime).Seconds()
@@ -306,14 +276,6 @@ func runBenchmark(
 			endReporting := time.Now()
 			reportingTime += endReporting.Sub(startReporting)
 			lastReportTime = endReporting
-
-			intervalNumber := ((i + 1) / reportingInterval) + 1
-			if profilingEnabled {
-				startCpuProfiler(fmt.Sprintf("%s_%06d", params.cpuProfilePrefix, intervalNumber))
-			}
-			if tracingEnabled {
-				startTracer(fmt.Sprintf("%s_%06d", params.traceFilePrefix, intervalNumber))
-			}
 		}
 	}
 	observer(
