@@ -102,13 +102,13 @@ impl<S> Cache for NodeCacheImpl<S>
 where
     S: Storage<Id = NodeId, Item = CacheEntryImpl>,
 {
-    type Id = NodeId;
+    type Key = NodeId;
     type Item = CacheEntry;
     type ItemPayload = Node;
 
     /// Retrieves a [`CacheEntryImpl`] from the cache with the specified ID.
     /// If the entry is not in the cache, it's retrieved from the underlying storage.
-    fn get(&self, id: Self::Id) -> Result<Self::Item, Error> {
+    fn get(&self, id: Self::Key) -> Result<Self::Item, Error> {
         let cache = self.cache.read().unwrap();
         let entry = cache.get(&id);
         // NOTE: Our rustfmt conf make the suggested `if let` statement very ugly IMO.
@@ -127,7 +127,7 @@ where
     }
 
     /// Stores the node in the cache and reserves a [`NodeId`] for it.
-    fn set(&self, node: Node) -> Result<Self::Id, Error> {
+    fn set(&self, node: Node) -> Result<Self::Key, Error> {
         let entry = CacheEntryImpl::new(RwLock::new(CachedNode::new_dirty(node)));
         let id = self.storage.reserve(&entry);
         self.cache.read().unwrap().insert(id, entry);
@@ -153,7 +153,7 @@ where
     /// queried
     fn delete(
         &self,
-        id: Self::Id,
+        id: Self::Key,
         #[cfg(test)] _test_notify: Option<std::sync::mpsc::Sender<DeleteStatusMsg>>,
     ) -> Result<(), Error> {
         // We acquire a write lock to ensure no get operation on the same ID happens while deleting.
