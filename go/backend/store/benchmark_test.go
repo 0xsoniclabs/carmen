@@ -34,7 +34,7 @@ import (
 const (
 	BmBranchingFactor = 32
 	BmPageSize        = 1 << 12 // = 4 KiB
-	BmPoolSize        = 100000
+	BmPoolSize        = 1000
 )
 
 // initial number of values inserted into the Store before the benchmark
