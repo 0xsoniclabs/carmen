@@ -13,10 +13,11 @@ package store_test
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/backend/store"
-	"github.com/0xsoniclabs/carmen/go/common"
 	"math/rand"
 	"testing"
+
+	"github.com/0xsoniclabs/carmen/go/backend/store"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Benchmark of isolated Stores
@@ -148,6 +149,56 @@ func BenchmarkHash(b *testing.B) {
 				}
 			}
 			_ = s.Close()
+		}
+	}
+}
+
+func BenchmarkHash_Various_Page_Sizes(b *testing.B) {
+	pageSizes := []int{
+		BmPageSize >> 4,
+		BmPageSize >> 3,
+		BmPageSize >> 2,
+		BmPageSize >> 1,
+		BmPageSize,
+		BmPageSize << 1,
+		BmPageSize << 2,
+		BmPageSize << 3,
+		BmPageSize << 4,
+	}
+	for _, pageSize := range pageSizes {
+		for _, fac := range getStoresFactories[common.Value](b, common.ValueSerializer{}, BmBranchingFactor, pageSize, BmPoolSize) {
+			for _, initialSize := range initialSizes {
+				s := fac.getStore(b.TempDir())
+				initialized := false
+				for _, updateSize := range updateSizes {
+					for _, dist := range common.GetDistributions(initialSize) {
+						b.Run(fmt.Sprintf("Store %s initialSize %d updateSize %d dist %s page_size %d", fac.label, initialSize, updateSize, dist.Label, pageSize), func(b *testing.B) {
+							if !initialized {
+								initStoreContent(b, s, initialSize)
+								initialized = true
+							}
+
+							for i := 0; i < b.N; i++ {
+								b.StopTimer() // don't measure the update
+								for ii := 0; ii < updateSize; ii++ {
+									err := s.Set(dist.GetNext(), toValue(rand.Uint32()))
+									if err != nil {
+										b.Fatalf("failed to set store item; %s", err)
+									}
+								}
+								b.StartTimer()
+
+								hash, err := s.GetStateHash()
+								if err != nil {
+									b.Fatalf("failed to hash store; %s", err)
+								}
+								sinkHash = hash // prevent compiler to optimize it out
+							}
+						})
+					}
+				}
+				_ = s.Close()
+			}
 		}
 	}
 }
