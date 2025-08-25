@@ -375,7 +375,6 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		}); err != nil {
 			t.Errorf("failed to apply: %v", err)
 		}
-		
 		hashOfEmptyCode := common.GetKeccak256Hash([]byte{})
 		// For a non-existing account the code is empty and the hash should match.
 		hash, err := s.GetCodeHash(address1)
