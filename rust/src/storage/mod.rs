@@ -13,8 +13,8 @@ use std::path::Path;
 
 pub use self::error::Error;
 
-mod error;
-mod file;
+pub mod error;
+pub mod file;
 
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
