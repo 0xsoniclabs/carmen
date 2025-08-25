@@ -62,6 +62,7 @@ func main() {
 			&Block,
 			&StressTestCmd,
 			&Reset,
+			&TotalSupplyCmd,
 		},
 	}
 
