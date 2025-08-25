@@ -63,6 +63,14 @@ pipeline {
                     }
                 }
 
+                stage('Build Rust library') {
+                    steps {
+                        sh 'rustup update'
+                        sh 'rustup default stable'
+                        sh 'cd rust && cargo build --release'
+                    }
+                }
+
                 stage('Build Go') {
                     steps {
                         sh 'cd go && go build -v ./...'
