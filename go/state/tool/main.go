@@ -41,7 +41,7 @@ var (
 func main() {
 	app := &cli.App{
 		Name:      "tool",
-		Usage:     "Carmen MPT toolbox",
+		Usage:     "Carmen State toolbox",
 		Copyright: "(c) 2022-25 Sonic Operations Ltd",
 		Flags: []cli.Flag{
 			&diagnosticsFlag,

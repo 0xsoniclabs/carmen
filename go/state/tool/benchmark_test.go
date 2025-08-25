@@ -13,10 +13,13 @@ package main
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBenchmark_RunExampleBenchmark(t *testing.T) {
@@ -138,4 +141,30 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetDirectorySize_Normal(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file1")
+	data := []byte("abcde")
+	require.NoError(t, os.WriteFile(file, data, 0644))
+
+	size := getDirectorySize(dir)
+	require.Equal(t, int64(len(data)), size)
+}
+
+func TestGetDirectorySize_NonExistentDir(t *testing.T) {
+	size := getDirectorySize("/path/does/not/exist")
+	require.Equal(t, int64(0), size)
+}
+
+func TestGetDirectorySize_UnreadableFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file2")
+	data := []byte("xyz")
+	require.NoError(t, os.WriteFile(file, data, 0000)) // No permissions
+
+	size := getDirectorySize(dir)
+	// Should skip unreadable file and not panic
+	require.GreaterOrEqual(t, size, int64(0))
 }

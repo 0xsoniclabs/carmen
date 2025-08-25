@@ -36,6 +36,21 @@ var (
 		Usage: "sets the target file for traces to, disabled if empty",
 		Value: "",
 	}
+
+	commands = []*cli.Command{
+		&Check,
+		&ExportCmd,
+		&ImportLiveDbCmd,
+		&ImportArchiveCmd,
+		&ImportLiveAndArchiveCmd,
+		&Info,
+		&InitArchive,
+		&Verify,
+		&VerifyProof,
+		&Block,
+		&StressTestCmd,
+		&Reset,
+	}
 )
 
 func main() {
@@ -48,20 +63,7 @@ func main() {
 			&cpuProfileFlag,
 			&traceFlag,
 		},
-		Commands: []*cli.Command{
-			&Check,
-			&ExportCmd,
-			&ImportLiveDbCmd,
-			&ImportArchiveCmd,
-			&ImportLiveAndArchiveCmd,
-			&Info,
-			&InitArchive,
-			&Verify,
-			&VerifyProof,
-			&Block,
-			&StressTestCmd,
-			&Reset,
-		},
+		Commands: commands,
 	}
 
 	if err := app.Run(os.Args); err != nil {
