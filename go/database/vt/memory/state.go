@@ -31,7 +31,14 @@ type State struct {
 }
 
 // NewState creates a new, empty in-memory state instance.
-func NewState() *State {
+func NewState(_ state.Parameters) (state.State, error) {
+	return &State{
+		trie: &trie.Trie{},
+	}, nil
+}
+
+// newState creates a new, empty in-memory state instance.
+func newState() *State {
 	return &State{
 		trie: &trie.Trie{},
 	}
@@ -148,7 +155,7 @@ func (s *State) Close() error {
 }
 
 func (s *State) GetMemoryFootprint() *common.MemoryFootprint {
-	panic("not implemented")
+	return common.NewMemoryFootprint(1)
 }
 
 func (s *State) GetArchiveState(block uint64) (state.State, error) {
