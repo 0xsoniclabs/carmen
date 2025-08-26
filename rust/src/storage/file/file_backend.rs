@@ -217,8 +217,6 @@ mod tests {
         let path = dir.join("test_file.bin");
         let _ = File::create(path.as_path()).unwrap();
         tempdir.set_permissions(Permissions::ReadOnly).unwrap();
-        // file.set_permissions(std::fs::Permissions::from_mode(0o000))
-        //     .unwrap();
 
         let mut options = OpenOptions::new();
         options.read(true).write(true);
@@ -227,10 +225,6 @@ mod tests {
             let file = backend(path.as_path(), &options);
             assert!(file.is_err());
         }
-
-        // Allow cleanup
-        // file.set_permissions(std::fs::Permissions::from_mode(0o777))
-        //     .unwrap();
     }
 
     #[test]
