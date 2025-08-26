@@ -17,6 +17,8 @@ mod ffi;
 mod storage;
 pub mod types;
 
+mod utils;
+
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
 /// created. If it is empty, a new, empty state is initialized. If it contains
