@@ -192,6 +192,7 @@ impl FlushWorkers {
                     return Ok(());
                 }
                 // avoid busy looping
+                // TODO: use a condvar or similar
                 std::thread::yield_now();
             }
         }
@@ -236,7 +237,7 @@ mod tests {
 
     #[test]
     fn open_all_nested_layers() {
-        // The purpose of this test is to ensure, that `StorageWithFlushBuffer` can be used with
+        // The purpose of this test is to ensure that `StorageWithFlushBuffer` can be used with
         // the lower layers of the storage system (that the types and interfaces line up).
         let dir = tempfile::tempdir().unwrap();
 
