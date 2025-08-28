@@ -23,45 +23,45 @@ use crate::{
     types::{Node, NodeId},
 };
 
-/// A storage backend that uses an eviction cache to hold updates and deletions while they get
+/// A storage backend that uses a flush buffer to hold updates and deletions while they get
 /// written to the underlying storage layer in background threads.
 ///
-/// The eviction workers (the background threads that write the updates and deletions to the
+/// The flush workers (the background threads that write the updates and deletions to the
 /// underlying storage layer) lock nodes while they are being written out to ensure that they are
 /// not concurrently modified.
 ///
 /// Deletions only involve the id, not the node itself, so they are not locked. The id is deleted in
-/// the underlying storage layer first and then removed from the eviction cache. In case it was
-/// deleted in the underlying storage layer and reassigned by a concurrent task before the eviction
-/// worker deleted it from the eviction cache, the `StorageWithEvictionCache::reserve` method also
-/// deletes the id from the eviction cache. This way it is guaranteed that a reassigned id is not
-/// found in the eviction cache.
+/// the underlying storage layer first and then removed from the flush buffer. In case it was
+/// deleted in the underlying storage layer and reassigned by a concurrent task before the flush
+/// worker deleted it from the flush buffer, the `StorageWithFlushBuffer:reserve` method also
+/// deletes the id from the flush buffer. This way it is guaranteed that a reassigned id is not
+/// found in the flush buffer.
 ///
-/// Queries always check the eviction cache first. If the id is found there and it is an update, the
-/// node is removed from the eviction cache and returned. The node is then still considered dirty.
-/// If the id is found in the eviction cache and it is a delete operation, a not found error is
-/// returned. Only if the id is not found in the eviction cache, the underlying storage layer is
+/// Queries always check the flush buffer first. If the id is found there and it is an update, the
+/// node is removed from the flush buffer and returned. The node is then still considered dirty.
+/// If the id is found in the flush buffer and it is a delete operation, a not found error is
+/// returned. Only if the id is not found in the flush buffer, the underlying storage layer is
 /// queried.
-pub struct StorageWithEvictionCache<S>
+pub struct StorageWithFlushBuffer<S>
 where
     S: Storage<Item = Node>,
 {
-    cache: Arc<EvictionCache>, // Arc for shared ownership with eviction worker threads
-    storage: Arc<S>,           // Arc for shared ownership with eviction worker threads
-    eviction_workers: EvictionWorkers,
+    flush_buffer: Arc<FlushBuffer>, // Arc for shared ownership with flush worker threads
+    storage: Arc<S>,                // Arc for shared ownership with flush worker threads
+    flush_workers: FlushWorkers,
 }
 
-impl<S> StorageWithEvictionCache<S>
+impl<S> StorageWithFlushBuffer<S>
 where
     S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
 {
-    pub fn shutdown_eviction_workers(self) -> Result<(), Error> {
-        self.eviction_workers.shutdown()
+    pub fn shutdown_flush_workers(self) -> Result<(), Error> {
+        self.flush_workers.shutdown()
     }
 }
 
 #[cfg_attr(test, mockall::automock)]
-impl<S> Storage for StorageWithEvictionCache<S>
+impl<S> Storage for StorageWithFlushBuffer<S>
 where
     S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
 {
@@ -70,17 +70,17 @@ where
 
     fn open(path: &Path) -> Result<Self, Error> {
         let storage = Arc::new(S::open(path)?);
-        let eviction_cache = Arc::new(DashMap::new());
-        let workers = EvictionWorkers::new(&eviction_cache, &storage);
-        Ok(StorageWithEvictionCache {
-            cache: eviction_cache,
-            eviction_workers: workers,
+        let flush_buffer = Arc::new(DashMap::new());
+        let workers = FlushWorkers::new(&flush_buffer, &storage);
+        Ok(StorageWithFlushBuffer {
+            flush_buffer,
+            flush_workers: workers,
             storage,
         })
     }
 
     fn get(&self, id: NodeId) -> Result<Self::Item, Error> {
-        match self.cache.get(&id) {
+        match self.flush_buffer.get(&id) {
             Some(value) => match value.value() {
                 Op::Set(node) => Ok(node.clone()),
                 Op::Delete => Err(Error::NotFound),
@@ -92,66 +92,64 @@ where
     fn reserve(&self, node: &Self::Item) -> Self::Id {
         let id = self.storage.reserve(node);
         // The id may have been deleted in the underlying storage layer and reassigned here, but not
-        // yet removed from the eviction cache. In this case, we remove it from the eviction
-        // cache to ensure that it is no longer in the cache.
-        self.cache.remove(&id);
+        // yet removed from the flush buffer. In this case, we remove it from the flush
+        // buffer to ensure that it is no longer in the buffer.
+        self.flush_buffer.remove(&id);
         id
     }
 
     fn set(&self, id: NodeId, node: &Self::Item) -> Result<(), Error> {
-        self.cache.insert(id, Op::Set(node.clone()));
+        self.flush_buffer.insert(id, Op::Set(node.clone()));
         Ok(())
     }
 
     fn delete(&self, id: NodeId) -> Result<(), Error> {
-        self.cache.insert(id, Op::Delete);
+        self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }
 
     fn flush(&self) -> Result<(), Error> {
-        // Busy loop until all eviction workers are done.
+        // Busy loop until all flush workers are done.
         // Because there are no concurrent inserts, len() might only return a number that is higher
         // that the actual number of items. This is however not a problem because we will wait a
         // little bit longer.
-        while !self.cache.is_empty() {}
+        while !self.flush_buffer.is_empty() {}
         self.storage.flush()
     }
 }
 
-/// A wrapper around a set of eviction worker threads that allows to shut them down gracefully.
-struct EvictionWorkers {
+/// A wrapper around a set of flush worker threads that allows to shut them down gracefully.
+struct FlushWorkers {
     workers: Vec<std::thread::JoinHandle<Result<(), Error>>>,
-    shutdown: Arc<AtomicBool>, // Arc for shared ownership with eviction worker threads
+    shutdown: Arc<AtomicBool>, // Arc for shared ownership with flush worker threads
 }
 
-impl EvictionWorkers {
+impl FlushWorkers {
     const WORKER_COUNT: usize = 10; // TODO the optimal number needs to be determined based on benchmarks
 
-    /// Creates a new set of eviction workers that will process items from the eviction cache and
+    /// Creates a new set of flush workers that will process items from the flush buffer and
     /// write them to the underlying storage layer.
-    pub fn new<S>(eviction_cache: &Arc<EvictionCache>, storage: &Arc<S>) -> Self
+    pub fn new<S>(flush_buffer: &Arc<FlushBuffer>, storage: &Arc<S>) -> Self
     where
         S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
     {
         let shutdown = Arc::new(AtomicBool::new(false));
         let workers = (0..Self::WORKER_COUNT)
             .map(|_| {
-                let eviction_cache = eviction_cache.clone();
+                let flush_buffer = flush_buffer.clone();
                 let storage = storage.clone();
                 let shutdown = shutdown.clone();
-                std::thread::spawn(move || {
-                    EvictionWorkers::task(&eviction_cache, &*storage, &shutdown)
-                })
+                std::thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
             })
             .collect();
 
-        EvictionWorkers { workers, shutdown }
+        FlushWorkers { workers, shutdown }
     }
 
-    /// The task that each eviction worker runs. It processes items from the eviction cache
+    /// The task that each flush worker runs. It processes items from the flush buffer
     /// and writes them to the underlying storage layer.
     fn task<S>(
-        eviction_cache: &EvictionCache,
+        flush_buffer: &FlushBuffer,
         storage: &S,
         shutdown: &Arc<AtomicBool>,
     ) -> Result<(), Error>
@@ -159,7 +157,7 @@ impl EvictionWorkers {
         S: Storage<Id = NodeId, Item = Node>,
     {
         loop {
-            let item = eviction_cache
+            let item = flush_buffer
                 .iter()
                 .next()
                 .map(|entry| (*entry.key(), entry.value().clone()));
@@ -169,27 +167,27 @@ impl EvictionWorkers {
                     Op::Set(node) => {
                         // Acquire a write lock on the node to prevent concurrent accesses,
                         // write it to the underlying storage layer and then remove it from the
-                        // eviction cache. If the node was queried during
-                        // this time, it may be again in the node cache, but
+                        // flush buffer. If the node was queried during
+                        // this time, it may be again in the node buffer, but
                         // it cannot be modified until the lock is released.
                         storage.set(id, &node)?;
                     }
                     Op::Delete => {
                         // Delete the id in the underlying storage first, then remove it from the
-                        // eviction cache.
+                        // flush buffer.
                         // Once the id was deleted in the underlying storage layer, it may get
                         // reused in a call to `reserve`.
                         // For the case that the id was deleted in the storage layer and reassigned
-                        // by a concurrent task before the eviction worker deleted it from the
-                        // eviction cache, `StorageWithEvictionCache::reserve` also deletes the id
-                        // from the eviction cache. This way it is guaranteed, that a reassigned id
-                        // is not found in the eviction cache.
+                        // by a concurrent task before the flush worker deleted it from the
+                        // flush buffer, `StorageWithFlushBuffer::reserve` also deletes the id
+                        // from the flush buffer. This way it is guaranteed, that a reassigned id
+                        // is not found in the flush buffer.
                         storage.delete(id)?;
                     }
                 }
-                eviction_cache.remove(&id);
+                flush_buffer.remove(&id);
             } else {
-                // the cache is currently empty
+                // the buffer is currently empty
                 if shutdown.load(Ordering::SeqCst) {
                     return Ok(());
                 }
@@ -208,9 +206,9 @@ impl EvictionWorkers {
     }
 }
 
-type EvictionCache = DashMap<NodeId, Op>;
+type FlushBuffer = DashMap<NodeId, Op>;
 
-/// An element in the eviction cache that can either be a set operation or a delete operation.
+/// An element in the flush buffer that can either be a set operation or a delete operation.
 #[derive(Debug, Clone)]
 enum Op {
     Set(Node),
@@ -238,12 +236,12 @@ mod tests {
 
     #[test]
     fn open_all_nested_layers() {
-        // The purpose of this test is to ensure, that `StorageWithEvictionCache` can be used with
+        // The purpose of this test is to ensure, that `StorageWithFlushBuffer` can be used with
         // the lower layers of the storage system (that the types and interfaces line up).
         let dir = tempfile::tempdir().unwrap();
 
         // this opens:
-        // StorageWithEvictionCache
+        // StorageWithFlushBuffer
         //   -> FileStoreManager
         //     -> NodeFileStorage for InnerNode
         //       -> NoSeekFile
@@ -251,17 +249,17 @@ mod tests {
         //       -> NoSeekFile
         //     -> NodeFileStorage for LeafNode256
         //       -> NoSeekFile
-        StorageWithEvictionCache::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
+        StorageWithFlushBuffer::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
     }
 
     #[test]
-    fn open_opens_underlying_storage_and_starts_eviction_workers() {
+    fn open_opens_underlying_storage_and_starts_flush_workers() {
         let dir = tempfile::tempdir().unwrap();
         // Using mocks for `FileStorageManager` and `NoSeekFile` is not possible, because `open`
         // creates the mocks using calls to `open` on the mock type, but the mocks have no
         // expectations set up.
         let storage =
-            StorageWithEvictionCache::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
+            StorageWithFlushBuffer::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
 
         // The node store files should be locked while opened
         let file = File::open(
@@ -273,20 +271,20 @@ mod tests {
         assert!(file.try_lock().is_err());
 
         assert_eq!(
-            storage.eviction_workers.workers.len(),
-            EvictionWorkers::WORKER_COUNT
+            storage.flush_workers.workers.len(),
+            FlushWorkers::WORKER_COUNT
         );
-        for worker in &storage.eviction_workers.workers {
+        for worker in &storage.flush_workers.workers {
             assert!(!worker.is_finished()); // Ensure the worker is running
         }
     }
 
     #[test]
-    fn get_returns_node_from_cache_if_present_as_set_op() {
-        let storage = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+    fn get_returns_node_from_buffer_if_present_as_set_op() {
+        let storage = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
@@ -295,33 +293,33 @@ mod tests {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
-        storage.cache.insert(id, Op::Set(node.clone()));
+        storage.flush_buffer.insert(id, Op::Set(node.clone()));
 
         let result = storage.get(id).unwrap();
         assert_eq!(result, node);
-        assert!(storage.cache.get(&id).is_some());
+        assert!(storage.flush_buffer.get(&id).is_some());
     }
 
     #[test]
     fn get_returns_not_found_error_if_id_is_present_as_delete_op() {
-        let storage = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
         };
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        storage.cache.insert(id, Op::Delete);
+        storage.flush_buffer.insert(id, Op::Delete);
 
         let result = storage.get(id);
         assert!(matches!(result, Err(Error::NotFound)));
     }
 
     #[test]
-    fn get_returns_node_from_storage_if_not_in_cache() {
+    fn get_returns_node_from_storage_if_not_in_buffer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
@@ -334,21 +332,21 @@ mod tests {
                 move |_| Ok(node.clone())
             });
 
-        let storage_with_eviction_cache = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
         };
 
-        let result = storage_with_eviction_cache.get(id).unwrap();
+        let result = storage_with_flush_buffer.get(id).unwrap();
         assert_eq!(result, node);
     }
 
     #[test]
-    fn reserve_retrieves_id_from_underlying_storage_layer_and_removes_from_cache() {
+    fn reserve_retrieves_id_from_underlying_storage_layer_and_removes_from_buffer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
@@ -361,37 +359,37 @@ mod tests {
             })
             .returning(move |_| id);
 
-        let storage_with_eviction_cache = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
         };
 
-        let reserved_id = storage_with_eviction_cache.reserve(&node);
+        let reserved_id = storage_with_flush_buffer.reserve(&node);
         assert_eq!(reserved_id, id);
-        assert!(storage_with_eviction_cache.cache.get(&id).is_none());
+        assert!(storage_with_flush_buffer.flush_buffer.get(&id).is_none());
     }
 
     #[test]
-    fn set_inserts_set_op_into_cache() {
+    fn set_inserts_set_op_into_buffer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
-        let storage_with_eviction_cache = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
         };
 
-        storage_with_eviction_cache.set(id, &node).unwrap();
+        storage_with_flush_buffer.set(id, &node).unwrap();
 
-        let entry = storage_with_eviction_cache.cache.get(&id);
+        let entry = storage_with_flush_buffer.flush_buffer.get(&id);
         assert!(entry.is_some());
         let entry = entry.unwrap();
         let value = entry.value();
@@ -399,21 +397,21 @@ mod tests {
     }
 
     #[test]
-    fn delete_inserts_delete_op_into_cache() {
+    fn delete_inserts_delete_op_into_buffer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
 
-        let storage_with_eviction_cache = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
         };
 
-        storage_with_eviction_cache.delete(id).unwrap();
+        storage_with_flush_buffer.delete(id).unwrap();
 
-        let entry = storage_with_eviction_cache.cache.get(&id);
+        let entry = storage_with_flush_buffer.flush_buffer.get(&id);
         assert!(entry.is_some());
         let entry = entry.unwrap();
         let value = entry.value();
@@ -421,31 +419,31 @@ mod tests {
     }
 
     #[test]
-    fn flush_waits_until_cache_is_empty_then_calls_flush_on_underlying_storage_layer() {
+    fn flush_waits_until_buffer_is_empty_then_calls_flush_on_underlying_storage_layer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
         let mut mock_storage = MockFileStorageManager::<MockFileBackend>::new();
         mock_storage.expect_flush().returning(|| Ok(()));
 
-        let storage_with_eviction_cache = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
-            eviction_workers: EvictionWorkers {
+            flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
             },
         };
 
-        storage_with_eviction_cache
-            .cache
+        storage_with_flush_buffer
+            .flush_buffer
             .insert(id, Op::Set(node.clone()));
 
-        let storage_with_eviction_cache = Arc::new(storage_with_eviction_cache);
+        let storage_with_flush_buffer = Arc::new(storage_with_flush_buffer);
 
         let thread = std::thread::spawn({
-            let storage_with_eviction_cache = storage_with_eviction_cache.clone();
-            move || storage_with_eviction_cache.flush()
+            let storage_with_flush_buffer = storage_with_flush_buffer.clone();
+            move || storage_with_flush_buffer.flush()
         });
 
         // flush is waiting
@@ -454,8 +452,8 @@ mod tests {
         // flush is still waiting
         assert!(!thread.is_finished());
 
-        // remove the item from the cache to allow flush to complete
-        storage_with_eviction_cache.cache.remove(&id);
+        // remove the item from the buffer to allow flush to complete
+        storage_with_flush_buffer.flush_buffer.remove(&id);
 
         std::thread::sleep(Duration::from_millis(100));
         // flush should not call flush on the underlying storage layer and return
@@ -464,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn shutdown_eviction_workers_calls_shutdown_on_eviction_workers() {
+    fn shutdown_flush_workers_calls_shutdown_on_flush_workers() {
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_received = Arc::new(AtomicUsize::new(0));
         let workers = vec![{
@@ -479,34 +477,32 @@ mod tests {
             })
         }];
 
-        let storage_with_eviction_cache = StorageWithEvictionCache {
-            cache: Arc::new(DashMap::new()),
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
-            eviction_workers: EvictionWorkers { workers, shutdown },
+            flush_workers: FlushWorkers { workers, shutdown },
         };
 
         assert_eq!(shutdown_received.load(Ordering::SeqCst), 0);
-        storage_with_eviction_cache
-            .shutdown_eviction_workers()
-            .unwrap();
+        storage_with_flush_buffer.shutdown_flush_workers().unwrap();
         assert_eq!(shutdown_received.load(Ordering::SeqCst), 1);
     }
 
     #[test]
-    fn eviction_workers_new_spawns_threads() {
-        let eviction_cache = Arc::new(DashMap::new());
+    fn flush_workers_new_spawns_threads() {
+        let flush_buffer = Arc::new(DashMap::new());
         let storage = Arc::new(MockFileStorageManager::<MockFileBackend>::new());
 
-        let workers = EvictionWorkers::new(&eviction_cache, &storage);
-        assert_eq!(workers.workers.len(), EvictionWorkers::WORKER_COUNT);
+        let workers = FlushWorkers::new(&flush_buffer, &storage);
+        assert_eq!(workers.workers.len(), FlushWorkers::WORKER_COUNT);
         for worker in &workers.workers {
             assert!(!worker.is_finished()); // Ensure the worker is running
         }
     }
 
     #[test]
-    fn eviction_workers_task_calls_underlying_storage_layer_and_removes_elements_once_processed() {
-        let eviction_cache = Arc::new(DashMap::new());
+    fn flush_workers_task_calls_underlying_storage_layer_and_removes_elements_once_processed() {
+        let flush_buffer = Arc::new(DashMap::new());
         let shutdown = Arc::new(AtomicBool::new(false));
 
         let mut storage = MockFileStorageManager::<MockFileBackend>::new();
@@ -515,26 +511,26 @@ mod tests {
         let storage = Arc::new(storage);
 
         let workers = vec![{
-            let eviction_cache = eviction_cache.clone();
+            let flush_buffer = flush_buffer.clone();
             let shutdown = shutdown.clone();
 
-            std::thread::spawn(move || EvictionWorkers::task(&eviction_cache, &*storage, &shutdown))
+            std::thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
         }];
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
-        eviction_cache.insert(id, Op::Set(node.clone()));
+        flush_buffer.insert(id, Op::Set(node.clone()));
 
         // Allow the worker to process the set operation
         std::thread::sleep(Duration::from_millis(100));
-        assert!(eviction_cache.is_empty());
+        assert!(flush_buffer.is_empty());
 
-        eviction_cache.insert(id, Op::Delete);
+        flush_buffer.insert(id, Op::Delete);
 
         // Allow the worker to process the delete operation
         std::thread::sleep(Duration::from_millis(100));
-        assert!(eviction_cache.is_empty());
+        assert!(flush_buffer.is_empty());
 
         shutdown.store(true, Ordering::SeqCst);
         for worker in workers {
@@ -543,10 +539,10 @@ mod tests {
     }
 
     #[test]
-    fn eviction_workers_shutdowns_signals_threads_to_stop_and_waits_until_they_return() {
+    fn flush_workers_shutdowns_signals_threads_to_stop_and_waits_until_they_return() {
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_received = Arc::new(AtomicUsize::new(0));
-        let workers = (0..EvictionWorkers::WORKER_COUNT)
+        let workers = (0..FlushWorkers::WORKER_COUNT)
             .map(|_| {
                 let shutdown = shutdown.clone();
                 let shutdown_received = shutdown_received.clone();
@@ -559,13 +555,13 @@ mod tests {
                 })
             })
             .collect();
-        let eviction_workers = EvictionWorkers { workers, shutdown };
+        let flush_workers = FlushWorkers { workers, shutdown };
 
         assert_eq!(shutdown_received.load(Ordering::SeqCst), 0);
-        eviction_workers.shutdown().unwrap();
+        flush_workers.shutdown().unwrap();
         assert_eq!(
             shutdown_received.load(Ordering::SeqCst),
-            EvictionWorkers::WORKER_COUNT
+            FlushWorkers::WORKER_COUNT
         );
     }
 }

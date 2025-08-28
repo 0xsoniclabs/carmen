@@ -15,7 +15,7 @@ pub use self::error::Error;
 
 pub mod error;
 pub mod file;
-pub mod storage_with_eviction_cache;
+pub mod storage_with_flush_buffer;
 
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
