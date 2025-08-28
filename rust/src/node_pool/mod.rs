@@ -8,6 +8,8 @@ use crate::{
     types::{Node, NodeId},
 };
 
+pub mod node_pool_with_storage;
+
 #[allow(dead_code)]
 /// An abstraction for a thread-safe pool of nodes.
 pub trait NodePool<T> {
