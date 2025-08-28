@@ -11,7 +11,7 @@
 use std::{
     path::Path,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -20,7 +20,7 @@ use dashmap::DashMap;
 
 use crate::{
     storage::{Error, Storage},
-    types::{CacheEntry, CachedNode, Node, NodeId},
+    types::{Node, NodeId},
 };
 
 /// A storage backend that uses an eviction cache to hold updates and deletions while they get
@@ -66,7 +66,7 @@ where
     S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
 {
     type Id = NodeId;
-    type Item = CacheEntry;
+    type Item = Node;
 
     fn open(path: &Path) -> Result<Self, Error> {
         let storage = Arc::new(S::open(path)?);
@@ -80,17 +80,17 @@ where
     }
 
     fn get(&self, id: NodeId) -> Result<Self::Item, Error> {
-        match self.cache.remove(&id) {
-            Some((_, Op::Set(node))) => Ok(node),
-            Some((_, Op::Delete)) => Err(Error::NotFound),
-            None => Ok(Arc::new(RwLock::new(CachedNode::new_clean(
-                self.storage.get(id)?,
-            )))),
+        match self.cache.get(&id) {
+            Some(value) => match value.value() {
+                Op::Set(node) => Ok(node.clone()),
+                Op::Delete => Err(Error::NotFound),
+            },
+            None => Ok(self.storage.get(id)?),
         }
     }
 
     fn reserve(&self, node: &Self::Item) -> Self::Id {
-        let id = self.storage.reserve(&node.read().unwrap());
+        let id = self.storage.reserve(node);
         // The id may have been deleted in the underlying storage layer and reassigned here, but not
         // yet removed from the eviction cache. In this case, we remove it from the eviction
         // cache to ensure that it is no longer in the cache.
@@ -172,10 +172,7 @@ impl EvictionWorkers {
                         // eviction cache. If the node was queried during
                         // this time, it may be again in the node cache, but
                         // it cannot be modified until the lock is released.
-                        let mut node_guard = node.write().unwrap();
-                        storage.set(id, &node_guard)?;
-                        eviction_cache.remove(&id);
-                        node_guard.set_clean(WriteCertificate(()));
+                        storage.set(id, &node)?;
                     }
                     Op::Delete => {
                         // Delete the id in the underlying storage first, then remove it from the
@@ -188,9 +185,9 @@ impl EvictionWorkers {
                         // from the eviction cache. This way it is guaranteed, that a reassigned id
                         // is not found in the eviction cache.
                         storage.delete(id)?;
-                        eviction_cache.remove(&id);
                     }
                 }
+                eviction_cache.remove(&id);
             } else {
                 // the cache is currently empty
                 if shutdown.load(Ordering::SeqCst) {
@@ -216,7 +213,7 @@ type EvictionCache = DashMap<NodeId, Op>;
 /// An element in the eviction cache that can either be a set operation or a delete operation.
 #[derive(Debug, Clone)]
 enum Op {
-    Set(CacheEntry),
+    Set(Node),
     Delete,
 }
 
@@ -234,7 +231,7 @@ mod tests {
     use crate::{
         storage::file::{
             FileStorageManager, MockFileBackend, MockFileStorageManager, NoSeekFile,
-            node_file_storage::NodeFileStorage,
+            NodeFileStorage,
         },
         types::NodeType,
     };
@@ -285,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn get_removes_and_returns_node_from_cache_if_present_as_set_op() {
+    fn get_returns_node_from_cache_if_present_as_set_op() {
         let storage = StorageWithEvictionCache {
             cache: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
@@ -296,15 +293,13 @@ mod tests {
         };
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = CacheEntry::new(RwLock::new(CachedNode::new_clean(Node::Inner(
-            Box::default(),
-        ))));
+        let node = Node::Inner(Box::default());
 
         storage.cache.insert(id, Op::Set(node.clone()));
 
         let result = storage.get(id).unwrap();
-        assert_eq!(**result.read().unwrap(), **node.read().unwrap());
-        assert!(storage.cache.get(&id).is_none());
+        assert_eq!(result, node);
+        assert!(storage.cache.get(&id).is_some());
     }
 
     #[test]
@@ -349,7 +344,7 @@ mod tests {
         };
 
         let result = storage_with_eviction_cache.get(id).unwrap();
-        assert_eq!(**result.read().unwrap(), node);
+        assert_eq!(result, node);
     }
 
     #[test]
@@ -375,8 +370,7 @@ mod tests {
             },
         };
 
-        let reserved_id = storage_with_eviction_cache
-            .reserve(&Arc::new(RwLock::new(CachedNode::new_clean(node))));
+        let reserved_id = storage_with_eviction_cache.reserve(&node);
         assert_eq!(reserved_id, id);
         assert!(storage_with_eviction_cache.cache.get(&id).is_none());
     }
@@ -384,9 +378,7 @@ mod tests {
     #[test]
     fn set_inserts_set_op_into_cache() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = CacheEntry::new(RwLock::new(CachedNode::new_clean(Node::Inner(
-            Box::default(),
-        ))));
+        let node = Node::Inner(Box::default());
 
         let storage_with_eviction_cache = StorageWithEvictionCache {
             cache: Arc::new(DashMap::new()),
@@ -403,7 +395,7 @@ mod tests {
         assert!(entry.is_some());
         let entry = entry.unwrap();
         let value = entry.value();
-        assert!(matches!(value, Op::Set(n) if Arc::ptr_eq(n, &node)));
+        assert!(matches!(value, Op::Set(n) if n == &node));
     }
 
     #[test]
@@ -445,10 +437,9 @@ mod tests {
             },
         };
 
-        storage_with_eviction_cache.cache.insert(
-            id,
-            Op::Set(CacheEntry::new(RwLock::new(CachedNode::new_clean(node)))),
-        );
+        storage_with_eviction_cache
+            .cache
+            .insert(id, Op::Set(node.clone()));
 
         let storage_with_eviction_cache = Arc::new(storage_with_eviction_cache);
 
@@ -531,9 +522,7 @@ mod tests {
         }];
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Arc::new(RwLock::new(CachedNode::new_clean(Node::Inner(
-            Box::default(),
-        ))));
+        let node = Node::Inner(Box::default());
 
         eviction_cache.insert(id, Op::Set(node.clone()));
 
