@@ -11,17 +11,17 @@ use crate::{
 #[allow(dead_code)]
 /// An abstraction for a thread-safe pool of nodes.
 pub trait NodePool<T> {
-    /// Retrieves an entry from the cache.
+    /// Retrieves an entry from the pool.
     fn get(&self, id: NodeId) -> Result<NodePoolEntry<T>, Error>;
 
-    /// Stores the value in the cache and reserves an ID for it.
+    /// Stores the value in the pool and reserves an ID for it.
     fn set(&self, value: Node) -> Result<NodeId, Error>;
 
-    /// Deletes the entry with the given ID from the cache and storage.
+    /// Deletes the entry with the given ID from the pool
     /// The ID may be reused in the future.
     fn delete(&self, id: NodeId) -> Result<(), Error>;
 
-    /// Flushes all cache elements
+    /// Flushes all pool elements
     fn flush(&self) -> Result<(), Error>;
 }
 
@@ -32,7 +32,7 @@ pub struct NodePoolEntry<T>(Arc<RwLock<T>>);
 
 impl<T> NodePoolEntry<T> {
     #[allow(dead_code)]
-    /// Creates a new cache entry with the given [`NodePoolEntry`].
+    /// Creates a new pool entry with the given [`NodePoolEntry`].
     pub fn new(value: Arc<RwLock<T>>) -> Self {
         Self(value)
     }
