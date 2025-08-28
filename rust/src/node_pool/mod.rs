@@ -1,7 +1,4 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, LockResult, RwLock};
 
 use crate::{
     error::Error,
@@ -10,7 +7,6 @@ use crate::{
 
 pub mod node_pool_with_storage;
 
-#[allow(dead_code)]
 /// An abstraction for a thread-safe pool of nodes.
 pub trait NodePool<T> {
     /// Retrieves an entry from the pool.
@@ -27,29 +23,23 @@ pub trait NodePool<T> {
     fn flush(&self) -> Result<(), Error>;
 }
 
-#[allow(dead_code)]
 /// A node pool entry that can be safely shared across threads.
 #[derive(Debug)]
 pub struct NodePoolEntry<T>(Arc<RwLock<T>>);
 
 impl<T> NodePoolEntry<T> {
-    #[allow(dead_code)]
     /// Creates a new pool entry with the given [`NodePoolEntry`].
     pub fn new(value: Arc<RwLock<T>>) -> Self {
         Self(value)
     }
-}
 
-impl<T> Deref for NodePoolEntry<T> {
-    type Target = Arc<RwLock<T>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    /// Acquires a read lock on the entry.
+    pub fn read(&self) -> LockResult<std::sync::RwLockReadGuard<'_, T>> {
+        self.0.read()
     }
-}
 
-impl<T> DerefMut for NodePoolEntry<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    /// Acquires a write lock on the entry.
+    pub fn write(&self) -> LockResult<std::sync::RwLockWriteGuard<'_, T>> {
+        self.0.write()
     }
 }
