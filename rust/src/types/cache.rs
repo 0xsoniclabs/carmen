@@ -31,13 +31,6 @@ impl CachedNode {
     pub fn dirty(&self) -> bool {
         self.dirty
     }
-
-    /// Sets the **dirty** flag to `false`.
-    /// To make sure this method can only be called from the EvictionCache, it takes a
-    /// `WriteCertificate` which can only be instantiated there.
-    pub fn set_clean(&mut self) {
-        self.dirty = false;
-    }
 }
 
 impl Deref for CachedNode {
