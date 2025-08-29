@@ -14,6 +14,8 @@ use crate::{error::Error, types::*};
 
 mod error;
 mod ffi;
+#[cfg(test)]
+mod node_pool;
 mod storage;
 pub mod types;
 
