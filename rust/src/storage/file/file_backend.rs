@@ -125,13 +125,13 @@ impl FileBackend for NoSeekFile {
 #[cfg(test)]
 mod tests {
     use std::{
-        fs::{File, OpenOptions, Permissions},
+        fs::{File, OpenOptions},
         io::{Read, Write},
-        os::unix::fs::PermissionsExt,
         sync::atomic::{AtomicU64, Ordering},
     };
 
     use super::*;
+    use crate::utils::test_dir::{Permissions, TestDir};
 
     fn open_backends() -> impl Iterator<
         Item = fn(&Path, &OpenOptions) -> std::io::Result<Box<dyn FileBackend + Send + Sync>>,
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn open_creates_and_opens_file() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn open_opens_existing_file() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn open_fails_if_file_is_locked() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -211,12 +211,12 @@ mod tests {
 
     #[test]
     fn open_fails_if_no_permissions() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let path = dir.join("test_file.bin");
-        let file = File::create(path.as_path()).unwrap();
-        file.set_permissions(Permissions::from_mode(0o000)).unwrap();
+        let _ = File::create(path.as_path()).unwrap();
+        tempdir.set_permissions(Permissions::ReadOnly).unwrap();
 
         let mut options = OpenOptions::new();
         options.read(true).write(true);
@@ -225,14 +225,11 @@ mod tests {
             let file = backend(path.as_path(), &options);
             assert!(file.is_err());
         }
-
-        // Allow cleanup
-        file.set_permissions(Permissions::from_mode(0o777)).unwrap();
     }
 
     #[test]
     fn write_all_at_writes_whole_buffer_at_offset() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -260,7 +257,7 @@ mod tests {
 
     #[test]
     fn read_exact_at_fills_whole_buffer_by_reading_at_offset() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -289,7 +286,7 @@ mod tests {
 
     #[test]
     fn read_exact_at_fails_when_out_of_bounds() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -311,7 +308,7 @@ mod tests {
 
     #[test]
     fn flush_flushes_file_and_sets_length() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -346,7 +343,7 @@ mod tests {
 
     #[test]
     fn drop_flushes_file_and_sets_length() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -370,7 +367,7 @@ mod tests {
 
     #[test]
     fn len_returns_file_length() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -387,7 +384,7 @@ mod tests {
 
     #[test]
     fn set_len_sets_length() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
@@ -407,7 +404,7 @@ mod tests {
 
     #[test]
     fn read_observes_writes_of_other_threads() {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let dir = tempdir.path();
 
         let mut options = OpenOptions::new();
