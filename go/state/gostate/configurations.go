@@ -13,14 +13,13 @@ package gostate
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
-
-	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/archive/sqlite"
@@ -48,6 +47,8 @@ import (
 	cachedStore "github.com/0xsoniclabs/carmen/go/backend/store/cache"
 	ldbstore "github.com/0xsoniclabs/carmen/go/backend/store/ldb"
 	storemem "github.com/0xsoniclabs/carmen/go/backend/store/memory"
+	vtgeth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
+	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/memory"
 )
 
 const HashTreeFactor = 32
@@ -138,6 +139,26 @@ func init() {
 		}, newGoFileState)
 	}
 
+	// Verkle Trie schemas
+	state.RegisterStateFactory(state.Configuration{
+		Variant: "go-geth-memory",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}, wrapInSyncState(vtgeth.NewState))
+
+	state.RegisterStateFactory(state.Configuration{
+		Variant: VariantGoMemory,
+		Schema:  6,
+		Archive: state.NoArchive,
+	}, wrapInSyncState(vtmemory.NewState))
+}
+
+// wrapInSyncState creates a state factory that ensures that the returned state is always wrapped in a synced state.
+func wrapInSyncState(factory state.StateFactory) state.StateFactory {
+	return func(params state.Parameters) (state.State, error) {
+		res, err := factory(params)
+		return state.WrapIntoSyncedState(res), err
+	}
 }
 
 // newGoMemoryState creates in memory implementation
