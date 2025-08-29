@@ -15,6 +15,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -24,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"io"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
@@ -187,7 +188,12 @@ func (s *verkleState) GetArchiveBlockHeight() (height uint64, empty bool, err er
 }
 
 func (s *verkleState) CreateAccount(address common.Address) error {
-	account := types.NewEmptyStateAccount()
+	account, err := s.verkle.GetAccount(ethcommon.Address(address))
+	if account != nil || err != nil {
+		return err
+	}
+
+	account = types.NewEmptyStateAccount()
 	return s.verkle.UpdateAccount(ethcommon.Address(address), account, 0)
 }
 
