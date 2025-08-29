@@ -12,5 +12,7 @@ mod file_backend;
 mod file_storage_manager;
 mod node_file_storage;
 
-use file_backend::*;
-use node_file_storage::NodeFileStorage;
+pub use file_backend::*;
+#[cfg(test)]
+pub use file_storage_manager::{FileStorageManager, MockFileStorageManager};
+pub use node_file_storage::NodeFileStorage;

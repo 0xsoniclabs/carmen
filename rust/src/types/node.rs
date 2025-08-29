@@ -27,12 +27,9 @@ pub struct ValueWithIndex {
 }
 
 /// A sparsely populated leaf node in a (file-based) Verkle trie.
-// NOTE: This type should NOT implement [`Clone`] because there should never be two instances
-// corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
-#[cfg_attr(test, derive(Clone))] // For testing purposes only
+#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct SparseLeafNode<const N: usize> {
     pub commitment: Commitment,
@@ -56,12 +53,9 @@ impl<const N: usize> Default for SparseLeafNode<N> {
 }
 
 /// A leaf node with 256 children in a (file-based) Verkle trie.
-// NOTE: This type should NOT implement [`Clone`] because there should never be two instances
-// corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
-#[cfg_attr(test, derive(Clone))] // For testing purposes only
+#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct FullLeafNode {
     pub commitment: Commitment,
@@ -84,8 +78,8 @@ impl Default for FullLeafNode {
 // corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
-#[cfg_attr(test, derive(Clone))] // For testing purposes only
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned, Clone)]
+// #[cfg_attr(test, derive(Clone))] // For testing purposes only
 #[repr(C)]
 pub struct InnerNode {
     pub commitment: Commitment,
@@ -105,10 +99,7 @@ impl Default for InnerNode {
 //
 /// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
 /// dictated by the largest variant).
-// NOTE: This type should NOT implement [`Clone`] because there should never be two instances
-// corresponding to the same logical node.
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(Clone))] // For testing purposes only
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
     Empty,
     Inner(Box<InnerNode>),
