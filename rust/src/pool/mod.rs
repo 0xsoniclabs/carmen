@@ -1,5 +1,5 @@
 use std::{
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     sync::{Arc, LockResult, RwLock},
 };
 
@@ -8,20 +8,17 @@ use crate::error::Error;
 pub mod node_pool_with_storage;
 
 /// An abstraction for a pool of thread-safe elements
-pub trait Pool
-where
-    Self::StoredType: Deref<Target = Self::Type> + DerefMut<Target = Self::Type>,
-{
+pub trait Pool {
     /// The key type used to identify entries in the pool.
     type Key;
     /// The type of elements indexed by the pool.
     type Type;
-    /// The type of elements stored in the pool. This is usually a wrapper around [`Self::Type`] and
-    /// can be dereferenced to it.
-    type StoredType;
 
     /// Retrieves an entry from the pool.
-    fn get(&self, id: Self::Key) -> Result<PoolEntry<Self::StoredType>, Error>;
+    fn get(
+        &self,
+        id: Self::Key,
+    ) -> Result<PoolEntry<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
 
     /// Stores the value in the pool and reserves an ID for it.
     fn set(&self, value: Self::Type) -> Result<Self::Key, Error>;
@@ -66,7 +63,11 @@ mod tests {
         thread,
     };
 
-    use crate::{error::Error, pool::Pool, storage};
+    use crate::{
+        error::Error,
+        pool::{Pool, PoolEntry},
+        storage,
+    };
 
     const TREE_DEPTH: u32 = 6;
     const CHILDREN_PER_NODE: u32 = 3;
@@ -79,7 +80,7 @@ mod tests {
         depth: u32,
         max_depth: u32,
         root_id: u32,
-        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
     ) {
         if depth == max_depth {
             return;
@@ -112,7 +113,7 @@ mod tests {
         cur_node: &Node,
         path: &[u32],
         value: u32,
-        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
     ) {
         let child_id = path
             .first()
@@ -131,7 +132,7 @@ mod tests {
     fn read_from_tree_path(
         cur_node: &Node,
         path: &[u32],
-        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
     ) -> u32 {
         let child_id = path
             .first()
@@ -152,7 +153,7 @@ mod tests {
         level: u32,
         id: u32,
         depth: u32,
-        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
     ) {
         if depth == level {
             pool.delete(id).unwrap();
@@ -306,12 +307,14 @@ mod tests {
     impl Pool for FakeNodePool {
         type Key = u32;
         type Type = Node;
-        type StoredType = Node;
 
         fn get(
             &self,
             id: Self::Key,
-        ) -> Result<super::PoolEntry<Self::StoredType>, crate::error::Error> {
+        ) -> Result<
+            PoolEntry<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
+            crate::error::Error,
+        > {
             self.nodes
                 .lock()
                 .unwrap()
