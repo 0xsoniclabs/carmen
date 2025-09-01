@@ -36,7 +36,6 @@ pub trait Pool {
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
     /// Flushes all pending operations to the underlying storage layer (if one exists).
-    #[allow(dead_code)]
     fn flush(&self) -> Result<(), Error>;
 }
 
