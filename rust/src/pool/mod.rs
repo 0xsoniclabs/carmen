@@ -1,0 +1,394 @@
+use std::{
+    ops::{Deref, DerefMut},
+    sync::{Arc, LockResult, RwLock},
+};
+
+use crate::error::Error;
+
+/// An abstraction for a pool of thread-safe elements
+pub trait Pool
+where
+    Self::StoredType: Deref<Target = Self::Type> + DerefMut<Target = Self::Type>,
+{
+    /// The key type used to identify entries in the pool.
+    type Key;
+    /// The type of elements indexed by the pool.
+    type Type;
+    /// The type of elements stored in the pool. This is usually a wrapper around [`Self::Type`] and
+    /// can be dereferenced to it.
+    type StoredType;
+
+    /// Retrieves an entry from the pool.
+    fn get(&self, id: Self::Key) -> Result<PoolEntry<Self::StoredType>, Error>;
+
+    /// Stores the value in the pool and reserves an ID for it.
+    fn set(&self, value: Self::Type) -> Result<Self::Key, Error>;
+
+    /// Deletes the entry with the given ID from the pool
+    /// The ID may be reused in the future.
+    fn delete(&self, id: Self::Key) -> Result<(), Error>;
+
+    /// Flushes all pool elements
+    #[allow(dead_code)]
+    fn flush(&self) -> Result<(), Error>;
+}
+
+/// A pool entry that can be safely shared across threads.
+#[derive(Debug)]
+pub struct PoolEntry<T>(Arc<RwLock<T>>);
+
+impl<T> PoolEntry<T> {
+    /// Creates a new pool entry with the given [`NodePoolEntry`].
+    pub fn new(value: Arc<RwLock<T>>) -> Self {
+        Self(value)
+    }
+
+    /// Acquires a read lock on the entry.
+    pub fn read(&self) -> LockResult<std::sync::RwLockReadGuard<'_, T>> {
+        self.0.read()
+    }
+
+    /// Acquires a write lock on the entry.
+    pub fn write(&self) -> LockResult<std::sync::RwLockWriteGuard<'_, T>> {
+        self.0.write()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use std::{
+        collections::HashMap,
+        ops::{Deref, DerefMut},
+        sync::{Arc, Mutex, RwLock},
+        thread,
+    };
+
+    use crate::{error::Error, pool::Pool, storage};
+
+    const TREE_DEPTH: u32 = 6;
+    const CHILDREN_PER_NODE: u32 = 3;
+
+    /// Recursively sets up a tree with a [`FakeNodePool`] with depth `MAX_DEPTH` and `MAX_CHILDREN`
+    /// children per node. Each node's value is set to a unique number based on its position in
+    /// the tree.
+    fn populate_tree(
+        cur_node: &mut Node,
+        depth: u32,
+        max_depth: u32,
+        root_id: u32,
+        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+    ) {
+        if depth == max_depth {
+            return;
+        }
+        let mut handles = vec![];
+        for i in 1..=CHILDREN_PER_NODE {
+            let child = Node {
+                value: root_id * 10 + i,
+                children: vec![],
+            };
+            let child_id = pool.set(child).unwrap();
+            cur_node.children.push(child_id);
+            let child = pool.get(child_id).unwrap();
+            handles.push(thread::spawn({
+                let pool = pool.clone();
+                move || {
+                    let mut child = child.write().unwrap();
+                    let new_root_id = child.value;
+                    populate_tree(&mut child, depth + 1, TREE_DEPTH, new_root_id, pool);
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+    }
+
+    fn set_value_at_path(
+        cur_node: &Node,
+        path: &[u32],
+        value: u32,
+        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+    ) {
+        let child_id = path
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("Empty path. You may have recursed too deep."));
+        let path = &path[1..];
+        let child = pool.get(cur_node.children[child_id as usize]).unwrap();
+        if path.is_empty() {
+            child.write().unwrap().value = value;
+        } else {
+            set_value_at_path(&child.read().unwrap(), path, value, pool)
+        }
+    }
+
+    //// Recursively reads a value from the tree following the given path.
+    fn read_from_tree_path(
+        cur_node: &Node,
+        path: &[u32],
+        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+    ) -> u32 {
+        let child_id = path
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("Empty path. You may have recursed too deep."));
+        let path = &path[1..];
+        let child = pool.get(cur_node.children[child_id as usize]).unwrap();
+        if path.is_empty() {
+            return child.read().unwrap().value;
+        } else {
+            read_from_tree_path(&child.read().unwrap(), path, pool)
+        }
+    }
+
+    /// Recursively deletes all nodes at the given level in the tree.
+    fn delete_tree_level(
+        node: &Node,
+        level: u32,
+        id: u32,
+        depth: u32,
+        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+    ) {
+        if depth == level {
+            pool.delete(id).unwrap();
+            return;
+        }
+
+        let mut handles = vec![];
+        for &child_id in &node.children {
+            let child = pool.get(child_id).unwrap();
+            handles.push(thread::spawn({
+                let pool = pool.clone();
+                move || {
+                    delete_tree_level(&child.read().unwrap(), level, child_id, depth + 1, pool);
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+    }
+
+    #[test]
+    pub fn pool_allows_concurrent_tree_construction() {
+        let pool = Arc::new(FakeNodePool {
+            nodes: Mutex::new(HashMap::new()),
+        });
+
+        let root = Node {
+            value: 0,
+            children: vec![],
+        };
+        let root_id = pool.set(root).unwrap();
+
+        let root = pool.get(root_id).unwrap();
+        populate_tree(&mut root.write().unwrap(), 3, TREE_DEPTH, 0, pool);
+    }
+
+    #[test]
+    pub fn pool_allows_concurrent_tree_lookup() {
+        let pool = Arc::new(FakeNodePool {
+            nodes: Mutex::new(HashMap::new()),
+        });
+
+        // Setting up the tree
+        let root = Node {
+            value: 0,
+            children: vec![],
+        };
+        let root_id = pool.set(root).unwrap();
+        let root = pool.get(root_id).unwrap();
+        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, pool.clone());
+
+        let mut cases = vec![];
+        generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
+
+        let mut handles = vec![];
+        for case in cases {
+            let root = pool.get(root_id).unwrap();
+            let pool = pool.clone();
+            handles.push(thread::spawn(move || {
+                assert_eq!(
+                    case.expected,
+                    read_from_tree_path(&root.read().unwrap(), &case.path, pool)
+                );
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn pool_allows_concurrent_delete_on_different_branches() {
+        let pool = Arc::new(FakeNodePool {
+            nodes: Mutex::new(HashMap::new()),
+        });
+
+        // Setting up the tree
+        let root = Node {
+            value: 0,
+            children: vec![],
+        };
+        let root_id = pool.set(root).unwrap();
+        let root = pool.get(root_id).unwrap();
+        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, pool.clone());
+
+        let num_nodes = pool.nodes.lock().unwrap().len();
+        delete_tree_level(&root.read().unwrap(), TREE_DEPTH, root_id, 0, pool.clone());
+
+        assert_eq!(
+            pool.nodes.lock().unwrap().len(),
+            num_nodes - (CHILDREN_PER_NODE.pow(TREE_DEPTH) as usize)
+        );
+    }
+
+    #[test]
+    fn pool_allows_concurrent_set_and_get() {
+        // The point of this test is to prove that one can model concurrent set and get operations
+        // on a tree using the pool without deadlocking or panicking.
+        let pool = Arc::new(FakeNodePool {
+            nodes: Mutex::new(HashMap::new()),
+        });
+        // Setting up the tree
+        let root = Node {
+            value: 0,
+            children: vec![],
+        };
+        let root_id = pool.set(root).unwrap();
+        let root = pool.get(root_id).unwrap();
+        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, pool.clone());
+
+        let mut cases = vec![];
+        generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
+        let paths: Vec<Vec<u32>> = cases.into_iter().map(|c| c.path).collect();
+
+        let mut handles = vec![];
+        for (i, path) in paths.into_iter().enumerate() {
+            // Spawn set
+            handles.push(thread::spawn({
+                let pool = pool.clone();
+                let root = pool.get(root_id).unwrap();
+                let path = path.clone();
+                move || {
+                    set_value_at_path(&root.read().unwrap(), &path, i as u32, pool.clone());
+                }
+            }));
+            // Spawn get
+            handles.push(thread::spawn({
+                let pool = pool.clone();
+                let root = pool.get(root_id).unwrap();
+                move || {
+                    let _ = read_from_tree_path(&root.read().unwrap(), &path, pool.clone());
+                }
+            }));
+        }
+    }
+
+    /// A simple in-memory pool of nodes for testing purposes.
+    struct FakeNodePool {
+        nodes: Mutex<HashMap<u32, Arc<RwLock<Node>>>>,
+    }
+
+    impl Pool for FakeNodePool {
+        type Key = u32;
+        type Type = Node;
+        type StoredType = Node;
+
+        fn get(
+            &self,
+            id: Self::Key,
+        ) -> Result<super::PoolEntry<Self::StoredType>, crate::error::Error> {
+            self.nodes
+                .lock()
+                .unwrap()
+                .get(&id)
+                .cloned()
+                .map(super::PoolEntry::new)
+                .ok_or(Error::Storage(storage::Error::NotFound))
+        }
+
+        fn set(&self, value: Node) -> Result<Self::Key, crate::error::Error> {
+            let node = Arc::new(RwLock::new(value));
+            let mut nodes = self.nodes.lock().unwrap();
+            let id = nodes.len() as u32 + 1;
+            nodes.insert(id, node);
+            Ok(id)
+        }
+
+        fn delete(&self, id: Self::Key) -> Result<(), crate::error::Error> {
+            self.nodes
+                .lock()
+                .unwrap()
+                .remove(&id)
+                .map(|_| ())
+                .ok_or(Error::Storage(storage::Error::NotFound))
+        }
+
+        fn flush(&self) -> Result<(), crate::error::Error> {
+            Ok(())
+        }
+    }
+
+    /// A simple tree node for testing purposes.
+    /// It stores a u32 payload a list of children node IDs.
+    struct Node {
+        value: u32,
+        children: Vec<u32>,
+    }
+
+    impl Deref for Node {
+        type Target = Self;
+
+        fn deref(&self) -> &Self::Target {
+            self
+        }
+    }
+
+    impl DerefMut for Node {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self
+        }
+    }
+
+    /// A utility wrapper for holding a path with its expected value at the end of the path.
+    struct PathWithValue {
+        path: Vec<u32>,
+        expected: u32,
+    }
+
+    /// Recursively generates all possible paths of a given depth in a tree with the expected value
+    /// at the end of each path, as it is initialized in [`populate_tree`].
+    fn generate_cases_recursive(
+        cases: &mut Vec<PathWithValue>,
+        current_path: &mut Vec<u32>,
+        remaining_depth: u32,
+    ) {
+        if remaining_depth == 0 {
+            let expected = current_path
+                .iter()
+                .rev()
+                .enumerate()
+                .map(|(i, &val)| (val + 1) * 10u32.pow(i.try_into().unwrap()))
+                .sum();
+
+            // Push the new Case.
+            cases.push(PathWithValue {
+                path: current_path.clone(),
+                expected,
+            });
+            return;
+        }
+
+        for i in 0..CHILDREN_PER_NODE {
+            current_path.push(i);
+            generate_cases_recursive(cases, current_path, remaining_depth - 1);
+            current_path.pop();
+        }
+    }
+}
