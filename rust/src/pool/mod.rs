@@ -15,6 +15,10 @@ pub trait Pool {
     type Type;
 
     /// Retrieves an entry from the pool.
+    /// The concrete type returned by the get operation may not be the concrete type `Self::Type`
+    /// but instead a wrapper type which behaves like `Self::Type`. This abstraction allows for
+    /// the pool to store complex types which track the lifetime of stored objects, enabling
+    /// nested catching.
     fn get(
         &self,
         id: Self::Key,
@@ -24,15 +28,17 @@ pub trait Pool {
     fn set(&self, value: Self::Type) -> Result<Self::Key, Error>;
 
     /// Deletes the entry with the given ID from the pool
-    /// The ID may be reused in the future.
+    /// The ID may be reused in the future, when creating a new entry by calling [`Pool::set`].
     fn delete(&self, id: Self::Key) -> Result<(), Error>;
 
-    /// Flushes all pool elements
+    /// Flushes all pending operations to the underlying IO hierarchy.
     #[allow(dead_code)]
     fn flush(&self) -> Result<(), Error>;
 }
 
-/// A pool entry that can be safely shared across threads.
+/// An element retrieved from the pool which can be locked before reading to enable safe concurrent
+/// access. Instances of this object shall not be kept for longer than the scope where they are
+/// needed, failing to release these nodes will lead to resources leackage.
 #[derive(Debug)]
 pub struct PoolEntry<T>(Arc<RwLock<T>>);
 
@@ -301,7 +307,7 @@ mod tests {
 
     /// A simple in-memory pool of nodes for testing purposes.
     struct FakeNodePool {
-        nodes: Mutex<HashMap<u32, Arc<RwLock<Node>>>>,
+        nodes: Mutex<VecArc<RwLock<Node>>>>,
     }
 
     impl Pool for FakeNodePool {
