@@ -77,7 +77,7 @@ mod tests {
         depth: u32,
         max_depth: u32,
         root_id: u32,
-        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
     ) {
         if depth == max_depth {
             return;
@@ -96,7 +96,7 @@ mod tests {
                 move || {
                     let mut child = child.write().unwrap();
                     let new_root_id = child.value;
-                    populate_tree(&mut child, depth + 1, TREE_DEPTH, new_root_id, pool);
+                    populate_tree(&mut child, depth + 1, TREE_DEPTH, new_root_id, &pool);
                 }
             }));
         }
@@ -110,7 +110,7 @@ mod tests {
         cur_node: &Node,
         path: &[u32],
         value: u32,
-        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
     ) {
         let child_id = path
             .first()
@@ -121,15 +121,15 @@ mod tests {
         if path.is_empty() {
             child.write().unwrap().value = value;
         } else {
-            set_value_at_path(&child.read().unwrap(), path, value, pool)
+            set_value_at_path(&child.read().unwrap(), path, value, pool);
         }
     }
 
-    //// Recursively reads a value from the tree following the given path.
+    /// Recursively reads a value from the tree following the given path.
     fn read_from_tree_path(
         cur_node: &Node,
         path: &[u32],
-        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
     ) -> u32 {
         let child_id = path
             .first()
@@ -150,7 +150,7 @@ mod tests {
         level: u32,
         id: u32,
         depth: u32,
-        pool: Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Key = u32, Type = Node, StoredType = Node> + Send + Sync + 'static>,
     ) {
         if depth == level {
             pool.delete(id).unwrap();
@@ -163,7 +163,7 @@ mod tests {
             handles.push(thread::spawn({
                 let pool = pool.clone();
                 move || {
-                    delete_tree_level(&child.read().unwrap(), level, child_id, depth + 1, pool);
+                    delete_tree_level(&child.read().unwrap(), level, child_id, depth + 1, &pool);
                 }
             }));
         }
@@ -186,7 +186,7 @@ mod tests {
         let root_id = pool.set(root).unwrap();
 
         let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 3, TREE_DEPTH, 0, pool);
+        populate_tree(&mut root.write().unwrap(), 3, TREE_DEPTH, 0, &pool);
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
         };
         let root_id = pool.set(root).unwrap();
         let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, pool.clone());
+        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
 
         let mut cases = vec![];
         generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
@@ -214,7 +214,7 @@ mod tests {
             handles.push(thread::spawn(move || {
                 assert_eq!(
                     case.expected,
-                    read_from_tree_path(&root.read().unwrap(), &case.path, pool)
+                    read_from_tree_path(&root.read().unwrap(), &case.path, &pool)
                 );
             }));
         }
@@ -237,10 +237,10 @@ mod tests {
         };
         let root_id = pool.set(root).unwrap();
         let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, pool.clone());
+        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
 
         let num_nodes = pool.nodes.lock().unwrap().len();
-        delete_tree_level(&root.read().unwrap(), TREE_DEPTH, root_id, 0, pool.clone());
+        delete_tree_level(&root.read().unwrap(), TREE_DEPTH, root_id, 0, &pool);
 
         assert_eq!(
             pool.nodes.lock().unwrap().len(),
@@ -262,10 +262,12 @@ mod tests {
         };
         let root_id = pool.set(root).unwrap();
         let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, pool.clone());
+        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
 
         let mut cases = vec![];
         generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
+        // IMO this is clearer than filtering the elements in the for loop below.
+        #[allow(clippy::needless_collect)]
         let paths: Vec<Vec<u32>> = cases.into_iter().map(|c| c.path).collect();
 
         let mut handles = vec![];
@@ -276,7 +278,7 @@ mod tests {
                 let root = pool.get(root_id).unwrap();
                 let path = path.clone();
                 move || {
-                    set_value_at_path(&root.read().unwrap(), &path, i as u32, pool.clone());
+                    set_value_at_path(&root.read().unwrap(), &path, i as u32, &pool.clone());
                 }
             }));
             // Spawn get
@@ -284,9 +286,13 @@ mod tests {
                 let pool = pool.clone();
                 let root = pool.get(root_id).unwrap();
                 move || {
-                    let _ = read_from_tree_path(&root.read().unwrap(), &path, pool.clone());
+                    let _ = read_from_tree_path(&root.read().unwrap(), &path, &pool);
                 }
             }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
         }
     }
 
