@@ -25,9 +25,6 @@ pub trait Pool {
     /// Adds the item in the pool and returns an ID for it.
     fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
 
-    /// Adds the item in the pool and returns an ID for it.
-    fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
-
     /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
     fn get(
         &self,
@@ -39,7 +36,6 @@ pub trait Pool {
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
     /// Flushes all pending operations to the underlying storage layer (if one exists).
-    #[allow(dead_code)]
     fn flush(&self) -> Result<(), Error>;
 }
 
