@@ -307,7 +307,7 @@ mod tests {
 
     /// A simple in-memory pool of nodes for testing purposes.
     struct FakeNodePool {
-        nodes: Mutex<VecArc<RwLock<Node>>>>,
+        nodes: Mutex<HashMap<u32, Arc<RwLock<Node>>>>,
     }
 
     impl Pool for FakeNodePool {
