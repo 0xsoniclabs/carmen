@@ -20,7 +20,7 @@ pub trait Pool {
     fn get(
         &self,
         id: Self::Id,
-    ) -> Result<PoolEntry<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
+    ) -> Result<PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
 
     /// Stores the item in the pool and assigns an ID to it.
     fn set(&self, item: Self::Type) -> Result<Self::Id, Error>;
@@ -37,9 +37,9 @@ pub trait Pool {
 /// An item retrieved from the pool which can be locked before reading to enable safe concurrent
 /// access.
 #[derive(Debug)]
-pub struct PoolEntry<T>(Arc<RwLock<T>>);
+pub struct PoolItem<T>(Arc<RwLock<T>>);
 
-impl<T> PoolEntry<T> {
+impl<T> PoolItem<T> {
     /// Creates a new pool entry with the given [`PoolEntry`].
     pub fn new(item: Arc<RwLock<T>>) -> Self {
         Self(item)
@@ -68,7 +68,7 @@ mod tests {
 
     use crate::{
         error::Error,
-        pool::{Pool, PoolEntry},
+        pool::{Pool, PoolItem},
         storage,
     };
 
@@ -315,7 +315,7 @@ mod tests {
             &self,
             id: Self::Id,
         ) -> Result<
-            PoolEntry<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
+            PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
             crate::error::Error,
         > {
             self.nodes
@@ -323,7 +323,7 @@ mod tests {
                 .unwrap()
                 .get(&id)
                 .cloned()
-                .map(super::PoolEntry::new)
+                .map(super::PoolItem::new)
                 .ok_or(Error::Storage(storage::Error::NotFound))
         }
 
