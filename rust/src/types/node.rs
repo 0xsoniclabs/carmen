@@ -78,8 +78,7 @@ impl Default for FullLeafNode {
 // corresponding to the same logical node.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned, Clone)]
-// #[cfg_attr(test, derive(Clone))] // For testing purposes only
+#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct InnerNode {
     pub commitment: Commitment,

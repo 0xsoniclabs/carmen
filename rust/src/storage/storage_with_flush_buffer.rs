@@ -26,19 +26,17 @@ use crate::{
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
 /// written to the underlying storage layer in background threads.
 ///
-/// The flush workers (the background threads that write the updates and deletions to the
-/// underlying storage layer) lock nodes while they are being written out to ensure that they are
-/// not concurrently modified.
+/// Upon deletion, the id is deleted in the underlying storage layer first and then removed from the
+/// flush buffer. In case it was deleted in the underlying storage layer and reassigned by a
+/// concurrent task before the flush worker deleted it from the flush buffer, the
+/// `StorageWithFlushBuffer:reserve` method also deletes the id from the flush buffer. This way it
+/// is guaranteed that a reassigned id is not found in the flush buffer.
 ///
-/// Deletions only involve the id, not the node itself, so they are not locked. The id is deleted in
-/// the underlying storage layer first and then removed from the flush buffer. In case it was
-/// deleted in the underlying storage layer and reassigned by a concurrent task before the flush
-/// worker deleted it from the flush buffer, the `StorageWithFlushBuffer:reserve` method also
-/// deletes the id from the flush buffer. This way it is guaranteed that a reassigned id is not
-/// found in the flush buffer.
-///
-/// Queries always check the flush buffer first. If the id is found there and it is an update, the
-/// node is removed from the flush buffer and returned. The node is then still considered dirty.
+/// Queries always check the flush buffer first. If the id is found there and it is an update, a
+/// copy of the node is returned, but the node is kept in the flush buffer. This ensures that
+/// once changes to a node enter the flush buffer, they will eventually be persisted. If a node
+/// is updated repeatedly before a flush worker manages to flush the changes to the underlying
+/// storage layer, later updates replace earlier ones and only the latest changes are persisted.
 /// If the id is found in the flush buffer and it is a delete operation, a not found error is
 /// returned. Only if the id is not found in the flush buffer, the underlying storage layer is
 /// queried.
@@ -92,8 +90,9 @@ where
     fn reserve(&self, node: &Self::Item) -> Self::Id {
         let id = self.storage.reserve(node);
         // The id may have been deleted in the underlying storage layer and reassigned here, but not
-        // yet removed from the flush buffer. In this case, we remove it from the flush
-        // buffer to ensure that it is no longer in the buffer.
+        // yet removed from the flush buffer (racing against flush workers). In this case, we remove
+        // it from the flush buffer to ensure that the id no longer returns an
+        // [`Error::NotFound`].
         self.flush_buffer.remove(&id);
         id
     }
@@ -165,11 +164,6 @@ impl FlushWorkers {
             if let Some((id, op)) = item {
                 match op {
                     Op::Set(node) => {
-                        // Acquire a write lock on the node to prevent concurrent accesses,
-                        // write it to the underlying storage layer and then remove it from the
-                        // flush buffer. If the node was queried during
-                        // this time, it may be again in the node buffer, but
-                        // it cannot be modified until the lock is released.
                         storage.set(id, &node)?;
                     }
                     Op::Delete => {
@@ -216,12 +210,6 @@ enum Op {
     Delete,
 }
 
-/// A zero-sized type used as a certificate that a node was written to disk and can therefore be
-/// treated as clean again.
-// Note: The struct has to have a private field so that it cannot be instantiated outside of this
-// module.
-pub struct WriteCertificate(());
-
 #[cfg(test)]
 mod tests {
     use std::{fs::File, sync::atomic::AtomicUsize, time::Duration};
@@ -244,11 +232,7 @@ mod tests {
         // this opens:
         // StorageWithFlushBuffer
         //   -> FileStoreManager
-        //     -> NodeFileStorage for InnerNode
-        //       -> NoSeekFile
-        //     -> NodeFileStorage for LeafNode2
-        //       -> NoSeekFile
-        //     -> NodeFileStorage for LeafNode256
+        //     -> A NodeFileStorage for each node type (InnerNode, SparseLeafNode<N>, ...)
         //       -> NoSeekFile
         StorageWithFlushBuffer::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
     }
@@ -281,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn get_returns_node_from_buffer_if_present_as_set_op() {
+    fn get_returns_copy_of_node_if_present_as_set_op() {
         let storage = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
@@ -298,6 +282,7 @@ mod tests {
 
         let result = storage.get(id).unwrap();
         assert_eq!(result, node);
+        // Node is kept for eventual flush.
         assert!(storage.flush_buffer.get(&id).is_some());
     }
 
@@ -457,7 +442,7 @@ mod tests {
         storage_with_flush_buffer.flush_buffer.remove(&id);
 
         std::thread::sleep(Duration::from_millis(100));
-        // flush should not call flush on the underlying storage layer and return
+        // flush should call flush on the underlying storage layer and return
         assert!(thread.is_finished());
         assert!(thread.join().is_ok());
     }
