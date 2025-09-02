@@ -260,7 +260,7 @@ func newState(impl C.enum_LiveImpl, params state.Parameters, ffiType FFIType) (s
 	case FFITypeRust:
 		ffi = RustInterface{}
 	default:
-		panic("unsupported FFI type")
+		return nil, fmt.Errorf("%w: unsupported FFI type %v", state.UnsupportedConfiguration, extImpl)
 	}
 
 	db := unsafe.Pointer(nil)
