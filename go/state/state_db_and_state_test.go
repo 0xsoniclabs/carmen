@@ -24,7 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/0xsoniclabs/carmen/go/state/ffistate"
+	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
 )
 

@@ -28,7 +28,7 @@ import (
 	"golang.org/x/crypto/sha3"
 	"golang.org/x/exp/maps"
 
-	_ "github.com/0xsoniclabs/carmen/go/state/ffistate"
+	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 )
 
 var (

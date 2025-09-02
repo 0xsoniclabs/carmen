@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/state"
-	_ "github.com/0xsoniclabs/carmen/go/state/ffistate"
+	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
 )
 
