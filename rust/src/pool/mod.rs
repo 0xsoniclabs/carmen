@@ -5,47 +5,44 @@ use std::{
 
 use crate::error::Error;
 
-pub mod node_pool_with_storage;
-
-/// An abstraction for a pool of thread-safe elements
+/// An abstraction for a pool of thread-safe items
 pub trait Pool {
-    /// The key type used to identify entries in the pool.
-    type Key;
-    /// The type of elements indexed by the pool.
+    /// The id type used to identify entries in the pool.
+    type Id;
+    /// The type of items indexed by the pool.
     type Type;
 
-    /// Retrieves an entry from the pool.
+    /// Retrieves an item from the pool.
     /// The concrete type returned by the get operation may not be the concrete type `Self::Type`
     /// but instead a wrapper type which behaves like `Self::Type`. This abstraction allows for
     /// the pool to store complex types which track the lifetime of stored objects, enabling
-    /// nested catching.
+    /// nested caching.
     fn get(
         &self,
-        id: Self::Key,
+        id: Self::Id,
     ) -> Result<PoolEntry<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
 
-    /// Stores the value in the pool and reserves an ID for it.
-    fn set(&self, value: Self::Type) -> Result<Self::Key, Error>;
+    /// Stores the item in the pool and assigns an ID to it.
+    fn set(&self, item: Self::Type) -> Result<Self::Id, Error>;
 
-    /// Deletes the entry with the given ID from the pool
-    /// The ID may be reused in the future, when creating a new entry by calling [`Pool::set`].
-    fn delete(&self, id: Self::Key) -> Result<(), Error>;
+    /// Deletes an item with the given ID from the pool
+    /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
+    fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
     /// Flushes all pending operations to the underlying IO hierarchy.
     #[allow(dead_code)]
     fn flush(&self) -> Result<(), Error>;
 }
 
-/// An element retrieved from the pool which can be locked before reading to enable safe concurrent
-/// access. Instances of this object shall not be kept for longer than the scope where they are
-/// needed, failing to release these nodes will lead to resources leackage.
+/// An item retrieved from the pool which can be locked before reading to enable safe concurrent
+/// access.
 #[derive(Debug)]
 pub struct PoolEntry<T>(Arc<RwLock<T>>);
 
 impl<T> PoolEntry<T> {
-    /// Creates a new pool entry with the given [`NodePoolEntry`].
-    pub fn new(value: Arc<RwLock<T>>) -> Self {
-        Self(value)
+    /// Creates a new pool entry with the given [`PoolEntry`].
+    pub fn new(item: Arc<RwLock<T>>) -> Self {
+        Self(item)
     }
 
     /// Acquires a read lock on the entry.
@@ -78,22 +75,22 @@ mod tests {
     const TREE_DEPTH: u32 = 6;
     const CHILDREN_PER_NODE: u32 = 3;
 
-    /// Recursively sets up a tree with a [`FakeNodePool`] with depth `MAX_DEPTH` and `MAX_CHILDREN`
-    /// children per node. Each node's value is set to a unique number based on its position in
-    /// the tree.
+    /// Recursively sets up a tree with a [`Pool`] as backing store.
+    /// A thread is spawned for each child node to populate its subtree. Each node's value is set to
+    /// a unique number based on its position in the tree.
     fn populate_tree(
-        cur_node: &mut Node,
+        cur_node: &mut TestNode,
         depth: u32,
         max_depth: u32,
         root_id: u32,
-        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
     ) {
         if depth == max_depth {
             return;
         }
         let mut handles = vec![];
         for i in 1..=CHILDREN_PER_NODE {
-            let child = Node {
+            let child = TestNode {
                 value: root_id * 10 + i,
                 children: vec![],
             };
@@ -116,10 +113,10 @@ mod tests {
     }
 
     fn set_value_at_path(
-        cur_node: &Node,
+        cur_node: &TestNode,
         path: &[u32],
         value: u32,
-        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
     ) {
         let child_id = path
             .first()
@@ -136,9 +133,9 @@ mod tests {
 
     /// Recursively reads a value from the tree following the given path.
     fn read_from_tree_path(
-        cur_node: &Node,
+        cur_node: &TestNode,
         path: &[u32],
-        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
     ) -> u32 {
         let child_id = path
             .first()
@@ -155,11 +152,11 @@ mod tests {
 
     /// Recursively deletes all nodes at the given level in the tree.
     fn delete_tree_level(
-        node: &Node,
+        node: &TestNode,
         level: u32,
         id: u32,
         depth: u32,
-        pool: &Arc<impl Pool<Key = u32, Type = Node> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
     ) {
         if depth == level {
             pool.delete(id).unwrap();
@@ -188,7 +185,7 @@ mod tests {
             nodes: Mutex::new(HashMap::new()),
         });
 
-        let root = Node {
+        let root = TestNode {
             value: 0,
             children: vec![],
         };
@@ -205,7 +202,7 @@ mod tests {
         });
 
         // Setting up the tree
-        let root = Node {
+        let root = TestNode {
             value: 0,
             children: vec![],
         };
@@ -240,7 +237,7 @@ mod tests {
         });
 
         // Setting up the tree
-        let root = Node {
+        let root = TestNode {
             value: 0,
             children: vec![],
         };
@@ -265,7 +262,7 @@ mod tests {
             nodes: Mutex::new(HashMap::new()),
         });
         // Setting up the tree
-        let root = Node {
+        let root = TestNode {
             value: 0,
             children: vec![],
         };
@@ -275,7 +272,7 @@ mod tests {
 
         let mut cases = vec![];
         generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
-        // IMO this is clearer than filtering the elements in the for loop below.
+        // IMO this is clearer than filtering the items in the for loop below.
         #[allow(clippy::needless_collect)]
         let paths: Vec<Vec<u32>> = cases.into_iter().map(|c| c.path).collect();
 
@@ -307,16 +304,16 @@ mod tests {
 
     /// A simple in-memory pool of nodes for testing purposes.
     struct FakeNodePool {
-        nodes: Mutex<HashMap<u32, Arc<RwLock<Node>>>>,
+        nodes: Mutex<HashMap<u32, Arc<RwLock<TestNode>>>>,
     }
 
     impl Pool for FakeNodePool {
-        type Key = u32;
-        type Type = Node;
+        type Id = u32;
+        type Type = TestNode;
 
         fn get(
             &self,
-            id: Self::Key,
+            id: Self::Id,
         ) -> Result<
             PoolEntry<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
             crate::error::Error,
@@ -330,7 +327,7 @@ mod tests {
                 .ok_or(Error::Storage(storage::Error::NotFound))
         }
 
-        fn set(&self, value: Node) -> Result<Self::Key, crate::error::Error> {
+        fn set(&self, value: TestNode) -> Result<Self::Id, crate::error::Error> {
             let node = Arc::new(RwLock::new(value));
             let mut nodes = self.nodes.lock().unwrap();
             let id = nodes.len() as u32 + 1;
@@ -338,7 +335,7 @@ mod tests {
             Ok(id)
         }
 
-        fn delete(&self, id: Self::Key) -> Result<(), crate::error::Error> {
+        fn delete(&self, id: Self::Id) -> Result<(), crate::error::Error> {
             self.nodes
                 .lock()
                 .unwrap()
@@ -354,12 +351,12 @@ mod tests {
 
     /// A simple tree node for testing purposes.
     /// It stores a u32 payload a list of children node IDs.
-    struct Node {
+    struct TestNode {
         value: u32,
         children: Vec<u32>,
     }
 
-    impl Deref for Node {
+    impl Deref for TestNode {
         type Target = Self;
 
         fn deref(&self) -> &Self::Target {
@@ -367,7 +364,7 @@ mod tests {
         }
     }
 
-    impl DerefMut for Node {
+    impl DerefMut for TestNode {
         fn deref_mut(&mut self) -> &mut Self::Target {
             self
         }
