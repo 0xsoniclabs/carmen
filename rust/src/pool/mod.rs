@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::error::Error;
+pub mod node_pool_with_storage;
 
 /// An abstraction for a pool of thread-safe items
 pub trait Pool {
