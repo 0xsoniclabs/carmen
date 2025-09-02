@@ -410,7 +410,7 @@ mod tests {
         let node = Node::Inner(Box::default());
 
         let mut mock_storage = MockFileStorageManager::<MockFileBackend>::new();
-        mock_storage.expect_flush().returning(|| Ok(()));
+        mock_storage.expect_flush().times(1).returning(|| Ok(()));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
