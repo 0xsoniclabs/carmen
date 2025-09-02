@@ -6,18 +6,23 @@ use std::{
 use crate::error::Error;
 pub mod node_pool_with_storage;
 
-/// An abstraction for a pool of thread-safe items
+/// A collection of thread-safe *items* that dereference to [`Pool::Type`].
+///
+/// Items in the pool are uniquely identified by a [`Pool::Id`].
+/// Calling [`Pool::get`] with the same ID twice is guaranteed to yield the same item.
+/// IDs are managed by the pool itself, which hands out new IDs upon insertion of an item.
+/// IDs are not globally unique and may be reused after deletion.
+///
+/// The concrete type returned by [`Pool::get`] may not be [`Pool::Type`] but instead a wrapper type
+/// which dereferences to [`Pool::Type`]. This abstraction allows for the pool to associate metadata
+/// with each item, for example to implement smart cache eviction.
 pub trait Pool {
     /// The id type used to identify entries in the pool.
     type Id;
     /// The type of items indexed by the pool.
     type Type;
 
-    /// Retrieves an item from the pool.
-    /// The concrete type returned by the get operation may not be the concrete type `Self::Type`
-    /// but instead a wrapper type which behaves like `Self::Type`. This abstraction allows for
-    /// the pool to store complex types which track the lifetime of stored objects, enabling
-    /// nested caching.
+    /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
     fn get(
         &self,
         id: Self::Id,
@@ -30,18 +35,18 @@ pub trait Pool {
     /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
-    /// Flushes all pending operations to the underlying IO hierarchy.
+    /// Flushes all pending operations to the underlying storage layer (if one exists).
     #[allow(dead_code)]
     fn flush(&self) -> Result<(), Error>;
 }
 
-/// An item retrieved from the pool which can be locked before reading to enable safe concurrent
-/// access.
+/// An item retrieved from the pool which can be locked for reading or writing to enable safe
+/// concurrent access.
 #[derive(Debug)]
 pub struct PoolItem<T>(Arc<RwLock<T>>);
 
 impl<T> PoolItem<T> {
-    /// Creates a new pool entry with the given [`PoolEntry`].
+    /// Creates a new [`PoolItem`] by wrapping the given [`Arc<RwLock<T>>`].
     pub fn new(item: Arc<RwLock<T>>) -> Self {
         Self(item)
     }
@@ -51,7 +56,7 @@ impl<T> PoolItem<T> {
         self.0.read()
     }
 
-    /// Acquires a write lock on the entry.
+    /// Acquires a write lock on the item.
     pub fn write(&self) -> LockResult<std::sync::RwLockWriteGuard<'_, T>> {
         self.0.write()
     }
