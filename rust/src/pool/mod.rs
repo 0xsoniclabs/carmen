@@ -81,6 +81,110 @@ mod tests {
     const TREE_DEPTH: u32 = 6;
     const CHILDREN_PER_NODE: u32 = 3;
 
+    /// A simple in-memory pool of nodes for testing purposes.
+    struct FakeNodePool {
+        nodes: Mutex<HashMap<u32, Arc<RwLock<TestNode>>>>,
+    }
+
+    impl Pool for FakeNodePool {
+        type Id = u32;
+        type Type = TestNode;
+
+        fn get(
+            &self,
+            id: Self::Id,
+        ) -> Result<
+            PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
+            crate::error::Error,
+        > {
+            self.nodes
+                .lock()
+                .unwrap()
+                .get(&id)
+                .cloned()
+                .map(super::PoolItem::new)
+                .ok_or(Error::Storage(storage::Error::NotFound))
+        }
+
+        fn set(&self, value: TestNode) -> Result<Self::Id, crate::error::Error> {
+            let node = Arc::new(RwLock::new(value));
+            let mut nodes = self.nodes.lock().unwrap();
+            let id = nodes.len() as u32 + 1;
+            nodes.insert(id, node);
+            Ok(id)
+        }
+
+        fn delete(&self, id: Self::Id) -> Result<(), crate::error::Error> {
+            self.nodes
+                .lock()
+                .unwrap()
+                .remove(&id)
+                .map(|_| ())
+                .ok_or(Error::Storage(storage::Error::NotFound))
+        }
+
+        fn flush(&self) -> Result<(), crate::error::Error> {
+            Ok(())
+        }
+    }
+
+    /// A simple tree node for testing purposes.
+    /// It stores a u32 payload a list of children node IDs.
+    struct TestNode {
+        value: u32,
+        children: Vec<u32>,
+    }
+
+    impl Deref for TestNode {
+        type Target = Self;
+
+        fn deref(&self) -> &Self::Target {
+            self
+        }
+    }
+
+    impl DerefMut for TestNode {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self
+        }
+    }
+
+    /// A utility wrapper for holding a path with its expected value at the end of the path.
+    struct PathWithValue {
+        path: Vec<u32>,
+        expected: u32,
+    }
+
+    /// Recursively generates all possible paths of a given depth in a tree with the expected value
+    /// at the end of each path, as it is initialized in [`populate_tree`].
+    fn generate_cases_recursive(
+        cases: &mut Vec<PathWithValue>,
+        current_path: &mut Vec<u32>,
+        remaining_depth: u32,
+    ) {
+        if remaining_depth == 0 {
+            let expected = current_path
+                .iter()
+                .rev()
+                .enumerate()
+                .map(|(i, &val)| (val + 1) * 10u32.pow(i.try_into().unwrap()))
+                .sum();
+
+            // Push the new Case.
+            cases.push(PathWithValue {
+                path: current_path.clone(),
+                expected,
+            });
+            return;
+        }
+
+        for i in 0..CHILDREN_PER_NODE {
+            current_path.push(i);
+            generate_cases_recursive(cases, current_path, remaining_depth - 1);
+            current_path.pop();
+        }
+    }
+
     /// Recursively sets up a tree with a [`Pool`] as backing store.
     /// A thread is spawned for each child node to populate its subtree. Each node's value is set to
     /// a unique number based on its position in the tree.
@@ -305,110 +409,6 @@ mod tests {
 
         for h in handles {
             h.join().unwrap();
-        }
-    }
-
-    /// A simple in-memory pool of nodes for testing purposes.
-    struct FakeNodePool {
-        nodes: Mutex<HashMap<u32, Arc<RwLock<TestNode>>>>,
-    }
-
-    impl Pool for FakeNodePool {
-        type Id = u32;
-        type Type = TestNode;
-
-        fn get(
-            &self,
-            id: Self::Id,
-        ) -> Result<
-            PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
-            crate::error::Error,
-        > {
-            self.nodes
-                .lock()
-                .unwrap()
-                .get(&id)
-                .cloned()
-                .map(super::PoolItem::new)
-                .ok_or(Error::Storage(storage::Error::NotFound))
-        }
-
-        fn set(&self, value: TestNode) -> Result<Self::Id, crate::error::Error> {
-            let node = Arc::new(RwLock::new(value));
-            let mut nodes = self.nodes.lock().unwrap();
-            let id = nodes.len() as u32 + 1;
-            nodes.insert(id, node);
-            Ok(id)
-        }
-
-        fn delete(&self, id: Self::Id) -> Result<(), crate::error::Error> {
-            self.nodes
-                .lock()
-                .unwrap()
-                .remove(&id)
-                .map(|_| ())
-                .ok_or(Error::Storage(storage::Error::NotFound))
-        }
-
-        fn flush(&self) -> Result<(), crate::error::Error> {
-            Ok(())
-        }
-    }
-
-    /// A simple tree node for testing purposes.
-    /// It stores a u32 payload a list of children node IDs.
-    struct TestNode {
-        value: u32,
-        children: Vec<u32>,
-    }
-
-    impl Deref for TestNode {
-        type Target = Self;
-
-        fn deref(&self) -> &Self::Target {
-            self
-        }
-    }
-
-    impl DerefMut for TestNode {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            self
-        }
-    }
-
-    /// A utility wrapper for holding a path with its expected value at the end of the path.
-    struct PathWithValue {
-        path: Vec<u32>,
-        expected: u32,
-    }
-
-    /// Recursively generates all possible paths of a given depth in a tree with the expected value
-    /// at the end of each path, as it is initialized in [`populate_tree`].
-    fn generate_cases_recursive(
-        cases: &mut Vec<PathWithValue>,
-        current_path: &mut Vec<u32>,
-        remaining_depth: u32,
-    ) {
-        if remaining_depth == 0 {
-            let expected = current_path
-                .iter()
-                .rev()
-                .enumerate()
-                .map(|(i, &val)| (val + 1) * 10u32.pow(i.try_into().unwrap()))
-                .sum();
-
-            // Push the new Case.
-            cases.push(PathWithValue {
-                path: current_path.clone(),
-                expected,
-            });
-            return;
-        }
-
-        for i in 0..CHILDREN_PER_NODE {
-            current_path.push(i);
-            generate_cases_recursive(cases, current_path, remaining_depth - 1);
-            current_path.pop();
         }
     }
 }
