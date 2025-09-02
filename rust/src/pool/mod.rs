@@ -17,7 +17,7 @@ pub mod node_pool_with_storage;
 /// which dereferences to [`Pool::Type`]. This abstraction allows for the pool to associate metadata
 /// with each item, for example to implement smart cache eviction.
 pub trait Pool {
-    /// The id type used to identify entries in the pool.
+    /// The id type used to identify items in the pool.
     type Id;
     /// The type of items indexed by the pool.
     type Type;
@@ -51,7 +51,7 @@ impl<T> PoolItem<T> {
         Self(item)
     }
 
-    /// Acquires a read lock on the entry.
+    /// Acquires a read lock on the item.
     pub fn read(&self) -> LockResult<std::sync::RwLockReadGuard<'_, T>> {
         self.0.read()
     }
