@@ -23,7 +23,7 @@ pub trait Pool {
         id: Self::Id,
     ) -> Result<PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
 
-    /// Stores the item in the pool and assigns an ID to it.
+    /// Stores the item in the pool and returns an ID for it.
     fn set(&self, item: Self::Type) -> Result<Self::Id, Error>;
 
     /// Deletes an item with the given ID from the pool
