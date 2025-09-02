@@ -3,7 +3,8 @@ use std::ops::{Deref, DerefMut};
 use crate::types::Node;
 
 /// A [`Node`] with a **status** to store metadata about the node lifecycle.
-/// The internal node is set as [`NodeStatus::Dirty`] when a mutable reference is requested.
+/// [`NodeWithMetadata`] automatically dereferences to `Node` via the [`Deref`] trait.
+/// The node's status is set to [`NodeStatus::Dirty`] when a mutable reference is requested.
 /// Accessing a deleted node will panic.
 #[derive(Debug, PartialEq, Eq)]
 pub struct NodeWithMetadata {
@@ -58,7 +59,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn node_with_metadata_sets_dirty_flag_on_get_mut() {
+    fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
         let mut cached_node = NodeWithMetadata::new(Node::Empty, NodeStatus::Clean);
         assert!(cached_node.status != NodeStatus::Dirty);
         let _ = cached_node.deref();
