@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_try_new_creates_node_pool() {
+    fn node_pool_with_storage_impl_try_new_creates_node_pool() {
         let storage = MockStorage::new();
         let cache = NodePoolWithStorageImpl::try_new(storage, 10);
         assert!(cache.is_ok());
@@ -309,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_get_returns_existing_entry_from_storage_if_not_in_cache() {
+    fn node_pool_with_storage_impl_get_returns_existing_entry_from_storage_if_not_in_cache() {
         let expected_entry = Node::Empty;
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let mut storage = MockStorage::new();
@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_add_inserts_elements_in_cache() {
+    fn node_pool_with_storage_impl_add_inserts_elements_in_cache() {
         let mut storage = MockStorage::new();
         storage
             .expect_reserve()
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_get_returns_error_if_node_id_does_not_exist() {
+    fn node_pool_with_storage_impl_get_returns_error_if_node_id_does_not_exist() {
         let mut storage = MockStorage::new();
         storage
             .expect_get()
@@ -355,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_get_always_insert_element_in_cache() {
+    fn node_pool_with_storage_impl_get_always_insert_element_in_cache() {
         const NUM_ELEMENTS: u64 = 10;
         let mut storage = MockStorage::new();
         let mut sequence = Sequence::new();
@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_flush_saves_dirty_entries_to_storage() {
+    fn node_pool_with_storage_impl_flush_saves_dirty_entries_to_storage() {
         const NUM_ELEMENTS: u64 = 10;
         let data = Arc::new(Mutex::new(vec![]));
         let mut storage = MockStorage::new();
@@ -438,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_stores_data_in_storage_on_evict() {
+    fn node_pool_with_storage_impl_stores_data_in_storage_on_evict() {
         let mut storage = MockStorage::new();
         let mut sequence = Sequence::new();
         storage
@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_delete_removes_entry_from_cache_and_storage() {
+    fn node_pool_with_storage_impl_delete_removes_entry_from_cache_and_storage() {
         let mut storage = MockStorage::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let entry = Arc::new(RwLock::new(NodeWithMetadata::new(
@@ -483,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_delete_sets_deleted_status_if_in_cache() {
+    fn node_pool_with_storage_impl_delete_sets_deleted_status_if_in_cache() {
         let mut storage = MockStorage::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let entry = Arc::new(RwLock::new(NodeWithMetadata::new(
@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_delete_fails_on_storage_error() {
+    fn node_pool_with_storage_impl_delete_fails_on_storage_error() {
         let mut storage = MockStorage::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         storage
