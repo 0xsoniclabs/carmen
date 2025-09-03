@@ -145,14 +145,14 @@ where
     S: Storage<Id = NodeId, Item = Node>,
 {
     type Id = NodeId;
-    type Type = Node;
+    type Item = Node;
 
     /// Retrieves an entry from the pool with the specified ID.
     /// If the entry is not in the pool, it's retrieved from the underlying storage.
     fn get(
         &self,
         id: Self::Id,
-    ) -> Result<PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error> {
+    ) -> Result<PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>, Error> {
         let entry = self.cache.get(&id);
         // NOTE: Our rustfmt conf make the suggested `if let` statement very ugly IMO.
         #[allow(clippy::single_match_else)]
@@ -172,8 +172,8 @@ where
         Ok(PoolItem::new(entry))
     }
 
-    /// Stores the node in the pool and reserves a [`NodeId`] for it.
-    fn set(&self, node: Self::Type) -> Result<Self::Id, Error> {
+    /// Adds the node in the pool and reserves a [`NodeId`] for it.
+    fn add(&self, node: Self::Item) -> Result<Self::Id, Error> {
         let id = self.storage.reserve(&node);
         let entry = Arc::new(RwLock::new(NodeWithMetadata::new(node, NodeStatus::Dirty)));
         self.cache.insert(id, entry);
@@ -324,6 +324,21 @@ mod tests {
     }
 
     #[test]
+    fn node_pool_impl_add_inserts_elements_in_cache() {
+        let mut storage = MockStorage::new();
+        storage
+            .expect_reserve()
+            .returning(|_| NodeId::from_idx_and_node_type(42, NodeType::Empty));
+        storage.expect_get().never(); // Cache get should not call storage get
+        let cache = NodePoolWithStorageImpl::try_new(storage, 10).unwrap();
+        let node = Node::Empty;
+        let id = cache.add(node).expect("set should succeed");
+        assert_eq!(id, NodeId::from_idx_and_node_type(42, NodeType::Empty));
+        let entry = cache.get(id).expect("get should succeed");
+        assert!(**entry.read().unwrap() == Node::Empty);
+    }
+
+    #[test]
     fn node_pool_impl_get_returns_error_if_node_id_does_not_exist() {
         let mut storage = MockStorage::new();
         storage
@@ -384,21 +399,6 @@ mod tests {
     }
 
     #[test]
-    fn node_pool_impl_set_inserts_elements_in_cache() {
-        let mut storage = MockStorage::new();
-        storage
-            .expect_reserve()
-            .returning(|_| NodeId::from_idx_and_node_type(42, NodeType::Empty));
-        storage.expect_get().never(); // Cache get should not call storage get
-        let cache = NodePoolWithStorageImpl::try_new(storage, 10).unwrap();
-        let node = Node::Empty;
-        let id = cache.set(node).expect("set should succeed");
-        assert_eq!(id, NodeId::from_idx_and_node_type(42, NodeType::Empty));
-        let entry = cache.get(id).expect("get should succeed");
-        assert!(**entry.read().unwrap() == Node::Empty);
-    }
-
-    #[test]
     fn node_pool_impl_flush_saves_dirty_entries_to_storage() {
         const NUM_ELEMENTS: u64 = 10;
         let data = Arc::new(Mutex::new(vec![]));
@@ -431,7 +431,7 @@ mod tests {
             .expect("cache should be created");
 
         for _ in 0..NUM_ELEMENTS {
-            let _ = cache.set(Node::Empty).expect("set should succeed");
+            let _ = cache.add(Node::Empty).expect("set should succeed");
         }
 
         cache.flush().expect("flush should succeed");
@@ -458,7 +458,7 @@ mod tests {
 
         let cache = NodePoolWithStorageImpl::try_new(storage, 1).expect("cache should be created");
         // Insert an element, which will be immediately evicted and stored
-        let _ = cache.set(Node::Empty).expect("set should succeed");
+        let _ = cache.add(Node::Empty).expect("set should succeed");
     }
 
     #[test]

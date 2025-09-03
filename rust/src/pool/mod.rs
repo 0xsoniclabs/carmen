@@ -20,16 +20,16 @@ pub trait Pool {
     /// The id type used to identify items in the pool.
     type Id;
     /// The type of items indexed by the pool.
-    type Type;
+    type Item;
 
     /// Adds the item in the pool and returns an ID for it.
-    fn add(&self, item: Self::Type) -> Result<Self::Id, Error>;
+    fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
 
     /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
     fn get(
         &self,
         id: Self::Id,
-    ) -> Result<PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
+    ) -> Result<PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>, Error>;
 
     /// Deletes an item with the given ID from the pool
     /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
@@ -87,13 +87,13 @@ mod tests {
 
     impl Pool for FakeNodePool {
         type Id = u32;
-        type Type = TestNode;
+        type Item = TestNode;
 
         fn get(
             &self,
             id: Self::Id,
         ) -> Result<
-            PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>,
+            PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>,
             crate::error::Error,
         > {
             self.nodes
@@ -192,7 +192,7 @@ mod tests {
         depth: u32,
         max_depth: u32,
         root_id: u32,
-        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
     ) {
         if depth == max_depth {
             return;
@@ -225,7 +225,7 @@ mod tests {
         cur_node: &TestNode,
         path: &[u32],
         value: u32,
-        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
     ) {
         let child_id = path
             .first()
@@ -244,7 +244,7 @@ mod tests {
     fn read_from_tree_path(
         cur_node: &TestNode,
         path: &[u32],
-        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
     ) -> u32 {
         let child_id = path
             .first()
@@ -265,7 +265,7 @@ mod tests {
         level: u32,
         id: u32,
         depth: u32,
-        pool: &Arc<impl Pool<Id = u32, Type = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
     ) {
         if depth == level {
             pool.delete(id).unwrap();
