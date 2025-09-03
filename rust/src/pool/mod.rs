@@ -22,14 +22,14 @@ pub trait Pool {
     /// The type of items indexed by the pool.
     type Type;
 
+    /// Adds the item in the pool and returns an ID for it.
+    fn add(&self, item: Self::Type) -> Result<Self::Id, Error>;
+
     /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
     fn get(
         &self,
         id: Self::Id,
     ) -> Result<PoolItem<impl DerefMut<Target = Self::Type> + Send + Sync + 'static>, Error>;
-
-    /// Stores the item in the pool and returns an ID for it.
-    fn set(&self, item: Self::Type) -> Result<Self::Id, Error>;
 
     /// Deletes an item with the given ID from the pool
     /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
@@ -106,7 +106,7 @@ mod tests {
                 .ok_or(Error::Storage(storage::Error::NotFound))
         }
 
-        fn set(&self, value: TestNode) -> Result<Self::Id, crate::error::Error> {
+        fn add(&self, value: TestNode) -> Result<Self::Id, crate::error::Error> {
             let node = Arc::new(RwLock::new(value));
             let mut nodes = self.nodes.lock().unwrap();
             let id = nodes.len() as u32 + 1;
@@ -204,7 +204,7 @@ mod tests {
                 value: root_id * 10 + i,
                 children: vec![],
             };
-            let child_id = pool.set(child).unwrap();
+            let child_id = pool.add(child).unwrap();
             cur_node.children.push(child_id);
             let child = pool.get(child_id).unwrap();
             handles.push(thread::spawn({
@@ -299,7 +299,7 @@ mod tests {
             value: 0,
             children: vec![],
         };
-        let root_id = pool.set(root).unwrap();
+        let root_id = pool.add(root).unwrap();
 
         let root = pool.get(root_id).unwrap();
         populate_tree(&mut root.write().unwrap(), 3, TREE_DEPTH, 0, &pool);
@@ -316,7 +316,7 @@ mod tests {
             value: 0,
             children: vec![],
         };
-        let root_id = pool.set(root).unwrap();
+        let root_id = pool.add(root).unwrap();
         let root = pool.get(root_id).unwrap();
         populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
 
@@ -351,7 +351,7 @@ mod tests {
             value: 0,
             children: vec![],
         };
-        let root_id = pool.set(root).unwrap();
+        let root_id = pool.add(root).unwrap();
         let root = pool.get(root_id).unwrap();
         populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
 
@@ -376,7 +376,7 @@ mod tests {
             value: 0,
             children: vec![],
         };
-        let root_id = pool.set(root).unwrap();
+        let root_id = pool.add(root).unwrap();
         let root = pool.get(root_id).unwrap();
         populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
 
