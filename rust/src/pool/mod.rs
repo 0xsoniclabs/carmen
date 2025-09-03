@@ -26,7 +26,7 @@ pub trait Pool {
     fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
 
     /// Adds the item in the pool and returns an ID for it.
-    fn add(&self, item: Self::Type) -> Result<Self::Id, Error>;
+    fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
 
     /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
     fn get(
