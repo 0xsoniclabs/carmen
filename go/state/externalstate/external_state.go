@@ -39,17 +39,17 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
-const CodeCacheSize = 8_000 // ~ 200 MiB of memory for go-side code cache
-const CodeMaxSize = 25000   // Contract limit is 24577
+const codeCacheSize = 8_000 // ~ 200 MiB of memory for go-side code cache
+const codeMaxSize = 25000   // Contract limit is 24577
 
-type ExternalImpl int
+type externalImpl int
 
 const (
-	ExternalImplCpp ExternalImpl = iota
-	ExternalImplRust
+	externalImplCpp externalImpl = iota
+	externalImplRust
 )
 
-type ExternalBindings interface {
+type externalBindings interface {
 	OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
 	Flush(database unsafe.Pointer) C.enum_Result
 	Close(database unsafe.Pointer) C.enum_Result
@@ -230,10 +230,10 @@ type ExternalState struct {
 	// cache of contract codes
 	codeCache *common.LruCache[common.Address, []byte]
 	// The foreign language implementation
-	bindings ExternalBindings
+	bindings externalBindings
 }
 
-func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl ExternalImpl) (state.State, error) {
+func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl externalImpl) (state.State, error) {
 	if err := os.MkdirAll(filepath.Join(params.Directory, "live"), 0700); err != nil {
 		return nil, err
 	}
@@ -252,59 +252,59 @@ func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl ExternalImp
 		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
 	}
 
-	var bindings ExternalBindings
+	var bindings externalBindings
 
 	switch extImpl {
-	case ExternalImplCpp:
+	case externalImplCpp:
 		bindings = CppBindings{}
-	case ExternalImplRust:
+	case externalImplRust:
 		bindings = RustBindings{}
 	default:
-		return nil, fmt.Errorf("%w: unsupported FFI type %v", state.UnsupportedConfiguration, extImpl)
+		return nil, fmt.Errorf("%w: unsupported external implementation %v", state.UnsupportedConfiguration, extImpl)
 	}
 
 	db := unsafe.Pointer(nil)
 	result := bindings.OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
 	if result != C.kResult_Success {
-		return nil, fmt.Errorf("failed to create FFI database instance for parameters %v (error code %v)", params, result)
+		return nil, fmt.Errorf("failed to create external database instance for parameters %v (error code %v)", params, result)
 	}
 	if db == unsafe.Pointer(nil) {
-		return nil, fmt.Errorf("%w: failed to create FFI database instance for parameters %v", state.UnsupportedConfiguration, params)
+		return nil, fmt.Errorf("%w: failed to create external database instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
 	live := unsafe.Pointer(nil)
 	result = bindings.GetLiveState(db, &live)
 	if result != C.kResult_Success {
-		C.Carmen_Cpp_ReleaseDatabase(db)
-		return nil, fmt.Errorf("failed to create FFI live state instance for parameters %v (error code %v)", params, result)
+		bindings.ReleaseDatabase(db)
+		return nil, fmt.Errorf("failed to create external live state instance for parameters %v (error code %v)", params, result)
 	}
 	if live == unsafe.Pointer(nil) {
 		bindings.ReleaseDatabase(db)
-		return nil, fmt.Errorf("%w: failed to create FFI live state instance for parameters %v", state.UnsupportedConfiguration, params)
+		return nil, fmt.Errorf("%w: failed to create external live state instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
 	return state.WrapIntoSyncedState(&ExternalState{
 		database:  db,
 		state:     live,
-		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
+		codeCache: common.NewLruCache[common.Address, []byte](codeCacheSize),
 		bindings:  bindings,
 	}), nil
 }
 
 func newRustInMemoryState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_Memory, params, ExternalImplRust)
+	return newState(C.kLive_Memory, params, externalImplRust)
 }
 
 func newCppInMemoryState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_Memory, params, ExternalImplCpp)
+	return newState(C.kLive_Memory, params, externalImplCpp)
 }
 
 func newCppFileBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_File, params, ExternalImplCpp)
+	return newState(C.kLive_File, params, externalImplCpp)
 }
 
 func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_LevelDb, params, ExternalImplCpp)
+	return newState(C.kLive_LevelDb, params, externalImplCpp)
 }
 
 func (s *ExternalState) CreateAccount(address common.Address) error {
@@ -380,14 +380,14 @@ func (s *ExternalState) GetCode(address common.Address) ([]byte, error) {
 	}
 
 	// Load the code from the external state
-	code = make([]byte, CodeMaxSize)
-	var size C.uint32_t = CodeMaxSize
+	code = make([]byte, codeMaxSize)
+	var size C.uint32_t = codeMaxSize
 	result := s.bindings.GetCode(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&code[0]), &size)
 	if result != C.kResult_Success {
 		return nil, fmt.Errorf("failed to get code for address %s (error code %v)", address, result)
 	}
-	if size >= CodeMaxSize {
-		return nil, fmt.Errorf("unable to load contract exceeding maximum capacity of %d", CodeMaxSize)
+	if size >= codeMaxSize {
+		return nil, fmt.Errorf("unable to load contract exceeding maximum capacity of %d", codeMaxSize)
 	}
 	if size > 0 {
 		code = code[0:size]
@@ -541,7 +541,7 @@ func (s *ExternalState) GetArchiveState(block uint64) (state.State, error) {
 	}
 	return &ExternalState{
 		state:     state,
-		codeCache: common.NewLruCache[common.Address, []byte](CodeCacheSize),
+		codeCache: common.NewLruCache[common.Address, []byte](codeCacheSize),
 		bindings:  s.bindings,
 	}, nil
 }
