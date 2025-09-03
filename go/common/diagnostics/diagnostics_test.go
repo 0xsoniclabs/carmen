@@ -32,17 +32,21 @@ func TestAddPerformanceDiagnosticsAction(t *testing.T) {
 		// server started
 		var statusCode int
 		var counter int
-		const loops = 60
+		const loops = 10
+		var lastHttpGetErr error
+		wait := 100 * time.Millisecond
 		for statusCode != http.StatusOK && counter < loops {
 			resp, err := http.Get("http://localhost:6060/debug/pprof/")
-			require.NoError(t, err)
+			lastHttpGetErr = err
 			if resp != nil {
 				statusCode = resp.StatusCode
 			}
 			counter++
-			time.Sleep(1 * time.Second)
+			time.Sleep(wait)
+			wait *= 2
 		}
 
+		require.NoError(t, lastHttpGetErr)
 		require.Equal(t, http.StatusOK, statusCode)
 
 		called = true
