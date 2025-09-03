@@ -18,6 +18,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -306,4 +307,138 @@ func TestState_Export_Unsupported(t *testing.T) {
 
 	_, err = st.Export(nil, nil)
 	require.ErrorContains(t, err, "not supported", "expected error containing 'not supported'")
+}
+
+func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
+	require := require.New(t)
+
+	state, err := NewState(state.Parameters{})
+	require.NoError(err, "failed to create state")
+	defer func() {
+		require.NoError(state.Close(), "failed to close state")
+	}()
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.Equal(common.Hash(types.EmptyCodeHash), codeHash)
+}
+
+func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	state, err := NewState(state.Parameters{})
+	require.NoError(err, "failed to create state")
+	defer func() {
+		require.NoError(state.Close(), "failed to close state")
+	}()
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		Codes: []common.CodeUpdate{{Account: addr1, Code: []byte{1, 2, 3}}},
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
+
+	// Recreate the account, which should not empty the code hash
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	codeHash, err = state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
+}
+
+func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	state, err := NewState(state.Parameters{})
+	require.NoError(err, "failed to create state")
+	defer func() {
+		require.NoError(state.Close(), "failed to close state")
+	}()
+
+	addr1 := common.Address{1}
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	require.NoError(state.Apply(0, update))
+
+	balance, err := state.GetBalance(addr1)
+	require.NoError(err)
+	require.Equal(amount.New(1), balance)
+
+	// Recreate the account, which should not empty the code hash
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	// The balance should remain the same
+	balance, err = state.GetBalance(addr1)
+	require.NoError(err)
+	require.Equal(amount.New(1), balance)
+}
+
+func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	state, err := NewState(state.Parameters{})
+	require.NoError(err, "failed to create state")
+	defer func() {
+		require.NoError(state.Close(), "failed to close state")
+	}()
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Nonces: []common.NonceUpdate{
+			{Account: addr1, Nonce: common.ToNonce(1)},
+		},
+	}
+
+	require.NoError(state.Apply(0, update))
+
+	nonce, err := state.GetNonce(addr1)
+	require.NoError(err)
+	require.Equal(common.ToNonce(1), nonce)
+
+	// Recreate the account, which should not empty the nonce
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	// The nonce should remain the same
+	nonce, err = state.GetNonce(addr1)
+	require.NoError(err)
+	require.Equal(common.ToNonce(1), nonce)
 }
