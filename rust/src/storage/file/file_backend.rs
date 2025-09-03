@@ -445,6 +445,7 @@ mod tests {
                         assert_eq!(buf, [1; 32]);
 
                         iteration.fetch_add(1, Ordering::Relaxed);
+                        std::thread::yield_now();
                     }
                 });
                 s.spawn(|| {
@@ -472,6 +473,7 @@ mod tests {
                         assert_eq!(buf, [2; 32]);
 
                         iteration.fetch_add(1, Ordering::Relaxed);
+                        std::thread::yield_now();
                     }
                 });
             });
