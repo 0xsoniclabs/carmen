@@ -21,12 +21,14 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 # datastructures
 dashmap = { version = "6.1.0", features = ["inline"] }
+quick_cache = "0.6.15"
 
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
 # error handling
 thiserror = "2.0.12"
+mockall = "0.13.1"
 
 [build-dependencies]
 # FFI

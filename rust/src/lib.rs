@@ -16,6 +16,7 @@ mod error;
 mod ffi;
 #[cfg(test)]
 mod pool;
+mod pool2;
 mod storage;
 pub mod types;
 
