@@ -11,6 +11,7 @@
 package memory
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/database/vt/memory/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // State is an in-memory implementation of a chain-state tracking account and
@@ -31,14 +33,25 @@ type State struct {
 }
 
 // NewState creates a new, empty in-memory state instance.
-func NewState() *State {
+func NewState(_ state.Parameters) (state.State, error) {
+	return &State{
+		trie: &trie.Trie{},
+	}, nil
+}
+
+// newState creates a new, empty in-memory state instance.
+func newState() *State {
 	return &State{
 		trie: &trie.Trie{},
 	}
 }
 
 func (s *State) Exists(address common.Address) (bool, error) {
-	return false, fmt.Errorf("this is not supported by Verkle Tries")
+	key := getBasicDataKey(address)
+	value := s.trie.Get(key)
+	var empty [24]byte // nonce and balance are layed out in bytes 8-32
+	return !bytes.Equal(value[8:32], empty[:]), nil
+
 }
 
 func (s *State) GetBalance(address common.Address) (amount.Amount, error) {
@@ -86,6 +99,19 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 
 func (s *State) Apply(block uint64, update common.Update) error {
 
+	// init potentially empty accounts with empty code hash,
+	for _, address := range update.CreatedAccounts {
+		accountKey := getBasicDataKey(address)
+		value := s.trie.Get(accountKey)
+		var empty [28]byte
+		// empty accnout has empty code size, nonce, and balance
+		if bytes.Equal(value[4:32], empty[:]) {
+			codeHashKey := getCodeHashKey(address)
+			s.trie.Set(accountKey, value) // must be initialized to empty account
+			s.trie.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
+		}
+	}
+
 	for _, update := range update.Nonces {
 		key := getBasicDataKey(update.Account)
 		value := s.trie.Get(key)
@@ -99,6 +125,11 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		amount := update.Balance.Bytes32()
 		copy(value[16:32], amount[16:])
 		s.trie.Set(key, value)
+	}
+
+	for _, update := range update.Slots {
+		key := getStorageKey(update.Account, update.Key)
+		s.trie.Set(key, trie.Value(update.Value))
 	}
 
 	for _, update := range update.Codes {
@@ -122,11 +153,6 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		}
 	}
 
-	for _, update := range update.Slots {
-		key := getStorageKey(update.Account, update.Key)
-		s.trie.Set(key, trie.Value(update.Value))
-	}
-
 	return nil
 }
 
@@ -148,7 +174,7 @@ func (s *State) Close() error {
 }
 
 func (s *State) GetMemoryFootprint() *common.MemoryFootprint {
-	panic("not implemented")
+	return common.NewMemoryFootprint(1)
 }
 
 func (s *State) GetArchiveState(block uint64) (state.State, error) {
