@@ -31,7 +31,7 @@ pub trait Pool {
         id: Self::Id,
     ) -> Result<PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>, Error>;
 
-    /// Deletes an item with the given ID from the pool
+    /// Deletes an item with the given ID from the pool.
     /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 

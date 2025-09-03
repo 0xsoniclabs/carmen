@@ -47,7 +47,7 @@ impl NodeId {
     pub fn from_idx_and_node_type(idx: u64, node_type: NodeType) -> Self {
         assert!(
             (idx & !Self::INDEX_MASK) == 0,
-            "indices can not get this large, unless we have a bug somewhere"
+            "indices cannot get this large, unless we have a bug somewhere"
         );
         let prefix = match node_type {
             NodeType::Empty => Self::EMPTY_NODE_PREFIX,

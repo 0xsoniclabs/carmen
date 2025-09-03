@@ -109,9 +109,10 @@ where
 
     fn flush(&self) -> Result<(), Error> {
         // Busy loop until all flush workers are done.
-        // Because there are no concurrent inserts, len() might only return a number that is higher
-        // that the actual number of items. This is however not a problem because we will wait a
-        // little bit longer.
+        // Because there are no concurrent operations, len() might only return a number that is
+        // higher that the actual number of items (in case an element of the flush buffer
+        // was removed by a flush worker while iterating over the shards). This is however not a
+        // problem because we will wait a little bit longer.
         while !self.flush_buffer.is_empty() {}
         self.storage.flush()
     }
@@ -231,7 +232,7 @@ mod tests {
 
         // this opens:
         // StorageWithFlushBuffer
-        //   -> FileStoreManager
+        //   -> FileStorageManager
         //     -> A NodeFileStorage for each node type (InnerNode, SparseLeafNode<N>, ...)
         //       -> NoSeekFile
         StorageWithFlushBuffer::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();

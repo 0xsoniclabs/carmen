@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::types::Node;
 
-/// A [`Node`] with a **status** to store metadata about the node lifecycle.
+/// A [`Node`] with additional metadata about the node lifecycle.
 /// [`NodeWithMetadata`] automatically dereferences to `Node` via the [`Deref`] trait.
 /// The node's status is set to [`NodeStatus::Dirty`] when a mutable reference is requested.
 /// Accessing a deleted node will panic.
@@ -18,16 +18,19 @@ pub struct NodeWithMetadata {
 /// - `Dirty`: the node has been modified and needs to be flushed to storage
 /// - `Deleted`: the node has been deleted and should not be used anymore
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NodeStatus {
+enum NodeStatus {
     Clean,
     Dirty,
     Deleted,
 }
 
 impl NodeWithMetadata {
-    /// Creates a new [`NodeWithMetadata`] with the given [`Node`] and status.
-    pub fn new(value: Node, status: NodeStatus) -> Self {
-        NodeWithMetadata { value, status }
+    /// Creates a new [`NodeWithMetadata`].
+    pub fn new(value: Node) -> Self {
+        NodeWithMetadata {
+            value,
+            status: NodeStatus::Clean,
+        }
     }
 }
 
@@ -54,32 +57,35 @@ impl DerefMut for NodeWithMetadata {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::catch_unwind;
-
     use super::*;
 
     #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
-        let mut cached_node = NodeWithMetadata::new(Node::Empty, NodeStatus::Clean);
-        assert!(cached_node.status != NodeStatus::Dirty);
+        let mut cached_node = NodeWithMetadata::new(Node::Empty);
+        assert_eq!(cached_node.status, NodeStatus::Clean);
         let _ = cached_node.deref();
-        assert!(cached_node.status == NodeStatus::Clean);
+        assert_eq!(cached_node.status, NodeStatus::Clean);
         let _ = cached_node.deref_mut();
-        assert!(cached_node.status == NodeStatus::Dirty);
+        assert_eq!(cached_node.status, NodeStatus::Dirty);
     }
 
     #[test]
-    fn node_with_metadata_deref_panics_on_deleted_node() {
-        let res = catch_unwind(|| {
-            let cached_node = NodeWithMetadata::new(Node::Empty, NodeStatus::Deleted);
-            let _ = cached_node.deref();
-        });
-        assert!(res.is_err());
+    #[should_panic = "Attempted to access a deleted node"]
+    fn node_with_metadata_deref_mut_panics_on_deleted_node() {
+        let cached_node = NodeWithMetadata {
+            value: Node::Empty,
+            status: NodeStatus::Deleted,
+        };
+        let _ = cached_node.deref();
+    }
 
-        let res = catch_unwind(|| {
-            let mut cached_node = NodeWithMetadata::new(Node::Empty, NodeStatus::Deleted);
-            let _ = cached_node.deref_mut();
-        });
-        assert!(res.is_err());
+    #[test]
+    #[should_panic = "Attempted to access a deleted node"]
+    fn node_with_metadata_deref_panics_on_deleted_node() {
+        let mut cached_node = NodeWithMetadata {
+            value: Node::Empty,
+            status: NodeStatus::Deleted,
+        };
+        let _ = cached_node.deref_mut();
     }
 }
