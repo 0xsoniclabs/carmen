@@ -10,12 +10,17 @@
 
 .PHONY: all clean
 
-all: carmen-cpp
+all: carmen-cpp carmen-rust
 
 # this target builds the C++ library required by Go
-carmen-cpp: 
+carmen-cpp:
 	@cd ./go/lib ; \
 	./build_libcarmen.sh ;
+
+# this target builds the Rust library required by Go
+carmen-rust:
+	@cd ./rust ; \
+	cargo build --release
 
 clean:
 	cd ./go ; \

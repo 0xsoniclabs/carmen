@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package cppstate
+package externalstate
 
 import "github.com/0xsoniclabs/carmen/go/state"
 
@@ -32,17 +32,17 @@ func init() {
 				Variant: VariantCppMemory,
 				Schema:  schema,
 				Archive: archive,
-			}, newInMemoryState)
+			}, newCppInMemoryState)
 			state.RegisterStateFactory(state.Configuration{
 				Variant: VariantCppFile,
 				Schema:  schema,
 				Archive: archive,
-			}, newFileBasedState)
+			}, newCppFileBasedState)
 			state.RegisterStateFactory(state.Configuration{
 				Variant: VariantCppLevelDb,
 				Schema:  schema,
 				Archive: archive,
-			}, newLevelDbBasedState)
+			}, newCppLevelDbBasedState)
 		}
 	}
 }
