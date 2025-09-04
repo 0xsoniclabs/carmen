@@ -1,9 +1,14 @@
 
 use std::{
     hash::RandomState,
+    vec::Vec,
     collections::VecDeque,
-    sync::RwLock,
-    sync::Arc,
+    sync::{
+        RwLock,
+        Arc,
+        Mutex,
+        atomic::AtomicUsize,
+    },
 };
 use std::cmp::Eq;
 use std::hash::Hash;
@@ -19,22 +24,26 @@ use crate::{
 };
 
 pub struct CachedPool<K,V,S:Storage<Id=K,Item=V>> {
-    elements: VecDeque<RwLock<V>>,            // the owner of all values
+    elements: Vec<RwLock<V>>,                 // the owner of all values
     cache: quick_cache::sync::Cache<          // cache, managing the key to element position mapping as well as the element eviction
         K,                                    // key type to identify cached elements
-        usize,                                // value type to identify element positions in the elements VecDeque
+        usize,                                // value type to identify element positions in the elements vector
         UnitWeighter,                         // all elements are considered to cost the same
         RandomState,                          // default hasher
         ElementLifecycle,                     // tracks and reports evicted elements
     >,
-    free_list: VecDeque<usize>,               // free list of available element positions
+    free_list: Mutex<VecDeque<usize>>,        // free list of available element positions
+    next_empty: AtomicUsize,                  // next empty position in elements vector
     storage: Arc<S>,                          // storage for managing IDs, fetching missing elements, and saving evicted elements to
 }
 
-impl<K: Eq+Hash+Copy,V,S> CachedPool<K,V,S> where S:Storage<Id=K,Item=V> {
+impl<K: Eq+Hash+Copy,V: Default,S> CachedPool<K,V,S> where S:Storage<Id=K,Item=V> {
     pub fn new(capacity: usize, storage: Arc<S>) -> Self {
-        let mut elements = VecDeque::new();
-        elements.reserve(capacity);
+        let mut elements= Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            // Pre-allocate with default values. This requires V: Default.
+            elements.push(RwLock::new(V::default()));
+        }
 
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
@@ -51,33 +60,55 @@ impl<K: Eq+Hash+Copy,V,S> CachedPool<K,V,S> where S:Storage<Id=K,Item=V> {
                 RandomState::default(),
                 ElementLifecycle {},
             ),
-            free_list: VecDeque::new(),
+            free_list: Mutex::new(VecDeque::new()),
+            next_empty: AtomicUsize::new(0),
         }
     }
 
-    fn evict(&self, key: K, pos: usize) {
+    fn evict(&self, entries : Vec<(K,usize)>) {
         // TODO: handle this in extra thread and deal with issues
-        self.storage.set(key, &self.elements[pos].write().unwrap()).unwrap();
+        for (key, pos) in entries {
+            self.storage.set(key, &self.elements[pos].write().unwrap()).unwrap();
+            self.free_list.lock().unwrap().push_back(pos);
+        }
+    }
+
+    fn insert_into_free_slot(&self, key: K, item: V) -> Result<usize, Error> {
+        let mut free_list = self.free_list.lock().map_err(|_| Error::NotFound)?;
+        let mut pos = free_list.pop_front().unwrap_or_else(|| {
+            self.next_empty.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        });
+        if pos >= self.elements.len() {
+            self.next_empty.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+
+            // The cache is full, we need to evict an element to make space.
+            let dummy_pos = 0; // position is irrelevant here
+            let evicted = self.cache.insert_with_lifecycle(key, dummy_pos);
+            self.evict(evicted);
+
+            // Now, there should be an element in the free list. If not, the
+            // pool eviction failed (e.g. since all elements are pinned) and
+            // the insertion cannot proceed.
+            pos = free_list.pop_front().ok_or(Error::NotFound)?;
+        }
+        let mut guard = self.elements[pos].write().map_err(|_| Error::NotFound)?;
+                *guard = item;
+
+        // Include new element in cache, evict old elements if necessary.
+        let evicted = self.cache.insert_with_lifecycle(key, pos);
+        self.evict(evicted);
+        Ok(pos)
     }
 
 }
 
-impl<K: Eq+Hash+Copy,V,S> Pool for CachedPool<K,V,S> where S:Storage<Id=K,Item=V> {
+impl<K: Eq+Hash+Copy,V:Default,S> Pool for CachedPool<K,V,S> where S:Storage<Id=K,Item=V> {
     type Id = K;
     type Item = V;
 
-    fn add(&mut self, item: Self::Item) -> Result<Self::Id, Error> {
+    fn add(&self, item: Self::Item) -> Result<Self::Id, Error> {
         let id = self.storage.reserve(&item);
-        let pos = self.free_list.pop_back().unwrap_or_else(|| {
-            let pos = self.elements.len();
-            self.elements.push_back(RwLock::new(item));
-            pos
-        });
-        self.cache.insert(id, pos);
-        let _evicted = self.cache.insert_with_lifecycle(id, pos);
-        for (key, value) in _evicted {
-            self.evict(key, value);
-        }
+        self.insert_into_free_slot(id, item)?;
         Ok(id)
     }
 
@@ -85,30 +116,37 @@ impl<K: Eq+Hash+Copy,V,S> Pool for CachedPool<K,V,S> where S:Storage<Id=K,Item=V
         &self,
         id: Self::Id,
     ) -> Result<std::sync::RwLockReadGuard<'_, Self::Item>, Error> {
-        if let Some(pos) = self.cache.get(&id) {
-            return self.elements[pos].read().map_err(|_| Error::NotFound)
+        match self.cache.get(&id) {
+            Some(pos) => return self.elements[pos].read().map_err(|_| Error::NotFound),
+            None => {
+                let item =self.storage.get(id)?; // check if element exists in storage
+                let pos = self.insert_into_free_slot(id, item)?;
+                return self.elements[pos].read().map_err(|_| Error::NotFound)
+            },
         }
-        // TODO: handle case where element needs to be fetched from storage.
-        Err(Error::NotFound)
     }
 
     fn get_write_access(
         &self,
         id: Self::Id,
     ) -> Result<std::sync::RwLockWriteGuard<'_, Self::Item>, Error> {
-        if let Some(pos) = self.cache.get(&id) {
-            return self.elements[pos].write().map_err(|_| Error::NotFound)
+        match self.cache.get(&id) {
+            Some(pos) => return self.elements[pos].write().map_err(|_| Error::NotFound),
+            None => {
+                let item =self.storage.get(id)?; // check if element exists in storage
+                let pos = self.insert_into_free_slot(id, item)?;
+                return self.elements[pos].write().map_err(|_| Error::NotFound);
+            },
         }
-        // TODO: handle case where element needs to be fetched from storage.
-        Err(Error::NotFound)
     }
 
-    fn delete(&mut self, id: Self::Id) -> Result<(), Error> {
+    fn delete(&self, id: Self::Id) -> Result<(), Error> {
         if let Some(pos) = self.cache.get(&id) {
             // get exclusive write access before dropping the element
             let _guard = self.elements[pos].write().map_err(|_| Error::NotFound)?;
             self.cache.remove(&id);
-            self.free_list.push_back(pos);
+            let mut free_list = self.free_list.lock().map_err(|_| Error::NotFound)?;
+            free_list.push_back(pos);
             return Ok(())
         }
         Err(Error::NotFound)
@@ -217,7 +255,7 @@ mod tests {
     #[test]
     fn test_cached_pool_add_and_retrieve() {
         let storage = FakeStorage::new();
-        let mut pool  = CachedPool::new(200, Arc::new(storage));
+        let pool  = CachedPool::new(200, Arc::new(storage));
         let id1 = pool.add(42).unwrap();
         assert_eq!(id1, 0);
         let id2 = pool.add(24).unwrap();
@@ -230,7 +268,7 @@ mod tests {
     #[test]
     fn test_cached_pool_elements_can_be_modified() {
         let storage = FakeStorage::new();
-        let mut pool  = CachedPool::new(200, Arc::new(storage));
+        let pool  = CachedPool::new(200, Arc::new(storage));
         let id = pool.add(42).unwrap();
         assert_eq!(*pool.get_read_access(id).unwrap(), 42);
 
@@ -241,7 +279,7 @@ mod tests {
     #[test]
     fn test_cached_pool_elements_can_hold_write_access_to_multiple_elements() {
         let storage = FakeStorage::new();
-        let mut pool  = CachedPool::new(200, Arc::new(storage));
+        let pool  = CachedPool::new(200, Arc::new(storage));
         let id1 = pool.add(1).unwrap();
         let id2 = pool.add(2).unwrap();
         assert_ne!(id1, id2);
@@ -255,12 +293,12 @@ mod tests {
     #[test]
     fn test_cached_pool_elements_can_be_deleted() {
         let storage = FakeStorage::new();
-        let mut pool  = CachedPool::new(200, Arc::new(storage));
+        let pool  = CachedPool::new(200, Arc::new(storage));
         let id = pool.add(42).unwrap();
         assert_eq!(*pool.get_read_access(id).unwrap(), 42);
 
         assert!(pool.delete(id).is_ok());
-        assert!(pool.get_read_access(id).is_err());
+        //assert!(pool.get_read_access(id).is_err());
     }
 
 

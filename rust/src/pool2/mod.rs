@@ -9,7 +9,7 @@ pub trait Pool {
     type Id;
     type Item;
 
-    fn add(&mut self, item: Self::Item) -> Result<Self::Id, Error>;
+    fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
 
     fn get_read_access(
         &self,
@@ -21,5 +21,5 @@ pub trait Pool {
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, Self::Item>, Error>;
 
-    fn delete(&mut self, id: Self::Id) -> Result<(), Error>;
+    fn delete(&self, id: Self::Id) -> Result<(), Error>;
 }
