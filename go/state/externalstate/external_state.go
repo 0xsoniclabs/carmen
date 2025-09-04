@@ -70,153 +70,153 @@ type externalBindings interface {
 	ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result
 }
 
-type RustBindings struct {
+type rustBindings struct {
 }
 
-func (r RustBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
+func (r rustBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
 }
 
-func (r RustBindings) Flush(database unsafe.Pointer) C.enum_Result {
+func (r rustBindings) Flush(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_Flush(database)
 }
 
-func (r RustBindings) Close(database unsafe.Pointer) C.enum_Result {
+func (r rustBindings) Close(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_Close(database)
 }
 
-func (r RustBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
+func (r rustBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_ReleaseDatabase(database)
 }
 
-func (r RustBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
+func (r rustBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_ReleaseState(state)
 }
 
-func (r RustBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetLiveState(database, outState)
 }
 
-func (r RustBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetArchiveState(database, block, outState)
 }
 
-func (r RustBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
+func (r rustBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_AccountExists(state, address, outExists)
 }
 
-func (r RustBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetBalance(state, address, outBalance)
 }
 
-func (r RustBindings) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetNonce(state, address, outNonce)
 }
 
-func (r RustBindings) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetStorageValue(state, address, key, outValue)
 }
 
-func (r RustBindings) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+func (r rustBindings) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
 	return C.Carmen_Rust_GetCode(state, address, outCode, outSize)
 }
 
-func (r RustBindings) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetCodeHash(state, address, outHash)
 }
 
-func (r RustBindings) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+func (r rustBindings) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
 	return C.Carmen_Rust_GetCodeSize(state, address, outSize)
 }
 
-func (r RustBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
+func (r rustBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
 	return C.Carmen_Rust_Apply(state, block, update, updateLength)
 }
 
-func (r RustBindings) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+func (r rustBindings) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetHash(state, outHash)
 }
 
-func (r RustBindings) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
+func (r rustBindings) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
 	return C.Carmen_Rust_GetMemoryFootprint(database, outBuffer, outSize)
 }
 
-func (r RustBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
+func (r rustBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
 	return C.Carmen_Rust_ReleaseMemoryFootprintBuffer(buffer, size)
 }
 
-type CppBindings struct {
+type cppBindings struct {
 }
 
-func (c CppBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
+func (c cppBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
 }
 
-func (c CppBindings) Flush(database unsafe.Pointer) C.enum_Result {
+func (c cppBindings) Flush(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_Flush(database)
 }
 
-func (c CppBindings) Close(database unsafe.Pointer) C.enum_Result {
+func (c cppBindings) Close(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_Close(database)
 }
 
-func (c CppBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
+func (c cppBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_ReleaseDatabase(database)
 }
 
-func (c CppBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
+func (c cppBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_ReleaseState(state)
 }
 
-func (c CppBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetLiveState(database, outState)
 }
 
-func (c CppBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetArchiveState(database, block, outState)
 }
 
-func (c CppBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
+func (c cppBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_AccountExists(state, address, outExists)
 }
 
-func (c CppBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetBalance(state, address, outBalance)
 }
 
-func (c CppBindings) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetNonce(state, address, outNonce)
 }
 
-func (c CppBindings) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetStorageValue(state, address, key, outValue)
 }
 
-func (c CppBindings) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+func (c cppBindings) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
 	return C.Carmen_Cpp_GetCode(state, address, outCode, outSize)
 }
 
-func (c CppBindings) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetCodeHash(state, address, outHash)
 }
 
-func (c CppBindings) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
+func (c cppBindings) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
 	return C.Carmen_Cpp_GetCodeSize(state, address, outSize)
 }
 
-func (c CppBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
+func (c cppBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
 	return C.Carmen_Cpp_Apply(state, block, update, updateLength)
 }
 
-func (c CppBindings) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
+func (c cppBindings) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetHash(state, outHash)
 }
 
-func (c CppBindings) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
+func (c cppBindings) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
 	return C.Carmen_Cpp_GetMemoryFootprint(database, outBuffer, outSize)
 }
 
-func (c CppBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
+func (c cppBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
 	return C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
 }
 
@@ -256,9 +256,9 @@ func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl externalImp
 
 	switch extImpl {
 	case externalImplCpp:
-		bindings = CppBindings{}
+		bindings = cppBindings{}
 	case externalImplRust:
-		bindings = RustBindings{}
+		bindings = rustBindings{}
 	default:
 		return nil, fmt.Errorf("%w: unsupported external implementation %v", state.UnsupportedConfiguration, extImpl)
 	}
