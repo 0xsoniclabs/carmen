@@ -8,7 +8,7 @@ use quick_cache::{Lifecycle, UnitWeighter};
 
 use crate::{
     error::Error,
-    pool::{Pool, PoolItem},
+    pool::{NodeManager, PoolItem},
     storage::Storage,
     types::{Node, NodeId},
 };
@@ -140,19 +140,20 @@ impl<S: Storage<Id = NodeId, Item = Node>> NodePoolWithStorageImpl<S> {
     }
 }
 
-impl<S> Pool for NodePoolWithStorageImpl<S>
+impl<S> NodeManager for NodePoolWithStorageImpl<S>
 where
     S: Storage<Id = NodeId, Item = Node>,
 {
     type Id = NodeId;
-    type Item = Node;
+    type NodeType = Node;
 
     /// Retrieves an entry from the pool with the specified ID.
     /// If the entry is not in the pool, it's retrieved from the underlying storage.
     fn get(
         &self,
         id: Self::Id,
-    ) -> Result<PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>, Error> {
+    ) -> Result<PoolItem<impl DerefMut<Target = Self::NodeType> + Send + Sync + 'static>, Error>
+    {
         let entry = self.cache.get(&id);
         // NOTE: Our rustfmt conf make the suggested `if let` statement very ugly IMO.
         #[allow(clippy::single_match_else)]
@@ -173,7 +174,7 @@ where
     }
 
     /// Adds the node in the pool and reserves a [`NodeId`] for it.
-    fn add(&self, node: Self::Item) -> Result<Self::Id, Error> {
+    fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error> {
         let id = self.storage.reserve(&node);
         let entry = Arc::new(RwLock::new(NodeWithMetadata::new(node, NodeStatus::Dirty)));
         self.cache.insert(id, entry);

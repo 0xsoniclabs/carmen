@@ -1,10 +1,11 @@
 use std::{
-    ops::DerefMut,
-    sync::{Arc, LockResult, RwLock},
+    ops::{Deref, DerefMut},
+    sync::{Arc, LockResult, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::error::Error;
-pub mod node_pool_with_storage;
+pub mod cached_node_manager;
+// pub mod node_pool_with_storage;
 
 /// A collection of thread-safe *items* that dereference to [`Pool::Type`].
 ///
@@ -16,113 +17,192 @@ pub mod node_pool_with_storage;
 /// The concrete type returned by [`Pool::get`] may not be [`Pool::Type`] but instead a wrapper type
 /// which dereferences to [`Pool::Type`]. This abstraction allows for the pool to associate metadata
 /// with each item, for example to implement smart cache eviction.
-pub trait Pool {
+// pub trait Pool {
+//     /// The id type used to identify items in the pool.
+//     type Id;
+//     /// The type of items indexed by the pool.
+//     type Item;
+
+//     /// Adds the item in the pool and returns an ID for it.
+//     fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
+
+//     /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
+//     fn get(
+//         &self,
+//         id: Self::Id,
+//     ) -> Result<PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>, Error>;
+
+//     /// Deletes an item with the given ID from the pool
+//     /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
+//     fn delete(&self, id: Self::Id) -> Result<(), Error>;
+
+//     /// Flushes all pending operations to the underlying storage layer (if one exists).
+//     fn flush(&self) -> Result<(), Error>;
+// }
+
+/// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].
+///
+/// Nodes are uniquely identified by a [`NodeManager::Id`].
+/// Nodes ownership is held by the [`NodeManager`] implementation and can be accessed through read
+/// or write locks with the [`NodeManager::get_read_access`] and [`NodeManager::get_write_access`]
+/// methods.
+/// Calling a `get_*` method with the same ID twice is guaranteed to yield the same item.
+/// IDs are managed by the pool itself, which hands out new IDs upon insertion of an item.
+/// IDs are not globally unique and may be reused after deletion.
+///
+/// The concrete type returned by the [`NodeManager`] may not be [`NodeManager::NodeType`] but
+/// instead a wrapper type which dereferences to [`NodeManager::NodeType`]. This abstraction allows
+/// for the pool to associate metadata with each item, for example to implement smart cache
+/// eviction.
+pub trait NodeManager {
     /// The id type used to identify items in the pool.
     type Id;
-    /// The type of items indexed by the pool.
-    type Item;
+    /// The node type indexed by the pool, which is specialized depending on the trie
+    /// implementation.
+    type NodeType;
 
-    /// Adds the item in the pool and returns an ID for it.
-    fn add(&self, item: Self::Item) -> Result<Self::Id, Error>;
+    /// Adds the item in the node manager and returns an ID for it.
+    fn add(&self, item: Self::NodeType) -> Result<Self::Id, Error>;
 
-    /// Retrieves an item from the pool, if it exists. Returns [`Error::NotFound`] otherwise.
-    fn get(
+    /// Retrieves and lock an item from the node manager with read access, if it exists. Returns
+    /// [`crate::storage::Error::NotFound`] otherwise.
+    fn get_read_access(
         &self,
         id: Self::Id,
-    ) -> Result<PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>, Error>;
+    ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error>;
+
+    /// Retrieves and lock an item from the node manager with write access, if it exists. Returns
+    /// [`crate::storage::Error::NotFound`] otherwise.
+    fn get_write_access(
+        &self,
+        id: Self::Id,
+    ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>;
 
     /// Deletes an item with the given ID from the pool
-    /// The ID may be reused in the future, when creating a new item by calling [`Pool::set`].
+    /// The ID may be reused in the future, when creating a new item by calling
+    /// [`NodeManager::add`].
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
     /// Flushes all pending operations to the underlying storage layer (if one exists).
     fn flush(&self) -> Result<(), Error>;
 }
 
-/// An item retrieved from the pool which can be locked for reading or writing to enable safe
-/// concurrent access.
-#[derive(Debug)]
-pub struct PoolItem<T>(Arc<RwLock<T>>);
+// /// An item retrieved from the pool which can be locked for reading or writing to enable safe
+// /// concurrent access.
+// #[derive(Debug)]
+// pub struct PoolItem<T>(Arc<RwLock<T>>);
 
-impl<T> PoolItem<T> {
-    /// Creates a new [`PoolItem`] by wrapping the given [`Arc<RwLock<T>>`].
-    pub fn new(item: Arc<RwLock<T>>) -> Self {
-        Self(item)
-    }
+// impl<T> PoolItem<T> {
+//     /// Creates a new [`PoolItem`] by wrapping the given [`Arc<RwLock<T>>`].
+//     pub fn new(item: Arc<RwLock<T>>) -> Self {
+//         Self(item)
+//     }
 
-    /// Acquires a read lock on the item.
-    pub fn read(&self) -> LockResult<std::sync::RwLockReadGuard<'_, T>> {
-        self.0.read()
-    }
+//     /// Acquires a read lock on the item.
+//     pub fn read(&self) -> LockResult<std::sync::RwLockReadGuard<'_, T>> {
+//         self.0.read()
+//     }
 
-    /// Acquires a write lock on the item.
-    pub fn write(&self) -> LockResult<std::sync::RwLockWriteGuard<'_, T>> {
-        self.0.write()
-    }
-}
+//     /// Acquires a write lock on the item.
+//     pub fn write(&self) -> LockResult<std::sync::RwLockWriteGuard<'_, T>> {
+//         self.0.write()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
 
     use std::{
-        collections::HashMap,
         ops::{Deref, DerefMut},
-        sync::{Arc, Mutex, RwLock},
-        thread,
+        sync::{
+            Arc, Mutex, RwLock,
+            atomic::{AtomicUsize, Ordering},
+        },
+        thread, vec,
     };
 
-    use crate::{
-        error::Error,
-        pool::{Pool, PoolItem},
-        storage,
-    };
+    use crate::{error::Error, pool::NodeManager, storage};
 
+    const FAKE_POOL_SIZE: usize = 1_000_000;
     const TREE_DEPTH: u32 = 6;
     const CHILDREN_PER_NODE: u32 = 3;
 
     /// A simple in-memory pool of nodes for testing purposes.
     struct FakeNodePool {
-        nodes: Mutex<HashMap<u32, Arc<RwLock<TestNode>>>>,
+        nodes: Vec<RwLock<TestNode>>,   // Fixed-size pool of nodes
+        next_pos: AtomicUsize,          // Next position to insert a node
+        deleted_nodes: Mutex<Vec<u32>>, // To keep track of deleted node IDs
     }
 
-    impl Pool for FakeNodePool {
-        type Id = u32;
-        type Item = TestNode;
+    impl FakeNodePool {
+        pub fn new() -> Self {
+            let mut nodes = vec![];
+            for _ in 0..FAKE_POOL_SIZE {
+                nodes.push(RwLock::new(TestNode {
+                    value: 0,
+                    children: vec![],
+                }));
+            }
+            Self {
+                nodes,
+                next_pos: AtomicUsize::new(0),
+                deleted_nodes: Mutex::new(vec![]),
+            }
+        }
+    }
 
-        fn get(
+    impl NodeManager for FakeNodePool {
+        type Id = u32;
+
+        type NodeType = TestNode;
+
+        fn add(&self, item: Self::NodeType) -> Result<Self::Id, Error> {
+            let id = self.next_pos.fetch_add(1, Ordering::Relaxed);
+            if id >= FAKE_POOL_SIZE {
+                return Err(Error::Storage(storage::Error::NotFound));
+            }
+            *self.nodes[id].write().unwrap() = item;
+            Ok(id as u32)
+        }
+
+        fn get_read_access(
             &self,
             id: Self::Id,
-        ) -> Result<
-            PoolItem<impl DerefMut<Target = Self::Item> + Send + Sync + 'static>,
-            crate::error::Error,
-        > {
-            self.nodes
-                .lock()
-                .unwrap()
-                .get(&id)
-                .cloned()
-                .map(super::PoolItem::new)
-                .ok_or(Error::Storage(storage::Error::NotFound))
+        ) -> Result<std::sync::RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error>
+        {
+            if (id as usize) >= FAKE_POOL_SIZE {
+                return Err(Error::Storage(storage::Error::NotFound));
+            }
+            Ok(self.nodes[id as usize].read().unwrap())
         }
 
-        fn add(&self, value: TestNode) -> Result<Self::Id, crate::error::Error> {
-            let node = Arc::new(RwLock::new(value));
-            let mut nodes = self.nodes.lock().unwrap();
-            let id = nodes.len() as u32 + 1;
-            nodes.insert(id, node);
-            Ok(id)
+        fn get_write_access(
+            &self,
+            id: Self::Id,
+        ) -> Result<std::sync::RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>
+        {
+            if (id as usize) >= FAKE_POOL_SIZE {
+                return Err(Error::Storage(storage::Error::NotFound));
+            }
+            Ok(self.nodes[id as usize].write().unwrap())
         }
 
-        fn delete(&self, id: Self::Id) -> Result<(), crate::error::Error> {
-            self.nodes
-                .lock()
-                .unwrap()
-                .remove(&id)
-                .map(|_| ())
-                .ok_or(Error::Storage(storage::Error::NotFound))
+        /// Deletes an item with the given ID from the pool
+        /// The ID will NOT be reused in the future.
+        fn delete(&self, id: Self::Id) -> Result<(), Error> {
+            if (id as usize) >= FAKE_POOL_SIZE {
+                return Err(Error::Storage(storage::Error::NotFound));
+            }
+            let mut deleted = self.deleted_nodes.lock().unwrap();
+            if deleted.contains(&id) {
+                return Err(Error::Storage(storage::Error::NotFound));
+            }
+            deleted.push(id);
+            Ok(())
         }
 
-        fn flush(&self) -> Result<(), crate::error::Error> {
+        /// No-op for the fake pool.
+        fn flush(&self) -> Result<(), Error> {
             Ok(())
         }
     }
@@ -192,7 +272,7 @@ mod tests {
         depth: u32,
         max_depth: u32,
         root_id: u32,
-        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl NodeManager<Id = u32, NodeType = TestNode> + Send + Sync + 'static>,
     ) {
         if depth == max_depth {
             return;
@@ -205,11 +285,10 @@ mod tests {
             };
             let child_id = pool.add(child).unwrap();
             cur_node.children.push(child_id);
-            let child = pool.get(child_id).unwrap();
             handles.push(thread::spawn({
                 let pool = pool.clone();
                 move || {
-                    let mut child = child.write().unwrap();
+                    let mut child = pool.get_write_access(child_id).unwrap();
                     let new_root_id = child.value;
                     populate_tree(&mut child, depth + 1, TREE_DEPTH, new_root_id, &pool);
                 }
@@ -222,21 +301,23 @@ mod tests {
     }
 
     fn set_value_at_path(
-        cur_node: &TestNode,
+        cur_node: &mut TestNode,
         path: &[u32],
         value: u32,
-        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl NodeManager<Id = u32, NodeType = TestNode> + Send + Sync + 'static>,
     ) {
         let child_id = path
             .first()
             .copied()
             .unwrap_or_else(|| panic!("Empty path. You may have recursed too deep."));
         let path = &path[1..];
-        let child = pool.get(cur_node.children[child_id as usize]).unwrap();
+        let mut child = pool
+            .get_write_access(cur_node.children[child_id as usize])
+            .unwrap();
         if path.is_empty() {
-            child.write().unwrap().value = value;
+            child.value = value;
         } else {
-            set_value_at_path(&child.read().unwrap(), path, value, pool);
+            set_value_at_path(&mut child, path, value, pool);
         }
     }
 
@@ -244,18 +325,20 @@ mod tests {
     fn read_from_tree_path(
         cur_node: &TestNode,
         path: &[u32],
-        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl NodeManager<Id = u32, NodeType = TestNode> + Send + Sync + 'static>,
     ) -> u32 {
         let child_id = path
             .first()
             .copied()
             .unwrap_or_else(|| panic!("Empty path. You may have recursed too deep."));
         let path = &path[1..];
-        let child = pool.get(cur_node.children[child_id as usize]).unwrap();
+        let child = pool
+            .get_read_access(cur_node.children[child_id as usize])
+            .unwrap();
         if path.is_empty() {
-            return child.read().unwrap().value;
+            return child.value;
         } else {
-            read_from_tree_path(&child.read().unwrap(), path, pool)
+            read_from_tree_path(&child, path, pool)
         }
     }
 
@@ -265,7 +348,7 @@ mod tests {
         level: u32,
         id: u32,
         depth: u32,
-        pool: &Arc<impl Pool<Id = u32, Item = TestNode> + Send + Sync + 'static>,
+        pool: &Arc<impl NodeManager<Id = u32, NodeType = TestNode> + Send + Sync + 'static>,
     ) {
         if depth == level {
             pool.delete(id).unwrap();
@@ -274,11 +357,11 @@ mod tests {
 
         let mut handles = vec![];
         for &child_id in &node.children {
-            let child = pool.get(child_id).unwrap();
             handles.push(thread::spawn({
                 let pool = pool.clone();
                 move || {
-                    delete_tree_level(&child.read().unwrap(), level, child_id, depth + 1, &pool);
+                    let child = pool.get_read_access(child_id).unwrap();
+                    delete_tree_level(&child, level, child_id, depth + 1, &pool);
                 }
             }));
         }
@@ -290,9 +373,7 @@ mod tests {
 
     #[test]
     pub fn pool_allows_concurrent_tree_construction() {
-        let pool = Arc::new(FakeNodePool {
-            nodes: Mutex::new(HashMap::new()),
-        });
+        let pool = Arc::new(FakeNodePool::new());
 
         let root = TestNode {
             value: 0,
@@ -300,15 +381,13 @@ mod tests {
         };
         let root_id = pool.add(root).unwrap();
 
-        let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 3, TREE_DEPTH, 0, &pool);
+        let mut root = pool.get_write_access(root_id).unwrap();
+        populate_tree(&mut root, 3, TREE_DEPTH, 0, &pool);
     }
 
     #[test]
     pub fn pool_allows_concurrent_tree_lookup() {
-        let pool = Arc::new(FakeNodePool {
-            nodes: Mutex::new(HashMap::new()),
-        });
+        let pool = Arc::new(FakeNodePool::new());
 
         // Setting up the tree
         let root = TestNode {
@@ -316,21 +395,19 @@ mod tests {
             children: vec![],
         };
         let root_id = pool.add(root).unwrap();
-        let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
+        {
+            let mut root = pool.get_write_access(root_id).unwrap();
+            populate_tree(&mut root, 0, TREE_DEPTH, 0, &pool.clone());
+        }
 
         let mut cases = vec![];
         generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
-
         let mut handles = vec![];
         for case in cases {
-            let root = pool.get(root_id).unwrap();
             let pool = pool.clone();
             handles.push(thread::spawn(move || {
-                assert_eq!(
-                    case.expected,
-                    read_from_tree_path(&root.read().unwrap(), &case.path, &pool)
-                );
+                let root = pool.get_read_access(root_id).unwrap();
+                assert_eq!(case.expected, read_from_tree_path(&root, &case.path, &pool));
             }));
         }
 
@@ -341,9 +418,7 @@ mod tests {
 
     #[test]
     fn pool_allows_concurrent_delete_on_different_branches() {
-        let pool = Arc::new(FakeNodePool {
-            nodes: Mutex::new(HashMap::new()),
-        });
+        let pool = Arc::new(FakeNodePool::new());
 
         // Setting up the tree
         let root = TestNode {
@@ -351,15 +426,21 @@ mod tests {
             children: vec![],
         };
         let root_id = pool.add(root).unwrap();
-        let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
+        {
+            let mut root = pool.get_write_access(root_id).unwrap();
+            populate_tree(&mut root, 0, TREE_DEPTH, 0, &pool.clone());
+        }
 
-        let num_nodes = pool.nodes.lock().unwrap().len();
-        delete_tree_level(&root.read().unwrap(), TREE_DEPTH, root_id, 0, &pool);
-
+        delete_tree_level(
+            &pool.get_read_access(root_id).unwrap(),
+            TREE_DEPTH,
+            root_id,
+            0,
+            &pool,
+        );
         assert_eq!(
-            pool.nodes.lock().unwrap().len(),
-            num_nodes - (CHILDREN_PER_NODE.pow(TREE_DEPTH) as usize)
+            pool.deleted_nodes.lock().unwrap().len() as u32,
+            CHILDREN_PER_NODE.pow(TREE_DEPTH)
         );
     }
 
@@ -367,17 +448,18 @@ mod tests {
     fn pool_allows_concurrent_set_and_get() {
         // The point of this test is to prove that one can model concurrent set and get operations
         // on a tree using the pool without deadlocking or panicking.
-        let pool = Arc::new(FakeNodePool {
-            nodes: Mutex::new(HashMap::new()),
-        });
+        let pool = Arc::new(FakeNodePool::new());
+
         // Setting up the tree
         let root = TestNode {
             value: 0,
             children: vec![],
         };
         let root_id = pool.add(root).unwrap();
-        let root = pool.get(root_id).unwrap();
-        populate_tree(&mut root.write().unwrap(), 0, TREE_DEPTH, 0, &pool.clone());
+        {
+            let mut root = pool.get_write_access(root_id).unwrap();
+            populate_tree(&mut root, 0, TREE_DEPTH, 0, &pool.clone());
+        }
 
         let mut cases = vec![];
         generate_cases_recursive(&mut cases, &mut vec![], TREE_DEPTH);
@@ -390,18 +472,18 @@ mod tests {
             // Spawn set
             handles.push(thread::spawn({
                 let pool = pool.clone();
-                let root = pool.get(root_id).unwrap();
                 let path = path.clone();
                 move || {
-                    set_value_at_path(&root.read().unwrap(), &path, i as u32, &pool.clone());
+                    let mut root = pool.get_write_access(root_id).unwrap();
+                    set_value_at_path(&mut root, &path, i as u32, &pool.clone());
                 }
             }));
             // Spawn get
             handles.push(thread::spawn({
                 let pool = pool.clone();
-                let root = pool.get(root_id).unwrap();
                 move || {
-                    let _ = read_from_tree_path(&root.read().unwrap(), &path, &pool);
+                    let root = pool.get_read_access(root_id).unwrap();
+                    let _ = read_from_tree_path(&root, &path, &pool);
                 }
             }));
         }
