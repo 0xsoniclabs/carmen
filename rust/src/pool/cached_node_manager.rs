@@ -364,6 +364,8 @@ mod tests {
         cache.evict(Some((id, PINNED_POS)), |_| true); // should not store pinned element
     }
 
+    // TODO: Add tests for insert_into_free_slot
+
     #[test]
     fn cached_node_manager_get_methods_return_existing_entry_from_storage_if_not_in_cache() {
         let expected_entry = Node::Empty;
