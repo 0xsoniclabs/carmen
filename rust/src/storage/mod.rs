@@ -20,7 +20,6 @@ pub mod storage_with_flush_buffer;
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
 /// `Id` and `Item`.
-#[cfg_attr(test, mockall::automock(type Id = crate::types::NodeId; type Item = crate::types::Node;))]
 pub trait Storage {
     /// The type of the ID used to identify `Self::Item` in the storage.
     type Id: Copy;

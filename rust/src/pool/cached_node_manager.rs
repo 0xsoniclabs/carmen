@@ -139,7 +139,7 @@ where
             if pos == PINNED_POS {
                 return;
             }
-            let guard = self.elements[pos].write().unwrap();
+            let guard = self.elements[pos].read().unwrap();
             if !storage_filter(&guard) {
                 return; // skip elements that should not be stored
             }
@@ -213,23 +213,20 @@ where
         &self,
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
-        match self.cache.get(&id) {
-            Some(pos) => {
-                return self.elements[pos]
-                    .read()
-                    .map_err(|_| Error::Storage(storage::Error::NotFound)); // TODO: What to do with poisoned lock?
-            }
-            None => {
-                let item = self.storage.get(id)?; // check if element exists in storage
-                let pos = self.insert_into_free_slot(
-                    id,
-                    NodeWithMetadata::new(item, NodeStatus::Clean),
-                    |n| n.status == NodeStatus::Dirty,
-                )?;
-                return self.elements[pos]
-                    .read()
-                    .map_err(|_| Error::Storage(storage::Error::NotFound));
-            }
+        if let Some(pos) = self.cache.get(&id) {
+            self.elements[pos]
+                .read()
+                .map_err(|_| Error::Storage(storage::Error::NotFound)) // TODO: What to do with poisoned lock?
+        } else {
+            let item = self.storage.get(id)?; // check if element exists in storage
+            let pos = self.insert_into_free_slot(
+                id,
+                NodeWithMetadata::new(item, NodeStatus::Clean),
+                |n| n.status == NodeStatus::Dirty,
+            )?;
+            self.elements[pos]
+                .read()
+                .map_err(|_| Error::Storage(storage::Error::NotFound))
         }
     }
 
@@ -238,23 +235,20 @@ where
         id: Self::Id,
     ) -> Result<std::sync::RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>
     {
-        match self.cache.get(&id) {
-            Some(pos) => {
-                return self.elements[pos]
-                    .write()
-                    .map_err(|_| Error::Storage(storage::Error::NotFound)); // TODO: What to do with poisoned lock?
-            }
-            None => {
-                let item = self.storage.get(id)?; // check if element exists in storage
-                let pos = self.insert_into_free_slot(
-                    id,
-                    NodeWithMetadata::new(item, NodeStatus::Clean),
-                    |n| n.status == NodeStatus::Dirty,
-                )?;
-                return self.elements[pos]
-                    .write()
-                    .map_err(|_| Error::Storage(storage::Error::NotFound));
-            }
+        if let Some(pos) = self.cache.get(&id) {
+            self.elements[pos]
+                .write()
+                .map_err(|_| Error::Storage(storage::Error::NotFound)) // TODO: What to do with poisoned lock?
+        } else {
+            let item = self.storage.get(id)?; // check if element exists in storage
+            let pos = self.insert_into_free_slot(
+                id,
+                NodeWithMetadata::new(item, NodeStatus::Clean),
+                |n| n.status == NodeStatus::Dirty,
+            )?;
+            self.elements[pos]
+                .write()
+                .map_err(|_| Error::Storage(storage::Error::NotFound))
         }
     }
 
@@ -324,7 +318,6 @@ impl<W> Clone for ElementLifecycle<W> {
 }
 
 #[cfg(test)]
-
 mod tests {
     use std::sync::Mutex;
 
@@ -335,21 +328,25 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::{self, MockStorage},
-        types::{InnerNode, NodeId, NodeType},
+        storage::{
+            file::{MockFileBackend, MockFileStorageManager},
+            storage_with_flush_buffer::MockStorageWithFlushBuffer,
+        },
+        types::{NodeId, NodeType},
     };
 
     #[test]
     fn cached_node_manager_new_creates_node_pool() {
-        let storage = MockStorage::new();
-        let cache = CachedNodeManager::<NodeId, NodeWithMetadata, MockStorage>::new(10, storage);
+        let storage = MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
+        let cache = CachedNodeManager::<NodeId, NodeWithMetadata, _>::new(10, storage);
         assert_eq!(cache.cache.capacity(), 10);
     }
 
     #[test]
     fn cached_node_manager_evict_stores_entries_in_storage() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         storage.expect_reserve().times(1).returning(move |_| id);
         storage
             .expect_set()
@@ -370,7 +367,8 @@ mod tests {
     fn cached_node_manager_get_methods_return_existing_entry_from_storage_if_not_in_cache() {
         let expected_entry = Node::Empty;
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         storage.expect_get().times(2).with(eq(id)).returning({
             let expected_entry = expected_entry.clone();
             move |_| Ok(expected_entry.clone())
@@ -386,7 +384,8 @@ mod tests {
 
     #[test]
     fn cached_node_manager_add_inserts_elements_in_cache() {
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         storage
             .expect_reserve()
             .returning(|_| NodeId::from_idx_and_node_type(42, NodeType::Empty));
@@ -401,7 +400,8 @@ mod tests {
 
     #[test]
     fn cached_node_manager_get_returns_error_if_node_id_does_not_exist() {
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         storage
             .expect_get()
             .returning(|_| Err(storage::Error::NotFound));
@@ -418,7 +418,8 @@ mod tests {
     #[test]
     fn cached_node_manager_get_always_insert_element_in_cache() {
         const NUM_ELEMENTS: u64 = 10;
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         let mut sequence = Sequence::new();
         for i in 0..NUM_ELEMENTS + 1 {
             // 1 element more than capacity
@@ -462,8 +463,9 @@ mod tests {
     #[test]
     fn cached_node_manager_flush_saves_dirty_entries_to_storage() {
         const NUM_ELEMENTS: u64 = 10;
-        let data = Arc::new(Mutex::new(vec![]));
-        let mut storage = MockStorage::new();
+        let data: Arc<Mutex<Vec<_>>> = Arc::new(Mutex::new(vec![]));
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         let mut sequence = Sequence::new();
         for i in 0..NUM_ELEMENTS {
             storage
@@ -499,7 +501,8 @@ mod tests {
 
     #[test]
     fn cached_node_manager_stores_data_in_storage_on_evict() {
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         let mut sequence = Sequence::new();
         storage
             .expect_reserve()
@@ -524,18 +527,19 @@ mod tests {
         // Insert two elements to trigger the eviction of the first one
         let _ = cache.add(Node::Empty).expect("set should succeed");
         let id = cache
-            .add(Node::Inner(Box::new(InnerNode::default())))
+            .add(Node::Inner(Box::default()))
             .expect("set should succeed");
 
         let entry = cache.get_read_access(id).expect("get should succeed");
-        assert!(**entry == Node::Inner(Box::new(InnerNode::default())));
+        assert!(**entry == Node::Inner(Box::default()));
     }
 
     #[test]
     fn cached_node_manager_delete_removes_entry_from_cache_and_storage() {
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let entry = Node::Inner(Box::new(InnerNode::default()));
+        let entry = Node::Inner(Box::default());
         storage.expect_reserve().times(1).returning(move |_| id);
         storage
             .expect_delete()
@@ -553,7 +557,8 @@ mod tests {
 
     #[test]
     fn cached_node_manager_delete_fails_on_storage_error() {
-        let mut storage = MockStorage::new();
+        let mut storage =
+            MockStorageWithFlushBuffer::<MockFileStorageManager<MockFileBackend>>::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         storage.expect_reserve().times(1).returning(move |_| id);
         storage
@@ -582,124 +587,3 @@ mod tests {
         assert!(cached_node.status == NodeStatus::Dirty);
     }
 }
-
-// mod tests {
-//     use std::sync::RwLock;
-
-//     use super::*;
-//     use crate::storage::Error;
-
-//     // I did not manage to get the mock system to work, so I had to use a fake.
-//     struct FakeStorage {
-//         data: RwLock<std::collections::HashMap<i32, i32>>,
-//     }
-
-//     impl FakeStorage {
-//         pub fn new() -> Self {
-//             FakeStorage {
-//                 data: RwLock::new(std::collections::HashMap::new()),
-//             }
-//         }
-//     }
-
-//     impl Storage for FakeStorage {
-//         type Id = i32;
-//         type Item = i32;
-
-//         fn open(_path: &std::path::Path) -> Result<Self, crate::storage::Error>
-//         where
-//             Self: Sized,
-//         {
-//             Err(crate::storage::Error::NotFound)
-//         }
-
-//         fn get(&self, id: Self::Id) -> Result<Self::NodeType, crate::storage::Error> {
-//             match self.data.read() {
-//                 Ok(data) => data.get(&id).ok_or(Error::NotFound).copied(),
-//                 Err(_) => Err(Error::NotFound),
-//             }
-//         }
-
-//         fn reserve(&self, item: &Self::NodeType) -> Self::Id {
-//             match self.data.write() {
-//                 Ok(mut data) => {
-//                     let id = data.len() as i32;
-//                     data.insert(id, *item);
-//                     id
-//                 }
-//                 Err(_) => 0,
-//             }
-//         }
-
-//         fn set(&self, _id: Self::Id, _item: &Self::NodeType) -> Result<(), crate::storage::Error>
-// {             match self.data.write() {
-//                 Ok(mut data) => {
-//                     data.insert(_id, *_item);
-//                     Ok(())
-//                 }
-//                 Err(_) => Err(crate::storage::Error::NotFound),
-//             }
-//         }
-
-//         fn delete(&self, _id: Self::Id) -> Result<(), crate::storage::Error> {
-//             match self.data.write() {
-//                 Ok(mut data) => {
-//                     data.remove(&_id);
-//                     Ok(())
-//                 }
-//                 Err(_) => Err(crate::storage::Error::NotFound),
-//             }
-//         }
-
-//         fn flush(&self) -> Result<(), crate::storage::Error> {
-//             Ok(())
-//         }
-//     }
-
-//     #[test]
-//     fn test_cached_pool_add_and_retrieve() {
-//         let storage = FakeStorage::new();
-//         let pool = CachedNodeManager::new(200, Arc::new(storage));
-//         let id1 = pool.add(42).unwrap();
-//         assert_eq!(id1, 0);
-//         let id2 = pool.add(24).unwrap();
-//         assert_eq!(id2, 1);
-//         assert_eq!(*pool.get_read_access(id1).unwrap(), 42);
-//         assert_eq!(*pool.get_read_access(id2).unwrap(), 24);
-//     }
-
-//     #[test]
-//     fn test_cached_pool_elements_can_be_modified() {
-//         let storage = FakeStorage::new();
-//         let pool = CachedNodeManager::new(200, Arc::new(storage));
-//         let id = pool.add(42).unwrap();
-//         assert_eq!(*pool.get_read_access(id).unwrap(), 42);
-
-//         *pool.get_write_access(id).unwrap() = 24;
-//         assert_eq!(*pool.get_read_access(id).unwrap(), 24);
-//     }
-
-//     #[test]
-//     fn test_cached_pool_elements_can_hold_write_access_to_multiple_elements() {
-//         let storage = FakeStorage::new();
-//         let pool = CachedNodeManager::new(200, Arc::new(storage));
-//         let id1 = pool.add(1).unwrap();
-//         let id2 = pool.add(2).unwrap();
-//         assert_ne!(id1, id2);
-
-//         // Demonstrating that write access can be obtained for multiple elements
-//         let _guard1 = pool.get_write_access(id1).unwrap();
-//         let _guard2 = pool.get_write_access(id2).unwrap();
-//     }
-
-//     #[test]
-//     fn test_cached_pool_elements_can_be_deleted() {
-//         let storage = FakeStorage::new();
-//         let pool = CachedNodeManager::new(200, Arc::new(storage));
-//         let id = pool.add(42).unwrap();
-//         assert_eq!(*pool.get_read_access(id).unwrap(), 42);
-
-//         assert!(pool.delete(id).is_ok());
-//         //assert!(pool.get_read_access(id).is_err());
-//     }
-// }
