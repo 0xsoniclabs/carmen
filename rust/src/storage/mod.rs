@@ -11,11 +11,17 @@
 
 use std::path::Path;
 
-pub use self::error::Error;
+#[cfg(test)]
+pub use self::storage_with_flush_buffer::MockStorageWithFlushBuffer;
+pub use self::{
+    error::Error,
+    file::{BackendOpenFn, FileBackend, backend_open_fns},
+    storage_with_flush_buffer::StorageWithFlushBuffer,
+};
 
-pub mod error;
-pub mod file;
-pub mod storage_with_flush_buffer;
+mod error;
+mod file;
+mod storage_with_flush_buffer;
 
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for

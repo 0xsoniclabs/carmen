@@ -13,14 +13,17 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::FileExt,
     path::Path,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
+
+use crate::storage::file::PageCachedFile;
 
 /// An abstraction for concurrent file operations.
 ///
 /// Implementations of this trait are required to ensure that concurrent operations are safe (in
 /// that there are no data races) as long as they operate on non-overlapping regions of the file.
 /// When called with overlapping regions, the behavior is undefined and may lead to data corruption.
+#[allow(clippy::len_without_is_empty)]
 #[cfg_attr(test, mockall::automock)]
 pub trait FileBackend: Send + Sync {
     /// Opens a file at the given path with the specified options and tries to acquire a file lock.
@@ -122,6 +125,50 @@ impl FileBackend for NoSeekFile {
     }
 }
 
+/// A type alias for a function that opens a `FileBackend` implementation.
+/// The function takes a [`Path`] and [`OpenOptions`] and returns a tuple of the opened backend
+/// and a string identifying the backend.
+pub type BackendOpenFn =
+    fn(&Path, OpenOptions) -> std::io::Result<(Arc<dyn FileBackend>, &'static str)>;
+
+/// Returns an iterator over functions that open different `FileBackend` implementations.
+/// Each function returns a tuple of the opened backend and a string identifying the backend.
+pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
+    [
+        (|path, options| {
+            <SeekFile as FileBackend>::open(path, options)
+                .map(|f| (Arc::new(f) as Arc<dyn FileBackend>, "SeekFile"))
+        }) as BackendOpenFn,
+        (|path, options| {
+            <NoSeekFile as FileBackend>::open(path, options)
+                .map(|f| (Arc::new(f) as Arc<dyn FileBackend>, "NoSeekFile"))
+        }) as BackendOpenFn,
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <PageCachedFile<SeekFile> as FileBackend>::open(path, options).map(|f| {
+                    (
+                        Arc::new(f) as Arc<dyn FileBackend>,
+                        "PageCachedFile<SeekFile>",
+                    )
+                })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options).map(|f| {
+                    (
+                        Arc::new(f) as Arc<dyn FileBackend>,
+                        "PageCachedFile<NoSeekFile>",
+                    )
+                })
+            }) as BackendOpenFn
+        },
+    ]
+    .into_iter()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -135,38 +182,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{PageCachedFile, page_utils::Page},
+        storage::file::page_utils::Page,
         utils::test_dir::{Permissions, TestDir},
     };
-
-    fn open_backends()
-    -> impl Iterator<Item = fn(&Path, OpenOptions) -> std::io::Result<Arc<dyn FileBackend>>> {
-        [
-            (|path, options| {
-                <SeekFile as FileBackend>::open(path, options)
-                    .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-            }) as fn(&Path, OpenOptions) -> _,
-            (|path, options| {
-                <NoSeekFile as FileBackend>::open(path, options)
-                    .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-            }) as fn(&Path, OpenOptions) -> _,
-            #[cfg(unix)]
-            {
-                (|path, options| {
-                    <PageCachedFile<SeekFile> as FileBackend>::open(path, options)
-                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-                }) as fn(&Path, OpenOptions) -> _
-            },
-            #[cfg(unix)]
-            {
-                (|path, options| {
-                    <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
-                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-                }) as fn(&Path, OpenOptions) -> _
-            },
-        ]
-        .into_iter()
-    }
 
     #[test]
     fn open_creates_and_opens_file() {
@@ -176,10 +194,10 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
-            let file = backend(path.as_path(), options.clone());
-            assert!(file.unwrap().len().unwrap() == 0);
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            assert_eq!(backend.len().unwrap(), 0);
             assert!(std::fs::exists(path).unwrap());
         }
     }
@@ -192,7 +210,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
@@ -200,8 +218,8 @@ mod tests {
                 file.write_all(&[0; 10]).unwrap();
             }
 
-            let file = backend(path.as_path(), options.clone());
-            assert!(file.unwrap().len().unwrap() == 10);
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            assert!(backend.len().unwrap() == 10);
         }
     }
 
@@ -213,15 +231,15 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             // open the file once and lock it
-            let file = backend(path.as_path(), options.clone());
+            let file = backend_open_fn(path.as_path(), options.clone());
             assert!(file.is_ok());
 
             // try to open it again, should fail
-            let file = backend(path.as_path(), options.clone());
+            let file = backend_open_fn(path.as_path(), options.clone());
             assert!(file.map(|_| ()).unwrap_err().kind() == std::io::ErrorKind::WouldBlock);
         }
     }
@@ -238,9 +256,8 @@ mod tests {
         let mut options = OpenOptions::new();
         options.read(true).write(true);
 
-        for backend in open_backends() {
-            let file = backend(path.as_path(), options.clone());
-            assert!(file.is_err());
+        for backend_open_fn in backend_open_fns() {
+            assert!(backend_open_fn(path.as_path(), options.clone()).is_err());
         }
     }
 
@@ -255,12 +272,12 @@ mod tests {
         let data = [1; 10];
         let offset = 5;
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
-                let file = backend(path.as_path(), options.clone()).unwrap();
-                file.write_all_at(&data, offset).unwrap();
+                let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+                backend.write_all_at(&data, offset).unwrap();
             }
             // file: [_, _, _, _, _, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
@@ -283,12 +300,12 @@ mod tests {
         let data = [1; Page::SIZE * 3];
         let offset = 0;
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
-                let file = backend(path.as_path(), options.clone()).unwrap();
-                file.write_all_at(&data, offset).unwrap();
+                let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+                backend.write_all_at(&data, offset).unwrap();
             }
 
             let file = File::open(path).unwrap();
@@ -311,13 +328,13 @@ mod tests {
         let offset1 = 0;
         let offset2 = 10000;
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
-                let file = backend(path.as_path(), options.clone()).unwrap();
-                file.write_all_at(&data, offset1).unwrap();
-                file.write_all_at(&data, offset2).unwrap();
+                let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+                backend.write_all_at(&data, offset1).unwrap();
+                backend.write_all_at(&data, offset2).unwrap();
             }
 
             let mut file = File::open(path).unwrap();
@@ -341,7 +358,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
@@ -354,9 +371,9 @@ mod tests {
             // file: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
             // read:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; 10];
-            file.read_exact_at(&mut buf, 5).unwrap();
+            backend.read_exact_at(&mut buf, 5).unwrap();
             assert_eq!(buf[..5], [1; 5]);
             assert_eq!(buf[5..], [0; 5]);
         }
@@ -373,7 +390,7 @@ mod tests {
         let data = [1; Page::SIZE * 3];
         let offset = 0;
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
@@ -381,9 +398,9 @@ mod tests {
                 file.write_all(&data).unwrap();
             }
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; Page::SIZE * 3];
-            file.read_exact_at(&mut buf, offset).unwrap();
+            backend.read_exact_at(&mut buf, offset).unwrap();
             assert_eq!(buf, data);
         }
     }
@@ -400,7 +417,7 @@ mod tests {
         let offset1 = 0;
         let offset2 = 10000;
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
@@ -411,11 +428,11 @@ mod tests {
                 file.write_all(&data).unwrap();
             }
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
             let mut buf = [1];
-            file.read_exact_at(&mut buf, offset1).unwrap();
+            backend.read_exact_at(&mut buf, offset1).unwrap();
             assert_eq!(buf, data);
-            file.read_exact_at(&mut buf, offset2).unwrap();
+            backend.read_exact_at(&mut buf, offset2).unwrap();
             assert_eq!(buf, data);
         }
     }
@@ -428,16 +445,16 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
                 File::create(path.as_path()).unwrap();
             }
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; 5];
-            let res = file.read_exact_at(&mut buf, 5);
+            let res = backend.read_exact_at(&mut buf, 5);
             assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
         }
     }
@@ -455,7 +472,7 @@ mod tests {
 
         let data = vec![1; Page::SIZE * PAGES];
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
@@ -463,20 +480,21 @@ mod tests {
                 file.write_all(&data).unwrap();
             }
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
 
             let barrier = Barrier::new(THREADS);
 
             std::thread::scope(|s| {
                 for t in 0..THREADS {
                     let barrier = &barrier;
-                    let file = Arc::clone(&file);
+                    let backend = Arc::clone(&backend);
                     s.spawn(move || {
                         const BUF_LEN: usize = Page::SIZE / THREADS;
                         barrier.wait(); // ensure that all threads have at least been spawned before any starts performing I/O
                         for page in 0..PAGES {
                             let mut buf = [0; BUF_LEN];
-                            file.read_exact_at(&mut buf, (page * Page::SIZE + t * BUF_LEN) as u64)
+                            backend
+                                .read_exact_at(&mut buf, (page * Page::SIZE + t * BUF_LEN) as u64)
                                 .unwrap();
                             assert_eq!(buf, [1; BUF_LEN]);
                         }
@@ -494,13 +512,13 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             // flush with no changes
             {
-                let file = backend(path.as_path(), options.clone()).unwrap();
-                file.flush().unwrap();
+                let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+                backend.flush().unwrap();
 
                 let file = File::open(path.as_path()).unwrap();
                 assert_eq!(file.metadata().unwrap().len(), 0);
@@ -508,9 +526,9 @@ mod tests {
 
             // flush with changes
             {
-                let file = backend(path.as_path(), options.clone()).unwrap();
-                file.write_all_at(&[1; 10], 0).unwrap();
-                file.flush().unwrap();
+                let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+                backend.write_all_at(&[1; 10], 0).unwrap();
+                backend.flush().unwrap();
 
                 let mut file = File::open(path.as_path()).unwrap();
                 assert_eq!(file.metadata().unwrap().len(), 10);
@@ -529,12 +547,12 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
-                let file = backend(path.as_path(), options.clone()).unwrap();
-                file.write_all_at(&[1; 10], 0).unwrap();
+                let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+                backend.write_all_at(&[1; 10], 0).unwrap();
             }
 
             let mut file = File::open(path.as_path()).unwrap();
@@ -553,12 +571,12 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
-            file.write_all_at(&[1; 10], 0).unwrap();
-            assert_eq!(file.len().unwrap(), 10);
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            backend.write_all_at(&[1; 10], 0).unwrap();
+            assert_eq!(backend.len().unwrap(), 10);
         }
     }
 
@@ -570,12 +588,12 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
-            file.write_all_at(&[1; 200], 0).unwrap();
-            file.set_len(100).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            backend.write_all_at(&[1; 200], 0).unwrap();
+            backend.set_len(100).unwrap();
 
             let check_file = File::open(path.as_path()).unwrap();
             assert_eq!(check_file.metadata().unwrap().len(), 100);
@@ -590,10 +608,10 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        for (i, backend) in open_backends().enumerate() {
+        for (i, backend_open_fn) in backend_open_fns().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            let file = backend(path.as_path(), options.clone()).unwrap();
+            let (backend, _) = backend_open_fn(path.as_path(), options.clone()).unwrap();
 
             let iteration = AtomicU64::new(0);
 
@@ -613,15 +631,15 @@ mod tests {
                         let offset = iteration.load(Ordering::Relaxed) * 32;
                         if offset >= 32 {
                             // check that the previous write of thread2 is visible
-                            file.read_exact_at(&mut buf, offset - 32).unwrap();
+                            backend.read_exact_at(&mut buf, offset - 32).unwrap();
                             assert_eq!(buf, [2; 32]);
                         }
 
                         // write data
-                        file.write_all_at([1; 32].as_slice(), offset).unwrap();
+                        backend.write_all_at([1; 32].as_slice(), offset).unwrap();
 
                         // check that thread1 observes its own write
-                        file.read_exact_at(&mut buf, offset).unwrap();
+                        backend.read_exact_at(&mut buf, offset).unwrap();
                         assert_eq!(buf, [1; 32]);
 
                         iteration.fetch_add(1, Ordering::Relaxed);
@@ -640,15 +658,15 @@ mod tests {
                         let offset = iteration.load(Ordering::Relaxed) * 32;
                         if offset >= 32 {
                             // check that the previous write of thread1 is visible
-                            file.read_exact_at(&mut buf, offset - 32).unwrap();
+                            backend.read_exact_at(&mut buf, offset - 32).unwrap();
                             assert_eq!(buf, [1; 32]);
                         }
 
                         // write data
-                        file.write_all_at([2; 32].as_slice(), offset).unwrap();
+                        backend.write_all_at([2; 32].as_slice(), offset).unwrap();
 
                         // check that thread2 observes its own write
-                        file.read_exact_at(&mut buf, offset).unwrap();
+                        backend.read_exact_at(&mut buf, offset).unwrap();
                         assert_eq!(buf, [2; 32]);
 
                         iteration.fetch_add(1, Ordering::Relaxed);
