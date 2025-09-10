@@ -13,7 +13,7 @@ use std::path::Path;
 
 pub use self::error::Error;
 
-pub mod error;
+mod error;
 pub mod file;
 pub mod storage_with_flush_buffer;
 

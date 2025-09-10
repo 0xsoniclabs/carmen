@@ -19,6 +19,10 @@ rust-version = "1.89"
 name = "carmen_rust"
 crate-type = ["rlib", "cdylib"]
 
+[[bench]]
+name = "file_backend"
+harness = false
+
 [dependencies]
 # datastructures
 dashmap = { version = "6.1.0", features = ["inline"] }
@@ -49,6 +53,9 @@ const-hex = "1.14.1"
 
 # automatically generate mocks from traits
 mockall = "0.13.1"
+
+# benchmark harness
+criterion = "0.7.0"
 
 # create temporary files and directories for tests
 tempfile = "3.20.0"

@@ -21,6 +21,7 @@ use std::{
 /// Implementations of this trait are required to ensure that concurrent operations are safe (in
 /// that there are no data races) as long as they operate on non-overlapping regions of the file.
 /// When called with overlapping regions, the behavior is undefined and may lead to data corruption.
+#[allow(clippy::len_without_is_empty)]
 #[cfg_attr(test, mockall::automock)]
 pub trait FileBackend: Send + Sync {
     /// Opens a file at the given path with the specified options and tries to acquire a file lock.
