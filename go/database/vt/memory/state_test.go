@@ -24,31 +24,34 @@ import (
 	geth_trie "github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb/database"
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
 
 func TestState_ImplementsState(t *testing.T) {
 	var _ state.State = &State{}
+
+	inst, _ := NewState(state.Parameters{})
+	var _ state.State = inst
 }
 
 func TestState_NewState_CreatesEmptyState(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 	require.NotNil(state)
 	require.Zero(state.GetHash())
 }
 
-func TestState_Exists_ReturnsError(t *testing.T) {
-	state := NewState()
-	_, err := state.Exists(common.Address{1})
-	require.ErrorContains(t, err, "not supported")
+func TestState_Exists(t *testing.T) {
+	state := newState()
+	exists, err := state.Exists(common.Address{1})
+	require.NoError(t, err)
+	require.False(t, exists, "Expected Exists to return false for non-existing address")
 }
 
 func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 
@@ -87,7 +90,7 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 
@@ -126,7 +129,7 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 
@@ -169,14 +172,14 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 }
 
 func TestState_HasEmptyStorage_ReturnsError(t *testing.T) {
-	state := NewState()
+	state := newState()
 	_, err := state.HasEmptyStorage(common.Address{1})
 	require.ErrorContains(t, err, "not supported by Verkle Tries")
 }
 
 func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 
 	random := make([]byte, 1000)
 	rand.Read(random)
@@ -213,7 +216,7 @@ func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 
 	address := common.Address{1}
 	key := common.Key{2}
@@ -255,51 +258,48 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 func TestState_EmptyStateHasZeroCommitment(t *testing.T) {
 	require := require.New(t)
 
-	state := NewState()
+	state := newState()
 	hash, err := state.GetHash()
 	require.NoError(err)
 	require.Equal(common.Hash(types.EmptyVerkleHash), hash)
 }
 
 func TestState_Check_ReturnsNoError(t *testing.T) {
-	require.NoError(t, NewState().Check())
+	require.NoError(t, newState().Check())
 }
 
 func TestState_Flush_ReturnsNoError(t *testing.T) {
-	require.NoError(t, NewState().Flush())
+	require.NoError(t, newState().Flush())
 }
 
 func TestState_Close_ReturnsNoError(t *testing.T) {
-	require.NoError(t, NewState().Close())
+	require.NoError(t, newState().Close())
 }
 
-func TestState_GetMemoryFootprint_PanicsAsNotImplemented(t *testing.T) {
+func TestState_GetMemoryFootprint(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
-	require.Panics(
-		func() { state.GetMemoryFootprint() },
-		"GetMemoryFootprint should panic as it is not implemented",
-	)
+	state := newState()
+	require.NotNil(state.GetMemoryFootprint())
 }
 
 func TestState_GetArchiveState_ReturnsNoArchiveError(t *testing.T) {
-	_, err := NewState().GetArchiveState(0)
+	_, err := newState().GetArchiveState(0)
 	require.ErrorIs(t, err, state.NoArchiveError)
 }
 
 func TestState_GetArchiveBlockHeight_ReturnsNoArchiveError(t *testing.T) {
-	_, _, err := NewState().GetArchiveBlockHeight()
+	_, _, err := newState().GetArchiveBlockHeight()
 	require.ErrorIs(t, err, state.NoArchiveError)
 }
 
 func TestState_CreateWitnessProof_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().CreateWitnessProof(common.Address{1}, common.Key{2})
+	_, err := newState().CreateWitnessProof(common.Address{1}, common.Key{2})
 	require.ErrorContains(t, err, "witness proof not supported yet")
 }
 
 func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
-	state := NewState()
+	state := newState()
 	require.Panics(
 		func() { state.Export(nil, nil) },
 		"Export should panic as it is not implemented",
@@ -307,23 +307,23 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 }
 
 func TestState_GetProof_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().GetProof()
+	_, err := newState().GetProof()
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 func TestState_CreateSnapshot_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().CreateSnapshot()
+	_, err := newState().CreateSnapshot()
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 func TestState_Restore_ReturnsNotSupportedError(t *testing.T) {
 	var data backend.SnapshotData
-	err := NewState().Restore(data)
+	err := newState().Restore(data)
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 func TestState_GetSnapshotVerifier_ReturnsNotSupportedError(t *testing.T) {
-	_, err := NewState().GetSnapshotVerifier(nil)
+	_, err := newState().GetSnapshotVerifier(nil)
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
@@ -359,7 +359,7 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	state.Apply(0, update)
 
 	hash, err := state.GetHash()
@@ -449,7 +449,7 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	reference, err := newRefState()
 	require.NoError(err)
 
@@ -472,12 +472,13 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	addr1 := common.Address{1}
 
 	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
 		},
 	}
 
-	state := NewState()
+	state := newState()
 	require.NoError(state.Apply(0, update))
 
 	hash, err := state.GetHash()
@@ -487,6 +488,192 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
 	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := newState()
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.Equal(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		Codes: []common.CodeUpdate{{Account: addr1, Code: []byte{1, 2, 3}}},
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := newState()
+	require.NoError(state.Apply(0, update))
+
+	codeHash, err := state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+
+	// Recreate the account, which should not empty the code hash
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	codeHash, err = state.GetCodeHash(addr1)
+	require.NoError(err)
+	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
+
+	hash, err = state.GetHash()
+	require.NoError(err)
+
+	require.NoError(reference.Apply(0, update2))
+	want, err = reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Balances: []common.BalanceUpdate{
+			{Account: addr1, Balance: amount.New(1)},
+		},
+	}
+
+	state := newState()
+	require.NoError(state.Apply(0, update))
+
+	balance, err := state.GetBalance(addr1)
+	require.NoError(err)
+	require.Equal(amount.New(1), balance)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+
+	// Recreate the account, which should not empty the code hash
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	// The balance should remain the same
+	balance, err = state.GetBalance(addr1)
+	require.NoError(err)
+	require.Equal(amount.New(1), balance)
+
+	hash, err = state.GetHash()
+	require.NoError(err)
+
+	require.NoError(reference.Apply(0, update2))
+	want, err = reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+}
+
+func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+	require := require.New(t)
+
+	addr1 := common.Address{1}
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
+		Nonces: []common.NonceUpdate{
+			{Account: addr1, Nonce: common.ToNonce(1)},
+		},
+	}
+
+	state := newState()
+	require.NoError(state.Apply(0, update))
+
+	nonce, err := state.GetNonce(addr1)
+	require.NoError(err)
+	require.Equal(common.ToNonce(1), nonce)
+
+	hash, err := state.GetHash()
+	require.NoError(err)
+
+	reference, err := newRefState()
+	require.NoError(err)
+	require.NoError(reference.Apply(0, update))
+	want, err := reference.GetHash()
+	require.NoError(err)
+
+	require.Equal(want, hash)
+
+	// Recreate the account, which should not empty the nonce
+	update2 := common.Update{
+		CreatedAccounts: []common.Address{addr1},
+	}
+
+	require.NoError(state.Apply(0, update2))
+
+	// The nonce should remain the same
+	nonce, err = state.GetNonce(addr1)
+	require.NoError(err)
+	require.Equal(common.ToNonce(1), nonce)
+
+	hash, err = state.GetHash()
+	require.NoError(err)
+
+	require.NoError(reference.Apply(0, update2))
+	want, err = reference.GetHash()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -521,9 +708,7 @@ func (s *refState) Apply(block uint64, update common.Update) error {
 				panic(err)
 			}
 			if s == nil {
-				s = &types.StateAccount{
-					Balance: uint256.NewInt(0),
-				}
+				s = types.NewEmptyStateAccount()
 			}
 			accountStates[addr] = s
 			state = s
