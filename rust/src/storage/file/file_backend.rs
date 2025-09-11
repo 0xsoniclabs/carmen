@@ -44,12 +44,11 @@ pub trait FileBackend: Send + Sync {
     fn set_len(&self, size: u64) -> std::io::Result<()>;
 }
 
-/// A marker trait which denotes that this [`FileBackend`] implementation is the lowers layer
-/// implementing [`FileBackend`] and does not wrap another [`FileBackend`].
+/// A marker trait that denotes that this [`FileBackend`] implementation is the lowest layer
+/// implementing [`FileBackend`] and does not wrap any other [`FileBackend`].
 ///
 /// This is useful for [`FileBackend`] implementations that add caching on top of another
 /// [`FileBackend`] and should therefore not be wrapped again by another caching layer.
-// #[cfg_attr(test, mockall::automock)]
 pub trait Layer1FileBackend: FileBackend {}
 
 // For inherited traits `mockall::automock` does not work and `mockall::mock` has to be used.
