@@ -24,7 +24,7 @@ use std::{
 #[cfg_attr(test, mockall::automock)]
 pub trait FileBackend: Send + Sync {
     /// Opens a file at the given path with the specified options and tries to acquire a file lock.
-    fn open(path: &Path, options: &mut OpenOptions) -> std::io::Result<Self>
+    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self>
     where
         Self: Sized;
 
@@ -44,39 +44,13 @@ pub trait FileBackend: Send + Sync {
     fn set_len(&self, size: u64) -> std::io::Result<()>;
 }
 
-/// A marker trait that denotes that this [`FileBackend`] implementation is the lowest layer
-/// implementing [`FileBackend`] and does not wrap any other [`FileBackend`].
-///
-/// This is useful for [`FileBackend`] implementations that add caching on top of another
-/// [`FileBackend`] and should therefore not be wrapped again by another caching layer.
-pub trait Layer1FileBackend: FileBackend {}
-
-// For inherited traits `mockall::automock` does not work and `mockall::mock` has to be used.
-#[cfg(test)]
-mockall::mock! {
-    pub Layer1FileBackend {}
-
-    impl FileBackend for Layer1FileBackend {
-        fn open(path: &Path, options: &mut OpenOptions) -> std::io::Result<Self>
-        where
-            Self: Sized;
-        fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()>;
-        fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()>;
-        fn flush(&self) -> std::io::Result<()>;
-        fn len(&self) -> Result<u64, std::io::Error>;
-        fn set_len(&self, size: u64) -> std::io::Result<()>;
-    }
-
-    impl Layer1FileBackend for Layer1FileBackend {}
-}
-
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using a mutex to ensure
 /// exclusive access to the file. This is suitable for platforms where `pread` and `pwrite` are not
 /// available or where seeking is required for other reasons.
 pub struct SeekFile(Mutex<std::fs::File>);
 
 impl FileBackend for SeekFile {
-    fn open(path: &Path, options: &mut OpenOptions) -> std::io::Result<Self>
+    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self>
     where
         Self: Sized,
     {
@@ -110,8 +84,6 @@ impl FileBackend for SeekFile {
     }
 }
 
-impl Layer1FileBackend for SeekFile {}
-
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using the Unix-specific file
 /// operations `pread` and `pwrite` which do not modify the file offset. This avoids the syscall for
 /// seeking and allows for concurrent access without needing to manage a cursor.
@@ -120,7 +92,7 @@ pub struct NoSeekFile(std::fs::File);
 
 #[cfg(unix)]
 impl FileBackend for NoSeekFile {
-    fn open(path: &Path, options: &mut OpenOptions) -> std::io::Result<Self>
+    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self>
     where
         Self: Sized,
     {
@@ -150,9 +122,6 @@ impl FileBackend for NoSeekFile {
     }
 }
 
-#[cfg(unix)]
-impl Layer1FileBackend for NoSeekFile {}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -168,17 +137,16 @@ mod tests {
     use crate::utils::test_dir::{Permissions, TestDir};
 
     fn open_backends()
-    -> impl Iterator<Item = fn(&Path, &mut OpenOptions) -> std::io::Result<Arc<dyn FileBackend>>>
-    {
+    -> impl Iterator<Item = fn(&Path, OpenOptions) -> std::io::Result<Arc<dyn FileBackend>>> {
         [
             (|path, options| {
                 <SeekFile as FileBackend>::open(path, options)
                     .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-            }) as fn(&Path, &mut OpenOptions) -> _,
+            }) as fn(&Path, OpenOptions) -> _,
             (|path, options| {
                 <NoSeekFile as FileBackend>::open(path, options)
                     .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-            }) as fn(&Path, &mut OpenOptions) -> _,
+            }) as fn(&Path, OpenOptions) -> _,
         ]
         .into_iter()
     }
@@ -193,7 +161,7 @@ mod tests {
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
-            let file = backend(path.as_path(), &mut options);
+            let file = backend(path.as_path(), options.clone());
             assert!(file.unwrap().len().unwrap() == 0);
             assert!(std::fs::exists(path).unwrap());
         }
@@ -215,7 +183,7 @@ mod tests {
                 file.write_all(&[0; 10]).unwrap();
             }
 
-            let file = backend(path.as_path(), &mut options);
+            let file = backend(path.as_path(), options.clone());
             assert!(file.unwrap().len().unwrap() == 10);
         }
     }
@@ -232,11 +200,11 @@ mod tests {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             // open the file once and lock it
-            let file = backend(path.as_path(), &mut options);
+            let file = backend(path.as_path(), options.clone());
             assert!(file.is_ok());
 
             // try to open it again, should fail
-            let file = backend(path.as_path(), &mut options);
+            let file = backend(path.as_path(), options.clone());
             assert!(file.map(|_| ()).unwrap_err().kind() == std::io::ErrorKind::WouldBlock);
         }
     }
@@ -254,7 +222,7 @@ mod tests {
         options.read(true).write(true);
 
         for backend in open_backends() {
-            let file = backend(path.as_path(), &mut options);
+            let file = backend(path.as_path(), options.clone());
             assert!(file.is_err());
         }
     }
@@ -274,7 +242,7 @@ mod tests {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
-                let file = backend(path.as_path(), &mut options).unwrap();
+                let file = backend(path.as_path(), options.clone()).unwrap();
                 file.write_all_at(&data, offset).unwrap();
             }
             // file: [_, _, _, _, _, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
@@ -308,7 +276,7 @@ mod tests {
             // file: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
             // read:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-            let file = backend(path.as_path(), &mut options).unwrap();
+            let file = backend(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; 10];
             file.read_exact_at(&mut buf, 5).unwrap();
             assert_eq!(buf[..5], [1; 5]);
@@ -331,7 +299,7 @@ mod tests {
                 File::create(path.as_path()).unwrap();
             }
 
-            let file = backend(path.as_path(), &mut options).unwrap();
+            let file = backend(path.as_path(), options.clone()).unwrap();
             let mut buf = [0; 5];
             let res = file.read_exact_at(&mut buf, 5);
             assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
@@ -351,7 +319,7 @@ mod tests {
 
             // flush with no changes
             {
-                let file = backend(path.as_path(), &mut options).unwrap();
+                let file = backend(path.as_path(), options.clone()).unwrap();
                 file.flush().unwrap();
 
                 let file = File::open(path.as_path()).unwrap();
@@ -360,7 +328,7 @@ mod tests {
 
             // flush with changes
             {
-                let file = backend(path.as_path(), &mut options).unwrap();
+                let file = backend(path.as_path(), options.clone()).unwrap();
                 file.write_all_at(&[1; 10], 0).unwrap();
                 file.flush().unwrap();
 
@@ -385,7 +353,7 @@ mod tests {
             let path = dir.join(format!("test_file_{i}.bin"));
 
             {
-                let file = backend(path.as_path(), &mut options).unwrap();
+                let file = backend(path.as_path(), options.clone()).unwrap();
                 file.write_all_at(&[1; 10], 0).unwrap();
             }
 
@@ -408,7 +376,7 @@ mod tests {
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            let file = backend(path.as_path(), &mut options).unwrap();
+            let file = backend(path.as_path(), options.clone()).unwrap();
             file.write_all_at(&[1; 10], 0).unwrap();
             assert_eq!(file.len().unwrap(), 10);
         }
@@ -425,7 +393,7 @@ mod tests {
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            let file = backend(path.as_path(), &mut options).unwrap();
+            let file = backend(path.as_path(), options.clone()).unwrap();
             file.write_all_at(&[1; 200], 0).unwrap();
             file.set_len(100).unwrap();
 
@@ -445,7 +413,7 @@ mod tests {
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
 
-            let file = backend(path.as_path(), &mut options).unwrap();
+            let file = backend(path.as_path(), options.clone()).unwrap();
 
             let iteration = AtomicU64::new(0);
 
