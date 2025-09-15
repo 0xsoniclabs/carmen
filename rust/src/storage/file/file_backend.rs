@@ -135,7 +135,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::PageCachedFile,
+        storage::file::{PageCachedFile, page_utils::Page},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -150,14 +150,20 @@ mod tests {
                 <NoSeekFile as FileBackend>::open(path, options)
                     .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
             }) as fn(&Path, OpenOptions) -> _,
-            (|path, options| {
-                <PageCachedFile<SeekFile> as FileBackend>::open(path, options)
-                    .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-            }) as fn(&Path, OpenOptions) -> _,
-            (|path, options| {
-                <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
-                    .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
-            }) as fn(&Path, OpenOptions) -> _,
+            #[cfg(unix)]
+            {
+                (|path, options| {
+                    <PageCachedFile<SeekFile> as FileBackend>::open(path, options)
+                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                }) as fn(&Path, OpenOptions) -> _
+            },
+            #[cfg(unix)]
+            {
+                (|path, options| {
+                    <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
+                        .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                }) as fn(&Path, OpenOptions) -> _
+            },
         ]
         .into_iter()
     }
@@ -274,7 +280,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let data = [1; 4096 * 3];
+        let data = [1; Page::SIZE * 3];
         let offset = 0;
 
         for (i, backend) in open_backends().enumerate() {
@@ -287,7 +293,7 @@ mod tests {
 
             let file = File::open(path).unwrap();
             assert_eq!(file.metadata().unwrap().len(), data.len() as u64);
-            let mut buf = vec![0; 4096 * 3];
+            let mut buf = vec![0; Page::SIZE * 3];
             file.read_exact_at(&mut buf, offset).unwrap();
             assert_eq!(buf, data);
         }
@@ -320,6 +326,7 @@ mod tests {
             file.seek(SeekFrom::Start(offset1)).unwrap();
             file.read_exact(&mut buf).unwrap();
             assert_eq!(buf, data);
+            buf = [0; 1];
             file.seek(SeekFrom::Start(offset2)).unwrap();
             file.read_exact(&mut buf).unwrap();
             assert_eq!(buf, data);
@@ -363,7 +370,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let data = [1; 4096 * 3];
+        let data = [1; Page::SIZE * 3];
         let offset = 0;
 
         for (i, backend) in open_backends().enumerate() {
@@ -375,7 +382,7 @@ mod tests {
             }
 
             let file = backend(path.as_path(), options.clone()).unwrap();
-            let mut buf = [0; 4096 * 3];
+            let mut buf = [0; Page::SIZE * 3];
             file.read_exact_at(&mut buf, offset).unwrap();
             assert_eq!(buf, data);
         }
@@ -446,7 +453,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let data = vec![1; 4096 * PAGES];
+        let data = vec![1; Page::SIZE * PAGES];
 
         for (i, backend) in open_backends().enumerate() {
             let path = dir.join(format!("test_file_{i}.bin"));
@@ -465,11 +472,11 @@ mod tests {
                     let barrier = &barrier;
                     let file = Arc::clone(&file);
                     s.spawn(move || {
-                        const BUF_LEN: usize = 4096 / THREADS;
-                        let mut buf = [0; BUF_LEN];
+                        const BUF_LEN: usize = Page::SIZE / THREADS;
                         barrier.wait(); // ensure that all threads have at least been spawned before any starts performing I/O
                         for page in 0..PAGES {
-                            file.read_exact_at(&mut buf, (page * 4096 + t * BUF_LEN) as u64)
+                            let mut buf = [0; BUF_LEN];
+                            file.read_exact_at(&mut buf, (page * Page::SIZE + t * BUF_LEN) as u64)
                                 .unwrap();
                             assert_eq!(buf, [1; BUF_LEN]);
                         }

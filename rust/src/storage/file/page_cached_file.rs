@@ -19,14 +19,14 @@ use crate::storage::file::{
 #[derive(Debug)]
 struct InnerPageCachedFile<F: FileBackend> {
     file: F,
-    /// The logical file size, which may be smaller than the actual file size due to padding.
+    /// The logical file size, which may be smaller than the actual file size which is padded.
     file_len: u64,
     page: Box<Page>,
-    page_offset: u64,
+    page_index: u64,
     page_dirty: bool,
 }
 
-// All methods in this impl expect for `load_page_at_offset` correspond to the methods in
+// All methods in this impl except for `load_page_at_offset` correspond to the methods in
 // `FileBackend`, except that they take mutable references since [`PageCachedFile`] adds the
 // synchronization on top using a mutex.
 impl<F: FileBackend> InnerPageCachedFile<F> {
@@ -42,27 +42,29 @@ impl<F: FileBackend> InnerPageCachedFile<F> {
         let file = F::open(path, options)?;
 
         let mut page = Box::new(Page::zeroed());
-        file.read_exact_at(&mut page[..cmp::min(padded_len as usize, Page::SIZE)], 0)?;
+        if padded_len != 0 {
+            file.read_exact_at(&mut page[..Page::SIZE], 0)?;
+        }
 
         Ok(Self {
             file,
             file_len,
             page,
-            page_offset: 0,
+            page_index: 0,
             page_dirty: false,
         })
     }
 
     /// See [`FileBackend::write_all_at`].
     fn write_all_at(&mut self, buf: &[u8], offset: u64) -> std::io::Result<()> {
-        self.load_page_at_offset(offset)?;
+        self.change_page(offset)?;
 
-        let page_start_idx = (offset - self.page_offset) as usize;
-        let page_end_idx = cmp::min(page_start_idx + buf.len(), Page::SIZE);
-        let len = page_end_idx - page_start_idx;
+        let start_in_page = offset as usize - self.page_index as usize * Page::SIZE;
+        let end_in_page = cmp::min(start_in_page + buf.len(), Page::SIZE);
+        let len = end_in_page - start_in_page;
 
         self.page_dirty = true;
-        self.page[page_start_idx..page_end_idx].copy_from_slice(&buf[..len]);
+        self.page[start_in_page..end_in_page].copy_from_slice(&buf[..len]);
 
         self.file_len = cmp::max(self.file_len, offset + len as u64);
 
@@ -78,13 +80,13 @@ impl<F: FileBackend> InnerPageCachedFile<F> {
             return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
         }
 
-        self.load_page_at_offset(offset)?;
+        self.change_page(offset)?;
 
-        let page_start_idx = (offset - self.page_offset) as usize;
-        let page_end_idx = cmp::min(page_start_idx + buf.len(), Page::SIZE);
-        let len = page_end_idx - page_start_idx;
+        let start_in_page = offset as usize - self.page_index as usize * Page::SIZE;
+        let end_in_page = cmp::min(start_in_page + buf.len(), Page::SIZE);
+        let len = end_in_page - start_in_page;
 
-        buf[..len].copy_from_slice(&self.page[page_start_idx..page_end_idx]);
+        buf[..len].copy_from_slice(&self.page[start_in_page..end_in_page]);
 
         if buf.len() > len {
             self.read_exact_at(&mut buf[len..], offset + len as u64)?;
@@ -95,7 +97,8 @@ impl<F: FileBackend> InnerPageCachedFile<F> {
     /// See [`FileBackend::flush`].
     fn flush(&mut self) -> std::io::Result<()> {
         if self.page_dirty {
-            self.file.write_all_at(&self.page, self.page_offset)?;
+            self.file
+                .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
         }
         self.file.flush()?;
         self.set_len(self.file_len)
@@ -114,8 +117,10 @@ impl<F: FileBackend> InnerPageCachedFile<F> {
 
     /// Load the page containing the given offset into memory, flushing the current page if dirty.
     /// If the offset is already within the currently loaded page, this is a no-op.
-    fn load_page_at_offset(&mut self, offset: u64) -> std::io::Result<()> {
-        if offset < self.page_offset || offset >= self.page_offset + Page::SIZE as u64 {
+    fn change_page(&mut self, offset: u64) -> std::io::Result<()> {
+        if offset < self.page_index * Page::SIZE as u64
+            || offset >= (self.page_index + 1) * Page::SIZE as u64
+        {
             // O_DIRECT requires reads and writes to operate on page aligned chunks with sizes that
             // are multiples of the page size. So the file is padded to have a size of a multiple of
             // the page size.
@@ -125,17 +130,17 @@ impl<F: FileBackend> InnerPageCachedFile<F> {
             }
 
             if self.page_dirty {
-                self.file.write_all_at(&self.page, self.page_offset)?;
+                self.file
+                    .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
             }
 
-            self.page_offset = (offset / Page::SIZE as u64) * Page::SIZE as u64;
-            let len = cmp::min(
-                padded_len.saturating_sub(self.page_offset) as usize,
-                Page::SIZE,
-            );
-            self.file
-                .read_exact_at(&mut self.page[..len], self.page_offset)?;
-            self.page[len..].fill(0);
+            self.page_index = offset / Page::SIZE as u64;
+            if padded_len <= self.page_index * Page::SIZE as u64 {
+                self.page.fill(0);
+            } else {
+                self.file
+                    .read_exact_at(&mut self.page, self.page_index * Page::SIZE as u64)?;
+            }
             self.page_dirty = false;
         }
         Ok(())
@@ -197,7 +202,7 @@ mod tests {
             file: _file,
             file_len: 4096,
             page: Box::new(Page::zeroed()),
-            page_offset: 0,
+            page_index: 0,
             page_dirty: false,
         }));
 
@@ -234,7 +239,7 @@ mod tests {
             file: _file,
             file_len: 8192,
             page: Box::new(Page::zeroed()),
-            page_offset: 0,
+            page_index: 0,
             page_dirty: false,
         }));
 

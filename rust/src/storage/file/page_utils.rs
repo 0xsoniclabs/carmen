@@ -19,7 +19,9 @@ pub const O_SYNC: i32 = 1052672; // from libc::O_SYNC
 pub struct Page([u8; 4096]);
 
 impl Page {
-    /// The size of a page in bytes.
+    /// The size of a page in bytes, which is typically 4 KiB on most SSDs.
+    /// If this size is not equivalent to (a multiple of) the system page size,
+    /// page read / writes on files opened with `O_DIRECT` will fail.
     pub const SIZE: usize = 4096;
 
     /// Creates a new page initialized to zero.
