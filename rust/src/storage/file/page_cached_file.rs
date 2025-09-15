@@ -19,7 +19,8 @@ use crate::storage::file::{
 #[derive(Debug)]
 struct InnerPageCachedFile<F: FileBackend> {
     file: F,
-    /// The logical file size, which may be smaller than the actual file size which is padded.
+    /// The logical file size, which may be smaller than the actual file size which is padded to a
+    /// multiple of [`Page::SIZE`].
     file_len: u64,
     page: Box<Page>,
     page_index: u64,
