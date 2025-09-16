@@ -40,7 +40,7 @@ pipeline {
             stages {
                 stage('Check license headers') {
                     steps {
-                        sh 'cd scripts/license && ./add_license_header.sh --check'
+                        sh 'make license-check'
                     }
                 }
 

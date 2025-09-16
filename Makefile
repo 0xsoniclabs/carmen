@@ -27,3 +27,11 @@ clean:
 	rm -f lib/libcarmen.so ; \
 	cd ../cpp ; \
 	bazel clean ; \
+
+.PHONY: license-check
+license-check:
+	./scripts/license/add_license_header.sh --check -dir ./
+
+.PHONY: license-add
+license-add:
+	./scripts/license/add_license_header.sh -dir ./
