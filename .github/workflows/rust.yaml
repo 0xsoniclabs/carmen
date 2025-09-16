@@ -8,11 +8,13 @@ on:
   push:
     branches: [ main ]
     paths:
+    - '.github/workflows/rust.yaml'
     - "rust/**"
     - "cpp/state/c_state.h"
   pull_request:
     branches: [ main ]
     paths:
+    - '.github/workflows/rust.yaml'
     - "rust/**"
     - "cpp/state/c_state.h"
 
@@ -37,6 +39,8 @@ jobs:
         components: rustfmt
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo fmt
       run: cargo +nightly fmt --check
 
@@ -53,6 +57,8 @@ jobs:
         components: clippy
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo clippy
       run: cargo clippy --all-targets --no-deps -- --deny warnings
 
@@ -67,6 +73,8 @@ jobs:
       uses: dtolnay/rust-toolchain@1.89
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo doc
       env:
         # Treat warnings as errors
@@ -86,6 +94,8 @@ jobs:
       uses: dtolnay/rust-toolchain@1.89
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo build
       run: cargo build
 
@@ -100,6 +110,8 @@ jobs:
       uses: dtolnay/rust-toolchain@1.89
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo test
       run: cargo test --all-features --all-targets --no-fail-fast
   
@@ -116,6 +128,8 @@ jobs:
         components: miri
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo miri test
       env: 
         MIRIFLAGS: "-Zmiri-backtrace=full"
@@ -130,6 +144,8 @@ jobs:
       uses: actions/checkout@v4
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: install cargo-machete
       run: cargo install cargo-machete
     - name: cargo machete
@@ -144,6 +160,8 @@ jobs:
       uses: actions/checkout@v4
     - name: load cache
       uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: cargo deny
       uses: EmbarkStudios/cargo-deny-action@v2
       with:
