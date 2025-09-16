@@ -182,55 +182,72 @@ impl<const P: usize> Pages<P> {
         }
     }
 
-    /// Returns a page and optionally a [`PageRemapGuard`].
+    /// Returns a page and whether the page was remapped and needs to be overwritten with new data.
     /// The page can be used to access the data for the specified offset.
-    /// If the page remap guard is [`Some`], the page was previously mapped to a different offset in
-    /// the file and was remapped. The old data must be written back to the file before reading
-    /// the new data into the page. The page remap guard must not be dropped before the data
-    /// has been written back.
-    pub fn get_page_for_offset(&self, offset: u64) -> (LockedPage<'_>, Option<PageRemap<'_, P>>) {
+    /// The `write_back` function is called if the page was dirty and needs to be written back to
+    /// disk before being remapped.
+    pub fn get_page_for_offset(
+        &self,
+        offset: u64,
+        write_back: impl Fn(&Page, u64) -> std::io::Result<()>,
+    ) -> std::io::Result<(LockedPage<'_>, bool)> {
         let requested_page_index = offset / Page::SIZE as u64;
-        let mut page_indices = self.page_indices.lock().unwrap();
-        loop {
+        let mut page_indices_guard = self.page_indices.lock().unwrap();
+        'outer: loop {
             // Try to find a page that is mapped to the requested offset.
-            for (page_index, page) in page_indices.iter().zip(&self.pages) {
-                if *page_index == requested_page_index {
-                    let locked_page = page.lock().unwrap();
+            for (i, page_index) in page_indices_guard.iter().enumerate() {
+                let page_index = *page_index;
+                if page_index == requested_page_index {
+                    drop(page_indices_guard); // drop the page_indices_guard while locking the page because this might block
+                    let locked_page = self.pages[i].lock().unwrap();
+                    page_indices_guard = self.page_indices.lock().unwrap();
+                    if page_indices_guard[i] != requested_page_index {
+                        // Another thread remapped the page while we dropped the guard.
+                        continue 'outer;
+                    }
                     let locked_page = LockedPage {
                         page_guard: locked_page,
-                        page_index: *page_index,
+                        page_index,
                         assignment_change: &self.assignment_change,
                     };
-                    return (locked_page, None);
+                    return Ok((locked_page, false));
                 }
             }
 
             // Try to find an unlocked page which can be remapped.
-            for (page_index, page) in page_indices.iter_mut().zip(&self.pages) {
-                if let Ok(locked_page) = page.try_lock() {
+            for (i, (page_index, page)) in
+                page_indices_guard.iter_mut().zip(&self.pages).enumerate()
+            {
+                if let Ok(mut page_guard) = page.try_lock() {
+                    if page_guard.dirty {
+                        let page_index = *page_index;
+                        drop(page_indices_guard); // drop the page_indices_guard while doing I/O
+                        write_back(&page_guard.page, page_index)?;
+                        page_guard.dirty = false;
+                        page_indices_guard = self.page_indices.lock().unwrap();
+                        for (j, index) in page_indices_guard.iter().enumerate() {
+                            if j != i && *index == requested_page_index {
+                                // Another thread remapped a page to the requested offset while we
+                                // dropped the guard.
+                                continue 'outer;
+                            }
+                        }
+                    }
+
                     // We hold the page assignment guard, so we are allowed to change the offset
                     // of the page.
-                    let old_page_index = *page_index;
-                    *page_index = requested_page_index;
-                    let page_remap = PageRemap {
-                        old_page_write_back_guard: locked_page.dirty.then_some(
-                            OldPageWriteBackGuard {
-                                page_write_back_guard: page_indices,
-                                old_page_index,
-                            },
-                        ),
-                    };
+                    page_indices_guard[i] = requested_page_index;
                     let locked_page = LockedPage {
-                        page_guard: locked_page,
+                        page_guard,
                         page_index: requested_page_index,
                         assignment_change: &self.assignment_change,
                     };
-                    return (locked_page, Some(page_remap));
+                    return Ok((locked_page, true));
                 }
             }
 
             // Wait until a page becomes unlocked.
-            page_indices = self.assignment_change.wait(page_indices).unwrap();
+            page_indices_guard = self.assignment_change.wait(page_indices_guard).unwrap();
         }
     }
 }

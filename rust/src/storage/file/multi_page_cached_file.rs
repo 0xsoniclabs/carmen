@@ -126,6 +126,22 @@ impl<const P: usize, F: FileBackend> FileBackend for MultiPageCachedFile<P, F> {
 }
 
 impl<const P: usize, F: FileBackend> MultiPageCachedFile<P, F> {
+    fn write_back(&self, page: &Page, page_index: u64) -> std::io::Result<()> {
+        let file_len = self.file_len.load(Ordering::Relaxed);
+        // O_DIRECT requires reads and writes to operate on page aligned chunks with sizes that
+        // are multiples of the page size. So the file is padded to have a size of a multiple of
+        // the page size and greater or equal to the offset.
+        let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
+        if file_len < padded_len {
+            self.file.set_len(padded_len)?;
+        }
+
+        self.file
+            .write_all_at(page, page_index * Page::SIZE as u64)?;
+
+        Ok(())
+    }
+
     /// Returns a locked page that contains the data for the given offset.
     ///
     /// If a page is already mapped to the file region containing the offset but is currently in
@@ -134,11 +150,12 @@ impl<const P: usize, F: FileBackend> MultiPageCachedFile<P, F> {
     /// remapped to the file region. If all pages are in use, this function will block until a page
     /// becomes available.
     fn change_page(&'_ self, offset: u64) -> std::io::Result<LockedPage<'_>> {
-        let (mut locked_page, page_remap_guard) = self.pages.get_page_for_offset(offset);
+        let (mut locked_page, remapped) = self
+            .pages
+            .get_page_for_offset(offset, |page, page_index| self.write_back(page, page_index))?;
 
-        // The page index was changed, so we need to write back the old data if it was dirty and
-        // read the new data.
-        if let Some(mut page_remap_guard) = page_remap_guard {
+        // The page index was changed, so we need to read the new data.
+        if remapped {
             let file_len = self.file_len.load(Ordering::Relaxed);
             // O_DIRECT requires reads and writes to operate on page aligned chunks with sizes that
             // are multiples of the page size. So the file is padded to have a size of a multiple of
@@ -148,17 +165,8 @@ impl<const P: usize, F: FileBackend> MultiPageCachedFile<P, F> {
                 self.file.set_len(padded_len)?;
             }
 
-            if let Some(page_write_back_guard) = page_remap_guard.old_page_write_back_guard.take() {
-                self.file.write_all_at(
-                    &locked_page,
-                    page_write_back_guard.old_page_index * Page::SIZE as u64,
-                )?;
-                locked_page.mark_clean();
-                drop(page_write_back_guard); // The old data has been written back, so we can drop the guard.
-            }
-
             let page_index = locked_page.page_index();
-            if padded_len <= locked_page.page_index() * Page::SIZE as u64 {
+            if padded_len <= page_index * Page::SIZE as u64 {
                 locked_page.fill(0);
             } else {
                 self.file
