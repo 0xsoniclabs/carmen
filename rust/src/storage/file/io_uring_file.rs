@@ -48,27 +48,17 @@ impl FileBackend for IoUringFile {
         .build();
         // .user_data(0x1);
 
-        let mut pool = self.io_uring_pool.lock().unwrap();
-        let mut io_uring = loop {
-            match pool.pop() {
-                Some(uring) => break uring,
-                None => {
-                    // Wait for a connection to become available
-                    pool = self.cond.wait(pool).unwrap();
-                }
-            }
-        };
+        let mut io_uring = self.get_io_uring()?;
 
+        let mut sq = io_uring.submission();
         // SAFETY:
         // The contents of `write_e` are valid for the duration of the operation, because both the
         // buffer `buf` and the file descriptor are borrowed for the duration of the function and
         // the operation is waited on in this function.
         unsafe {
-            io_uring
-                .submission()
-                .push(&write_e)
-                .expect("submission queue is full");
+            sq.push(&write_e).expect("submission queue is full");
         }
+        drop(sq);
 
         io_uring.submit_and_wait(1)?;
 
@@ -77,8 +67,7 @@ impl FileBackend for IoUringFile {
             .next()
             .expect("completion queue is empty");
 
-        pool.push(io_uring);
-        self.cond.notify_one();
+        self.release_io_uring(io_uring);
 
         // assert_eq!(cqe.user_data(), 0x1);
         match cqe.result() {
@@ -107,27 +96,17 @@ impl FileBackend for IoUringFile {
         .build();
         // .user_data(0x2);
 
-        let mut pool = self.io_uring_pool.lock().unwrap();
-        let mut io_uring = loop {
-            match pool.pop() {
-                Some(uring) => break uring,
-                None => {
-                    // Wait for a connection to become available
-                    pool = self.cond.wait(pool).unwrap();
-                }
-            }
-        };
+        let mut io_uring = self.get_io_uring()?;
 
+        let mut sq = io_uring.submission();
         // SAFETY:
         // The contents of `read_e` are valid for the duration of the operation, because both the
         // buffer `buf` and the file descriptor are borrowed for the duration of the function and
         // the operation is waited on in this function.
         unsafe {
-            io_uring
-                .submission()
-                .push(&read_e)
-                .expect("submission queue is full");
+            sq.push(&read_e).expect("submission queue is full");
         }
+        drop(sq);
 
         io_uring.submit_and_wait(1)?;
 
@@ -136,8 +115,7 @@ impl FileBackend for IoUringFile {
             .next()
             .expect("completion queue is empty");
 
-        pool.push(io_uring);
-        self.cond.notify_one();
+        self.release_io_uring(io_uring);
 
         // assert_eq!(cqe.user_data(), 0x2);
         match cqe.result() {
@@ -166,6 +144,27 @@ impl FileBackend for IoUringFile {
 
     fn set_len(&self, size: u64) -> std::io::Result<()> {
         self.file.set_len(size)
+    }
+}
+
+impl IoUringFile {
+    fn get_io_uring(&self) -> std::io::Result<IoUring> {
+        let mut pool = self.io_uring_pool.lock().unwrap();
+        loop {
+            match pool.pop() {
+                Some(uring) => return Ok(uring),
+                None => {
+                    // Wait for a connection to become available
+                    pool = self.cond.wait(pool).unwrap();
+                }
+            }
+        }
+    }
+
+    fn release_io_uring(&self, io_uring: IoUring) {
+        let mut pool = self.io_uring_pool.lock().unwrap();
+        pool.push(io_uring);
+        self.cond.notify_one();
     }
 }
 

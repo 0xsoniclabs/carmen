@@ -9,12 +9,12 @@ const ITER: u64 = 10_000_000;
 #[test]
 fn write_multiple_no_seek_file() -> std::io::Result<()> {
     let tempdir = tempfile::tempdir().unwrap();
-    let path1 = tempdir.path().join("test_file1.txt");
+    let path = tempdir.path().join("test_file1.txt");
 
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
 
-    let file = NoSeekFile::open(path1.as_path(), options).unwrap();
+    let file = NoSeekFile::open(path.as_path(), options).unwrap();
 
     let buf = [1u8; 32];
 
@@ -31,18 +31,18 @@ fn write_multiple_no_seek_file() -> std::io::Result<()> {
 #[test]
 fn write_multiple_io_uring() -> std::io::Result<()> {
     let tempdir = tempfile::tempdir().unwrap();
-    let path1 = tempdir.path().join("test_file1.txt");
+    let path = tempdir.path().join("test_file1.txt");
 
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
 
-    let file = options.open(path1)?;
+    let file = options.open(path)?;
 
     let size = 10_000;
     let mut io_uring: IoUring<io_uring::squeue::Entry, io_uring::cqueue::Entry> =
         IoUring::builder()
             .setup_sqpoll(u32::MAX)
-            .build(size) //ITER as u32)
+            .build(size)
             .map_err(std::io::Error::other)?;
 
     let buf = [1u8; 32];
@@ -55,12 +55,10 @@ fn write_multiple_io_uring() -> std::io::Result<()> {
                     .offset(i as u64 * buf.len() as u64)
                     .build();
 
+            let mut sq = io_uring.submission();
             // SAFETY:
             unsafe {
-                io_uring
-                    .submission()
-                    .push(&write_e)
-                    .expect("submission queue is full");
+                sq.push(&write_e).expect("submission queue is full");
             }
         }
 
