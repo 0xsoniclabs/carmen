@@ -12,6 +12,7 @@ use std::mem::MaybeUninit;
 
 use crate::{error::Error, types::*};
 
+mod database;
 mod error;
 mod ffi;
 #[cfg(test)]
