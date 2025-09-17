@@ -1,6 +1,7 @@
 use std::{fs::OpenOptions, os::fd::AsRawFd};
 
 use io_uring::{IoUring, opcode, types};
+use libc::{O_DIRECT, O_SYNC};
 
 use crate::storage::file::file_backend::{FileBackend, NoSeekFile};
 
@@ -58,12 +59,15 @@ fn write_multiple_io_uring() -> std::io::Result<()> {
 
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
+    //options.custom_flags(O_DIRECT); // needed for io poll
 
     let file = options.open(path)?;
 
     let size = 10_000;
     let mut io_uring: IoUring = IoUring::builder()
         .setup_sqpoll(u32::MAX)
+        //.setup_iopoll()
+        //.setup_coop_taskrun() // incompatible with sqpoll
         .build(size)
         .map_err(std::io::Error::other)?;
 
@@ -118,6 +122,71 @@ fn write_multiple_io_uring() -> std::io::Result<()> {
                         l
                     )));
                 }
+            }
+        }
+    }
+
+    println!("{:?}", now.elapsed());
+
+    Ok(())
+}
+
+#[test]
+fn write_sequential_io_uring() -> std::io::Result<()> {
+    let tempdir = tempfile::tempdir().unwrap();
+    let path = tempdir.path().join("test_file1.txt");
+
+    let mut options = OpenOptions::new();
+    options.create(true).read(true).write(true);
+
+    let file = options.open(path)?;
+
+    let mut io_uring: IoUring = IoUring::builder()
+        .setup_sqpoll(u32::MAX)
+        .build(2)
+        .map_err(std::io::Error::other)?;
+
+    let mut buf = [1u8; 32];
+
+    // SAFETY:
+    unsafe {
+        io_uring
+            .submitter()
+            .register_buffers(&[libc::iovec {
+                iov_base: buf.as_mut_ptr() as *mut _,
+                iov_len: buf.len(),
+            }])
+            .unwrap();
+    }
+
+    let now = std::time::Instant::now();
+    for i in 0..ITER / 10 {
+        let write_e =
+            opcode::WriteFixed::new(types::Fd(file.as_raw_fd()), buf.as_ptr(), buf.len() as _, 0)
+                .offset(i * buf.len() as u64)
+                .build();
+
+        let mut sq = io_uring.submission();
+        // SAFETY:
+        unsafe {
+            sq.push(&write_e).expect("submission queue is full");
+        }
+        drop(sq);
+
+        io_uring.submit_and_wait(1)?;
+
+        let entry = io_uring.completion().next().unwrap();
+        // assert_eq!(cqe.user_data(), 0x1);
+        match entry.result() {
+            -1 => return Err(std::io::Error::other("io_uring write failed")),
+            0 => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)),
+            l @ 1.. if l == buf.len() as i32 => {}
+            l => {
+                return Err(std::io::Error::other(format!(
+                    "io_uring write: expected {} bytes, got {}",
+                    buf.len(),
+                    l
+                )));
             }
         }
     }
