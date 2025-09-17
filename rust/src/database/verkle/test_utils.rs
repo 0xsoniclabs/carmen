@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn from_index_values_creates_vector_with_provided_default_and_values() {
         let result = Vec::<u8>::from_index_values(1, &[]);
-        assert_eq!(result, vec![]);
+        assert_eq!(result, vec![0u8; 0]);
 
         let result = Vec::<u8>::from_index_values(0, &[(0, 1), (2, 3)]);
         assert_eq!(result, vec![1, 0, 3]);

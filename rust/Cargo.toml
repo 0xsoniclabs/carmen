@@ -29,6 +29,12 @@ zerocopy = { version = "0.8.26", features = ["derive"] }
 # error handling
 thiserror = "2.0.12"
 
+# verkle trie
+ark-ff = "0.4.2"
+banderwagon = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
+ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
+verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
@@ -38,10 +44,13 @@ bindgen = "0.72.0"
 rstest = "0.26.1"
 rstest_reuse = "0.7.0"
 
-# mocking
+# parse hex strings into byte arrays (e.g. expected hashes)
+const-hex = "1.14.1"
+
+# automatically generate mocks from traits
 mockall = "0.13.1"
 
-# temporary files
+# create temporary files and directories for tests
 tempfile = "3.20.0"
 
 [lints.rust]

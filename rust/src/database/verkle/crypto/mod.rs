@@ -8,6 +8,11 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod crypto;
-#[cfg(test)]
-mod test_utils;
+mod commitment;
+mod opening;
+mod scalar;
+
+pub use commitment::Commitment;
+#[expect(unused)]
+pub use opening::Opening;
+pub use scalar::Scalar;

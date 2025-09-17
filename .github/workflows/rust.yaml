@@ -113,8 +113,9 @@ jobs:
       with:
         workspaces: rust
     - name: cargo test
-      run: cargo test --all-features --all-targets --no-fail-fast
-  
+      # Run tests with --release as some of the crypto primitives for Verkle tries are quite slow otherwise.
+      run: cargo test --release --all-features --all-targets --no-fail-fast
+
   miri:
     name: miri
     runs-on: ubuntu-latest
@@ -131,7 +132,7 @@ jobs:
       with:
         workspaces: rust
     - name: cargo miri test
-      env: 
+      env:
         MIRIFLAGS: "-Zmiri-backtrace=full"
       run: cargo +nightly miri test --no-fail-fast ffi
 

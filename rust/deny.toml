@@ -131,6 +131,21 @@ exceptions = [
 # Each entry is a crate relative path, and the (opaque) hash of its contents
 #{ path = "LICENSE", hash = 0xbd0eed23 }
 #]
+[[licenses.clarify]]
+crate = "banderwagon"
+expression = "MIT OR Apache-2.0"
+license-files = []
+
+
+[[licenses.clarify]]
+crate = "verkle-db"
+expression = "MIT OR Apache-2.0"
+license-files = []
+
+[[licenses.clarify]]
+crate = "verkle-trie"
+expression = "MIT OR Apache-2.0"
+license-files = []
 
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
@@ -236,7 +251,7 @@ allow-git = []
 
 [sources.allow-org]
 # github.com organizations to allow git sources for
-github = []
+github = ["crate-crypto"]
 # gitlab.com organizations to allow git sources for
 gitlab = []
 # bitbucket.org organizations to allow git sources for
