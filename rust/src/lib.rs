@@ -7,6 +7,7 @@
 //
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
+#![cfg_attr(test, allow(non_snake_case))]
 
 use std::mem::MaybeUninit;
 

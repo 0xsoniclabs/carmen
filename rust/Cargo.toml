@@ -34,6 +34,10 @@ thiserror = "2.0.12"
 bindgen = "0.72.0"
 
 [dev-dependencies]
+# testing
+rstest = "0.26.1"
+rstest_reuse = "0.7.0"
+
 # mocking
 mockall = "0.13.1"
 
