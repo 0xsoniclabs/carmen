@@ -88,7 +88,7 @@ impl Operation {
             Operation::Read => backend.read_exact_at(data, offset).unwrap(),
             Operation::Write => backend.write_all_at(data, offset).unwrap(),
             Operation::Mixed => {
-                if iter % Self::MIXED_WRITE_RATIO == 0 {
+                if iter.is_multiple_of(Self::MIXED_WRITE_RATIO) {
                     backend.read_exact_at(data, offset).unwrap();
                 } else {
                     backend.write_all_at(data, offset).unwrap();
