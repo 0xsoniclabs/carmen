@@ -12,17 +12,23 @@ use std::{
     fmt::Display,
     fs::{File, OpenOptions},
     io::Write,
+    ops::Deref,
     path::Path,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
 };
 
 use carmen_rust::storage::file::{FileBackend, NoSeekFile, PageCachedFile, SeekFile};
 use criterion::{
     BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput, criterion_group,
-    criterion_main, measurement::Measurement,
+    criterion_main, measurement::WallTime,
 };
 
-const FILE_SIZE: usize = 10 * 1024 * 1024 * 1024; // 10GB
+const ONE_GB: usize = 1024 * 1024 * 1024;
+const FILE_SIZE: usize = 10 * ONE_GB; // 10GB
 
 /// Defines the access pattern for the benchmark.
 #[derive(Debug, Clone, Copy)]
@@ -188,7 +194,6 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
     let path = path.as_path();
 
     {
-        const ONE_GB: usize = 1024 * 1024 * 1024;
         let mut file = File::create(path).unwrap();
         let data_1gb = vec![0; ONE_GB];
         for _ in 0..(FILE_SIZE / ONE_GB) {
@@ -201,25 +206,29 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
     for operation in Operation::variants() {
         for access in AccessPattern::variants() {
             for chunk_size in [32, 4096] {
-                let mut group =
-                    c.benchmark_group(format!("file_backend/{operation}/{access}/{chunk_size}B"));
-                group.plot_config(plot_config.clone());
-                for backend_fn in backend_open_fns() {
-                    file_backend_benchmark(
-                        &mut group, path, operation, access, chunk_size, backend_fn,
-                    );
+                for threads in [1, 4, 16] {
+                    let mut group = c.benchmark_group(format!(
+                        "file_backend/{operation}/{access}/{chunk_size}B/{threads}threads",
+                    ));
+                    group.plot_config(plot_config.clone());
+                    for backend_fn in backend_open_fns() {
+                        file_backend_benchmark(
+                            &mut group, path, operation, access, chunk_size, threads, backend_fn,
+                        );
+                    }
                 }
             }
         }
     }
 }
 
-fn file_backend_benchmark<M: Measurement>(
-    g: &mut BenchmarkGroup<'_, M>,
+fn file_backend_benchmark(
+    g: &mut BenchmarkGroup<'_, WallTime>,
     path: &Path,
     operation: Operation,
     access: AccessPattern,
     chunk_size: usize,
+    threads: usize,
     backend_fn: BackendOpenFn,
 ) {
     let mut options = OpenOptions::new();
@@ -227,18 +236,44 @@ fn file_backend_benchmark<M: Measurement>(
 
     let (backend, backend_name) = backend_fn(path, options.clone()).unwrap();
 
+    let mut completed_iterations = 0u64;
     g.throughput(Throughput::Bytes(chunk_size as u64));
     g.bench_with_input(
         BenchmarkId::from_parameter(backend_name),
         // these are passed though [criterion::black_box]
-        &(operation, access, chunk_size, backend),
-        |b, (operation, access, chunk_size, backend)| {
-            let mut data = vec![0; *chunk_size];
-            let mut iter = 0;
-            b.iter(|| {
-                let offset = access.offset(iter, *chunk_size);
-                operation.execute(backend.as_ref(), &mut data, offset, iter);
-                iter += 1;
+        &(operation, access, chunk_size, threads, backend),
+        |b, (operation, access, chunk_size, threads, backend)| {
+            let chunk_size = *chunk_size;
+            let threads = *threads;
+            b.iter_custom(|iterations| {
+                let start_toggle = &AtomicBool::new(false);
+                let duration = std::thread::scope(|s| {
+                    let mut handles = Vec::with_capacity(threads);
+                    for thread in 0..threads {
+                        handles.push(s.spawn(move || {
+                            let mut data = vec![0; chunk_size];
+                            while !start_toggle.load(Ordering::Acquire) {
+                                std::hint::spin_loop();
+                            }
+                            for iter in ((completed_iterations + thread as u64)
+                                ..(completed_iterations + iterations))
+                                .step_by(threads)
+                            {
+                                let offset = access.offset(iter, chunk_size);
+                                operation.execute(backend.deref(), &mut data, offset, iter);
+                            }
+                        }));
+                    }
+                    let start = Instant::now();
+                    start_toggle.store(true, Ordering::Release);
+
+                    for handle in handles {
+                        handle.join().unwrap();
+                    }
+                    start.elapsed()
+                });
+                completed_iterations += iterations;
+                duration
             });
         },
     );
