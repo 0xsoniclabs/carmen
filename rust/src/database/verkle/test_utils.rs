@@ -11,24 +11,16 @@
 /// A utility trait to create an array-like object from a list of index-value pairs.
 pub trait FromIndexValues {
     type Value;
-    type Output;
 
     /// Creates a new [`Self::Output`], where the specified values are set at their respective
     /// indices. The remaining indices are set to the `default` value.
-    fn from_index_values(
-        default: Self::Value,
-        index_values: &[(usize, Self::Value)],
-    ) -> Self::Output;
+    fn from_index_values(default: Self::Value, index_values: &[(usize, Self::Value)]) -> Self;
 }
 
-impl<const N: usize> FromIndexValues for [u8; N] {
-    type Value = u8;
-    type Output = Self;
+impl<const N: usize, T: Copy> FromIndexValues for [T; N] {
+    type Value = T;
 
-    fn from_index_values(
-        default: Self::Value,
-        index_values: &[(usize, Self::Value)],
-    ) -> Self::Output {
+    fn from_index_values(default: Self::Value, index_values: &[(usize, Self::Value)]) -> Self {
         let mut result = [default; N];
         for (index, value) in index_values {
             result[*index] = *value;
@@ -39,18 +31,17 @@ impl<const N: usize> FromIndexValues for [u8; N] {
 
 impl<T: Clone> FromIndexValues for Vec<T> {
     type Value = T;
-    type Output = Self;
 
-    fn from_index_values(
-        default: Self::Value,
-        index_values: &[(usize, Self::Value)],
-    ) -> Self::Output {
-        let max_index = index_values.iter().map(|(i, _)| *i).max().unwrap_or(0);
-        let mut result = vec![default; max_index + 1];
-        for (index, value) in index_values {
-            result[*index] = value.clone();
+    fn from_index_values(default: Self::Value, index_values: &[(usize, Self::Value)]) -> Self {
+        if let Some(max_index) = index_values.iter().map(|(i, _)| *i).max() {
+            let mut result = vec![default; max_index + 1];
+            for (index, value) in index_values {
+                result[*index] = value.clone();
+            }
+            result
+        } else {
+            vec![]
         }
-        result
     }
 }
 
@@ -60,6 +51,9 @@ mod tests {
 
     #[test]
     fn from_index_values_creates_array_with_provided_default_and_values() {
+        let result = <[u8; 3]>::from_index_values(1, &[]);
+        assert_eq!(result, [1, 1, 1]);
+
         let result = <[u8; 5]>::from_index_values(0, &[(0, 1), (2, 3)]);
         assert_eq!(result, [1, 0, 3, 0, 0]);
 
@@ -69,6 +63,9 @@ mod tests {
 
     #[test]
     fn from_index_values_creates_vector_with_provided_default_and_values() {
+        let result = Vec::<u8>::from_index_values(1, &[]);
+        assert_eq!(result, vec![]);
+
         let result = Vec::<u8>::from_index_values(0, &[(0, 1), (2, 3)]);
         assert_eq!(result, vec![1, 0, 3]);
 
