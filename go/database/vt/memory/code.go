@@ -25,7 +25,7 @@ func splitCode(code []byte) []chunk {
 	// based on the last PUSH instruction. 30 covers the maximum number of potentially
 	// "missing" bytes: A PUSH32 instruction at the end of a chunk, followed by a single byte
 	// of data in the next chunk => 1 + 30 = 31. This way we still mark the correct number of
-	// elements as data (as if the code had the expected length).
+	// elements in the second chunk as data (as if the code had the expected length).
 	isCode := make([]bool, len(code)+30)
 	for i := 0; i < len(isCode); i++ {
 		isCode[i] = true
