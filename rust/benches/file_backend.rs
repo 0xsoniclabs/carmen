@@ -131,10 +131,10 @@ pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
         #[cfg(unix)]
         {
             (|path, options| {
-                <PageCachedFile<SeekFile> as FileBackend>::open(path, options).map(|f| {
+                <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options).map(|f| {
                     (
                         Arc::new(f) as Arc<dyn FileBackend>,
-                        "PageCachedFile<SeekFile>",
+                        "PageCachedFile<SeekFile, true>",
                     )
                 })
             }) as BackendOpenFn
@@ -142,10 +142,32 @@ pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
         #[cfg(unix)]
         {
             (|path, options| {
-                <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options).map(|f| {
+                <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options).map(|f| {
                     (
                         Arc::new(f) as Arc<dyn FileBackend>,
-                        "PageCachedFile<NoSeekFile>",
+                        "PageCachedFile<NoSeekFile, true>",
+                    )
+                })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options).map(|f| {
+                    (
+                        Arc::new(f) as Arc<dyn FileBackend>,
+                        "PageCachedFile<SeekFile, false>",
+                    )
+                })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options| {
+                <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options).map(|f| {
+                    (
+                        Arc::new(f) as Arc<dyn FileBackend>,
+                        "PageCachedFile<NoSeekFile, false>",
                     )
                 })
             }) as BackendOpenFn
