@@ -12,7 +12,7 @@
 pub trait FromIndexValues {
     type Value;
 
-    /// Creates a new [`Self::Output`], where the specified values are set at their respective
+    /// Creates a new [`Self`], where the specified values are set at their respective
     /// indices. The remaining indices are set to the `default` value.
     fn from_index_values(default: Self::Value, index_values: &[(usize, Self::Value)]) -> Self;
 }
