@@ -21,7 +21,12 @@ type chunk [32]byte
 func splitCode(code []byte) []chunk {
 	const PUSH1 = 0x60
 	const PUSH32 = 0x7f
-	isCode := make([]bool, len(code)+33)
+	// Add 30 additional entries to handle the case where the code is shorter than expected
+	// based on the last PUSH instruction. 30 covers the maximum number of potentially
+	// "missing" bytes: A PUSH32 instruction at the end of a chunk, followed by a single byte
+	// of data in the next chunk => 1 + 30 = 31. This way we still mark the correct number of
+	// elements as data (as if the code had the expected length).
+	isCode := make([]bool, len(code)+30)
 	for i := 0; i < len(isCode); i++ {
 		isCode[i] = true
 		if i < len(code) {
