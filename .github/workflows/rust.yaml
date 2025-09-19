@@ -79,7 +79,7 @@ jobs:
       env:
         # Treat warnings as errors
         RUSTDOCFLAGS: "-D warnings"
-      run: cargo doc --no-deps
+      run: cargo doc --no-deps --document-private-items
     - name: cargo test doc
       run: cargo test --doc
 
@@ -97,7 +97,7 @@ jobs:
       with:
         workspaces: rust
     - name: cargo build
-      run: cargo build
+      run: cargo build --all-features --all-targets
 
   test:
     name: test
