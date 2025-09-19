@@ -37,6 +37,7 @@ thiserror = "2.0.12"
 # verkle trie
 ark-ff = "0.4.2"
 banderwagon = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
+crypto-bigint = "0.6.1"
 ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 

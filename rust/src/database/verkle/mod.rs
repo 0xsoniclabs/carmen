@@ -9,5 +9,6 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod crypto;
+mod embedding;
 #[cfg(test)]
 mod test_utils;
