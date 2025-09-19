@@ -170,20 +170,20 @@ mod tests {
     fn open_backend(#[case] f: OpenBackendFn) {}
 
     #[rstest_reuse::apply(open_backend)]
-    fn open_creates_and_opens_file(#[case] backend_open_fn: OpenBackendFn) {
+    fn open_creates_and_opens_file(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         assert_eq!(backend.len().unwrap(), 0);
         assert!(std::fs::exists(path).unwrap());
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn open_opens_existing_file(#[case] backend_open_fn: OpenBackendFn) {
+    fn open_opens_existing_file(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -195,12 +195,12 @@ mod tests {
             file.write_all(&[0; 10]).unwrap();
         }
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         assert_eq!(backend.len().unwrap(), 10);
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn open_fails_if_file_is_locked(#[case] backend_open_fn: OpenBackendFn) {
+    fn open_fails_if_file_is_locked(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -208,11 +208,11 @@ mod tests {
         options.create(true).read(true).write(true);
 
         // Open the file once and lock it.
-        let file = backend_open_fn(path.as_path(), options.clone());
+        let file = open_backend_fn(path.as_path(), options.clone());
         assert!(file.is_ok());
 
         // Try to open it again, while the first on is still open. This should fail.
-        let file = backend_open_fn(path.as_path(), options.clone());
+        let file = open_backend_fn(path.as_path(), options.clone());
         assert_eq!(
             file.map(|_| ()).unwrap_err().kind(),
             std::io::ErrorKind::WouldBlock
@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn open_fails_if_no_permissions(#[case] backend_open_fn: OpenBackendFn) {
+    fn open_fails_if_no_permissions(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -231,7 +231,7 @@ mod tests {
         options.read(true).write(true);
 
         assert_eq!(
-            backend_open_fn(path.as_path(), options.clone())
+            open_backend_fn(path.as_path(), options.clone())
                 .map(|_| ())
                 .unwrap_err()
                 .kind(),
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn write_all_at_writes_whole_buffer_at_offset(#[case] backend_open_fn: OpenBackendFn) {
+    fn write_all_at_writes_whole_buffer_at_offset(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -251,7 +251,7 @@ mod tests {
         let offset = 5;
 
         {
-            let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
             backend.write_all_at(&data, offset).unwrap();
         }
         // file: [_, _, _, _, _, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn write_all_at_can_write_across_pages(#[case] backend_open_fn: OpenBackendFn) {
+    fn write_all_at_can_write_across_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -275,7 +275,7 @@ mod tests {
         let offset = 0;
 
         {
-            let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
             backend.write_all_at(&data, offset).unwrap();
         }
 
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn write_all_at_can_write_data_to_different_pages(#[case] backend_open_fn: OpenBackendFn) {
+    fn write_all_at_can_write_data_to_different_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -299,7 +299,7 @@ mod tests {
         let offset2 = 10000;
 
         {
-            let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
             backend.write_all_at(&data, offset1).unwrap();
             backend.write_all_at(&data, offset2).unwrap();
         }
@@ -318,7 +318,7 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_fills_whole_buffer_by_reading_at_offset(
-        #[case] backend_open_fn: OpenBackendFn,
+        #[case] open_backend_fn: OpenBackendFn,
     ) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
@@ -336,7 +336,7 @@ mod tests {
         // file: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
         // read:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [0; 10];
         backend.read_exact_at(&mut buf, 5).unwrap();
         assert_eq!(buf[..5], [1; 5]);
@@ -344,7 +344,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn read_exact_at_can_read_across_pages(#[case] backend_open_fn: OpenBackendFn) {
+    fn read_exact_at_can_read_across_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -359,14 +359,14 @@ mod tests {
             file.write_all(&data).unwrap();
         }
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [0; Page::SIZE * 3];
         backend.read_exact_at(&mut buf, offset).unwrap();
         assert_eq!(buf, data);
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn read_exact_at_can_read_data_from_different_pages(#[case] backend_open_fn: OpenBackendFn) {
+    fn read_exact_at_can_read_data_from_different_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = tempfile::tempdir().unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -385,7 +385,7 @@ mod tests {
             file.write_all(&data).unwrap();
         }
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [1];
         backend.read_exact_at(&mut buf, offset1).unwrap();
         assert_eq!(buf, data);
@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn read_exact_at_fails_when_out_of_bounds(#[case] backend_open_fn: OpenBackendFn) {
+    fn read_exact_at_fails_when_out_of_bounds(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -406,14 +406,14 @@ mod tests {
         }
         // The file exists but is empty.
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [0; 5];
         let res = backend.read_exact_at(&mut buf, 5);
         assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn access_same_page_in_parallel_does_not_deadlock(#[case] backend_open_fn: OpenBackendFn) {
+    fn access_same_page_in_parallel_does_not_deadlock(#[case] open_backend_fn: OpenBackendFn) {
         const THREADS: usize = 128;
         const PAGES: usize = 100;
 
@@ -430,7 +430,7 @@ mod tests {
             file.write_all(&data).unwrap();
         }
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
 
         let barrier = Barrier::new(THREADS);
 
@@ -454,7 +454,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn flush_flushes_file_and_sets_length(#[case] backend_open_fn: OpenBackendFn) {
+    fn flush_flushes_file_and_sets_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -463,7 +463,7 @@ mod tests {
 
         // flush with no changes
         {
-            let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
             backend.flush().unwrap();
 
             let file = File::open(path.as_path()).unwrap();
@@ -472,7 +472,7 @@ mod tests {
 
         // flush with changes
         {
-            let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
             backend.write_all_at(&[1; 10], 0).unwrap();
             backend.flush().unwrap();
 
@@ -485,7 +485,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn drop_flushes_file_and_sets_length(#[case] backend_open_fn: OpenBackendFn) {
+    fn drop_flushes_file_and_sets_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
@@ -493,7 +493,7 @@ mod tests {
         options.create(true).read(true).write(true);
 
         {
-            let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
             backend.write_all_at(&[1; 10], 0).unwrap();
         }
 
@@ -505,27 +505,27 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn len_returns_file_length(#[case] backend_open_fn: OpenBackendFn) {
+    fn len_returns_file_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         backend.write_all_at(&[1; 10], 0).unwrap();
         assert_eq!(backend.len().unwrap(), 10);
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn set_len_sets_length(#[case] backend_open_fn: OpenBackendFn) {
+    fn set_len_sets_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         backend.write_all_at(&[1; 200], 0).unwrap();
         backend.set_len(100).unwrap();
 
@@ -534,14 +534,14 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn read_observes_writes_of_other_threads(#[case] backend_open_fn: OpenBackendFn) {
+    fn read_observes_writes_of_other_threads(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = backend_open_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
 
         let iteration = AtomicU64::new(0);
 
