@@ -117,9 +117,10 @@ fn write<M: Measurement>(
     chunk_size: usize,
     backend_fn: BackendOpenFn,
 ) {
-    // using NamedTempFile is slower
+    // Note: At least on Ubuntu, reading and writing to a file which is located directly in `/tmp`
+    // is slower than with a file in a subdirectory of `/tmp`.
     let tempdir = tempfile::tempdir().unwrap();
-    let path = tempdir.path().join("file_backend_bench");
+    let path = tempdir.path().join("data.bin");
     let path = path.as_path();
 
     {
