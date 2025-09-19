@@ -8,7 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+mod compute_commitment;
 mod crypto;
 mod embedding;
 #[cfg(test)]
 mod test_utils;
+mod variants;
+mod verkle_trie;
