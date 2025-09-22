@@ -11,6 +11,7 @@
 use std::{
     fmt::Display,
     fs::{File, OpenOptions},
+    io::Write,
     path::Path,
     sync::Arc,
 };
@@ -207,8 +208,14 @@ fn file_backend_benchmark<M: Measurement>(
     let path = path.as_path();
 
     {
-        let file = File::create(path).unwrap();
-        file.set_len(FILE_SIZE as u64).unwrap();
+        const ONE_GB: usize = 1024 * 1024 * 1024;
+        let mut file = File::create(path).unwrap();
+        let data_1gb = vec![0; ONE_GB];
+        for _ in 0..(FILE_SIZE / ONE_GB) {
+            file.write_all(&data_1gb).unwrap();
+        }
+        // Note: Using File::set_len creates sparse files on some file systems which results in
+        // non-realistic read performance.
     }
 
     let mut options = OpenOptions::new();
