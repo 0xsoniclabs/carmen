@@ -125,26 +125,46 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
         if offset < self.page_index * Page::SIZE as u64
             || offset >= (self.page_index + 1) * Page::SIZE as u64
         {
-            // O_DIRECT requires reads and writes to operate on page aligned chunks with sizes that
-            // are multiples of the page size. So the file is padded to have a size of a multiple of
-            // the page size.
-            let padded_len = self.file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
-            if self.file_len < padded_len {
-                self.file.set_len(padded_len)?;
-            }
+            if D {
+                let padded_len = self.file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
+                // O_DIRECT requires reads and writes to operate on page aligned chunks with sizes
+                // that are multiples of the page size. So the file is padded to
+                // have a size of a multiple of the page size.
+                if self.file_len < padded_len {
+                    self.file.set_len(padded_len)?;
+                }
 
-            if self.page_dirty {
-                self.file
-                    .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
-            }
+                if self.page_dirty {
+                    self.file
+                        .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
+                }
 
-            self.page_index = offset / Page::SIZE as u64;
-            if padded_len <= self.page_index * Page::SIZE as u64 {
-                self.page.fill(0);
+                self.page_index = offset / Page::SIZE as u64;
+                if padded_len <= self.page_index * Page::SIZE as u64 {
+                    self.page.fill(0);
+                } else {
+                    self.file
+                        .read_exact_at(&mut self.page, self.page_index * Page::SIZE as u64)?;
+                }
             } else {
+                if self.page_dirty {
+                    self.file
+                        .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
+                }
+
+                self.page_index = offset / Page::SIZE as u64;
+
+                let len = cmp::min(
+                    self.file_len
+                        .saturating_sub(self.page_index * Page::SIZE as u64)
+                        as usize,
+                    Page::SIZE,
+                );
                 self.file
-                    .read_exact_at(&mut self.page, self.page_index * Page::SIZE as u64)?;
+                    .read_exact_at(&mut self.page[..len], self.page_index * Page::SIZE as u64)?;
+                self.page[len..].fill(0);
             }
+
             self.page_dirty = false;
         }
         Ok(())
