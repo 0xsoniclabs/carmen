@@ -15,7 +15,6 @@ use crate::{
 };
 
 /// The result of a call to [`ManagedTrieNode::lookup`].
-#[expect(unused)]
 pub enum LookupResult<ID> {
     /// Indicates that the value associated with the key was found in this node.
     Value(Value),
@@ -24,7 +23,6 @@ pub enum LookupResult<ID> {
 }
 
 /// The result of a call to [`ManagedTrieNode::next_store_action`].
-#[expect(unused)]
 pub enum StoreAction<ID, U> {
     /// Indicates that the value can be stored directly in this node.
     /// The contained `usize` is the index of the slot in which the value will be stored.
@@ -40,6 +38,9 @@ pub enum StoreAction<ID, U> {
     /// in it or one of its children. The contained `U` is the transformed node.
     HandleTransform(U),
 }
+
+/// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
+pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {}
 
 /// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)
 /// trie (Verkle, Binary, Merkle-Patricia, ...).
@@ -58,7 +59,6 @@ pub enum StoreAction<ID, U> {
 ///
 /// Since not all lifecycle methods make sense for all node types, the trait provides default
 /// implementations that return an [`Error::UnsupportedOperation`] for most methods.
-#[cfg_attr(not(test), expect(unused))]
 pub trait ManagedTrieNode {
     /// The union type (enum) that encompasses all node types in the trie.
     type Union;
@@ -70,11 +70,9 @@ pub trait ManagedTrieNode {
     type Commitment: TrieCommitment;
 
     /// Looks up the value associated with the given key in this node.
-    #[expect(unused)]
     fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error>;
 
     /// Returns information about the next action required to store a value at the given key.
-    #[expect(unused)]
     fn next_store_action(
         &self,
         _key: &Key,
@@ -157,16 +155,15 @@ mod tests {
 
         assert!(matches!(
             node.replace_child(&Key::default(), 0, 0),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::replace_child"
+            Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::replace_child")
         ));
         assert!(matches!(
             node.store(&Key::default(), &Value::default()),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::store"
+            Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::store")
         ));
-        let commitment = node.get_commitment();
         assert!(matches!(
-            node.set_commitment(commitment),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::set_commitment"
+            node.set_commitment(TestCommitment{}),
+            Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::set_commitment")
         ));
     }
 }

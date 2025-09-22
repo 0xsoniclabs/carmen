@@ -11,4 +11,5 @@
 pub mod managed;
 mod simple;
 
+pub use managed::{FakeCache, ManagedVerkleTrie};
 pub use simple::SimpleInMemoryVerkleTrie;
