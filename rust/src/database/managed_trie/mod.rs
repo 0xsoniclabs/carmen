@@ -8,6 +8,16 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+mod lookup;
+mod managed_trie_node;
+mod store;
 mod trie_commitment;
+mod trie_update_log;
 
+pub use lookup::lookup;
+pub use managed_trie_node::{CanStoreResult, LookupResult, ManagedTrieNode, UnionManagedTrieNode};
+pub use store::store;
 pub use trie_commitment::TrieCommitment;
+pub use trie_update_log::TrieUpdateLog;
+
+use crate::types::Value;

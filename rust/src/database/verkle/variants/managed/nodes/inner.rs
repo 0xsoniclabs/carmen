@@ -11,11 +11,16 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::verkle::variants::managed::{
-        commitment::VerkleCommitment,
-        nodes::{NodeType, id::NodeId},
+    database::{
+        managed_trie::{CanStoreResult, LookupResult, ManagedTrieNode},
+        verkle::variants::managed::{
+            Node,
+            commitment::{VerkleCommitment, VerkleCommitmentInput},
+            nodes::{NodeType, id::NodeId},
+        },
     },
-    types::TreeId,
+    error::Error,
+    types::{Key, TreeId},
 };
 
 /// An inner node in a managed Verkle trie.
@@ -28,12 +33,49 @@ pub struct InnerNode {
     pub commitment: VerkleCommitment,
 }
 
+impl InnerNode {
+    pub fn get_commitment_input(&self) -> Result<VerkleCommitmentInput, Error> {
+        Ok(VerkleCommitmentInput::Inner(self.children))
+    }
+}
+
 impl Default for InnerNode {
     fn default() -> Self {
         InnerNode {
             children: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
             commitment: VerkleCommitment::default(),
         }
+    }
+}
+
+impl ManagedTrieNode for InnerNode {
+    type Union = Node;
+    type Id = NodeId;
+    type Commitment = VerkleCommitment;
+
+    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
+        Ok(LookupResult::Node(
+            self.children[key[depth as usize] as usize],
+        ))
+    }
+
+    fn can_store(&self, key: &Key, depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
+        let pos = key[depth as usize] as usize;
+        Ok(CanStoreResult::Descend(pos, self.children[pos]))
+    }
+
+    fn replace_child(&mut self, key: &Key, depth: u8, new: NodeId) -> Result<(), Error> {
+        self.children[key[depth as usize] as usize] = new;
+        Ok(())
+    }
+
+    fn get_commitment(&self) -> Self::Commitment {
+        self.commitment
+    }
+
+    fn set_commitment(&mut self, cache: Self::Commitment) -> Result<(), Error> {
+        self.commitment = cache;
+        Ok(())
     }
 }
 

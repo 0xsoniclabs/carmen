@@ -8,10 +8,21 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::collections::HashMap;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::{managed_trie::TrieCommitment, verkle::crypto::Commitment},
+    database::{
+        managed_trie::{ManagedTrieNode, TrieCommitment, TrieUpdateLog},
+        verkle::{
+            compute_commitment::compute_leaf_node_commitment,
+            crypto::Commitment,
+            variants::managed::{Node, NodeId},
+        },
+    },
+    error::Error,
+    node_manager::NodeManager,
     types::Value,
 };
 
@@ -70,6 +81,59 @@ impl TrieCommitment for VerkleCommitment {
         self.changed[index / 8] |= 1 << (index % 8);
         self.dirty = 1;
     }
+}
+
+// TODO: Avoid copying all 256 values / children: https://github.com/0xsoniclabs/sonic-admin/issues/384
+#[allow(clippy::large_enum_variant)]
+pub enum VerkleCommitmentInput {
+    Leaf([Value; 256], [u8; 31]),
+    Inner([NodeId; 256]),
+}
+
+pub fn update_commitments(
+    log: &TrieUpdateLog<NodeId>,
+    manager: &impl NodeManager<Id = NodeId, NodeType = Node>,
+) -> Result<(), Error> {
+    let mut previous_commitments = HashMap::new();
+    for dirty_nodes in log.dirty_nodes_by_level.read().unwrap().iter().rev() {
+        for id in dirty_nodes.iter() {
+            let mut lock = manager.get_write_access(*id)?;
+            let mut com = lock.get_commitment();
+            assert_eq!(com.dirty, 1);
+
+            previous_commitments.insert(*id, com.commitment);
+
+            match lock.get_commitment_input()? {
+                VerkleCommitmentInput::Leaf(values, stem) => {
+                    // TODO: Consider caching leaf node commitments https://github.com/0xsoniclabs/sonic-admin/issues/386
+                    com.commitment = compute_leaf_node_commitment(&values, &com.used_slots, &stem);
+                }
+                VerkleCommitmentInput::Inner(children) => {
+                    for (i, child_id) in children.iter().enumerate() {
+                        if com.changed[i / 8] & (1 << (i % 8)) == 0 {
+                            continue;
+                        }
+
+                        let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
+                        assert_eq!(child_commitment.dirty, 0);
+                        com.commitment.update(
+                            i as u8,
+                            previous_commitments[child_id].to_scalar(),
+                            child_commitment.commitment.to_scalar(),
+                        );
+                    }
+                }
+            }
+
+            com.dirty = 0;
+            // TODO: Test this (currently not caught by any test!)
+            com.changed.fill(0);
+            lock.set_commitment(com)?;
+        }
+    }
+    // TODO: Test
+    log.clear();
+    Ok(())
 }
 
 #[cfg(test)]
