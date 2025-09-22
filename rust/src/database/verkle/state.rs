@@ -8,13 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::mem::MaybeUninit;
+use std::{mem::MaybeUninit, sync::Arc};
 
 use sha3::{Digest, Keccak256};
 
 use crate::{
     CarmenState,
     database::verkle::{
+        FakeCache, ManagedVerkleTrie,
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
@@ -38,6 +39,14 @@ pub struct VerkleTrieCarmenState<T: VerkleTrie> {
 impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     pub fn new() -> Self {
         let trie = SimpleInMemoryVerkleTrie::new();
+        Self { trie }
+    }
+}
+
+#[cfg_attr(not(test), expect(unused))]
+impl VerkleTrieCarmenState<ManagedVerkleTrie<FakeCache>> {
+    pub fn new() -> Self {
+        let trie = ManagedVerkleTrie::new(Arc::new(FakeCache::new()));
         Self { trie }
     }
 }
@@ -179,6 +188,7 @@ mod tests {
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
+    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<FakeCache>>::new()) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]

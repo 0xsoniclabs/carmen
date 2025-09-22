@@ -16,7 +16,6 @@ use crate::{database::VerkleTrieCarmenState, error::Error, types::*};
 mod database;
 mod error;
 mod ffi;
-#[cfg(test)]
 mod node_manager;
 pub mod storage;
 pub mod types;

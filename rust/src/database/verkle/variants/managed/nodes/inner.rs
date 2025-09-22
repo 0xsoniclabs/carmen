@@ -10,12 +10,20 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::database::{
-    managed_trie::CachedCommitment,
-    verkle::{
-        crypto::Commitment,
-        variants::managed::nodes::{NodeType, id::NodeId},
+use crate::{
+    database::{
+        managed_trie::{CachedCommitment, CanStoreResult, LookupResult, ManagedTrieNode},
+        verkle::{
+            crypto::Commitment,
+            variants::managed::{
+                Node,
+                commitment::VerkleCommitmentInput,
+                nodes::{NodeType, id::NodeId},
+            },
+        },
     },
+    error::Error,
+    types::Key,
 };
 
 /// An inner node in a managed Verkle trie.
@@ -34,6 +42,45 @@ impl Default for InnerNode {
             children: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
             commitment: CachedCommitment::default(),
         }
+    }
+}
+
+impl ManagedTrieNode for InnerNode {
+    type Union = Node;
+    type Id = NodeId;
+    type Commitment = Commitment;
+    type CommitmentInput = VerkleCommitmentInput;
+
+    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
+        Ok(LookupResult::Node(
+            self.children[key[depth as usize] as usize],
+        ))
+    }
+
+    fn can_store(&self, key: &Key, depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
+        let pos = key[depth as usize];
+        Ok(CanStoreResult::Descend(self.children[pos as usize]))
+    }
+
+    fn replace_child(&mut self, key: &Key, depth: u8, new: NodeId) -> Result<(), Error> {
+        self.children[key[depth as usize] as usize] = new;
+        Ok(())
+    }
+
+    fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {
+        self.commitment
+    }
+
+    fn set_cached_commitment(
+        &mut self,
+        cache: CachedCommitment<Self::Commitment>,
+    ) -> Result<(), Error> {
+        self.commitment = cache;
+        Ok(())
+    }
+
+    fn get_commitment_input(&self) -> Result<Self::CommitmentInput, Error> {
+        Ok(VerkleCommitmentInput::Inner(self.children))
     }
 }
 

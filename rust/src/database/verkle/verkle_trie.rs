@@ -38,15 +38,18 @@ pub trait VerkleTrie: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::database::verkle::{
-        SimpleInMemoryVerkleTrie,
+        FakeCache, ManagedVerkleTrie, SimpleInMemoryVerkleTrie,
         test_utils::{make_key, make_leaf_key, make_value},
     };
 
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
+    #[case::managed(Box::new(ManagedVerkleTrie::<FakeCache>::new(Arc::new(FakeCache::new()))) as Box<dyn VerkleTrie>)]
     fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>) {}
 
     #[rstest_reuse::apply(all_trie_impls)]
