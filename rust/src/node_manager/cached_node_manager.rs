@@ -267,6 +267,7 @@ where
     }
 
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
+        self.storage.delete(id)?;
         if let Some(pos) = self.cache.get(&id) {
             // get exclusive write access before dropping the element
             let _guard = self.elements[pos].write().unwrap();
@@ -274,13 +275,11 @@ where
             let mut free_list = self.free_list.lock().unwrap();
             free_list.push_back(pos);
         }
-        self.storage
-            .delete(id)
-            .map_err(|_| Error::Storage(storage::Error::NotFound))?;
         Ok(())
     }
 
     fn flush(&self) -> Result<(), crate::error::Error> {
+        self.storage.flush()?;
         for (id, pos) in self.cache.iter() {
             let mut entry_guard = self.elements[pos].write().unwrap();
             if self.free_list.lock().unwrap().contains(&pos) {
@@ -291,7 +290,6 @@ where
                 entry_guard.status = NodeStatus::Clean;
             }
         }
-        self.storage.flush()?;
         Ok(())
     }
 }
