@@ -450,7 +450,9 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn access_same_page_in_parallel_does_not_deadlock(#[case] open_backend_fn: OpenBackendFn) {
+    fn access_same_page_in_parallel_does_not_deadlock__slow(
+        #[case] open_backend_fn: OpenBackendFn,
+    ) {
         const THREADS: usize = 128;
         const PAGES: usize = 100;
 
