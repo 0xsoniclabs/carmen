@@ -34,6 +34,7 @@ mod bindings {
                     Result_kResult_CorruptedDatabase
                 }
                 Error::Storage(crate::storage::Error::Io(_)) => Result_kResult_IOError,
+                Error::NotFound => todo!(),
             }
         }
     }

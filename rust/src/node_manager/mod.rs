@@ -57,5 +57,6 @@ pub trait NodeManager {
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
 
     /// Flushes all pending operations to the underlying storage layer (if one exists).
+    #[cfg_attr(not(test), expect(unused))]
     fn flush(&self) -> Result<(), Error>;
 }

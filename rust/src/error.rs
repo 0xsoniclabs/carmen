@@ -29,4 +29,7 @@ pub enum Error {
     Storage(#[from] storage::Error),
     #[error("node manager error: {0}")]
     NodeManager(String),
+
+    #[error("not found")]
+    NotFound,
 }

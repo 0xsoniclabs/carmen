@@ -18,4 +18,5 @@ mod variants;
 mod verkle_trie;
 
 pub use state::VerkleTrieCarmenState;
-pub use variants::SimpleInMemoryVerkleTrie;
+pub use variants::FakeCache; // TODO: Remove
+pub use variants::{CachedCommitment, ManagedVerkleTrie, SimpleInMemoryVerkleTrie};

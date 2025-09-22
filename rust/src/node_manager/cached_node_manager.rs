@@ -18,7 +18,7 @@ use std::{
 
 use quick_cache::{Lifecycle, UnitWeighter};
 
-use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::Node};
+use crate::{error::Error, node_manager::NodeManager, storage::Storage};
 
 /// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
@@ -65,6 +65,7 @@ where
     storage: S,
 }
 
+#[cfg_attr(not(test), expect(unused))]
 impl<K: Eq + Hash + Copy, S, N> CachedNodeManager<K, N, S>
 where
     S: Storage<Id = K, Item = N>,
@@ -338,7 +339,7 @@ mod tests {
     use super::*;
     use crate::{
         storage::{self},
-        types::{NodeId, NodeType},
+        types::{EmptyNode, Node, NodeId, NodeType},
     };
 
     #[test]
@@ -404,7 +405,7 @@ mod tests {
             storage.expect_set().never();
             let manager = CachedNodeManager::new(10, storage);
             let expected = NodeWithMetadata {
-                node: Node::Empty,
+                node: Node::Empty(EmptyNode),
                 is_dirty: true,
             };
             let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
@@ -421,7 +422,7 @@ mod tests {
             // Create manager that only fits a single node.
             let manager = CachedNodeManager::new(1, storage);
             let expected_node = NodeWithMetadata {
-                node: Node::Empty,
+                node: Node::Empty(EmptyNode),
                 is_dirty: true,
             };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
@@ -457,7 +458,7 @@ mod tests {
 
     #[rstest_reuse::apply(get_method)]
     fn cached_node_manager_get_methods_return_cached_entry(#[case] get_method: GetMethod) {
-        let expected_entry = Node::Empty;
+        let expected_entry = Node::Empty(EmptyNode);
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().never(); // Shouldn't query storage if entry is in cache
@@ -479,7 +480,7 @@ mod tests {
     fn cached_node_manager_get_methods_return_existing_entry_from_storage_if_not_in_cache(
         #[case] get_method: GetMethod,
     ) {
-        let expected_entry = Node::Empty;
+        let expected_entry = Node::Empty(EmptyNode);
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().times(1).with(eq(id)).returning({
@@ -524,7 +525,7 @@ mod tests {
                 .times(1)
                 .in_sequence(&mut sequence)
                 .with(eq(NodeId::from_idx_and_node_type(i, NodeType::Empty)))
-                .returning(move |_| Ok(Node::Empty));
+                .returning(move |_| Ok(Node::Empty(EmptyNode)));
         }
         storage
             .expect_set()
@@ -579,7 +580,7 @@ mod tests {
                 .times(1)
                 .with(
                     eq(NodeId::from_idx_and_node_type(i, NodeType::Empty)),
-                    eq(Node::Empty),
+                    eq(Node::Empty(EmptyNode)),
                 )
                 .returning(move |_, _| Ok(()));
         }
@@ -588,7 +589,7 @@ mod tests {
         let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
         for _ in 0..NUM_NODES {
             // Newly added nodes are always dirty
-            let _ = manager.add(Node::Empty).unwrap();
+            let _ = manager.add(Node::Empty(EmptyNode)).unwrap();
         }
         manager.flush().expect("flush should succeed");
     }
@@ -626,7 +627,7 @@ mod tests {
             .returning(|_| Err(storage::Error::NotFound));
 
         let manager = CachedNodeManager::new(2, storage);
-        let _ = manager.add(Node::Empty).unwrap();
+        let _ = manager.add(Node::Empty(EmptyNode)).unwrap();
         let res = manager.delete(id);
         assert!(res.is_err());
         assert!(matches!(
@@ -654,14 +655,14 @@ mod tests {
             .times(1)
             .with(
                 eq(NodeId::from_idx_and_node_type(0, NodeType::Empty)),
-                eq(Node::Empty),
+                eq(Node::Empty(EmptyNode)),
             )
             .returning(|_, _| Ok(()));
 
         // With unit-size cache, each item is immediately evicted
         let manager = CachedNodeManager::new(1, storage);
         // Insert two nodes to trigger the eviction of the first one
-        let _ = manager.add(Node::Empty).unwrap();
+        let _ = manager.add(Node::Empty(EmptyNode)).unwrap();
         let id = manager.add(Node::Inner(Box::default())).unwrap();
 
         let entry = manager.get_read_access(id).unwrap();

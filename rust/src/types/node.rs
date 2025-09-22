@@ -10,7 +10,13 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::types::{Commitment, NodeId, Value};
+use crate::{
+    database::verkle::CachedCommitment,
+    types::{NodeId, Value},
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmptyNode;
 
 /// A value of a leaf node in a (file-based) Verkle trie, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -32,9 +38,10 @@ pub struct ValueWithIndex {
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct SparseLeafNode<const N: usize> {
-    pub commitment: Commitment,
     pub stem: [u8; 31],
     pub values: [ValueWithIndex; N],
+    pub used_bits: [u8; 256 / 8],
+    pub commitment: CachedCommitment,
 }
 
 impl<const N: usize> Default for SparseLeafNode<N> {
@@ -45,9 +52,10 @@ impl<const N: usize> Default for SparseLeafNode<N> {
         });
 
         SparseLeafNode {
-            commitment: Commitment::default(),
             stem: [0; 31],
             values,
+            used_bits: [0; 256 / 8],
+            commitment: CachedCommitment::default(),
         }
     }
 }
@@ -58,17 +66,20 @@ impl<const N: usize> Default for SparseLeafNode<N> {
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct FullLeafNode {
-    pub commitment: Commitment,
+    // TODO: We could make these all private by implementing the TrieNode trait in this file
     pub stem: [u8; 31],
     pub values: [Value; 256],
+    pub used_bits: [u8; 256 / 8],
+    pub commitment: CachedCommitment,
 }
 
 impl Default for FullLeafNode {
     fn default() -> Self {
         FullLeafNode {
-            commitment: Commitment::default(),
             stem: [0; 31],
             values: [Value::default(); 256],
+            used_bits: [0; 256 / 8],
+            commitment: CachedCommitment::default(),
         }
     }
 }
@@ -81,15 +92,15 @@ impl Default for FullLeafNode {
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct InnerNode {
-    pub commitment: Commitment,
-    pub values: [NodeId; 256],
+    pub children: [NodeId; 256],
+    pub commitment: CachedCommitment,
 }
 
 impl Default for InnerNode {
     fn default() -> Self {
         InnerNode {
-            commitment: Commitment::default(),
-            values: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
+            children: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
+            commitment: CachedCommitment::default(),
         }
     }
 }
@@ -98,10 +109,9 @@ impl Default for InnerNode {
 //
 /// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
 /// dictated by the largest variant).
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
-    #[default]
-    Empty,
+    Empty(EmptyNode),
     Inner(Box<InnerNode>),
     Leaf2(Box<SparseLeafNode<2>>),
     Leaf256(Box<FullLeafNode>),
@@ -110,7 +120,7 @@ pub enum Node {
 impl Node {
     pub fn to_node_type(&self) -> NodeType {
         match self {
-            Node::Empty => NodeType::Empty,
+            Node::Empty(_) => NodeType::Empty,
             Node::Inner(_) => NodeType::Inner,
             Node::Leaf2(_) => NodeType::Leaf2,
             Node::Leaf256(_) => NodeType::Leaf256,
@@ -128,9 +138,15 @@ impl NodeSize for Node {
     }
 }
 
+impl Default for Node {
+    fn default() -> Self {
+        Node::Empty(EmptyNode)
+    }
+}
+
 /// A node type of a node in a (file-based) Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeType {
     Empty,
     Inner,
@@ -180,7 +196,7 @@ mod tests {
         const N: usize = 2;
         let node: SparseLeafNode<N> = SparseLeafNode::default();
 
-        assert_eq!(node.commitment, Commitment::default());
+        assert_eq!(node.commitment, CachedCommitment::default());
         assert_eq!(node.stem, [0; 31]);
 
         for (i, value) in node.values.iter().enumerate() {
@@ -192,17 +208,17 @@ mod tests {
     #[test]
     fn full_leaf_node_default_returns_leaf_node_with_all_values_set_to_default() {
         let node: FullLeafNode = FullLeafNode::default();
-        assert_eq!(node.commitment, Commitment::default());
+        assert_eq!(node.commitment, CachedCommitment::default());
         assert_eq!(node.stem, [0; 31]);
         assert_eq!(node.values, [Value::default(); 256]);
     }
 
     #[test]
-    fn inner_node_default_returns_inner_node_with_all_values_set_to_empty_node_id() {
+    fn inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
         let node: InnerNode = InnerNode::default();
-        assert_eq!(node.commitment, Commitment::default());
+        assert_eq!(node.commitment, CachedCommitment::default());
         assert_eq!(
-            node.values,
+            node.children,
             [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256]
         );
     }
@@ -245,7 +261,7 @@ mod tests {
 
     #[test]
     fn node_byte_size_returns_node_type_byte_size() {
-        let empty_node = Node::Empty;
+        let empty_node = Node::Empty(EmptyNode);
         let inner_node = Node::Inner(Box::default());
         let leaf2_node = Node::Leaf2(Box::default());
         let leaf256_node = Node::Leaf256(Box::default());
