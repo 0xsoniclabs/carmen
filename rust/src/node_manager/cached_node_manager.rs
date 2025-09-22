@@ -140,24 +140,34 @@ where
     /// Evicts an entry from the cache, storing it in the storage if `storage_filter` returns
     /// true.
     /// NOTE: this may be done in a separate thread
-    fn evict(&self, entry: Option<(K, usize)>, storage_filter: impl Fn(&W) -> bool) {
+    fn evict(
+        &self,
+        entry: Option<(K, usize)>,
+        storage_filter: impl Fn(&W) -> bool,
+    ) -> Result<(), Error> {
         if let Some((key, pos)) = entry {
             // If the cache was full, we had to insert an element with the actual key and pos
             // PINNED_POS to trigger eviction. When inserting the the correct key and pos,
             // quick_cache returns the old pos as an evicted element. Therefore we have to skip it
             // here
             if pos == PINNED_POS {
-                return;
+                return Ok(()); // skip pinned elements
             }
             let guard = self.elements[pos].write().unwrap();
             if !storage_filter(&guard) {
-                return; // skip elements that should not be stored
+                return Ok(()); // skip elements that should not be stored
             }
-            self.storage.set(key, &guard).unwrap();
+            self.storage.set(key, &guard)?;
             self.free_list.lock().unwrap().push_back(pos);
         }
+        Ok(())
     }
 
+    /// Insert an element in the cache, reusing a free slot if available or evicting an
+    /// existing element if the cache is full.
+    /// The `storage_filter` function is used to determine if an evicted element should be
+    /// stored in the storage.
+    /// Returns the position of the inserted element in the `elements` vector.
     fn insert_into_free_slot(
         &self,
         key: K,
@@ -180,7 +190,7 @@ where
             // The cache is full, we need to evict an element to make space.
             // Element is inserted as pinned to avoid being immediately evicted
             let evicted = self.cache.insert_with_lifecycle(key, PINNED_POS);
-            self.evict(evicted, &storage_filter);
+            self.evict(evicted, &storage_filter)?;
 
             // Now, there should be an element in the free list. If not, the
             // cache eviction failed (e.g. since all elements are pinned) and
@@ -199,7 +209,7 @@ where
 
         // Include new element in cache, evict old elements if necessary.
         let evicted = self.cache.insert_with_lifecycle(key, pos);
-        self.evict(evicted, storage_filter);
+        self.evict(evicted, storage_filter)?;
         Ok(pos)
     }
 }
@@ -361,9 +371,15 @@ mod tests {
 
         let cache = CachedNodeManager::new(10, storage);
         cache.add(Node::Empty).expect("set should succeed");
-        cache.evict(Some((id, 0)), |_| true);
-        cache.evict(Some((id, 0)), |_| false); // should not store again
-        cache.evict(Some((id, PINNED_POS)), |_| true); // should not store pinned element
+        cache
+            .evict(Some((id, 0)), |_| true)
+            .expect("evict should succeed");
+        cache
+            .evict(Some((id, 0)), |_| false)
+            .expect("evict should succeed"); // should not store again
+        cache
+            .evict(Some((id, PINNED_POS)), |_| true)
+            .expect("evict should succeed"); // should not store pinned element
     }
 
     #[test]
