@@ -19,7 +19,7 @@ use zerocopy::IntoBytes;
 
 use crate::{
     database::verkle::variants::managed::{
-        FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
+        EmptyNode, FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
     },
     storage::{CheckpointParticipant, Checkpointable, Error, Storage},
 };
@@ -96,7 +96,7 @@ where
     fn get(&self, id: NodeId) -> Result<Node, Error> {
         let idx = id.to_index();
         match id.to_node_type().ok_or(Error::InvalidId)? {
-            NodeType::Empty => Ok(Node::Empty),
+            NodeType::Empty => Ok(Node::Empty(EmptyNode)),
             NodeType::Inner => {
                 let node = self.inner_nodes.get(idx)?;
                 Ok(Node::Inner(Box::new(node)))
@@ -114,7 +114,7 @@ where
 
     fn reserve(&self, node: &Node) -> NodeId {
         match node {
-            Node::Empty => NodeId::from_idx_and_node_type(0, NodeType::Empty),
+            Node::Empty(_) => NodeId::from_idx_and_node_type(0, NodeType::Empty),
             Node::Inner(node) => {
                 let idx = self.inner_nodes.reserve(node);
                 NodeId::from_idx_and_node_type(idx, NodeType::Inner)
@@ -133,11 +133,11 @@ where
     fn set(&self, id: NodeId, node: &Node) -> Result<(), Error> {
         let idx = id.to_index();
         match (node, id.to_node_type().ok_or(Error::InvalidId)?) {
-            (Node::Empty, NodeType::Empty) => Ok(()),
+            (Node::Empty(_), NodeType::Empty) => Ok(()),
             (Node::Inner(node), NodeType::Inner) => self.inner_nodes.set(idx, node),
             (Node::Leaf2(node), NodeType::Leaf2) => self.leaf_nodes_2.set(idx, node),
             (Node::Leaf256(node), NodeType::Leaf256) => self.leaf_nodes_256.set(idx, node),
-            (Node::Empty | Node::Inner(_) | Node::Leaf2(_) | Node::Leaf256(_), _) => {
+            (Node::Empty(_) | Node::Inner(_) | Node::Leaf2(_) | Node::Leaf256(_), _) => {
                 Err(Error::IdNodeTypeMismatch)
             }
         }
@@ -288,7 +288,7 @@ mod tests {
         {
             // Empty nodes are not stored. Calling get with them returns a (default) empty node.
             let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            assert_eq!(storage.get(empty_node_id).unwrap(), Node::Empty);
+            assert_eq!(storage.get(empty_node_id).unwrap(), Node::Empty(EmptyNode));
         }
 
         // Node::Inner
@@ -363,7 +363,7 @@ mod tests {
             // Empty nodes are not stored. Calling reserve with them always returns ID 0.
             let empty_node_idx = 0;
             assert_eq!(
-                storage.reserve(&Node::Empty),
+                storage.reserve(&Node::Empty(EmptyNode)),
                 NodeId::from_idx_and_node_type(empty_node_idx, NodeType::Empty)
             );
         }
@@ -430,7 +430,7 @@ mod tests {
         {
             // Empty nodes are not stored. Calling set with them is a no-op.
             let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            let empty_node = Node::Empty;
+            let empty_node = Node::Empty(EmptyNode);
             assert!(storage.set(empty_node_id, &empty_node).is_ok());
         }
 

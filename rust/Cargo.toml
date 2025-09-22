@@ -67,6 +67,9 @@ criterion = "0.7.0"
 
 tempfile = "3.20.0"
 
+[profile.release]
+debug = "line-tables-only"
+
 [lints.rust]
 macro_use_extern_crate = "warn"
 unused_unsafe = "warn"
