@@ -14,7 +14,6 @@ use std::{
 };
 
 use crate::error::Error;
-pub mod cached_node_manager;
 
 /// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].
 ///
@@ -30,6 +29,7 @@ pub mod cached_node_manager;
 /// instead a wrapper type which dereferences to [`NodeManager::NodeType`]. This abstraction allows
 /// for the pool to associate metadata with each item, for example to implement smart cache
 /// eviction.
+#[allow(dead_code)]
 pub trait NodeManager {
     /// The id type used to identify items in the pool.
     type Id;
