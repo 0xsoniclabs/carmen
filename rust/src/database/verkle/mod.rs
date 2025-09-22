@@ -11,7 +11,11 @@
 mod compute_commitment;
 mod crypto;
 mod embedding;
+mod state;
 #[cfg(test)]
 mod test_utils;
 mod variants;
 mod verkle_trie;
+
+pub use state::VerkleTrieState;
+pub use variants::SimpleInMemoryVerkleTrie;

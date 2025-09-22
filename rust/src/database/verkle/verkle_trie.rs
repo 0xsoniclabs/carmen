@@ -22,7 +22,6 @@ use crate::{
 ///
 /// The trait prescribes interior mutability through shared references,
 /// allowing for safe concurrent access.
-#[cfg_attr(not(test), expect(unused))]
 pub trait VerkleTrie: Send + Sync {
     /// Retrieves the value associated with the given key.
     /// Returns the default [`Value`] if the key does not exist.

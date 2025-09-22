@@ -9,3 +9,5 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod verkle;
+
+pub use verkle::{SimpleInMemoryVerkleTrie, VerkleTrieState};

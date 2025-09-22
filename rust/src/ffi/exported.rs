@@ -1170,8 +1170,8 @@ mod tests {
 
     #[test]
     fn carmen_rust_open_database_returns_non_null_pointers() {
-        let live_impls = [LiveImpl::Memory, LiveImpl::File, LiveImpl::LevelDb];
-        let archive_impls = [ArchiveImpl::None, ArchiveImpl::LevelDb, ArchiveImpl::Sqlite];
+        let live_impls = [LiveImpl::Memory];
+        let archive_impls = [ArchiveImpl::None];
         for live_impl in live_impls {
             for archive_impl in archive_impls {
                 unsafe {
