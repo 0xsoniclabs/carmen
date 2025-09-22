@@ -10,6 +10,8 @@
 
 mod file_backend;
 mod file_storage_manager;
+#[cfg(unix)]
+mod multi_page_cached_file;
 mod node_file_storage;
 #[cfg(unix)]
 mod page_cached_file;
@@ -19,6 +21,8 @@ mod page_utils;
 pub use file_backend::*;
 #[cfg(test)]
 pub use file_storage_manager::{FileStorageManager, MockFileStorageManager};
+#[cfg(unix)]
+pub use multi_page_cached_file::MultiPageCachedFile;
 pub use node_file_storage::NodeFileStorage;
 #[cfg(unix)]
 pub use page_cached_file::PageCachedFile;

@@ -136,7 +136,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{PageCachedFile, page_utils::Page},
+        storage::file::{MultiPageCachedFile, PageCachedFile, page_utils::Page},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -156,15 +156,51 @@ mod tests {
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
-    #[case::page_cached_file__seek_file(
+    #[case::page_cached_file__seek_file__true(
         (|path, options| {
-            <PageCachedFile<SeekFile> as FileBackend>::open(path, options)
+            <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
-    #[case::page_cached_file__no_seek_file(
+    #[case::page_cached_file__no_seek_file__true(
         (|path, options| {
-            <PageCachedFile<NoSeekFile> as FileBackend>::open(path, options)
+            <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::page_cached_file__seek_file__false(
+        (|path, options| {
+            <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::page_cached_file__no_seek_file__false(
+        (|path, options| {
+            <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__seek_file__true(
+        (|path, options| {
+            <MultiPageCachedFile<8, SeekFile, true> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__no_seek_file__true(
+        (|path, options| {
+            <MultiPageCachedFile<8, NoSeekFile, true> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__seek_file__false(
+        (|path, options| {
+            <MultiPageCachedFile<8, SeekFile, false> as FileBackend>::open(path, options)
+                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+        }) as OpenBackendFn
+    )]
+    #[case::multi_page_cached_file__no_seek_file__false(
+        (|path, options| {
+            <MultiPageCachedFile<8, NoSeekFile, false> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
@@ -414,7 +450,9 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn access_same_page_in_parallel_does_not_deadlock(#[case] open_backend_fn: OpenBackendFn) {
+    fn access_same_page_in_parallel_does_not_deadlock__slow(
+        #[case] open_backend_fn: OpenBackendFn,
+    ) {
         const THREADS: usize = 128;
         const PAGES: usize = 100;
 
