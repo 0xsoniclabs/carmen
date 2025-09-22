@@ -23,19 +23,16 @@ const VERKLE_NODE_WIDTH: U256 = U256::from_u64(256);
 const VERKLE_NODE_WIDTH_LOG2: u64 = 8;
 
 /// Returns the key of the basic data fields (nonce, balance, code size) for the given address.
-#[cfg_attr(not(test), expect(unused))]
 pub fn get_basic_data_key(address: &Address) -> Key {
     get_trie_key(address, &U256::ZERO, 0)
 }
 
 /// Returns the key of the code hash field for the given address.
-#[cfg_attr(not(test), expect(unused))]
 pub fn get_code_hash_key(address: &Address) -> Key {
     get_trie_key(address, &U256::ZERO, 1)
 }
 
 /// Returns the key of the code chunk with the given chunk number for the given address.
-#[cfg_attr(not(test), expect(unused))]
 pub fn get_code_chunk_key(address: &Address, chunk_number: u32) -> Key {
     // Derived from
     // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
@@ -48,7 +45,6 @@ pub fn get_code_chunk_key(address: &Address, chunk_number: u32) -> Key {
 }
 
 /// Returns the storage key for the given address and storage key.
-#[cfg_attr(not(test), expect(unused))]
 pub fn get_storage_key(address: &Address, key: &Key) -> Key {
     // Derived from
     // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203

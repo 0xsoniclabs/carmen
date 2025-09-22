@@ -16,7 +16,6 @@ type Chunk = [u8; 32];
 /// Splits the given EVM bytecode into 31-byte chunks, each prefixed with a single byte indicating
 /// the number of leading data bytes (i.e., non-opcode bytes, part of the data section of a PUSH
 /// instruction) in that chunk.
-#[cfg_attr(not(test), expect(unused))]
 pub fn split_code(code: &[u8]) -> Vec<Chunk> {
     // Add 30 additional entries to handle the case where the code is shorter than expected
     // based on the last PUSH instruction. 30 covers the maximum number of potentially
@@ -53,7 +52,6 @@ pub fn split_code(code: &[u8]) -> Vec<Chunk> {
 
 /// Merges the given chunks (created by [`split_code`]) back into the original bytecode.
 /// At most `result.len()` bytes are written to `result`.
-#[cfg_attr(not(test), expect(unused))]
 pub fn merge_code(chunks: &[Chunk], result: &mut [u8]) {
     for (chunk, out) in chunks.iter().zip(result.chunks_mut(31)) {
         out.copy_from_slice(&chunk[1..1 + out.len()]);
