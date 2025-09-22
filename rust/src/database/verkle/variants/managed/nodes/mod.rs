@@ -72,7 +72,6 @@ impl Node {
     }
 
     /// Returns the commitment input for computing the commitment of this node.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         match self {
             Node::Empty(n) => n.get_commitment_input(),

@@ -21,7 +21,6 @@ pub struct TrieUpdateLog<ID> {
     dirty_nodes_by_level: RwLock<Vec<DashSet<ID>>>,
 }
 
-#[cfg_attr(not(test), expect(unused))]
 impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
     /// Creates a new, empty [`TrieUpdateLog`].
     pub fn new() -> Self {
