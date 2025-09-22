@@ -87,8 +87,8 @@ where
     W: DerefMut,
 {
     elements: Arc<Vec<RwLock<W>>>, // the owner of all values
+    // cache, managing the key to element position mapping as well as the element eviction
     cache: quick_cache::sync::Cache<
-        // cache, managing the key to element position mapping as well as the element eviction
         K,                   // key type to identify cached elements
         usize,               // value type to identify element positions in the elements vector
         UnitWeighter,        // all elements are considered to cost the same
@@ -97,8 +97,8 @@ where
     >,
     free_list: Mutex<VecDeque<usize>>, // free list of available element positions
     next_empty: AtomicUsize,           // next empty position in elements vector
-    storage: S,                        /* storage for managing IDs, fetching missing elements,
-                                        * and saving evicted elements to */
+    //storage for managing IDs, fetching missing elements, and saving evicted elements to
+    storage: S,
 }
 
 impl<K: Eq + Hash + Copy, S, W> CachedNodeManager<K, W, S>
@@ -106,10 +106,11 @@ where
     S: Storage<Id = K, Item = W::Target>,
     W: DerefMut + Default,
 {
+    /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
     pub fn new(capacity: usize, storage: S) -> Self {
         let mut elements = Vec::with_capacity(capacity);
         for _ in 0..capacity {
-            // Pre-allocate with default values. This requires V: Default.
+            // Pre-allocate with default values. This requires W: Default.
             elements.push(RwLock::new(W::default()));
         }
         let elements = Arc::new(elements);
@@ -138,8 +139,8 @@ where
 
     /// Evicts an entry from the cache, storing it in the storage if `storage_filter` returns
     /// true.
+    /// NOTE: this may be done in a separate thread
     fn evict(&self, entry: Option<(K, usize)>, storage_filter: impl Fn(&W) -> bool) {
-        // TODO: handle this in extra thread and deal with issues
         if let Some((key, pos)) = entry {
             // If the cache was full, we had to insert an element with the actual key and pos
             // PINNED_POS to trigger eviction. When inserting the the correct key and pos,
