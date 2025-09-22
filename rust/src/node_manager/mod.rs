@@ -14,6 +14,7 @@ use std::{
 };
 
 use crate::error::Error;
+pub mod cached_node_manager;
 
 /// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].
 ///
