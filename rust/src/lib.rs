@@ -17,7 +17,7 @@ mod database;
 mod error;
 mod ffi;
 #[cfg(test)]
-mod pool;
+mod node_manager;
 pub mod storage;
 pub mod types;
 
