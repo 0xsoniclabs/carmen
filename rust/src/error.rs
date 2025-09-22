@@ -14,7 +14,7 @@ use crate::storage;
 
 /// The top level error type for Carmen .
 /// This type is returned to the ffi interface and converted there.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub enum Error {
     /// An unsupported schema version was provided.
     #[error("unsupported schema version: {0}")]
