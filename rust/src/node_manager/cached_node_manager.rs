@@ -13,7 +13,7 @@ use std::{
     collections::VecDeque,
     hash::{Hash, RandomState},
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex, RwLock, RwLockReadGuard, atomic::AtomicUsize},
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicUsize},
     vec::Vec,
 };
 
@@ -32,14 +32,21 @@ use crate::{
 /// Accessing a deleted node will panic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeWithMetadata {
-    value: Node,
+    item: Node,
     status: NodeStatus,
+}
+
+impl NodeWithMetadata {
+    /// Returns if the node has been modified and needs to be written out to storage.
+    fn needs_flush(&self) -> bool {
+        self.status == NodeStatus::Dirty
+    }
 }
 
 impl Default for NodeWithMetadata {
     fn default() -> Self {
         NodeWithMetadata {
-            value: Node::Empty,
+            item: Node::Empty,
             status: NodeStatus::Clean,
         }
     }
@@ -50,30 +57,23 @@ impl Default for NodeWithMetadata {
 /// - `Clean`: the node is in sync with the storage
 /// - `Dirty`: the node has been modified and needs to be flushed to storage
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NodeStatus {
+enum NodeStatus {
     Clean,
     Dirty,
-}
-
-impl NodeWithMetadata {
-    /// Creates a new [`NodeWithMetadata`] with the given [`Node`] and status.
-    pub fn new(value: Node, status: NodeStatus) -> Self {
-        NodeWithMetadata { value, status }
-    }
 }
 
 impl Deref for NodeWithMetadata {
     type Target = Node;
 
     fn deref(&self) -> &Self::Target {
-        &self.value
+        &self.item
     }
 }
 
 impl DerefMut for NodeWithMetadata {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.status = NodeStatus::Dirty; // Mark as dirty on mutable borrow
-        &mut self.value
+        &mut self.item
     }
 }
 
@@ -86,7 +86,7 @@ where
     S: Storage<Id = K, Item = W::Target>,
     W: DerefMut,
 {
-    elements: Arc<Vec<RwLock<W>>>, // the owner of all values
+    elements: Arc<[RwLock<W>]>, // the owner of all values
     // cache, managing the key to element position mapping as well as the element eviction
     cache: quick_cache::sync::Cache<
         K,                   // key type to identify cached elements
@@ -113,7 +113,7 @@ where
             // Pre-allocate with default values. This requires W: Default.
             elements.push(RwLock::new(W::default()));
         }
-        let elements = Arc::new(elements);
+        let elements: Arc<[RwLock<W>]> = Arc::from(elements.into_boxed_slice());
 
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
@@ -128,9 +128,7 @@ where
                 options,
                 UnitWeighter,
                 RandomState::default(),
-                ElementLifecycle {
-                    elements: elements.clone(),
-                },
+                ElementLifecycle { elements },
             ),
             free_list: Mutex::new(VecDeque::new()),
             next_empty: AtomicUsize::new(0),
@@ -143,6 +141,7 @@ where
     fn evict(
         &self,
         entry: Option<(K, usize)>,
+        free_list_guard: &mut std::sync::MutexGuard<'_, VecDeque<usize>>,
         storage_filter: impl Fn(&W) -> bool,
     ) -> Result<(), Error> {
         if let Some((key, pos)) = entry {
@@ -160,7 +159,7 @@ where
                 return Ok(()); // skip elements that should not be stored
             }
             self.storage.set(key, &guard)?;
-            self.free_list.lock().unwrap().push_back(pos);
+            free_list_guard.push_back(pos);
         }
         Ok(())
     }
@@ -170,12 +169,7 @@ where
     /// The `storage_filter` function is used to determine if an evicted element should be
     /// stored in the storage.
     /// Returns the position of the inserted element in the `elements` vector.
-    fn insert_into_free_slot(
-        &self,
-        key: K,
-        item: W,
-        storage_filter: impl Fn(&W) -> bool,
-    ) -> Result<usize, Error> {
+    fn insert(&self, key: K, item: W, storage_filter: impl Fn(&W) -> bool) -> Result<usize, Error> {
         let mut pos = self
             .free_list
             .lock()
@@ -192,15 +186,13 @@ where
             // The cache is full, we need to evict an element to make space.
             // Element is inserted as pinned to avoid being immediately evicted
             let evicted = self.cache.insert_with_lifecycle(key, PINNED_POS);
-            self.evict(evicted, &storage_filter)?;
+            let mut free_list_guard = self.free_list.lock().unwrap();
+            self.evict(evicted, &mut free_list_guard, &storage_filter)?;
 
             // Now, there should be an element in the free list. If not, the
             // cache eviction failed (e.g. since all elements are pinned) and
             // the insertion cannot proceed.
-            pos = self
-                .free_list
-                .lock()
-                .unwrap()
+            pos = free_list_guard
                 .pop_front()
                 .ok_or(storage::Error::NotFound)?;
         }
@@ -211,7 +203,7 @@ where
 
         // Include new element in cache, evict old elements if necessary.
         let evicted = self.cache.insert_with_lifecycle(key, pos);
-        self.evict(evicted, storage_filter)?;
+        self.evict(evicted, &mut self.free_list.lock().unwrap(), storage_filter)?;
         Ok(pos)
     }
 }
@@ -225,9 +217,14 @@ where
 
     fn add(&self, item: Self::NodeType) -> Result<Self::Id, Error> {
         let id = self.storage.reserve(&item);
-        self.insert_into_free_slot(id, NodeWithMetadata::new(item, NodeStatus::Dirty), |n| {
-            n.status == NodeStatus::Dirty
-        })?;
+        self.insert(
+            id,
+            NodeWithMetadata {
+                item,
+                status: NodeStatus::Dirty,
+            },
+            NodeWithMetadata::needs_flush,
+        )?;
         Ok(id)
     }
 
@@ -239,10 +236,13 @@ where
             Ok(self.elements[pos].read().unwrap())
         } else {
             let item = self.storage.get(id)?; // check if element exists in storage
-            let pos = self.insert_into_free_slot(
+            let pos = self.insert(
                 id,
-                NodeWithMetadata::new(item, NodeStatus::Clean),
-                |n| n.status == NodeStatus::Dirty,
+                NodeWithMetadata {
+                    item,
+                    status: NodeStatus::Clean,
+                },
+                NodeWithMetadata::needs_flush,
             )?;
             Ok(self.elements[pos].read().unwrap())
         }
@@ -251,23 +251,24 @@ where
     fn get_write_access(
         &self,
         id: Self::Id,
-    ) -> Result<std::sync::RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>
-    {
+    ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
             Ok(self.elements[pos].write().unwrap())
         } else {
             let item = self.storage.get(id)?; // check if element exists in storage
-            let pos = self.insert_into_free_slot(
+            let pos = self.insert(
                 id,
-                NodeWithMetadata::new(item, NodeStatus::Clean),
-                |n| n.status == NodeStatus::Dirty,
+                NodeWithMetadata {
+                    item,
+                    status: NodeStatus::Clean,
+                },
+                NodeWithMetadata::needs_flush,
             )?;
             Ok(self.elements[pos].write().unwrap())
         }
     }
 
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
-        self.storage.delete(id)?;
         if let Some(pos) = self.cache.get(&id) {
             // get exclusive write access before dropping the element
             let _guard = self.elements[pos].write().unwrap();
@@ -275,28 +276,29 @@ where
             let mut free_list = self.free_list.lock().unwrap();
             free_list.push_back(pos);
         }
+        self.storage.delete(id)?;
         Ok(())
     }
 
     fn flush(&self) -> Result<(), crate::error::Error> {
-        self.storage.flush()?;
         for (id, pos) in self.cache.iter() {
             let mut entry_guard = self.elements[pos].write().unwrap();
             if self.free_list.lock().unwrap().contains(&pos) {
                 continue; // skip deleted elements
             }
             if entry_guard.status == NodeStatus::Dirty {
-                self.storage.set(id, &entry_guard.value)?;
+                self.storage.set(id, &entry_guard.item)?;
                 entry_guard.status = NodeStatus::Clean;
             }
         }
+        self.storage.flush()?;
         Ok(())
     }
 }
 
 /// Manages the lifecycle of cached elements, preventing eviction of elements currently in use.
 pub struct ElementLifecycle<W> {
-    elements: Arc<Vec<RwLock<W>>>,
+    elements: Arc<[RwLock<W>]>,
 }
 
 impl<K: Eq + Hash + Copy, W> Lifecycle<K, usize> for ElementLifecycle<W> {
@@ -368,14 +370,15 @@ mod tests {
 
         let cache = CachedNodeManager::new(10, storage);
         cache.add(Node::Empty).expect("set should succeed");
+        let mut free_list_guard = cache.free_list.lock().unwrap();
         cache
-            .evict(Some((id, 0)), |_| true)
+            .evict(Some((id, 0)), &mut free_list_guard, |_| true)
             .expect("evict should succeed");
         cache
-            .evict(Some((id, 0)), |_| false)
+            .evict(Some((id, 0)), &mut free_list_guard, |_| false)
             .expect("evict should succeed"); // should not store again
         cache
-            .evict(Some((id, PINNED_POS)), |_| true)
+            .evict(Some((id, PINNED_POS)), &mut free_list_guard, |_| true)
             .expect("evict should succeed"); // should not store pinned element
     }
 
@@ -384,10 +387,13 @@ mod tests {
         // Cache is not full, empty list is empty
         {
             let cache = CachedNodeManager::new(10, MockStorage::new());
-            let node = NodeWithMetadata::new(Node::Empty, NodeStatus::Dirty);
+            let node = NodeWithMetadata {
+                item: Node::Empty,
+                status: NodeStatus::Dirty,
+            };
             let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let pos = cache
-                .insert_into_free_slot(id, node, |_| true)
+                .insert(id, node, |_| true)
                 .expect("insert should succeed");
             assert_eq!(pos, 0);
         }
@@ -396,31 +402,37 @@ mod tests {
             let mut storage = MockStorage::new();
             storage.expect_set().times(1).returning(|_, _| Ok(()));
             let cache = CachedNodeManager::new(1, storage);
-            let node = NodeWithMetadata::new(Node::Empty, NodeStatus::Dirty);
+            let node = NodeWithMetadata {
+                item: Node::Empty,
+                status: NodeStatus::Dirty,
+            };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
             let pos1 = cache
-                .insert_into_free_slot(id1, node.clone(), |_| true)
+                .insert(id1, node.clone(), |_| true)
                 .expect("insert should succeed");
             assert_eq!(pos1, 0);
             let pos2 = cache
-                .insert_into_free_slot(id2, node, |_| true)
+                .insert(id2, node, |_| true)
                 .expect("insert should succeed");
             assert_eq!(pos2, 0); // same position as first element, which was evicted
         }
         // Cache is not full, empty list is not empty
         {
             let cache = CachedNodeManager::new(10, MockStorage::new());
-            let node = NodeWithMetadata::new(Node::Empty, NodeStatus::Dirty);
+            let node = NodeWithMetadata {
+                item: Node::Empty,
+                status: NodeStatus::Dirty,
+            };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
             let pos1 = cache
-                .insert_into_free_slot(id1, node.clone(), |_| true)
+                .insert(id1, node.clone(), |_| true)
                 .expect("insert should succeed");
             assert_eq!(pos1, 0);
             cache.free_list.lock().unwrap().push_back(pos1); // manually free the position
             let pos2 = cache
-                .insert_into_free_slot(id2, node, |_| true)
+                .insert(id2, node, |_| true)
                 .expect("insert should succeed");
             assert_eq!(pos2, 0); // same position as first element, which was freed
         }
@@ -449,9 +461,12 @@ mod tests {
         storage.expect_get().never(); // Cache get should not call storage get
         let cache = CachedNodeManager::new(10, storage);
         let _ = cache
-            .insert_into_free_slot(
+            .insert(
                 id,
-                NodeWithMetadata::new(expected_entry.clone(), NodeStatus::Clean),
+                NodeWithMetadata {
+                    item: expected_entry.clone(),
+                    status: NodeStatus::Clean,
+                },
                 |_| true,
             )
             .expect("insert should succeed");
@@ -657,7 +672,7 @@ mod tests {
 
     #[test]
     fn element_lifecycle_is_pinned_checks_lock_and_pinned_pos() {
-        let elements = Arc::new(vec![RwLock::new(1)]);
+        let elements = Arc::new([RwLock::new(1)]);
         let lifecycle = ElementLifecycle { elements };
 
         // Element is not pinned if it can be locked and position is not PINNED_POS
@@ -673,7 +688,7 @@ mod tests {
 
     #[test]
     fn element_lifecycle_on_evict_records_evicted_element() {
-        let elements = Arc::new(vec![RwLock::new(1)]);
+        let elements = Arc::new([RwLock::new(1)]);
         let lifecycle = ElementLifecycle { elements };
         let mut state = lifecycle.begin_request();
         assert!(state.is_none());
@@ -683,7 +698,10 @@ mod tests {
 
     #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
-        let mut cached_node = NodeWithMetadata::new(Node::Empty, NodeStatus::Clean);
+        let mut cached_node = NodeWithMetadata {
+            item: Node::Empty,
+            status: NodeStatus::Clean,
+        };
         assert!(cached_node.status != NodeStatus::Dirty);
         let _ = cached_node.deref();
         assert!(cached_node.status == NodeStatus::Clean);
