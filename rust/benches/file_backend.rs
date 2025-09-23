@@ -215,7 +215,7 @@ fn file_backend_benchmark<M: Measurement>(
             file.write_all(&data_1gb).unwrap();
         }
         // Note: Using File::set_len creates sparse files on some file systems which results in
-        // non-realistic read performance.
+        // unrealistic read performance.
     }
 
     let mut options = OpenOptions::new();
