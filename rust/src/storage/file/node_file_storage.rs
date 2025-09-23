@@ -9,8 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    fs::{File, OpenOptions},
-    io::{Read, Write},
+    fs::OpenOptions,
     marker::PhantomData,
     path::Path,
     sync::{
@@ -19,9 +18,16 @@ use std::{
     },
 };
 
-use zerocopy::{FromBytes, Immutable, IntoBytes, transmute_ref};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::storage::{Error, Storage, file::FileBackend};
+use crate::storage::{
+    Error, Storage,
+    file::{
+        FileBackend,
+        metadata_file::{Metadata, MetadataFile},
+        reuse_list_file::ReuseListFile,
+    },
+};
 
 /// A file-based storage backend for elements of type `T`.
 ///
@@ -34,7 +40,8 @@ where
     F: FileBackend + 'static,
 {
     node_file: F,
-    reuse_list_file: Mutex<CachedReuseListFile>,
+    reuse_list_file: Mutex<ReuseListFile>,
+    metadata_file: MetadataFile,
     next_idx: AtomicU64,
     _node_type: PhantomData<T>,
 }
@@ -46,6 +53,7 @@ where
 {
     pub const NODE_STORE_FILE: &'static str = "node_store.bin";
     pub const REUSE_LIST_FILE: &'static str = "reuse_list.bin";
+    pub const METADATA_FILE: &'static str = "metadata.bin";
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -71,36 +79,31 @@ where
             .read(true)
             .write(true);
 
-        let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts.clone())?;
-        let len = node_file.len()?;
-        if len % size_of::<T>() as u64 != 0 {
-            return Err(Error::DatabaseCorruption);
-        }
-        let next_idx = AtomicU64::new(len / size_of::<T>() as u64);
+        let metadata_file = MetadataFile::new(file_opts.open(dir.join(Self::METADATA_FILE))?);
+        let metadata = metadata_file.read()?;
 
-        let mut reuse_file = file_opts.open(dir.join(Self::REUSE_LIST_FILE))?;
-        let len = reuse_file.metadata()?.len();
-        if len % size_of::<u64>() as u64 != 0 {
+        let reuse_file = file_opts.open(dir.join(Self::REUSE_LIST_FILE))?;
+        let reuse_list_file = ReuseListFile::new(reuse_file, metadata.reuse_frozen_count)?;
+        if reuse_list_file
+            .as_slice()
+            .iter()
+            .any(|&idx| idx >= metadata.node_count)
+        {
             return Err(Error::DatabaseCorruption);
         }
-        let mut reuse_idxs = Vec::with_capacity(len as usize / size_of::<u64>());
-        reuse_file.read_to_end(&mut reuse_idxs)?;
-        // we could also transmute here, but since new is only called once, performance is not
-        // critical
-        let reuse_idxs = reuse_idxs
-            .chunks_exact(size_of::<u64>())
-            .map(|chunk| {
-                chunk.try_into().map(u64::from_be_bytes).unwrap() // slices are guaranteed to be of size 8
-            })
-            .collect();
-        let reuse_file = Mutex::new(CachedReuseListFile {
-            file: reuse_file,
-            cache: reuse_idxs,
-        });
+
+        let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts)?;
+        let len = node_file.len()?;
+        if len < metadata.node_count * size_of::<T>() as u64 {
+            return Err(Error::DatabaseCorruption);
+        }
+
+        let next_idx = AtomicU64::new(metadata.node_count);
 
         Ok(Self {
             node_file,
-            reuse_list_file: reuse_file,
+            reuse_list_file: Mutex::new(reuse_list_file),
+            metadata_file,
             next_idx,
             _node_type: PhantomData,
         })
@@ -121,7 +124,6 @@ where
         self.reuse_list_file
             .lock()
             .unwrap()
-            .cache
             .pop()
             .unwrap_or_else(|| self.next_idx.fetch_add(1, Ordering::Relaxed))
     }
@@ -139,19 +141,23 @@ where
         if idx >= self.next_idx.load(Ordering::Relaxed) {
             return Err(Error::NotFound);
         }
-        self.reuse_list_file.lock().unwrap().cache.push(idx);
+        self.reuse_list_file.lock().unwrap().push(idx);
         Ok(())
     }
 
     fn flush(&self) -> Result<(), Error> {
         self.node_file.flush()?;
 
-        let mut reuse_file = self.reuse_list_file.lock().unwrap();
-        let reuse_file = &mut *reuse_file;
-        let data: &[u8] = transmute_ref!(reuse_file.cache.as_slice());
-        reuse_file.file.write_all(data)?;
-        reuse_file.file.set_len(data.len() as u64)?;
-        reuse_file.file.flush()?;
+        let reuse_file = self.reuse_list_file.lock().unwrap();
+        reuse_file.write()?;
+        let reuse_file_len = reuse_file.len();
+        drop(reuse_file);
+
+        let metadata = Metadata {
+            node_count: self.next_idx.load(Ordering::Relaxed),
+            reuse_frozen_count: reuse_file_len as u64,
+        };
+        self.metadata_file.write(&metadata)?;
 
         Ok(())
     }
@@ -167,19 +173,44 @@ where
     }
 }
 
-/// A wrapper around the file which stores the reuse list indices, which caches the indices in
-/// memory for faster access and reduces the number of file operations.
-#[derive(Debug)]
-struct CachedReuseListFile {
-    file: File,
-    cache: Vec<u64>,
+#[cfg(test)]
+impl<T, F> NodeFileStorage<T, F>
+where
+    T: FromBytes + IntoBytes + Immutable + 'static,
+    F: FileBackend + 'static,
+{
+    /// Creates all files for a file-based node storage in the specified directory
+    /// and populates them with the provided nodes.
+    pub fn create_files_for_nodes(path: impl AsRef<Path>, nodes: &[T]) -> Result<(), Error> {
+        use std::{fs::File, io::Write};
+
+        let path = path.as_ref();
+
+        std::fs::create_dir_all(path)?;
+
+        let metadata_file = MetadataFile::new(File::create(path.join(Self::METADATA_FILE))?);
+        metadata_file
+            .write(&Metadata {
+                node_count: nodes.len() as u64,
+                reuse_frozen_count: 0,
+            })
+            .unwrap();
+
+        let mut node_file = File::create(path.join(Self::NODE_STORE_FILE))?;
+        for node in nodes {
+            node_file.write_all(node.as_bytes())?;
+        }
+        node_file.flush()?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
-        fs::{self, Permissions},
-        io::{Seek, SeekFrom},
+        fs::{self, File, Permissions},
+        io::{Read, Seek, SeekFrom},
         os::unix::fs::PermissionsExt,
     };
 
@@ -189,6 +220,31 @@ mod tests {
     type TestNode = [u8; 32];
 
     type NodeFileStorage = super::NodeFileStorage<TestNode, SeekFile>;
+
+    fn write_metadata(dir: impl AsRef<Path>, node_count: u64, reuse_frozen_count: u64) {
+        MetadataFile::new(File::create(dir.as_ref().join(NodeFileStorage::METADATA_FILE)).unwrap())
+            .write(&Metadata {
+                node_count,
+                reuse_frozen_count,
+            })
+            .unwrap();
+    }
+
+    fn write_reuse_list(dir: impl AsRef<Path>, indices: &[u64]) {
+        fs::write(
+            dir.as_ref().join(NodeFileStorage::REUSE_LIST_FILE),
+            indices.as_bytes(),
+        )
+        .unwrap();
+    }
+
+    fn write_nodes(dir: impl AsRef<Path>, nodes: &[TestNode]) {
+        fs::write(
+            dir.as_ref().join(NodeFileStorage::NODE_STORE_FILE),
+            nodes.as_bytes(),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn open_creates_new_directory_and_files_for_non_existing_path() {
@@ -200,6 +256,7 @@ mod tests {
 
         assert!(fs::exists(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
+        assert!(fs::exists(path.join(NodeFileStorage::METADATA_FILE)).unwrap());
     }
 
     #[test]
@@ -211,6 +268,7 @@ mod tests {
 
         assert!(fs::exists(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
+        assert!(fs::exists(path.join(NodeFileStorage::METADATA_FILE)).unwrap());
     }
 
     #[test]
@@ -218,39 +276,45 @@ mod tests {
         // files have valid sizes
         {
             let dir = tempfile::tempdir().unwrap();
-            let path = dir.path();
-            fs::write(
-                path.join(NodeFileStorage::NODE_STORE_FILE),
-                [0; size_of::<TestNode>()],
-            )
-            .unwrap();
-            fs::write(
-                path.join(NodeFileStorage::REUSE_LIST_FILE),
-                [0; size_of::<u64>()],
-            )
-            .unwrap();
+            write_metadata(&dir, 1, 1);
+            write_reuse_list(&dir, &[0]);
+            write_nodes(&dir, &[[0; 32]]);
 
-            assert!(NodeFileStorage::open(path).is_ok());
+            assert!(NodeFileStorage::open(dir.path()).is_ok());
         }
-        // node store has invalid size
+        // metadata contains larger node count that node file sizes allows
         {
             let dir = tempfile::tempdir().unwrap();
-            let path = dir.path();
-            fs::write(path.join(NodeFileStorage::NODE_STORE_FILE), [0; 1]).unwrap();
+            write_metadata(&dir, 2, 0);
+            write_reuse_list(&dir, &[0]);
+            write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(path),
+                NodeFileStorage::open(dir.path()),
                 Err(Error::DatabaseCorruption)
             ));
         }
-        // reuse list has invalid size
+        // metadata contains larger frozen count that reuse list file sizes allows
         {
             let dir = tempfile::tempdir().unwrap();
-            let path = dir.path();
-            fs::write(path.join(NodeFileStorage::REUSE_LIST_FILE), [0; 1]).unwrap();
+            write_metadata(&dir, 0, 2);
+            write_reuse_list(&dir, &[0]);
+            write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(path),
+                NodeFileStorage::open(dir.path()),
+                Err(Error::DatabaseCorruption)
+            ));
+        }
+        // reuse list contains indices which are larger than node count in metadata
+        {
+            let dir = tempfile::tempdir().unwrap();
+            write_metadata(&dir, 0, 0);
+            write_reuse_list(&dir, &[1]);
+            write_nodes(&dir, &[]);
+
+            assert!(matches!(
+                NodeFileStorage::open(dir.path()),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -271,62 +335,43 @@ mod tests {
     #[test]
     fn get_reads_data_if_index_in_bounds() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
 
-        let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
-        node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
+        write_metadata(&dir, 2, 0);
+        write_reuse_list(&dir, &[]);
+        write_nodes(&dir, &[[0; 32], [1; 32]]);
 
-        let storage = NodeFileStorage::open(path).unwrap();
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
 
-        assert_eq!(storage.get(0).unwrap(), [1; 32]);
-        assert_eq!(storage.get(1).unwrap(), [2; 32]);
-    }
-
-    #[test]
-    fn get_returns_error_if_index_out_of_bounds() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-
-        let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
-        node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
-
-        let storage = NodeFileStorage::open(path).unwrap();
-
+        assert_eq!(storage.get(0).unwrap(), [0; 32]);
+        assert_eq!(storage.get(1).unwrap(), [1; 32]);
         assert!(matches!(storage.get(2).unwrap_err(), Error::NotFound));
     }
 
     #[test]
     fn reserve_returns_last_index_from_reuse_list() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
 
-        // write index 1 and 3 in reuse list
-        {
-            let mut node_file = File::create(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
-            node_file.write_all(&1u64.to_be_bytes()).unwrap();
-            node_file.write_all(&3u64.to_be_bytes()).unwrap();
-        }
+        write_metadata(&dir, 3, 0);
+        write_reuse_list(&dir, &[0, 2]);
+        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32]]);
 
-        let storage = NodeFileStorage::open(path).unwrap();
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
 
-        assert_eq!(storage.reserve(&[0; 32]), 3);
+        assert_eq!(storage.reserve(&[0; 32]), 2); // last index in reuse list
+        assert_eq!(storage.reserve(&[0; 32]), 0); // next index in reuse list
+        assert_eq!(storage.reserve(&[0; 32]), 3); // new index
     }
 
     #[test]
     fn reserve_returns_new_index_if_no_reuse_available() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
 
         // create a single node -> index 0 is used
-        fs::write(
-            path.join(NodeFileStorage::NODE_STORE_FILE),
-            [0; size_of::<TestNode>()],
-        )
-        .unwrap();
+        write_metadata(&dir, 1, 0);
+        write_reuse_list(&dir, &[]);
+        write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(path).unwrap();
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
 
         assert_eq!(storage.reserve(&[0; 32]), 1);
     }
@@ -337,11 +382,9 @@ mod tests {
         let path = dir.path();
 
         // prepare file: write some nodes into the file
-        {
-            let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-            node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
-            node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
-        }
+        write_metadata(&dir, 2, 0);
+        write_reuse_list(&dir, &[]);
+        write_nodes(&dir, &[[0; 32], [1; 32]]);
 
         // create storage and call set with existing and new nodes
         {
@@ -365,7 +408,7 @@ mod tests {
         // second node remains unchanged
         assert_eq!(
             &buf[size_of::<TestNode>()..size_of::<TestNode>() * 2],
-            &[2; 32]
+            &[1; 32]
         );
         // new node at index 2
         assert_eq!(
@@ -379,10 +422,10 @@ mod tests {
     #[test]
     fn set_returns_error_if_index_out_of_bounds() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-        let storage = NodeFileStorage::open(path).unwrap();
+
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(
-            storage.set(123, &[1; 32]).unwrap_err(),
+            storage.set(123, &[0; 32]).unwrap_err(),
             Error::NotFound
         ));
     }
@@ -392,22 +435,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
 
-        let mut node_file = File::create(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        node_file.write_all(&[1; size_of::<TestNode>()]).unwrap();
-        node_file.write_all(&[2; size_of::<TestNode>()]).unwrap();
+        write_metadata(&dir, 2, 0);
+        write_reuse_list(&dir, &[]);
+        write_nodes(&dir, &[[0; 32], [1; 32]]);
 
         let storage = NodeFileStorage::open(path).unwrap();
         storage.delete(0).unwrap();
         storage.delete(1).unwrap();
-        assert_eq!(storage.reuse_list_file.lock().unwrap().cache, [0, 1]);
+        let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
+        assert_eq!(reuse_list_file.pop(), Some(1));
+        assert_eq!(reuse_list_file.pop(), Some(0));
+        assert_eq!(reuse_list_file.pop(), None);
     }
 
     #[test]
     fn delete_returns_error_if_index_out_of_bounds() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
 
-        let storage = NodeFileStorage::open(path).unwrap();
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
     }
 
@@ -417,7 +462,11 @@ mod tests {
         let path = dir.path();
 
         let storage = NodeFileStorage::open(path).unwrap();
-        storage.reuse_list_file.lock().unwrap().cache = vec![0, 1];
+        {
+            let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
+            reuse_list_file.push(0);
+            reuse_list_file.push(1);
+        }
 
         storage.flush().unwrap();
 
