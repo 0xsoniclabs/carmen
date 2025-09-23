@@ -15,6 +15,7 @@ mod node_file_storage;
 mod page_cached_file;
 #[cfg(unix)]
 mod page_utils;
+mod reuse_list_file;
 
 pub use file_backend::*;
 #[cfg(test)]
