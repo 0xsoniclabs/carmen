@@ -337,30 +337,56 @@ impl<W> Clone for ElementLifecycle<W> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::{path::Path, sync::Mutex};
 
     use mockall::{
-        Sequence,
+        Sequence, mock,
         predicate::{always, eq},
     };
 
     use super::*;
     use crate::{
-        storage::{self, MockStorage},
+        storage::{self},
         types::{NodeId, NodeType},
     };
 
+    mock! {
+        pub CachedNodeManagerStorage {}
+
+        impl Storage for CachedNodeManagerStorage {
+            type Id = NodeId;
+            type Item = Node;
+
+            fn open(_path: &Path) -> Result<Self, storage::Error>
+            where
+                Self: Sized;
+
+            fn get(&self, _id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, storage::Error>;
+
+            fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+
+            fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) -> Result<(), storage::Error>;
+
+            fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), storage::Error>;
+
+            fn flush(&self) -> Result<(), storage::Error>;
+        }
+    }
+
     #[test]
     fn cached_node_manager_new_creates_node_manager() {
-        let storage = MockStorage::new();
-        let cache = CachedNodeManager::<NodeId, NodeWithMetadata, MockStorage>::new(10, storage);
+        let storage = MockCachedNodeManagerStorage::new();
+        let cache =
+            CachedNodeManager::<NodeId, NodeWithMetadata, MockCachedNodeManagerStorage>::new(
+                10, storage,
+            );
         assert_eq!(cache.cache.capacity(), 10);
     }
 
     #[test]
     fn cached_node_manager_evict_stores_entries_in_storage() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_reserve().times(1).returning(move |_| id);
         storage
             .expect_set()
@@ -386,7 +412,7 @@ mod tests {
     fn cached_node_manager_insert_into_free_slot_inserts_elements_in_cache() {
         // Cache is not full, empty list is empty
         {
-            let cache = CachedNodeManager::new(10, MockStorage::new());
+            let cache = CachedNodeManager::new(10, MockCachedNodeManagerStorage::new());
             let node = NodeWithMetadata {
                 item: Node::Empty,
                 status: NodeStatus::Dirty,
@@ -399,7 +425,7 @@ mod tests {
         }
         // Cache is full, empty list is empty
         {
-            let mut storage = MockStorage::new();
+            let mut storage = MockCachedNodeManagerStorage::new();
             storage.expect_set().times(1).returning(|_, _| Ok(()));
             let cache = CachedNodeManager::new(1, storage);
             let node = NodeWithMetadata {
@@ -419,7 +445,7 @@ mod tests {
         }
         // Cache is not full, empty list is not empty
         {
-            let cache = CachedNodeManager::new(10, MockStorage::new());
+            let cache = CachedNodeManager::new(10, MockCachedNodeManagerStorage::new());
             let node = NodeWithMetadata {
                 item: Node::Empty,
                 status: NodeStatus::Dirty,
@@ -440,7 +466,7 @@ mod tests {
 
     #[test]
     fn cached_node_manager_add_inserts_elements_in_cache() {
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         storage
             .expect_reserve()
             .returning(|_| NodeId::from_idx_and_node_type(42, NodeType::Empty));
@@ -457,7 +483,7 @@ mod tests {
     fn cached_node_manager_get_methods_return_cached_entry(#[case] get_method: GetMethod) {
         let expected_entry = Node::Empty;
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().never(); // Cache get should not call storage get
         let cache = CachedNodeManager::new(10, storage);
         let _ = cache
@@ -482,7 +508,7 @@ mod tests {
     ) {
         let expected_entry = Node::Empty;
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().times(1).with(eq(id)).returning({
             let expected_entry = expected_entry.clone();
             move |_| Ok(expected_entry.clone())
@@ -497,7 +523,7 @@ mod tests {
     fn cached_node_manager_get_methods_returns_error_if_node_id_does_not_exist(
         #[case] get_method: GetMethod,
     ) {
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         storage
             .expect_get()
             .returning(|_| Err(storage::Error::NotFound));
@@ -516,7 +542,7 @@ mod tests {
         #[case] get_method: GetMethod,
     ) {
         const NUM_ELEMENTS: u64 = 10;
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         let mut sequence = Sequence::new();
         for i in 0..NUM_ELEMENTS + 1 {
             // 1 element more than capacity
@@ -561,7 +587,7 @@ mod tests {
     fn cached_node_manager_flush_saves_dirty_entries_to_storage() {
         const NUM_ELEMENTS: u64 = 10;
         let data = Arc::new(Mutex::new(vec![]));
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         let mut sequence = Sequence::new();
         for i in 0..NUM_ELEMENTS {
             storage
@@ -597,7 +623,7 @@ mod tests {
 
     #[test]
     fn cached_node_manager_delete_removes_entry_from_cache_and_storage() {
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let entry = Node::Inner(Box::default());
         storage.expect_reserve().times(1).returning(move |_| id);
@@ -617,7 +643,7 @@ mod tests {
 
     #[test]
     fn cached_node_manager_delete_fails_on_storage_error() {
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         storage.expect_reserve().times(1).returning(move |_| id);
         storage
@@ -638,7 +664,7 @@ mod tests {
 
     #[test]
     fn cached_node_manager_stores_data_in_storage_on_evict() {
-        let mut storage = MockStorage::new();
+        let mut storage = MockCachedNodeManagerStorage::new();
         let mut sequence = Sequence::new();
         storage
             .expect_reserve()
@@ -710,7 +736,7 @@ mod tests {
     }
 
     type GetMethod = fn(
-        &CachedNodeManager<NodeId, NodeWithMetadata, MockStorage>,
+        &CachedNodeManager<NodeId, NodeWithMetadata, MockCachedNodeManagerStorage>,
         NodeId,
     ) -> Result<Node, Error>;
 

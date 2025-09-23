@@ -58,7 +58,7 @@ mockall = "0.13.1"
 criterion = "0.7.0"
 
 # create temporary files and directories for tests
-# temporary files
+
 tempfile = "3.20.0"
 
 [lints.rust]
