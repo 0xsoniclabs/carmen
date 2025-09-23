@@ -123,7 +123,6 @@ where
 mod tests {
     use std::{
         fs::{self, File, Permissions},
-        io::Write,
         os::unix::fs::PermissionsExt,
     };
 
@@ -141,9 +140,22 @@ mod tests {
         let path = dir.path();
         let storage = FileStorageManager::open(path);
         assert!(storage.is_ok());
-        assert!(fs::exists(path.join(FileStorageManager::INNER_NODE_DIR)).unwrap());
-        assert!(fs::exists(path.join(FileStorageManager::LEAF_NODE_2_DIR)).unwrap());
-        assert!(fs::exists(path.join(FileStorageManager::LEAF_NODE_256_DIR)).unwrap());
+        let sub_dirs = [
+            FileStorageManager::INNER_NODE_DIR,
+            FileStorageManager::LEAF_NODE_2_DIR,
+            FileStorageManager::LEAF_NODE_256_DIR,
+        ];
+        let files = [
+            NodeFileStorage::NODE_STORE_FILE,
+            NodeFileStorage::REUSE_LIST_FILE,
+            NodeFileStorage::METADATA_FILE,
+        ];
+        for sub_dir in &sub_dirs {
+            fs::exists(path.join(sub_dir)).unwrap();
+            for file in &files {
+                fs::exists(path.join(sub_dir).join(file)).unwrap();
+            }
+        }
     }
 
     #[test]
@@ -158,6 +170,7 @@ mod tests {
         let files = [
             NodeFileStorage::NODE_STORE_FILE,
             NodeFileStorage::REUSE_LIST_FILE,
+            NodeFileStorage::METADATA_FILE,
         ];
         for sub_dir in &sub_dirs {
             fs::create_dir_all(path.join(sub_dir)).unwrap();
@@ -187,36 +200,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
 
-        let inner_node = Box::new(InnerNode::default());
-        let leaf_node_2 = Box::new(SparseLeafNode::default());
-        let leaf_node_256 = Box::new(FullLeafNode::default());
+        let inner_node = InnerNode::default();
+        let leaf_node_2 = SparseLeafNode::default();
+        let leaf_node_256 = FullLeafNode::default();
 
-        fs::create_dir_all(path.join(FileStorageManager::INNER_NODE_DIR)).unwrap();
-        fs::create_dir_all(path.join(FileStorageManager::LEAF_NODE_2_DIR)).unwrap();
-        fs::create_dir_all(path.join(FileStorageManager::LEAF_NODE_256_DIR)).unwrap();
-
-        File::create(
-            path.join(FileStorageManager::INNER_NODE_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::INNER_NODE_DIR),
+            std::slice::from_ref(&inner_node),
         )
-        .unwrap()
-        .write_all(inner_node.as_bytes())
         .unwrap();
 
-        File::create(
-            path.join(FileStorageManager::LEAF_NODE_2_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::LEAF_NODE_2_DIR),
+            std::slice::from_ref(&leaf_node_2),
         )
-        .unwrap()
-        .write_all(leaf_node_2.as_bytes())
         .unwrap();
 
-        File::create(
-            path.join(FileStorageManager::LEAF_NODE_256_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::LEAF_NODE_256_DIR),
+            std::slice::from_ref(&leaf_node_256),
         )
-        .unwrap()
-        .write_all(leaf_node_256.as_bytes())
         .unwrap();
 
         let storage = FileStorageManager::open(path).unwrap();
@@ -232,19 +235,19 @@ mod tests {
             storage
                 .get(NodeId::from_idx_and_node_type(0, NodeType::Inner))
                 .unwrap(),
-            Node::Inner(inner_node)
+            Node::Inner(Box::new(inner_node))
         );
         assert_eq!(
             storage
                 .get(NodeId::from_idx_and_node_type(0, NodeType::Leaf2))
                 .unwrap(),
-            Node::Leaf2(leaf_node_2)
+            Node::Leaf2(Box::new(leaf_node_2))
         );
         assert_eq!(
             storage
                 .get(NodeId::from_idx_and_node_type(0, NodeType::Leaf256))
                 .unwrap(),
-            Node::Leaf256(leaf_node_256)
+            Node::Leaf256(Box::new(leaf_node_256))
         );
     }
 
@@ -276,40 +279,27 @@ mod tests {
 
         // to test that the id comes from the correct file storage, we create different number of
         // nodes for each type
-        let inner_node = Box::new(InnerNode::default());
-        let leaf_node_2 = Box::new(SparseLeafNode::default());
-        let leaf_node_256 = Box::new(FullLeafNode::default());
+        let inner_node = InnerNode::default();
+        let leaf_node_2 = SparseLeafNode::<2>::default();
+        let leaf_node_256 = FullLeafNode::default();
 
-        fs::create_dir_all(path.join(FileStorageManager::INNER_NODE_DIR)).unwrap();
-        fs::create_dir_all(path.join(FileStorageManager::LEAF_NODE_2_DIR)).unwrap();
-        fs::create_dir_all(path.join(FileStorageManager::LEAF_NODE_256_DIR)).unwrap();
-
-        let mut file = File::create(
-            path.join(FileStorageManager::INNER_NODE_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::INNER_NODE_DIR),
+            &vec![inner_node.clone(); inner_count],
         )
         .unwrap();
-        for _ in 0..inner_count {
-            file.write_all(inner_node.as_bytes()).unwrap();
-        }
 
-        let mut file = File::create(
-            path.join(FileStorageManager::LEAF_NODE_2_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::LEAF_NODE_2_DIR),
+            &vec![leaf_node_2.clone(); leaf_2_count],
         )
         .unwrap();
-        for _ in 0..leaf_2_count {
-            file.write_all(leaf_node_2.as_bytes()).unwrap();
-        }
 
-        let mut file = File::create(
-            path.join(FileStorageManager::LEAF_NODE_256_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::LEAF_NODE_256_DIR),
+            &vec![leaf_node_256.clone(); leaf_256_count],
         )
         .unwrap();
-        for _ in 0..leaf_256_count {
-            file.write_all(leaf_node_256.as_bytes()).unwrap();
-        }
 
         let storage = FileStorageManager::open(path).unwrap();
 
@@ -319,16 +309,16 @@ mod tests {
             NodeId::from_idx_and_node_type(0, NodeType::Empty)
         );
         assert_eq!(
-            storage.reserve(&Node::Inner(inner_node)),
-            NodeId::from_idx_and_node_type(inner_count, NodeType::Inner)
+            storage.reserve(&Node::Inner(Box::new(inner_node))),
+            NodeId::from_idx_and_node_type(inner_count as u64, NodeType::Inner)
         );
         assert_eq!(
-            storage.reserve(&Node::Leaf2(leaf_node_2)),
-            NodeId::from_idx_and_node_type(leaf_2_count, NodeType::Leaf2)
+            storage.reserve(&Node::Leaf2(Box::new(leaf_node_2))),
+            NodeId::from_idx_and_node_type(leaf_2_count as u64, NodeType::Leaf2)
         );
         assert_eq!(
-            storage.reserve(&Node::Leaf256(leaf_node_256)),
-            NodeId::from_idx_and_node_type(leaf_256_count, NodeType::Leaf256)
+            storage.reserve(&Node::Leaf256(Box::new(leaf_node_256))),
+            NodeId::from_idx_and_node_type(leaf_256_count as u64, NodeType::Leaf256)
         );
     }
 
@@ -414,34 +404,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
 
-        let inner_node = Box::new(InnerNode::default());
-        let leaf_node_2 = Box::new(SparseLeafNode::<2>::default());
-        let leaf_node_256 = Box::new(FullLeafNode::default());
+        let inner_node = InnerNode::default();
+        let leaf_node_2 = SparseLeafNode::<2>::default();
+        let leaf_node_256 = FullLeafNode::default();
 
-        fs::create_dir_all(path.join(FileStorageManager::INNER_NODE_DIR)).unwrap();
-        fs::create_dir_all(path.join(FileStorageManager::LEAF_NODE_2_DIR)).unwrap();
-        fs::create_dir_all(path.join(FileStorageManager::LEAF_NODE_256_DIR)).unwrap();
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::INNER_NODE_DIR),
+            &[inner_node],
+        )
+        .unwrap();
 
-        File::create(
-            path.join(FileStorageManager::INNER_NODE_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::LEAF_NODE_2_DIR),
+            &[leaf_node_2],
         )
-        .unwrap()
-        .write_all(inner_node.as_bytes())
         .unwrap();
-        File::create(
-            path.join(FileStorageManager::LEAF_NODE_2_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
+
+        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
+            path.join(FileStorageManager::LEAF_NODE_256_DIR),
+            &[leaf_node_256],
         )
-        .unwrap()
-        .write_all(leaf_node_2.as_bytes())
-        .unwrap();
-        File::create(
-            path.join(FileStorageManager::LEAF_NODE_256_DIR)
-                .join(NodeFileStorage::NODE_STORE_FILE),
-        )
-        .unwrap()
-        .write_all(leaf_node_256.as_bytes())
         .unwrap();
 
         let storage = FileStorageManager::open(path).unwrap();
