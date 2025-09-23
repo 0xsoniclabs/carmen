@@ -17,44 +17,43 @@ use crate::error::Error;
 
 /// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].
 ///
-/// Nodes are uniquely identified by a [`NodeManager::Id`].
-/// Nodes ownership is held by the [`NodeManager`] implementation and can be accessed through read
+/// Nodes are uniquely identified by a [`NodeManager::Id`] and are owned by the node manager.
+/// They can be accessed through read
 /// or write locks with the [`NodeManager::get_read_access`] and [`NodeManager::get_write_access`]
 /// methods.
 /// Calling a `get_*` method with the same ID twice is guaranteed to yield the same item.
-/// IDs are managed by the pool itself, which hands out new IDs upon insertion of an item.
+/// IDs are managed by the node manager itself, which hands out new IDs upon insertion of an item.
 /// IDs are not globally unique and may be reused after deletion.
 ///
 /// The concrete type returned by the [`NodeManager`] may not be [`NodeManager::NodeType`] but
 /// instead a wrapper type which dereferences to [`NodeManager::NodeType`]. This abstraction allows
-/// for the pool to associate metadata with each item, for example to implement smart cache
+/// for the node manager to associate metadata with each item, for example to implement smart cache
 /// eviction.
 #[allow(dead_code)]
 pub trait NodeManager {
-    /// The id type used to identify items in the pool.
+    /// The id type used to identify items in the node manager.
     type Id;
-    /// The node type indexed by the pool, which is specialized depending on the trie
-    /// implementation.
+    /// The node type indexed by the node manager.
     type NodeType;
 
     /// Adds the item in the node manager and returns an ID for it.
     fn add(&self, item: Self::NodeType) -> Result<Self::Id, Error>;
 
-    /// Retrieves and lock an item from the node manager with read access, if it exists. Returns
+    /// Returns a read guard for an item in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
     fn get_read_access(
         &self,
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error>;
 
-    /// Retrieves and lock an item from the node manager with write access, if it exists. Returns
+    /// Returns a write guard for an item in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
     fn get_write_access(
         &self,
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>;
 
-    /// Deletes an item with the given ID from the pool
+    /// Deletes an item with the given ID from the node manager.
     /// The ID may be reused in the future, when creating a new item by calling
     /// [`NodeManager::add`].
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
