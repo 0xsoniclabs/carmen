@@ -34,8 +34,8 @@ struct InnerPageCachedFile<F: FileBackend, const D: bool> {
 impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     /// See [`FileBackend::open`].
     fn open(path: &Path, mut options: OpenOptions) -> std::io::Result<Self> {
-        let file = F::open(path, options.clone())?;
-        let file_len = file.len()?;
+        let file = options.clone().open(path)?;
+        let file_len = file.metadata()?.len();
         let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
         file.set_len(padded_len)?;
         drop(file);
@@ -104,19 +104,12 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
             self.file
                 .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
         }
-        self.file.flush()?;
-        self.set_len(self.file_len)
+        self.file.flush()
     }
 
     /// See [`FileBackend::len`].
     fn len(&self) -> Result<u64, std::io::Error> {
         Ok(self.file_len)
-    }
-
-    /// See [`FileBackend::set_len`].
-    fn set_len(&mut self, len: u64) -> std::io::Result<()> {
-        self.file_len = len;
-        self.file.set_len(len)
     }
 
     /// Load the page containing the given offset into memory, flushing the current page if dirty.
@@ -126,21 +119,13 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
             || offset >= (self.page_index + 1) * Page::SIZE as u64
         {
             if D {
-                let padded_len = self.file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
-                // O_DIRECT requires reads and writes to operate on page aligned chunks with sizes
-                // that are multiples of the page size. So the file is padded to
-                // have a size of a multiple of the page size.
-                if self.file_len < padded_len {
-                    self.file.set_len(padded_len)?;
-                }
-
                 if self.page_dirty {
                     self.file
                         .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
                 }
 
                 self.page_index = offset / Page::SIZE as u64;
-                if padded_len <= self.page_index * Page::SIZE as u64 {
+                if self.file_len <= self.page_index * Page::SIZE as u64 {
                     self.page.fill(0);
                 } else {
                     self.file
@@ -198,10 +183,6 @@ impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
 
     fn len(&self) -> Result<u64, std::io::Error> {
         self.0.lock().unwrap().len()
-    }
-
-    fn set_len(&self, size: u64) -> std::io::Result<()> {
-        self.0.lock().unwrap().set_len(size)
     }
 }
 
