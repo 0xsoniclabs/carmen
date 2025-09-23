@@ -350,7 +350,7 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 		},
 		Codes: []common.CodeUpdate{
 			{Account: addr1, Code: []byte{0x01, 0x02}},
-			{Account: addr2, Code: []byte{0x03, 30: PUSH32, 31: 0x05}},           // code is shorter than expected
+			{Account: addr2, Code: []byte{0x03, 30: PUSH32, 31: 0x05}},           // truncated push data
 			{Account: addr3, Code: []byte{0x06, 0x07, 0x08, 3 * 256 * 32: 0x09}}, // fills multiple leafs
 		},
 		Slots: []common.SlotUpdate{

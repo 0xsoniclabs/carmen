@@ -49,7 +49,7 @@ func TestSplitAndMerge(t *testing.T) {
 		// Instead, we only have a single byte (just enough to force the creation of a
 		// second chunk). We nevertheless want the entire second chunk to be marked as
 		// data.
-		"code shorter than expected": {
+		"truncated push data at chunk boundary filling full chunk": {
 			code: []byte{0x03, 30: PUSH32, 31: 0x05},
 			chunks: []chunk{
 				{0, 0x03, 31: PUSH32},
@@ -58,7 +58,7 @@ func TestSplitAndMerge(t *testing.T) {
 		},
 		// Same as before, but the PUSH32 comes two bytes earlier.
 		// This way only 30 bytes of the second chunk should be marked as data.
-		"code shorter than expected, case 2": {
+		"truncated push data at chunk boundary filling partial chunk": {
 			code: []byte{0x03, 28: PUSH32, 31: 0x05},
 			chunks: []chunk{
 				{0, 0x03, 29: PUSH32},
