@@ -18,10 +18,8 @@ use crate::error::Error;
 /// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].
 ///
 /// Nodes are uniquely identified by a [`NodeManager::Id`] and are owned by the node manager.
-/// They can be accessed through read
-/// or write locks with the [`NodeManager::get_read_access`] and [`NodeManager::get_write_access`]
-/// methods.
-/// Calling a `get_*` method with the same ID twice is guaranteed to yield the same item.
+/// They can be accessed through read or write locks with the [`NodeManager::get_read_access`] and
+/// [`NodeManager::get_write_access`] methods.
 /// IDs are managed by the node manager itself, which hands out new IDs upon insertion of an item.
 /// IDs are not globally unique and may be reused after deletion.
 ///
