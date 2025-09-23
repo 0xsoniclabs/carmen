@@ -80,6 +80,7 @@ enum Operation {
 }
 
 impl Operation {
+    // The number of reads performed for each write in the "mixed" operation.
     const MIXED_WRITE_RATIO: u64 = 10;
 
     fn variants() -> impl IntoIterator<Item = Operation> {
@@ -92,9 +93,9 @@ impl Operation {
             Operation::Write => backend.write_all_at(data, offset).unwrap(),
             Operation::Mixed => {
                 if iter.is_multiple_of(Self::MIXED_WRITE_RATIO) {
-                    backend.read_exact_at(data, offset).unwrap();
-                } else {
                     backend.write_all_at(data, offset).unwrap();
+                } else {
+                    backend.read_exact_at(data, offset).unwrap();
                 }
             }
         }
@@ -106,7 +107,7 @@ impl Display for Operation {
         match self {
             Operation::Read => write!(f, "read"),
             Operation::Write => write!(f, "write"),
-            Operation::Mixed => write!(f, "mixed"),
+            Operation::Mixed => write!(f, "mixed-{}%write", 100.0 / Self::MIXED_WRITE_RATIO as f64),
         }
     }
 }
@@ -180,27 +181,6 @@ pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
 fn file_backend_benchmark_matrix(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
 
-    for operation in Operation::variants() {
-        for access in AccessPattern::variants() {
-            for chunk_size in [32, 4096] {
-                let mut group =
-                    c.benchmark_group(format!("file_backend/{operation}/{access}/{chunk_size}B"));
-                group.plot_config(plot_config.clone());
-                for backend_fn in backend_open_fns() {
-                    file_backend_benchmark(&mut group, operation, access, chunk_size, backend_fn);
-                }
-            }
-        }
-    }
-}
-
-fn file_backend_benchmark<M: Measurement>(
-    g: &mut BenchmarkGroup<'_, M>,
-    operation: Operation,
-    access: AccessPattern,
-    chunk_size: usize,
-    backend_fn: BackendOpenFn,
-) {
     // Note: At least on Ubuntu, reading and writing to a file which is located directly in `/tmp`
     // is slower than with a file in a subdirectory of `/tmp`.
     let tempdir = tempfile::tempdir().unwrap();
@@ -218,6 +198,30 @@ fn file_backend_benchmark<M: Measurement>(
         // unrealistic read performance.
     }
 
+    for operation in Operation::variants() {
+        for access in AccessPattern::variants() {
+            for chunk_size in [32, 4096] {
+                let mut group =
+                    c.benchmark_group(format!("file_backend/{operation}/{access}/{chunk_size}B"));
+                group.plot_config(plot_config.clone());
+                for backend_fn in backend_open_fns() {
+                    file_backend_benchmark(
+                        &mut group, path, operation, access, chunk_size, backend_fn,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn file_backend_benchmark<M: Measurement>(
+    g: &mut BenchmarkGroup<'_, M>,
+    path: &Path,
+    operation: Operation,
+    access: AccessPattern,
+    chunk_size: usize,
+    backend_fn: BackendOpenFn,
+) {
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
 

@@ -153,7 +153,7 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
                 }
 
                 self.page_index = offset / Page::SIZE as u64;
-
+                // Without O_DIRECT, the file size is not padded and we may read a partial page.
                 let len = cmp::min(
                     self.file_len
                         .saturating_sub(self.page_index * Page::SIZE as u64)
@@ -162,6 +162,7 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
                 );
                 self.file
                     .read_exact_at(&mut self.page[..len], self.page_index * Page::SIZE as u64)?;
+                // In case we read a partial page, set the remainder to zero.
                 self.page[len..].fill(0);
             }
 

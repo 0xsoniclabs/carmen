@@ -156,25 +156,25 @@ mod tests {
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
-    #[case::page_cached_file__seek_file__true(
+    #[case::page_cached_file__seek_file__direct_io(
         (|path, options| {
             <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
-    #[case::page_cached_file__no_seek_file__true(
+    #[case::page_cached_file__no_seek_file__direct_io(
         (|path, options| {
             <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
-    #[case::page_cached_file__seek_file__false(
+    #[case::page_cached_file__seek_file__no_direct_io(
         (|path, options| {
             <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
-    #[case::page_cached_file__no_seek_file__false(
+    #[case::page_cached_file__no_seek_file__no_direct_io(
         (|path, options| {
             <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
