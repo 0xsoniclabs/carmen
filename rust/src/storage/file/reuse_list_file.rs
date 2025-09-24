@@ -17,8 +17,8 @@ use zerocopy::transmute_ref;
 
 use crate::storage::Error;
 
-/// A wrapper around a file which stores the reuse list indices, which caches the indices in
-/// memory for faster access.
+/// A wrapper around a file storing reuse list indices, which caches the indices in memory for
+/// faster access.
 #[derive(Debug)]
 pub struct ReuseListFile {
     file: File,
@@ -40,7 +40,7 @@ impl ReuseListFile {
         let reuse_idxs = reuse_idxs
             .chunks_exact(size_of::<u64>())
             .map(|chunk| {
-                chunk.try_into().map(u64::from_le_bytes).unwrap() // slices are guaranteed to be of size 8
+                chunk.try_into().map(u64::from_ne_bytes).unwrap() // slices are guaranteed to be of size 8
             })
             .collect();
         Ok(Self {
@@ -88,10 +88,9 @@ impl ReuseListFile {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{self, OpenOptions},
-        io::Write,
-    };
+    use std::fs::{self, OpenOptions};
+
+    use zerocopy::IntoBytes;
 
     use super::*;
     use crate::utils::test_dir::{Permissions, TestDir};
@@ -103,14 +102,8 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().join("reuse_list");
 
-        let indices: Vec<u64> = vec![1, 2, 3, 4, 5];
-        {
-            let mut file = File::create(path.as_path()).unwrap();
-
-            for &idx in &indices {
-                file.write_all(&idx.to_le_bytes()).unwrap();
-            }
-        }
+        let indices = [1u64, 2, 3, 4, 5];
+        fs::write(path.as_path(), indices.as_bytes()).unwrap();
 
         let frozen_count = 2;
         let cached_file = ReuseListFile::new(File::open(path).unwrap(), frozen_count).unwrap();
@@ -122,9 +115,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().join("reuse_list");
 
-        {
-            fs::write(path.as_path(), [0; 10]).unwrap();
-        }
+        fs::write(path.as_path(), [0; 10]).unwrap();
 
         let frozen_count = 2;
         let result = ReuseListFile::new(File::open(path).unwrap(), frozen_count);
@@ -139,7 +130,6 @@ mod tests {
         File::create(path.as_path()).unwrap();
 
         let result = ReuseListFile::new(OpenOptions::new().write(true).open(path).unwrap(), 0);
-        println!("{result:?}");
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
@@ -179,7 +169,7 @@ mod tests {
             frozen_count: 2,
         };
 
-        let result = cached_file.write();
+        let result = cached_file.write(); // file is opened read-only
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
