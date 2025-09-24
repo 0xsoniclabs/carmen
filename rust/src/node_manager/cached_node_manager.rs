@@ -13,32 +13,28 @@ use std::{
     collections::VecDeque,
     hash::{Hash, RandomState},
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicUsize},
+    sync::{
+        Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicUsize, Ordering},
+    },
     vec::Vec,
 };
 
 use quick_cache::{Lifecycle, UnitWeighter};
 
-use crate::{
-    error::Error,
-    node_manager::NodeManager,
-    storage::{self, Storage},
-    types::Node,
-};
+use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::Node};
 
-/// A [`Node`] with a **status** to store metadata about the node lifecycle.
+/// A [`Node`] with a **status** attribute to store if it needs to be flushed to storage.
 /// [`NodeWithMetadata`] automatically dereferences to `Node` via the [`Deref`] trait.
 /// The node's status is set to [`NodeStatus::Dirty`] when a mutable reference is requested.
-/// Accessing a deleted node will panic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeWithMetadata {
     item: Node,
     status: NodeStatus,
 }
 
-impl NodeWithMetadata {
-    /// Returns if the node has been modified and needs to be written out to storage.
-    fn needs_flush(&self) -> bool {
+impl StorageFilter for NodeWithMetadata {
+    fn should_store(&self) -> bool {
         self.status == NodeStatus::Dirty
     }
 }
@@ -77,16 +73,21 @@ impl DerefMut for NodeWithMetadata {
     }
 }
 
-/// Dummy position used to notify the cache that the (key, value) pair is pinned and must not be
-/// evicted.
-const PINNED_POS: usize = usize::MAX;
+/// An abstraction to determine if an item should be stored in the storage backend.
+pub trait StorageFilter {
+    /// Determines if the given item should be stored in the storage backend.
+    fn should_store(&self) -> bool;
+}
 
 pub struct CachedNodeManager<K, W, S>
 where
     S: Storage<Id = K, Item = W::Target>,
     W: DerefMut,
 {
-    elements: Arc<[RwLock<W>]>, // the owner of all values
+    // A fixed-size container that acts as the owner of all values.
+    // This allows us to hand out read/write guards from a shared reference to the node manager.
+    // Wrapped in an Arc so that it can be shared with [`ElementLifecycle`].
+    items: Arc<[RwLock<W>]>,
     // cache, managing the key to element position mapping as well as the element eviction
     cache: quick_cache::sync::Cache<
         K,                   // key type to identify cached elements
@@ -104,7 +105,7 @@ where
 impl<K: Eq + Hash + Copy, S, W> CachedNodeManager<K, W, S>
 where
     S: Storage<Id = K, Item = W::Target>,
-    W: DerefMut + Default,
+    W: DerefMut + Default + StorageFilter,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
     pub fn new(capacity: usize, storage: S) -> Self {
@@ -122,7 +123,7 @@ where
             .expect("failed to build cache options. Did you provide all the required options?");
 
         CachedNodeManager {
-            elements: elements.clone(),
+            items: elements.clone(),
             storage,
             cache: quick_cache::sync::Cache::with_options(
                 options,
@@ -140,27 +141,27 @@ where
     /// NOTE: this may be done in a separate thread
     fn evict(
         &self,
-        entry: Option<(K, usize)>,
+        entry: (K, usize),
         free_list_guard: &mut std::sync::MutexGuard<'_, VecDeque<usize>>,
-        storage_filter: impl Fn(&W) -> bool,
     ) -> Result<(), Error> {
-        if let Some((key, pos)) = entry {
-            // If the cache was full, we had to insert an element with the actual key and pos
-            // PINNED_POS to trigger eviction. When inserting the the correct key and pos,
-            // quick_cache returns the old pos as an evicted element. Therefore we have to skip it
-            // here
-            if pos == PINNED_POS {
-                return Ok(()); // skip pinned elements
-            }
-            // Get exclusive write access to the element before storing it
-            #[allow(clippy::readonly_write_lock)]
-            let guard = self.elements[pos].write().unwrap();
-            if !storage_filter(&guard) {
-                return Ok(()); // skip elements that should not be stored
-            }
-            self.storage.set(key, &guard)?;
-            free_list_guard.push_back(pos);
+        let (key, pos) = entry;
+        // If the cache was full, we had to insert an element with the actual key and pos
+        // PINNED_POS to trigger eviction. When inserting the the correct key and pos,
+        // quick_cache returns the old pos as an evicted element. Therefore we have to skip it
+        // here
+        if pos == ElementLifecycle::<NodeWithMetadata>::PINNED_POS {
+            return Ok(()); // skip pinned elements
         }
+        // Get exclusive write access to the element before storing it
+        // to ensure that no other thread has a reference to it and
+        // avoid risking to lose data.
+        #[allow(clippy::readonly_write_lock)]
+        let guard = self.items[pos].write().unwrap();
+        if !guard.should_store() {
+            return Ok(()); // skip elements that should not be stored
+        }
+        self.storage.set(key, &guard)?;
+        free_list_guard.push_back(pos);
         Ok(())
     }
 
@@ -169,41 +170,46 @@ where
     /// The `storage_filter` function is used to determine if an evicted element should be
     /// stored in the storage.
     /// Returns the position of the inserted element in the `elements` vector.
-    fn insert(&self, key: K, item: W, storage_filter: impl Fn(&W) -> bool) -> Result<usize, Error> {
-        let mut pos = self
-            .free_list
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| {
-                self.next_empty
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            });
-        if pos >= self.elements.len() {
-            self.next_empty
-                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-
+    fn insert(&self, key: K, item: W) -> Result<usize, Error> {
+        let pos = if let Some(pos) = self.free_list.lock().unwrap().pop_front() {
+            pos
+        } else if let pos = self.next_empty.fetch_add(1, Ordering::Relaxed)
+            && pos < self.items.len()
+        {
+            // This is not gonna overflow in practice
+            pos
+        } else {
             // The cache is full, we need to evict an element to make space.
-            // Element is inserted as pinned to avoid being immediately evicted
-            let evicted = self.cache.insert_with_lifecycle(key, PINNED_POS);
+            // The default behavior of quick_cache is to immediately evict every new element
+            // until it is seen for a second time. To avoid this behavior, we first insert the
+            // special `PINNED_POS` element which is always pinned by
+            // [`ElementLifecycle`].
+            let evicted = self
+                .cache
+                .insert_with_lifecycle(key, ElementLifecycle::<W>::PINNED_POS)
+                .ok_or(Error::NodeManager(
+                    "no available space in cache".to_string(),
+                ))?;
             let mut free_list_guard = self.free_list.lock().unwrap();
-            self.evict(evicted, &mut free_list_guard, &storage_filter)?;
+            self.evict(evicted, &mut free_list_guard)?;
 
             // Now, there should be an element in the free list. If not, the
             // cache eviction failed (e.g. since all elements are pinned) and
             // the insertion cannot proceed.
-            pos = free_list_guard
-                .pop_front()
-                .ok_or(storage::Error::NotFound)?;
-        }
-        let mut guard = self.elements[pos]
-            .write()
-            .map_err(|_| storage::Error::NotFound)?;
+            free_list_guard.pop_front().ok_or(Error::NodeManager(
+                "no available space in cache".to_string(),
+            ))?
+        };
+
+        let mut guard = self.items[pos].write().unwrap();
         *guard = item;
 
         // Include new element in cache, evict old elements if necessary.
         let evicted = self.cache.insert_with_lifecycle(key, pos);
-        self.evict(evicted, &mut self.free_list.lock().unwrap(), storage_filter)?;
+        if let Some(evicted) = evicted {
+            let mut free_list_guard = self.free_list.lock().unwrap();
+            self.evict(evicted, &mut free_list_guard)?;
+        }
         Ok(pos)
     }
 }
@@ -223,7 +229,6 @@ where
                 item,
                 status: NodeStatus::Dirty,
             },
-            NodeWithMetadata::needs_flush,
         )?;
         Ok(id)
     }
@@ -233,18 +238,18 @@ where
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            Ok(self.elements[pos].read().unwrap())
+            Ok(self.items[pos].read().unwrap())
         } else {
-            let item = self.storage.get(id)?; // check if element exists in storage
+            // Get node from storage, or return `Error::NotFound` if it doesn't exist.
+            let item = self.storage.get(id)?;
             let pos = self.insert(
                 id,
                 NodeWithMetadata {
                     item,
                     status: NodeStatus::Clean,
                 },
-                NodeWithMetadata::needs_flush,
             )?;
-            Ok(self.elements[pos].read().unwrap())
+            Ok(self.items[pos].read().unwrap())
         }
     }
 
@@ -253,25 +258,26 @@ where
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            Ok(self.elements[pos].write().unwrap())
+            Ok(self.items[pos].write().unwrap())
         } else {
-            let item = self.storage.get(id)?; // check if element exists in storage
+            // Get node from storage, or return `Error::NotFound` if it doesn't exist.
+            let item = self.storage.get(id)?;
             let pos = self.insert(
                 id,
                 NodeWithMetadata {
                     item,
                     status: NodeStatus::Clean,
                 },
-                NodeWithMetadata::needs_flush,
             )?;
-            Ok(self.elements[pos].write().unwrap())
+            Ok(self.items[pos].write().unwrap())
         }
     }
 
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
         if let Some(pos) = self.cache.get(&id) {
-            // get exclusive write access before dropping the element
-            let _guard = self.elements[pos].write().unwrap();
+            // Get exclusive write access before dropping the element
+            // to ensure that no other thread is holding a reference to it.
+            let _guard = self.items[pos].write().unwrap();
             self.cache.remove(&id);
             let mut free_list = self.free_list.lock().unwrap();
             free_list.push_back(pos);
@@ -282,9 +288,10 @@ where
 
     fn flush(&self) -> Result<(), crate::error::Error> {
         for (id, pos) in self.cache.iter() {
-            let mut entry_guard = self.elements[pos].write().unwrap();
+            let mut entry_guard = self.items[pos].write().unwrap();
+            // Skip deleted elements. We expect the free list to be short, so this should be cheap.
             if self.free_list.lock().unwrap().contains(&pos) {
-                continue; // skip deleted elements
+                continue;
             }
             if entry_guard.status == NodeStatus::Dirty {
                 self.storage.set(id, &entry_guard.item)?;
@@ -301,6 +308,12 @@ pub struct ElementLifecycle<W> {
     elements: Arc<[RwLock<W>]>,
 }
 
+impl<W> ElementLifecycle<W> {
+    /// Dummy position that is always considered as pinned by [`ElementLifecycle`].
+    /// Used to push out other cache entries in case the cache is full.
+    const PINNED_POS: usize = usize::MAX;
+}
+
 impl<K: Eq + Hash + Copy, W> Lifecycle<K, usize> for ElementLifecycle<W> {
     type RequestState = Option<(K, usize)>;
 
@@ -310,9 +323,10 @@ impl<K: Eq + Hash + Copy, W> Lifecycle<K, usize> for ElementLifecycle<W> {
     /// - Its position is set to `PINNED_POS`, which is a dummy position used to explicitly mark
     ///   elements as pinned during insertion.
     fn is_pinned(&self, _key: &K, value: &usize) -> bool {
-        // NOTE: another thread may ask for a write lock while this is checked, but that should be
-        // fine as the the shard containing the evicting element is write locked at this stage.
-        *value == PINNED_POS || self.elements[*value].try_write().is_err()
+        // NOTE: Another thread may try to acquire a write lock on this element after the function
+        // returns, but that should be fine as the the shard containing the element should
+        // remain write-locked for the entire eviction process.
+        *value == Self::PINNED_POS || self.elements[*value].try_write().is_err()
     }
 
     /// No-op
@@ -350,29 +364,6 @@ mod tests {
         types::{NodeId, NodeType},
     };
 
-    mock! {
-        pub CachedNodeManagerStorage {}
-
-        impl Storage for CachedNodeManagerStorage {
-            type Id = NodeId;
-            type Item = Node;
-
-            fn open(_path: &Path) -> Result<Self, storage::Error>
-            where
-                Self: Sized;
-
-            fn get(&self, _id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, storage::Error>;
-
-            fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
-
-            fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) -> Result<(), storage::Error>;
-
-            fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), storage::Error>;
-
-            fn flush(&self) -> Result<(), storage::Error>;
-        }
-    }
-
     #[test]
     fn cached_node_manager_new_creates_node_manager() {
         let storage = MockCachedNodeManagerStorage::new();
@@ -396,15 +387,26 @@ mod tests {
 
         let cache = CachedNodeManager::new(10, storage);
         cache.add(Node::Empty).expect("set should succeed");
+        // Get mutable reference to `Node` to mark it as dirty
+        {
+            let _ = &mut **cache.get_write_access(id).expect("get should succeed");
+        }
         let mut free_list_guard = cache.free_list.lock().unwrap();
         cache
-            .evict(Some((id, 0)), &mut free_list_guard, |_| true)
+            .evict((id, 0), &mut free_list_guard)
             .expect("evict should succeed");
+        // Set the status to clean to avoid eviction
+        let mut item_guard = cache.items[0].write().unwrap();
+        item_guard.status = NodeStatus::Clean;
+        drop(item_guard);
         cache
-            .evict(Some((id, 0)), &mut free_list_guard, |_| false)
+            .evict((id, 0), &mut free_list_guard)
             .expect("evict should succeed"); // should not store again
         cache
-            .evict(Some((id, PINNED_POS)), &mut free_list_guard, |_| true)
+            .evict(
+                (id, ElementLifecycle::<NodeWithMetadata>::PINNED_POS),
+                &mut free_list_guard,
+            )
             .expect("evict should succeed"); // should not store pinned element
     }
 
@@ -418,9 +420,7 @@ mod tests {
                 status: NodeStatus::Dirty,
             };
             let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            let pos = cache
-                .insert(id, node, |_| true)
-                .expect("insert should succeed");
+            let pos = cache.insert(id, node).expect("insert should succeed");
             assert_eq!(pos, 0);
         }
         // Cache is full, empty list is empty
@@ -435,12 +435,10 @@ mod tests {
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
             let pos1 = cache
-                .insert(id1, node.clone(), |_| true)
+                .insert(id1, node.clone())
                 .expect("insert should succeed");
             assert_eq!(pos1, 0);
-            let pos2 = cache
-                .insert(id2, node, |_| true)
-                .expect("insert should succeed");
+            let pos2 = cache.insert(id2, node).expect("insert should succeed");
             assert_eq!(pos2, 0); // same position as first element, which was evicted
         }
         // Cache is not full, empty list is not empty
@@ -453,13 +451,11 @@ mod tests {
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
             let pos1 = cache
-                .insert(id1, node.clone(), |_| true)
+                .insert(id1, node.clone())
                 .expect("insert should succeed");
             assert_eq!(pos1, 0);
             cache.free_list.lock().unwrap().push_back(pos1); // manually free the position
-            let pos2 = cache
-                .insert(id2, node, |_| true)
-                .expect("insert should succeed");
+            let pos2 = cache.insert(id2, node).expect("insert should succeed");
             assert_eq!(pos2, 0); // same position as first element, which was freed
         }
     }
@@ -493,13 +489,10 @@ mod tests {
                     item: expected_entry.clone(),
                     status: NodeStatus::Clean,
                 },
-                |_| true,
             )
             .expect("insert should succeed");
-        {
-            let entry = get_method(&cache, id).expect("get should succeed");
-            assert!(entry == expected_entry);
-        }
+        let entry = get_method(&cache, id).expect("get should succeed");
+        assert!(entry == expected_entry);
     }
 
     #[rstest_reuse::apply(get_method)]
@@ -705,7 +698,7 @@ mod tests {
         assert!(!lifecycle.is_pinned(&0, &0));
 
         // Element is pinned if its position is PINNED_POS
-        assert!(lifecycle.is_pinned(&0, &PINNED_POS));
+        assert!(lifecycle.is_pinned(&0, &ElementLifecycle::<NodeWithMetadata>::PINNED_POS));
 
         // Element is pinned if it cannot be locked (another thread holds a lock)
         let _guard = lifecycle.elements[0].write().unwrap(); // Lock element at pos 1
@@ -733,6 +726,40 @@ mod tests {
         assert!(cached_node.status == NodeStatus::Clean);
         let _ = cached_node.deref_mut();
         assert!(cached_node.status == NodeStatus::Dirty);
+    }
+
+    #[test]
+    fn node_with_metadata_storage_filter_returns_true_if_dirty() {
+        let mut cached_node = NodeWithMetadata {
+            item: Node::Empty,
+            status: NodeStatus::Clean,
+        };
+        assert!(!cached_node.should_store());
+        let _ = cached_node.deref_mut();
+        assert!(cached_node.should_store());
+    }
+
+    mock! {
+        pub CachedNodeManagerStorage {}
+
+        impl Storage for CachedNodeManagerStorage {
+            type Id = NodeId;
+            type Item = Node;
+
+            fn open(_path: &Path) -> Result<Self, storage::Error>
+            where
+                Self: Sized;
+
+            fn get(&self, _id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, storage::Error>;
+
+            fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+
+            fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) -> Result<(), storage::Error>;
+
+            fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), storage::Error>;
+
+            fn flush(&self) -> Result<(), storage::Error>;
+        }
     }
 
     type GetMethod = fn(
