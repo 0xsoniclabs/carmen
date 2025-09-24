@@ -28,23 +28,15 @@ use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::No
 /// [`NodeWithMetadata`] automatically dereferences to `Node` via the [`Deref`] trait.
 /// The node's status is set to [`NodeStatus::Dirty`] when a mutable reference is requested.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NodeWithMetadata {
-    node: Node,
+pub struct NodeWithMetadata<N> {
+    node: N,
     status: NodeStatus,
 }
 
-impl StorageFilter for NodeWithMetadata {
-    fn should_store(&self) -> bool {
+impl<N> NodeWithMetadata<N> {
+    /// Returns true if the node needs to be stored in the storage backend.
+    pub fn should_store(&self) -> bool {
         self.status == NodeStatus::Dirty
-    }
-}
-
-impl Default for NodeWithMetadata {
-    fn default() -> Self {
-        NodeWithMetadata {
-            node: Node::Empty,
-            status: NodeStatus::Clean,
-        }
     }
 }
 
@@ -58,43 +50,36 @@ enum NodeStatus {
     Dirty,
 }
 
-impl Deref for NodeWithMetadata {
-    type Target = Node;
+impl<N> Deref for NodeWithMetadata<N> {
+    type Target = N;
 
     fn deref(&self) -> &Self::Target {
         &self.node
     }
 }
 
-impl DerefMut for NodeWithMetadata {
+impl<N> DerefMut for NodeWithMetadata<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.status = NodeStatus::Dirty; // Mark as dirty on mutable borrow
         &mut self.node
     }
 }
 
-/// An abstraction to determine if an item should be stored in the storage backend.
-pub trait StorageFilter {
-    /// Determines if the given item should be stored in the storage backend.
-    fn should_store(&self) -> bool;
-}
-
-pub struct CachedNodeManager<K, W, S>
+pub struct CachedNodeManager<K, N, S>
 where
-    S: Storage<Id = K, Item = W::Target>,
-    W: DerefMut,
+    S: Storage<Id = K, Item = N>,
 {
     // A fixed-size container that acts as the owner of all values.
     // This allows us to hand out read/write guards from a shared reference to the node manager.
     // Wrapped in an Arc so that it can be shared with [`ElementLifecycle`].
-    items: Arc<[RwLock<W>]>,
+    nodes: Arc<[RwLock<NodeWithMetadata<N>>]>,
     // cache, managing the key to element position mapping as well as the element eviction
     cache: quick_cache::sync::Cache<
         K,                   // key type to identify cached elements
         usize,               // value type to identify element positions in the elements vector
         UnitWeighter,        // all elements are considered to cost the same
         RandomState,         // default hasher
-        ElementLifecycle<W>, // tracks and reports evicted elements
+        ElementLifecycle<N>, // tracks and reports evicted elements
     >,
     free_list: Mutex<VecDeque<usize>>, // free list of available element positions
     next_empty: AtomicUsize,           // next empty position in elements vector
@@ -102,19 +87,22 @@ where
     storage: S,
 }
 
-impl<K: Eq + Hash + Copy, S, W> CachedNodeManager<K, W, S>
+impl<K: Eq + Hash + Copy, S, N> CachedNodeManager<K, N, S>
 where
-    S: Storage<Id = K, Item = W::Target>,
-    W: DerefMut + Default + StorageFilter,
+    S: Storage<Id = K, Item = N>,
+    N: Default,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
     pub fn new(capacity: usize, storage: S) -> Self {
         let mut elements = Vec::with_capacity(capacity);
         for _ in 0..capacity {
             // Pre-allocate with default values. This requires W: Default.
-            elements.push(RwLock::new(W::default()));
+            elements.push(RwLock::new(NodeWithMetadata {
+                node: N::default(),
+                status: NodeStatus::Clean,
+            }));
         }
-        let elements: Arc<[RwLock<W>]> = Arc::from(elements.into_boxed_slice());
+        let elements: Arc<[RwLock<NodeWithMetadata<N>>]> = Arc::from(elements.into_boxed_slice());
 
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
@@ -123,7 +111,7 @@ where
             .expect("failed to build cache options. Did you provide all the required options?");
 
         CachedNodeManager {
-            items: elements.clone(),
+            nodes: elements.clone(),
             storage,
             cache: quick_cache::sync::Cache::with_options(
                 options,
@@ -149,14 +137,14 @@ where
         // PINNED_POS to trigger eviction. When inserting the the correct key and pos,
         // quick_cache returns the old pos as an evicted element. Therefore we have to skip it
         // here
-        if pos == ElementLifecycle::<NodeWithMetadata>::PINNED_POS {
+        if pos == ElementLifecycle::<N>::PINNED_POS {
             return Ok(()); // skip pinned elements
         }
         // Get exclusive write access to the element before storing it
         // to ensure that no other thread has a reference to it and
         // avoid risking to lose data.
         #[allow(clippy::readonly_write_lock)]
-        let guard = self.items[pos].write().unwrap();
+        let guard = self.nodes[pos].write().unwrap();
         if !guard.should_store() {
             return Ok(()); // skip elements that should not be stored
         }
@@ -170,11 +158,11 @@ where
     /// The `storage_filter` function is used to determine if an evicted element should be
     /// stored in the storage.
     /// Returns the position of the inserted element in the `elements` vector.
-    fn insert(&self, key: K, item: W) -> Result<usize, Error> {
+    fn insert(&self, key: K, node: NodeWithMetadata<N>) -> Result<usize, Error> {
         let pos = if let Some(pos) = self.free_list.lock().unwrap().pop_front() {
             pos
         } else if let pos = self.next_empty.fetch_add(1, Ordering::Relaxed)
-            && pos < self.items.len()
+            && pos < self.nodes.len()
         {
             // This is not gonna overflow in practice
             pos
@@ -186,7 +174,7 @@ where
             // [`ElementLifecycle`].
             let evicted = self
                 .cache
-                .insert_with_lifecycle(key, ElementLifecycle::<W>::PINNED_POS)
+                .insert_with_lifecycle(key, ElementLifecycle::<N>::PINNED_POS)
                 .ok_or(Error::NodeManager(
                     "no available space in cache".to_string(),
                 ))?;
@@ -201,8 +189,8 @@ where
             ))?
         };
 
-        let mut guard = self.items[pos].write().unwrap();
-        *guard = item;
+        let mut guard = self.nodes[pos].write().unwrap();
+        *guard = node;
 
         // Include new element in cache, evict old elements if necessary.
         let evicted = self.cache.insert_with_lifecycle(key, pos);
@@ -214,19 +202,19 @@ where
     }
 }
 
-impl<K: Eq + Hash + Copy, S> NodeManager for CachedNodeManager<K, NodeWithMetadata, S>
+impl<K: Eq + Hash + Copy, S> NodeManager for CachedNodeManager<K, Node, S>
 where
     S: Storage<Id = K, Item = Node>,
 {
     type Id = K;
     type NodeType = Node;
 
-    fn add(&self, item: Self::NodeType) -> Result<Self::Id, Error> {
-        let id = self.storage.reserve(&item);
+    fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error> {
+        let id = self.storage.reserve(&node);
         self.insert(
             id,
             NodeWithMetadata {
-                node: item,
+                node,
                 status: NodeStatus::Dirty,
             },
         )?;
@@ -238,18 +226,18 @@ where
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            Ok(self.items[pos].read().unwrap())
+            Ok(self.nodes[pos].read().unwrap())
         } else {
             // Get node from storage, or return `Error::NotFound` if it doesn't exist.
-            let item = self.storage.get(id)?;
+            let node = self.storage.get(id)?;
             let pos = self.insert(
                 id,
                 NodeWithMetadata {
-                    node: item,
+                    node,
                     status: NodeStatus::Clean,
                 },
             )?;
-            Ok(self.items[pos].read().unwrap())
+            Ok(self.nodes[pos].read().unwrap())
         }
     }
 
@@ -258,18 +246,18 @@ where
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            Ok(self.items[pos].write().unwrap())
+            Ok(self.nodes[pos].write().unwrap())
         } else {
             // Get node from storage, or return `Error::NotFound` if it doesn't exist.
-            let item = self.storage.get(id)?;
+            let node = self.storage.get(id)?;
             let pos = self.insert(
                 id,
                 NodeWithMetadata {
-                    node: item,
+                    node,
                     status: NodeStatus::Clean,
                 },
             )?;
-            Ok(self.items[pos].write().unwrap())
+            Ok(self.nodes[pos].write().unwrap())
         }
     }
 
@@ -277,7 +265,7 @@ where
         if let Some(pos) = self.cache.get(&id) {
             // Get exclusive write access before dropping the element
             // to ensure that no other thread is holding a reference to it.
-            let _guard = self.items[pos].write().unwrap();
+            let _guard = self.nodes[pos].write().unwrap();
             self.cache.remove(&id);
             let mut free_list = self.free_list.lock().unwrap();
             free_list.push_back(pos);
@@ -288,7 +276,7 @@ where
 
     fn flush(&self) -> Result<(), crate::error::Error> {
         for (id, pos) in self.cache.iter() {
-            let mut entry_guard = self.items[pos].write().unwrap();
+            let mut entry_guard = self.nodes[pos].write().unwrap();
             // Skip deleted elements. We expect the free list to be short, so this should be cheap.
             if self.free_list.lock().unwrap().contains(&pos) {
                 continue;
@@ -304,8 +292,8 @@ where
 }
 
 /// Manages the lifecycle of cached elements, preventing eviction of elements currently in use.
-pub struct ElementLifecycle<W> {
-    elements: Arc<[RwLock<W>]>,
+pub struct ElementLifecycle<N> {
+    elements: Arc<[RwLock<NodeWithMetadata<N>>]>,
 }
 
 impl<W> ElementLifecycle<W> {
@@ -341,7 +329,7 @@ impl<K: Eq + Hash + Copy, W> Lifecycle<K, usize> for ElementLifecycle<W> {
     }
 }
 
-impl<W> Clone for ElementLifecycle<W> {
+impl<N> Clone for ElementLifecycle<N> {
     fn clone(&self) -> Self {
         ElementLifecycle {
             elements: self.elements.clone(),
@@ -368,9 +356,7 @@ mod tests {
     fn cached_node_manager_new_creates_node_manager() {
         let storage = MockCachedNodeManagerStorage::new();
         let cache =
-            CachedNodeManager::<NodeId, NodeWithMetadata, MockCachedNodeManagerStorage>::new(
-                10, storage,
-            );
+            CachedNodeManager::<NodeId, Node, MockCachedNodeManagerStorage>::new(10, storage);
         assert_eq!(cache.cache.capacity(), 10);
     }
 
@@ -396,15 +382,15 @@ mod tests {
             .evict((id, 0), &mut free_list_guard)
             .expect("evict should succeed");
         // Set the status to clean to avoid eviction
-        let mut item_guard = cache.items[0].write().unwrap();
-        item_guard.status = NodeStatus::Clean;
-        drop(item_guard);
+        let mut node_guard = cache.nodes[0].write().unwrap();
+        node_guard.status = NodeStatus::Clean;
+        drop(node_guard);
         cache
             .evict((id, 0), &mut free_list_guard)
             .expect("evict should succeed"); // should not store again
         cache
             .evict(
-                (id, ElementLifecycle::<NodeWithMetadata>::PINNED_POS),
+                (id, ElementLifecycle::<Node>::PINNED_POS),
                 &mut free_list_guard,
             )
             .expect("evict should succeed"); // should not store pinned element
@@ -691,14 +677,17 @@ mod tests {
 
     #[test]
     fn element_lifecycle_is_pinned_checks_lock_and_pinned_pos() {
-        let elements = Arc::new([RwLock::new(1)]);
+        let elements = Arc::from([RwLock::new(NodeWithMetadata {
+            node: Node::Empty,
+            status: NodeStatus::Clean,
+        })]);
         let lifecycle = ElementLifecycle { elements };
 
         // Element is not pinned if it can be locked and position is not PINNED_POS
         assert!(!lifecycle.is_pinned(&0, &0));
 
         // Element is pinned if its position is PINNED_POS
-        assert!(lifecycle.is_pinned(&0, &ElementLifecycle::<NodeWithMetadata>::PINNED_POS));
+        assert!(lifecycle.is_pinned(&0, &ElementLifecycle::<Node>::PINNED_POS));
 
         // Element is pinned if it cannot be locked (another thread holds a lock)
         let _guard = lifecycle.elements[0].write().unwrap(); // Lock element at pos 1
@@ -707,7 +696,7 @@ mod tests {
 
     #[test]
     fn element_lifecycle_on_evict_records_evicted_element() {
-        let elements = Arc::new([RwLock::new(1)]);
+        let elements: Arc<[RwLock<NodeWithMetadata<Node>>]> = Arc::from(vec![].into_boxed_slice());
         let lifecycle = ElementLifecycle { elements };
         let mut state = lifecycle.begin_request();
         assert!(state.is_none());
@@ -763,7 +752,7 @@ mod tests {
     }
 
     type GetMethod = fn(
-        &CachedNodeManager<NodeId, NodeWithMetadata, MockCachedNodeManagerStorage>,
+        &CachedNodeManager<NodeId, Node, MockCachedNodeManagerStorage>,
         NodeId,
     ) -> Result<Node, Error>;
 

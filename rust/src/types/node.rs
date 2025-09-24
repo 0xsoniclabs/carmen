@@ -117,6 +117,12 @@ impl NodeSize for Node {
     }
 }
 
+impl Default for Node {
+    fn default() -> Self {
+        Node::Empty
+    }
+}
+
 /// A node type of a node in a (file-based) Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
