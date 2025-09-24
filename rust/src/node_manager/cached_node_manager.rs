@@ -29,7 +29,7 @@ use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::No
 /// The node's status is set to [`NodeStatus::Dirty`] when a mutable reference is requested.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeWithMetadata {
-    item: Node,
+    node: Node,
     status: NodeStatus,
 }
 
@@ -42,7 +42,7 @@ impl StorageFilter for NodeWithMetadata {
 impl Default for NodeWithMetadata {
     fn default() -> Self {
         NodeWithMetadata {
-            item: Node::Empty,
+            node: Node::Empty,
             status: NodeStatus::Clean,
         }
     }
@@ -62,14 +62,14 @@ impl Deref for NodeWithMetadata {
     type Target = Node;
 
     fn deref(&self) -> &Self::Target {
-        &self.item
+        &self.node
     }
 }
 
 impl DerefMut for NodeWithMetadata {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.status = NodeStatus::Dirty; // Mark as dirty on mutable borrow
-        &mut self.item
+        &mut self.node
     }
 }
 
@@ -226,7 +226,7 @@ where
         self.insert(
             id,
             NodeWithMetadata {
-                item,
+                node: item,
                 status: NodeStatus::Dirty,
             },
         )?;
@@ -245,7 +245,7 @@ where
             let pos = self.insert(
                 id,
                 NodeWithMetadata {
-                    item,
+                    node: item,
                     status: NodeStatus::Clean,
                 },
             )?;
@@ -265,7 +265,7 @@ where
             let pos = self.insert(
                 id,
                 NodeWithMetadata {
-                    item,
+                    node: item,
                     status: NodeStatus::Clean,
                 },
             )?;
@@ -294,7 +294,7 @@ where
                 continue;
             }
             if entry_guard.status == NodeStatus::Dirty {
-                self.storage.set(id, &entry_guard.item)?;
+                self.storage.set(id, &entry_guard.node)?;
                 entry_guard.status = NodeStatus::Clean;
             }
         }
@@ -416,7 +416,7 @@ mod tests {
         {
             let cache = CachedNodeManager::new(10, MockCachedNodeManagerStorage::new());
             let node = NodeWithMetadata {
-                item: Node::Empty,
+                node: Node::Empty,
                 status: NodeStatus::Dirty,
             };
             let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
@@ -429,7 +429,7 @@ mod tests {
             storage.expect_set().times(1).returning(|_, _| Ok(()));
             let cache = CachedNodeManager::new(1, storage);
             let node = NodeWithMetadata {
-                item: Node::Empty,
+                node: Node::Empty,
                 status: NodeStatus::Dirty,
             };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
@@ -445,7 +445,7 @@ mod tests {
         {
             let cache = CachedNodeManager::new(10, MockCachedNodeManagerStorage::new());
             let node = NodeWithMetadata {
-                item: Node::Empty,
+                node: Node::Empty,
                 status: NodeStatus::Dirty,
             };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
@@ -486,7 +486,7 @@ mod tests {
             .insert(
                 id,
                 NodeWithMetadata {
-                    item: expected_entry.clone(),
+                    node: expected_entry.clone(),
                     status: NodeStatus::Clean,
                 },
             )
@@ -718,7 +718,7 @@ mod tests {
     #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
         let mut cached_node = NodeWithMetadata {
-            item: Node::Empty,
+            node: Node::Empty,
             status: NodeStatus::Clean,
         };
         assert!(cached_node.status != NodeStatus::Dirty);
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn node_with_metadata_storage_filter_returns_true_if_dirty() {
         let mut cached_node = NodeWithMetadata {
-            item: Node::Empty,
+            node: Node::Empty,
             status: NodeStatus::Clean,
         };
         assert!(!cached_node.should_store());
