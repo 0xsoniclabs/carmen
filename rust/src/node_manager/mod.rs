@@ -35,7 +35,7 @@ pub trait NodeManager {
     type NodeType;
 
     /// Adds the given node to the node manager and returns an ID for it.
-    fn add(&self, item: Self::NodeType) -> Result<Self::Id, Error>;
+    fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error>;
 
     /// Returns a read guard for a node in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
