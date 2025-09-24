@@ -27,6 +27,8 @@ clean:
 	rm -f lib/libcarmen.so ; \
 	cd ../cpp ; \
 	bazel clean ; \
+	cd ../rust ; \
+	cargo clean ; \
 
 .PHONY: license-check
 license-check:

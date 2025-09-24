@@ -14,6 +14,7 @@ pipeline {
     options {
         timestamps ()
         timeout(time: 2, unit: 'HOURS')
+        disableConcurrentBuilds(abortPrevious: true)
     }
 
     environment {
@@ -97,6 +98,11 @@ pipeline {
                     steps {
                         sh 'cd cpp && bazel test --test_output=errors //...'
                     }
+                }
+            }
+            post {
+                always {
+                    sh 'make clean'
                 }
             }
         }
