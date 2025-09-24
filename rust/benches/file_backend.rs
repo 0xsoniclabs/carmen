@@ -255,6 +255,7 @@ fn file_backend_benchmark(
                             while !start_toggle.load(Ordering::Acquire) {
                                 std::hint::spin_loop();
                             }
+                            let start = Instant::now();
                             for iter in ((completed_iterations + thread as u64)
                                 ..(completed_iterations + iterations))
                                 .step_by(threads)
@@ -262,15 +263,19 @@ fn file_backend_benchmark(
                                 let offset = access.offset(iter, chunk_size);
                                 operation.execute(backend.deref(), &mut data, offset, iter);
                             }
+                            let end = Instant::now();
+                            (start, end)
                         }));
                     }
-                    let start = Instant::now();
                     start_toggle.store(true, Ordering::Release);
 
-                    for handle in handles {
-                        handle.join().unwrap();
-                    }
-                    start.elapsed()
+                    let times: Vec<_> = handles
+                        .into_iter()
+                        .map(|handle| handle.join().unwrap())
+                        .collect();
+                    let first_start = times.iter().map(|(start, _)| *start).min().unwrap();
+                    let last_end = times.iter().map(|(_, end)| *end).max().unwrap();
+                    last_end.duration_since(first_start)
                 });
                 completed_iterations += iterations;
                 duration
