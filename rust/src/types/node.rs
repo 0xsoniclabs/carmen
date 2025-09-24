@@ -98,8 +98,9 @@ impl Default for InnerNode {
 //
 /// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
 /// dictated by the largest variant).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Node {
+    #[default]
     Empty,
     Inner(Box<InnerNode>),
     Leaf2(Box<SparseLeafNode<2>>),
@@ -114,12 +115,6 @@ impl NodeSize for Node {
             Node::Leaf2(node) => std::mem::size_of_val(node),
             Node::Leaf256(node) => std::mem::size_of_val(node),
         }
-    }
-}
-
-impl Default for Node {
-    fn default() -> Self {
-        Node::Empty
     }
 }
 
