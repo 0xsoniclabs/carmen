@@ -13,16 +13,19 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
 };
 
+use zerocopy::transmute;
+
 use crate::storage::Error;
 
 /// Metadata stored in the metadata file.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Metadata {
     pub node_count: u64,
     pub reuse_frozen_count: u64,
 }
 
-/// A file that stores metadata about the node store for a certain node type.
+/// A file that stores metadata about the data of the
+/// [`NodeFileStorage`](crate::storage::file::NodeFileStorage) store for a certain node type.
 #[derive(Debug)]
 pub struct MetadataFile {
     file: File,
@@ -34,23 +37,20 @@ impl MetadataFile {
         Self { file }
     }
 
-    /// Reads the metadata from the file.
+    /// Reads the metadata from the file or returns [`Metadata::default`] if the file is empty.
     pub fn read(&self) -> Result<Metadata, Error> {
         let len = self.file.metadata().unwrap().len();
         if len == 0 {
-            return Ok(Metadata {
-                node_count: 0,
-                reuse_frozen_count: 0,
-            });
-        }
-        if len != 2 * size_of::<u64>() as u64 {
+            return Ok(Metadata::default());
+        } else if len != 2 * size_of::<u64>() as u64 {
             return Err(Error::DatabaseCorruption);
         }
         let mut metadata = [0u8; 2 * size_of::<u64>()];
         (&self.file).read_exact(&mut metadata)?;
+        let [node_count, reuse_frozen_count] = transmute!(metadata);
         Ok(Metadata {
-            node_count: u64::from_be_bytes(metadata[0..8].try_into().unwrap()),
-            reuse_frozen_count: u64::from_be_bytes(metadata[8..16].try_into().unwrap()),
+            node_count,
+            reuse_frozen_count,
         })
     }
 
@@ -70,10 +70,9 @@ impl MetadataFile {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{self, File, OpenOptions},
-        io::Write,
-    };
+    use std::fs::{self, File, OpenOptions};
+
+    use zerocopy::IntoBytes;
 
     use super::*;
     use crate::utils::test_dir::{Permissions, TestDir};
@@ -86,11 +85,8 @@ mod tests {
         let node_count: u64 = 1;
         let reuse_frozen_count: u64 = 2;
 
-        {
-            let mut file = File::create(path.as_path()).unwrap();
-            file.write_all(&node_count.to_be_bytes()).unwrap();
-            file.write_all(&reuse_frozen_count.to_be_bytes()).unwrap();
-        }
+        let data = [node_count, reuse_frozen_count];
+        fs::write(path.as_path(), data.as_bytes()).unwrap();
 
         let metadata_file = MetadataFile::new(File::open(path).unwrap());
         let metadata = metadata_file.read().unwrap();
@@ -114,10 +110,7 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("metadata");
 
-        {
-            let mut file = File::create(path.as_path()).unwrap();
-            file.write_all(&[0u8; 10]).unwrap();
-        }
+        fs::write(&path, [0u8; 10]).unwrap();
 
         let metadata_file = MetadataFile::new(File::open(path).unwrap());
         let result = metadata_file.read();
