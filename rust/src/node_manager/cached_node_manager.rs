@@ -192,6 +192,10 @@ where
         *guard = node;
 
         // Insert a new item in cache, evict an old item if necessary
+        // NOTE: When inserting with a full cache, the insert op will work as a replace. This will
+        // influence the hotness of the element, faking its reuse distance. To avoid this, we can
+        // use `cache.replace` with the `soft` parameter set to true. Note that this may still evict
+        // items depending on the weight of the replaced item.
         let evicted = self.cache.insert_with_lifecycle(key, pos);
         if let Some(evicted) = evicted {
             let mut free_list_guard = self.free_list.lock().unwrap();
