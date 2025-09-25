@@ -107,6 +107,24 @@ pub enum Node {
     Leaf256(Box<FullLeafNode>),
 }
 
+impl NodeSize for Node {
+    fn byte_size(&self) -> usize {
+        let inner_size = match self {
+            Node::Empty => 0,
+            Node::Inner(node) => std::mem::size_of_val(node),
+            Node::Leaf2(node) => std::mem::size_of_val(node),
+            Node::Leaf256(node) => std::mem::size_of_val(node),
+        };
+        std::mem::size_of::<Self>() + inner_size
+    }
+
+    /// Returns the minimum size of a node in bytes.
+    /// NOTE: This may be a BIG approximation.
+    fn min_size() -> usize {
+        Node::Empty.byte_size()
+    }
+}
+
 /// A node type of a node in a (file-based) Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +133,14 @@ pub enum NodeType {
     Inner,
     Leaf2,
     Leaf256,
+}
+
+/// A trait to determine the size of a node.
+pub trait NodeSize {
+    /// Returns the size of the node in bytes.
+    fn byte_size(&self) -> usize;
+
+    fn min_size() -> usize;
 }
 
 #[cfg(test)]
