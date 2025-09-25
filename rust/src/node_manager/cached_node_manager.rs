@@ -20,8 +20,8 @@ use quick_cache::{Lifecycle, UnitWeighter};
 
 use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::Node};
 
-/// A wrapper which dereferences to [`Node`] and additionally stores a **status** attribute
-/// indicating if it needs to be flushed to storage.
+/// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
+/// indicating whether it needs to be flushed to storage.
 /// The node's status is set to dirty when a mutable reference is requested.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeWithMetadata<N> {
@@ -257,6 +257,10 @@ where
             }
             let mut entry_guard = self.nodes[pos].write().unwrap();
             // Skip deleted nodes. We expect the free list to be short, so this should be cheap.
+            // NOTE: at startup, this operation will be quadratic in the number of nodes. However,
+            // we expect the cache to be always full, therefore the cost of this op should amortize
+            // quickly.
+            // TODO: Benchmark this and see if it is a problem in practice.
             if self.free_list.lock().unwrap().contains(&pos) {
                 continue;
             }
