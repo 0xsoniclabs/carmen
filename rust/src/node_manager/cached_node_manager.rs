@@ -30,24 +30,7 @@ use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::No
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeWithMetadata<N> {
     node: N,
-    status: NodeStatus,
-}
-
-impl<N> NodeWithMetadata<N> {
-    /// Returns true if the node needs to be stored in the storage backend.
-    pub fn should_store(&self) -> bool {
-        self.status == NodeStatus::Dirty
-    }
-}
-
-/// The status of a [`NodeWithMetadata`].
-/// It can be:
-/// - `Clean`: the node is in sync with the storage
-/// - `Dirty`: the node has been modified and needs to be flushed to storage
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NodeStatus {
-    Clean,
-    Dirty,
+    is_dirty: bool,
 }
 
 impl<N> Deref for NodeWithMetadata<N> {
@@ -60,7 +43,7 @@ impl<N> Deref for NodeWithMetadata<N> {
 
 impl<N> DerefMut for NodeWithMetadata<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.status = NodeStatus::Dirty; // Mark as dirty on mutable borrow
+        self.is_dirty = true; // Mark as dirty on mutable borrow
         &mut self.node
     }
 }
@@ -99,7 +82,7 @@ where
             // Pre-allocate with default values. This requires W: Default.
             nodes.push(RwLock::new(NodeWithMetadata {
                 node: N::default(),
-                status: NodeStatus::Clean,
+                is_dirty: false,
             }));
         }
         let nodes: Arc<[RwLock<NodeWithMetadata<N>>]> = Arc::from(nodes.into_boxed_slice());
@@ -145,7 +128,7 @@ where
         // avoid risking to lose data.
         #[allow(clippy::readonly_write_lock)]
         let guard = self.nodes[pos].write().unwrap();
-        if guard.should_store() {
+        if guard.is_dirty {
             self.storage.set(key, &guard)?;
         }
         free_list_guard.push_back(pos);
@@ -218,7 +201,7 @@ where
             id,
             NodeWithMetadata {
                 node,
-                status: NodeStatus::Dirty,
+                is_dirty: true,
             },
         )?;
         Ok(id)
@@ -237,7 +220,7 @@ where
                 id,
                 NodeWithMetadata {
                     node,
-                    status: NodeStatus::Clean,
+                    is_dirty: false,
                 },
             )?;
             Ok(self.nodes[pos].read().unwrap())
@@ -257,7 +240,7 @@ where
                 id,
                 NodeWithMetadata {
                     node,
-                    status: NodeStatus::Clean,
+                    is_dirty: false,
                 },
             )?;
             Ok(self.nodes[pos].write().unwrap())
@@ -284,9 +267,9 @@ where
             if self.free_list.lock().unwrap().contains(&pos) {
                 continue;
             }
-            if entry_guard.status == NodeStatus::Dirty {
+            if entry_guard.is_dirty {
                 self.storage.set(id, &entry_guard.node)?;
-                entry_guard.status = NodeStatus::Clean;
+                entry_guard.is_dirty = false;
             }
         }
         self.storage.flush()?;
@@ -358,44 +341,50 @@ mod tests {
     #[test]
     fn cached_node_manager_new_creates_node_manager() {
         let storage = MockCachedNodeManagerStorage::new();
-        let cache =
+        let manager =
             CachedNodeManager::<NodeId, Node, MockCachedNodeManagerStorage>::new(10, storage);
-        assert_eq!(cache.cache.capacity(), 10);
+        assert_eq!(manager.cache.capacity(), 10);
     }
 
     #[test]
-    fn cached_node_manager_evict_stores_entries_in_storage() {
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
+    fn cached_node_manager_evict_saves_dirty_nodes_in_storage() {
+        let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
+        let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
         let mut storage = MockCachedNodeManagerStorage::new();
-        storage.expect_reserve().times(1).returning(move |_| id);
         storage
             .expect_set()
             .times(1)
-            .with(eq(id), eq(&Node::Empty))
+            .with(eq(id1), eq(&Node::Empty))
             .returning(|_, _| Ok(()));
 
-        let cache = CachedNodeManager::new(10, storage);
-        cache.add(Node::Empty).unwrap();
-        // Get mutable reference to `Node` to mark it as dirty
-        {
-            let _ = &mut **cache.get_write_access(id).unwrap();
-        }
-        let mut free_list_guard = cache.free_list.lock().unwrap();
-        cache.evict((id, 0), &mut free_list_guard).unwrap();
-        assert!(free_list_guard.pop_front() == Some(0));
-        // Set the status to clean to avoid eviction
-        let mut node_guard = cache.nodes[0].write().unwrap();
-        node_guard.status = NodeStatus::Clean;
-        drop(node_guard);
-        cache.evict((id, 0), &mut free_list_guard).unwrap(); // should not store again
-        assert!(free_list_guard.pop_front() == Some(0));
-        cache
+        let manager = CachedNodeManager::new(10, storage);
+        // Manually insert two nodes
+        *manager.nodes[0].write().unwrap() = NodeWithMetadata {
+            node: Node::Empty,
+            is_dirty: true,
+        };
+        *manager.nodes[1].write().unwrap() = NodeWithMetadata {
+            node: Node::Empty,
+            is_dirty: false,
+        };
+        manager.cache.insert(id1, 0);
+        manager.cache.insert(id2, 1);
+
+        let mut free_list_guard = manager.free_list.lock().unwrap();
+        // Special `PINNED_POS` position should never be evicted.
+        manager
             .evict(
-                (id, ItemLifecycle::<Node>::PINNED_POS),
+                (id1, ItemLifecycle::<Node>::PINNED_POS),
                 &mut free_list_guard,
             )
-            .unwrap(); // should not store pinned items
+            .unwrap();
         assert!(free_list_guard.is_empty());
+        // This should be evicted as it is dirty.
+        manager.evict((id1, 0), &mut free_list_guard).unwrap();
+        assert!(free_list_guard.pop_front() == Some(0));
+        // This should not be evicted as it is clean.
+        manager.evict((id2, 1), &mut free_list_guard).unwrap();
+        assert!(free_list_guard.pop_front() == Some(1));
     }
 
     #[test]
@@ -407,7 +396,7 @@ mod tests {
             let manager = CachedNodeManager::new(10, storage);
             let expected = NodeWithMetadata {
                 node: Node::Empty,
-                status: NodeStatus::Dirty,
+                is_dirty: true,
             };
             let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let pos = manager.insert(id, expected.clone()).unwrap();
@@ -419,10 +408,11 @@ mod tests {
         {
             let mut storage = MockCachedNodeManagerStorage::new();
             storage.expect_set().times(1).returning(|_, _| Ok(()));
+            // Create manager that only fits a single node.
             let manager = CachedNodeManager::new(1, storage);
             let expected_node = NodeWithMetadata {
                 node: Node::Empty,
-                status: NodeStatus::Dirty,
+                is_dirty: true,
             };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
@@ -443,7 +433,7 @@ mod tests {
             let manager = CachedNodeManager::new(10, storage);
             let expected_node = NodeWithMetadata {
                 node: Node::Empty,
-                status: NodeStatus::Dirty,
+                is_dirty: true,
             };
             let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
             let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
@@ -462,17 +452,18 @@ mod tests {
 
     #[test]
     fn cached_node_manager_add_inserts_nodes() {
+        let expected_id = NodeId::from_idx_and_node_type(42, NodeType::Leaf256);
+        let node = Node::Leaf256(Box::default());
         let mut storage = MockCachedNodeManagerStorage::new();
-        storage
-            .expect_reserve()
-            .returning(|_| NodeId::from_idx_and_node_type(42, NodeType::Empty));
+        storage.expect_reserve().returning(move |_| expected_id);
         storage.expect_get().never(); // Shouldn't query storage on add
         let manager = CachedNodeManager::new(10, storage);
-        let node = Node::Empty;
-        let id = manager.add(node).unwrap();
-        assert_eq!(id, NodeId::from_idx_and_node_type(42, NodeType::Empty));
-        let entry = manager.get_read_access(id).unwrap();
-        assert!(**entry == Node::Empty);
+        let id = manager.add(node.clone()).unwrap();
+        assert_eq!(id, expected_id);
+        let pos = manager.cache.get(&id).unwrap();
+        assert_eq!(pos, 0); // First node should be inserted at pos
+        assert!(manager.nodes[pos].read().unwrap().is_dirty);
+        assert_eq!(manager.nodes[pos].read().unwrap().node, node);
     }
 
     #[rstest_reuse::apply(get_method)]
@@ -487,7 +478,7 @@ mod tests {
                 id,
                 NodeWithMetadata {
                     node: expected_entry.clone(),
-                    status: NodeStatus::Clean,
+                    is_dirty: false,
                 },
             )
             .unwrap();
@@ -534,10 +525,10 @@ mod tests {
     fn cached_node_manager_get_methods_always_insert_node_in_cache_when_retrieved_from_storage(
         #[case] get_method: GetMethod,
     ) {
-        const NUM_ELEMENTS: u64 = 10;
+        const NUM_NODES: u64 = 10;
         let mut storage = MockCachedNodeManagerStorage::new();
         let mut sequence = Sequence::new();
-        for i in 0..NUM_ELEMENTS + 1 {
+        for i in 0..NUM_NODES + 1 {
             // 1 item more than capacity
             storage
                 .expect_get()
@@ -552,16 +543,16 @@ mod tests {
             .with(
                 eq(NodeId::from_idx_and_node_type(
                     // NUM_ELEMENT - 1 will be evicted because of infinite reuse distance
-                    NUM_ELEMENTS - 1,
+                    NUM_NODES - 1,
                     NodeType::Empty,
                 )),
                 always(),
             )
             .returning(|_, _| Ok(()));
 
-        let manager = CachedNodeManager::new(NUM_ELEMENTS as usize, storage);
+        let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
 
-        for i in 0..NUM_ELEMENTS {
+        for i in 0..NUM_NODES {
             let id = NodeId::from_idx_and_node_type(i, NodeType::Empty);
             let mut entry = manager.get_write_access(id).unwrap();
             {
@@ -572,17 +563,17 @@ mod tests {
 
         // Retrieving and insert one item more than capacity, triggering eviction of the
         // precedent item.
-        let id = NodeId::from_idx_and_node_type(NUM_ELEMENTS, NodeType::Empty);
+        let id = NodeId::from_idx_and_node_type(NUM_NODES, NodeType::Empty);
         let _unused = get_method(&manager, id).unwrap();
     }
 
     #[test]
     fn cached_node_manager_flush_saves_dirty_nodes_to_storage() {
-        const NUM_ELEMENTS: u64 = 10;
+        const NUM_NODES: u64 = 10;
         let data = Arc::new(Mutex::new(vec![]));
         let mut storage = MockCachedNodeManagerStorage::new();
         let mut sequence = Sequence::new();
-        for i in 0..NUM_ELEMENTS {
+        for i in 0..NUM_NODES {
             storage
                 .expect_reserve()
                 .times(1)
@@ -605,8 +596,9 @@ mod tests {
         }
         storage.expect_flush().times(1).returning(|| Ok(()));
 
-        let manager = CachedNodeManager::new(NUM_ELEMENTS as usize, storage);
-        for _ in 0..NUM_ELEMENTS {
+        let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
+        for _ in 0..NUM_NODES {
+            // Newly added nodes are always dirty
             let _ = manager.add(Node::Empty).unwrap();
         }
         manager.flush().expect("flush should succeed");
@@ -654,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_node_manager_stores_data_in_storage_on_evict() {
+    fn cached_node_manager_stores_data_in_storage_when_full() {
         let mut storage = MockCachedNodeManagerStorage::new();
         let mut sequence = Sequence::new();
         storage
@@ -667,7 +659,6 @@ mod tests {
             .times(1)
             .in_sequence(&mut sequence)
             .returning(move |_| NodeId::from_idx_and_node_type(1, NodeType::Empty));
-        // With unit-size cache, each item is immediately evicted
         storage
             .expect_set()
             .times(1)
@@ -676,6 +667,7 @@ mod tests {
             })
             .returning(|_, _| Ok(()));
 
+        // With unit-size cache, each item is immediately evicted
         let manager = CachedNodeManager::new(1, storage);
         // Insert two nodes to trigger the eviction of the first one
         let _ = manager.add(Node::Empty).unwrap();
@@ -689,7 +681,7 @@ mod tests {
     fn item_lifecycle_is_pinned_checks_lock_and_pinned_pos() {
         let nodes = Arc::from([RwLock::new(NodeWithMetadata {
             node: Node::Empty,
-            status: NodeStatus::Clean,
+            is_dirty: false,
         })]);
         let lifecycle = ItemLifecycle { nodes };
 
@@ -700,7 +692,7 @@ mod tests {
         assert!(lifecycle.is_pinned(&0, &ItemLifecycle::<Node>::PINNED_POS));
 
         // Element is pinned if it cannot be locked (another thread holds a lock)
-        let _guard = lifecycle.nodes[0].write().unwrap(); // Lock item at pos 1
+        let _guard = lifecycle.nodes[0].write().unwrap(); // Lock item at pos 0
         assert!(lifecycle.is_pinned(&0, &0));
     }
 
@@ -716,26 +708,15 @@ mod tests {
 
     #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
-        let mut cached_node = NodeWithMetadata {
+        let mut node = NodeWithMetadata {
             node: Node::Empty,
-            status: NodeStatus::Clean,
+            is_dirty: false,
         };
-        assert!(cached_node.status != NodeStatus::Dirty);
-        let _ = cached_node.deref();
-        assert!(cached_node.status == NodeStatus::Clean);
-        let _ = cached_node.deref_mut();
-        assert!(cached_node.status == NodeStatus::Dirty);
-    }
-
-    #[test]
-    fn node_with_metadata_storage_filter_returns_true_if_dirty() {
-        let mut cached_node = NodeWithMetadata {
-            node: Node::Empty,
-            status: NodeStatus::Clean,
-        };
-        assert!(!cached_node.should_store());
-        let _ = cached_node.deref_mut();
-        assert!(cached_node.should_store());
+        assert!(!node.is_dirty);
+        let _ = node.deref();
+        assert!(!node.is_dirty);
+        let _ = node.deref_mut();
+        assert!(node.is_dirty);
     }
 
     mock! {
@@ -761,19 +742,21 @@ mod tests {
         }
     }
 
+    /// Type alias for a closure that calls either `get_read_access` or `get_write_access`
     type GetMethod = fn(
         &CachedNodeManager<NodeId, Node, MockCachedNodeManagerStorage>,
         NodeId,
     ) -> Result<Node, Error>;
 
+    /// Reusable rstest template to test both `get_read_access` and `get_write_access`
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::get_read_access((|cache, id| {
-        let guard = cache.get_read_access(id)?;
+    #[case::get_read_access((|manager, id| {
+        let guard = manager.get_read_access(id)?;
         Ok((**guard).clone())
     }) as GetMethod)]
-    #[case::get_write_access((|cache, id| {
-        let guard = cache.get_write_access(id)?;
+    #[case::get_write_access((|manager, id| {
+        let guard = manager.get_write_access(id)?;
         Ok((**guard).clone())
     }) as GetMethod)]
     fn get_method(#[case] f: GetMethod) {}
