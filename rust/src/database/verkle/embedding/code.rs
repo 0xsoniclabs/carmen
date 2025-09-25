@@ -51,17 +51,13 @@ pub fn split_code(code: &[u8]) -> Vec<Chunk> {
     chunks
 }
 
-/// Merges the given chunks (created by [`split_code`]) back into the original bytecode, up to the
-/// specified length. If the specified length is shorter than the combined length of the chunks,
-/// the result is truncated accordingly. If the specified length is longer than the total
-/// length of the chunks, the result is padded with zeros.
+/// Merges the given chunks (created by [`split_code`]) back into the original bytecode.
+/// At most `result.len()` bytes are written to `result`.
 #[cfg_attr(not(test), expect(unused))]
-pub fn merge_code(chunks: &[Chunk], len: usize) -> Vec<u8> {
-    let mut code = Vec::with_capacity(len);
-    for chunk in chunks {
-        code.extend_from_slice(&chunk[1..32.min(len - code.len() + 1)]);
+pub fn merge_code(chunks: &[Chunk], result: &mut [u8]) {
+    for (chunk, out) in chunks.iter().zip(result.chunks_mut(31)) {
+        out.copy_from_slice(&chunk[1..1 + out.len()]);
     }
-    code
 }
 
 #[cfg(test)]
@@ -192,7 +188,8 @@ mod tests {
             let chunks = split_code(&code);
             assert_eq!(chunks, expected_chunks, "split failed for case: {name}");
 
-            let merged_code = merge_code(&chunks, code.len());
+            let mut merged_code = vec![0u8; code.len()];
+            merge_code(&chunks, &mut merged_code);
             assert_eq!(merged_code, code, "merge failed for case: {name}");
         }
     }
@@ -204,13 +201,16 @@ mod tests {
             Chunk::from_index_values(0, &[(1, 0x03)]),
         ];
 
-        let merged_code = merge_code(&chunks, 5);
+        let mut merged_code = vec![0x0; 5];
+        merge_code(&chunks, &mut merged_code);
         assert_eq!(merged_code, vec![0x01, 0x02, 0x00, 0x00, 0x00]);
 
-        let merged_code = merge_code(&chunks, 1);
+        let mut merged_code = vec![0x0; 1];
+        merge_code(&chunks, &mut merged_code);
         assert_eq!(merged_code, vec![0x01]);
 
-        let merged_code = merge_code(&chunks, 33);
+        let mut merged_code = vec![0x0; 33];
+        merge_code(&chunks, &mut merged_code);
         assert_eq!(
             merged_code,
             Vec::from_index_values(0, &[(0, 0x01), (1, 0x02), (31, 0x03), (32, 0x00)])
