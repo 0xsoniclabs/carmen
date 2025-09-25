@@ -257,7 +257,7 @@ where
             }
             let mut entry_guard = self.nodes[pos].write().unwrap();
             // Skip deleted nodes. We expect the free list to be short, so this should be cheap.
-            // NOTE: at startup, this operation will be quadratic in the number of nodes. However,
+            // NOTE: this operation may be quadratic in the number of nodes. However,
             // we expect the cache to be always full, therefore the cost of this op should amortize
             // quickly.
             // TODO: Benchmark this and see if it is a problem in practice.
