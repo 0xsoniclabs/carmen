@@ -8,7 +8,6 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use core::num;
 use std::{
     cmp::Eq,
     hash::{Hash, RandomState},
@@ -17,7 +16,7 @@ use std::{
     vec::Vec,
 };
 
-use quick_cache::{Lifecycle, UnitWeighter, Weighter};
+use quick_cache::{Lifecycle, Weighter};
 
 use crate::{
     error::Error,
@@ -86,24 +85,31 @@ where
             + (std::mem::size_of::<K>() + 29) as f64 * next_pow_2 as f64 // Cache size
         };
         let bytes_capacity = capacity * 1024f64 * 1024f64;
-        let mut num_nodes_in_bytes = bytes_capacity;
-        let num_nodes;
+        // Binary search to find the maximum number of nodes that fit in the given capacity
+        let mut left = 0.0;
+        let mut right = bytes_capacity;
+        let mut max = 0.0;
         loop {
-            let res = bytes_required(num_nodes_in_bytes);
-            if res < bytes_capacity {
-                // Found the maximum number of bytes that fits the capacity
-                // Divide by the minimum size of a node to get the number of nodes
-                num_nodes = res.floor() as usize / N::min_size();
+            let mid = (left + right) / 2.0;
+            if (mid - left).abs() < 1.0 {
                 break;
+            }
+            let res = bytes_required(mid);
+            if res > bytes_capacity {
+                // Too big, search in the left half
+                right = mid;
             } else {
-                num_nodes_in_bytes -= 1.0;
+                // Fits, search in the right half
+                // This is our maximum, as `bytes_required` is monotonically increasing and `mid`
+                // can only increase once found a maximum
+                left = mid;
+                max = res;
             }
-            // the cache cannot hold any nodes
-            if res == 0.0 {
-                panic!("Cache capacity too small to hold any nodes");
-            }
-            continue;
         }
+        if max == 0.0 {
+            panic!("Node manager capacity too small to fit a single node");
+        }
+        let num_nodes = max.floor() as usize / N::min_size();
 
         let mut nodes = Vec::with_capacity(num_nodes);
         for _ in 0..num_nodes {
@@ -393,7 +399,7 @@ mod tests {
     fn cached_node_manager_new_creates_node_manager() {
         let storage = MockCachedNodeManagerStorage::new();
         let manager =
-            CachedNodeManager::<NodeId, Node, MockCachedNodeManagerStorage>::new(10.0, storage);
+            CachedNodeManager::<NodeId, Node, MockCachedNodeManagerStorage>::new(1.0, storage);
         assert_eq!(manager.cache.capacity(), 10);
         assert_eq!(manager.nodes.len(), 10);
         assert_eq!(
