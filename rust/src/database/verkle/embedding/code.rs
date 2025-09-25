@@ -40,9 +40,7 @@ pub fn split_code(code: &[u8]) -> Vec<Chunk> {
 
     let mut chunks = Vec::with_capacity((code.len() / 32) + 1);
     for i in (0..code.len()).step_by(31) {
-        let data_size = is_code[i..].iter().take_while(|&ic| !ic).count() as u8;
-        assert!(data_size <= 32);
-
+        let data_size = 31.min(is_code[i..].iter().take_while(|&ic| !ic).count() as u8);
         let code_size = 31.min(code.len() - i);
         let mut next = Chunk::default();
         next[0] = data_size;
@@ -78,11 +76,28 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0][0], 0);
 
+        // PUSH32 at different positions within the first chunk, followed by 32 bytes of data.
         for i in 0..30 {
             let code = Vec::from_index_values(0, &[(i, PUSH32), (i + 32, 0xab)]);
             let chunks = split_code(&code);
             assert_eq!(chunks.len(), 2);
             assert_eq!(chunks[1][0], 2 + i as u8);
+        }
+
+        // PUSH32 at the end of the first chunk, followed by 1-32 bytes of data,
+        // and up to 32 additional bytes of "opcodes".
+        for i in 0..64 {
+            let code = Vec::from_index_values(0, &[(30, PUSH32), (i + 31, 0xab)]);
+            let chunks = split_code(&code);
+            assert_eq!(
+                chunks.len(),
+                i / 31 + 2,
+                "unexpected number of chunks for i={i}"
+            );
+            // Second chunk should always contain 31 bytes of data.
+            assert_eq!(chunks[1][0], 31, "unexpected data length for i={i}");
+            // Third chunk (if it exists) should contain 1 byte of data.
+            assert!(chunks.len() < 3 || chunks[2][0] == 1);
         }
     }
 
@@ -140,7 +155,16 @@ mod tests {
                 ],
             ),
             (
-                "code shorter than expected",
+                "code ending with PUSH32",
+                Vec::from_index_values(0, &[(0, 0x03), (30, PUSH32), (62, 0x05)]),
+                vec![
+                    Chunk::from_index_values(0, &[(1, 0x03), (31, PUSH32)]),
+                    Chunk::from_index_values(0, &[(0, 31), (1, 0x00)]),
+                    Chunk::from_index_values(0, &[(0, 1), (1, 0x05)]),
+                ],
+            ),
+            (
+                "truncated push data at chunk boundary filling full chunk",
                 // In this case the last instruction of the first chunk is a PUSH32.
                 // For a valid code, 32 bytes of data (two chunks) should follow.
                 // Instead, we only have a single byte -- just enough to force the
@@ -153,7 +177,7 @@ mod tests {
                 ],
             ),
             (
-                "code shorter than expected, case 2",
+                "truncated push data at chunk boundary filling partial chunk",
                 // Same as before, but the PUSH32 comes two bytes earlier.
                 // This way only 30 bytes of the second chunk should be marked as data.
                 Vec::from_index_values(0, &[(0, 0x03), (28, PUSH32), (31, 0x05)]),

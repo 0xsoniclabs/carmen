@@ -57,7 +57,7 @@ pub fn get_storage_key(address: &Address, key: &Key) -> Key {
     let mut tree_index = U256::from_be_slice(key);
     let suffix;
 
-    if tree_index.cmp(&code_storage_delta) == std::cmp::Ordering::Less {
+    if tree_index < code_storage_delta {
         tree_index += HEADER_STORAGE_OFFSET;
         suffix = tree_index.to_le_bytes()[0];
         tree_index = U256::ZERO;
@@ -82,7 +82,7 @@ fn get_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
     let mut expanded = [0u8; 32];
     expanded[12..].copy_from_slice(address);
 
-    let mut values = vec![Scalar::zero(); 5];
+    let mut values = [Scalar::zero(); 5];
     values[0] = Scalar::from(2 + 256 * 64);
     values[1] = Scalar::from_le_bytes(&expanded[..16]);
     values[2] = Scalar::from_le_bytes(&expanded[16..]);
