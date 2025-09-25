@@ -183,7 +183,7 @@ impl LeafNode {
     /// Creates a new leaf node for the given key, initializing all values to [`Value::default`].
     pub fn new(key: &Key) -> Self {
         LeafNode {
-            stem: key[..31].try_into().expect("slice should be 31 bytes"),
+            stem: key[..31].try_into().unwrap(), // safe to unwrap because `Key` is 32 bytes long
             values: [Value::default(); 256],
             used_bits: [0; 256 / 8],
             commitment: Commitment::default(),
@@ -194,7 +194,7 @@ impl LeafNode {
     /// Returns the value associated with the given key, or [`Value::default`] if the key does
     /// not match the stem of this leaf.
     pub fn get(&self, key: &Key) -> Value {
-        if key[..31] != self.stem[..] {
+        if key[..31] != self.stem {
             Value::default()
         } else {
             self.values[key[31] as usize]
@@ -206,7 +206,7 @@ impl LeafNode {
     /// If the stem of the key does not match the stem of this leaf, the leaf is split
     /// into an inner node with two children (the existing leaf and a new leaf for the key).
     pub fn set(mut self, key: &Key, depth: u8, value: &Value) -> Node {
-        if key[..31] == self.stem[..] {
+        if key[..31] == self.stem {
             let suffix = key[31];
             self.values[suffix as usize] = *value;
             self.used_bits[(suffix / 8) as usize] |= 1 << (suffix % 8);
