@@ -40,7 +40,7 @@ func splitCode(code []byte) []chunk {
 	chunks := make([]chunk, 0, len(code)/32+1)
 	for i := 0; len(code) > 0; i++ {
 		next := chunk{}
-		for j := 31 * i; j < len(isCode) && !isCode[j]; j++ {
+		for j := 31 * i; j < 31*(i+1) && j < len(isCode) && !isCode[j]; j++ {
 			next[0]++
 		}
 		code = code[copy(next[1:], code):]

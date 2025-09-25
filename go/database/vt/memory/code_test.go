@@ -44,6 +44,14 @@ func TestSplitAndMerge(t *testing.T) {
 				{80%31 + 1: PUSH2, 0x01},
 			},
 		},
+		"code ending with PUSH32": {
+			code: []byte{0x03, 30: PUSH32, 62: 0x05},
+			chunks: []chunk{
+				{0, 0x03, 31: PUSH32},
+				{31, 0x00},
+				{1, 0x05},
+			},
+		},
 		// In this case the last instruction of the first chunk is a PUSH32.
 		// For a valid code, 32 bytes of data (two chunks) should follow.
 		// Instead, we only have a single byte (just enough to force the creation of a
