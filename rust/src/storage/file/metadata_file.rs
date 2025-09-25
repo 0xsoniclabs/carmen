@@ -13,12 +13,13 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
 };
 
-use zerocopy::transmute;
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::storage::Error;
 
 /// Metadata stored in the metadata file.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+#[repr(C)]
 pub struct Metadata {
     pub node_count: u64,
     pub reuse_frozen_count: u64,
@@ -42,27 +43,21 @@ impl MetadataFile {
         let len = self.file.metadata().unwrap().len();
         if len == 0 {
             return Ok(Metadata::default());
-        } else if len != 2 * size_of::<u64>() as u64 {
+        } else if len != size_of::<Metadata>() as u64 {
             return Err(Error::DatabaseCorruption);
         }
-        let mut metadata = [0u8; 2 * size_of::<u64>()];
-        (&self.file).read_exact(&mut metadata)?;
-        let [node_count, reuse_frozen_count] = transmute!(metadata);
-        Ok(Metadata {
-            node_count,
-            reuse_frozen_count,
-        })
+        let mut metadata = Metadata::default();
+        (&self.file).seek(SeekFrom::Start(0)).unwrap();
+        (&self.file).read_exact(metadata.as_mut_bytes())?;
+        Ok(metadata)
     }
 
     /// Writes the metadata to the file.
     pub fn write(&self, metadata: &Metadata) -> Result<(), Error> {
-        let mut data = [0; 2 * size_of::<u64>()];
-        data[..8].copy_from_slice(&metadata.node_count.to_be_bytes());
-        data[8..].copy_from_slice(&metadata.reuse_frozen_count.to_be_bytes());
         let mut file = &self.file;
         file.seek(SeekFrom::Start(0))?;
-        file.write_all(&data)?;
-        file.flush()?;
+        file.write_all(metadata.as_bytes())?;
+        file.sync_all()?;
 
         Ok(())
     }
@@ -148,10 +143,10 @@ mod tests {
         }
 
         let mut file = File::open(path).unwrap();
-        let mut data = [0u8; 16];
-        file.read_exact(&mut data).unwrap();
-        assert_eq!(data[0..8], node_count.to_be_bytes());
-        assert_eq!(data[8..16], reuse_frozen_count.to_be_bytes());
+        let mut data = [0; 2];
+        file.read_exact(data.as_mut_bytes()).unwrap();
+        assert_eq!(data[0], node_count);
+        assert_eq!(data[1], reuse_frozen_count);
     }
 
     #[test]
@@ -168,5 +163,27 @@ mod tests {
         };
         let result = metadata_file.write(&metadata);
         assert!(matches!(result, Err(Error::Io(_))));
+    }
+
+    #[test]
+    fn read_returns_what_write_wrote() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.path().join("metadata");
+
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(path.as_path())
+            .unwrap();
+
+        let metadata_file = MetadataFile::new(file);
+        let metadata = Metadata {
+            node_count: 1,
+            reuse_frozen_count: 2,
+        };
+        metadata_file.write(&metadata).unwrap();
+        assert_eq!(metadata_file.read().unwrap(), metadata);
     }
 }

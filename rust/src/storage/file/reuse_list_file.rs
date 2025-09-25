@@ -13,7 +13,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
 };
 
-use zerocopy::transmute_ref;
+use zerocopy::IntoBytes;
 
 use crate::storage::Error;
 
@@ -52,12 +52,12 @@ impl ReuseListFile {
 
     /// Writes the cached indices to the file.
     pub fn write(&self) -> Result<(), Error> {
-        let data: &[u8] = transmute_ref!(self.cache.as_slice());
+        let data = self.cache.as_bytes();
         let mut file = &self.file;
         file.seek(SeekFrom::Start(0))?;
         file.write_all(data)?;
         file.set_len(data.len() as u64)?;
-        file.flush()?;
+        file.sync_all()?;
 
         Ok(())
     }
