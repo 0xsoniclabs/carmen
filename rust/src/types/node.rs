@@ -10,7 +10,7 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::types::{Commitment, NodeId, NodeSize, Value};
+use crate::types::{Commitment, NodeId, Value};
 
 /// A value of a leaf node in a (file-based) Verkle trie, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -109,12 +109,13 @@ pub enum Node {
 
 impl NodeSize for Node {
     fn byte_size(&self) -> usize {
-        match self {
+        let inner_size = match self {
             Node::Empty => 0,
             Node::Inner(node) => std::mem::size_of_val(node),
             Node::Leaf2(node) => std::mem::size_of_val(node),
             Node::Leaf256(node) => std::mem::size_of_val(node),
-        }
+        };
+        std::mem::size_of::<Self>() + inner_size
     }
 }
 
@@ -126,6 +127,12 @@ pub enum NodeType {
     Inner,
     Leaf2,
     Leaf256,
+}
+
+/// A trait to determine the size of a node.
+pub trait NodeSize {
+    /// Returns the size of the node in bytes.
+    fn byte_size(&self) -> usize;
 }
 
 #[cfg(test)]

@@ -53,9 +53,3 @@ pub type U256 = [u8; 32];
 /// Carmen does not do any numeric operations on nonce. By using [`[u8; 8]`] instead of [`u64`], we
 /// don't require 8 byte alignment.
 pub type Nonce = [u8; 8];
-
-/// A trait to determine the size of a node
-pub trait NodeSize {
-    /// Returns the size of the node in bytes
-    fn byte_size(&self) -> usize;
-}
