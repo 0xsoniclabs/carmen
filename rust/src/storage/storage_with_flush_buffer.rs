@@ -58,7 +58,6 @@ where
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
 impl<S> Storage for StorageWithFlushBuffer<S>
 where
     S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
@@ -217,10 +216,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{
-            FileStorageManager, MockFileBackend, MockFileStorageManager, NoSeekFile,
-            NodeFileStorage,
-        },
+        storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
         types::NodeType,
     };
 
@@ -234,8 +230,15 @@ mod tests {
         // StorageWithFlushBuffer
         //   -> FileStorageManager
         //     -> A NodeFileStorage for each node type (InnerNode, SparseLeafNode<N>, ...)
-        //       -> NoSeekFile
-        StorageWithFlushBuffer::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
+        //       -> SeekFile
+        StorageWithFlushBuffer::<
+            FileStorageManager<
+                NodeFileStorage<_, SeekFile>,
+                NodeFileStorage<_, SeekFile>,
+                NodeFileStorage<_, SeekFile>,
+            >,
+        >::open(dir.path())
+        .unwrap();
     }
 
     #[test]
@@ -244,14 +247,26 @@ mod tests {
         // Using mocks for `FileStorageManager` and `NoSeekFile` is not possible, because `open`
         // creates the mocks using calls to `open` on the mock type, but the mocks have no
         // expectations set up.
-        let storage =
-            StorageWithFlushBuffer::<FileStorageManager<NoSeekFile>>::open(dir.path()).unwrap();
+        let storage = StorageWithFlushBuffer::<
+            FileStorageManager<
+                NodeFileStorage<_, SeekFile>,
+                NodeFileStorage<_, SeekFile>,
+                NodeFileStorage<_, SeekFile>,
+            >,
+        >::open(dir.path())
+        .unwrap();
 
         // The node store files should be locked while opened
         let file = File::open(
             dir.path()
-                .join(FileStorageManager::<NoSeekFile>::INNER_NODE_DIR)
-                .join(NodeFileStorage::<u8, NoSeekFile>::NODE_STORE_FILE),
+                .join(
+                    FileStorageManager::<
+                        NodeFileStorage<_, SeekFile>,
+                        NodeFileStorage<_, SeekFile>,
+                        NodeFileStorage<_, SeekFile>,
+                    >::INNER_NODE_DIR,
+                )
+                .join(NodeFileStorage::<u8, SeekFile>::NODE_STORE_FILE),
         )
         .unwrap();
         assert!(file.try_lock().is_err());
@@ -269,7 +284,7 @@ mod tests {
     fn get_returns_copy_of_node_if_present_as_set_op() {
         let storage = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
-            storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
+            storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
@@ -291,7 +306,7 @@ mod tests {
     fn get_returns_not_found_error_if_id_is_present_as_delete_op() {
         let storage = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
-            storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
+            storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
@@ -310,7 +325,7 @@ mod tests {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
-        let mut mock_storage = MockFileStorageManager::<MockFileBackend>::new();
+        let mut mock_storage = MockStorage::new();
         mock_storage
             .expect_get()
             .withf(move |arg| *arg == id)
@@ -337,7 +352,7 @@ mod tests {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
-        let mut mock_storage = MockFileStorageManager::<MockFileBackend>::new();
+        let mut mock_storage = MockStorage::new();
         mock_storage
             .expect_reserve()
             .withf({
@@ -367,7 +382,7 @@ mod tests {
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
-            storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
+            storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
@@ -389,7 +404,7 @@ mod tests {
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
-            storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
+            storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
                 shutdown: Arc::new(AtomicBool::new(false)),
@@ -406,11 +421,11 @@ mod tests {
     }
 
     #[test]
-    fn flush_waits_until_buffer_is_empty_then_calls_flush_on_underlying_storage_layer() {
+    fn checkpoint_waits_until_buffer_is_empty_then_calls_flush_on_underlying_storage_layer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
-        let mut mock_storage = MockFileStorageManager::<MockFileBackend>::new();
+        let mut mock_storage = MockStorage::new();
         mock_storage.expect_flush().times(1).returning(|| Ok(()));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
@@ -466,7 +481,7 @@ mod tests {
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
-            storage: Arc::new(MockFileStorageManager::<MockFileBackend>::new()),
+            storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers { workers, shutdown },
         };
 
@@ -478,7 +493,7 @@ mod tests {
     #[test]
     fn flush_workers_new_spawns_threads() {
         let flush_buffer = Arc::new(DashMap::new());
-        let storage = Arc::new(MockFileStorageManager::<MockFileBackend>::new());
+        let storage = Arc::new(MockStorage::new());
 
         let workers = FlushWorkers::new(&flush_buffer, &storage);
         assert_eq!(workers.workers.len(), FlushWorkers::WORKER_COUNT);
@@ -492,7 +507,7 @@ mod tests {
         let flush_buffer = Arc::new(DashMap::new());
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        let mut storage = MockFileStorageManager::<MockFileBackend>::new();
+        let mut storage = MockStorage::new();
         storage.expect_set().returning(|_, _| Ok(()));
         storage.expect_delete().returning(|_| Ok(()));
         let storage = Arc::new(storage);
@@ -550,5 +565,28 @@ mod tests {
             shutdown_received.load(Ordering::SeqCst),
             FlushWorkers::WORKER_COUNT
         );
+    }
+
+    mockall::mock! {
+        pub Storage {}
+
+        impl Storage for Storage {
+            type Id = NodeId;
+            type Item = Node;
+
+            fn open(_path: &Path) -> Result<Self, Error>
+            where
+                Self: Sized;
+
+            fn get(&self, id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
+
+            fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+
+            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
+
+            fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
+
+            fn flush(&self) -> Result<(), Error>;
+        }
     }
 }

@@ -11,10 +11,7 @@
 use std::path::Path;
 
 use crate::{
-    storage::{
-        Error, Storage,
-        file::{FileBackend, NodeFileStorage},
-    },
+    storage::{Error, Storage},
     types::{FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode},
 };
 
@@ -23,32 +20,49 @@ use crate::{
 /// In order for concurrent operations to be safe (in that there are not data races) they have to
 /// operate on different [`NodeId`]s.
 #[derive(Debug)]
-pub struct FileStorageManager<F: FileBackend + 'static> {
-    inner_nodes: NodeFileStorage<InnerNode, F>,
-    leaf_nodes_2: NodeFileStorage<SparseLeafNode<2>, F>,
-    leaf_nodes_256: NodeFileStorage<FullLeafNode, F>,
+pub struct FileStorageManager<S1, S2, S3>
+where
+    S1: Storage<Id = u64, Item = InnerNode>,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>>,
+    S3: Storage<Id = u64, Item = FullLeafNode>,
+{
+    inner_nodes: S1,
+    leaf_nodes_2: S2,
+    leaf_nodes_256: S3,
 }
 
-impl<F: FileBackend> FileStorageManager<F> {
+impl<S1, S2, S3> FileStorageManager<S1, S2, S3>
+where
+    S1: Storage<Id = u64, Item = InnerNode>,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>>,
+    S3: Storage<Id = u64, Item = FullLeafNode>,
+{
     pub const INNER_NODE_DIR: &str = "inner_node";
     pub const LEAF_NODE_2_DIR: &str = "leaf_node_2";
     pub const LEAF_NODE_256_DIR: &str = "leaf_node_256";
 }
 
-#[cfg_attr(test, mockall::automock)]
-impl<F> Storage for FileStorageManager<F>
+impl<S1, S2, S3> Storage for FileStorageManager<S1, S2, S3>
 where
-    F: FileBackend + 'static,
+    S1: Storage<Id = u64, Item = InnerNode>,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>>,
+    S3: Storage<Id = u64, Item = FullLeafNode>,
 {
     type Id = NodeId;
     type Item = Node;
 
     /// Opens or creates the file backends for the individual node types in the specified directory.
     fn open(dir: &Path) -> Result<Self, Error> {
+        std::fs::create_dir_all(dir)?;
+
+        let inner_nodes = S1::open(dir.join(Self::INNER_NODE_DIR).as_path())?;
+        let leaf_nodes_2 = S2::open(dir.join(Self::LEAF_NODE_2_DIR).as_path())?;
+        let leaf_nodes_256 = S3::open(dir.join(Self::LEAF_NODE_256_DIR).as_path())?;
+
         Ok(Self {
-            inner_nodes: NodeFileStorage::open(dir.join(Self::INNER_NODE_DIR).as_path())?,
-            leaf_nodes_2: NodeFileStorage::open(dir.join(Self::LEAF_NODE_2_DIR).as_path())?,
-            leaf_nodes_256: NodeFileStorage::open(dir.join(Self::LEAF_NODE_256_DIR).as_path())?,
+            inner_nodes,
+            leaf_nodes_2,
+            leaf_nodes_256,
         })
     }
 
@@ -122,20 +136,24 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        fs::{self, File, Permissions},
+        fs::{self, Permissions},
         os::unix::fs::PermissionsExt,
     };
 
-    use zerocopy::IntoBytes;
-
     use super::*;
-    use crate::{storage::file::SeekFile, types::NodeId};
-
-    type FileStorageManager = super::FileStorageManager<SeekFile>;
-    type NodeFileStorage = super::NodeFileStorage<InnerNode, SeekFile>;
+    use crate::{
+        storage::file::{NodeFileStorage, SeekFile},
+        types::NodeId,
+    };
 
     #[test]
-    fn open_creates_files_if_they_do_not_exist() {
+    fn open_creates_directory_and_opens_committed_checkpoint_and_calls_open_on_all_storages() {
+        type FileStorageManager = super::FileStorageManager<
+            NodeFileStorage<InnerNode, SeekFile>,
+            NodeFileStorage<SparseLeafNode<2>, SeekFile>,
+            NodeFileStorage<FullLeafNode, SeekFile>,
+        >;
+
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
         let storage = FileStorageManager::open(path);
@@ -146,20 +164,26 @@ mod tests {
             FileStorageManager::LEAF_NODE_256_DIR,
         ];
         let files = [
-            NodeFileStorage::NODE_STORE_FILE,
-            NodeFileStorage::REUSE_LIST_FILE,
-            NodeFileStorage::METADATA_FILE,
+            NodeFileStorage::<InnerNode, SeekFile>::NODE_STORE_FILE,
+            NodeFileStorage::<InnerNode, SeekFile>::REUSE_LIST_FILE,
+            NodeFileStorage::<InnerNode, SeekFile>::METADATA_FILE,
         ];
         for sub_dir in &sub_dirs {
-            fs::exists(path.join(sub_dir)).unwrap();
+            assert!(fs::exists(path.join(sub_dir)).unwrap());
             for file in &files {
-                fs::exists(path.join(sub_dir).join(file)).unwrap();
+                assert!(fs::exists(path.join(sub_dir).join(file)).unwrap());
             }
         }
     }
 
     #[test]
     fn open_opens_existing_files() {
+        type FileStorageManager = super::FileStorageManager<
+            NodeFileStorage<InnerNode, SeekFile>,
+            NodeFileStorage<SparseLeafNode<2>, SeekFile>,
+            NodeFileStorage<FullLeafNode, SeekFile>,
+        >;
+
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
         let sub_dirs = [
@@ -167,16 +191,10 @@ mod tests {
             FileStorageManager::LEAF_NODE_2_DIR,
             FileStorageManager::LEAF_NODE_256_DIR,
         ];
-        let files = [
-            NodeFileStorage::NODE_STORE_FILE,
-            NodeFileStorage::REUSE_LIST_FILE,
-            NodeFileStorage::METADATA_FILE,
-        ];
         for sub_dir in &sub_dirs {
             fs::create_dir_all(path.join(sub_dir)).unwrap();
-            for file in &files {
-                File::create(path.join(sub_dir).join(file)).unwrap();
-            }
+            // because we are not writing any nodes, the node type does not matter
+            NodeFileStorage::<InnerNode, SeekFile>::create_files_for_nodes(path, &[]).unwrap();
         }
 
         let storage = FileStorageManager::open(path);
@@ -185,210 +203,241 @@ mod tests {
 
     #[test]
     fn open_propagates_io_errors() {
+        type FileStorageManager = super::FileStorageManager<
+            MockStorage<InnerNode>,
+            MockStorage<SparseLeafNode<2>>,
+            MockStorage<FullLeafNode>,
+        >;
+
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
 
-        fs::set_permissions(path, Permissions::from_mode(0o000)).unwrap();
+        fs::set_permissions(&dir, Permissions::from_mode(0o000)).unwrap();
 
-        assert!(matches!(FileStorageManager::open(path), Err(Error::Io(_))));
+        let path = dir.path().join("non_existent_dir");
 
-        fs::set_permissions(path, Permissions::from_mode(0o777)).unwrap();
+        assert!(matches!(
+            FileStorageManager::open(path.as_path()),
+            Err(Error::Io(_))
+        ));
+
+        fs::set_permissions(&dir, Permissions::from_mode(0o777)).unwrap();
     }
 
     #[test]
-    fn get_reads_node_from_corresponding_node_file_storage_depending_on_node_type() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
+    fn get_forwards_to_get_of_corresponding_node_file_storage_depending_on_node_type() {
+        let mut storage = FileStorageManager {
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
 
-        let inner_node = InnerNode::default();
-        let leaf_node_2 = SparseLeafNode::default();
-        let leaf_node_256 = FullLeafNode::default();
-
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::INNER_NODE_DIR),
-            std::slice::from_ref(&inner_node),
-        )
-        .unwrap();
-
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::LEAF_NODE_2_DIR),
-            std::slice::from_ref(&leaf_node_2),
-        )
-        .unwrap();
-
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::LEAF_NODE_256_DIR),
-            std::slice::from_ref(&leaf_node_256),
-        )
-        .unwrap();
-
-        let storage = FileStorageManager::open(path).unwrap();
-
-        // the empty node is not stored but is returned as a default value
-        assert_eq!(
-            storage
-                .get(NodeId::from_idx_and_node_type(0, NodeType::Empty))
-                .unwrap(),
-            Node::Empty
-        );
-        assert_eq!(
-            storage
-                .get(NodeId::from_idx_and_node_type(0, NodeType::Inner))
-                .unwrap(),
-            Node::Inner(Box::new(inner_node))
-        );
-        assert_eq!(
-            storage
-                .get(NodeId::from_idx_and_node_type(0, NodeType::Leaf2))
-                .unwrap(),
-            Node::Leaf2(Box::new(leaf_node_2))
-        );
-        assert_eq!(
-            storage
-                .get(NodeId::from_idx_and_node_type(0, NodeType::Leaf256))
-                .unwrap(),
-            Node::Leaf256(Box::new(leaf_node_256))
-        );
-    }
-
-    #[test]
-    fn get_non_existent_id_returns_not_found_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-        let storage = FileStorageManager::open(path).unwrap();
-
-        let node = Node::Inner(Box::default());
-        let id = storage.reserve(&node);
-
-        // id has not been set yet
-        assert!(matches!(storage.get(id), Err(Error::NotFound)));
-
-        storage.set(id, &node).unwrap();
-        // id has been set, and get should succeed
-        assert_eq!(storage.get(id).unwrap(), node);
-    }
-
-    #[test]
-    fn reserve_retrieves_node_id_from_node_file_storage_depending_on_node_type() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-
-        let inner_count = 1;
-        let leaf_2_count = 2;
-        let leaf_256_count = 3;
-
-        // to test that the id comes from the correct file storage, we create different number of
-        // nodes for each type
-        let inner_node = InnerNode::default();
-        let leaf_node_2 = SparseLeafNode::<2>::default();
-        let leaf_node_256 = FullLeafNode::default();
-
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::INNER_NODE_DIR),
-            &vec![inner_node.clone(); inner_count],
-        )
-        .unwrap();
-
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::LEAF_NODE_2_DIR),
-            &vec![leaf_node_2.clone(); leaf_2_count],
-        )
-        .unwrap();
-
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::LEAF_NODE_256_DIR),
-            &vec![leaf_node_256.clone(); leaf_256_count],
-        )
-        .unwrap();
-
-        let storage = FileStorageManager::open(path).unwrap();
-
-        // all empty nodes have id 0
-        assert_eq!(
-            storage.reserve(&Node::Empty),
-            NodeId::from_idx_and_node_type(0, NodeType::Empty)
-        );
-        assert_eq!(
-            storage.reserve(&Node::Inner(Box::new(inner_node))),
-            NodeId::from_idx_and_node_type(inner_count as u64, NodeType::Inner)
-        );
-        assert_eq!(
-            storage.reserve(&Node::Leaf2(Box::new(leaf_node_2))),
-            NodeId::from_idx_and_node_type(leaf_2_count as u64, NodeType::Leaf2)
-        );
-        assert_eq!(
-            storage.reserve(&Node::Leaf256(Box::new(leaf_node_256))),
-            NodeId::from_idx_and_node_type(leaf_256_count as u64, NodeType::Leaf256)
-        );
-    }
-
-    #[test]
-    fn set_updates_node_in_correct_node_file_storage() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-
-        let inner_node = Box::new(InnerNode::default());
-        let leaf_node_2 = Box::new(SparseLeafNode::default());
-        let leaf_node_256 = Box::new(FullLeafNode::default());
-
+        // Node::Empty
         {
-            let storage = FileStorageManager::open(path).unwrap();
-
-            // the empty node is not stored
-            let empty_node = Node::Empty;
-            storage
-                .set(storage.reserve(&empty_node), &empty_node)
-                .unwrap();
-
-            let inner_node = Node::Inner(inner_node.clone());
-            storage
-                .set(storage.reserve(&inner_node), &inner_node)
-                .unwrap();
-
-            let leaf_node_2 = Node::Leaf2(leaf_node_2.clone());
-            storage
-                .set(storage.reserve(&leaf_node_2), &leaf_node_2)
-                .unwrap();
-
-            let leaf_node_256 = Node::Leaf256(leaf_node_256.clone());
-            storage
-                .set(storage.reserve(&leaf_node_256), &leaf_node_256)
-                .unwrap();
+            // Empty nodes are not stored. Calling get with them returns a (default) empty node.
+            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
+            assert_eq!(storage.get(empty_node_id).unwrap(), Node::Empty);
         }
 
-        let node_store_file = path
-            .join(FileStorageManager::INNER_NODE_DIR)
-            .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(node_store_file).unwrap(), inner_node.as_bytes());
+        // Node::Inner
+        {
+            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
+            let inner_node = InnerNode::default();
+            storage
+                .inner_nodes
+                .expect_get()
+                .withf(move |id| *id == inner_node_id.to_index())
+                .returning({
+                    let inner_node = inner_node.clone();
+                    move |_| Ok(inner_node.clone())
+                });
+            assert_eq!(
+                storage.get(inner_node_id).unwrap(),
+                Node::Inner(Box::new(inner_node))
+            );
+        }
 
-        let node_store_file = path
-            .join(FileStorageManager::LEAF_NODE_2_DIR)
-            .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_2.as_bytes());
+        // Node::Leaf2
+        {
+            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
+            let leaf_node_2 = SparseLeafNode::default();
+            storage
+                .leaf_nodes_2
+                .expect_get()
+                .withf(move |id| *id == leaf_node_2_id.to_index())
+                .returning({
+                    let leaf_node_2 = leaf_node_2.clone();
+                    move |_| Ok(leaf_node_2.clone())
+                });
+            assert_eq!(
+                storage.get(leaf_node_2_id).unwrap(),
+                Node::Leaf2(Box::new(leaf_node_2))
+            );
+        }
 
-        let node_store_file = path
-            .join(FileStorageManager::LEAF_NODE_256_DIR)
-            .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_256.as_bytes());
+        // Node::Leaf256
+        {
+            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
+            let leaf_node_256 = FullLeafNode::default();
+            storage
+                .leaf_nodes_256
+                .expect_get()
+                .withf(move |id| *id == leaf_node_256_id.to_index())
+                .returning({
+                    let leaf_node_256 = leaf_node_256.clone();
+                    move |_| Ok(leaf_node_256.clone())
+                });
+            assert_eq!(
+                storage.get(leaf_node_256_id).unwrap(),
+                Node::Leaf256(Box::new(leaf_node_256))
+            );
+        }
     }
 
     #[test]
-    fn set_non_existent_id_returns_not_found_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-        let storage = FileStorageManager::open(path).unwrap();
+    fn reserve_forwards_to_reserve_of_corresponding_node_file_storage_depending_on_node_type() {
+        let mut storage = FileStorageManager {
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
 
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        // Node::Empty
+        {
+            // Empty nodes are not stored. Calling reserve with them always returns ID 0.
+            let empty_node_idx = 0;
+            assert_eq!(
+                storage.reserve(&Node::Empty),
+                NodeId::from_idx_and_node_type(empty_node_idx, NodeType::Empty)
+            );
+        }
 
-        assert!(matches!(storage.set(id, &node), Err(Error::NotFound)));
+        // Node::Inner
+        {
+            let inner_node_idx = 1;
+            let inner_node = InnerNode::default();
+            storage
+                .inner_nodes
+                .expect_reserve()
+                .withf({
+                    let inner_node = inner_node.clone();
+                    move |node| *node == inner_node
+                })
+                .returning(move |_| inner_node_idx);
+            assert_eq!(
+                storage.reserve(&Node::Inner(Box::new(inner_node))),
+                NodeId::from_idx_and_node_type(inner_node_idx, NodeType::Inner)
+            );
+        }
+
+        // Node::Leaf2
+        {
+            let leaf_node_2_idx = 2;
+            let leaf_node_2 = SparseLeafNode::<2>::default();
+            storage
+                .leaf_nodes_2
+                .expect_reserve()
+                .withf({
+                    let leaf_node_2 = leaf_node_2.clone();
+                    move |node| *node == leaf_node_2
+                })
+                .returning(move |_| leaf_node_2_idx);
+            assert_eq!(
+                storage.reserve(&Node::Leaf2(Box::new(leaf_node_2))),
+                NodeId::from_idx_and_node_type(leaf_node_2_idx, NodeType::Leaf2)
+            );
+        }
+
+        // Node::Leaf256
+        {
+            let leaf_node_256_idx = 3;
+            let leaf_node_256 = FullLeafNode::default();
+            storage
+                .leaf_nodes_256
+                .expect_reserve()
+                .withf({
+                    let leaf_node_256 = leaf_node_256.clone();
+                    move |node| *node == leaf_node_256
+                })
+                .returning(move |_| leaf_node_256_idx);
+            assert_eq!(
+                storage.reserve(&Node::Leaf256(Box::new(leaf_node_256))),
+                NodeId::from_idx_and_node_type(leaf_node_256_idx, NodeType::Leaf256)
+            );
+        }
+    }
+
+    #[test]
+    fn set_forwards_to_set_of_corresponding_node_file_storage_depending_on_node_type() {
+        let mut storage = FileStorageManager {
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
+
+        // Node::Empty
+        {
+            // Empty nodes are not stored. Calling set with them is a no-op.
+            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
+            let empty_node = Node::Empty;
+            assert!(storage.set(empty_node_id, &empty_node).is_ok());
+        }
+
+        // Node::Inner
+        {
+            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
+            let inner_node = InnerNode::default();
+            storage
+                .inner_nodes
+                .expect_set()
+                .withf({
+                    let inner_node = inner_node.clone();
+                    move |id, node| *id == inner_node_id.to_index() && *node == inner_node
+                })
+                .returning(move |_, _| Ok(()));
+            let inner_node = Node::Inner(Box::new(inner_node));
+            assert!(storage.set(inner_node_id, &inner_node).is_ok());
+        }
+
+        // Node::Leaf2
+        {
+            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
+            let leaf_node_2 = SparseLeafNode::default();
+            storage
+                .leaf_nodes_2
+                .expect_set()
+                .withf({
+                    let leaf_node_2 = leaf_node_2.clone();
+                    move |id, node| *id == leaf_node_2_id.to_index() && *node == leaf_node_2
+                })
+                .returning(move |_, _| Ok(()));
+            let leaf_node_2 = Node::Leaf2(Box::new(leaf_node_2));
+            assert!(storage.set(leaf_node_2_id, &leaf_node_2).is_ok());
+        }
+
+        // Node::Leaf256
+        {
+            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
+            let leaf_node_256 = FullLeafNode::default();
+            storage
+                .leaf_nodes_256
+                .expect_set()
+                .withf({
+                    let leaf_node_256 = leaf_node_256.clone();
+                    move |id, node| *id == leaf_node_256_id.to_index() && *node == leaf_node_256
+                })
+                .returning(move |_, _| Ok(()));
+            let leaf_node_256 = Node::Leaf256(Box::new(leaf_node_256));
+            assert!(storage.set(leaf_node_256_id, &leaf_node_256).is_ok());
+        }
     }
 
     #[test]
     fn set_returns_error_if_node_id_prefix_and_node_type_mismatch() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-        let storage = FileStorageManager::open(path).unwrap();
+        let storage = FileStorageManager {
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
         let node = Node::Inner(Box::default());
@@ -400,99 +449,90 @@ mod tests {
     }
 
     #[test]
-    fn delete_adds_node_id_to_reuse_list_in_reuse_list_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
+    fn delete_forwards_to_delete_of_corresponding_node_file_storage_depending_on_node_type() {
+        let mut storage = FileStorageManager {
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
 
-        let inner_node = InnerNode::default();
-        let leaf_node_2 = SparseLeafNode::<2>::default();
-        let leaf_node_256 = FullLeafNode::default();
+        // Node::Empty
+        {
+            // Empty nodes are not stored. Calling delete with them is a no-op.
+            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
+            assert!(storage.delete(empty_node_id).is_ok());
+        }
 
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::INNER_NODE_DIR),
-            &[inner_node],
-        )
-        .unwrap();
+        // Node::Inner
+        {
+            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
+            storage
+                .inner_nodes
+                .expect_delete()
+                .withf(move |id| *id == inner_node_id.to_index())
+                .returning(move |_| Ok(()));
+            assert!(storage.delete(inner_node_id).is_ok());
+        }
 
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::LEAF_NODE_2_DIR),
-            &[leaf_node_2],
-        )
-        .unwrap();
+        // Node::Leaf2
+        {
+            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
+            storage
+                .leaf_nodes_2
+                .expect_delete()
+                .withf(move |id| *id == leaf_node_2_id.to_index())
+                .returning(move |_| Ok(()));
+            assert!(storage.delete(leaf_node_2_id).is_ok());
+        }
 
-        super::NodeFileStorage::<_, SeekFile>::create_files_for_nodes(
-            path.join(FileStorageManager::LEAF_NODE_256_DIR),
-            &[leaf_node_256],
-        )
-        .unwrap();
-
-        let storage = FileStorageManager::open(path).unwrap();
-        // the empty node is not stored so deleting it is a no-op
-        storage
-            .delete(NodeId::from_idx_and_node_type(0, NodeType::Empty))
-            .unwrap();
-        storage
-            .delete(NodeId::from_idx_and_node_type(0, NodeType::Inner))
-            .unwrap();
-        storage
-            .delete(NodeId::from_idx_and_node_type(0, NodeType::Leaf2))
-            .unwrap();
-        storage
-            .delete(NodeId::from_idx_and_node_type(0, NodeType::Leaf256))
-            .unwrap();
-
-        drop(storage);
-
-        let reuse_list_file = path
-            .join(FileStorageManager::INNER_NODE_DIR)
-            .join(NodeFileStorage::REUSE_LIST_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), [0; 8]);
-        let reuse_list_file = path
-            .join(FileStorageManager::LEAF_NODE_2_DIR)
-            .join(NodeFileStorage::REUSE_LIST_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), [0; 8]);
-        let reuse_list_file = path
-            .join(FileStorageManager::LEAF_NODE_256_DIR)
-            .join(NodeFileStorage::REUSE_LIST_FILE);
-        assert_eq!(fs::read(reuse_list_file).unwrap(), [0; 8]);
+        // Node::Leaf256
+        {
+            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
+            storage
+                .leaf_nodes_256
+                .expect_delete()
+                .withf(move |id| *id == leaf_node_256_id.to_index())
+                .returning(move |_| Ok(()));
+            assert!(storage.delete(leaf_node_256_id).is_ok());
+        }
     }
 
     #[test]
-    fn flush_flushes_all_node_file_storages() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
+    fn flush_calls_flushes_on_all_storages() {
+        let mut storage = FileStorageManager {
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
 
-        let inner_node = Box::new(InnerNode::default());
-        let leaf_node_2 = Box::new(SparseLeafNode::<_>::default());
-        let leaf_node_256 = Box::new(FullLeafNode::default());
+        storage.inner_nodes.expect_flush().returning(|| Ok(()));
+        storage.leaf_nodes_2.expect_flush().returning(|| Ok(()));
+        storage.leaf_nodes_256.expect_flush().returning(|| Ok(()));
 
-        let storage = FileStorageManager::open(path).unwrap();
-        let id = storage.reserve(&Node::Empty);
-        storage.set(id, &Node::Empty).unwrap();
-        let id = storage.reserve(&Node::Inner(inner_node.clone()));
-        storage.set(id, &Node::Inner(inner_node.clone())).unwrap();
-        let id = storage.reserve(&Node::Leaf2(leaf_node_2.clone()));
-        storage.set(id, &Node::Leaf2(leaf_node_2.clone())).unwrap();
-        let id = storage.reserve(&Node::Leaf256(leaf_node_256.clone()));
-        storage
-            .set(id, &Node::Leaf256(leaf_node_256.clone()))
-            .unwrap();
+        assert!(storage.flush().is_ok());
+    }
 
-        storage.flush().unwrap();
+    mockall::mock! {
+        pub Storage<T: 'static> {}
 
-        let node_store_file = path
-            .join(FileStorageManager::INNER_NODE_DIR)
-            .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(node_store_file).unwrap(), inner_node.as_bytes());
 
-        let node_store_file = path
-            .join(FileStorageManager::LEAF_NODE_2_DIR)
-            .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_2.as_bytes());
+        impl<T: 'static> Storage for Storage<T> {
+            type Id = u64;
+            type Item = T;
 
-        let node_store_file = path
-            .join(FileStorageManager::LEAF_NODE_256_DIR)
-            .join(NodeFileStorage::NODE_STORE_FILE);
-        assert_eq!(fs::read(node_store_file).unwrap(), leaf_node_256.as_bytes());
+            fn open(_path: &Path) -> Result<Self, Error>
+            where
+                Self: Sized;
+
+            fn get(&self, _id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
+
+            fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+
+            fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) -> Result<(), Error>;
+
+            fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), Error>;
+
+            fn flush(&self) -> Result<(), Error>;
+        }
     }
 }

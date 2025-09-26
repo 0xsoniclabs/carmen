@@ -20,7 +20,7 @@ mod reuse_list_file;
 
 pub use file_backend::*;
 #[cfg(test)]
-pub use file_storage_manager::{FileStorageManager, MockFileStorageManager};
+pub use file_storage_manager::FileStorageManager;
 pub use node_file_storage::NodeFileStorage;
 #[cfg(unix)]
 pub use page_cached_file::PageCachedFile;
