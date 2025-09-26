@@ -27,7 +27,7 @@ use crate::{
 ///    C = Commit([1, stem, C1, C2])
 ///
 /// For details on the commitment procedure, see
-/// https://blog.ethereum.org/2021/12/02/verkle-tree-structure#commitment-to-the-values-leaf-nodes
+/// <https://blog.ethereum.org/2021/12/02/verkle-tree-structure#commitment-to-the-values-leaf-nodes>
 #[cfg_attr(not(test), expect(unused))]
 pub fn compute_leaf_node_commitment(
     input_values: &[Value; 256],

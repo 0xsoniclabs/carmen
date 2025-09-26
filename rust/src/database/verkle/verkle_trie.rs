@@ -25,7 +25,7 @@ use crate::{
 #[cfg_attr(not(test), expect(unused))]
 pub trait VerkleTrie: Send + Sync {
     /// Retrieves the value associated with the given key.
-    /// Returns [`Value::default`] if the key does not exist.
+    /// Returns the default [`Value`] if the key does not exist.
     fn get(&self, key: &Key) -> Result<Value, Error>;
 
     /// Sets the value for the given key.
