@@ -88,7 +88,7 @@ impl Node {
 #[cfg_attr(not(test), expect(unused))]
 #[derive(Debug)]
 pub struct InnerNode {
-    children: Vec<Node>,
+    children: Box<[Node; 256]>,
     commitment: Commitment,
     commitment_dirty: bool,
 }
@@ -97,10 +97,7 @@ pub struct InnerNode {
 impl InnerNode {
     /// Creates a new inner node without any children.
     fn new() -> Self {
-        let mut children = Vec::with_capacity(256);
-        for _ in 0..256 {
-            children.push(Node::Empty);
-        }
+        let children = Box::new([const { Node::Empty }; 256]);
         InnerNode {
             children,
             commitment: Commitment::default(),
@@ -174,7 +171,7 @@ impl InnerNode {
 #[derive(Debug)]
 pub struct LeafNode {
     stem: [u8; 31],
-    values: [Value; 256],
+    values: Box<[Value; 256]>,
     used_bits: [u8; 256 / 8],
     commitment: Commitment,
     commitment_dirty: bool,
@@ -184,9 +181,10 @@ pub struct LeafNode {
 impl LeafNode {
     /// Creates a new leaf node for the given key, initializing all values to [`Value::default`].
     pub fn new(key: &Key) -> Self {
+        let values = Box::new([Value::default(); 256]);
         LeafNode {
             stem: key[..31].try_into().unwrap(), // safe to unwrap because `Key` is 32 bytes long
-            values: [Value::default(); 256],
+            values,
             used_bits: [0; 256 / 8],
             commitment: Commitment::default(),
             commitment_dirty: true,
@@ -254,7 +252,7 @@ mod tests {
     #[test]
     fn inner_node_new_creates_empty_node() {
         let inner = InnerNode::new();
-        for child in inner.children {
+        for child in inner.children.iter() {
             assert!(matches!(child, Node::Empty));
         }
         assert_eq!(inner.commitment, Commitment::default());
@@ -380,7 +378,7 @@ mod tests {
         );
         assert_eq!(
             leaf.values,
-            [Value::default(); 256],
+            Box::new([Value::default(); 256]),
             "all values should be initialized to zero"
         );
         assert_eq!(leaf.used_bits, [0; 256 / 8], "used bitmap should be empty");
