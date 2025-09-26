@@ -14,7 +14,6 @@ use crate::{database::verkle::crypto::Commitment, types::Value};
 
 /// A node in the simple in-memory Verkle trie.
 #[cfg_attr(not(test), expect(unused))]
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Node {
     Empty,
