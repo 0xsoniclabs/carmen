@@ -14,10 +14,8 @@ mod test_utils;
 
 use std::sync::Mutex;
 
-use crate::database::verkle::variants::simple::node::Node;
-#[cfg(test)]
 use crate::{
-    database::verkle::{crypto::Commitment, verkle_trie::VerkleTrie},
+    database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
     error::Error,
     types::{Key, Value},
 };
@@ -32,11 +30,9 @@ use crate::{
 /// - No concurrency support (single lock on root node).
 /// - Not optimized for memory usage (all nodes store 256 children / values).
 pub struct SimpleInMemoryVerkleTrie {
-    #[cfg_attr(not(test), expect(unused))]
     root: Mutex<Node>,
 }
 
-#[cfg_attr(not(test), expect(unused))]
 impl SimpleInMemoryVerkleTrie {
     pub fn new() -> Self {
         SimpleInMemoryVerkleTrie {
@@ -45,7 +41,6 @@ impl SimpleInMemoryVerkleTrie {
     }
 }
 
-#[cfg(test)]
 impl VerkleTrie for SimpleInMemoryVerkleTrie {
     fn get(&self, key: &Key) -> Result<Value, Error> {
         Ok(self.root.lock().unwrap().get(key, 0))

@@ -28,7 +28,6 @@ use crate::{
 ///
 /// For details on the commitment procedure, see
 /// <https://blog.ethereum.org/2021/12/02/verkle-tree-structure#commitment-to-the-values-leaf-nodes>
-#[cfg_attr(not(test), expect(unused))]
 pub fn compute_leaf_node_commitment(
     input_values: &[Value; 256],
     used_bits: &[u8; 256 / 8],

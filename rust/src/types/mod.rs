@@ -11,7 +11,7 @@
 pub use commitment::*;
 pub use id::*;
 pub use node::*;
-pub use update::Update;
+pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod commitment;
 mod id;
