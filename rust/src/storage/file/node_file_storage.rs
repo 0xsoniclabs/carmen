@@ -56,7 +56,6 @@ where
     pub const METADATA_FILE: &'static str = "metadata.bin";
 }
 
-#[cfg_attr(test, mockall::automock)]
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
     T: FromBytes + IntoBytes + Immutable + 'static,
