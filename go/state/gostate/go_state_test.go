@@ -107,7 +107,7 @@ func TestMissingKeys(t *testing.T) {
 				t.Errorf("Value must be empty. It is: %s, err: %s", value, err)
 			}
 			code, err := state.GetCode(address1)
-			if err != nil || code != nil {
+			if err != nil || len(code) != 0 {
 				t.Errorf("Value must be empty. It is: %s, err: %s", value, err)
 			}
 			size, err := state.GetCodeSize(address1)
@@ -159,6 +159,10 @@ func TestBasicOperations(t *testing.T) {
 				t.Errorf("Invalid code size or error returned: Val: %d, Err: %v", val, err)
 			}
 
+			if config.config.Schema == 6 {
+				t.Skipf("scheme %d not supported", config.config.Schema)
+			}
+
 			// delete account
 			err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
 			if err != nil {
@@ -179,6 +183,10 @@ func TestBasicOperations(t *testing.T) {
 func TestDeletingAccounts(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
+			if config.config.Schema == 6 {
+				t.Skipf("scheme %d not supported", config.config.Schema)
+			}
+
 			state, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
@@ -267,6 +275,10 @@ func TestMoreInserts(t *testing.T) {
 func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
+			if config.config.Schema == 6 {
+				t.Skipf("scheme %d not supported", config.config.Schema)
+			}
+
 			state, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
@@ -333,8 +345,9 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 }
 
 func TestHashing(t *testing.T) {
-	var hashes = [][]common.Hash{nil, nil, nil, nil, nil, nil}
-	for _, config := range initGoStates() {
+	states := initGoStates()
+	var hashes = make([][]common.Hash, len(states))
+	for _, config := range states {
 		t.Run(config.name(), func(t *testing.T) {
 			state, err := config.createState(t.TempDir())
 			if err != nil {

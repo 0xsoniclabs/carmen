@@ -33,6 +33,10 @@ func TestStateConfigs_AllSetupsCreateDataInCorrectDirectories(t *testing.T) {
 		config := config
 		factory := factory
 		t.Run(config.String(), func(t *testing.T) {
+			if config.Schema == 6 &&
+				(config.Variant == "go-memory" || config.Variant == "go-geth-memory") {
+				t.Skipf("%d/%s not supported", config.Schema, config.Variant)
+			}
 			t.Parallel()
 			dir := t.TempDir()
 
