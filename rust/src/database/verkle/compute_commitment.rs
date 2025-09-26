@@ -34,7 +34,7 @@ pub fn compute_leaf_node_commitment(
     used_bits: &[u8; 256 / 8],
     stem: &[u8; 31],
 ) -> Commitment {
-    let mut values = vec![vec![Commitment::default().to_scalar(); 256]; 2];
+    let mut values = [[Commitment::default().to_scalar(); 256]; 2];
     for (i, value) in input_values.iter().enumerate() {
         let mut lower = Scalar::from_le_bytes(&value[..16]);
         let upper = Scalar::from_le_bytes(&value[16..]);

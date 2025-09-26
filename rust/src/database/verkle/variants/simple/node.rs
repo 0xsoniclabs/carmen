@@ -39,10 +39,15 @@ impl Node {
     pub fn set(self, key: &Key, depth: u8, value: &Value) -> Node {
         match self {
             Node::Empty => {
-                // While conceptually it would suffice to create a leaf node here,
-                // Geth always creates an inner node (and we want to stay compatible).
-                let inner = InnerNode::new();
-                inner.set(key, depth, value)
+                if depth == 0 {
+                    // While conceptually it would suffice to create a leaf node here,
+                    // Geth always creates an inner node (and we want to stay compatible).
+                    let inner = InnerNode::new();
+                    inner.set(key, depth, value)
+                } else {
+                    let leaf = LeafNode::new(key);
+                    leaf.set(key, depth, value)
+                }
             }
             Node::Inner(inner) => inner.set(key, depth, value),
             Node::Leaf(leaf) => leaf.set(key, depth, value),
@@ -126,9 +131,6 @@ impl InnerNode {
         self.commitment_dirty = true;
 
         let pos = key[depth as usize];
-        if matches!(self.children[pos as usize], Node::Empty) {
-            self.children[pos as usize] = Node::Leaf(LeafNode::new(key));
-        }
         let next = std::mem::replace(&mut self.children[pos as usize], Node::Empty);
         self.children[pos as usize] = next.set(key, depth + 1, value);
         Node::Inner(self)
