@@ -62,6 +62,10 @@ impl ReuseListFile {
         Ok(())
     }
 
+    pub fn set_fronzen_count(&mut self, frozen_count: usize) {
+        self.frozen_count = frozen_count;
+    }
+
     /// Pops an index from the cache, if there are non-frozen indices available.
     pub fn pop(&mut self) -> Option<u64> {
         if self.cache.len() <= self.frozen_count {
@@ -171,6 +175,24 @@ mod tests {
 
         let result = cached_file.write(); // file is opened read-only
         assert!(matches!(result, Err(Error::Io(_))));
+    }
+
+    #[test]
+    fn update_fronzen_count_changes_value() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.path().join("reuse_list");
+
+        let mut cached_file = ReuseListFile {
+            file: File::create(path).unwrap(),
+            cache: vec![1, 2, 3, 4],
+            frozen_count: 2,
+        };
+
+        assert_eq!(cached_file.frozen_count, 2);
+        cached_file.set_fronzen_count(3);
+        assert_eq!(cached_file.frozen_count, 3);
+        cached_file.set_fronzen_count(0);
+        assert_eq!(cached_file.frozen_count, 0);
     }
 
     #[test]

@@ -148,14 +148,15 @@ where
     fn flush(&self) -> Result<(), Error> {
         self.node_file.flush()?;
 
-        let reuse_file = self.reuse_list_file.lock().unwrap();
+        let mut reuse_file = self.reuse_list_file.lock().unwrap();
         reuse_file.write()?;
-        let reuse_file_len = reuse_file.len();
+        let reuse_frozen_count = reuse_file.len();
+        reuse_file.set_fronzen_count(reuse_frozen_count);
         drop(reuse_file);
 
         let metadata = Metadata {
             node_count: self.next_idx.load(Ordering::Relaxed),
-            reuse_frozen_count: reuse_file_len as u64,
+            reuse_frozen_count: reuse_frozen_count as u64,
         };
         self.metadata_file.write(&metadata)?;
 
@@ -457,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_writes_reuse_list_to_file() {
+    fn flush_writes_reuse_list_to_file_and_updates_frozen_count() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
 
@@ -470,14 +471,17 @@ mod tests {
 
         storage.flush().unwrap();
 
+        // all current elements should be frozen
+        assert!(storage.reuse_list_file.lock().unwrap().pop().is_none());
+
         let mut reuse_file = File::open(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
         assert_eq!(
             reuse_file.metadata().unwrap().len(),
             size_of::<u64>() as u64 * 2
         );
-        let mut buf = [0; size_of::<u64>() * 2];
+        let mut buf = [0u64; 2];
         reuse_file.seek(SeekFrom::Start(0)).unwrap();
-        reuse_file.read_exact(&mut buf).unwrap();
-        assert_eq!(buf, [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+        reuse_file.read_exact(buf.as_mut_bytes()).unwrap();
+        assert_eq!(buf, [0, 1]);
     }
 }
