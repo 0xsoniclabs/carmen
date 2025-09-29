@@ -59,10 +59,10 @@ impl AccessPattern {
             AccessPattern::Random => {
                 // splitmix64
                 let rand = iter + 0x9e3779b97f4a7c15;
-                let rand = (rand ^ (rand >> 30)) * 0xbf58476d1ce4e5b9;
-                let rand = (rand ^ (rand >> 27)) * 0x94d049bb133111eb;
+                let rand = (rand ^ (rand >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+                let rand = (rand ^ (rand >> 27)).wrapping_mul(0x94d049bb133111eb);
                 let rand = rand ^ (rand >> 31);
-                (rand * chunk_size as u64) % FILE_SIZE as u64
+                (rand.wrapping_mul(chunk_size as u64)) % FILE_SIZE as u64
             }
         }
     }

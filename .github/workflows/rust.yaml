@@ -113,8 +113,7 @@ jobs:
       with:
         workspaces: rust
     - name: cargo test
-      # Run tests with --release as some of the crypto primitives for Verkle tries are quite slow otherwise.
-      run: cargo test --release --all-features --all-targets --no-fail-fast
+      run: cargo test --all-features --all-targets --no-fail-fast
 
   miri:
     name: miri
