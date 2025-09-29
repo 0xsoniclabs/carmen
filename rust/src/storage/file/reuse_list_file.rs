@@ -62,7 +62,7 @@ impl ReuseListFile {
         Ok(())
     }
 
-    pub fn set_fronzen_count(&mut self, frozen_count: usize) {
+    pub fn set_frozen_count(&mut self, frozen_count: usize) {
         self.frozen_count = frozen_count;
     }
 
@@ -189,9 +189,9 @@ mod tests {
         };
 
         assert_eq!(cached_file.frozen_count, 2);
-        cached_file.set_fronzen_count(3);
+        cached_file.set_frozen_count(3);
         assert_eq!(cached_file.frozen_count, 3);
-        cached_file.set_fronzen_count(0);
+        cached_file.set_frozen_count(0);
         assert_eq!(cached_file.frozen_count, 0);
     }
 

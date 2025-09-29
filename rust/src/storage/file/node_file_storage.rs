@@ -151,7 +151,7 @@ where
         let mut reuse_file = self.reuse_list_file.lock().unwrap();
         reuse_file.write()?;
         let reuse_frozen_count = reuse_file.len();
-        reuse_file.set_fronzen_count(reuse_frozen_count);
+        reuse_file.set_frozen_count(reuse_frozen_count);
         drop(reuse_file);
 
         let metadata = Metadata {
