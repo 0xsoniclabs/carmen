@@ -40,6 +40,7 @@ where
     F: FileBackend + 'static,
 {
     node_file: F,
+    node_count: AtomicU64,
     reuse_list_file: Mutex<ReuseListFile>,
     metadata_file: MetadataFile,
     next_idx: AtomicU64,
@@ -83,6 +84,9 @@ where
 
         let reuse_file = file_opts.open(dir.join(Self::REUSE_LIST_FILE))?;
         let reuse_list_file = ReuseListFile::new(reuse_file, metadata.reuse_frozen_count)?;
+        if reuse_list_file.len() < metadata.reuse_frozen_count as usize {
+            return Err(Error::DatabaseCorruption);
+        }
         if reuse_list_file
             .as_slice()
             .iter()
@@ -91,9 +95,12 @@ where
             return Err(Error::DatabaseCorruption);
         }
 
+        let node_file_len = file_opts
+            .open(dir.join(Self::NODE_STORE_FILE))?
+            .metadata()?
+            .len();
         let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts)?;
-        let len = node_file.len()?;
-        if len < metadata.node_count * size_of::<T>() as u64 {
+        if node_file_len < metadata.node_count * size_of::<T>() as u64 {
             return Err(Error::DatabaseCorruption);
         }
 
@@ -101,6 +108,7 @@ where
 
         Ok(Self {
             node_file,
+            node_count: AtomicU64::new(metadata.node_count),
             reuse_list_file: Mutex::new(reuse_list_file),
             metadata_file,
             next_idx,
@@ -110,7 +118,7 @@ where
 
     fn get(&self, idx: Self::Id) -> Result<Self::Item, Error> {
         let offset = idx * size_of::<Self::Item>() as u64;
-        if self.node_file.len()? < offset + size_of::<T>() as u64 {
+        if idx >= self.node_count.load(Ordering::Acquire) {
             return Err(Error::NotFound);
         }
         // this is hopefully optimized away
@@ -131,6 +139,7 @@ where
         if idx >= self.next_idx.load(Ordering::Relaxed) {
             return Err(Error::NotFound);
         }
+        self.node_count.fetch_max(idx + 1, Ordering::AcqRel);
         let offset = idx * size_of::<Self::Item>() as u64;
         self.node_file.write_all_at(node.as_bytes(), offset)?;
         Ok(())
@@ -154,7 +163,7 @@ where
         drop(reuse_file);
 
         let metadata = Metadata {
-            node_count: self.next_idx.load(Ordering::Relaxed),
+            node_count: self.next_idx.load(Ordering::Acquire),
             reuse_frozen_count: reuse_frozen_count as u64,
         };
         self.metadata_file.write(&metadata)?;
