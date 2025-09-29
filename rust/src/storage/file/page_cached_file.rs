@@ -20,8 +20,6 @@ use crate::storage::file::{
 #[derive(Debug)]
 struct InnerPageCachedFile<F: FileBackend, const D: bool> {
     file: F,
-    /// The logical file size, which may be smaller than the actual file size which is padded to a
-    /// multiple of [`Page::SIZE`].
     file_len: u64,
     page: Box<Page>,
     page_index: u64,
@@ -35,20 +33,21 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     /// See [`FileBackend::open`].
     fn open(path: &Path, mut options: OpenOptions) -> std::io::Result<Self> {
         let file = options.clone().open(path)?;
-        let file_len = file.metadata()?.len();
-        let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
-        file.set_len(padded_len)?;
-        drop(file);
+        let mut file_len = file.metadata()?.len();
 
         if D {
+            let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
+            file.set_len(padded_len)?;
+            file_len = padded_len;
+
             options.custom_flags(O_DIRECT | O_SYNC);
         }
+        drop(file);
+
         let file = F::open(path, options)?;
 
         let mut page = Box::new(Page::zeroed());
-        if padded_len != 0 {
-            file.read_exact_at(&mut page[..Page::SIZE], 0)?;
-        }
+        file.read_exact_at(&mut page[..cmp::min(file_len as usize, Page::SIZE)], 0)?;
 
         Ok(Self {
             file,
@@ -105,11 +104,6 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
                 .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
         }
         self.file.flush()
-    }
-
-    /// See [`FileBackend::len`].
-    fn len(&self) -> Result<u64, std::io::Error> {
-        Ok(self.file_len)
     }
 
     /// Load the page containing the given offset into memory, flushing the current page if dirty.
@@ -179,10 +173,6 @@ impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
 
     fn flush(&self) -> std::io::Result<()> {
         self.0.lock().unwrap().flush()
-    }
-
-    fn len(&self) -> Result<u64, std::io::Error> {
-        self.0.lock().unwrap().len()
     }
 }
 

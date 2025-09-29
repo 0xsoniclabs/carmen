@@ -37,9 +37,6 @@ pub trait FileBackend: Send + Sync {
 
     /// Flushes all changes to disk.
     fn flush(&self) -> std::io::Result<()>;
-
-    /// Returns the size of this file in bytes.
-    fn len(&self) -> Result<u64, std::io::Error>;
 }
 
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using a mutex to ensure
@@ -72,10 +69,6 @@ impl FileBackend for SeekFile {
     fn flush(&self) -> std::io::Result<()> {
         self.0.lock().unwrap().sync_all()
     }
-
-    fn len(&self) -> std::io::Result<u64> {
-        self.0.lock().unwrap().metadata().map(|m| m.len())
-    }
 }
 
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using the Unix-specific file
@@ -105,10 +98,6 @@ impl FileBackend for NoSeekFile {
 
     fn flush(&self) -> std::io::Result<()> {
         self.0.sync_all()
-    }
-
-    fn len(&self) -> std::io::Result<u64> {
-        self.0.metadata().map(|m| m.len())
     }
 }
 
@@ -179,8 +168,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        assert_eq!(backend.len().unwrap(), 0);
+        assert!(open_backend_fn(path.as_path(), options.clone()).is_ok());
         assert!(std::fs::exists(path).unwrap());
     }
 
@@ -197,8 +185,7 @@ mod tests {
             file.write_all(&[0; 10]).unwrap();
         }
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        assert_eq!(backend.len().unwrap(), 10);
+        assert!(open_backend_fn(path.as_path(), options.clone()).is_ok());
     }
 
     #[rstest_reuse::apply(open_backend)]
@@ -486,19 +473,6 @@ mod tests {
         let mut buf = [0; 10];
         file.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [1; 10]);
-    }
-
-    #[rstest_reuse::apply(open_backend)]
-    fn len_returns_file_length(#[case] open_backend_fn: OpenBackendFn) {
-        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
-
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).write(true);
-
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        backend.write_all_at(&[1; 10], 0).unwrap();
-        assert_eq!(backend.len().unwrap(), 10);
     }
 
     #[rstest_reuse::apply(open_backend)]
