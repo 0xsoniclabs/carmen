@@ -175,39 +175,6 @@ where
 }
 
 #[cfg(test)]
-impl<T, F> NodeFileStorage<T, F>
-where
-    T: FromBytes + IntoBytes + Immutable + 'static,
-    F: FileBackend + 'static,
-{
-    /// Creates all files for a file-based node storage in the specified directory
-    /// and populates them with the provided nodes.
-    pub fn create_files_for_nodes(path: impl AsRef<Path>, nodes: &[T]) -> Result<(), Error> {
-        use std::{fs::File, io::Write};
-
-        let path = path.as_ref();
-
-        std::fs::create_dir_all(path)?;
-
-        let metadata_file = MetadataFile::new(File::create(path.join(Self::METADATA_FILE))?);
-        metadata_file
-            .write(&Metadata {
-                node_count: nodes.len() as u64,
-                reuse_frozen_count: 0,
-            })
-            .unwrap();
-
-        let mut node_file = File::create(path.join(Self::NODE_STORE_FILE))?;
-        for node in nodes {
-            node_file.write_all(node.as_bytes())?;
-        }
-        node_file.flush()?;
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use std::{
         fs::{self, File, Permissions},
@@ -221,31 +188,6 @@ mod tests {
     type TestNode = [u8; 32];
 
     type NodeFileStorage = super::NodeFileStorage<TestNode, SeekFile>;
-
-    fn write_metadata(dir: impl AsRef<Path>, node_count: u64, reuse_frozen_count: u64) {
-        MetadataFile::new(File::create(dir.as_ref().join(NodeFileStorage::METADATA_FILE)).unwrap())
-            .write(&Metadata {
-                node_count,
-                reuse_frozen_count,
-            })
-            .unwrap();
-    }
-
-    fn write_reuse_list(dir: impl AsRef<Path>, indices: &[u64]) {
-        fs::write(
-            dir.as_ref().join(NodeFileStorage::REUSE_LIST_FILE),
-            indices.as_bytes(),
-        )
-        .unwrap();
-    }
-
-    fn write_nodes(dir: impl AsRef<Path>, nodes: &[TestNode]) {
-        fs::write(
-            dir.as_ref().join(NodeFileStorage::NODE_STORE_FILE),
-            nodes.as_bytes(),
-        )
-        .unwrap();
-    }
 
     #[test]
     fn open_creates_new_directory_and_files_for_non_existing_path() {
@@ -483,5 +425,62 @@ mod tests {
         reuse_file.seek(SeekFrom::Start(0)).unwrap();
         reuse_file.read_exact(buf.as_mut_bytes()).unwrap();
         assert_eq!(buf, [0, 1]);
+    }
+
+    impl<T, F> super::NodeFileStorage<T, F>
+    where
+        T: FromBytes + IntoBytes + Immutable + 'static,
+        F: FileBackend + 'static,
+    {
+        /// Creates all files for a file-based node storage in the specified directory
+        /// and populates them with the provided nodes.
+        pub fn create_files_for_nodes(path: impl AsRef<Path>, nodes: &[T]) -> Result<(), Error> {
+            use std::{fs::File, io::Write};
+
+            let path = path.as_ref();
+
+            std::fs::create_dir_all(path)?;
+
+            let metadata_file = MetadataFile::new(File::create(path.join(Self::METADATA_FILE))?);
+            metadata_file
+                .write(&Metadata {
+                    node_count: nodes.len() as u64,
+                    reuse_frozen_count: 0,
+                })
+                .unwrap();
+
+            let mut node_file = File::create(path.join(Self::NODE_STORE_FILE))?;
+            for node in nodes {
+                node_file.write_all(node.as_bytes())?;
+            }
+            node_file.flush()?;
+
+            Ok(())
+        }
+    }
+
+    fn write_metadata(dir: impl AsRef<Path>, node_count: u64, reuse_frozen_count: u64) {
+        MetadataFile::new(File::create(dir.as_ref().join(NodeFileStorage::METADATA_FILE)).unwrap())
+            .write(&Metadata {
+                node_count,
+                reuse_frozen_count,
+            })
+            .unwrap();
+    }
+
+    fn write_reuse_list(dir: impl AsRef<Path>, indices: &[u64]) {
+        fs::write(
+            dir.as_ref().join(NodeFileStorage::REUSE_LIST_FILE),
+            indices.as_bytes(),
+        )
+        .unwrap();
+    }
+
+    fn write_nodes(dir: impl AsRef<Path>, nodes: &[TestNode]) {
+        fs::write(
+            dir.as_ref().join(NodeFileStorage::NODE_STORE_FILE),
+            nodes.as_bytes(),
+        )
+        .unwrap();
     }
 }
