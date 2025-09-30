@@ -482,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_calls_flushes_on_all_storages() {
+    fn flush_calls_flush_on_all_storages() {
         let mut storage = FileStorageManager {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
