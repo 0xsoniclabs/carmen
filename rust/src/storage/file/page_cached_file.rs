@@ -18,7 +18,7 @@ use crate::storage::file::{
 /// The actual implementation of [`PageCachedFile<F>`], but without concurrency control.
 /// The generic parameter `D` controls whether to use direct I/O (`true`) or not (`false`).
 #[derive(Debug)]
-struct InnerPageCachedFile<F: FileBackend, const D: bool> {
+struct InnerPageCachedFile<F, const D: bool> {
     file: F,
     /// The logical file size, which may be smaller than the actual file size which is padded to a
     /// multiple of [`Page::SIZE`].
@@ -177,7 +177,7 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
 /// file when it is dirty and a different page is accessed, or when the file is flushed or dropped.
 /// The generic parameter `D` controls whether to use direct I/O (`true`) or not (`false`).
 #[derive(Debug)]
-pub struct PageCachedFile<F: FileBackend, const D: bool>(Mutex<InnerPageCachedFile<F, D>>);
+pub struct PageCachedFile<F, const D: bool>(Mutex<InnerPageCachedFile<F, D>>);
 
 impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
     fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
@@ -202,12 +202,6 @@ impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
 
     fn set_len(&self, size: u64) -> std::io::Result<()> {
         self.0.lock().unwrap().set_len(size)
-    }
-}
-
-impl<F: FileBackend, const D: bool> Drop for PageCachedFile<F, D> {
-    fn drop(&mut self) {
-        let _ = self.0.lock().unwrap().flush();
     }
 }
 

@@ -51,10 +51,7 @@ pub trait FileBackend: Send + Sync {
 pub struct SeekFile(Mutex<std::fs::File>);
 
 impl FileBackend for SeekFile {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
         let file = options.open(path)?;
         file.try_lock()?;
         Ok(Self(Mutex::new(file)))
@@ -93,10 +90,7 @@ pub struct NoSeekFile(std::fs::File);
 
 #[cfg(unix)]
 impl FileBackend for NoSeekFile {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self>
-    where
-        Self: Sized,
-    {
+    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
         let file = options.open(path)?;
         file.try_lock()?;
         Ok(Self(file))

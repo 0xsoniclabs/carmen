@@ -30,11 +30,7 @@ use crate::storage::{
 /// Concurrent operations on non-overlapping index ranges are thread safe. Concurrent access to
 /// overlapping index ranges is undefined behavior.
 #[derive(Debug)]
-pub struct NodeFileStorage<T, F>
-where
-    T: FromBytes + IntoBytes + Immutable + 'static,
-    F: FileBackend + 'static,
-{
+pub struct NodeFileStorage<T, F> {
     checkpoint: AtomicU64,
     metadata: RwLock<Metadata>,
     commited_metadata_path: PathBuf,
@@ -48,11 +44,7 @@ where
     _node_type: PhantomData<T>,
 }
 
-impl<T, F> NodeFileStorage<T, F>
-where
-    T: FromBytes + IntoBytes + Immutable + 'static,
-    F: FileBackend + 'static,
-{
+impl<T, F> NodeFileStorage<T, F> {
     pub const NODE_STORE_FILE: &'static str = "node_store.bin";
     pub const REUSE_LIST_FILE: &'static str = "reuse_list.bin";
     pub const COMMITTED_METADATA_FILE: &'static str = "committed_metadata.bin";
@@ -61,8 +53,8 @@ where
 
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
-    T: FromBytes + IntoBytes + Immutable + 'static,
-    F: FileBackend + 'static,
+    T: FromBytes + IntoBytes + Immutable,
+    F: FileBackend,
 {
     type Id = u64;
     type Item = T;
@@ -158,8 +150,7 @@ where
 
 impl<T, F> CheckpointParticipant for NodeFileStorage<T, F>
 where
-    T: FromBytes + IntoBytes + Immutable + 'static,
-    F: FileBackend + 'static,
+    F: FileBackend,
 {
     fn ensure(&self, checkpoint: u64) -> Result<(), Error> {
         if checkpoint != self.checkpoint.load(Ordering::Relaxed) {
@@ -731,8 +722,7 @@ mod tests {
 
     impl<T, F> super::NodeFileStorage<T, F>
     where
-        T: FromBytes + IntoBytes + Immutable + 'static,
-        F: FileBackend + 'static,
+        T: IntoBytes + Immutable,
     {
         /// Creates all files for a file-based node storage in the specified directory
         /// and populates them with the provided nodes and reusable indices.

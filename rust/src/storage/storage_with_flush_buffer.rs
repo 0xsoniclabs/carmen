@@ -576,9 +576,7 @@ mod tests {
             type Id = NodeId;
             type Item = Node;
 
-            fn open(_path: &Path) -> Result<Self, Error>
-            where
-                Self: Sized;
+            fn open(_path: &Path) -> Result<Self, Error>;
 
             fn get(&self, id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
 
