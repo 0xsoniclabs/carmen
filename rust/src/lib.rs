@@ -45,11 +45,12 @@ pub fn open_carmen_db(
 /// This is the safe interface which gets called from the exported FFI functions.
 #[cfg_attr(test, mockall::automock)]
 pub trait CarmenDb: Send + Sync {
-    /// Flushes all committed state information to disk to guarantee permanent
-    /// storage. All internally cached modifications are synced to disk.
-    fn flush(&self) -> Result<(), Error>;
+    /// Creates a new checkpoint by persisting all state information to disk to guarantee permanent
+    /// storage.
+    fn checkpoint(&self) -> Result<(), Error>;
 
-    /// Closes this state, releasing all IO handles and locks on external resources.
+    /// Creates a new checkpoint and then closes this state, releasing all IO handles and locks on
+    /// external resources.
     fn close(&self) -> Result<(), Error>;
 
     /// Returns a handle to the live state. The resulting state must be released and must not
@@ -103,7 +104,7 @@ pub struct CarmenS6Db;
 
 #[allow(unused_variables)]
 impl CarmenDb for CarmenS6Db {
-    fn flush(&self) -> Result<(), Error> {
+    fn checkpoint(&self) -> Result<(), Error> {
         unimplemented!()
     }
 

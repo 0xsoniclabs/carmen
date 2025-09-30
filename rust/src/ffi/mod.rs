@@ -23,8 +23,10 @@ mod bindings {
                 Error::UnsupportedOperation(op) => Result_kResult_UnsupportedOperation,
                 Error::Storage(
                     crate::storage::Error::NotFound
+                    | crate::storage::Error::Committed
                     | crate::storage::Error::IdNodeTypeMismatch
-                    | crate::storage::Error::InvalidId,
+                    | crate::storage::Error::InvalidId
+                    | crate::storage::Error::Checkpoint,
                 )
                 | Error::NodeManager(_) => Result_kResult_InternalError,
                 Error::Storage(crate::storage::Error::DatabaseCorruption) => {

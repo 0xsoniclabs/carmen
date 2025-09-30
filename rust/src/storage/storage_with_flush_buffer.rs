@@ -19,7 +19,7 @@ use std::{
 use dashmap::DashMap;
 
 use crate::{
-    storage::{Error, Storage},
+    storage::{Checkpointable, Error, Storage},
     types::{Node, NodeId},
 };
 
@@ -105,15 +105,20 @@ where
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }
+}
 
-    fn flush(&self) -> Result<(), Error> {
+impl<S> Checkpointable for StorageWithFlushBuffer<S>
+where
+    S: Checkpointable + Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
+{
+    fn checkpoint(&self) -> Result<(), Error> {
         // Busy loop until all flush workers are done.
         // Because there are no concurrent operations, len() might only return a number that is
         // higher that the actual number of items (in case an element of the flush buffer
         // was removed by a flush worker while iterating over the shards). This is however not a
         // problem because we will wait a little bit longer.
         while !self.flush_buffer.is_empty() {}
-        self.storage.flush()
+        self.storage.checkpoint()
     }
 }
 
@@ -423,7 +428,10 @@ mod tests {
         let node = Node::Inner(Box::default());
 
         let mut mock_storage = MockStorage::new();
-        mock_storage.expect_flush().times(1).returning(|| Ok(()));
+        mock_storage
+            .expect_checkpoint()
+            .times(1)
+            .returning(|| Ok(()));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -442,7 +450,7 @@ mod tests {
 
         let thread = std::thread::spawn({
             let storage_with_flush_buffer = storage_with_flush_buffer.clone();
-            move || storage_with_flush_buffer.flush()
+            move || storage_with_flush_buffer.checkpoint()
         });
 
         // flush is waiting
@@ -567,6 +575,10 @@ mod tests {
     mockall::mock! {
         pub Storage {}
 
+        impl Checkpointable for Storage {
+            fn checkpoint(&self) -> Result<(), Error>;
+        }
+
         impl Storage for Storage {
             type Id = NodeId;
             type Item = Node;
@@ -582,8 +594,6 @@ mod tests {
             fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
 
             fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
-
-            fn flush(&self) -> Result<(), Error>;
         }
     }
 }

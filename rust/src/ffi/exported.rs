@@ -118,7 +118,7 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
     let db = unsafe { db.inner_to_ref_scoped(&token) };
-    match db.flush() {
+    match db.checkpoint() {
         Ok(_) => bindings::Result_kResult_Success,
         Err(err) => err.into(),
     }
@@ -1283,10 +1283,10 @@ mod tests {
     }
 
     #[test]
-    fn carmen_rust_flush_calls_flush_on_carmen_db() {
+    fn carmen_rust_flush_calls_checkpoint_on_carmen_db() {
         create_db_then_call_fn_then_release_db(
             |mock_db| {
-                mock_db.expect_flush().returning(|| Ok(()));
+                mock_db.expect_checkpoint().returning(|| Ok(()));
             },
             |db| unsafe {
                 Carmen_Rust_Flush(db);
@@ -1305,7 +1305,7 @@ mod tests {
         create_db_then_call_fn_then_release_db(
             |mock_db| {
                 mock_db
-                    .expect_flush()
+                    .expect_checkpoint()
                     .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             |db| unsafe {

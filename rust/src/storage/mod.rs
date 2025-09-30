@@ -26,8 +26,10 @@ pub trait Storage {
     /// The type of the item stored in the storage.
     type Item;
 
-    /// Opens the storage backend at the given path.
-    /// Depending on the implementation, the path is required to be a directory or a file.
+    /// Opens the storage backend at the given path and restore that state of the last committed
+    /// checkpoint.
+    /// Depending on the implementation, the path is required to be a directory or a
+    /// file.
     fn open(path: &Path) -> Result<Self, Error>
     where
         Self: Sized;
@@ -45,7 +47,21 @@ pub trait Storage {
     /// Deletes the item with the given ID.
     /// The ID may be reused in the future.
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
+}
 
-    /// Flushes all changes to the storage.
-    fn flush(&self) -> Result<(), Error>;
+pub trait Checkpointable {
+    /// Create a checkpoint which is guaranteed to be durable.
+    fn checkpoint(&self) -> Result<(), Error>;
+}
+
+pub trait CheckpointParticipant {
+    fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
+
+    fn prepare(&self, checkpoint: u64) -> Result<(), Error>;
+
+    fn commit(&self, checkpoint: u64) -> Result<(), Error>;
+
+    fn abort(&self, checkpoint: u64) -> Result<(), Error>;
+
+    // fn restore() -> Result<(), Error> ;
 }

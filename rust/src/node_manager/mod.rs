@@ -55,7 +55,4 @@ pub trait NodeManager {
     /// The ID may be reused in the future, when adding new nodes using
     /// [`NodeManager::add`].
     fn delete(&self, id: Self::Id) -> Result<(), Error>;
-
-    /// Flushes all pending operations to the underlying storage layer (if one exists).
-    fn flush(&self) -> Result<(), Error>;
 }

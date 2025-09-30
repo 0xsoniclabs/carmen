@@ -62,6 +62,15 @@ impl ReuseListFile {
         Ok(())
     }
 
+    pub fn freeze_all(&mut self) {
+        self.frozen_count = self.cache.len();
+    }
+
+    #[cfg(test)]
+    pub fn frozen_count(&self) -> usize {
+        self.frozen_count
+    }
+
     pub fn set_frozen_count(&mut self, frozen_count: usize) {
         self.frozen_count = frozen_count;
     }
@@ -85,7 +94,7 @@ impl ReuseListFile {
     }
 
     /// Returns the number of cached indices.
-    pub fn len(&self) -> usize {
+    pub fn count(&self) -> usize {
         self.cache.len()
     }
 }
@@ -178,7 +187,23 @@ mod tests {
     }
 
     #[test]
-    fn update_fronzen_count_changes_value() {
+    fn freeze_all_sets_frozen_count_to_current_length() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.path().join("reuse_list");
+
+        let mut cached_file = ReuseListFile {
+            file: File::create(path).unwrap(),
+            cache: vec![1, 2, 3, 4],
+            frozen_count: 2,
+        };
+
+        assert_eq!(cached_file.frozen_count, 2);
+        cached_file.freeze_all();
+        assert_eq!(cached_file.frozen_count, 4);
+    }
+
+    #[test]
+    fn set_frozen_count_updates_value() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().join("reuse_list");
 
@@ -258,6 +283,6 @@ mod tests {
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.len(), 4);
+        assert_eq!(cached_file.count(), 4);
     }
 }
