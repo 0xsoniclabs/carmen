@@ -91,8 +91,8 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     }
 }
 
-/// Flushes all committed database information to disk to guarantee permanent storage. All
-/// internally cached modifications are synced to disk.
+/// Creates a new checkpoint by persisting all state information to disk to guarantee permanent
+/// storage.
 ///
 /// # Safety
 /// - `db` must be a valid pointer to a `DbWrapper` object which holds a pointer to a `dyn CarmenDb`
@@ -103,7 +103,7 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
 /// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
 /// - `db.inner` must not be mutated for the duration of the lifetime of `token`
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
+unsafe extern "C" fn Carmen_Rust_Checkpoint(db: *mut c_void) -> bindings::Result {
     let token = LifetimeToken;
     if db.is_null() {
         return bindings::Result_kResult_InvalidArguments;
@@ -1079,8 +1079,8 @@ const COMPILE_TIME_CHECK_THAT_SIGNATURES_MATCH_SIGNATURES_GENERATED_FROM_C_HEADE
         bindings::Carmen_Rust_OpenDatabase,
     );
     assert_same_signature(
-        Carmen_Rust_Flush as unsafe extern "C" fn(_) -> _,
-        bindings::Carmen_Rust_Flush,
+        Carmen_Rust_Checkpoint as unsafe extern "C" fn(_) -> _,
+        bindings::Carmen_Rust_Checkpoint,
     );
     assert_same_signature(
         Carmen_Rust_Close as unsafe extern "C" fn(_) -> _,
@@ -1283,25 +1283,25 @@ mod tests {
     }
 
     #[test]
-    fn carmen_rust_flush_calls_checkpoint_on_carmen_db() {
+    fn carmen_rust_checkpoint_calls_checkpoint_on_carmen_db() {
         create_db_then_call_fn_then_release_db(
             |mock_db| {
                 mock_db.expect_checkpoint().returning(|| Ok(()));
             },
             |db| unsafe {
-                Carmen_Rust_Flush(db);
+                Carmen_Rust_Checkpoint(db);
             },
         );
     }
 
     #[test]
-    fn carmen_rust_flush_checks_that_arguments_are_valid() {
-        let result = unsafe { Carmen_Rust_Flush(std::ptr::null_mut()) };
+    fn carmen_rust_checkpoint_checks_that_arguments_are_valid() {
+        let result = unsafe { Carmen_Rust_Checkpoint(std::ptr::null_mut()) };
         assert_eq!(result, bindings::Result_kResult_InvalidArguments);
     }
 
     #[test]
-    fn carmen_rust_flush_returns_error_as_int() {
+    fn carmen_rust_checkpoint_returns_error_as_int() {
         create_db_then_call_fn_then_release_db(
             |mock_db| {
                 mock_db
@@ -1309,7 +1309,7 @@ mod tests {
                     .returning(|| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             |db| unsafe {
-                let result = Carmen_Rust_Flush(db);
+                let result = Carmen_Rust_Checkpoint(db);
                 assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
             },
         );

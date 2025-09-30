@@ -263,7 +263,8 @@ Result Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
   return kResult_InternalError;
 }
 
-Result Carmen_Cpp_Flush(C_Database db) {
+Result Carmen_Cpp_Checkpoint(C_Database db) {
+  // carmen cpp does not support checkpoints, so just flush instead
   auto res = reinterpret_cast<carmen::Database*>(db)->Flush();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to flush state: " << res << "\n"

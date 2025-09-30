@@ -51,7 +51,7 @@ const (
 
 type externalBindings interface {
 	OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
-	Flush(database unsafe.Pointer) C.enum_Result
+	Checkpoint(database unsafe.Pointer) C.enum_Result
 	Close(database unsafe.Pointer) C.enum_Result
 	ReleaseDatabase(database unsafe.Pointer) C.enum_Result
 	ReleaseState(state unsafe.Pointer) C.enum_Result
@@ -77,8 +77,8 @@ func (r rustBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, a
 	return C.Carmen_Rust_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
 }
 
-func (r rustBindings) Flush(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_Flush(database)
+func (r rustBindings) Checkpoint(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_Checkpoint(database)
 }
 
 func (r rustBindings) Close(database unsafe.Pointer) C.enum_Result {
@@ -152,8 +152,8 @@ func (c cppBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, ar
 	return C.Carmen_Cpp_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
 }
 
-func (c cppBindings) Flush(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_Flush(database)
+func (c cppBindings) Checkpoint(database unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_Checkpoint(database)
 }
 
 func (c cppBindings) Close(database unsafe.Pointer) C.enum_Result {
@@ -451,8 +451,9 @@ func (s *ExternalState) Apply(block uint64, update common.Update) error {
 	return nil
 }
 
+// TODO: should this flush (which is part of state.go:State) also be renamed to checkpoint?
 func (s *ExternalState) Flush() error {
-	result := s.bindings.Flush(s.database)
+	result := s.bindings.Checkpoint(s.database)
 	if result != C.kResult_Success {
 		return fmt.Errorf("failed to flush state (error code %v)", result)
 	}

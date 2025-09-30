@@ -86,9 +86,9 @@ DUPLICATE_FOR_LANGS(enum Result,
                                  const char* directory, int length,
                                  C_Database* out_database));
 
-// Flushes all committed database information to disk to guarantee permanent
-// storage. All internally cached modifications is synced to disk.
-DUPLICATE_FOR_LANGS(enum Result, Flush(C_Database database));
+// Creates a new checkpoint by persisting all state information to disk to
+// guarantee permanent storage.
+DUPLICATE_FOR_LANGS(enum Result, Checkpoint(C_Database database));
 
 // Closes this database, releasing all IO handles and locks on external
 // resources.
