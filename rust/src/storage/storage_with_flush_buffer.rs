@@ -19,7 +19,7 @@ use std::{
 use dashmap::DashMap;
 
 use crate::{
-    storage::{Error, Storage},
+    storage::{Checkpointable, Error, Storage},
     types::{Node, NodeId},
 };
 
@@ -40,19 +40,13 @@ use crate::{
 /// If the id is found in the flush buffer and it is a delete operation, a not found error is
 /// returned. Only if the id is not found in the flush buffer, the underlying storage layer is
 /// queried.
-pub struct StorageWithFlushBuffer<S>
-where
-    S: Storage<Item = Node>,
-{
+pub struct StorageWithFlushBuffer<S> {
     flush_buffer: Arc<FlushBuffer>, // Arc for shared ownership with flush worker threads
     storage: Arc<S>,                // Arc for shared ownership with flush worker threads
     flush_workers: FlushWorkers,
 }
 
-impl<S> StorageWithFlushBuffer<S>
-where
-    S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
-{
+impl<S> StorageWithFlushBuffer<S> {
     pub fn shutdown_flush_workers(self) -> Result<(), Error> {
         self.flush_workers.shutdown()
     }
@@ -105,15 +99,20 @@ where
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }
+}
 
-    fn flush(&self) -> Result<(), Error> {
+impl<S> Checkpointable for StorageWithFlushBuffer<S>
+where
+    S: Checkpointable,
+{
+    fn checkpoint(&self) -> Result<(), Error> {
         // Busy loop until all flush workers are done.
         // Because there are no concurrent operations, len() might only return a number that is
         // higher that the actual number of items (in case an element of the flush buffer
         // was removed by a flush worker while iterating over the shards). This is however not a
         // problem because we will wait a little bit longer.
         while !self.flush_buffer.is_empty() {}
-        self.storage.flush()
+        self.storage.checkpoint()
     }
 }
 
@@ -417,12 +416,15 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_waits_until_buffer_is_empty_then_calls_flush_on_underlying_storage_layer() {
+    fn checkpoint_waits_until_buffer_is_empty_then_calls_checkpoint_on_underlying_storage_layer() {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let node = Node::Inner(Box::default());
 
         let mut mock_storage = MockStorage::new();
-        mock_storage.expect_flush().times(1).returning(|| Ok(()));
+        mock_storage
+            .expect_checkpoint()
+            .times(1)
+            .returning(|| Ok(()));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -441,7 +443,7 @@ mod tests {
 
         let thread = std::thread::spawn({
             let storage_with_flush_buffer = storage_with_flush_buffer.clone();
-            move || storage_with_flush_buffer.flush()
+            move || storage_with_flush_buffer.checkpoint()
         });
 
         // flush is waiting
@@ -566,6 +568,10 @@ mod tests {
     mockall::mock! {
         pub Storage {}
 
+        impl Checkpointable for Storage {
+            fn checkpoint(&self) -> Result<(), Error>;
+        }
+
         impl Storage for Storage {
             type Id = NodeId;
             type Item = Node;
@@ -581,8 +587,6 @@ mod tests {
             fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
 
             fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
-
-            fn flush(&self) -> Result<(), Error>;
         }
     }
 }

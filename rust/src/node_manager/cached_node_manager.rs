@@ -18,7 +18,12 @@ use std::{
 
 use quick_cache::{Lifecycle, UnitWeighter};
 
-use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::Node};
+use crate::{
+    error::Error,
+    node_manager::NodeManager,
+    storage::{Checkpointable, Storage},
+    types::Node,
+};
 
 /// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
@@ -44,10 +49,7 @@ impl<N> DerefMut for NodeWithMetadata<N> {
     }
 }
 
-pub struct CachedNodeManager<K, N, S>
-where
-    S: Storage<Id = K, Item = N>,
-{
+pub struct CachedNodeManager<K, N, S> {
     // A fixed-size container that acts as the owner of all nodes.
     // This allows us to hand out read/write guards from a shared reference to the node manager.
     // Wrapped in an Arc so that it can be shared with [`ItemLifecycle`].
@@ -255,8 +257,14 @@ where
         self.storage.delete(id)?;
         Ok(())
     }
+}
 
-    fn flush(&self) -> Result<(), crate::error::Error> {
+impl<K: Eq + Hash + Copy, N, S> Checkpointable for CachedNodeManager<K, N, S>
+where
+    S: Storage<Id = K, Item = N> + Checkpointable,
+    N: Default,
+{
+    fn checkpoint(&self) -> Result<(), crate::storage::Error> {
         for (id, pos) in self.cache.iter() {
             if pos == ItemLifecycle::<N>::PINNED_POS {
                 continue; // skip pinned items
@@ -275,7 +283,7 @@ where
                 entry_guard.is_dirty = false;
             }
         }
-        self.storage.flush()?;
+        self.storage.checkpoint()?;
         Ok(())
     }
 }
@@ -557,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_node_manager_flush_saves_dirty_nodes_to_storage() {
+    fn cached_node_manager_checkpoint_saves_dirty_nodes_to_storage() {
         const NUM_NODES: u64 = 10;
         let data = Arc::new(Mutex::new(vec![]));
         let mut storage = MockCachedNodeManagerStorage::new();
@@ -583,14 +591,14 @@ mod tests {
                 )
                 .returning(move |_, _| Ok(()));
         }
-        storage.expect_flush().times(1).returning(|| Ok(()));
+        storage.expect_checkpoint().times(1).returning(|| Ok(()));
 
         let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
         for _ in 0..NUM_NODES {
             // Newly added nodes are always dirty
             let _ = manager.add(Node::Empty).unwrap();
         }
-        manager.flush().expect("flush should succeed");
+        manager.checkpoint().expect("checkpoint should succeed");
     }
 
     #[test]
@@ -713,6 +721,10 @@ mod tests {
     mock! {
         pub CachedNodeManagerStorage {}
 
+        impl Checkpointable for CachedNodeManagerStorage {
+            fn checkpoint(&self) -> Result<(), storage::Error>;
+        }
+
         impl Storage for CachedNodeManagerStorage {
             type Id = NodeId;
             type Item = Node;
@@ -728,8 +740,6 @@ mod tests {
             fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) -> Result<(), storage::Error>;
 
             fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), storage::Error>;
-
-            fn flush(&self) -> Result<(), storage::Error>;
         }
     }
 

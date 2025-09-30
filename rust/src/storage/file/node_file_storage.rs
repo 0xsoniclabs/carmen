@@ -21,7 +21,7 @@ use std::{
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::storage::{
-    Error, Storage,
+    CheckpointParticipant, Error, Storage,
     file::{FileBackend, metadata_file::Metadata, reuse_list_file::ReuseListFile},
 };
 
@@ -37,9 +37,11 @@ where
 {
     checkpoint: AtomicU64,
     metadata: RwLock<Metadata>,
-    metadata_path: PathBuf,
+    commited_metadata_path: PathBuf,
+    prepared_metadata_path: PathBuf,
 
     node_file: F,
+    node_count: AtomicU64,
     next_idx: AtomicU64,
 
     reuse_list_file: Mutex<ReuseListFile>,
@@ -54,7 +56,8 @@ where
 {
     pub const NODE_STORE_FILE: &'static str = "node_store.bin";
     pub const REUSE_LIST_FILE: &'static str = "reuse_list.bin";
-    pub const METADATA_FILE: &'static str = "metadata.bin";
+    pub const COMMITTED_METADATA_FILE: &'static str = "committed_metadata.bin";
+    pub const PREPARED_METADATA_FILE: &'static str = "prepared_metadata.bin";
 }
 
 impl<T, F> Storage for NodeFileStorage<T, F>
@@ -72,7 +75,7 @@ where
     fn open(dir: &Path) -> Result<Self, Error> {
         fs::create_dir_all(dir)?;
 
-        let metadata = Metadata::read(dir.join(Self::METADATA_FILE))?;
+        let metadata = Metadata::read(dir.join(Self::COMMITTED_METADATA_FILE))?;
 
         let mut file_opts = OpenOptions::new();
         file_opts
@@ -100,9 +103,11 @@ where
         Ok(Self {
             checkpoint: AtomicU64::new(metadata.checkpoint),
             metadata: RwLock::new(metadata),
-            metadata_path: dir.join(Self::METADATA_FILE),
+            commited_metadata_path: dir.join(Self::COMMITTED_METADATA_FILE),
+            prepared_metadata_path: dir.join(Self::PREPARED_METADATA_FILE),
 
             node_file,
+            node_count: AtomicU64::new(metadata.frozen_nodes),
             next_idx: AtomicU64::new(metadata.frozen_nodes),
 
             reuse_list_file: Mutex::new(reuse_list_file),
@@ -133,48 +138,86 @@ where
     fn set(&self, idx: Self::Id, node: &Self::Item) -> Result<(), Error> {
         if idx >= self.next_idx.load(Ordering::Relaxed) {
             return Err(Error::NotFound);
+        } else if idx < self.metadata.read().unwrap().frozen_nodes {
+            return Err(Error::Committed);
         }
         let offset = idx * size_of::<Self::Item>() as u64;
         self.node_file.write_all_at(node.as_bytes(), offset)?;
+        self.node_count.fetch_max(idx + 1, Ordering::AcqRel);
         Ok(())
     }
 
     fn delete(&self, idx: Self::Id) -> Result<(), Error> {
         if idx >= self.next_idx.load(Ordering::Relaxed) {
-            return Err(Error::NotFound);
+            Err(Error::NotFound)
+        } else if idx < self.metadata.read().unwrap().frozen_nodes {
+            Err(Error::Committed)
+        } else {
+            self.reuse_list_file.lock().unwrap().push(idx);
+            Ok(())
         }
-        self.reuse_list_file.lock().unwrap().push(idx);
-        Ok(())
-    }
-
-    fn flush(&self) -> Result<(), Error> {
-        self.node_file.flush()?;
-
-        let mut reuse_file = self.reuse_list_file.lock().unwrap();
-        reuse_file.write()?;
-        let reuse_frozen_count = reuse_file.count();
-        reuse_file.set_frozen_count(reuse_frozen_count);
-        drop(reuse_file);
-
-        let mut metadata = self.metadata.write().unwrap();
-        *metadata = Metadata {
-            checkpoint: self.checkpoint.load(Ordering::Acquire),
-            frozen_nodes: self.next_idx.load(Ordering::Acquire),
-            frozen_reuse_indices: reuse_frozen_count as u64,
-        };
-        metadata.write(&self.metadata_path)?;
-
-        Ok(())
     }
 }
 
-impl<T, F> Drop for NodeFileStorage<T, F>
+impl<T, F> CheckpointParticipant for NodeFileStorage<T, F>
 where
     T: FromBytes + IntoBytes + Immutable + 'static,
     F: FileBackend + 'static,
 {
-    fn drop(&mut self) {
-        let _ = self.flush();
+    fn ensure(&self, checkpoint: u64) -> Result<(), Error> {
+        if checkpoint != self.checkpoint.load(Ordering::Acquire) {
+            return Err(Error::Checkpoint);
+        }
+        Ok(())
+    }
+
+    fn prepare(&self, checkpoint: u64) -> Result<(), Error> {
+        if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
+            return Err(Error::Checkpoint);
+        }
+
+        self.node_file.flush()?;
+        let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
+        reuse_list_file.write()?;
+        reuse_list_file.freeze_all();
+        let frozen_reuse_indices = reuse_list_file.count();
+
+        let new = Metadata {
+            checkpoint,
+            frozen_nodes: self.node_count.load(Ordering::Acquire),
+            frozen_reuse_indices: frozen_reuse_indices as u64,
+        };
+        let mut metadata = self.metadata.write().unwrap();
+        *metadata = new;
+        metadata.write(&self.prepared_metadata_path)?;
+        Ok(())
+    }
+
+    fn commit(&self, checkpoint: u64) -> Result<(), Error> {
+        if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
+            return Err(Error::Checkpoint);
+        }
+        let prepared_metadata = Metadata::read(&self.prepared_metadata_path)?;
+        if checkpoint != prepared_metadata.checkpoint {
+            return Err(Error::Checkpoint);
+        }
+        fs::rename(&self.prepared_metadata_path, &self.commited_metadata_path)?;
+        self.checkpoint.store(checkpoint, Ordering::Release);
+        Ok(())
+    }
+
+    fn abort(&self, checkpoint: u64) -> Result<(), Error> {
+        if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
+            return Err(Error::Checkpoint);
+        }
+        fs::remove_file(&self.prepared_metadata_path)?;
+        let committed_metadata = Metadata::read(&self.commited_metadata_path)?;
+        self.reuse_list_file
+            .lock()
+            .unwrap()
+            .set_frozen_count(committed_metadata.frozen_reuse_indices as usize);
+        *self.metadata.write().unwrap() = committed_metadata;
+        Ok(())
     }
 }
 
@@ -182,7 +225,7 @@ where
 mod tests {
     use std::{
         fs::{self, File},
-        io::{Read, Seek, SeekFrom},
+        io::Read,
     };
 
     use super::*;
@@ -205,7 +248,7 @@ mod tests {
 
         assert!(fs::exists(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
-        assert!(fs::exists(path.join(NodeFileStorage::METADATA_FILE)).unwrap());
+        assert!(fs::exists(path.join(NodeFileStorage::COMMITTED_METADATA_FILE)).unwrap());
     }
 
     #[test]
@@ -216,7 +259,7 @@ mod tests {
 
         assert!(fs::exists(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
-        assert!(fs::exists(dir.join(NodeFileStorage::METADATA_FILE)).unwrap());
+        assert!(fs::exists(dir.join(NodeFileStorage::COMMITTED_METADATA_FILE)).unwrap());
     }
 
     #[test]
@@ -320,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn set_writes_data_to_node_file_at_index() {
+    fn set_writes_data_to_node_file_at_index_and_updates_node_count() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         // prepare file: write some nodes into the file
@@ -331,22 +374,23 @@ mod tests {
         // create storage and call set with existing and new nodes
         {
             let storage = NodeFileStorage::open(&dir).unwrap();
+            assert_eq!(storage.node_count.load(Ordering::Relaxed), 2);
             storage.next_idx.store(5, Ordering::Relaxed);
 
-            // overwrite existing node
-            storage.set(0, &[3; 32]).unwrap();
             // add new node at end
             storage.set(2, &[4; 32]).unwrap();
+            assert_eq!(storage.node_count.load(Ordering::Relaxed), 3);
             // add new node after end
             storage.set(4, &[5; 32]).unwrap();
+            assert_eq!(storage.node_count.load(Ordering::Relaxed), 5);
         }
 
         let mut node_file = File::open(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
         let mut buf = [0; size_of::<TestNode>() * 5];
         node_file.read_exact(&mut buf).unwrap();
 
-        // overwritten node
-        assert_eq!(&buf[..size_of::<TestNode>()], &[3; 32]);
+        // first node remains unchanged
+        assert_eq!(&buf[..size_of::<TestNode>()], &[0; 32]);
         // second node remains unchanged
         assert_eq!(
             &buf[size_of::<TestNode>()..size_of::<TestNode>() * 2],
@@ -376,11 +420,12 @@ mod tests {
     fn delete_adds_index_to_reuse_list() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        write_metadata(&dir, 0, 2, 0);
+        write_metadata(&dir, 0, 0, 0);
         write_reuse_list(&dir, &[]);
-        write_nodes(&dir, &[[0; 32], [1; 32]]);
+        write_nodes(&dir, &[]);
 
         let storage = NodeFileStorage::open(&dir).unwrap();
+        storage.next_idx.store(2, Ordering::Relaxed);
         storage.delete(0).unwrap();
         storage.delete(1).unwrap();
         let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
@@ -398,30 +443,264 @@ mod tests {
     }
 
     #[test]
-    fn flush_writes_reuse_list_to_file_and_updates_frozen_count() {
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+    fn ensure_returns_if_checkpoint_matches() {
+        let dir = tempfile::tempdir().unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
-        {
-            let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
-            reuse_list_file.push(0);
-            reuse_list_file.push(1);
-        }
+        let checkpoint = 1;
+        write_metadata(&dir, checkpoint, 0, 0);
 
-        storage.flush().unwrap();
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        assert!(storage.ensure(checkpoint).is_ok());
+        assert!(matches!(
+            storage.ensure(checkpoint - 1).unwrap_err(),
+            Error::Checkpoint
+        ));
+        assert!(matches!(
+            storage.ensure(checkpoint + 1).unwrap_err(),
+            Error::Checkpoint
+        ));
+    }
 
-        // all current elements should be frozen
-        assert!(storage.reuse_list_file.lock().unwrap().pop().is_none());
+    #[test]
+    fn prepare_fails_if_requested_checkpoint_is_not_one_larger_than_current_one() {
+        let dir = tempfile::tempdir().unwrap();
 
-        let mut reuse_file = File::open(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
-        assert_eq!(
-            reuse_file.metadata().unwrap().len(),
-            size_of::<u64>() as u64 * 2
+        let checkpoint = 1;
+        write_metadata(&dir, checkpoint, 0, 0);
+
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        assert!(matches!(
+            storage.prepare(checkpoint).unwrap_err(),
+            Error::Checkpoint
+        ));
+        assert!(matches!(
+            storage.prepare(checkpoint + 2).unwrap_err(),
+            Error::Checkpoint
+        ));
+    }
+
+    #[test]
+    fn prepare_flushes_nodes_and_reuse_indices_then_freezes_them_and_writes_prepared_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+
+        write_metadata(&dir, 0, 1, 1);
+        write_reuse_list(&dir, &[0]);
+        write_nodes(&dir, &[[0; 32]]);
+
+        let expected_new_metadata = Metadata {
+            checkpoint: 1,
+            frozen_nodes: 2,
+            frozen_reuse_indices: 2,
+        };
+
+        let storage = NodeFileStorage::open(path).unwrap();
+
+        // add one new node and one new reuse index
+        storage.next_idx.store(3, Ordering::Release);
+        storage
+            .node_file
+            .write_all_at(&[1; 32], size_of::<TestNode>() as u64)
+            .unwrap();
+        storage.node_count.store(2, Ordering::Release);
+        storage.reuse_list_file.lock().unwrap().push(1);
+
+        storage.prepare(1).unwrap();
+
+        // check that nodes have been flushed
+        let nodes = fs::read(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
+        assert_eq!(nodes[..size_of::<TestNode>()], [0; 32]);
+        assert_eq!(nodes[size_of::<TestNode>()..], [1; 32]);
+
+        // check that reuse list has been flushed and frozen
+        let reuse_indices = fs::read(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
+        assert_eq!(reuse_indices, [0u64, 1u64].as_bytes());
+
+        // check that reuse list in memory has been frozen
+        let cached_file = storage.reuse_list_file.lock().unwrap();
+        assert_eq!(cached_file.frozen_count(), 2);
+
+        // check that prepared metadata has been written
+        let prepared_metadata =
+            Metadata::read(path.join(NodeFileStorage::PREPARED_METADATA_FILE)).unwrap();
+        assert_eq!(prepared_metadata, expected_new_metadata);
+
+        // check that in-memory metadata has been updated
+        assert_eq!(*storage.metadata.read().unwrap(), expected_new_metadata);
+    }
+
+    #[test]
+    fn commit_fails_if_requested_checkpoint_is_not_one_larger_than_current_one() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let checkpoint = 1;
+        write_metadata(&dir, checkpoint, 0, 0);
+
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        assert!(matches!(
+            storage.commit(checkpoint).unwrap_err(),
+            Error::Checkpoint
+        ));
+        assert!(matches!(
+            storage.commit(checkpoint + 2).unwrap_err(),
+            Error::Checkpoint
+        ));
+    }
+
+    #[test]
+    fn commit_fails_if_requested_checkpoint_does_not_match_prepared_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let checkpoint = 1;
+        write_metadata(&dir, checkpoint, 0, 0);
+
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        fs::write(
+            dir.path().join(NodeFileStorage::PREPARED_METADATA_FILE),
+            Metadata {
+                checkpoint: checkpoint + 2,
+                frozen_nodes: 0,
+                frozen_reuse_indices: 0,
+            }
+            .as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            storage.commit(checkpoint + 1).unwrap_err(),
+            Error::Checkpoint
+        ));
+    }
+
+    #[test]
+    fn commit_renames_prepared_to_committed_metadata_and_sets_checkpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+
+        let old_metadata = Metadata {
+            checkpoint: 1,
+            frozen_nodes: 1,
+            frozen_reuse_indices: 1,
+        };
+
+        write_metadata(
+            &dir,
+            old_metadata.checkpoint,
+            old_metadata.frozen_nodes,
+            old_metadata.frozen_reuse_indices,
         );
-        let mut buf = [0u64; 2];
-        reuse_file.seek(SeekFrom::Start(0)).unwrap();
-        reuse_file.read_exact(buf.as_mut_bytes()).unwrap();
-        assert_eq!(buf, [0, 1]);
+        write_reuse_list(&dir, &[0]);
+        write_nodes(&dir, &[[0; 32]]);
+
+        let storage = NodeFileStorage::open(path).unwrap();
+        assert_eq!(storage.checkpoint.load(Ordering::Relaxed), 1);
+
+        let new_metadata = Metadata {
+            checkpoint: 2,
+            frozen_nodes: 1,
+            frozen_reuse_indices: 1,
+        };
+        fs::write(
+            path.join(NodeFileStorage::PREPARED_METADATA_FILE),
+            new_metadata.as_bytes(),
+        )
+        .unwrap();
+
+        storage.commit(2).unwrap();
+
+        assert!(!fs::exists(path.join(NodeFileStorage::PREPARED_METADATA_FILE)).unwrap());
+        assert_eq!(
+            fs::read(path.join(NodeFileStorage::COMMITTED_METADATA_FILE)).unwrap(),
+            new_metadata.as_bytes()
+        );
+        assert_eq!(
+            storage.checkpoint.load(Ordering::Relaxed),
+            new_metadata.checkpoint
+        );
+    }
+
+    #[test]
+    fn abort_fails_if_requested_checkpoint_is_not_one_larger_than_current_one() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let checkpoint = 1;
+        write_metadata(&dir, checkpoint, 0, 0);
+
+        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        assert!(matches!(
+            storage.abort(checkpoint).unwrap_err(),
+            Error::Checkpoint
+        ));
+        assert!(matches!(
+            storage.abort(checkpoint + 2).unwrap_err(),
+            Error::Checkpoint
+        ));
+    }
+
+    #[test]
+    fn abort_removes_prepared_metadata_and_restores_committed_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+
+        let old_metadata = Metadata {
+            checkpoint: 1,
+            frozen_nodes: 1,
+            frozen_reuse_indices: 1,
+        };
+
+        write_metadata(
+            &dir,
+            old_metadata.checkpoint,
+            old_metadata.frozen_nodes,
+            old_metadata.frozen_reuse_indices,
+        );
+        write_reuse_list(&dir, &[0, 1]); // one frozen + one new
+        write_nodes(&dir, &[[0; 32], [1; 32]]); // one frozen + one new
+
+        let prepared_metadata = Metadata {
+            checkpoint: 2,
+            frozen_nodes: 2,
+            frozen_reuse_indices: 2,
+        };
+
+        let mut opts = OpenOptions::new();
+        opts.read(true).write(true);
+        let storage = NodeFileStorage {
+            commited_metadata_path: path.join(NodeFileStorage::COMMITTED_METADATA_FILE),
+            prepared_metadata_path: path.join(NodeFileStorage::PREPARED_METADATA_FILE),
+            node_file: SeekFile::open(path.join(NodeFileStorage::NODE_STORE_FILE).as_path(), opts)
+                .unwrap(),
+            node_count: AtomicU64::new(2), // 1 frozen + 1 new
+            reuse_list_file: Mutex::new(
+                ReuseListFile::new(
+                    File::open(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap(),
+                    1,
+                )
+                .unwrap(),
+            ),
+            checkpoint: AtomicU64::new(1),
+            metadata: RwLock::new(prepared_metadata),
+            next_idx: AtomicU64::new(2),
+            _node_type: PhantomData,
+        };
+
+        fs::write(
+            path.join(NodeFileStorage::PREPARED_METADATA_FILE),
+            prepared_metadata.as_bytes(),
+        )
+        .unwrap();
+
+        storage.abort(2).unwrap();
+
+        assert!(!fs::exists(path.join(NodeFileStorage::PREPARED_METADATA_FILE)).unwrap());
+        assert_eq!(
+            fs::read(path.join(NodeFileStorage::COMMITTED_METADATA_FILE)).unwrap(),
+            old_metadata.as_bytes()
+        );
+        assert_eq!(
+            storage.reuse_list_file.lock().unwrap().frozen_count(),
+            old_metadata.frozen_reuse_indices as usize
+        );
+        assert_eq!(*storage.metadata.read().unwrap(), old_metadata);
     }
 
     impl<T, F> super::NodeFileStorage<T, F>
@@ -447,9 +726,8 @@ mod tests {
                 frozen_nodes: nodes.len() as u64,
                 frozen_reuse_indices: reuse_indices.len() as u64,
             }
-            .write(path.join(Self::METADATA_FILE))?;
+            .write(path.join(Self::COMMITTED_METADATA_FILE))?;
             fs::write(path.join(Self::REUSE_LIST_FILE), reuse_indices.as_bytes())?;
-            fs::write(path.join(Self::NODE_STORE_FILE), nodes.as_bytes())?;
 
             Ok(())
         }
@@ -466,7 +744,7 @@ mod tests {
             frozen_nodes,
             frozen_reuse_indices,
         }
-        .write(dir.as_ref().join(NodeFileStorage::METADATA_FILE))
+        .write(dir.as_ref().join(NodeFileStorage::COMMITTED_METADATA_FILE))
         .unwrap();
     }
 

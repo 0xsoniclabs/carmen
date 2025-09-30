@@ -8,10 +8,17 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::path::Path;
+use std::{
+    fs::{self, File},
+    io::Read,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+use zerocopy::IntoBytes;
 
 use crate::{
-    storage::{Error, Storage},
+    storage::{CheckpointParticipant, Checkpointable, Error, Storage},
     types::{FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode},
 };
 
@@ -22,10 +29,12 @@ use crate::{
 #[derive(Debug)]
 pub struct FileStorageManager<S1, S2, S3>
 where
-    S1: Storage<Id = u64, Item = InnerNode>,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>>,
-    S3: Storage<Id = u64, Item = FullLeafNode>,
+    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
+    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
 {
+    dir: PathBuf,
+    checkpoint: AtomicU64,
     inner_nodes: S1,
     leaf_nodes_2: S2,
     leaf_nodes_256: S3,
@@ -33,20 +42,22 @@ where
 
 impl<S1, S2, S3> FileStorageManager<S1, S2, S3>
 where
-    S1: Storage<Id = u64, Item = InnerNode>,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>>,
-    S3: Storage<Id = u64, Item = FullLeafNode>,
+    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
+    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
 {
     pub const INNER_NODE_DIR: &str = "inner_node";
     pub const LEAF_NODE_2_DIR: &str = "leaf_node_2";
     pub const LEAF_NODE_256_DIR: &str = "leaf_node_256";
+    pub const COMMITTED_CHECKPOINT_FILE: &str = "committed_checkpoint.bin";
+    pub const PREPARED_CHECKPOINT_FILE: &str = "prepared_checkpoint.bin";
 }
 
 impl<S1, S2, S3> Storage for FileStorageManager<S1, S2, S3>
 where
-    S1: Storage<Id = u64, Item = InnerNode>,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>>,
-    S3: Storage<Id = u64, Item = FullLeafNode>,
+    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
+    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
 {
     type Id = NodeId;
     type Item = Node;
@@ -55,11 +66,25 @@ where
     fn open(dir: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(dir)?;
 
+        let commited_path = dir.join(Self::COMMITTED_CHECKPOINT_FILE);
+        if !fs::exists(&commited_path)? {
+            fs::write(&commited_path, 0u64.as_bytes())?;
+        }
+
+        let mut checkpoint = 0u64;
+        File::open(&commited_path)?.read_exact(checkpoint.as_mut_bytes())?;
+
         let inner_nodes = S1::open(dir.join(Self::INNER_NODE_DIR).as_path())?;
         let leaf_nodes_2 = S2::open(dir.join(Self::LEAF_NODE_2_DIR).as_path())?;
         let leaf_nodes_256 = S3::open(dir.join(Self::LEAF_NODE_256_DIR).as_path())?;
 
+        inner_nodes.ensure(checkpoint)?;
+        leaf_nodes_2.ensure(checkpoint)?;
+        leaf_nodes_256.ensure(checkpoint)?;
+
         Ok(Self {
+            dir: dir.to_path_buf(),
+            checkpoint: AtomicU64::new(checkpoint),
             inner_nodes,
             leaf_nodes_2,
             leaf_nodes_256,
@@ -125,11 +150,43 @@ where
             NodeType::Leaf256 => self.leaf_nodes_256.delete(idx),
         }
     }
+}
 
-    fn flush(&self) -> Result<(), Error> {
-        self.inner_nodes.flush()?;
-        self.leaf_nodes_2.flush()?;
-        self.leaf_nodes_256.flush()
+impl<S1, S2, S3> Checkpointable for FileStorageManager<S1, S2, S3>
+where
+    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
+    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+{
+    fn checkpoint(&self) -> Result<(), Error> {
+        let current_checkpoint = self.checkpoint.load(Ordering::Acquire);
+        let new_checkpoint = current_checkpoint + 1;
+        let participants = [
+            &self.inner_nodes as &dyn CheckpointParticipant,
+            &self.leaf_nodes_2,
+            &self.leaf_nodes_256,
+        ];
+        for (i, participant) in participants.iter().enumerate() {
+            if let Err(err) = participant.prepare(new_checkpoint) {
+                for participant in participants[..i].iter().rev() {
+                    participant.abort(current_checkpoint)?;
+                }
+                return Err(err);
+            }
+        }
+        fs::write(
+            self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
+            new_checkpoint.as_bytes(),
+        )?;
+        fs::rename(
+            self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
+            self.dir.join(Self::COMMITTED_CHECKPOINT_FILE),
+        )?;
+        for participant in participants.iter() {
+            participant.commit(new_checkpoint)?;
+        }
+        self.checkpoint.store(new_checkpoint, Ordering::Release);
+        Ok(())
     }
 }
 
@@ -137,7 +194,7 @@ where
 mod tests {
     use std::fs;
 
-    use mockall::predicate::eq;
+    use mockall::{Sequence, predicate::eq};
 
     use super::*;
     use crate::{
@@ -165,7 +222,7 @@ mod tests {
         let files = [
             NodeFileStorage::<InnerNode, SeekFile>::NODE_STORE_FILE,
             NodeFileStorage::<InnerNode, SeekFile>::REUSE_LIST_FILE,
-            NodeFileStorage::<InnerNode, SeekFile>::METADATA_FILE,
+            NodeFileStorage::<InnerNode, SeekFile>::COMMITTED_METADATA_FILE,
         ];
         for sub_dir in &sub_dirs {
             assert!(fs::exists(dir.join(sub_dir)).unwrap());
@@ -216,7 +273,11 @@ mod tests {
 
     #[test]
     fn get_forwards_to_get_of_corresponding_node_file_storage_depending_on_node_type() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
         let mut storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(0),
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
@@ -286,7 +347,11 @@ mod tests {
 
     #[test]
     fn reserve_forwards_to_reserve_of_corresponding_node_file_storage_depending_on_node_type() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
         let mut storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(0),
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
@@ -350,7 +415,11 @@ mod tests {
 
     #[test]
     fn set_forwards_to_set_of_corresponding_node_file_storage_depending_on_node_type() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
         let mut storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(0),
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
@@ -406,7 +475,11 @@ mod tests {
 
     #[test]
     fn set_returns_error_if_node_id_prefix_and_node_type_mismatch() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
         let storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(0),
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
@@ -423,7 +496,11 @@ mod tests {
 
     #[test]
     fn delete_forwards_to_delete_of_corresponding_node_file_storage_depending_on_node_type() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
         let mut storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(0),
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
@@ -471,22 +548,152 @@ mod tests {
     }
 
     #[test]
-    fn flush_calls_flush_on_all_storages() {
+    fn checkpoint_calls_prepare_on_participants_then_writes_checkpoint_file_then_calls_commit_then_sets_checkpoint_variable()
+     {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let old_checkpoint = 1;
+
         let mut storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(old_checkpoint),
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
         };
 
-        storage.inner_nodes.expect_flush().returning(|| Ok(()));
-        storage.leaf_nodes_2.expect_flush().returning(|| Ok(()));
-        storage.leaf_nodes_256.expect_flush().returning(|| Ok(()));
+        let mut seq = Sequence::new();
+        storage
+            .inner_nodes
+            .expect_prepare()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+        storage
+            .leaf_nodes_2
+            .expect_prepare()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+        storage
+            .leaf_nodes_256
+            .expect_prepare()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
 
-        assert!(storage.flush().is_ok());
+        storage
+            .inner_nodes
+            .expect_commit()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+        storage
+            .leaf_nodes_2
+            .expect_commit()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+        storage
+            .leaf_nodes_256
+            .expect_commit()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+
+        assert!(storage.checkpoint().is_ok());
+
+        // The prepared checkpoint file should not exist after a successful checkpoint.
+        assert!(!fs::exists(dir.path().join(
+            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
+        )).unwrap());
+        // The committed checkpoint file should exist and contain the new checkpoint.
+        assert_eq!(
+            fs::read(
+                dir.path()
+                    .join(FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE)
+            )
+            .unwrap(),
+            (old_checkpoint + 1).as_bytes()
+        );
+        // The checkpoint variable should be updated to the new checkpoint.
+        assert_eq!(
+            storage.checkpoint.load(Ordering::Acquire),
+            old_checkpoint + 1
+        );
+    }
+
+    #[test]
+    fn checkpoint_calls_prepare_then_calls_abort_on_previous_participants_if_prepare_failed() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let old_checkpoint = 1;
+        fs::write(
+                dir.path()
+                    .join(FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE)
+            ,old_checkpoint.as_bytes()
+            )
+            .unwrap();
+
+        let mut storage = FileStorageManager {
+            dir: dir.path().to_path_buf(),
+            checkpoint: AtomicU64::new(old_checkpoint),
+            inner_nodes: MockStorage::new(),
+            leaf_nodes_2: MockStorage::new(),
+            leaf_nodes_256: MockStorage::new(),
+        };
+
+        let mut seq = Sequence::new();
+        storage
+            .inner_nodes
+            .expect_prepare()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+        storage
+            .leaf_nodes_2
+            .expect_prepare()
+            .returning(|_| Err(Error::Io(std::io::Error::from(std::io::ErrorKind::Other))))
+            .times(1)
+            .in_sequence(&mut seq);
+        storage
+            .inner_nodes
+            .expect_abort()
+            .returning(|_| Ok(()))
+            .times(1)
+            .in_sequence(&mut seq);
+
+        assert!(matches!(storage.checkpoint(), Err(Error::Io(_))));
+
+        // The prepared checkpoint file should not exist after a failed checkpoint.
+        assert!(!fs::exists(dir.path().join(
+            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
+        )).unwrap());
+        // The committed checkpoint file should exist and contain the old checkpoint.
+        assert_eq!(
+            fs::read(
+                dir.path()
+                    .join(FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE)
+            )
+            .unwrap(),
+            old_checkpoint.as_bytes()
+        );
+        // The checkpoint variable should still be the old checkpoint.
+        assert_eq!(storage.checkpoint.load(Ordering::Acquire), old_checkpoint);
     }
 
     mockall::mock! {
         pub Storage<T: 'static> {}
+
+        impl<T: 'static> CheckpointParticipant for Storage<T> {
+            fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
+
+            fn prepare(&self, checkpoint: u64) -> Result<(), Error>;
+
+            fn commit(&self, checkpoint: u64) -> Result<(), Error>;
+
+            fn abort(&self, checkpoint: u64) -> Result<(), Error>;
+        }
 
         impl<T: 'static> Storage for Storage<T> {
             type Id = u64;
@@ -503,8 +710,6 @@ mod tests {
             fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
 
             fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
-
-            fn flush(&self) -> Result<(), Error>;
         }
     }
 }
