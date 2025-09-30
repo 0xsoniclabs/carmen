@@ -140,6 +140,8 @@ mod tests {
         os::unix::fs::PermissionsExt,
     };
 
+    use mockall::predicate::eq;
+
     use super::*;
     use crate::{
         storage::file::{NodeFileStorage, SeekFile},
@@ -147,7 +149,7 @@ mod tests {
     };
 
     #[test]
-    fn open_creates_directory_and_opens_committed_checkpoint_and_calls_open_on_all_storages() {
+    fn open_creates_directory_and_calls_open_on_all_storages() {
         type FileStorageManager = super::FileStorageManager<
             NodeFileStorage<InnerNode, SeekFile>,
             NodeFileStorage<SparseLeafNode<2>, SeekFile>,
@@ -245,7 +247,7 @@ mod tests {
             storage
                 .inner_nodes
                 .expect_get()
-                .withf(move |id| *id == inner_node_id.to_index())
+                .with(eq(inner_node_id.to_index()))
                 .returning({
                     let inner_node = inner_node.clone();
                     move |_| Ok(inner_node.clone())
@@ -263,7 +265,7 @@ mod tests {
             storage
                 .leaf_nodes_2
                 .expect_get()
-                .withf(move |id| *id == leaf_node_2_id.to_index())
+                .with(eq(leaf_node_2_id.to_index()))
                 .returning({
                     let leaf_node_2 = leaf_node_2.clone();
                     move |_| Ok(leaf_node_2.clone())
@@ -281,7 +283,7 @@ mod tests {
             storage
                 .leaf_nodes_256
                 .expect_get()
-                .withf(move |id| *id == leaf_node_256_id.to_index())
+                .with(eq(leaf_node_256_id.to_index()))
                 .returning({
                     let leaf_node_256 = leaf_node_256.clone();
                     move |_| Ok(leaf_node_256.clone())
@@ -318,10 +320,7 @@ mod tests {
             storage
                 .inner_nodes
                 .expect_reserve()
-                .withf({
-                    let inner_node = inner_node.clone();
-                    move |node| *node == inner_node
-                })
+                .with(eq(inner_node.clone()))
                 .returning(move |_| inner_node_idx);
             assert_eq!(
                 storage.reserve(&Node::Inner(Box::new(inner_node))),
@@ -336,10 +335,7 @@ mod tests {
             storage
                 .leaf_nodes_2
                 .expect_reserve()
-                .withf({
-                    let leaf_node_2 = leaf_node_2.clone();
-                    move |node| *node == leaf_node_2
-                })
+                .with(eq(leaf_node_2.clone()))
                 .returning(move |_| leaf_node_2_idx);
             assert_eq!(
                 storage.reserve(&Node::Leaf2(Box::new(leaf_node_2))),
@@ -354,10 +350,7 @@ mod tests {
             storage
                 .leaf_nodes_256
                 .expect_reserve()
-                .withf({
-                    let leaf_node_256 = leaf_node_256.clone();
-                    move |node| *node == leaf_node_256
-                })
+                .with(eq(leaf_node_256.clone()))
                 .returning(move |_| leaf_node_256_idx);
             assert_eq!(
                 storage.reserve(&Node::Leaf256(Box::new(leaf_node_256))),
@@ -389,10 +382,7 @@ mod tests {
             storage
                 .inner_nodes
                 .expect_set()
-                .withf({
-                    let inner_node = inner_node.clone();
-                    move |id, node| *id == inner_node_id.to_index() && *node == inner_node
-                })
+                .with(eq(inner_node_id.to_index()), eq(inner_node.clone()))
                 .returning(move |_, _| Ok(()));
             let inner_node = Node::Inner(Box::new(inner_node));
             assert!(storage.set(inner_node_id, &inner_node).is_ok());
@@ -405,10 +395,7 @@ mod tests {
             storage
                 .leaf_nodes_2
                 .expect_set()
-                .withf({
-                    let leaf_node_2 = leaf_node_2.clone();
-                    move |id, node| *id == leaf_node_2_id.to_index() && *node == leaf_node_2
-                })
+                .with(eq(leaf_node_2_id.to_index()), eq(leaf_node_2.clone()))
                 .returning(move |_, _| Ok(()));
             let leaf_node_2 = Node::Leaf2(Box::new(leaf_node_2));
             assert!(storage.set(leaf_node_2_id, &leaf_node_2).is_ok());
@@ -421,10 +408,7 @@ mod tests {
             storage
                 .leaf_nodes_256
                 .expect_set()
-                .withf({
-                    let leaf_node_256 = leaf_node_256.clone();
-                    move |id, node| *id == leaf_node_256_id.to_index() && *node == leaf_node_256
-                })
+                .with(eq(leaf_node_256_id.to_index()), eq(leaf_node_256.clone()))
                 .returning(move |_, _| Ok(()));
             let leaf_node_256 = Node::Leaf256(Box::new(leaf_node_256));
             assert!(storage.set(leaf_node_256_id, &leaf_node_256).is_ok());
@@ -469,7 +453,7 @@ mod tests {
             storage
                 .inner_nodes
                 .expect_delete()
-                .withf(move |id| *id == inner_node_id.to_index())
+                .with(eq(inner_node_id.to_index()))
                 .returning(move |_| Ok(()));
             assert!(storage.delete(inner_node_id).is_ok());
         }
@@ -480,7 +464,7 @@ mod tests {
             storage
                 .leaf_nodes_2
                 .expect_delete()
-                .withf(move |id| *id == leaf_node_2_id.to_index())
+                .with(eq(leaf_node_2_id.to_index()))
                 .returning(move |_| Ok(()));
             assert!(storage.delete(leaf_node_2_id).is_ok());
         }
@@ -491,7 +475,7 @@ mod tests {
             storage
                 .leaf_nodes_256
                 .expect_delete()
-                .withf(move |id| *id == leaf_node_256_id.to_index())
+                .with(eq(leaf_node_256_id.to_index()))
                 .returning(move |_| Ok(()));
             assert!(storage.delete(leaf_node_256_id).is_ok());
         }
@@ -514,7 +498,6 @@ mod tests {
 
     mockall::mock! {
         pub Storage<T: 'static> {}
-
 
         impl<T: 'static> Storage for Storage<T> {
             type Id = u64;
