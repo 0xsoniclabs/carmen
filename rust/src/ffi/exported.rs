@@ -1163,6 +1163,8 @@ const _COMPILE_TIME_CHECK_THAT_WRAPPERS_HAVE_DOUBLE_THE_SIZE_OF_VOID_POINTERS: (
 )]
 #[cfg(test)]
 mod tests {
+    use mockall::predicate::{always, eq};
+
     use super::*;
     use crate::{MockCarmenDb, MockCarmenState};
 
@@ -1405,7 +1407,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_archive_state()
-                    .withf(move |b| *b == block)
+                    .with(eq(block))
                     .returning(|_| Ok(Box::new(MockCarmenState::new())));
             },
             move |db| {
@@ -1445,7 +1447,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_archive_state()
-                    .withf(move |b| *b == block)
+                    .with(eq(block))
                     .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |db| {
@@ -1470,7 +1472,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_account_exists()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(move |_| Ok(expected_account_state));
             },
             move |state| {
@@ -1527,7 +1529,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_account_exists()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -1553,7 +1555,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_balance()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(move |_| Ok(expected_balance));
             },
             move |state| {
@@ -1610,7 +1612,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_balance()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -1636,7 +1638,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_nonce()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(move |_| Ok(expected_nonce));
             },
             move |state| {
@@ -1693,7 +1695,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_nonce()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -1720,7 +1722,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_storage_value()
-                    .withf(move |a, k| a == &addr && k == &key)
+                    .with(eq(addr), eq(key))
                     .returning(move |_, _| Ok(expected_value));
             },
             move |state| {
@@ -1794,7 +1796,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_storage_value()
-                    .withf(move |a, k| a == &addr && k == &key)
+                    .with(eq(addr), eq(key))
                     .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -1822,7 +1824,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_code()
-                    .withf(move |a, _| a == &addr)
+                    .with(eq(addr), always())
                     .returning(move |_, code_buf| {
                         for i in 0..expected_code.len() {
                             code_buf[i].write(expected_code[i]);
@@ -1903,7 +1905,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_code()
-                    .withf(move |a, _| a == &addr)
+                    .with(eq(addr), always())
                     .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -1931,7 +1933,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_code_hash()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(move |_| Ok(expected_hash));
             },
             move |state| {
@@ -1988,7 +1990,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_code_hash()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -2014,7 +2016,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_code_len()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(move |_| Ok(expected_size));
             },
             move |state| {
@@ -2071,7 +2073,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_get_code_len()
-                    .withf(move |a| a == &addr)
+                    .with(eq(addr))
                     .returning(|_| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {
@@ -2097,7 +2099,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_apply_block_update()
-                    .withf(move |b, _| *b == block)
+                    .with(eq(block), always())
                     .returning(|_, _| Ok(()));
             },
             move |state| {
@@ -2173,7 +2175,7 @@ mod tests {
             move |mock_db| {
                 mock_db
                     .expect_apply_block_update()
-                    .withf(move |b, _| *b == block)
+                    .with(eq(block), always())
                     .returning(|_, _| Err(crate::Error::UnsupportedOperation("some error".into())));
             },
             move |state| {

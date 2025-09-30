@@ -570,10 +570,10 @@ mod tests {
             storage
                 .expect_set()
                 .times(1)
-                .withf(move |idx, value| {
-                    *idx == NodeId::from_idx_and_node_type(i, NodeType::Empty)
-                        && value == &Node::Empty
-                })
+                .with(
+                    eq(NodeId::from_idx_and_node_type(i, NodeType::Empty)),
+                    eq(Node::Empty),
+                )
                 .returning(move |_, _| Ok(()));
         }
         storage.expect_flush().times(1).returning(|| Ok(()));
@@ -644,9 +644,10 @@ mod tests {
         storage
             .expect_set()
             .times(1)
-            .withf(move |idx, value| {
-                *idx == NodeId::from_idx_and_node_type(0, NodeType::Empty) && value == &Node::Empty
-            })
+            .with(
+                eq(NodeId::from_idx_and_node_type(0, NodeType::Empty)),
+                eq(Node::Empty),
+            )
             .returning(|_, _| Ok(()));
 
         // With unit-size cache, each item is immediately evicted

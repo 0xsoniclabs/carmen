@@ -135,10 +135,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{self, Permissions},
-        os::unix::fs::PermissionsExt,
-    };
+    use std::fs;
 
     use mockall::predicate::eq;
 
@@ -146,6 +143,7 @@ mod tests {
     use crate::{
         storage::file::{NodeFileStorage, SeekFile},
         types::NodeId,
+        utils::test_dir::{Permissions, TestDir},
     };
 
     #[test]
@@ -156,7 +154,7 @@ mod tests {
             NodeFileStorage<FullLeafNode, SeekFile>,
         >;
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path();
         let storage = FileStorageManager::open(path);
         assert!(storage.is_ok());
@@ -186,7 +184,7 @@ mod tests {
             NodeFileStorage<FullLeafNode, SeekFile>,
         >;
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path();
         let sub_dirs = [
             FileStorageManager::INNER_NODE_DIR,
@@ -211,9 +209,7 @@ mod tests {
             MockStorage<FullLeafNode>,
         >;
 
-        let dir = tempfile::tempdir().unwrap();
-
-        fs::set_permissions(&dir, Permissions::from_mode(0o000)).unwrap();
+        let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
 
         let path = dir.path().join("non_existent_dir");
 
@@ -221,8 +217,6 @@ mod tests {
             FileStorageManager::open(path.as_path()),
             Err(Error::Io(_))
         ));
-
-        fs::set_permissions(&dir, Permissions::from_mode(0o777)).unwrap();
     }
 
     #[test]
@@ -503,17 +497,17 @@ mod tests {
             type Id = u64;
             type Item = T;
 
-            fn open(_path: &Path) -> Result<Self, Error>
+            fn open(path: &Path) -> Result<Self, Error>
             where
                 Self: Sized;
 
-            fn get(&self, _id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
+            fn get(&self, id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
 
-            fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+            fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
-            fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) -> Result<(), Error>;
+            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
 
-            fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), Error>;
+            fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
 
             fn flush(&self) -> Result<(), Error>;
         }
