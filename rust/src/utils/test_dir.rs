@@ -65,6 +65,12 @@ impl TestDir {
     }
 }
 
+impl AsRef<Path> for TestDir {
+    fn as_ref(&self) -> &Path {
+        &self.dir
+    }
+}
+
 impl Drop for TestDir {
     /// Deletes the test directory and its contents
     fn drop(&mut self) {
@@ -169,7 +175,7 @@ mod tests {
         let non_existent_path = PathBuf::from("non_existent_dir");
         let result = set_permissions(&non_existent_path, Permissions::ReadWrite)
             .expect_err("set_permissions should fail for non-existent directory");
-        assert!(result.kind() == std::io::ErrorKind::NotFound);
+        assert_eq!(result.kind(), std::io::ErrorKind::NotFound);
     }
 
     #[test]
@@ -197,6 +203,12 @@ mod tests {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let permissions = fs::metadata(test_dir.path()).unwrap().permissions();
         assert_eq!(permissions.mode() & 0o777, Permissions::ReadWrite.mode());
+    }
+
+    #[test]
+    fn as_ref_returns_path() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        assert_eq!(test_dir.as_ref(), test_dir.path());
     }
 
     #[test]

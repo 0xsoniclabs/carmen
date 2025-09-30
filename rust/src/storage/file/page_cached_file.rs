@@ -215,16 +215,18 @@ impl<F: FileBackend, const D: bool> Drop for PageCachedFile<F, D> {
 
 #[cfg(test)]
 mod tests {
+    use mockall::predicate::{always, eq};
+
     use super::*;
     use crate::storage::file::MockFileBackend;
 
     #[test]
     fn access_of_cache_data_does_not_trigger_io_operations() {
         // no expectations on the mock because there should not be no I/O operations.
-        let _file = MockFileBackend::new();
+        let file = MockFileBackend::new();
 
         let file = PageCachedFile::<_, true>(Mutex::new(InnerPageCachedFile {
-            file: _file,
+            file,
             file_len: 4096,
             page: Box::new(Page::zeroed()),
             page_index: 0,
@@ -245,15 +247,13 @@ mod tests {
 
     #[test]
     fn access_non_cached_data_triggers_write_of_old_and_read_of_new_page() {
-        let mut _file = MockFileBackend::new();
-        _file
-            .expect_write_all_at()
-            .withf(|buf, offset| buf == [0; 4096] && *offset == 0)
+        let mut file = MockFileBackend::new();
+        file.expect_write_all_at()
+            .with(eq([0; 4096]), eq(0))
             .times(1)
             .returning(|_, _| Ok(()));
-        _file
-            .expect_read_exact_at()
-            .withf(|_, offset| *offset == 4096)
+        file.expect_read_exact_at()
+            .with(always(), eq(4096))
             .times(1)
             .returning(|buf, _| {
                 buf.fill(1);
@@ -261,7 +261,7 @@ mod tests {
             });
 
         let file = PageCachedFile::<_, true>(Mutex::new(InnerPageCachedFile {
-            file: _file,
+            file,
             file_len: 8192,
             page: Box::new(Page::zeroed()),
             page_index: 0,

@@ -214,17 +214,20 @@ enum Op {
 mod tests {
     use std::{fs::File, sync::atomic::AtomicUsize, time::Duration};
 
+    use mockall::predicate::eq;
+
     use super::*;
     use crate::{
         storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
         types::NodeType,
+        utils::test_dir::{Permissions, TestDir},
     };
 
     #[test]
     fn open_all_nested_layers() {
         // The purpose of this test is to ensure that `StorageWithFlushBuffer` can be used with
         // the lower layers of the storage system (that the types and interfaces line up).
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         // this opens:
         // StorageWithFlushBuffer
@@ -243,7 +246,7 @@ mod tests {
 
     #[test]
     fn open_opens_underlying_storage_and_starts_flush_workers() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         // Using mocks for `FileStorageManager` and `NoSeekFile` is not possible, because `open`
         // creates the mocks using calls to `open` on the mock type, but the mocks have no
         // expectations set up.
@@ -326,13 +329,10 @@ mod tests {
         let node = Node::Inner(Box::default());
 
         let mut mock_storage = MockStorage::new();
-        mock_storage
-            .expect_get()
-            .withf(move |arg| *arg == id)
-            .returning({
-                let node = node.clone();
-                move |_| Ok(node.clone())
-            });
+        mock_storage.expect_get().with(eq(id)).returning({
+            let node = node.clone();
+            move |_| Ok(node.clone())
+        });
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -355,10 +355,7 @@ mod tests {
         let mut mock_storage = MockStorage::new();
         mock_storage
             .expect_reserve()
-            .withf({
-                let node = node.clone();
-                move |arg| arg == &node
-            })
+            .with(eq(node.clone()))
             .returning(move |_| id);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {

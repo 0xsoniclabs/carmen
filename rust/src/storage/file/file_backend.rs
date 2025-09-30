@@ -278,7 +278,7 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn write_all_at_can_write_across_pages(#[case] open_backend_fn: OpenBackendFn) {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
@@ -301,7 +301,7 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn write_all_at_can_write_data_to_different_pages(#[case] open_backend_fn: OpenBackendFn) {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
@@ -358,7 +358,7 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_can_read_across_pages(#[case] open_backend_fn: OpenBackendFn) {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
@@ -380,7 +380,7 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_can_read_data_from_different_pages(#[case] open_backend_fn: OpenBackendFn) {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();
@@ -430,7 +430,7 @@ mod tests {
         const THREADS: usize = 128;
         const PAGES: usize = 100;
 
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.path().join("test_file.bin");
 
         let mut options = OpenOptions::new();

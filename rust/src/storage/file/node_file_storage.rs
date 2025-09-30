@@ -176,13 +176,15 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        fs::{self, File, Permissions},
+        fs::{self, File},
         io::{Read, Seek, SeekFrom},
-        os::unix::fs::PermissionsExt,
     };
 
     use super::*;
-    use crate::storage::{Error, file::SeekFile};
+    use crate::{
+        storage::{Error, file::SeekFile},
+        utils::test_dir::{Permissions, TestDir},
+    };
 
     type TestNode = [u8; 32];
 
@@ -190,7 +192,7 @@ mod tests {
 
     #[test]
     fn open_creates_new_directory_and_files_for_non_existing_path() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().join("non_existing_dir");
         let path = path.as_path();
 
@@ -203,7 +205,7 @@ mod tests {
 
     #[test]
     fn open_creates_new_files_in_empty_directory() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path();
 
         assert!(NodeFileStorage::open(path).is_ok());
@@ -217,7 +219,7 @@ mod tests {
     fn open_performs_consistency_checks_on_existing_files() {
         // files have valid sizes
         {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 1, 1);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
@@ -226,7 +228,7 @@ mod tests {
         }
         // metadata contains larger node count that node file sizes allows
         {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 2, 0);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
@@ -238,7 +240,7 @@ mod tests {
         }
         // metadata contains larger frozen count that reuse list file sizes allows
         {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 2);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
@@ -250,7 +252,7 @@ mod tests {
         }
         // reuse list contains indices which are larger than node count in metadata
         {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 0);
             write_reuse_list(&dir, &[1]);
             write_nodes(&dir, &[]);
@@ -264,19 +266,15 @@ mod tests {
 
     #[test]
     fn open_forwards_io_errors() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.path();
 
-        fs::set_permissions(path, Permissions::from_mode(0o000)).unwrap();
-
         assert!(matches!(NodeFileStorage::open(path), Err(Error::Io(_))));
-
-        fs::set_permissions(path, Permissions::from_mode(0o777)).unwrap();
     }
 
     #[test]
     fn get_reads_data_if_index_in_bounds() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 2, 0);
         write_reuse_list(&dir, &[]);
@@ -291,7 +289,7 @@ mod tests {
 
     #[test]
     fn reserve_returns_last_index_from_reuse_list() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 3, 0);
         write_reuse_list(&dir, &[0, 2]);
@@ -306,7 +304,7 @@ mod tests {
 
     #[test]
     fn reserve_returns_new_index_if_no_reuse_available() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         // create a single node -> index 0 is used
         write_metadata(&dir, 1, 0);
@@ -320,7 +318,7 @@ mod tests {
 
     #[test]
     fn set_writes_data_to_node_file_at_index() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path();
 
         // prepare file: write some nodes into the file
@@ -363,7 +361,7 @@ mod tests {
 
     #[test]
     fn set_returns_error_if_index_out_of_bounds() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(
@@ -374,7 +372,7 @@ mod tests {
 
     #[test]
     fn delete_adds_index_to_reuse_list() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path();
 
         write_metadata(&dir, 2, 0);
@@ -392,7 +390,7 @@ mod tests {
 
     #[test]
     fn delete_returns_error_if_index_out_of_bounds() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
