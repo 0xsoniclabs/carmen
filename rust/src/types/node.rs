@@ -8,8 +8,6 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::LazyLock;
-
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::types::{Commitment, NodeId, Value};
@@ -109,20 +107,24 @@ pub enum Node {
     Leaf256(Box<FullLeafNode>),
 }
 
+impl Node {
+    pub fn to_node_type(&self) -> NodeType {
+        match self {
+            Node::Empty => NodeType::Empty,
+            Node::Inner(_) => NodeType::Inner,
+            Node::Leaf2(_) => NodeType::Leaf2,
+            Node::Leaf256(_) => NodeType::Leaf256,
+        }
+    }
+}
+
 impl NodeSize for Node {
     fn byte_size(&self) -> usize {
-        let inner_size = match self {
-            Node::Empty => 0,
-            Node::Inner(node) => std::mem::size_of_val(node) + std::mem::size_of_val(&**node),
-            Node::Leaf2(node) => std::mem::size_of_val(node) + std::mem::size_of_val(&**node),
-            Node::Leaf256(node) => std::mem::size_of_val(node) + std::mem::size_of_val(&**node),
-        };
-        std::mem::size_of::<Self>() + inner_size
+        self.to_node_type().byte_size()
     }
 
     fn min_size() -> usize {
-        // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        size_of::<Self>() + size_of::<Box<SparseLeafNode<2>>>() + size_of::<SparseLeafNode<2>>()
+        NodeType::min_size()
     }
 }
 
@@ -138,21 +140,25 @@ pub enum NodeType {
 
 impl NodeSize for NodeType {
     fn byte_size(&self) -> usize {
-        static EMPTY_NODE: Node = Node::Empty;
-        static INNER_NODE: LazyLock<Node> = LazyLock::new(|| Node::Inner(Box::default()));
-        static LEAF2_NODE: LazyLock<Node> = LazyLock::new(|| Node::Leaf2(Box::default()));
-        static LEAF256_NODE: LazyLock<Node> = LazyLock::new(|| Node::Leaf256(Box::default()));
-
-        match self {
-            NodeType::Empty => EMPTY_NODE.byte_size(),
-            NodeType::Inner => INNER_NODE.byte_size(),
-            NodeType::Leaf2 => LEAF2_NODE.byte_size(),
-            NodeType::Leaf256 => LEAF256_NODE.byte_size(),
-        }
+        let inner_size = match self {
+            NodeType::Empty => 0,
+            NodeType::Inner => {
+                std::mem::size_of::<Box<InnerNode>>() + std::mem::size_of::<InnerNode>()
+            }
+            NodeType::Leaf2 => {
+                std::mem::size_of::<Box<SparseLeafNode<2>>>()
+                    + std::mem::size_of::<SparseLeafNode<2>>()
+            }
+            NodeType::Leaf256 => {
+                std::mem::size_of::<Box<FullLeafNode>>() + std::mem::size_of::<FullLeafNode>()
+            }
+        };
+        std::mem::size_of::<Self>() + inner_size
     }
 
     fn min_size() -> usize {
-        Node::min_size()
+        // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
+        size_of::<Self>() + size_of::<Box<SparseLeafNode<2>>>() + size_of::<SparseLeafNode<2>>()
     }
 }
 
@@ -202,11 +208,11 @@ mod tests {
     }
 
     #[test]
-    fn node_byte_size_returns_correct_size() {
-        let empty_node = Node::Empty;
-        let inner_node = Node::Inner(Box::default());
-        let leaf2_node = Node::Leaf2(Box::default());
-        let leaf256_node = Node::Leaf256(Box::default());
+    fn node_type_byte_size_returns_correct_size() {
+        let empty_node = NodeType::Empty;
+        let inner_node = NodeType::Inner;
+        let leaf2_node = NodeType::Leaf2;
+        let leaf256_node = NodeType::Leaf256;
 
         assert_eq!(empty_node.byte_size(), std::mem::size_of::<Node>());
         assert_eq!(
@@ -230,12 +236,15 @@ mod tests {
     }
 
     #[test]
-    fn node_min_size_returns_size_of_smallest_non_empty_node() {
-        assert_eq!(Node::min_size(), Node::Leaf2(Box::default()).byte_size());
+    fn node_type_min_size_returns_size_of_smallest_non_empty_node() {
+        assert_eq!(
+            NodeType::min_size(),
+            Node::Leaf2(Box::default()).byte_size()
+        );
     }
 
     #[test]
-    fn node_type_byte_size_returns_node_byte_size() {
+    fn node_byte_size_returns_node_type_byte_size() {
         let empty_node = Node::Empty;
         let inner_node = Node::Inner(Box::default());
         let leaf2_node = Node::Leaf2(Box::default());
@@ -248,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn node_type_min_size_returns_node_min_size() {
+    fn node_min_size_returns_node_type_min_size() {
         assert_eq!(NodeType::min_size(), Node::min_size());
     }
 }
