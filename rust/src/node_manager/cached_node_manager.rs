@@ -18,12 +18,7 @@ use std::{
 
 use quick_cache::{Lifecycle, UnitWeighter};
 
-use crate::{
-    error::Error,
-    node_manager::NodeManager,
-    storage::{self, Storage},
-    types::Node,
-};
+use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::Node};
 
 /// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
@@ -208,22 +203,20 @@ where
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
             let guard = self.nodes[pos].read().unwrap();
-            if self.cache.get(&id).is_none() {
-                return Err(storage::Error::NotFound.into());
+            if self.cache.get(&id).is_some() {
+                return Ok(guard);
             }
-            Ok(guard)
-        } else {
-            // Get node from storage, or return `Error::NotFound` if it doesn't exist.
-            let node = self.storage.get(id)?;
-            let pos = self.insert(
-                id,
-                NodeWithMetadata {
-                    node,
-                    is_dirty: false,
-                },
-            )?;
-            Ok(self.nodes[pos].read().unwrap())
         }
+        // We didn't return, so we need to reload the node from storage.
+        let node = self.storage.get(id)?;
+        let pos = self.insert(
+            id,
+            NodeWithMetadata {
+                node,
+                is_dirty: false,
+            },
+        )?;
+        Ok(self.nodes[pos].read().unwrap())
     }
 
     fn get_write_access(
@@ -232,22 +225,20 @@ where
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
             let guard = self.nodes[pos].write().unwrap();
-            if self.cache.get(&id).is_none() {
-                return Err(storage::Error::NotFound.into());
+            if self.cache.get(&id).is_some() {
+                return Ok(guard);
             }
-            Ok(guard)
-        } else {
-            // Get node from storage, or return `Error::NotFound` if it doesn't exist.
-            let node = self.storage.get(id)?;
-            let pos = self.insert(
-                id,
-                NodeWithMetadata {
-                    node,
-                    is_dirty: false,
-                },
-            )?;
-            Ok(self.nodes[pos].write().unwrap())
         }
+        // We didn't return, so we need to reload the node from storage.
+        let node = self.storage.get(id)?;
+        let pos = self.insert(
+            id,
+            NodeWithMetadata {
+                node,
+                is_dirty: false,
+            },
+        )?;
+        Ok(self.nodes[pos].write().unwrap())
     }
 
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
