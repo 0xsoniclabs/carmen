@@ -37,7 +37,7 @@ where
 {
     checkpoint: AtomicU64,
     metadata: RwLock<Metadata>,
-    metadata_file: PathBuf,
+    metadata_path: PathBuf,
 
     node_file: F,
     next_idx: AtomicU64,
@@ -100,7 +100,7 @@ where
         Ok(Self {
             checkpoint: AtomicU64::new(metadata.checkpoint),
             metadata: RwLock::new(metadata),
-            metadata_file: dir.join(Self::METADATA_FILE),
+            metadata_path: dir.join(Self::METADATA_FILE),
 
             node_file,
             next_idx: AtomicU64::new(metadata.frozen_nodes),
@@ -162,7 +162,7 @@ where
             frozen_nodes: self.next_idx.load(Ordering::Acquire),
             frozen_reuse_indices: reuse_frozen_count as u64,
         };
-        metadata.write(&self.metadata_file)?;
+        metadata.write(&self.metadata_path)?;
 
         Ok(())
     }
@@ -433,7 +433,11 @@ mod tests {
         /// and populates them with the provided nodes and reusable indices.
         /// Both the nodes and the reusable indices are frozen, as [`NodeFileStorage::open`] only
         /// considers frozen data to exist.
-        pub fn create_files_for_nodes(path: impl AsRef<Path>, nodes: &[T]) -> Result<(), Error> {
+        pub fn create_files_for_nodes(
+            path: impl AsRef<Path>,
+            nodes: &[T],
+            reuse_indices: &[u64],
+        ) -> Result<(), Error> {
             let path = path.as_ref();
 
             fs::create_dir_all(path)?;
@@ -441,10 +445,10 @@ mod tests {
             Metadata {
                 checkpoint: 0,
                 frozen_nodes: nodes.len() as u64,
-                frozen_reuse_indices: 0,
+                frozen_reuse_indices: reuse_indices.len() as u64,
             }
             .write(path.join(Self::METADATA_FILE))?;
-            fs::write(path.join(Self::REUSE_LIST_FILE), [])?;
+            fs::write(path.join(Self::REUSE_LIST_FILE), reuse_indices.as_bytes())?;
             fs::write(path.join(Self::NODE_STORE_FILE), nodes.as_bytes())?;
 
             Ok(())

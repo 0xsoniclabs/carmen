@@ -22,13 +22,16 @@ use crate::storage::Error;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct Metadata {
+    /// The checkpoint number.
     pub checkpoint: u64,
+    /// The number of frozen nodes that can not be modified.
     pub frozen_nodes: u64,
+    /// The number of frozen reuse indices that can not be reused.
     pub frozen_reuse_indices: u64,
 }
 
 impl Metadata {
-    /// Reads the metadata from the file. It the file does not exit, it is initialized with
+    /// Reads the metadata from the file. It the file does not exist, it is initialized with
     /// [`Metadata::default`].
     pub fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
@@ -83,8 +86,7 @@ mod tests {
         let path = tempdir.join("metadata");
 
         let metadata = Metadata::read(path).unwrap();
-        assert_eq!(metadata.frozen_nodes, 0);
-        assert_eq!(metadata.frozen_reuse_indices, 0);
+        assert_eq!(metadata, Metadata::default());
     }
 
     #[test]
@@ -103,7 +105,7 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        // create the file so make sue Metadata::read tries to open it
+        // Create the file so make sure Metadata::read tries to open it.
         fs::write(&path, []).unwrap();
         tempdir.set_permissions(Permissions::WriteOnly).unwrap();
 
@@ -135,7 +137,7 @@ mod tests {
 
     #[test]
     fn write_fails_if_file_cannot_be_written() {
-        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let tempdir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = tempdir.join("metadata");
 
         let result = Metadata::default().write(&path);
