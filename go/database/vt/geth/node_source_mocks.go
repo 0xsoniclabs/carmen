@@ -25,7 +25,7 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MocknodeSource is a mock of nodeSource interface.
+// MocknodeSource is a mock of NodeSource interface.
 type MocknodeSource struct {
 	ctrl     *gomock.Controller
 	recorder *MocknodeSourceMockRecorder

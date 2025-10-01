@@ -19,10 +19,10 @@ import (
 
 //go:generate mockgen -source node_source.go -destination node_source_mocks.go -package geth
 
-// nodeSource is an interface for a source of verkle nodes.
+// NodeSource is an interface for a source of verkle nodes.
 // It provides methods to get and set nodes at specific paths.
 // It supports the adaptation for Geth's Verkle trie implementation.
-type nodeSource interface {
+type NodeSource interface {
 	common.FlushAndCloser
 	database.NodeReader
 
@@ -34,7 +34,7 @@ type nodeSource interface {
 // singleNodeReader is a wrapper around a single NodeReader.
 // When the method NodeReader is called, it returns always the same NodeReader.
 type singleNodeReader struct {
-	source nodeSource
+	source NodeSource
 }
 
 func (r singleNodeReader) NodeReader(stateRoot ethcommon.Hash) (database.NodeReader, error) {
@@ -42,6 +42,6 @@ func (r singleNodeReader) NodeReader(stateRoot ethcommon.Hash) (database.NodeRea
 }
 
 // getSource is a convenience method to retrieve the underlying NodeSource.
-func (r singleNodeReader) getSource() nodeSource {
+func (r singleNodeReader) getSource() NodeSource {
 	return r.source
 }

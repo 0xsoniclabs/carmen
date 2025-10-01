@@ -26,38 +26,40 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/ethereum/go-ethereum/triedb/database"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
-// NewState creates a new verkle state using an in-memory source.
+// NewState creates a new verkle in-memory state.
 // It uses the Verkle Trie from the Ethereum Geth implementation.
+// Data is not persisted, and always kept in memory.
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
 func NewState(params state.Parameters) (state.State, error) {
-	return newState(params)
+	return newState(params, nil)
 }
 
-// NewMemoryState creates a new verkle state where the whole trie
-// is always kept in memory.
+// NewStateWithSource creates a new verkle state where the whole trie
+// is persisted to the provided NodeSource.
 // It uses the Verkle Trie from the Ethereum Geth implementation.
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
-func NewMemoryState(params state.Parameters) (state.State, error) {
-	vs, err := newState(params)
+func NewStateWithSource(params state.Parameters, nodeSource NodeSource) (state.State, error) {
+	source := singleNodeReader{source: nodeSource}
+	vs, err := newState(params, source)
 	if err != nil {
 		return nil, err
 	}
 
-	source := singleNodeReader{source: newMemorySource()}
 	return &persistentVerkleState{*vs, source}, nil
 }
 
-func newState(_ state.Parameters) (*verkleState, error) {
+func newState(_ state.Parameters, source database.NodeDatabase) (*verkleState, error) {
 	pointCache := utils.NewPointCache(4096)
-	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, nil, pointCache)
+	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, source, pointCache)
 	if err != nil {
-		return nil, errors.Join(nil, err)
+		return nil, err
 	}
 	return &verkleState{
 		pointCache: pointCache,

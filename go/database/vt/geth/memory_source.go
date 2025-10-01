@@ -24,7 +24,7 @@ type memorySource struct {
 	nodes map[immutable.Bytes]immutable.Bytes
 }
 
-func newMemorySource() nodeSource {
+func newMemorySource() NodeSource {
 	return &memorySource{
 		nodes: make(map[immutable.Bytes]immutable.Bytes),
 	}

@@ -38,7 +38,7 @@ func initTestedState() map[string]func(param state.Parameters, t *testing.T) sta
 			return st
 		},
 		"memory source": func(param state.Parameters, t *testing.T) state.State {
-			st, err := NewMemoryState(param)
+			st, err := NewStateWithSource(param, newMemorySource())
 			require.NoError(t, err, "failed to create memory state")
 			addClosing(st, t)
 			return st
