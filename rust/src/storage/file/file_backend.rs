@@ -185,7 +185,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn open_creates_and_opens_file(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -198,7 +198,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn open_opens_existing_file(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -215,7 +215,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn open_fails_if_file_is_locked(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -235,7 +235,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn open_fails_if_no_permissions(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let _ = File::create(path.as_path()).unwrap();
         tempdir.set_permissions(Permissions::ReadOnly).unwrap();
@@ -255,7 +255,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn write_all_at_writes_whole_buffer_at_offset(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -279,7 +279,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn write_all_at_can_write_across_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -302,7 +302,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn write_all_at_can_write_data_to_different_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -334,7 +334,7 @@ mod tests {
         #[case] open_backend_fn: OpenBackendFn,
     ) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -359,7 +359,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_can_read_across_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -381,7 +381,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_can_read_data_from_different_pages(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -409,7 +409,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_fails_when_out_of_bounds(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -431,7 +431,7 @@ mod tests {
         const PAGES: usize = 100;
 
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -469,7 +469,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn flush_flushes_file_and_sets_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -500,7 +500,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn drop_flushes_file_and_sets_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -520,7 +520,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn len_returns_file_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -533,7 +533,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn set_len_sets_length(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -549,7 +549,7 @@ mod tests {
     #[rstest_reuse::apply(open_backend)]
     fn read_observes_writes_of_other_threads(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("test_file.bin");
+        let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);

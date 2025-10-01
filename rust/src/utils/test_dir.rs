@@ -10,6 +10,7 @@
 
 use std::{
     fs::{self},
+    ops::Deref,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -68,6 +69,14 @@ impl TestDir {
 impl AsRef<Path> for TestDir {
     fn as_ref(&self) -> &Path {
         &self.dir
+    }
+}
+
+impl Deref for TestDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        self.path()
     }
 }
 
@@ -139,14 +148,13 @@ mod tests {
     #[test]
     fn set_permissions_sets_permissions_recursively() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let dir_path = test_dir.path();
-        fs::create_dir(dir_path.join("subdir")).unwrap();
+        fs::create_dir(test_dir.join("subdir")).unwrap();
 
         test_dir.set_permissions(Permissions::WriteOnly).unwrap();
 
-        let permissions = fs::metadata(dir_path).unwrap().permissions();
+        let permissions = fs::metadata(&test_dir).unwrap().permissions();
         assert_eq!(permissions.mode() & 0o777, Permissions::WriteOnly.mode());
-        let subdir_permissions = fs::metadata(dir_path.join("subdir")).unwrap().permissions();
+        let subdir_permissions = fs::metadata(test_dir.join("subdir")).unwrap().permissions();
         assert_eq!(
             subdir_permissions.mode() & 0o777,
             Permissions::WriteOnly.mode()
@@ -156,14 +164,13 @@ mod tests {
     #[test]
     fn set_permissions_sets_permissions_of_write_only_directory() {
         let test_dir = TestDir::try_new(Permissions::WriteOnly).unwrap();
-        let dir_path = test_dir.path();
-        fs::create_dir(dir_path.join("subdir")).unwrap();
+        fs::create_dir(test_dir.join("subdir")).unwrap();
 
         test_dir.set_permissions(Permissions::ReadOnly).unwrap();
 
-        let permissions = fs::metadata(dir_path).unwrap().permissions();
+        let permissions = fs::metadata(&test_dir).unwrap().permissions();
         assert_eq!(permissions.mode() & 0o777, Permissions::ReadOnly.mode());
-        let subdir_permissions = fs::metadata(dir_path.join("subdir")).unwrap().permissions();
+        let subdir_permissions = fs::metadata(test_dir.join("subdir")).unwrap().permissions();
         assert_eq!(
             subdir_permissions.mode() & 0o777,
             Permissions::ReadOnly.mode()
@@ -181,27 +188,27 @@ mod tests {
     #[test]
     fn path_returns_path() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        assert!(test_dir.path().exists());
+        assert!(test_dir.exists());
     }
 
     #[test]
     fn make_read_only_changes_permissions() {
         let test_dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
-        let permissions = fs::metadata(test_dir.path()).unwrap().permissions();
+        let permissions = fs::metadata(test_dir).unwrap().permissions();
         assert_eq!(permissions.mode() & 0o777, Permissions::ReadOnly.mode());
     }
 
     #[test]
     fn make_write_only_changes_permissions() {
         let test_dir = TestDir::try_new(Permissions::WriteOnly).unwrap();
-        let permissions = fs::metadata(test_dir.path()).unwrap().permissions();
+        let permissions = fs::metadata(test_dir).unwrap().permissions();
         assert_eq!(permissions.mode() & 0o777, Permissions::WriteOnly.mode());
     }
 
     #[test]
     fn make_read_write_changes_permissions() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let permissions = fs::metadata(test_dir.path()).unwrap().permissions();
+        let permissions = fs::metadata(test_dir).unwrap().permissions();
         assert_eq!(permissions.mode() & 0o777, Permissions::ReadWrite.mode());
     }
 
@@ -212,32 +219,38 @@ mod tests {
     }
 
     #[test]
+    fn deref_returns_path() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        assert_eq!(test_dir.deref(), test_dir.path());
+    }
+
+    #[test]
     fn drop_deletes_directory_and_subdirectories() {
         let init_dir = |permission: Permissions| {
             // Create it as read write to be able to create subdirectories
             let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-            assert!(test_dir.path().exists());
-            fs::create_dir(test_dir.path().join("subdir")).unwrap();
+            assert!(test_dir.exists());
+            fs::create_dir(test_dir.join("subdir")).unwrap();
             // Apply the specified permissions
-            set_permissions(test_dir.path(), permission).unwrap();
+            set_permissions(&test_dir, permission).unwrap();
             test_dir
         };
 
         // Read-only permissions
         let test_dir = init_dir(Permissions::ReadOnly);
-        let path = test_dir.path().to_path_buf();
+        let path = test_dir.to_path_buf();
         drop(test_dir);
         assert!(!path.exists());
 
         // Write-only permissions
         let test_dir = init_dir(Permissions::WriteOnly);
-        let path = test_dir.path().to_path_buf();
+        let path = test_dir.to_path_buf();
         drop(test_dir);
         assert!(!path.exists());
 
         // Read-write permissions
         let test_dir = init_dir(Permissions::ReadWrite);
-        let path = test_dir.path().to_path_buf();
+        let path = test_dir.to_path_buf();
         drop(test_dir);
         assert!(!path.exists());
     }

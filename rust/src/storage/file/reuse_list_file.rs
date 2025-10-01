@@ -104,7 +104,7 @@ mod tests {
         use super::ReuseListFile;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let indices = [1u64, 2, 3, 4, 5];
         fs::write(path.as_path(), indices.as_bytes()).unwrap();
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn read_returns_error_for_invalid_file_size() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         fs::write(path.as_path(), [0; 10]).unwrap();
 
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn new_fails_if_file_can_not_be_read() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         File::create(path.as_path()).unwrap();
 
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn write_writes_cache_to_file() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let cached_file = ReuseListFile {
             file: File::create(path.as_path()).unwrap(),
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn write_fails_if_file_cannot_be_written() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         File::create(path.as_path()).unwrap();
 
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn update_fronzen_count_changes_value() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let mut cached_file = ReuseListFile {
             file: File::create(path).unwrap(),
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn pop_returns_element_if_non_frozen_elements_exist() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let mut cached_file = ReuseListFile {
             file: File::create(path).unwrap(),
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn push_adds_element_to_cache() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let mut cached_file = ReuseListFile {
             file: File::create(path).unwrap(),
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn as_slice_returns_slice_of_all_elements() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let cached_file = ReuseListFile {
             file: File::create(path).unwrap(),
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn len_returns_number_of_cached_elements() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("reuse_list");
+        let path = dir.join("reuse_list");
 
         let cached_file = ReuseListFile {
             file: File::create(path).unwrap(),

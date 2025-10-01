@@ -240,7 +240,7 @@ mod tests {
                 NodeFileStorage<_, SeekFile>,
                 NodeFileStorage<_, SeekFile>,
             >,
-        >::open(dir.path())
+        >::open(&dir)
         .unwrap();
     }
 
@@ -256,20 +256,19 @@ mod tests {
                 NodeFileStorage<_, SeekFile>,
                 NodeFileStorage<_, SeekFile>,
             >,
-        >::open(dir.path())
+        >::open(&dir)
         .unwrap();
 
         // The node store files should be locked while opened
         let file = File::open(
-            dir.path()
-                .join(
-                    FileStorageManager::<
-                        NodeFileStorage<_, SeekFile>,
-                        NodeFileStorage<_, SeekFile>,
-                        NodeFileStorage<_, SeekFile>,
-                    >::INNER_NODE_DIR,
-                )
-                .join(NodeFileStorage::<u8, SeekFile>::NODE_STORE_FILE),
+            dir.join(
+                FileStorageManager::<
+                    NodeFileStorage<_, SeekFile>,
+                    NodeFileStorage<_, SeekFile>,
+                    NodeFileStorage<_, SeekFile>,
+                >::INNER_NODE_DIR,
+            )
+            .join(NodeFileStorage::<u8, SeekFile>::NODE_STORE_FILE),
         )
         .unwrap();
         assert!(file.try_lock().is_err());

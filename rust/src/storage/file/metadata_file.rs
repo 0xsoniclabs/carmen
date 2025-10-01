@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn read_reads_metadata_from_file() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("metadata");
+        let path = tempdir.join("metadata");
 
         let node_count: u64 = 1;
         let reuse_frozen_count: u64 = 2;
@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn read_returns_zeroed_metadata_for_empty_file() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("metadata");
+        let path = tempdir.join("metadata");
 
         let metadata_file = MetadataFile::new(File::create(path).unwrap());
         let metadata = metadata_file.read().unwrap();
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn read_returns_error_for_invalid_file_size() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("metadata");
+        let path = tempdir.join("metadata");
 
         fs::write(&path, [0u8; 10]).unwrap();
 
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn read_fails_if_file_cannot_be_read() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("metadata");
+        let path = tempdir.join("metadata");
 
         // this is needed so that the file is not empty and actually has to be read
         fs::write(path.as_path(), [0u8; 16]).unwrap();
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn write_writes_metadata_to_file() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("metadata");
+        let path = tempdir.join("metadata");
 
         let node_count: u64 = 1;
         let reuse_frozen_count: u64 = 2;
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn write_fails_if_file_cannot_be_written() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.path().join("metadata");
+        let path = tempdir.join("metadata");
 
         File::create(path.as_path()).unwrap();
 
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn read_returns_what_write_wrote() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().join("metadata");
+        let path = dir.join("metadata");
 
         let file = OpenOptions::new()
             .create(true)
