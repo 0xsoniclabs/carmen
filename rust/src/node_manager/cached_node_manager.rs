@@ -121,10 +121,11 @@ where
         // to ensure that no other thread has a reference to it and
         // avoid risking to lose data.
         #[allow(clippy::readonly_write_lock)]
-        let guard = self.nodes[pos].write().unwrap();
+        let mut guard = self.nodes[pos].write().unwrap();
         if guard.is_dirty {
             self.storage.set(key, &guard)?;
         }
+        **guard = N::default(); // reset node to default value to release storage
         free_list_guard.push(pos);
         Ok(())
     }
@@ -241,9 +242,10 @@ where
         if let Some(pos) = self.cache.get(&id) {
             // Get exclusive write access before dropping the node
             // to ensure that no other thread is holding a reference to it.
-            let _guard = self.nodes[pos].write().unwrap();
+            let mut _guard = self.nodes[pos].write().unwrap();
             self.cache.remove(&id);
             let mut free_list = self.free_list.lock().unwrap();
+            **_guard = N::default(); // reset node to default value to release storage
             free_list.push(pos);
         }
         self.storage.delete(id)?;
@@ -350,23 +352,23 @@ mod tests {
 
     #[test]
     fn cached_node_manager_evict_saves_dirty_nodes_in_storage() {
-        let id1 = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-        let id2 = NodeId::from_idx_and_node_type(1, NodeType::Empty);
+        let id1 = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
+        let id2 = NodeId::from_idx_and_node_type(1, NodeType::Leaf2);
         let mut storage = MockCachedNodeManagerStorage::new();
         storage
             .expect_set()
             .times(1)
-            .with(eq(id1), eq(&Node::Empty))
+            .with(eq(id1), always())
             .returning(|_, _| Ok(()));
 
         let manager = CachedNodeManager::new(10, storage);
         // Manually insert two nodes
         *manager.nodes[0].write().unwrap() = NodeWithMetadata {
-            node: Node::Empty,
+            node: Node::Leaf2(Box::default()),
             is_dirty: true,
         };
         *manager.nodes[1].write().unwrap() = NodeWithMetadata {
-            node: Node::Empty,
+            node: Node::Leaf2(Box::default()),
             is_dirty: false,
         };
         manager.cache.insert(id1, 0);
@@ -384,6 +386,7 @@ mod tests {
         // This should be evicted as it is dirty.
         manager.evict((id1, 0), &mut free_list_guard).unwrap();
         assert!(free_list_guard.contains(&0));
+        assert!(**manager.nodes[0].read().unwrap() == Node::default()); // node reset to default
         // This should not be evicted as it is clean.
         manager.evict((id2, 1), &mut free_list_guard).unwrap();
         assert!(free_list_guard.contains(&1));
@@ -589,7 +592,7 @@ mod tests {
     #[test]
     fn cached_node_manager_delete_removes_entry_from_cache_and_storage() {
         let mut storage = MockCachedNodeManagerStorage::new();
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
+        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
         let entry = Node::Inner(Box::default());
         storage.expect_reserve().times(1).returning(move |_| id);
         storage
@@ -604,6 +607,7 @@ mod tests {
         assert!(manager.cache.get(&id).is_none());
         // First node should be inserted at pos 0
         assert!(manager.free_list.lock().unwrap().contains(&0));
+        assert!(**manager.nodes[0].read().unwrap() == Node::default()); // node reset to default
     }
 
     #[test]
