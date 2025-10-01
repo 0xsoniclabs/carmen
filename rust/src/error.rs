@@ -19,6 +19,9 @@ pub enum Error {
     /// An unsupported schema version was provided.
     #[error("unsupported schema version: {0}")]
     UnsupportedSchema(u8),
+    /// An unsupported implementation was requested.
+    #[error("unsupported implementation: {0}")]
+    UnsupportedImplementation(String),
     /// An unsupported operation was attempted.
     #[error("unsupported operation: {0}")]
     UnsupportedOperation(String),

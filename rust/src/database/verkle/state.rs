@@ -26,7 +26,7 @@ use crate::{
 };
 
 /// An implementation of [`CarmenState`] that uses a Verkle trie as the underlying data structure.
-pub struct VerkleTrieState<T: VerkleTrie + Send + Sync> {
+pub struct VerkleTrieState<T: VerkleTrie> {
     trie: T,
 }
 
@@ -37,7 +37,7 @@ impl VerkleTrieState<SimpleInMemoryVerkleTrie> {
     }
 }
 
-impl<T: VerkleTrie + Send + Sync> CarmenState for VerkleTrieState<T> {
+impl<T: VerkleTrie> CarmenState for VerkleTrieState<T> {
     fn account_exists(&self, _addr: &Address) -> Result<bool, Error> {
         Err(Error::UnsupportedOperation(
             "account_exists is not supported by Verkle tries".to_owned(),
@@ -67,8 +67,9 @@ impl<T: VerkleTrie + Send + Sync> CarmenState for VerkleTrieState<T> {
 
     fn get_code(&self, addr: &Address, code_buf: &mut [MaybeUninit<u8>]) -> Result<usize, Error> {
         let len = self.get_code_len(addr)?;
-        let mut chunks = Vec::with_capacity((len / 31 + 1) as usize);
-        for i in 0..(len / 31 + 1) {
+        let chunk_count = len / 31 + 1;
+        let mut chunks = Vec::with_capacity(chunk_count as usize);
+        for i in 0..chunk_count {
             let key = get_code_chunk_key(addr, i);
             let chunk = self.trie.get(&key)?;
             chunks.push(chunk);

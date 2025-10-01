@@ -1170,8 +1170,8 @@ mod tests {
 
     #[test]
     fn carmen_rust_open_database_returns_non_null_pointers() {
-        let live_impls = [LiveImpl::Memory];
-        let archive_impls = [ArchiveImpl::None];
+        let live_impls = [LiveImpl::Memory, LiveImpl::File, LiveImpl::LevelDb];
+        let archive_impls = [ArchiveImpl::None, ArchiveImpl::LevelDb, ArchiveImpl::Sqlite];
         for live_impl in live_impls {
             for archive_impl in archive_impls {
                 unsafe {
@@ -1185,11 +1185,14 @@ mod tests {
                         dir.len() as i32,
                         &mut out_database,
                     );
-                    assert_eq!(result, bindings::Result_kResult_Success);
-                    assert!(!out_database.is_null());
-                    let db_ref = &mut *(out_database as *mut DbWrapper);
-                    assert!(!db_ref.inner.is_null());
-                    Carmen_Rust_ReleaseDatabase(out_database);
+                    if result == bindings::Result_kResult_Success {
+                        assert!(!out_database.is_null());
+                        let db_ref = &mut *(out_database as *mut DbWrapper);
+                        assert!(!db_ref.inner.is_null());
+                        Carmen_Rust_ReleaseDatabase(out_database);
+                    } else {
+                        assert_eq!(result, bindings::Result_kResult_UnsupportedImplementation);
+                    }
                 }
             }
         }

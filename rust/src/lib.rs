@@ -38,15 +38,21 @@ pub fn open_carmen_db(
     }
 
     if !matches!(archive_impl, ArchiveImpl::None) {
-        unimplemented!("Archive is not yet supported");
+        return Err(Error::UnsupportedImplementation(
+            "archive is not yet supported".to_owned(),
+        ));
     }
 
     match live_impl {
         LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieState::<
             database::SimpleInMemoryVerkleTrie,
         >::new()))),
-        LiveImpl::File => unimplemented!("File-based live state is not yet supported"),
-        LiveImpl::LevelDb => unimplemented!("LevelDB-based live state is not supported"),
+        LiveImpl::File => Err(Error::UnsupportedImplementation(
+            "file-based live state is not yet supported".to_owned(),
+        )),
+        LiveImpl::LevelDb => Err(Error::UnsupportedImplementation(
+            "LevelDB-based live state is not supported".to_owned(),
+        )),
     }
 }
 

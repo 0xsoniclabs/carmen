@@ -173,7 +173,7 @@ pub struct LeafNode {
 }
 
 impl LeafNode {
-    /// Creates a new leaf node for the given key, initializing all values to [`Value::default`].
+    /// Creates a new leaf node for the given key, initializing all values to the default [Value].
     pub fn new(key: &Key) -> Self {
         let values = Box::new([Value::default(); 256]);
         LeafNode {
@@ -185,7 +185,7 @@ impl LeafNode {
         }
     }
 
-    /// Returns the value associated with the given key, or [`Value::default`] if the key does
+    /// Returns the value associated with the given key, or the default [Value] if the key does
     /// not match the stem of this leaf.
     pub fn get(&self, key: &Key) -> Value {
         if key[..31] != self.stem {

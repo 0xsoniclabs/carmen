@@ -18,9 +18,12 @@ mod bindings {
 
     impl From<Error> for Result {
         fn from(error: Error) -> Self {
+            eprintln!("Returning error via FFI: {error:?}");
+
             match error {
-                Error::UnsupportedSchema(version) => Result_kResult_UnsupportedSchema,
-                Error::UnsupportedOperation(op) => Result_kResult_UnsupportedOperation,
+                Error::UnsupportedSchema(_) => Result_kResult_UnsupportedSchema,
+                Error::UnsupportedOperation(_) => Result_kResult_UnsupportedOperation,
+                Error::UnsupportedImplementation(_) => Result_kResult_UnsupportedImplementation,
                 Error::Storage(
                     crate::storage::Error::NotFound
                     | crate::storage::Error::IdNodeTypeMismatch

@@ -63,8 +63,9 @@ enum Result {
   kResult_IOError = 2,
   kResult_UnsupportedOperation = 3,
   kResult_UnsupportedSchema = 4,
-  kResult_InvalidArguments = 5,
-  kResult_InternalError = 6,
+  kResult_UnsupportedImplementation = 5,
+  kResult_InvalidArguments = 6,
+  kResult_InternalError = 7,
 };
 
 // ------------------------------ Life Cycle ----------------------------------
