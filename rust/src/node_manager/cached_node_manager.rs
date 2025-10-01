@@ -18,7 +18,12 @@ use std::{
 
 use quick_cache::{Lifecycle, UnitWeighter};
 
-use crate::{error::Error, node_manager::NodeManager, storage::Storage, types::Node};
+use crate::{
+    error::Error,
+    node_manager::NodeManager,
+    storage::{self, Storage},
+    types::Node,
+};
 
 /// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
@@ -202,7 +207,11 @@ where
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            Ok(self.nodes[pos].read().unwrap())
+            let guard = self.nodes[pos].read().unwrap();
+            if self.cache.get(&id).is_none() {
+                return Err(storage::Error::NotFound.into());
+            }
+            Ok(guard)
         } else {
             // Get node from storage, or return `Error::NotFound` if it doesn't exist.
             let node = self.storage.get(id)?;
@@ -222,7 +231,11 @@ where
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            Ok(self.nodes[pos].write().unwrap())
+            let guard = self.nodes[pos].write().unwrap();
+            if self.cache.get(&id).is_none() {
+                return Err(storage::Error::NotFound.into());
+            }
+            Ok(guard)
         } else {
             // Get node from storage, or return `Error::NotFound` if it doesn't exist.
             let node = self.storage.get(id)?;
