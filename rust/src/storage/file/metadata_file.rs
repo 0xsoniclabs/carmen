@@ -9,8 +9,9 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    fs::{self, File},
+    io::Read,
+    path::Path,
 };
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -18,55 +19,42 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 use crate::storage::Error;
 
 /// Metadata stored in the metadata file.
-#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct Metadata {
-    pub node_count: u64,
-    pub reuse_frozen_count: u64,
+    pub checkpoint: u64,
+    pub frozen_nodes: u64,
+    pub frozen_reuse_indices: u64,
 }
 
-/// A file that stores metadata about the data of the
-/// [`NodeFileStorage`](crate::storage::file::NodeFileStorage) store for a certain node type.
-#[derive(Debug)]
-pub struct MetadataFile {
-    file: File,
-}
-
-impl MetadataFile {
-    /// Creates a new [`MetadataFile`] instance.
-    pub fn new(file: File) -> Self {
-        Self { file }
-    }
-
-    /// Reads the metadata from the file or returns [`Metadata::default`] if the file is empty.
-    pub fn read(&self) -> Result<Metadata, Error> {
-        let len = self.file.metadata().unwrap().len();
-        if len == 0 {
-            return Ok(Metadata::default());
-        } else if len != size_of::<Metadata>() as u64 {
-            return Err(Error::DatabaseCorruption);
+impl Metadata {
+    /// Reads the metadata from the file. It the file does not exit, it is initialized with
+    /// [`Metadata::default`].
+    pub fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let path = path.as_ref();
+        if !fs::exists(path)? {
+            fs::write(path, Self::default().as_bytes())?;
         }
         let mut metadata = Metadata::default();
-        (&self.file).seek(SeekFrom::Start(0)).unwrap();
-        (&self.file).read_exact(metadata.as_mut_bytes())?;
-        Ok(metadata)
+        let mut file = File::open(path)?;
+        match file.read_exact(metadata.as_mut_bytes()) {
+            Ok(_) => Ok(metadata),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                Err(Error::DatabaseCorruption)
+            }
+            Err(e) => Err(Error::Io(e)),
+        }
     }
 
     /// Writes the metadata to the file.
-    pub fn write(&self, metadata: &Metadata) -> Result<(), Error> {
-        let mut file = &self.file;
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(metadata.as_bytes())?;
-        file.sync_all()?;
-
+    pub fn write(&self, path: impl AsRef<Path>) -> Result<(), Error> {
+        fs::write(path.as_ref(), self.as_bytes())?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{self, File, OpenOptions};
-
     use zerocopy::IntoBytes;
 
     use super::*;
@@ -77,27 +65,26 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        let node_count: u64 = 1;
-        let reuse_frozen_count: u64 = 2;
+        let checkpoint: u64 = 1;
+        let node_count: u64 = 2;
+        let reuse_frozen_count: u64 = 3;
 
-        let data = [node_count, reuse_frozen_count];
+        let data = [checkpoint, node_count, reuse_frozen_count];
         fs::write(path.as_path(), data.as_bytes()).unwrap();
 
-        let metadata_file = MetadataFile::new(File::open(path).unwrap());
-        let metadata = metadata_file.read().unwrap();
-        assert_eq!(metadata.node_count, node_count);
-        assert_eq!(metadata.reuse_frozen_count, reuse_frozen_count);
+        let metadata = Metadata::read(path).unwrap();
+        assert_eq!(metadata.frozen_nodes, node_count);
+        assert_eq!(metadata.frozen_reuse_indices, reuse_frozen_count);
     }
 
     #[test]
-    fn read_returns_zeroed_metadata_for_empty_file() {
+    fn read_returns_default_metadata_if_file_does_not_exist() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        let metadata_file = MetadataFile::new(File::create(path).unwrap());
-        let metadata = metadata_file.read().unwrap();
-        assert_eq!(metadata.node_count, 0);
-        assert_eq!(metadata.reuse_frozen_count, 0);
+        let metadata = Metadata::read(path).unwrap();
+        assert_eq!(metadata.frozen_nodes, 0);
+        assert_eq!(metadata.frozen_reuse_indices, 0);
     }
 
     #[test]
@@ -107,8 +94,7 @@ mod tests {
 
         fs::write(&path, [0u8; 10]).unwrap();
 
-        let metadata_file = MetadataFile::new(File::open(path).unwrap());
-        let result = metadata_file.read();
+        let result = Metadata::read(path);
         assert!(matches!(result, Err(Error::DatabaseCorruption)));
     }
 
@@ -117,11 +103,11 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        // this is needed so that the file is not empty and actually has to be read
-        fs::write(path.as_path(), [0u8; 16]).unwrap();
+        // create the file so make sue Metadata::read tries to open it
+        fs::write(&path, []).unwrap();
+        tempdir.set_permissions(Permissions::WriteOnly).unwrap();
 
-        let metadata_file = MetadataFile::new(OpenOptions::new().write(true).open(path).unwrap());
-        let result = metadata_file.read();
+        let result = Metadata::read(&path);
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
@@ -130,23 +116,21 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        let node_count: u64 = 1;
-        let reuse_frozen_count: u64 = 2;
+        let checkpoint: u64 = 1;
+        let frozen_nodes: u64 = 2;
+        let frozen_reuse_indices: u64 = 3;
 
-        {
-            let metadata_file = MetadataFile::new(File::create(path.as_path()).unwrap());
-            let metadata = Metadata {
-                node_count,
-                reuse_frozen_count,
-            };
-            metadata_file.write(&metadata).unwrap();
-        }
+        let metadata = Metadata {
+            checkpoint,
+            frozen_nodes,
+            frozen_reuse_indices,
+        };
+        metadata.write(&path).unwrap();
 
         let mut file = File::open(path).unwrap();
-        let mut data = [0; 2];
+        let mut data = [0; 3];
         file.read_exact(data.as_mut_bytes()).unwrap();
-        assert_eq!(data[0], node_count);
-        assert_eq!(data[1], reuse_frozen_count);
+        assert_eq!(data, [checkpoint, frozen_nodes, frozen_reuse_indices]);
     }
 
     #[test]
@@ -154,14 +138,7 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        File::create(path.as_path()).unwrap();
-
-        let metadata_file = MetadataFile::new(File::open(path).unwrap());
-        let metadata = Metadata {
-            node_count: 1,
-            reuse_frozen_count: 2,
-        };
-        let result = metadata_file.write(&metadata);
+        let result = Metadata::default().write(&path);
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
@@ -170,20 +147,12 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("metadata");
 
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path.as_path())
-            .unwrap();
-
-        let metadata_file = MetadataFile::new(file);
         let metadata = Metadata {
-            node_count: 1,
-            reuse_frozen_count: 2,
+            checkpoint: 1,
+            frozen_nodes: 2,
+            frozen_reuse_indices: 3,
         };
-        metadata_file.write(&metadata).unwrap();
-        assert_eq!(metadata_file.read().unwrap(), metadata);
+        metadata.write(&path).unwrap();
+        assert_eq!(Metadata::read(&path).unwrap(), metadata);
     }
 }

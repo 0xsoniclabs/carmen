@@ -9,11 +9,11 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    fs::OpenOptions,
+    fs::{self, OpenOptions},
     marker::PhantomData,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
-        Mutex,
+        Mutex, RwLock,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -22,11 +22,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::storage::{
     Error, Storage,
-    file::{
-        FileBackend,
-        metadata_file::{Metadata, MetadataFile},
-        reuse_list_file::ReuseListFile,
-    },
+    file::{FileBackend, metadata_file::Metadata, reuse_list_file::ReuseListFile},
 };
 
 /// A file-based storage backend for elements of type `T`.
@@ -39,10 +35,15 @@ where
     T: FromBytes + IntoBytes + Immutable + 'static,
     F: FileBackend + 'static,
 {
+    checkpoint: AtomicU64,
+    metadata: RwLock<Metadata>,
+    metadata_file: PathBuf,
+
     node_file: F,
-    reuse_list_file: Mutex<ReuseListFile>,
-    metadata_file: MetadataFile,
     next_idx: AtomicU64,
+
+    reuse_list_file: Mutex<ReuseListFile>,
+
     _node_type: PhantomData<T>,
 }
 
@@ -69,7 +70,9 @@ where
     /// If the files do not exist, they will be created.
     /// If the files exist, they will be opened and their data verified.
     fn open(dir: &Path) -> Result<Self, Error> {
-        std::fs::create_dir_all(dir)?;
+        fs::create_dir_all(dir)?;
+
+        let metadata = Metadata::read(dir.join(Self::METADATA_FILE))?;
 
         let mut file_opts = OpenOptions::new();
         file_opts
@@ -78,32 +81,32 @@ where
             .read(true)
             .write(true);
 
-        let metadata_file = MetadataFile::new(file_opts.open(dir.join(Self::METADATA_FILE))?);
-        let metadata = metadata_file.read()?;
-
         let reuse_file = file_opts.open(dir.join(Self::REUSE_LIST_FILE))?;
-        let reuse_list_file = ReuseListFile::new(reuse_file, metadata.reuse_frozen_count)?;
+        let reuse_list_file = ReuseListFile::new(reuse_file, metadata.frozen_reuse_indices)?;
         if reuse_list_file
             .as_slice()
             .iter()
-            .any(|&idx| idx >= metadata.node_count)
+            .any(|&idx| idx >= metadata.frozen_nodes)
         {
             return Err(Error::DatabaseCorruption);
         }
 
         let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts)?;
         let len = node_file.len()?;
-        if len < metadata.node_count * size_of::<T>() as u64 {
+        if len < metadata.frozen_nodes * size_of::<T>() as u64 {
             return Err(Error::DatabaseCorruption);
         }
 
-        let next_idx = AtomicU64::new(metadata.node_count);
-
         Ok(Self {
+            checkpoint: AtomicU64::new(metadata.checkpoint),
+            metadata: RwLock::new(metadata),
+            metadata_file: dir.join(Self::METADATA_FILE),
+
             node_file,
+            next_idx: AtomicU64::new(metadata.frozen_nodes),
+
             reuse_list_file: Mutex::new(reuse_list_file),
-            metadata_file,
-            next_idx,
+
             _node_type: PhantomData,
         })
     }
@@ -149,15 +152,17 @@ where
 
         let mut reuse_file = self.reuse_list_file.lock().unwrap();
         reuse_file.write()?;
-        let reuse_frozen_count = reuse_file.len();
+        let reuse_frozen_count = reuse_file.count();
         reuse_file.set_frozen_count(reuse_frozen_count);
         drop(reuse_file);
 
-        let metadata = Metadata {
-            node_count: self.next_idx.load(Ordering::Relaxed),
-            reuse_frozen_count: reuse_frozen_count as u64,
+        let mut metadata = self.metadata.write().unwrap();
+        *metadata = Metadata {
+            checkpoint: self.checkpoint.load(Ordering::Acquire),
+            frozen_nodes: self.next_idx.load(Ordering::Acquire),
+            frozen_reuse_indices: reuse_frozen_count as u64,
         };
-        self.metadata_file.write(&metadata)?;
+        metadata.write(&self.metadata_file)?;
 
         Ok(())
     }
@@ -219,7 +224,7 @@ mod tests {
         // files have valid sizes
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-            write_metadata(&dir, 1, 1);
+            write_metadata(&dir, 0, 1, 1);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
@@ -228,7 +233,7 @@ mod tests {
         // metadata contains larger node count that node file sizes allows
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-            write_metadata(&dir, 2, 0);
+            write_metadata(&dir, 0, 2, 0);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
@@ -240,7 +245,7 @@ mod tests {
         // metadata contains larger frozen count that reuse list file sizes allows
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-            write_metadata(&dir, 0, 2);
+            write_metadata(&dir, 0, 0, 2);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
@@ -252,7 +257,7 @@ mod tests {
         // reuse list contains indices which are larger than node count in metadata
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-            write_metadata(&dir, 0, 0);
+            write_metadata(&dir, 0, 0, 0);
             write_reuse_list(&dir, &[1]);
             write_nodes(&dir, &[]);
 
@@ -274,7 +279,7 @@ mod tests {
     fn get_reads_data_if_index_in_bounds() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        write_metadata(&dir, 2, 0);
+        write_metadata(&dir, 0, 2, 0);
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
@@ -289,7 +294,7 @@ mod tests {
     fn reserve_returns_last_index_from_reuse_list() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        write_metadata(&dir, 3, 0);
+        write_metadata(&dir, 0, 3, 0);
         write_reuse_list(&dir, &[0, 2]);
         write_nodes(&dir, &[[0; 32], [1; 32], [2; 32]]);
 
@@ -305,7 +310,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         // create a single node -> index 0 is used
-        write_metadata(&dir, 1, 0);
+        write_metadata(&dir, 0, 1, 0);
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32]]);
 
@@ -319,7 +324,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         // prepare file: write some nodes into the file
-        write_metadata(&dir, 2, 0);
+        write_metadata(&dir, 0, 2, 0);
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
@@ -371,7 +376,7 @@ mod tests {
     fn delete_adds_index_to_reuse_list() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        write_metadata(&dir, 2, 0);
+        write_metadata(&dir, 0, 2, 0);
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
@@ -425,39 +430,40 @@ mod tests {
         F: FileBackend + 'static,
     {
         /// Creates all files for a file-based node storage in the specified directory
-        /// and populates them with the provided nodes.
+        /// and populates them with the provided nodes and reusable indices.
+        /// Both the nodes and the reusable indices are frozen, as [`NodeFileStorage::open`] only
+        /// considers frozen data to exist.
         pub fn create_files_for_nodes(path: impl AsRef<Path>, nodes: &[T]) -> Result<(), Error> {
-            use std::{fs::File, io::Write};
-
             let path = path.as_ref();
 
-            std::fs::create_dir_all(path)?;
+            fs::create_dir_all(path)?;
 
-            let metadata_file = MetadataFile::new(File::create(path.join(Self::METADATA_FILE))?);
-            metadata_file
-                .write(&Metadata {
-                    node_count: nodes.len() as u64,
-                    reuse_frozen_count: 0,
-                })
-                .unwrap();
-
-            let mut node_file = File::create(path.join(Self::NODE_STORE_FILE))?;
-            for node in nodes {
-                node_file.write_all(node.as_bytes())?;
+            Metadata {
+                checkpoint: 0,
+                frozen_nodes: nodes.len() as u64,
+                frozen_reuse_indices: 0,
             }
-            node_file.flush()?;
+            .write(path.join(Self::METADATA_FILE))?;
+            fs::write(path.join(Self::REUSE_LIST_FILE), [])?;
+            fs::write(path.join(Self::NODE_STORE_FILE), nodes.as_bytes())?;
 
             Ok(())
         }
     }
 
-    fn write_metadata(dir: impl AsRef<Path>, node_count: u64, reuse_frozen_count: u64) {
-        MetadataFile::new(File::create(dir.as_ref().join(NodeFileStorage::METADATA_FILE)).unwrap())
-            .write(&Metadata {
-                node_count,
-                reuse_frozen_count,
-            })
-            .unwrap();
+    fn write_metadata(
+        dir: impl AsRef<Path>,
+        checkpoint: u64,
+        frozen_nodes: u64,
+        frozen_reuse_indices: u64,
+    ) {
+        Metadata {
+            checkpoint,
+            frozen_nodes,
+            frozen_reuse_indices,
+        }
+        .write(dir.as_ref().join(NodeFileStorage::METADATA_FILE))
+        .unwrap();
     }
 
     fn write_reuse_list(dir: impl AsRef<Path>, indices: &[u64]) {
