@@ -10,7 +10,7 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::types::NodeType;
+use crate::types::{NodeSize, NodeType};
 
 /// An identifier for a node in a (file-based) Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -92,6 +92,18 @@ impl NodeId {
     }
 }
 
+impl NodeSize for NodeId {
+    /// Returns the byte size of the [`NodeType`] it refers to.
+    fn byte_size(&self) -> usize {
+        self.to_node_type().unwrap().byte_size()
+    }
+
+    /// Returns the minimum byte size of [`NodeType`].
+    fn min_size() -> usize {
+        NodeType::min_size()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +178,35 @@ mod tests {
     fn to_u64_converts_node_id_to_integer_with_lower_6_bytes() {
         let id = NodeId([0x12, 0x34, 0x56, 0x78, 0x90, 0xab]);
         assert_eq!(id.to_u64(), 0x1234_5678_90ab);
+    }
+
+    #[test]
+    fn node_id_byte_size_returns_byte_size_of_encoded_node_type() {
+        let cases = [
+            (
+                NodeId::from_idx_and_node_type(0, NodeType::Empty),
+                NodeType::Empty,
+            ),
+            (
+                NodeId::from_idx_and_node_type(0, NodeType::Inner),
+                NodeType::Inner,
+            ),
+            (
+                NodeId::from_idx_and_node_type(0, NodeType::Leaf2),
+                NodeType::Leaf2,
+            ),
+            (
+                NodeId::from_idx_and_node_type(0, NodeType::Leaf256),
+                NodeType::Leaf256,
+            ),
+        ];
+        for (node_id, node_type) in cases {
+            assert_eq!(node_id.byte_size(), node_type.byte_size());
+        }
+    }
+
+    #[test]
+    fn node_id_min_size_returns_min_byte_size_of_node_type() {
+        assert_eq!(NodeId::min_size(), NodeType::min_size());
     }
 }
