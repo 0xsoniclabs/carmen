@@ -95,13 +95,13 @@ impl NodeId {
 impl NodeSize for NodeId {
     /// Returns the byte size of the [`NodeType`] it refers to.
     /// Panics if the ID does not refer to a valid node type.
-    fn byte_size(&self) -> usize {
-        self.to_node_type().unwrap().byte_size()
+    fn node_byte_size(&self) -> usize {
+        self.to_node_type().unwrap().node_byte_size()
     }
 
     /// Returns the minimum byte size of [`NodeType`].
-    fn min_size() -> usize {
-        NodeType::min_size()
+    fn min_non_empty_node_size() -> usize {
+        NodeType::min_non_empty_node_size()
     }
 }
 
@@ -202,12 +202,15 @@ mod tests {
             ),
         ];
         for (node_id, node_type) in cases {
-            assert_eq!(node_id.byte_size(), node_type.byte_size());
+            assert_eq!(node_id.node_byte_size(), node_type.node_byte_size());
         }
     }
 
     #[test]
-    fn node_id_min_size_returns_min_byte_size_of_node_type() {
-        assert_eq!(NodeId::min_size(), NodeType::min_size());
+    fn node_id_min_non_empty_node_size_returns_min_byte_size_of_node_type() {
+        assert_eq!(
+            NodeId::min_non_empty_node_size(),
+            NodeType::min_non_empty_node_size()
+        );
     }
 }

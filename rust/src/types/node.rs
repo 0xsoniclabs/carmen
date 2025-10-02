@@ -119,12 +119,12 @@ impl Node {
 }
 
 impl NodeSize for Node {
-    fn byte_size(&self) -> usize {
-        self.to_node_type().byte_size()
+    fn node_byte_size(&self) -> usize {
+        self.to_node_type().node_byte_size()
     }
 
-    fn min_size() -> usize {
-        NodeType::min_size()
+    fn min_non_empty_node_size() -> usize {
+        NodeType::min_non_empty_node_size()
     }
 }
 
@@ -139,7 +139,7 @@ pub enum NodeType {
 }
 
 impl NodeSize for NodeType {
-    fn byte_size(&self) -> usize {
+    fn node_byte_size(&self) -> usize {
         let inner_size = match self {
             NodeType::Empty => 0,
             NodeType::Inner => {
@@ -156,19 +156,19 @@ impl NodeSize for NodeType {
         std::mem::size_of::<Node>() + inner_size
     }
 
-    fn min_size() -> usize {
+    fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        NodeType::Leaf2.byte_size()
+        NodeType::Leaf2.node_byte_size()
     }
 }
 
 /// A trait to determine the size of a node.
 pub trait NodeSize {
     /// Returns the size of the node in bytes.
-    fn byte_size(&self) -> usize;
+    fn node_byte_size(&self) -> usize;
 
-    /// Returns the minimum size of a node in bytes.
-    fn min_size() -> usize;
+    /// Returns the minimum size of a non-empty node in bytes.
+    fn min_non_empty_node_size() -> usize;
 }
 
 #[cfg(test)]
@@ -214,21 +214,21 @@ mod tests {
         let leaf2_node = NodeType::Leaf2;
         let leaf256_node = NodeType::Leaf256;
 
-        assert_eq!(empty_node.byte_size(), std::mem::size_of::<Node>());
+        assert_eq!(empty_node.node_byte_size(), std::mem::size_of::<Node>());
         assert_eq!(
-            inner_node.byte_size(),
+            inner_node.node_byte_size(),
             std::mem::size_of::<Node>()
                 + std::mem::size_of::<Box<InnerNode>>()
                 + std::mem::size_of::<InnerNode>()
         );
         assert_eq!(
-            leaf2_node.byte_size(),
+            leaf2_node.node_byte_size(),
             std::mem::size_of::<Node>()
                 + std::mem::size_of::<Box<SparseLeafNode<2>>>()
                 + std::mem::size_of::<SparseLeafNode<2>>()
         );
         assert_eq!(
-            leaf256_node.byte_size(),
+            leaf256_node.node_byte_size(),
             std::mem::size_of::<Node>()
                 + std::mem::size_of::<Box<FullLeafNode>>()
                 + std::mem::size_of::<FullLeafNode>()
@@ -236,10 +236,10 @@ mod tests {
     }
 
     #[test]
-    fn node_type_min_size_returns_size_of_smallest_non_empty_node() {
+    fn node_type_min_non_empty_node_size_returns_size_of_smallest_non_empty_node() {
         assert_eq!(
-            NodeType::min_size(),
-            Node::Leaf2(Box::default()).byte_size()
+            NodeType::min_non_empty_node_size(),
+            Node::Leaf2(Box::default()).node_byte_size()
         );
     }
 
@@ -250,14 +250,29 @@ mod tests {
         let leaf2_node = Node::Leaf2(Box::default());
         let leaf256_node = Node::Leaf256(Box::default());
 
-        assert_eq!(NodeType::Empty.byte_size(), empty_node.byte_size());
-        assert_eq!(NodeType::Inner.byte_size(), inner_node.byte_size());
-        assert_eq!(NodeType::Leaf2.byte_size(), leaf2_node.byte_size());
-        assert_eq!(NodeType::Leaf256.byte_size(), leaf256_node.byte_size());
+        assert_eq!(
+            NodeType::Empty.node_byte_size(),
+            empty_node.node_byte_size()
+        );
+        assert_eq!(
+            NodeType::Inner.node_byte_size(),
+            inner_node.node_byte_size()
+        );
+        assert_eq!(
+            NodeType::Leaf2.node_byte_size(),
+            leaf2_node.node_byte_size()
+        );
+        assert_eq!(
+            NodeType::Leaf256.node_byte_size(),
+            leaf256_node.node_byte_size()
+        );
     }
 
     #[test]
-    fn node_min_size_returns_node_type_min_size() {
-        assert_eq!(NodeType::min_size(), Node::min_size());
+    fn node_min_non_empty_node_size_returns_node_type_min_size() {
+        assert_eq!(
+            NodeType::min_non_empty_node_size(),
+            Node::min_non_empty_node_size()
+        );
     }
 }
