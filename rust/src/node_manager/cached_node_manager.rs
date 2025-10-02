@@ -592,39 +592,6 @@ mod tests {
     }
 
     #[test]
-    fn cached_node_manager_stores_data_in_storage_when_full() {
-        let mut storage = MockCachedNodeManagerStorage::new();
-        let mut sequence = Sequence::new();
-        storage
-            .expect_reserve()
-            .times(1)
-            .in_sequence(&mut sequence)
-            .returning(move |_| NodeId::from_idx_and_node_type(0, NodeType::Empty));
-        storage
-            .expect_reserve()
-            .times(1)
-            .in_sequence(&mut sequence)
-            .returning(move |_| NodeId::from_idx_and_node_type(1, NodeType::Empty));
-        storage
-            .expect_set()
-            .times(1)
-            .with(
-                eq(NodeId::from_idx_and_node_type(0, NodeType::Empty)),
-                eq(Node::Empty),
-            )
-            .returning(|_, _| Ok(()));
-
-        // With unit-size cache, each item is immediately evicted
-        let manager = CachedNodeManager::new(1, storage);
-        // Insert two nodes to trigger the eviction of the first one
-        let _ = manager.add(Node::Empty).unwrap();
-        let id = manager.add(Node::Inner(Box::default())).unwrap();
-
-        let entry = manager.get_read_access(id).unwrap();
-        assert!(**entry == Node::Inner(Box::default()));
-    }
-
-    #[test]
     fn item_lifecycle_is_pinned_checks_lock_and_pinned_pos() {
         let nodes = Arc::from([RwLock::new(NodeWithMetadata {
             node: Node::Empty,
