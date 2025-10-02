@@ -94,7 +94,7 @@ impl NodeId {
 
 impl NodeSize for NodeId {
     /// Returns the byte size of the [`NodeType`] it refers to.
-    /// This may panic if the [`NodeId`] is invalid
+    /// Panics if the ID does not refer to a valid node type.
     fn byte_size(&self) -> usize {
         self.to_node_type().unwrap().byte_size()
     }

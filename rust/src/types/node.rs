@@ -158,7 +158,7 @@ impl NodeSize for NodeType {
 
     fn min_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        size_of::<Node>() + size_of::<Box<SparseLeafNode<2>>>() + size_of::<SparseLeafNode<2>>()
+        NodeType::Leaf2.byte_size()
     }
 }
 
