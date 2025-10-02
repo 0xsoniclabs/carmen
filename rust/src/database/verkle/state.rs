@@ -25,6 +25,11 @@ use crate::{
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
+const EMPTY_CODE_HASH: Hash = [
+    197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202,
+    130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
+];
+
 /// An implementation of [`CarmenState`] that uses a Verkle trie as the underlying data structure.
 pub struct VerkleTrieState<T: VerkleTrie> {
     trie: T,
@@ -38,10 +43,8 @@ impl VerkleTrieState<SimpleInMemoryVerkleTrie> {
 }
 
 impl<T: VerkleTrie> CarmenState for VerkleTrieState<T> {
-    fn account_exists(&self, _addr: &Address) -> Result<bool, Error> {
-        Err(Error::UnsupportedOperation(
-            "account_exists is not supported by Verkle tries".to_owned(),
-        ))
+    fn account_exists(&self, addr: &Address) -> Result<bool, Error> {
+        Ok(self.get_code_hash(addr)? != Hash::default())
     }
 
     fn get_balance(&self, addr: &Address) -> Result<U256, Error> {
@@ -104,6 +107,20 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieState<T> {
     // TODO: Batch updates for the same account (https://github.com/0xsoniclabs/sonic-admin/issues/374)
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> Result<(), Error> {
+        for addr in update.created_accounts {
+            if !self.account_exists(addr)? {
+                // Set basic account data once to set used bit in Verkle leaf.
+                // Even though the data should be zero (since the code hash is), we nevertheless
+                // first fetch it in case the account was not explicitly created first for some
+                // reason.
+                let key = get_basic_data_key(addr);
+                let basic_data = self.trie.get(&key)?;
+                self.trie.set(&key, &basic_data)?;
+                let code_hash_key = get_code_hash_key(addr);
+                self.trie.set(&code_hash_key, &EMPTY_CODE_HASH)?;
+            }
+        }
+
         for u in update.nonces {
             let key = get_basic_data_key(&u.addr);
             let mut value = self.trie.get(&key)?;
@@ -162,33 +179,53 @@ mod tests {
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]
+    fn empty_code_hash_is_keccak256_of_empty_code() {
+        let hasher = Keccak256::new();
+        let expected = hasher.finalize();
+        assert_eq!(EMPTY_CODE_HASH, expected.as_slice());
+    }
+
+    #[test]
     fn new_creates_empty_state() {
         let state = VerkleTrieState::<SimpleInMemoryVerkleTrie>::new();
         assert_eq!(state.get_hash().unwrap(), Hash::default());
     }
 
     #[rstest_reuse::apply(all_state_impls)]
-    fn account_exists_returns_error(#[case] state: Box<dyn CarmenState>) {
+    fn account_exists_checks_whether_account_has_non_zero_code_hash(
+        #[case] state: Box<dyn CarmenState>,
+    ) {
         let addr = Address::default();
-        let result = state.account_exists(&addr);
-        assert_eq!(
-            result.unwrap_err(),
-            Error::UnsupportedOperation(
-                "account_exists is not supported by Verkle tries".to_owned()
-            )
-        );
+        assert!(!state.account_exists(&addr).unwrap());
+        assert_eq!(state.get_code_hash(&addr).unwrap(), Hash::default());
+
+        set_code(&*state, addr, &[0x01, 0x02, 0x03]);
+        assert!(state.account_exists(&addr).unwrap());
     }
 
-    fn set_nonce(state: &dyn CarmenState, addr: Address, nonce: Nonce) {
-        state
-            .apply_block_update(
-                0,
-                Update {
-                    nonces: &[NonceUpdate { addr, nonce }],
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+    #[rstest_reuse::apply(all_state_impls)]
+    fn creating_account_sets_empty_code_hash(#[case] state: Box<dyn CarmenState>) {
+        let addr = Address::from_index_values(0, &[(0, 1)]);
+        create_account(&*state, addr);
+        let code_hash = state.get_code_hash(&addr).unwrap();
+        assert_eq!(code_hash, EMPTY_CODE_HASH);
+    }
+
+    #[rstest_reuse::apply(all_state_impls)]
+    fn creating_account_does_not_overwrite_basic_account_data(#[case] state: Box<dyn CarmenState>) {
+        let addr = Address::from_index_values(0, &[(0, 1)]);
+        let initial_balance = crypto_bigint::U256::from_u32(42).to_be_bytes();
+        let initial_nonce = 7u64.to_be_bytes();
+
+        set_balance(&*state, addr, initial_balance);
+        set_nonce(&*state, addr, initial_nonce);
+
+        create_account(&*state, addr);
+
+        let balance = state.get_balance(&addr).unwrap();
+        assert_eq!(balance, initial_balance);
+        let nonce = state.get_nonce(&addr).unwrap();
+        assert_eq!(nonce, initial_nonce);
     }
 
     #[rstest_reuse::apply(all_state_impls)]
@@ -220,18 +257,6 @@ mod tests {
         // Nonce for addr2 should remain unchanged
         let nonce = state.get_nonce(&addr2).unwrap();
         assert_eq!(nonce, 33u64.to_be_bytes());
-    }
-
-    fn set_balance(state: &dyn CarmenState, addr: Address, balance: U256) {
-        state
-            .apply_block_update(
-                0,
-                Update {
-                    balances: &[BalanceUpdate { addr, balance }],
-                    ..Default::default()
-                },
-            )
-            .unwrap();
     }
 
     #[rstest_reuse::apply(all_state_impls)]
@@ -288,18 +313,6 @@ mod tests {
 
         let stored = state.get_balance(&addr).unwrap();
         assert_eq!(stored, truncated128);
-    }
-
-    fn set_code(state: &dyn CarmenState, addr: Address, code: &[u8]) {
-        state
-            .apply_block_update(
-                0,
-                Update {
-                    codes: vec![CodeUpdate { addr, code }],
-                    ..Default::default()
-                },
-            )
-            .unwrap();
     }
 
     #[rstest_reuse::apply(all_state_impls)]
@@ -393,18 +406,6 @@ mod tests {
 
     #[rstest_reuse::apply(all_state_impls)]
     fn can_store_and_retrieve_storage_values(#[case] state: Box<dyn CarmenState>) {
-        let set_storage = |state: &dyn CarmenState, addr: Address, key: Key, value: Value| {
-            state
-                .apply_block_update(
-                    0,
-                    Update {
-                        slots: &[SlotUpdate { addr, key, value }],
-                        ..Default::default()
-                    },
-                )
-                .unwrap();
-        };
-
         let addr = Address::from_index_values(0, &[(0, 1)]);
         let key = Key::from_index_values(0, &[(0, 42)]);
         let value = Value::from_index_values(0, &[(0, 1), (0, 2), (0, 3)]);
@@ -524,5 +525,65 @@ mod tests {
         let expected = "0x6b188de48e78866c34d38382b1965ec4908a0525d41cd66d18385390010b707d";
 
         assert_eq!(const_hex::encode_prefixed(hash), expected);
+    }
+
+    fn create_account(state: &dyn CarmenState, addr: Address) {
+        state
+            .apply_block_update(
+                0,
+                Update {
+                    created_accounts: &[addr],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    fn set_nonce(state: &dyn CarmenState, addr: Address, nonce: Nonce) {
+        state
+            .apply_block_update(
+                0,
+                Update {
+                    nonces: &[NonceUpdate { addr, nonce }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    fn set_balance(state: &dyn CarmenState, addr: Address, balance: U256) {
+        state
+            .apply_block_update(
+                0,
+                Update {
+                    balances: &[BalanceUpdate { addr, balance }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    fn set_code(state: &dyn CarmenState, addr: Address, code: &[u8]) {
+        state
+            .apply_block_update(
+                0,
+                Update {
+                    codes: vec![CodeUpdate { addr, code }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    fn set_storage(state: &dyn CarmenState, addr: Address, key: Key, value: Value) {
+        state
+            .apply_block_update(
+                0,
+                Update {
+                    slots: &[SlotUpdate { addr, key, value }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
     }
 }
