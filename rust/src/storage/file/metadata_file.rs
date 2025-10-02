@@ -24,9 +24,10 @@ use crate::storage::Error;
 pub struct Metadata {
     /// The checkpoint number.
     pub checkpoint: u64,
-    /// The number of frozen nodes that can not be modified.
+    /// The number of frozen nodes that can not be modified because they are part of a checkpoint.
     pub frozen_nodes: u64,
-    /// The number of frozen reuse indices that can not be reused.
+    /// The number of frozen reuse indices that can not be reused because they are part of a
+    /// checkpoint.
     pub frozen_reuse_indices: u64,
 }
 
