@@ -203,11 +203,11 @@ where
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
             let guard = self.nodes[pos].read().unwrap();
+            // The node may have been deleted from the cache in the meantime, check again.
             if self.cache.get(&id).is_some() {
                 return Ok(guard);
             }
         }
-        // We didn't return, so we need to reload the node from storage.
         let node = self.storage.get(id)?;
         let pos = self.insert(
             id,
@@ -225,11 +225,11 @@ where
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
             let guard = self.nodes[pos].write().unwrap();
+            // The node may have been deleted from the cache in the meantime, check again.
             if self.cache.get(&id).is_some() {
                 return Ok(guard);
             }
         }
-        // We didn't return, so we need to reload the node from storage.
         let node = self.storage.get(id)?;
         let pos = self.insert(
             id,
