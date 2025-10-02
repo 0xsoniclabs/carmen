@@ -298,8 +298,14 @@ func TestCanComputeNonEmptyMemoryFootprint(t *testing.T) {
 		if fp == nil {
 			t.Fatalf("state produces invalid footprint: %v", fp)
 		}
-		if fp.Total() <= 0 {
-			t.Errorf("memory footprint should not be empty")
+		if strings.HasPrefix(string(config.config.Variant), "rust-") {
+			if fp.Total() != 0 {
+				t.Errorf("expected rust memory footprint to be zero (not yet implemented)")
+			}
+		} else {
+			if fp.Total() <= 0 {
+				t.Errorf("memory footprint should not be empty")
+			}
 		}
 		if len(fp.ToString("top")) == 0 {
 			t.Errorf("footprint text empty: %v", fp.ToString("top"))

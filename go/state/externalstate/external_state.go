@@ -463,16 +463,16 @@ func (s *ExternalState) Close() error {
 	if s.state != nil {
 		result := s.bindings.ReleaseState(s.state)
 		if result != C.kResult_Success {
-			return fmt.Errorf("failed to release C++ state (error code %v)", result)
+			return fmt.Errorf("failed to release external state (error code %v)", result)
 		}
 		s.state = nil
 		result = s.bindings.Close(s.database)
 		if result != C.kResult_Success {
-			return fmt.Errorf("failed to close C++ database (error code %v)", result)
+			return fmt.Errorf("failed to close external database (error code %v)", result)
 		}
 		result = s.bindings.ReleaseDatabase(s.database)
 		if result != C.kResult_Success {
-			return fmt.Errorf("failed to release C++ database (error code %v)", result)
+			return fmt.Errorf("failed to release external database (error code %v)", result)
 		}
 		s.database = nil
 	}
@@ -506,8 +506,8 @@ func (s *ExternalState) GetMemoryFootprint() *common.MemoryFootprint {
 	result := s.bindings.GetMemoryFootprint(s.database, &buffer, &size)
 	if result != C.kResult_Success {
 		res := common.NewMemoryFootprint(0)
-		res.SetNote(fmt.Sprintf("failed to get C++ memory footprint (error code %v)", result))
-		log.Printf("failed to get C++ memory footprint (error code %v)", result)
+		res.SetNote(fmt.Sprintf("failed to get external memory footprint (error code %v)", result))
+		log.Printf("failed to get external memory footprint (error code %v)", result)
 		return res
 	}
 	defer func() {

@@ -45,4 +45,10 @@ func init() {
 			}, newCppLevelDbBasedState)
 		}
 	}
+
+	state.RegisterStateFactory(state.Configuration{
+		Variant: "rust-memory",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}, newRustInMemoryState)
 }

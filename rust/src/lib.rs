@@ -191,6 +191,8 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
     }
 
     fn get_memory_footprint(&self) -> Result<Box<str>, Error> {
-        unimplemented!()
+        Err(Error::UnsupportedOperation(
+            "get_memory_footprint is not yet implemented".to_string(),
+        ))
     }
 }
