@@ -242,10 +242,10 @@ where
         if let Some(pos) = self.cache.get(&id) {
             // Get exclusive write access before dropping the node
             // to ensure that no other thread is holding a reference to it.
-            let mut _guard = self.nodes[pos].write().unwrap();
+            let mut guard = self.nodes[pos].write().unwrap();
             self.cache.remove(&id);
             let mut free_list = self.free_list.lock().unwrap();
-            **_guard = N::default(); // reset node to default value to release storage
+            **guard = N::default(); // reset node to default value to release storage
             free_list.push(pos);
         }
         self.storage.delete(id)?;
