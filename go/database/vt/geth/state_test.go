@@ -12,12 +12,14 @@ package geth
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
@@ -428,4 +430,74 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 	nonce, err = state.GetNonce(addr1)
 	require.NoError(err)
 	require.Equal(common.ToNonce(1), nonce)
+}
+
+func TestState_Error_from_Apply(t *testing.T) {
+	injectedErr := fmt.Errorf("injected error")
+	source := &errorInjectingNodeSource{parentSource: newMemorySource(), injectError: injectedErr, threshold: 1000}
+	st, err := NewStateWithSource(state.Parameters{}, source)
+	require.NoError(t, err, "failed to create state")
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{{1}},
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{1}, Nonce: common.ToNonce(1)},
+		},
+	}
+
+	err = st.Apply(0, update)
+	require.NoError(t, err, "failed to apply update")
+
+	for i := 0; i < source.count; i++ {
+		source := &errorInjectingNodeSource{parentSource: newMemorySource(), injectError: injectedErr, threshold: i}
+		st, err := NewStateWithSource(state.Parameters{}, source)
+		require.NoError(t, err, "failed to create state")
+
+		err = st.Apply(0, update)
+		require.ErrorIs(t, err, injectedErr, "expected injected error at count %d", i)
+	}
+}
+
+// errorInjectingNodeSource is a NodeSource that injects an error after a certain number of calls.
+// It is used to test error handling in the state.
+// It wraps another NodeSource and delegates calls to it until the threshold is reached.
+// After the threshold is reached, it returns the injected error for all subsequent calls.
+type errorInjectingNodeSource struct {
+	parentSource NodeSource
+	injectError  error
+	threshold    int
+	count        int
+}
+
+func (s *errorInjectingNodeSource) Node(owner ethcommon.Hash, path []byte, hash ethcommon.Hash) ([]byte, error) {
+	if s.count >= s.threshold {
+		return nil, s.injectError
+	}
+
+	s.count++
+	return s.parentSource.Node(owner, path, hash)
+}
+
+func (s *errorInjectingNodeSource) set(path []byte, value []byte) error {
+	if s.count >= s.threshold {
+		return s.injectError
+	}
+	s.count++
+	return s.parentSource.set(path, value)
+}
+
+func (s *errorInjectingNodeSource) Flush() error {
+	if s.count >= s.threshold {
+		return s.injectError
+	}
+	s.count++
+	return s.parentSource.Flush()
+}
+
+func (s *errorInjectingNodeSource) Close() error {
+	if s.count >= s.threshold {
+		return s.injectError
+	}
+	s.count++
+	return s.parentSource.Close()
 }
