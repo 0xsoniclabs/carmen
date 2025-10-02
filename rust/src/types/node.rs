@@ -153,12 +153,12 @@ impl NodeSize for NodeType {
                 std::mem::size_of::<Box<FullLeafNode>>() + std::mem::size_of::<FullLeafNode>()
             }
         };
-        std::mem::size_of::<Self>() + inner_size
+        std::mem::size_of::<Node>() + inner_size
     }
 
     fn min_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        size_of::<Self>() + size_of::<Box<SparseLeafNode<2>>>() + size_of::<SparseLeafNode<2>>()
+        size_of::<Node>() + size_of::<Box<SparseLeafNode<2>>>() + size_of::<SparseLeafNode<2>>()
     }
 }
 
