@@ -17,5 +17,5 @@ mod test_utils;
 mod variants;
 mod verkle_trie;
 
-pub use state::VerkleTrieState;
+pub use state::VerkleTrieCarmenState;
 pub use variants::SimpleInMemoryVerkleTrie;

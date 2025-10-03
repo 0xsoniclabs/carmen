@@ -11,7 +11,7 @@
 
 use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
 
-use crate::{database::VerkleTrieState, error::Error, types::*};
+use crate::{database::VerkleTrieCarmenState, error::Error, types::*};
 
 mod database;
 mod error;
@@ -44,7 +44,7 @@ pub fn open_carmen_db(
     }
 
     match live_impl {
-        LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieState::<
+        LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
         >::new()))),
         LiveImpl::File => Err(Error::UnsupportedImplementation(

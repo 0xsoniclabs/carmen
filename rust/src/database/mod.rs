@@ -10,4 +10,4 @@
 
 mod verkle;
 
-pub use verkle::{SimpleInMemoryVerkleTrie, VerkleTrieState};
+pub use verkle::{SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};

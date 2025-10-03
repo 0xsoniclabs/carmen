@@ -31,18 +31,18 @@ const EMPTY_CODE_HASH: Hash = [
 ];
 
 /// An implementation of [`CarmenState`] that uses a Verkle trie as the underlying data structure.
-pub struct VerkleTrieState<T: VerkleTrie> {
+pub struct VerkleTrieCarmenState<T: VerkleTrie> {
     trie: T,
 }
 
-impl VerkleTrieState<SimpleInMemoryVerkleTrie> {
+impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     pub fn new() -> Self {
         let trie = SimpleInMemoryVerkleTrie::new();
         Self { trie }
     }
 }
 
-impl<T: VerkleTrie> CarmenState for VerkleTrieState<T> {
+impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     fn account_exists(&self, addr: &Address) -> Result<bool, Error> {
         Ok(self.get_code_hash(addr)? != Hash::default())
     }
@@ -175,7 +175,7 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::simple_in_memory(Box::new(VerkleTrieState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
+    #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn new_creates_empty_state() {
-        let state = VerkleTrieState::<SimpleInMemoryVerkleTrie>::new();
+        let state = VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new();
         assert_eq!(state.get_hash().unwrap(), Hash::default());
     }
 
