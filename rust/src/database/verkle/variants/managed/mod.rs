@@ -24,10 +24,10 @@ use crate::{
 impl UnionIdTrieNode for Node {}
 
 impl IdTrieNode for Node {
-    type UnionType = Node;
-    type IdType = NodeId;
+    type Union = Node;
+    type Id = NodeId;
 
-    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::IdType>, Error> {
+    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         match self {
             Node::Empty(n) => n.lookup(key, depth),
             Node::Inner(n) => n.lookup(key, depth),
@@ -36,7 +36,7 @@ impl IdTrieNode for Node {
         }
     }
 
-    fn can_store(&self, key: &Key, depth: u8) -> Result<CanStoreResult<Self::IdType>, Error> {
+    fn can_store(&self, key: &Key, depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
         match self {
             Node::Empty(n) => n.can_store(key, depth),
             Node::Inner(n) => n.can_store(key, depth),
@@ -45,7 +45,7 @@ impl IdTrieNode for Node {
         }
     }
 
-    fn transform(&self, key: &Key, depth: u8) -> Result<Self::UnionType, Error> {
+    fn transform(&self, key: &Key, depth: u8) -> Result<Self::Union, Error> {
         match self {
             Node::Empty(n) => n.transform(key, depth),
             Node::Inner(n) => n.transform(key, depth),
@@ -54,12 +54,7 @@ impl IdTrieNode for Node {
         }
     }
 
-    fn reparent(
-        &self,
-        key: &Key,
-        depth: u8,
-        self_id: Self::IdType,
-    ) -> Result<Self::UnionType, Error> {
+    fn reparent(&self, key: &Key, depth: u8, self_id: Self::Id) -> Result<Self::Union, Error> {
         match self {
             Node::Empty(n) => n.reparent(key, depth, self_id),
             Node::Inner(n) => n.reparent(key, depth, self_id),
@@ -104,7 +99,7 @@ impl IdTrieNode for Node {
         }
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::IdType> {
+    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
         match self {
             Node::Empty(n) => n.get_commitment_input(),
             Node::Inner(n) => n.get_commitment_input(),
@@ -116,19 +111,19 @@ impl IdTrieNode for Node {
 
 // TODO PROBLEM: There will be a lot of contention around the lock for empty nodes!!
 impl IdTrieNode for EmptyNode {
-    type UnionType = Node;
+    type Union = Node;
 
-    type IdType = NodeId;
+    type Id = NodeId;
 
-    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::IdType>, Error> {
+    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         Ok(LookupResult::Value(Value::default()))
     }
 
-    fn can_store(&self, _key: &Key, _depth: u8) -> Result<CanStoreResult<Self::IdType>, Error> {
+    fn can_store(&self, _key: &Key, _depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
         Ok(CanStoreResult::Transform)
     }
 
-    fn transform(&self, key: &Key, depth: u8) -> Result<Self::UnionType, Error> {
+    fn transform(&self, key: &Key, depth: u8) -> Result<Self::Union, Error> {
         if depth == 0 {
             // While conceptually it would suffice to create a leaf node here,
             // Geth always creates an inner node (and we want to stay compatible).
@@ -148,22 +143,22 @@ impl IdTrieNode for EmptyNode {
         CachedCommitment::default()
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::IdType> {
+    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
         CommitmentInput::Empty
     }
 }
 
 impl IdTrieNode for InnerNode {
-    type UnionType = Node;
-    type IdType = NodeId;
+    type Union = Node;
+    type Id = NodeId;
 
-    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::IdType>, Error> {
+    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         Ok(LookupResult::Node(
             self.children[key[depth as usize] as usize],
         ))
     }
 
-    fn can_store(&self, key: &Key, depth: u8) -> Result<CanStoreResult<Self::IdType>, Error> {
+    fn can_store(&self, key: &Key, depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
         let pos = key[depth as usize];
         Ok(CanStoreResult::Descend(self.children[pos as usize]))
     }
@@ -182,16 +177,16 @@ impl IdTrieNode for InnerNode {
         Ok(())
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::IdType> {
+    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
         CommitmentInput::Inner(self.children)
     }
 }
 
 impl IdTrieNode for FullLeafNode {
-    type UnionType = Node;
-    type IdType = NodeId;
+    type Union = Node;
+    type Id = NodeId;
 
-    fn lookup(&self, key: &Key, _depth: u8) -> Result<LookupResult<Self::IdType>, Error> {
+    fn lookup(&self, key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         if key[..31] != self.stem[..] {
             Ok(LookupResult::Value(Value::default()))
         } else {
@@ -199,7 +194,7 @@ impl IdTrieNode for FullLeafNode {
         }
     }
 
-    fn can_store(&self, key: &Key, _depth: u8) -> Result<CanStoreResult<Self::IdType>, Error> {
+    fn can_store(&self, key: &Key, _depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
         if key[..31] == self.stem[..] {
             Ok(CanStoreResult::Yes)
         } else {
@@ -207,7 +202,7 @@ impl IdTrieNode for FullLeafNode {
         }
     }
 
-    fn reparent(&self, key: &Key, depth: u8, self_id: NodeId) -> Result<Self::UnionType, Error> {
+    fn reparent(&self, key: &Key, depth: u8, self_id: NodeId) -> Result<Self::Union, Error> {
         assert!(matches!(
             self.can_store(key, depth)?,
             CanStoreResult::Reparent
@@ -240,7 +235,7 @@ impl IdTrieNode for FullLeafNode {
         Ok(())
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::IdType> {
+    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
         CommitmentInput::Leaf(self.values, self.used_bits, self.stem)
     }
 }
@@ -248,10 +243,10 @@ impl IdTrieNode for FullLeafNode {
 // TODO: Implement for generic N?
 // => Ensuring that entries are sorted could make things a lot easier
 impl IdTrieNode for SparseLeafNode<2> {
-    type UnionType = Node;
-    type IdType = NodeId;
+    type Union = Node;
+    type Id = NodeId;
 
-    fn lookup(&self, key: &Key, _depth: u8) -> Result<LookupResult<Self::IdType>, Error> {
+    fn lookup(&self, key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         if key[..31] != self.stem[..] {
             return Ok(LookupResult::Value(Value::default()));
         }
@@ -264,7 +259,7 @@ impl IdTrieNode for SparseLeafNode<2> {
         Ok(LookupResult::Value(Value::default()))
     }
 
-    fn can_store(&self, key: &Key, _depth: u8) -> Result<CanStoreResult<Self::IdType>, Error> {
+    fn can_store(&self, key: &Key, _depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
         if key[..31] != self.stem[..] {
             return Ok(CanStoreResult::Reparent);
         }
@@ -278,7 +273,7 @@ impl IdTrieNode for SparseLeafNode<2> {
         Ok(CanStoreResult::Transform)
     }
 
-    fn transform(&self, key: &Key, depth: u8) -> Result<Self::UnionType, Error> {
+    fn transform(&self, key: &Key, depth: u8) -> Result<Self::Union, Error> {
         assert!(matches!(
             self.can_store(key, depth)?,
             CanStoreResult::Transform
@@ -301,7 +296,7 @@ impl IdTrieNode for SparseLeafNode<2> {
         Ok(Node::Leaf256(Box::new(new_leaf)))
     }
 
-    fn reparent(&self, key: &Key, depth: u8, self_id: NodeId) -> Result<Self::UnionType, Error> {
+    fn reparent(&self, key: &Key, depth: u8, self_id: NodeId) -> Result<Self::Union, Error> {
         assert!(matches!(
             self.can_store(key, depth)?,
             CanStoreResult::Reparent
@@ -348,7 +343,7 @@ impl IdTrieNode for SparseLeafNode<2> {
     }
 
     // FIXME: This should not have to pass 256 values!
-    fn get_commitment_input(&self) -> CommitmentInput<Self::IdType> {
+    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
         let mut values = [Value::default(); 256];
         for ValueWithIndex { index, value } in &self.values {
             values[*index as usize] = *value;

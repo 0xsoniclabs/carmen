@@ -51,7 +51,7 @@ pub enum CommitmentInput<IdType> {
 }
 
 /// A helper trait to constrain an [`IdTrieNode`] to be its own union type.
-pub trait UnionIdTrieNode: IdTrieNode<UnionType = Self> {}
+pub trait UnionIdTrieNode: IdTrieNode<Union = Self> {}
 
 /// A generic interface for working with nodes in an ID-based (as opposed to pointer-based) trie
 /// (Verkle, Binary, Merkle-Patricia, ...).
@@ -73,13 +73,13 @@ pub trait UnionIdTrieNode: IdTrieNode<UnionType = Self> {}
 /// TODO Test default error?
 pub trait IdTrieNode {
     /// The union type (enum) that encompasses all node types in the trie.
-    type UnionType;
+    type Union;
 
     /// The ID type used to identify nodes.
-    type IdType;
+    type Id;
 
     /// TODO: Docblock
-    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::IdType>, Error> {
+    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::lookup",
             std::any::type_name::<Self>()
@@ -87,7 +87,7 @@ pub trait IdTrieNode {
     }
 
     /// TODO: Docblock
-    fn can_store(&self, _key: &Key, _depth: u8) -> Result<CanStoreResult<Self::IdType>, Error> {
+    fn can_store(&self, _key: &Key, _depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::can_store",
             std::any::type_name::<Self>()
@@ -95,7 +95,7 @@ pub trait IdTrieNode {
     }
 
     /// TODO: Docblock
-    fn transform(&self, _key: &Key, _depth: u8) -> Result<Self::UnionType, Error> {
+    fn transform(&self, _key: &Key, _depth: u8) -> Result<Self::Union, Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::transform",
             std::any::type_name::<Self>()
@@ -103,12 +103,7 @@ pub trait IdTrieNode {
     }
 
     /// TODO: Docblock
-    fn reparent(
-        &self,
-        _key: &Key,
-        _depth: u8,
-        _self_id: Self::IdType,
-    ) -> Result<Self::UnionType, Error> {
+    fn reparent(&self, _key: &Key, _depth: u8, _self_id: Self::Id) -> Result<Self::Union, Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::reparent",
             std::any::type_name::<Self>()
@@ -116,7 +111,7 @@ pub trait IdTrieNode {
     }
 
     /// TODO: Docblock
-    fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::IdType) -> Result<(), Error> {
+    fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::Id) -> Result<(), Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::replace_child",
             std::any::type_name::<Self>()
@@ -144,13 +139,13 @@ pub trait IdTrieNode {
     }
 
     /// TODO: Docblock
-    fn get_commitment_input(&self) -> CommitmentInput<Self::IdType>;
+    fn get_commitment_input(&self) -> CommitmentInput<Self::Id>;
 }
 
 pub fn lookup<T: IdTrieNode>(
-    root_id: T::IdType,
+    root_id: T::Id,
     key: &Key,
-    manager: &impl NodeManager<Id = T::IdType, NodeType = T>,
+    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
 ) -> Result<Value, Error> {
     let mut current_lock = manager.get_read_access(root_id)?;
     let mut depth = 0;
@@ -194,14 +189,14 @@ impl<IdType: Eq + std::hash::Hash> TrieUpdateLog<IdType> {
 }
 
 pub fn store<T: UnionIdTrieNode>(
-    mut root_id: RwLockWriteGuard<T::IdType>,
+    mut root_id: RwLockWriteGuard<T::Id>,
     key: &Key,
     value: &Value,
-    manager: &impl NodeManager<Id = T::IdType, NodeType = T>,
-    update_log: &mut TrieUpdateLog<T::IdType>,
+    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
+    update_log: &mut TrieUpdateLog<T::Id>,
 ) -> Result<(), Error>
 where
-    T::IdType: Copy + Eq + std::hash::Hash,
+    T::Id: Copy + Eq + std::hash::Hash,
 {
     let mut parent_lock = None;
     let mut current_id = *root_id;
@@ -272,11 +267,11 @@ where
 
 #[allow(dead_code)] // TODO: Add feature flag?
 pub fn compute_commitment_uncached_recursive<T: IdTrieNode>(
-    id: T::IdType,
-    manager: &impl NodeManager<Id = T::IdType, NodeType = T>,
+    id: T::Id,
+    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
 ) -> Result<Commitment, Error>
 where
-    T::IdType: Copy,
+    T::Id: Copy,
 {
     let current_lock = manager.get_read_access(id)?;
     match current_lock.get_commitment_input() {
@@ -306,11 +301,11 @@ where
 // - Is there any point to doing this non-recursively?
 #[allow(dead_code)] // TODO: Add feature flag?
 pub fn compute_commitment_cached_recursive<T: IdTrieNode>(
-    id: T::IdType,
-    manager: &impl NodeManager<Id = T::IdType, NodeType = T>,
+    id: T::Id,
+    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
 ) -> Result<Commitment, Error>
 where
-    T::IdType: Copy,
+    T::Id: Copy,
 {
     let mut current_lock = manager.get_write_access(id)?;
     let mut cache = current_lock.get_cached_commitment();
@@ -347,11 +342,11 @@ where
 // TODO: I guess we don't even really need the dirty flag on CommitmentCache (or that type, for
 //       that matter) any longer. Except for avoiding eviction..?
 pub fn update_commitments<T: IdTrieNode>(
-    log: &mut TrieUpdateLog<T::IdType>,
-    manager: &impl NodeManager<Id = T::IdType, NodeType = T>,
+    log: &mut TrieUpdateLog<T::Id>,
+    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
 ) -> Result<(), Error>
 where
-    T::IdType: Copy + Eq + std::hash::Hash,
+    T::Id: Copy + Eq + std::hash::Hash,
 {
     let mut previous_commitments = HashMap::new();
     for dirty_nodes in log.dirty_nodes_by_level.iter().rev() {
