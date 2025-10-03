@@ -16,6 +16,8 @@ const (
 	VariantCppMemory  state.Variant = "cpp-memory"
 	VariantCppFile    state.Variant = "cpp-file"
 	VariantCppLevelDb state.Variant = "cpp-ldb"
+
+	VariantRustMemory state.Variant = "rust-memory"
 )
 
 func init() {
@@ -47,7 +49,7 @@ func init() {
 	}
 
 	state.RegisterStateFactory(state.Configuration{
-		Variant: "rust-memory",
+		Variant: VariantRustMemory,
 		Schema:  6,
 		Archive: state.NoArchive,
 	}, newRustInMemoryState)
