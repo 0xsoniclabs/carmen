@@ -66,6 +66,7 @@ pub trait CarmenDb: Send + Sync {
 
     /// Creates a new checkpoint and then closes this state, releasing all IO handles and locks on
     /// external resources.
+    // TODO: Do not create a checkpoint if in an error state (https://github.com/0xsoniclabs/sonic-admin/issues/378)
     fn close(&self) -> Result<(), Error>;
 
     /// Returns a handle to the live state. The resulting state must be released and must not

@@ -548,8 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_calls_prepare_on_participants_then_writes_checkpoint_file_then_calls_commit_then_sets_checkpoint_variable()
-     {
+    fn checkpoint_follows_correct_sequence_for_two_phase_commit() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let old_checkpoint = 1;

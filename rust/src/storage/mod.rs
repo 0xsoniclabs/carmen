@@ -26,7 +26,7 @@ pub trait Storage {
     /// The type of the item stored in the storage.
     type Item;
 
-    /// Opens the storage backend at the given path and restore that state of the last committed
+    /// Opens the storage backend at the given path and restores the state of the last committed
     /// checkpoint.
     /// Depending on the implementation, the path is required to be a directory or a
     /// file.
@@ -50,10 +50,12 @@ pub trait Storage {
 }
 
 /// An entity which can create durable checkpoints of its state.
-/// This trait is used for entities, which may hold volatile state in memory, but which are not
+/// This trait is used for entities which may hold volatile state in memory, but which are not
 /// directly responsible for storing that state durably. Therefore, they only need to flush their
 /// state to the underlying layer and call `checkpoint` on that layer, but are not participating in
-/// the two-phase commit protocol.
+/// the two-phase commit protocol. The only except is the lowers layer which implements
+/// [`Checkpointable`]. This layer acts as the checkpoint coordinator. The layers below it should
+/// implement [`CheckpointParticipant`].
 pub trait Checkpointable {
     /// Create a checkpoint which is guaranteed to be durable.
     fn checkpoint(&self) -> Result<(), Error>;
@@ -63,7 +65,7 @@ pub trait Checkpointable {
 /// This trait is used for entities that are responsible for storing part of the overall state
 /// durably on disk.
 pub trait CheckpointParticipant {
-    /// Checks that the participant has committed to the given checkpoint.
+    /// Checks that `checkpoint` is the latest checkpoint the participant has committed to.
     fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
 
     /// Prepares the given checkpoint, but does not commit to it yet.
@@ -74,7 +76,7 @@ pub trait CheckpointParticipant {
     /// prepared before. Failing to commit a prepared checkpoint is an irrecoverable error.
     fn commit(&self, checkpoint: u64) -> Result<(), Error>;
 
-    /// Aborts the given checkpoint, reverting any preparations done in the prepare phase. The data
-    /// itself is not discarded. The checkpoint must have been prepared before.
+    /// Aborts the given checkpoint, reverting any preparations done in the prepare phase. The node
+    /// data itself is not discarded. The checkpoint must have been prepared before.
     fn abort(&self, checkpoint: u64) -> Result<(), Error>;
 }
