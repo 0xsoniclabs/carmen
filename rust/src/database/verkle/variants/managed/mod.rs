@@ -23,6 +23,7 @@ pub struct ManagedVerkleTrie<M: NodeManager<Id = NodeId, NodeType = Node> + Send
     root: RwLock<NodeId>,
     manager: Arc<M>,
     // FIXME: This needs to have interior mutability
+    // => How about we use different logs for each thread and then merge them before commit?
     update_log: Mutex<TrieUpdateLog<NodeId>>,
 }
 
