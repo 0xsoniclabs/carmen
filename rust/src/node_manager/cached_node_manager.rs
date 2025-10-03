@@ -13,7 +13,6 @@ use std::{
     hash::{Hash, RandomState},
     ops::{Deref, DerefMut},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    vec::Vec,
 };
 
 use dashmap::DashSet;
@@ -73,16 +72,16 @@ where
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
     pub fn new(capacity: usize, storage: S) -> Self {
-        let num_nodes = capacity + 1; // +1 to avoid edge cases when the cache is full
-        let mut nodes = Vec::with_capacity(num_nodes);
-        for _ in 0..num_nodes {
-            // Pre-allocate with default values. This requires `N: Default`.
-            nodes.push(RwLock::new(NodeWithMetadata {
-                node: N::default(),
-                is_dirty: false,
-            }));
-        }
-        let nodes: Arc<[RwLock<NodeWithMetadata<N>>]> = Arc::from(nodes.into_boxed_slice());
+        let num_nodes = capacity + 1; // +1 to avoid edge cases when the elements vector has no free slots
+        let nodes: Arc<[_]> = (0..num_nodes)
+            .map(|_| {
+                // Pre-allocate with default values. This requires `N: Default`.
+                RwLock::new(NodeWithMetadata {
+                    node: N::default(),
+                    is_dirty: false,
+                })
+            })
+            .collect();
 
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(num_nodes)
@@ -230,7 +229,7 @@ where
     fn flush(&self) -> Result<(), crate::error::Error> {
         for (id, pos) in self.cache.iter() {
             let mut entry_guard = self.nodes[pos].write().unwrap();
-            // Skip deleted nodes. We expect the free list to be short, so this should be cheap.
+            // Skip empty slots. We expect the free list to be short, so this should be cheap.
             // NOTE: this operation may be quadratic in the number of nodes. However,
             // we expect the cache to be always full, therefore the cost of this op should amortize
             // quickly.
