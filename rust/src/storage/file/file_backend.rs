@@ -13,8 +13,9 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::FileExt,
     path::Path,
-    sync::Mutex,
 };
+
+use crate::sync::*;
 
 /// An abstraction for concurrent file operations.
 ///
@@ -128,10 +129,6 @@ mod tests {
     use std::{
         fs::{File, OpenOptions},
         io::{Read, Write},
-        sync::{
-            Arc, Barrier,
-            atomic::{AtomicU64, Ordering},
-        },
     };
 
     use super::*;
@@ -140,44 +137,44 @@ mod tests {
         utils::test_dir::{Permissions, TestDir},
     };
 
-    type OpenBackendFn = fn(&Path, OpenOptions) -> std::io::Result<Arc<dyn FileBackend>>;
+    type OpenBackendFn = fn(&Path, OpenOptions) -> std::io::Result<Box<dyn FileBackend>>;
 
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::seek_file(
         (|path, options| {
             <SeekFile as FileBackend>::open(path, options)
-                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                .map(|f| Box::new(f) as Box<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::no_seek_file(
         (|path, options| {
             <NoSeekFile as FileBackend>::open(path, options)
-                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                .map(|f| Box::new(f) as Box<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__seek_file__direct_io(
         (|path, options| {
             <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options)
-                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                .map(|f| Box::new(f) as Box<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__no_seek_file__direct_io(
         (|path, options| {
             <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options)
-                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                .map(|f| Box::new(f) as Box<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__seek_file__no_direct_io(
         (|path, options| {
             <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options)
-                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                .map(|f| Box::new(f) as Box<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__no_seek_file__no_direct_io(
         (|path, options| {
             <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options)
-                .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
+                .map(|f| Box::new(f) as Box<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     fn open_backend(#[case] f: OpenBackendFn) {}
@@ -450,7 +447,7 @@ mod tests {
         std::thread::scope(|s| {
             for t in 0..THREADS {
                 let barrier = &barrier;
-                let backend = Arc::clone(&backend);
+                let backend = &backend;
                 s.spawn(move || {
                     const BUF_LEN: usize = Page::SIZE / THREADS;
                     barrier.wait(); // ensure that all threads have at least been spawned before any starts performing I/O

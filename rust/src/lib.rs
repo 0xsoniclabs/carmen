@@ -19,6 +19,7 @@ mod ffi;
 #[cfg(test)]
 mod node_manager;
 pub mod storage;
+pub(crate) mod sync;
 pub mod types;
 
 mod utils;

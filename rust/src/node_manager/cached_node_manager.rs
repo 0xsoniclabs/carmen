@@ -13,16 +13,17 @@ use std::{
     hash::{Hash, RandomState},
     mem,
     ops::{Deref, DerefMut},
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    vec::Vec,
 };
 
 use dashmap::DashSet;
-use quick_cache::{Lifecycle, Weighter};
+use quick_cache::{Lifecycle, OptionsBuilder, Weighter};
 
 use crate::{
     error::Error,
     node_manager::NodeManager,
     storage::{Checkpointable, Storage},
+    sync::*,
     types::{Node, NodeSize},
 };
 
@@ -76,14 +77,15 @@ impl<K, S, N> CachedNodeManager<K, N, S>
 where
     S: Storage<Id = K, Item = N>,
     N: Default + NodeSize,
-    K: Eq + Hash + Copy + NodeSize,
+    K: Eq + Hash + Copy + NodeSize + std::fmt::Debug,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity (in bytes) and storage backend.
-    /// NOTE: the capacity must be at least 1MB, or in general enough to store at least two nodes.
+    /// The cache capacity is set to `(num_nodes - 1)` to ensure that there is always at least one
+    /// free slot available in the node manager. Useful for creating node managers with smaller
     pub fn new(bytes_capacity: usize, storage: S) -> Self {
         // Requires at least 1MB
         if bytes_capacity < 1024 * 1024 {
-            panic!("Node manager capacity too small. Please provide a larger capacity.");
+            panic!("Node manager < 1 MiB. Please provide a larger capacity.");
         }
         // NOTE: Here we could just take into consideration the element footprint and ignore the
         // cache overhead. This would increase the number of nodes we can store and increase the
@@ -94,9 +96,25 @@ where
         // have a free slot we can use to insert a new item into the cache and force the
         // eviction of an old one.
         let num_nodes = bytes_capacity / min_node_byte_size + 1; // + 1 to be sure there is always gonna be a free node available
-        // NOTE: cache_weight needs to be <= num_nodes * N::min_non_empty_node_size() to ensure that
-        // the cache weight is exhausted when inserting only nodes with the minimum size.
-        let cache_weight = (num_nodes - 1) * N::min_non_empty_node_size();
+
+        // TODO: Benchmark different shard size as the default value is overestimated.
+        Self::new_with_options(num_nodes, None, None, storage)
+    }
+
+    /// Creates a new [`CachedNodeManager`] with the given number of nodes, number of shards, and
+    /// hot allocation percentage.
+    /// The number of shards is an estimation: it will be rounded up to the next power of two and it
+    /// may be smaller to ensure that each shard has enough capacity (depending on the internal
+    /// implementation of `quick_cache`). The cache capacity is set to `(num_nodes - 1)` to
+    /// ensure that there is always at least one free slot available in the node manager. Useful
+    /// for creating node managers with smaller cache capacity and predictable eviction
+    /// behavior.
+    fn new_with_options(
+        num_nodes: usize,
+        num_shards: Option<usize>,
+        hot_allocation: Option<f64>,
+        storage: S,
+    ) -> Self {
         let nodes: Arc<[_]> = (0..num_nodes)
             .map(|_| {
                 // Pre-allocate with default values. This requires `N: Default`.
@@ -107,10 +125,20 @@ where
             })
             .collect();
 
-        // TODO: Benchmark different shard size as the current value is overestimated.
-        let options = quick_cache::OptionsBuilder::new()
+        // NOTE: cache_weight needs to be <= num_nodes * N::min_non_empty_node_size() to ensure that
+        // the cache weight is exhausted when inserting only nodes with the minimum size.
+        let cache_weight = (num_nodes - 1) * N::min_non_empty_node_size();
+        let mut options = OptionsBuilder::new();
+        options
             .weight_capacity(cache_weight as u64)
-            .estimated_items_capacity(num_nodes - 1)
+            .estimated_items_capacity(num_nodes - 1);
+        if let Some(num_shards) = num_shards {
+            options.shards(num_shards);
+        };
+        if let Some(hot_allocation) = hot_allocation {
+            options.hot_allocation(hot_allocation);
+        }
+        let options = options
             .build()
             .expect("failed to build cache options. Did you provide all the required options?");
 
@@ -158,8 +186,8 @@ where
             {
                 break pos;
             }
+            hint::spin_loop();
         };
-
         let mut guard = self.nodes[pos].write().unwrap();
         *guard = node;
         drop(guard); // release lock before inserting in cache
@@ -181,7 +209,7 @@ impl<K, N, S> NodeManager for CachedNodeManager<K, N, S>
 where
     S: Storage<Id = K, Item = N>,
     N: Default + NodeSize,
-    K: Eq + Hash + Copy + NodeSize,
+    K: Eq + Hash + Copy + NodeSize + std::fmt::Debug,
 {
     type Id = K;
     type NodeType = N;
@@ -334,7 +362,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, sync::Mutex};
+    use std::path::Path;
 
     use mockall::{
         Sequence, mock,
@@ -429,7 +457,39 @@ mod tests {
     }
 
     #[test]
-    fn cached_node_manager_always_has_free_positions_in_free_slots() {
+    fn cached_node_manager_new_with_options_creates_node_manager_with_provided_options() {
+        let num_shards = 1;
+        let hot_allocation = 1.0;
+        let num_nodes = num_shards * 32; // 32 items per shard seems what quick_cache requires for each shard.
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage.expect_set().never();
+        let manager = TestCachedNodeManager::new_with_options(
+            num_nodes,
+            Some(num_shards),
+            Some(hot_allocation),
+            storage,
+        );
+        assert_eq!(manager.cache.num_shards(), num_shards);
+        // quick_cache doesn't allow querying the hot allocation directly, so we check it by filling
+        // up the cache and observing the eviction behavior. With hot_allocation = 1.0, no eviction
+        // should happen.
+        // The only reliable way to test this is to also have a shard capacity of 1, otherwise key
+        // collisions may cause evictions on the same shard.
+        let node = NodeWithMetadata {
+            node: Node::Leaf2(Box::default()),
+            is_dirty: true, // mark as dirty to trigger eviction
+        };
+        for i in 0..manager.nodes.len() - 1 {
+            let _ = manager.insert(
+                NodeId::from_idx_and_node_type(i as u64, NodeType::Leaf2),
+                node.clone(),
+            );
+        }
+        assert_eq!(manager.cache.len(), manager.nodes.len() - 1);
+    }
+
+    #[test]
+    fn cached_node_manager_always_has_free_positions_in_free_list() {
         let min_size_node_type = NodeType::Leaf2;
         let max_capacity = ONE_MB;
         let mut storage = MockCachedNodeManagerStorage::new();
@@ -742,6 +802,296 @@ mod tests {
             res.unwrap_err(),
             Error::Storage(storage::Error::NotFound)
         ));
+    }
+
+    #[rstest_reuse::apply(get_method)]
+    fn shuttle__cached_node_manager_never_returns_a_reference_to_a_non_existing_node_on_delete(
+        #[case] get_method: GetMethod,
+    ) {
+        run_shuttle_check(
+            move || {
+                let capacity = ONE_MB;
+                let id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
+                let node = NodeWithMetadata {
+                    node: Node::Leaf2(Box::default()),
+                    is_dirty: false,
+                };
+                let mut storage = MockCachedNodeManagerStorage::new();
+                let is_deleted = Arc::new(AtomicBool::new(false));
+                storage.expect_delete().times(1).with(eq(id)).returning({
+                    let is_deleted = is_deleted.clone();
+                    move |_| {
+                        is_deleted.store(true, Ordering::SeqCst);
+                        Ok(())
+                    }
+                });
+                storage.expect_get().times(0..=1).with(eq(id)).returning({
+                    let is_deleted = is_deleted.clone();
+                    move |_| {
+                        if is_deleted.load(Ordering::SeqCst) {
+                            Err(storage::Error::NotFound)
+                        } else {
+                            Ok(Node::Leaf2(Box::default()))
+                        }
+                    }
+                });
+                let manager = Arc::new(TestCachedNodeManager::new(capacity, storage));
+                *manager.nodes[0].write().unwrap() = node.clone();
+                manager.cache.insert(id, 0);
+
+                // now we spawn two threads: one that deletes the node, and one that tries to get
+                // a reference to it.
+                // the condition we want to test is that the get thread never returns a reference to
+                // a deleted (aka. empty) node.
+
+                let delete_thread = thread::spawn({
+                    let manager = manager.clone();
+                    move || {
+                        manager.delete(id).unwrap();
+                    }
+                });
+
+                let get_thread = thread::spawn({
+                    let manager = manager.clone();
+                    move || {
+                        let res = get_method(&manager, id);
+                        if let Ok(guard) = res {
+                            assert!(guard != Node::default());
+                        }
+                    }
+                });
+
+                delete_thread.join().unwrap();
+                get_thread.join().unwrap();
+            },
+            1000,
+        );
+    }
+
+    #[rstest_reuse::apply(get_method)]
+    fn shuttle__cached_node_manager_never_returns_a_reference_to_a_non_existing_node_on_evict(
+        #[case] get_method: GetMethod,
+    ) {
+        run_shuttle_check(
+            move || {
+                let num_elements: usize = 3;
+                // Evict the element previous to the last one
+                let id_to_evict =
+                    NodeId::from_idx_and_node_type(num_elements as u64 - 2, NodeType::Leaf2);
+                let mut storage = MockCachedNodeManagerStorage::new();
+                let is_evicted = Arc::new(AtomicBool::new(false));
+                storage.expect_set().times(1).returning({
+                    let is_evicted = is_evicted.clone();
+                    move |id, _| {
+                        if id == id_to_evict {
+                            is_evicted.store(true, Ordering::SeqCst);
+                        }
+                        Ok(())
+                    }
+                });
+                storage
+                    .expect_get()
+                    .times(0..=1)
+                    .with(eq(id_to_evict))
+                    .returning({
+                        let is_evicted = is_evicted.clone();
+                        move |_| {
+                            if is_evicted.load(Ordering::SeqCst) {
+                                Err(storage::Error::NotFound)
+                            } else {
+                                Ok(Node::Leaf2(Box::default()))
+                            }
+                        }
+                    });
+                storage.expect_reserve().times(3).returning({
+                    let counter = std::sync::atomic::AtomicU64::new(0);
+                    move |_| {
+                        NodeId::from_idx_and_node_type(
+                            counter.fetch_add(1, Ordering::SeqCst),
+                            NodeType::Leaf2,
+                        )
+                    }
+                });
+                // Manually construct a CachedNodeManager with a single-shard, small cache to
+                // control element eviction
+                let manager = Arc::new(TestCachedNodeManager::new_with_options(
+                    num_elements,
+                    Some(1),
+                    Some(1.0),
+                    storage,
+                ));
+
+                // now we spawn two threads: one that adds a new node to a full cache, which will
+                // cause eviction of an existing node, and one that tries to get a reference to the
+                // node being evicted. The condition we want to test is that the get thread never
+                // returns a reference to an evicted (aka. empty) node.
+                manager.add(Node::Leaf2(Box::default())).unwrap(); // Fill cache
+                manager.add(Node::Leaf2(Box::default())).unwrap(); // Fill cache
+
+                let add_thread = thread::spawn({
+                    let manager = manager.clone();
+                    move || {
+                        let _ = manager.add(Node::Leaf2(Box::default())).unwrap();
+                    }
+                });
+
+                let get_thread = thread::spawn({
+                    let manager = manager.clone();
+                    move || {
+                        let res = get_method(&manager, id_to_evict);
+                        if let Ok(guard) = res {
+                            assert!(guard != Node::default());
+                        }
+                    }
+                });
+
+                add_thread.join().unwrap();
+                get_thread.join().unwrap();
+            },
+            1000,
+        );
+    }
+
+    #[rstest_reuse::apply(get_method)]
+    #[test]
+    fn shuttle__cached_node_manager_never_returns_a_reference_to_a_non_existing_node_on_get(
+        #[case] get_method: GetMethod,
+    ) {
+        run_shuttle_check(
+            move || {
+                eprintln!("\n\nNew iteration\n");
+                let num_elements: usize = 3;
+                // Evict the element previous to the last one
+                let id_to_evict =
+                    NodeId::from_idx_and_node_type(num_elements as u64 - 2, NodeType::Leaf2);
+                let id_to_insert =
+                    NodeId::from_idx_and_node_type(num_elements as u64, NodeType::Leaf2);
+                let mut storage = MockCachedNodeManagerStorage::new();
+                let is_evicted = Arc::new(AtomicBool::new(false));
+                storage.expect_set().times(1).returning({
+                    let is_evicted = is_evicted.clone();
+                    move |id, _| {
+                        if id == id_to_evict {
+                            is_evicted.store(true, Ordering::SeqCst);
+                        }
+                        Ok(())
+                    }
+                });
+                storage.expect_get().times(1..=2).returning({
+                    let is_evicted = is_evicted.clone();
+                    move |id| {
+                        if id == id_to_insert {
+                            Ok(Node::Leaf2(Box::default()))
+                        } else if is_evicted.load(Ordering::SeqCst) {
+                            Err(storage::Error::NotFound)
+                        } else {
+                            Ok(Node::Leaf2(Box::default()))
+                        }
+                    }
+                });
+                storage.expect_reserve().times(2).returning({
+                    let counter = std::sync::atomic::AtomicU64::new(0);
+                    move |_| {
+                        NodeId::from_idx_and_node_type(
+                            counter.fetch_add(1, Ordering::SeqCst),
+                            NodeType::Leaf2,
+                        )
+                    }
+                });
+                // Manually construct a CachedNodeManager with a single-shard, small cache to
+                // control element eviction
+                let manager = Arc::new(TestCachedNodeManager::new_with_options(
+                    num_elements,
+                    Some(1),
+                    Some(1.0),
+                    storage,
+                ));
+
+                // now we spawn two threads: one that tries to get an existing element in the cache,
+                // and other one that tries to get an element that needs to be queried from the
+                // storage. The condition we want to test is that the get thread never
+                // returns a reference to an evicted (aka. empty) node.
+                manager.add(Node::Leaf2(Box::default())).unwrap(); // Fill cache
+                manager.add(Node::Leaf2(Box::default())).unwrap(); // Fill cache
+
+                let get_storage_thread = thread::spawn({
+                    let manager = manager.clone();
+                    move || {
+                        let _ = get_method(&manager, id_to_insert).unwrap();
+                    }
+                });
+
+                let get_existing_thread = thread::spawn({
+                    let manager = manager.clone();
+                    move || {
+                        let res = get_method(&manager, id_to_evict);
+                        if let Ok(guard) = res {
+                            assert!(guard != Node::default());
+                        }
+                    }
+                });
+
+                get_storage_thread.join().unwrap();
+                get_existing_thread.join().unwrap();
+            },
+            1000,
+        );
+    }
+
+    #[test]
+    fn shuttle__cached_node_manager_insertion_always_terminate() {
+        // The idea of this test is to check that inserting in a full cache with multiple threads
+        // doesn't lead to a deadlock when there is contention on the only available free slot.
+        // Therefore this test needs only to terminate to be considered successful.
+        run_shuttle_check(
+            move || {
+                let num_elements = 2;
+                let mut storage = MockCachedNodeManagerStorage::new();
+                storage.expect_set().returning(move |_, _| Ok(()));
+                storage.expect_reserve().returning({
+                    let counter = std::sync::atomic::AtomicU64::new(0);
+                    move |_| {
+                        NodeId::from_idx_and_node_type(
+                            counter.fetch_add(1, Ordering::SeqCst),
+                            NodeType::Leaf2,
+                        )
+                    }
+                });
+
+                let manager = Arc::new(TestCachedNodeManager::new_with_options(
+                    num_elements,
+                    Some(1),
+                    Some(1.0),
+                    storage,
+                ));
+                for _ in 0..num_elements - 1 {
+                    manager.add(Node::Leaf2(Box::default())).unwrap();
+                }
+
+                // Now we spawn two threads trying to insert an item in a full cache, causing
+                // contention on the only available free slot.
+                let mut handles = vec![];
+                for _ in 0..2 {
+                    let manager = manager.clone();
+                    handles.push(thread::spawn(move || {
+                        let _ = manager.add(Node::Leaf2(Box::default())).unwrap();
+                    }));
+                }
+
+                for handle in handles {
+                    handle.join().unwrap();
+                }
+            },
+            1000,
+        );
+    }
+
+    #[track_caller]
+    fn run_shuttle_check(test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
+        #[cfg(feature = "shuttle")]
+        shuttle::check_random(test, _num_iter);
+        #[cfg(not(feature = "shuttle"))]
+        test();
     }
 
     #[test]

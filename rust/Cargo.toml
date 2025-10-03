@@ -29,7 +29,7 @@ harness = false
 [dependencies]
 # datastructures
 dashmap = { version = "6.1.0", features = ["inline"] }
-quick_cache = "0.6.15"
+quick_cache = { version = "0.6.1" }
 
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
@@ -44,6 +44,12 @@ crypto-bigint = "0.6.1"
 ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 sha3 = "0.10.8"
+
+# testing
+shuttle = { version = "0.8.1", optional = true }
+
+[features]
+shuttle = ["quick_cache/shuttle", "dep:shuttle"]
 
 [build-dependencies]
 # FFI

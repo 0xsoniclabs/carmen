@@ -8,18 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::path::Path;
 
 use dashmap::DashMap;
 
 use crate::{
     storage::{Checkpointable, Error, Storage},
+    sync::*,
     types::{Node, NodeId},
 };
 
@@ -211,7 +206,7 @@ enum Op {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, sync::atomic::AtomicUsize, time::Duration};
+    use std::{fs::File, time::Duration};
 
     use mockall::predicate::eq;
 

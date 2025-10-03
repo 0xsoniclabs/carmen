@@ -8,12 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{
-    ops::{Deref, DerefMut},
-    sync::{RwLockReadGuard, RwLockWriteGuard},
-};
+use std::ops::{Deref, DerefMut};
 
-use crate::error::Error;
+use crate::{error::Error, sync::*};
 pub mod cached_node_manager;
 
 /// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].

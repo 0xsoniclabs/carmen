@@ -12,17 +12,16 @@ use std::{
     fs::{self, OpenOptions},
     marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{
-        Mutex, RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
 };
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::storage::{
-    CheckpointParticipant, Error, Storage,
-    file::{FileBackend, metadata_file::Metadata, reuse_list_file::ReuseListFile},
+use crate::{
+    storage::{
+        CheckpointParticipant, Error, Storage,
+        file::{FileBackend, metadata_file::Metadata, reuse_list_file::ReuseListFile},
+    },
+    sync::*,
 };
 
 /// A file-based storage backend for elements of type `T`.
