@@ -1,8 +1,8 @@
 use crate::{
     database::verkle::{
         CachedCommitment,
-        variants::managed::id_trie_node::{
-            CanStoreResult, CommitmentInput, IdTrieNode, LookupResult,
+        variants::managed::managed_trie_node::{
+            CanStoreResult, CommitmentInput, LookupResult, ManagedTrieNode,
         },
     },
     error::Error,
@@ -11,7 +11,7 @@ use crate::{
 
 // TODO: Implement for generic N?
 // => Ensuring that entries are sorted could make things a lot easier
-impl IdTrieNode for SparseLeafNode<2> {
+impl ManagedTrieNode for SparseLeafNode<2> {
     type Union = Node;
     type Id = NodeId;
 

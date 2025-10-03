@@ -50,11 +50,11 @@ pub enum CommitmentInput<IdType> {
     Inner([IdType; 256]),
 }
 
-/// A helper trait to constrain an [`IdTrieNode`] to be its own union type.
-pub trait UnionIdTrieNode: IdTrieNode<Union = Self> {}
+/// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
+pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {}
 
-/// A generic interface for working with nodes in an ID-based (as opposed to pointer-based) trie
-/// (Verkle, Binary, Merkle-Patricia, ...).
+/// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)
+/// trie (Verkle, Binary, Merkle-Patricia, ...).
 ///
 /// Besides simple value lookup, the trait specifies a set of lifecycle operations that allow to
 /// update/store values in the trie using an iterative algorithm.
@@ -71,7 +71,7 @@ pub trait UnionIdTrieNode: IdTrieNode<Union = Self> {}
 /// implementations that return an [`Error::UnsupportedOperation`] for most methods.
 ///
 /// TODO Test default error?
-pub trait IdTrieNode {
+pub trait ManagedTrieNode {
     /// The union type (enum) that encompasses all node types in the trie.
     type Union;
 
@@ -142,7 +142,7 @@ pub trait IdTrieNode {
     fn get_commitment_input(&self) -> CommitmentInput<Self::Id>;
 }
 
-pub fn lookup<T: IdTrieNode>(
+pub fn lookup<T: ManagedTrieNode>(
     root_id: T::Id,
     key: &Key,
     manager: &impl NodeManager<Id = T::Id, NodeType = T>,
@@ -188,7 +188,7 @@ impl<IdType: Eq + std::hash::Hash> TrieUpdateLog<IdType> {
     }
 }
 
-pub fn store<T: UnionIdTrieNode>(
+pub fn store<T: UnionManagedTrieNode>(
     mut root_id: RwLockWriteGuard<T::Id>,
     key: &Key,
     value: &Value,
@@ -267,7 +267,7 @@ where
 
 // TODO: I guess we don't even really need the dirty flag on CommitmentCache (or that type, for
 //       that matter) any longer. Except for avoiding eviction..?
-pub fn update_commitments<T: IdTrieNode>(
+pub fn update_commitments<T: ManagedTrieNode>(
     log: &mut TrieUpdateLog<T::Id>,
     manager: &impl NodeManager<Id = T::Id, NodeType = T>,
 ) -> Result<(), Error>

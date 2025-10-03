@@ -1,17 +1,17 @@
 mod fake_cache;
-mod id_trie_node;
+mod managed_trie_node;
 mod nodes;
 
 use std::sync::{Arc, Mutex, RwLock};
 
 pub use fake_cache::FakeCache;
-pub use id_trie_node::CachedCommitment;
-use id_trie_node::{IdTrieNode, lookup, store};
+pub use managed_trie_node::CachedCommitment;
+use managed_trie_node::{ManagedTrieNode, lookup, store};
 
 use crate::{
     database::verkle::{
         crypto::Commitment,
-        variants::managed::id_trie_node::{TrieUpdateLog, update_commitments},
+        variants::managed::managed_trie_node::{TrieUpdateLog, update_commitments},
         verkle_trie::VerkleTrie,
     },
     error::Error,

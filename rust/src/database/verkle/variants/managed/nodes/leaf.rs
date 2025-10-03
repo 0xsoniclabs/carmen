@@ -1,15 +1,15 @@
 use crate::{
     database::verkle::{
         CachedCommitment,
-        variants::managed::id_trie_node::{
-            CanStoreResult, CommitmentInput, IdTrieNode, LookupResult,
+        variants::managed::managed_trie_node::{
+            CanStoreResult, CommitmentInput, LookupResult, ManagedTrieNode,
         },
     },
     error::Error,
     types::{FullLeafNode, InnerNode, Key, Node, NodeId, Value},
 };
 
-impl IdTrieNode for FullLeafNode {
+impl ManagedTrieNode for FullLeafNode {
     type Union = Node;
     type Id = NodeId;
 
