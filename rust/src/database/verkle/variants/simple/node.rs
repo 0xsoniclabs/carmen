@@ -24,31 +24,31 @@ pub enum Node {
 impl Node {
     /// Returns the value associated with the given key, or the default value if
     /// the key does not exist.
-    pub fn get(&self, key: &Key, depth: u8) -> Value {
+    pub fn lookup(&self, key: &Key, depth: u8) -> Value {
         match self {
             Node::Empty => Value::default(),
-            Node::Inner(inner) => inner.get(key, depth),
-            Node::Leaf(leaf) => leaf.get(key),
+            Node::Inner(inner) => inner.lookup(key, depth),
+            Node::Leaf(leaf) => leaf.lookup(key),
         }
     }
 
     /// Sets the value for the given key.
     /// Consumes the node and returns an updated version.
-    pub fn set(self, key: &Key, depth: u8, value: &Value) -> Node {
+    pub fn store(self, key: &Key, depth: u8, value: &Value) -> Node {
         match self {
             Node::Empty => {
                 if depth == 0 {
                     // While conceptually it would suffice to create a leaf node here,
                     // Geth always creates an inner node (and we want to stay compatible).
                     let inner = InnerNode::new();
-                    inner.set(key, depth, value)
+                    inner.store(key, depth, value)
                 } else {
                     let leaf = LeafNode::new(key);
-                    leaf.set(key, depth, value)
+                    leaf.store(key, depth, value)
                 }
             }
-            Node::Inner(inner) => inner.set(key, depth, value),
-            Node::Leaf(leaf) => leaf.set(key, depth, value),
+            Node::Inner(inner) => inner.store(key, depth, value),
+            Node::Leaf(leaf) => leaf.store(key, depth, value),
         }
     }
 
@@ -110,22 +110,22 @@ impl InnerNode {
 
     /// Returns the value associated with the given key, by forwarding the request to
     /// the child at position `key[depth]`.
-    pub fn get(&self, key: &Key, depth: u8) -> Value {
-        self.children[key[depth as usize] as usize].get(key, depth + 1)
+    pub fn lookup(&self, key: &Key, depth: u8) -> Value {
+        self.children[key[depth as usize] as usize].lookup(key, depth + 1)
     }
 
-    /// Sets the value for the given key by forwarding the request to the child at
+    /// Stores the value for the given key by forwarding the request to the child at
     /// position `key[depth]`.
     ///
     /// If no child exists at that position, a new leaf node is created.
     ///
     /// Consumes the node and returns an updated version.
-    pub fn set(mut self, key: &Key, depth: u8, value: &Value) -> Node {
+    pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
         self.commitment_dirty = true;
 
         let pos = key[depth as usize];
         let next = std::mem::replace(&mut self.children[pos as usize], Node::Empty);
-        self.children[pos as usize] = next.set(key, depth + 1, value);
+        self.children[pos as usize] = next.store(key, depth + 1, value);
         Node::Inner(self)
     }
 
@@ -187,7 +187,7 @@ impl LeafNode {
 
     /// Returns the value associated with the given key, or the default [Value] if the key does
     /// not match the stem of this leaf.
-    pub fn get(&self, key: &Key) -> Value {
+    pub fn lookup(&self, key: &Key) -> Value {
         if key[..31] != self.stem {
             Value::default()
         } else {
@@ -195,11 +195,11 @@ impl LeafNode {
         }
     }
 
-    /// Sets the value for the given key.
+    /// Stores the value for the given key.
     ///
     /// If the stem of the key does not match the stem of this leaf, the leaf is split
     /// into an inner node with two children (the existing leaf and a new leaf for the key).
-    pub fn set(mut self, key: &Key, depth: u8, value: &Value) -> Node {
+    pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
         if key[..31] == self.stem {
             let suffix = key[31];
             self.values[suffix as usize] = *value;
@@ -211,7 +211,7 @@ impl LeafNode {
         // This leaf needs to be split
         let pos = self.stem[depth as usize];
         let inner = InnerNode::new_with_leaf(self, pos);
-        inner.set(key, depth, value)
+        inner.store(key, depth, value)
     }
 
     /// Computes and returns the commitment of this leaf node.
@@ -232,14 +232,14 @@ mod tests {
     use super::*;
     use crate::database::verkle::{
         crypto::Scalar,
-        variants::simple::test_utils::{make_key, make_leaf_key, make_value},
+        test_utils::{make_key, make_leaf_key, make_value},
     };
 
     #[test]
-    fn empty_node_set_creates_inner_node() {
+    fn empty_node_store_creates_inner_node() {
         let key = make_key(&[1, 2, 3]);
         let value = make_value(42);
-        let node = Node::Empty.set(&key, 0, &value);
+        let node = Node::Empty.store(&key, 0, &value);
         assert!(matches!(node, Node::Inner(_)));
     }
 
@@ -271,38 +271,38 @@ mod tests {
     }
 
     #[test]
-    fn inner_node_get_returns_default_value_if_there_is_no_next_node() {
+    fn inner_node_lookup_returns_default_value_if_there_is_no_next_node() {
         let inner = InnerNode::new();
         let key = [0; 32];
-        let value = inner.get(&key, 0);
+        let value = inner.lookup(&key, 0);
         assert_eq!(value, Value::default());
     }
 
     #[test]
-    fn inner_node_get_returns_value_from_next_node() {
+    fn inner_node_lookup_returns_value_from_next_node() {
         let key1 = make_key(&[1, 2, 3]);
         let key2 = make_key(&[1, 2, 4]);
 
         let root = Node::Leaf(LeafNode::new(&key1));
-        let root = root.set(&key1, 2, &make_value(42));
-        let root = root.set(&key2, 2, &make_value(84));
+        let root = root.store(&key1, 2, &make_value(42));
+        let root = root.store(&key2, 2, &make_value(84));
 
         assert!(
             matches!(root, Node::Inner(_)),
             "root should be an InnerNode"
         );
 
-        assert_eq!(root.get(&key1, 2), make_value(42));
-        assert_eq!(root.get(&key2, 2), make_value(84));
+        assert_eq!(root.lookup(&key1, 2), make_value(42));
+        assert_eq!(root.lookup(&key2, 2), make_value(84));
     }
 
     #[test]
-    fn inner_node_set_creates_new_leaf_if_there_is_no_next_node() {
+    fn inner_node_store_creates_new_leaf_if_there_is_no_next_node() {
         let key = make_key(&[1, 2, 3]);
         let inner = InnerNode::new();
         assert!(matches!(inner.children[key[2] as usize], Node::Empty));
 
-        let inner = inner.set(&key, 2, &make_value(42));
+        let inner = inner.store(&key, 2, &make_value(42));
         let Node::Inner(inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -316,7 +316,7 @@ mod tests {
 
         // Setting a value should mark the commitment as dirty.
         let key = make_key(&[1, 2, 3]);
-        let inner = inner.set(&key, 2, &make_value(42));
+        let inner = inner.store(&key, 2, &make_value(42));
         let Node::Inner(mut inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(fist_commitment, second_commitment);
 
         // Setting another value should mark the commitment as dirty again.
-        let inner = inner.set(&make_key(&[1, 2, 4]), 2, &make_value(84));
+        let inner = inner.store(&make_key(&[1, 2, 4]), 2, &make_value(84));
         let Node::Inner(inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -345,8 +345,8 @@ mod tests {
         let key1 = make_key(&[1, 2, 3]);
         let key2 = make_key(&[1, 2, 4]);
 
-        let inner = inner.set(&key1, 2, &make_value(42));
-        let inner = inner.set(&key2, 2, &make_value(84));
+        let inner = inner.store(&key1, 2, &make_value(42));
+        let inner = inner.store(&key2, 2, &make_value(84));
         let Node::Inner(mut inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -379,54 +379,54 @@ mod tests {
     }
 
     #[test]
-    fn leaf_node_get_returns_value_for_matching_stem() {
+    fn leaf_node_lookup_returns_value_for_matching_stem() {
         let key = make_leaf_key(&[1, 2, 3, 4, 5], 1);
         let leaf = LeafNode::new(&key);
 
         // Initially, the value for the key should be zero.
-        assert_eq!(leaf.get(&key), Value::default());
+        assert_eq!(leaf.lookup(&key), Value::default());
 
-        let leaf = leaf.set(&key, 0, &make_value(42));
+        let leaf = leaf.store(&key, 0, &make_value(42));
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
-        assert_eq!(leaf.get(&key), make_value(42),);
+        assert_eq!(leaf.lookup(&key), make_value(42),);
     }
 
     #[test]
-    fn leaf_node_get_returns_zero_for_non_matching_stem() {
+    fn leaf_node_lookup_returns_zero_for_non_matching_stem() {
         let key1 = make_key(&[1, 2, 3]);
         let key2 = make_key(&[4, 5, 6]);
         let leaf = LeafNode::new(&key1);
-        let leaf = leaf.set(&key1, 0, &make_value(42));
+        let leaf = leaf.store(&key1, 0, &make_value(42));
 
         assert_eq!(
-            leaf.get(&key2, 0),
+            leaf.lookup(&key2, 0),
             Value::default(),
             "value for non-matching key should be zero"
         );
     }
 
     #[test]
-    fn leaf_node_set_splits_leaf_if_steam_does_not_match() {
+    fn leaf_node_store_splits_leaf_if_stem_does_not_match() {
         let key1 = make_key(&[1, 2, 3]);
         let key2 = make_key(&[1, 2, 4]);
 
         let leaf = LeafNode::new(&key1);
-        let leaf = leaf.set(&key1, 0, &make_value(42));
+        let leaf = leaf.store(&key1, 0, &make_value(42));
 
-        let new_node = leaf.set(&key2, 2, &make_value(84));
+        let new_node = leaf.store(&key2, 2, &make_value(84));
         let Node::Inner(inner) = new_node else {
             panic!("expected InnerNode after set");
         };
 
         // Original leaf is now a child of the inner node.
-        let value = inner.children[key1[2] as usize].get(&key1, 2);
+        let value = inner.children[key1[2] as usize].lookup(&key1, 2);
         assert_eq!(value, make_value(42));
     }
 
     #[test]
-    fn leaf_node_can_set_and_get_values() {
+    fn leaf_node_can_store_and_lookup_values() {
         fn is_used(leaf: &LeafNode, suffix: u8) -> bool {
             leaf.used_bits[(suffix / 8) as usize] & (1 << (suffix % 8)) != 0
         }
@@ -441,12 +441,12 @@ mod tests {
         assert!(!is_used(&leaf, key2[31]));
         assert!(!is_used(&leaf, key3[31]));
 
-        assert_eq!(leaf.get(&key1), Value::default());
-        assert_eq!(leaf.get(&key2), Value::default());
-        assert_eq!(leaf.get(&key3), Value::default());
+        assert_eq!(leaf.lookup(&key1), Value::default());
+        assert_eq!(leaf.lookup(&key2), Value::default());
+        assert_eq!(leaf.lookup(&key3), Value::default());
 
         // Setting a value for key 1 makes the value retrievable and marks the suffix as used.
-        let leaf = leaf.set(&key1, 0, &make_value(10));
+        let leaf = leaf.store(&key1, 0, &make_value(10));
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -455,13 +455,13 @@ mod tests {
         assert!(!is_used(&leaf, key2[31]));
         assert!(!is_used(&leaf, key3[31]));
 
-        assert_eq!(leaf.get(&key1), make_value(10));
-        assert_eq!(leaf.get(&key2), Value::default());
-        assert_eq!(leaf.get(&key3), Value::default());
+        assert_eq!(leaf.lookup(&key1), make_value(10));
+        assert_eq!(leaf.lookup(&key2), Value::default());
+        assert_eq!(leaf.lookup(&key3), Value::default());
 
         // Setting the value for key 2 to zero does not change the value but marks the suffix as
         // used.
-        let leaf = leaf.set(&key2, 0, &Value::default());
+        let leaf = leaf.store(&key2, 0, &Value::default());
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -470,12 +470,12 @@ mod tests {
         assert!(is_used(&leaf, key2[31]));
         assert!(!is_used(&leaf, key3[31]));
 
-        assert_eq!(leaf.get(&key1), make_value(10));
-        assert_eq!(leaf.get(&key2), Value::default());
-        assert_eq!(leaf.get(&key3), Value::default());
+        assert_eq!(leaf.lookup(&key1), make_value(10));
+        assert_eq!(leaf.lookup(&key2), Value::default());
+        assert_eq!(leaf.lookup(&key3), Value::default());
 
         // Resetting the value for key 1 to zero does not change the used bitmap.
-        let leaf = leaf.set(&key1, 0, &Value::default());
+        let leaf = leaf.store(&key1, 0, &Value::default());
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -484,9 +484,9 @@ mod tests {
         assert!(is_used(&leaf, key2[31]));
         assert!(!is_used(&leaf, key3[31]));
 
-        assert_eq!(leaf.get(&key1), Value::default());
-        assert_eq!(leaf.get(&key2), Value::default());
-        assert_eq!(leaf.get(&key3), Value::default());
+        assert_eq!(leaf.lookup(&key1), Value::default());
+        assert_eq!(leaf.lookup(&key2), Value::default());
+        assert_eq!(leaf.lookup(&key3), Value::default());
     }
 
     #[test]
@@ -500,8 +500,8 @@ mod tests {
         val2[8..16].copy_from_slice(&84u64.to_be_bytes());
 
         let leaf = LeafNode::new(&key1);
-        let leaf = leaf.set(&key1, 0, &val1);
-        let leaf = leaf.set(&key2, 0, &val2);
+        let leaf = leaf.store(&key1, 0, &val1);
+        let leaf = leaf.store(&key2, 0, &val2);
         let Node::Leaf(mut leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -542,13 +542,13 @@ mod tests {
         let leaf = LeafNode::new(&key1);
         assert!(leaf.commitment_dirty);
 
-        let leaf = leaf.set(&key1, 0, &make_value(10));
+        let leaf = leaf.store(&key1, 0, &make_value(10));
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
         assert!(leaf.commitment_dirty);
 
-        let leaf = leaf.set(&key2, 0, &make_value(20));
+        let leaf = leaf.store(&key2, 0, &make_value(20));
         let Node::Leaf(mut leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -561,7 +561,7 @@ mod tests {
         assert!(!leaf.commitment_dirty);
         assert_eq!(first, second);
 
-        let leaf = leaf.set(&key1, 0, &make_value(30));
+        let leaf = leaf.store(&key1, 0, &make_value(30));
         let Node::Leaf(mut leaf) = leaf else {
             panic!("expected LeafNode after set");
         };

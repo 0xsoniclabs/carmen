@@ -49,7 +49,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     fn get_balance(&self, addr: &Address) -> Result<U256, Error> {
         let key = get_basic_data_key(addr);
-        let value = self.trie.get(&key)?;
+        let value = self.trie.lookup(&key)?;
         let mut result = U256::default();
         result[16..].copy_from_slice(&value[16..32]);
         Ok(result)
@@ -57,14 +57,14 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     fn get_nonce(&self, addr: &Address) -> Result<Nonce, Error> {
         let key = get_basic_data_key(addr);
-        let value = self.trie.get(&key)?;
+        let value = self.trie.lookup(&key)?;
         // Safe to unwrap: Always 8 bytes
         Ok(value[8..16].try_into().unwrap())
     }
 
     fn get_storage_value(&self, addr: &Address, key: &Key) -> Result<Value, Error> {
         let key = get_storage_key(addr, key);
-        let value = self.trie.get(&key)?;
+        let value = self.trie.lookup(&key)?;
         Ok(Value::from(value))
     }
 
@@ -74,7 +74,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         let mut chunks = Vec::with_capacity(chunk_count as usize);
         for i in 0..chunk_count {
             let key = get_code_chunk_key(addr, i);
-            let chunk = self.trie.get(&key)?;
+            let chunk = self.trie.lookup(&key)?;
             chunks.push(chunk);
         }
         let mut code = vec![0x0; len as usize];
@@ -88,13 +88,13 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     fn get_code_hash(&self, addr: &Address) -> Result<Hash, Error> {
         let key = get_code_hash_key(addr);
-        let value = self.trie.get(&key)?;
+        let value = self.trie.lookup(&key)?;
         Ok(Hash::from(value))
     }
 
     fn get_code_len(&self, addr: &Address) -> Result<u32, Error> {
         let key = get_basic_data_key(addr);
-        let value = self.trie.get(&key)?;
+        let value = self.trie.lookup(&key)?;
         // Safe to unwrap - slice is always 4 bytes
         Ok(u32::from_be_bytes(value[4..8].try_into().unwrap()))
     }
@@ -114,51 +114,51 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
                 // first fetch it in case the account was not explicitly created first for some
                 // reason.
                 let key = get_basic_data_key(addr);
-                let basic_data = self.trie.get(&key)?;
-                self.trie.set(&key, &basic_data)?;
+                let basic_data = self.trie.lookup(&key)?;
+                self.trie.store(&key, &basic_data)?;
                 let code_hash_key = get_code_hash_key(addr);
-                self.trie.set(&code_hash_key, &EMPTY_CODE_HASH)?;
+                self.trie.store(&code_hash_key, &EMPTY_CODE_HASH)?;
             }
         }
 
         for u in update.nonces {
             let key = get_basic_data_key(&u.addr);
-            let mut value = self.trie.get(&key)?;
+            let mut value = self.trie.lookup(&key)?;
             value[8..16].copy_from_slice(&u.nonce);
-            self.trie.set(&key, &value)?;
+            self.trie.store(&key, &value)?;
         }
 
         for u in update.balances {
             let key = get_basic_data_key(&u.addr);
-            let mut value = self.trie.get(&key)?;
+            let mut value = self.trie.lookup(&key)?;
             value[16..32].copy_from_slice(&u.balance[16..]);
-            self.trie.set(&key, &value)?;
+            self.trie.store(&key, &value)?;
         }
 
         for u in update.codes {
             // Store code length
             let len = u.code.len() as u32;
             let key = get_basic_data_key(&u.addr);
-            let mut value = self.trie.get(&key)?;
+            let mut value = self.trie.lookup(&key)?;
             value[4..8].copy_from_slice(&len.to_be_bytes());
-            self.trie.set(&key, &value)?;
+            self.trie.store(&key, &value)?;
 
             // Store code hash
             let hash_key = get_code_hash_key(&u.addr);
             let mut hasher = Keccak256::new();
             hasher.update(u.code);
-            self.trie.set(&hash_key, &Hash::from(hasher.finalize()))?;
+            self.trie.store(&hash_key, &Hash::from(hasher.finalize()))?;
 
             // Store actual code
             for (i, chunk) in code::split_code(u.code).into_iter().enumerate() {
                 let key = get_code_chunk_key(&u.addr, i as u32);
-                self.trie.set(&key, &chunk)?;
+                self.trie.store(&key, &chunk)?;
             }
         }
 
         for u in update.slots {
             let key = get_storage_key(&u.addr, &u.key);
-            self.trie.set(&key, &u.value)?;
+            self.trie.store(&key, &u.value)?;
         }
 
         Ok(())
