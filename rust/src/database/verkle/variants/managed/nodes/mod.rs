@@ -1,8 +1,10 @@
 use crate::{
     database::verkle::{
         CachedCommitment,
+        crypto::Commitment,
         variants::managed::managed_trie_node::{
-            CanStoreResult, CommitmentInput, LookupResult, ManagedTrieNode, UnionManagedTrieNode,
+            CanStoreResult, LookupResult, ManagedTrieNode, UnionManagedTrieNode,
+            VerkleCommitmentInput,
         },
     },
     error::Error,
@@ -19,6 +21,8 @@ impl UnionManagedTrieNode for Node {}
 impl ManagedTrieNode for Node {
     type Union = Node;
     type Id = NodeId;
+    type Commitment = Commitment;
+    type CommitmentInput = VerkleCommitmentInput;
 
     fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         match self {
@@ -74,7 +78,7 @@ impl ManagedTrieNode for Node {
         }
     }
 
-    fn get_cached_commitment(&self) -> CachedCommitment {
+    fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {
         match self {
             Node::Empty(n) => n.get_cached_commitment(),
             Node::Inner(n) => n.get_cached_commitment(),
@@ -83,7 +87,10 @@ impl ManagedTrieNode for Node {
         }
     }
 
-    fn set_cached_commitment(&mut self, cache: CachedCommitment) -> Result<(), Error> {
+    fn set_cached_commitment(
+        &mut self,
+        cache: CachedCommitment<Self::Commitment>,
+    ) -> Result<(), Error> {
         match self {
             Node::Empty(n) => n.set_cached_commitment(cache),
             Node::Inner(n) => n.set_cached_commitment(cache),
@@ -92,7 +99,7 @@ impl ManagedTrieNode for Node {
         }
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
+    fn get_commitment_input(&self) -> Self::CommitmentInput {
         match self {
             Node::Empty(n) => n.get_commitment_input(),
             Node::Inner(n) => n.get_commitment_input(),

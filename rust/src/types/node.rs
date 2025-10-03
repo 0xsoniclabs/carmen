@@ -11,7 +11,7 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::verkle::CachedCommitment,
+    database::verkle::{CachedCommitment, Commitment},
     types::{NodeId, Value},
 };
 
@@ -41,7 +41,7 @@ pub struct SparseLeafNode<const N: usize> {
     pub stem: [u8; 31],
     pub values: [ValueWithIndex; N],
     pub used_bits: [u8; 256 / 8],
-    pub commitment: CachedCommitment,
+    pub commitment: CachedCommitment<Commitment>,
 }
 
 impl<const N: usize> Default for SparseLeafNode<N> {
@@ -70,7 +70,7 @@ pub struct FullLeafNode {
     pub stem: [u8; 31],
     pub values: [Value; 256],
     pub used_bits: [u8; 256 / 8],
-    pub commitment: CachedCommitment,
+    pub commitment: CachedCommitment<Commitment>,
 }
 
 impl Default for FullLeafNode {
@@ -93,7 +93,7 @@ impl Default for FullLeafNode {
 #[repr(C)]
 pub struct InnerNode {
     pub children: [NodeId; 256],
-    pub commitment: CachedCommitment,
+    pub commitment: CachedCommitment<Commitment>,
 }
 
 impl Default for InnerNode {

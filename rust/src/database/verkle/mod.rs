@@ -17,6 +17,8 @@ mod test_utils;
 mod variants;
 mod verkle_trie;
 
+// TODO: Not needed once nodes are moved into this module (same for CachedCommitment)
+pub use crypto::Commitment;
 pub use state::VerkleTrieCarmenState;
 pub use variants::FakeCache; // TODO: Remove
 pub use variants::{CachedCommitment, ManagedVerkleTrie, SimpleInMemoryVerkleTrie};

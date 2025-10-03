@@ -6,7 +6,7 @@ use crate::{
     database::verkle::{compute_commitment::compute_leaf_node_commitment, crypto::Commitment},
     error::Error,
     node_manager::NodeManager,
-    types::{Key, Value},
+    types::{Key, Node, NodeId, Value},
 };
 
 pub enum LookupResult<IdType> {
@@ -26,28 +26,28 @@ pub enum CanStoreResult<IdType> {
     Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned,
 )]
 #[repr(C)]
-pub struct CachedCommitment {
-    commitment: Commitment,
+pub struct CachedCommitment<C> {
+    commitment: C,
     // bool does not implement FromBytes, so we use u8 instead
     dirty: u8,
 }
 
-impl CachedCommitment {
-    pub fn commitment(&self) -> Commitment {
+impl<C: Copy> CachedCommitment<C> {
+    pub fn commitment(&self) -> C {
         self.commitment
     }
 }
 
-// TODO: Make this generic over a "CommitmentScheme" (this is Ethereum Verkle)
+// TODO: Move elsewhere
 #[allow(clippy::large_enum_variant)] // FIXME
-pub enum CommitmentInput<IdType> {
+pub enum VerkleCommitmentInput {
     Empty,
     // TODO: Avoid copying these
     Leaf([Value; 256], [u8; 256 / 8], [u8; 31]),
     // TODO: Make sure we don't pass empty nodes here. In general if there is a single empty node
     //       item, there could be lock contention issues?!
     // TODO: Only pass non-empty children (Vec?)
-    Inner([IdType; 256]),
+    Inner([NodeId; 256]),
 }
 
 /// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
@@ -77,6 +77,12 @@ pub trait ManagedTrieNode {
 
     /// The ID type used to identify nodes.
     type Id;
+
+    /// The type used for cryptographic commitments.
+    type Commitment;
+
+    /// The input required to compute commitments for this node type.
+    type CommitmentInput;
 
     /// TODO: Docblock
     fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
@@ -128,10 +134,13 @@ pub trait ManagedTrieNode {
 
     // TODO: Return Result, don't implement for EmptyNode?
     /// TODO: Docblock
-    fn get_cached_commitment(&self) -> CachedCommitment;
+    fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment>;
 
     /// TODO: Docblock
-    fn set_cached_commitment(&mut self, _cache: CachedCommitment) -> Result<(), Error> {
+    fn set_cached_commitment(
+        &mut self,
+        _cache: CachedCommitment<Self::Commitment>,
+    ) -> Result<(), Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::set_cached_commitment",
             std::any::type_name::<Self>()
@@ -139,7 +148,7 @@ pub trait ManagedTrieNode {
     }
 
     /// TODO: Docblock
-    fn get_commitment_input(&self) -> CommitmentInput<Self::Id>;
+    fn get_commitment_input(&self) -> Self::CommitmentInput;
 }
 
 pub fn lookup<T: ManagedTrieNode>(
@@ -265,14 +274,18 @@ where
     }
 }
 
-// TODO: I guess we don't even really need the dirty flag on CommitmentCache (or that type, for
-//       that matter) any longer. Except for avoiding eviction..?
-pub fn update_commitments<T: ManagedTrieNode>(
-    log: &mut TrieUpdateLog<T::Id>,
-    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
+// TODO: Rename update_verkle_commitments?
+pub fn update_commitments<T>(
+    log: &mut TrieUpdateLog<NodeId>,
+    manager: &impl NodeManager<Id = NodeId, NodeType = T>,
 ) -> Result<(), Error>
 where
-    T::Id: Copy + Eq + std::hash::Hash,
+    T: ManagedTrieNode<
+            Union = Node,
+            Id = NodeId,
+            Commitment = Commitment,
+            CommitmentInput = VerkleCommitmentInput,
+        >,
 {
     let mut previous_commitments = HashMap::new();
     for dirty_nodes in log.dirty_nodes_by_level.iter().rev() {
@@ -286,15 +299,15 @@ where
             match lock.get_commitment_input() {
                 // TODO: It's weird that we return the default commitment from Leaf nodes but then
                 //       again have this logic here. Need single source of truth.
-                CommitmentInput::Empty => {
+                VerkleCommitmentInput::Empty => {
                     cache.commitment = Commitment::default();
                     panic!("should not happen?");
                 }
-                CommitmentInput::Leaf(values, used_bits, stem) => {
+                VerkleCommitmentInput::Leaf(values, used_bits, stem) => {
                     // TODO: Anything to cache here..?
                     cache.commitment = compute_leaf_node_commitment(&values, &used_bits, &stem);
                 }
-                CommitmentInput::Inner(children) => {
+                VerkleCommitmentInput::Inner(children) => {
                     // let mut child_commitments = vec![Commitment::default().to_scalar(); 256];
                     for (i, child_id) in children.iter().enumerate() {
                         if child_mask[i / 8] & 1 << (i as u8 % 8) == 0 {

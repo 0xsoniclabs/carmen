@@ -1,8 +1,9 @@
 use crate::{
     database::verkle::{
         CachedCommitment,
+        crypto::Commitment,
         variants::managed::managed_trie_node::{
-            CanStoreResult, CommitmentInput, LookupResult, ManagedTrieNode,
+            CanStoreResult, LookupResult, ManagedTrieNode, VerkleCommitmentInput,
         },
     },
     error::Error,
@@ -12,6 +13,8 @@ use crate::{
 impl ManagedTrieNode for InnerNode {
     type Union = Node;
     type Id = NodeId;
+    type Commitment = Commitment;
+    type CommitmentInput = VerkleCommitmentInput;
 
     fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         Ok(LookupResult::Node(
@@ -29,16 +32,19 @@ impl ManagedTrieNode for InnerNode {
         Ok(())
     }
 
-    fn get_cached_commitment(&self) -> CachedCommitment {
+    fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {
         self.commitment
     }
 
-    fn set_cached_commitment(&mut self, cache: CachedCommitment) -> Result<(), Error> {
+    fn set_cached_commitment(
+        &mut self,
+        cache: CachedCommitment<Self::Commitment>,
+    ) -> Result<(), Error> {
         self.commitment = cache;
         Ok(())
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
-        CommitmentInput::Inner(self.children)
+    fn get_commitment_input(&self) -> Self::CommitmentInput {
+        VerkleCommitmentInput::Inner(self.children)
     }
 }

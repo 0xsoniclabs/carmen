@@ -1,8 +1,9 @@
 use crate::{
     database::verkle::{
         CachedCommitment,
+        crypto::Commitment,
         variants::managed::managed_trie_node::{
-            CanStoreResult, CommitmentInput, LookupResult, ManagedTrieNode,
+            CanStoreResult, LookupResult, ManagedTrieNode, VerkleCommitmentInput,
         },
     },
     error::Error,
@@ -12,8 +13,9 @@ use crate::{
 // TODO PROBLEM: There will be a lot of contention around the lock for empty nodes!!
 impl ManagedTrieNode for EmptyNode {
     type Union = Node;
-
     type Id = NodeId;
+    type Commitment = Commitment;
+    type CommitmentInput = VerkleCommitmentInput;
 
     fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         Ok(LookupResult::Value(Value::default()))
@@ -39,11 +41,11 @@ impl ManagedTrieNode for EmptyNode {
         }
     }
 
-    fn get_cached_commitment(&self) -> CachedCommitment {
+    fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {
         CachedCommitment::default()
     }
 
-    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
-        CommitmentInput::Empty
+    fn get_commitment_input(&self) -> Self::CommitmentInput {
+        VerkleCommitmentInput::Empty
     }
 }

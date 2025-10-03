@@ -1,8 +1,9 @@
 use crate::{
     database::verkle::{
         CachedCommitment,
+        crypto::Commitment,
         variants::managed::managed_trie_node::{
-            CanStoreResult, CommitmentInput, LookupResult, ManagedTrieNode,
+            CanStoreResult, LookupResult, ManagedTrieNode, VerkleCommitmentInput,
         },
     },
     error::Error,
@@ -14,6 +15,8 @@ use crate::{
 impl ManagedTrieNode for SparseLeafNode<2> {
     type Union = Node;
     type Id = NodeId;
+    type Commitment = Commitment;
+    type CommitmentInput = VerkleCommitmentInput;
 
     fn lookup(&self, key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
         if key[..31] != self.stem[..] {
@@ -102,21 +105,24 @@ impl ManagedTrieNode for SparseLeafNode<2> {
         Ok(())
     }
 
-    fn get_cached_commitment(&self) -> CachedCommitment {
+    fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {
         self.commitment
     }
 
-    fn set_cached_commitment(&mut self, cache: CachedCommitment) -> Result<(), Error> {
+    fn set_cached_commitment(
+        &mut self,
+        cache: CachedCommitment<Self::Commitment>,
+    ) -> Result<(), Error> {
         self.commitment = cache;
         Ok(())
     }
 
     // FIXME: This should not have to pass 256 values!
-    fn get_commitment_input(&self) -> CommitmentInput<Self::Id> {
+    fn get_commitment_input(&self) -> Self::CommitmentInput {
         let mut values = [Value::default(); 256];
         for ValueWithIndex { index, value } in &self.values {
             values[*index as usize] = *value;
         }
-        CommitmentInput::Leaf(values, self.used_bits, self.stem)
+        VerkleCommitmentInput::Leaf(values, self.used_bits, self.stem)
     }
 }
