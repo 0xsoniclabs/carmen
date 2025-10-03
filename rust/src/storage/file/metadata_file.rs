@@ -34,7 +34,7 @@ pub struct Metadata {
 impl Metadata {
     /// Reads the metadata from the file. It the file does not exist, it is initialized with
     /// [`Metadata::default`].
-    pub fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub fn read_or_init(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
         if !fs::exists(path)? {
             fs::write(path, Self::default().as_bytes())?;
@@ -65,7 +65,7 @@ mod tests {
     use crate::utils::test_dir::{Permissions, TestDir};
 
     #[test]
-    fn read_reads_metadata_from_file() {
+    fn read_or_init_reads_metadata_from_file() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
@@ -76,33 +76,33 @@ mod tests {
         let data = [checkpoint, node_count, reuse_frozen_count];
         fs::write(path.as_path(), data.as_bytes()).unwrap();
 
-        let metadata = Metadata::read(path).unwrap();
+        let metadata = Metadata::read_or_init(path).unwrap();
         assert_eq!(metadata.frozen_nodes, node_count);
         assert_eq!(metadata.frozen_reuse_indices, reuse_frozen_count);
     }
 
     #[test]
-    fn read_returns_default_metadata_if_file_does_not_exist() {
+    fn read_or_init_returns_default_metadata_if_file_does_not_exist() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
-        let metadata = Metadata::read(path).unwrap();
+        let metadata = Metadata::read_or_init(path).unwrap();
         assert_eq!(metadata, Metadata::default());
     }
 
     #[test]
-    fn read_returns_error_for_invalid_file_size() {
+    fn read_or_init_returns_error_for_invalid_file_size() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
         fs::write(&path, [0u8; 10]).unwrap();
 
-        let result = Metadata::read(path);
+        let result = Metadata::read_or_init(path);
         assert!(matches!(result, Err(Error::DatabaseCorruption)));
     }
 
     #[test]
-    fn read_fails_if_file_cannot_be_read() {
+    fn read_or_init_fails_if_file_cannot_be_read() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("metadata");
 
@@ -110,7 +110,7 @@ mod tests {
         fs::write(&path, []).unwrap();
         tempdir.set_permissions(Permissions::WriteOnly).unwrap();
 
-        let result = Metadata::read(&path);
+        let result = Metadata::read_or_init(&path);
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
@@ -156,6 +156,6 @@ mod tests {
             frozen_reuse_indices: 3,
         };
         metadata.write(&path).unwrap();
-        assert_eq!(Metadata::read(&path).unwrap(), metadata);
+        assert_eq!(Metadata::read_or_init(&path).unwrap(), metadata);
     }
 }

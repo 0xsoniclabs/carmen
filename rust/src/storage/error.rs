@@ -15,10 +15,14 @@ use thiserror::Error;
 pub enum Error {
     #[error("not found")]
     NotFound,
+    #[error("the node is frozen and cannot be modified")]
+    Frozen,
     #[error("id / node type mismatch")]
     IdNodeTypeMismatch,
     #[error("id encodes a non-existing node type")]
     InvalidId,
+    #[error("checkpoint creation failed")]
+    Checkpoint,
     #[error("invalid file size")]
     DatabaseCorruption,
     #[error("IO error in storage: {0}")]
@@ -29,8 +33,10 @@ impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Error::NotFound, Error::NotFound)
+            | (Error::Frozen, Error::Frozen)
             | (Error::IdNodeTypeMismatch, Error::IdNodeTypeMismatch)
             | (Error::InvalidId, Error::InvalidId)
+            | (Error::Checkpoint, Error::Checkpoint)
             | (Error::DatabaseCorruption, Error::DatabaseCorruption) => true,
             (Error::Io(a), Error::Io(b)) => {
                 a.kind() == b.kind()
@@ -39,8 +45,10 @@ impl PartialEq for Error {
             }
             (
                 Error::NotFound
+                | Error::Frozen
                 | Error::IdNodeTypeMismatch
                 | Error::InvalidId
+                | Error::Checkpoint
                 | Error::DatabaseCorruption
                 | Error::Io(_),
                 _,
