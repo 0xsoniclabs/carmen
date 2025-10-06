@@ -100,7 +100,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     }
 
     fn get_hash(&self) -> Result<Hash, Error> {
-        let commitment = self.trie.commit();
+        let commitment = self.trie.commit()?;
         Ok(Hash::from(commitment.compress()))
     }
 

@@ -33,7 +33,7 @@ pub trait VerkleTrie: Send + Sync {
     /// Computes and returns the current root commitment of the trie.
     /// The commitment can be used as cryptographic proof of the trie's state,
     /// i.e., all contained key-value pairs.
-    fn commit(&self) -> Commitment;
+    fn commit(&self) -> Result<Commitment, Error>;
 }
 
 #[cfg(test)]
@@ -58,7 +58,7 @@ mod tests {
 
     #[rstest_reuse::apply(all_trie_impls)]
     fn commitment_of_empty_trie_is_default_commitment(#[case] trie: Box<dyn VerkleTrie>) {
-        assert_eq!(trie.commit(), Commitment::default());
+        assert_eq!(trie.commit(), Ok(Commitment::default()));
     }
 
     #[rstest_reuse::apply(all_trie_impls)]

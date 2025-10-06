@@ -32,7 +32,7 @@ impl Node {
         }
     }
 
-    /// Sets the value for the given key.
+    /// Stores the value for the given key.
     /// Consumes the node and returns an updated version.
     pub fn store(self, key: &Key, depth: u8, value: &Value) -> Node {
         match self {

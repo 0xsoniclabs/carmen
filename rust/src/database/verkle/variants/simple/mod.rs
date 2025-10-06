@@ -51,8 +51,8 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
         Ok(())
     }
 
-    fn commit(&self) -> Commitment {
-        self.root.lock().unwrap().commit()
+    fn commit(&self) -> Result<Commitment, Error> {
+        Ok(self.root.lock().unwrap().commit())
     }
 }
 
@@ -70,7 +70,7 @@ mod tests {
         trie.store(&make_leaf_key(&[2], 2), &make_value(2)).unwrap();
         trie.store(&make_leaf_key(&[3], 3), &make_value(3)).unwrap();
 
-        let have = trie.commit();
+        let have = trie.commit().unwrap();
         let want = trie.root.lock().unwrap().commit();
 
         assert_eq!(have, want);
