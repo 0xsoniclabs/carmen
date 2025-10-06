@@ -138,6 +138,17 @@ pub enum NodeType {
     Leaf256,
 }
 
+impl NodeType {
+    pub fn from_node(node: &Node) -> Self {
+        match node {
+            Node::Empty => NodeType::Empty,
+            Node::Inner(_) => NodeType::Inner,
+            Node::Leaf2(_) => NodeType::Leaf2,
+            Node::Leaf256(_) => NodeType::Leaf256,
+        }
+    }
+}
+
 impl NodeSize for NodeType {
     fn node_byte_size(&self) -> usize {
         let inner_size = match self {
