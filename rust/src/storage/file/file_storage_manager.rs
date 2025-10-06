@@ -18,8 +18,10 @@ use std::{
 use zerocopy::IntoBytes;
 
 use crate::{
+    database::verkle::variants::managed::{
+        FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
+    },
     storage::{CheckpointParticipant, Checkpointable, Error, Storage},
-    types::{FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode},
 };
 
 /// A storage manager for Verkle trie nodes for file based storage backends.
@@ -199,7 +201,6 @@ mod tests {
     use super::*;
     use crate::{
         storage::file::{NodeFileStorage, SeekFile},
-        types::NodeId,
         utils::test_dir::{Permissions, TestDir},
     };
 

@@ -14,7 +14,7 @@ mod embedding;
 mod state;
 #[cfg(test)]
 mod test_utils;
-mod variants;
+pub mod variants;
 mod verkle_trie;
 
 pub use state::VerkleTrieCarmenState;

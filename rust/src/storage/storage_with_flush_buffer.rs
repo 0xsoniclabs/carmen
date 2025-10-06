@@ -19,8 +19,8 @@ use std::{
 use dashmap::DashMap;
 
 use crate::{
+    database::verkle::variants::managed::{Node, NodeId},
     storage::{Checkpointable, Error, Storage},
-    types::{Node, NodeId},
 };
 
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
@@ -217,8 +217,8 @@ mod tests {
 
     use super::*;
     use crate::{
+        database::verkle::variants::managed::NodeType,
         storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
-        types::NodeType,
         utils::test_dir::{Permissions, TestDir},
     };
 

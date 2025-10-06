@@ -10,7 +10,7 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::types::{NodeSize, NodeType};
+use crate::{database::verkle::variants::managed::nodes::NodeType, types::NodeSize};
 
 /// An identifier for a node in a (file-based) Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the

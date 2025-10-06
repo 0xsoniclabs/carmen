@@ -8,7 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-pub mod managed;
-mod simple;
+mod nodes;
 
-pub use simple::SimpleInMemoryVerkleTrie;
+pub use nodes::{
+    Node, NodeType, id::NodeId, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+};

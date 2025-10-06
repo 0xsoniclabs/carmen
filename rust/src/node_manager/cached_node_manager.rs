@@ -22,7 +22,6 @@ use crate::{
     error::Error,
     node_manager::NodeManager,
     storage::{Checkpointable, Storage},
-    types::Node,
 };
 
 /// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
@@ -345,8 +344,8 @@ mod tests {
 
     use super::*;
     use crate::{
+        database::verkle::variants::managed::{Node, NodeId, NodeType},
         storage::{self},
-        types::{NodeId, NodeType},
     };
 
     #[test]

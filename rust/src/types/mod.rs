@@ -9,13 +9,11 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use commitment::*;
-pub use id::*;
-pub use node::*;
+pub use node_size::*;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod commitment;
-mod id;
-mod node;
+mod node_size;
 mod update;
 
 /// The Carmen live state implementation.
