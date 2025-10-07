@@ -165,8 +165,6 @@ func runBenchmark(
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	res := benchmarkResult{}
-
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
@@ -186,7 +184,7 @@ func runBenchmark(
 		observer("Creating state without archive in %s ..", path)
 	}
 	if err := os.Mkdir(path, 0700); err != nil {
-		return res, fmt.Errorf("failed to create temporary state directory: %v", err)
+		return benchmarkResult{}, fmt.Errorf("failed to create temporary state directory: %v", err)
 	}
 	if params.keepState {
 		observer("state in %s will not be removed at the end of the run", path)
@@ -212,7 +210,7 @@ func runBenchmark(
 		Archive:   archive,
 	})
 	if err != nil {
-		return res, err
+		return benchmarkResult{}, err
 	}
 	defer func() {
 		start := time.Now()
@@ -223,6 +221,16 @@ func runBenchmark(
 		observer("Final disk usage: %d", getDirectorySize(path))
 	}()
 
+	return runBenchmarkState(state, path, params, observer)
+}
+
+func runBenchmarkState(
+	state state.State,
+	path string,
+	params benchmarkParams,
+	observer func(string, ...any)) (benchmarkResult, error) {
+
+	res := benchmarkResult{}
 	// Progress tracking.
 	reportingInterval := params.reportInterval
 	lastReportTime := time.Now()
@@ -245,7 +253,9 @@ func runBenchmark(
 	for i := 0; i < numBlocks; i++ {
 		for j := 0; j < numReadsPerBlock; j++ {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
-			state.GetBalance(addr)
+			if _, err := state.GetBalance(addr); err != nil {
+				return res, fmt.Errorf("error reading balance for account %x at block %d: %v", addr, i, err)
+			}
 			counter++
 		}
 		update := common.Update{}

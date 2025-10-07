@@ -11,6 +11,8 @@
 package main
 
 import (
+	"bytes"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -19,7 +21,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v2"
+	"go.uber.org/mock/gomock"
 )
 
 func TestBenchmark_RunExampleBenchmark(t *testing.T) {
@@ -167,4 +174,84 @@ func TestGetDirectorySize_UnreadableFile(t *testing.T) {
 	size := getDirectorySize(dir)
 	// Should skip unreadable file and not panic
 	require.GreaterOrEqual(t, size, int64(0))
+}
+
+func TestBenchmark_CLIAction(t *testing.T) {
+	tmpDirs := map[string]struct {
+		tmpdir     func() string
+		shouldFail bool
+	}{
+		"tempdir":     {func() string { return t.TempDir() }, false},
+		"nonexistent": {func() string { return t.TempDir() + "/nonexistent" }, true},
+		"empty":       {func() string { return "" }, false},
+	}
+
+	for name, tc := range tmpDirs {
+		t.Run(name, func(t *testing.T) {
+			app := cli.NewApp()
+			set := flag.NewFlagSet("test", 0)
+			set.Bool("archive", false, "")
+			set.Int("num-blocks", 10, "")
+			set.Int("reads-per-block", 2, "")
+			set.Int("inserts-per-block", 2, "")
+			set.Int("report-interval", 5, "")
+			set.String("tmp-dir", tc.tmpdir(), "")
+			set.Bool("keep-state", false, "")
+			set.Int("schema", 5, "")
+			set.String("variant", "go-file", "")
+
+			ctx := cli.NewContext(app, set, nil)
+
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			err := benchmark(ctx)
+
+			// Restore stdout
+			require.NoError(t, w.Close())
+			os.Stdout = oldStdout
+
+			var buf bytes.Buffer
+			_, _ = buf.ReadFrom(r)
+
+			if tc.shouldFail {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, buf.String(), "Overall time")
+			}
+		})
+	}
+}
+
+func TestRunBenchmarkState_ApplyError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	injectedError := fmt.Errorf("injected error")
+
+	getError := func(threshold, current int) error {
+		if current >= threshold {
+			return injectedError
+		}
+		return nil
+	}
+
+	const methods = 3
+	for i := 0; i <= methods; i++ {
+		state := state.NewMockState(ctrl)
+		state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), getError(i, 1)).AnyTimes()
+		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(getError(i, 2)).AnyTimes()
+		state.EXPECT().GetHash().Return(common.Hash{}, getError(i, 3)).AnyTimes()
+
+		_, err := runBenchmarkState(state, "/tmp", benchmarkParams{
+			numBlocks:          1,
+			numReadsPerBlock:   1,
+			numInsertsPerBlock: 1,
+			reportInterval:     1,
+		}, func(string, ...any) {})
+
+		require.ErrorAs(t, err, &injectedError)
+	}
 }
