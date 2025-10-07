@@ -62,7 +62,7 @@ pub struct CachedNodeManager<K, N, S> {
         ItemLifecycle<N>, // tracks and reports evicted items
     >,
     free_slots: DashSet<usize>, // set of free slots in [`Self::nodes`]
-    //storage for managing IDs, fetching missing nodes, and saving evicted nodes to
+    /// Storage for managing IDs, fetching missing nodes, and saving evicted nodes to
     storage: S,
 }
 
@@ -71,8 +71,12 @@ where
     S: Storage<Id = K, Item = N>,
     N: Default,
 {
-    /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
-    pub fn new(capacity: usize, storage: S) -> Self {
+    /// Creates a new [`CachedNodeManager`] with the given capacity, storage backend, and pin
+    /// predicate.
+    ///
+    /// The pin predicate can be used to prevent nodes from being evicted from the cache.
+    /// It will only be called if a node is otherwise eligible for eviction.
+    pub fn new(capacity: usize, storage: S, is_pinned_predicate: fn(&N) -> bool) -> Self {
         // We allocate a slot for one additional node. This way, when the cache is full, we always
         // have a free slot we can use to insert a new item into the cache and force the
         // eviction of an old one.
@@ -100,7 +104,10 @@ where
                 options,
                 UnitWeighter,
                 RandomState::default(),
-                ItemLifecycle { nodes },
+                ItemLifecycle {
+                    nodes,
+                    is_pinned_predicate,
+                },
             ),
             free_slots: DashSet::from_iter(0..num_nodes),
         }
@@ -254,18 +261,25 @@ where
 /// Manages the lifecycle of cached items, preventing eviction of items currently in use.
 pub struct ItemLifecycle<N> {
     nodes: Arc<[RwLock<NodeWithMetadata<N>>]>,
+    is_pinned_predicate: fn(&N) -> bool,
 }
 
 impl<K: Eq + Hash + Copy, N> Lifecycle<K, usize> for ItemLifecycle<N> {
     type RequestState = Option<(K, usize)>;
 
     /// Checks if an item can be evicted from the cache.
-    /// An item is considered pinned if another thread holds a lock to it
+    /// An item is considered pinned if another thread holds a lock to it or the
+    /// predicate returns true.
     fn is_pinned(&self, _key: &K, value: &usize) -> bool {
         // NOTE: Another thread may try to acquire a write lock on this node after the function
         // returns, but that should be fine as the the shard containing the item should
         // remain write-locked for the entire eviction process.
-        self.nodes[*value].try_write().is_err()
+        let node_guard = self.nodes[*value].try_write();
+        if let Ok(node_guard) = node_guard {
+            return (self.is_pinned_predicate)(&node_guard.node);
+        }
+        // Failed to lock the node, cannot evict.
+        true
     }
 
     /// No-op
@@ -284,6 +298,7 @@ impl<N> Clone for ItemLifecycle<N> {
     fn clone(&self) -> Self {
         ItemLifecycle {
             nodes: self.nodes.clone(),
+            is_pinned_predicate: self.is_pinned_predicate,
         }
     }
 }
@@ -306,8 +321,11 @@ mod tests {
     #[test]
     fn cached_node_manager_new_creates_node_manager() {
         let storage = MockCachedNodeManagerStorage::new();
-        let manager =
-            CachedNodeManager::<NodeId, Node, MockCachedNodeManagerStorage>::new(10, storage);
+        let manager = CachedNodeManager::<NodeId, Node, MockCachedNodeManagerStorage>::new(
+            10,
+            storage,
+            pin_nothing,
+        );
         assert_eq!(manager.cache.capacity(), 10);
         assert_eq!(manager.nodes.len(), 11);
         assert_eq!(
@@ -327,7 +345,7 @@ mod tests {
             .with(eq(id1), always())
             .returning(|_, _| Ok(()));
 
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         // Manually insert two nodes
         *manager.nodes[0].write().unwrap() = NodeWithMetadata {
             node: Node::Leaf2(Box::default()),
@@ -355,7 +373,7 @@ mod tests {
         {
             let mut storage = MockCachedNodeManagerStorage::new();
             storage.expect_set().never();
-            let manager = CachedNodeManager::new(10, storage);
+            let manager = CachedNodeManager::new(10, storage, pin_nothing);
             let expected = NodeWithMetadata {
                 node: Node::Leaf2(Box::default()),
                 is_dirty: true,
@@ -371,7 +389,7 @@ mod tests {
             let mut storage = MockCachedNodeManagerStorage::new();
             storage.expect_set().times(1).returning(|_, _| Ok(()));
             // Create manager that only fits two nodes.
-            let manager = CachedNodeManager::new(2, storage);
+            let manager = CachedNodeManager::new(2, storage, pin_nothing);
             let expected_node = NodeWithMetadata {
                 node: Node::Empty(EmptyNode),
                 is_dirty: true,
@@ -401,7 +419,7 @@ mod tests {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_reserve().returning(move |_| expected_id);
         storage.expect_get().never(); // Shouldn't query storage on add
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let id = manager.add(node.clone()).unwrap();
         assert_eq!(id, expected_id);
         let pos = manager.cache.get(&id).unwrap();
@@ -415,7 +433,7 @@ mod tests {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().never(); // Shouldn't query storage if entry is in cache
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let _ = manager
             .insert(
                 id,
@@ -441,7 +459,7 @@ mod tests {
             move |_| Ok(expected_entry.clone())
         });
 
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let entry = get_method(&manager, id).unwrap();
         assert!(entry == expected_entry);
     }
@@ -455,7 +473,7 @@ mod tests {
             .expect_get()
             .returning(|_| Err(storage::Error::NotFound));
 
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let res = get_method(&manager, NodeId::from_idx_and_node_type(0, NodeType::Empty));
         assert!(res.is_err());
         assert!(matches!(
@@ -492,7 +510,7 @@ mod tests {
             )
             .returning(|_, _| Ok(()));
 
-        let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
+        let manager = CachedNodeManager::new(NUM_NODES as usize, storage, pin_nothing);
 
         for i in 0..NUM_NODES {
             let id = NodeId::from_idx_and_node_type(i, NodeType::Empty);
@@ -538,7 +556,7 @@ mod tests {
         }
         storage.expect_checkpoint().times(1).returning(|| Ok(()));
 
-        let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
+        let manager = CachedNodeManager::new(NUM_NODES as usize, storage, pin_nothing);
         for _ in 0..NUM_NODES {
             // Newly added nodes are always dirty
             let _ = manager.add(Node::Empty(EmptyNode)).unwrap();
@@ -558,7 +576,7 @@ mod tests {
             .with(eq(id))
             .returning(|_| Ok(()));
 
-        let manager = CachedNodeManager::new(2, storage);
+        let manager = CachedNodeManager::new(2, storage, pin_nothing);
         let _ = manager.add(entry).unwrap();
         let _ = manager.cache.get(&id).expect("entry should be in cache");
         manager.delete(id).unwrap();
@@ -581,7 +599,7 @@ mod tests {
             .with(eq(id))
             .returning(|_| Err(storage::Error::NotFound));
 
-        let manager = CachedNodeManager::new(2, storage);
+        let manager = CachedNodeManager::new(2, storage, pin_nothing);
         let _ = manager.add(Node::Empty(EmptyNode)).unwrap();
         let res = manager.delete(id);
         assert!(res.is_err());
@@ -592,25 +610,43 @@ mod tests {
     }
 
     #[test]
-    fn item_lifecycle_is_pinned_checks_lock_and_pinned_pos() {
-        let nodes = Arc::from([RwLock::new(NodeWithMetadata {
-            node: Node::Empty(EmptyNode),
-            is_dirty: false,
-        })]);
-        let lifecycle = ItemLifecycle { nodes };
+    fn item_lifecycle_is_pinned_checks_lock_and_predicate() {
+        let nodes = Arc::from([
+            RwLock::new(NodeWithMetadata {
+                node: Node::Empty(EmptyNode),
+                is_dirty: false,
+            }),
+            RwLock::new(NodeWithMetadata {
+                node: Node::Inner(Box::default()),
+                is_dirty: false,
+            }),
+        ]);
 
-        // Element is not pinned if it can be locked and position is not PINNED_POS
+        let pin_inner_nodes = |node: &Node| matches!(node, Node::Inner(_));
+
+        let lifecycle = ItemLifecycle {
+            nodes,
+            is_pinned_predicate: pin_inner_nodes,
+        };
+
+        // Element is not pinned if it can be locked and predicate returns false
         assert!(!lifecycle.is_pinned(&0, &0));
 
         // Element is pinned if it cannot be locked (another thread holds a lock)
         let _guard = lifecycle.nodes[0].write().unwrap(); // Lock item at pos 0
         assert!(lifecycle.is_pinned(&0, &0));
+
+        // Element is pinned if predicate returns true
+        assert!(lifecycle.is_pinned(&1, &1));
     }
 
     #[test]
     fn item_lifecycle_on_evict_records_evicted_items() {
         let nodes: Arc<[RwLock<NodeWithMetadata<Node>>]> = Arc::from(vec![].into_boxed_slice());
-        let lifecycle = ItemLifecycle { nodes };
+        let lifecycle = ItemLifecycle {
+            nodes,
+            is_pinned_predicate: pin_nothing,
+        };
         let mut state = lifecycle.begin_request();
         assert!(state.is_none());
         lifecycle.on_evict(&mut state, 42, 0);
@@ -628,6 +664,11 @@ mod tests {
         assert!(!node.is_dirty);
         let _ = node.deref_mut();
         assert!(node.is_dirty);
+    }
+
+    /// Default predicate that never pins any node.
+    fn pin_nothing(_node: &Node) -> bool {
+        false
     }
 
     mock! {

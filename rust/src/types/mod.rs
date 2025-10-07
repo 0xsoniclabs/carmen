@@ -8,11 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-pub use commitment::*;
 pub use node_size::*;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
-mod commitment;
 mod node_size;
 mod update;
 
