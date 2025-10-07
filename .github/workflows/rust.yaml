@@ -115,7 +115,7 @@ jobs:
     - name: cargo test
       run: cargo test --all-targets --no-fail-fast
     - name: shuttle test
-      run: cargo test --features shuttle --all-targets --no-fail-fast shuttle_
+      run: cargo test --features shuttle --no-fail-fast shuttle_
 
   miri:
     name: miri
