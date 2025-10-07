@@ -107,7 +107,7 @@ where
             })
             .collect();
 
-        // TODO: Benchmark different shard size as the current value is overestimated.
+        // TODO: Benchmark different shard size as the default value is overestimated.
         let options = quick_cache::OptionsBuilder::new()
             .weight_capacity(cache_weight as u64)
             .estimated_items_capacity(num_nodes - 1)
