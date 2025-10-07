@@ -19,7 +19,7 @@ use crate::{
     error::Error,
     node_manager::{
         NodeManager,
-        lock_cache::{LockCache, OnEvict},
+        lock_cache::{EvictionHooks, LockCache},
     },
     storage::{Checkpointable, Storage},
 };
@@ -49,16 +49,21 @@ impl<N> DerefMut for NodeWithMetadata<N> {
 }
 
 /// A wrapper around a storage backend that implements the [`OnEvict`] trait
-struct StorageEvictionHandler<S> {
+struct StorageEvictionHandler<S: Storage> {
     storage: S,
+    is_pinned_predicate: fn(&S::Item) -> bool,
 }
 
-impl<S> OnEvict for StorageEvictionHandler<S>
+impl<S> EvictionHooks for StorageEvictionHandler<S>
 where
     S: Storage + Send + Sync,
 {
     type Key = S::Id;
     type Value = NodeWithMetadata<S::Item>;
+
+    fn is_pinned(&self, _key: &Self::Key, value: &Self::Value) -> bool {
+        (self.is_pinned_predicate)(value)
+    }
 
     /// Stores the evicted node in the underlying storage if it is dirty.
     fn on_evict(&self, key: S::Id, node: NodeWithMetadata<S::Item>) -> Result<(), Error> {
@@ -69,7 +74,7 @@ where
     }
 }
 
-impl<S> Deref for StorageEvictionHandler<S> {
+impl<S: Storage> Deref for StorageEvictionHandler<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -96,13 +101,20 @@ where
     S: Storage<Id = K, Item = N> + Send + Sync + 'static,
     N: Default + Clone,
 {
-    /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
-    pub fn new(capacity: usize, storage: S) -> Self {
-        let storage = Arc::new(StorageEvictionHandler { storage });
+    /// Creates a new [`CachedNodeManager`] with the given capacity, storage backend, and pin
+    /// predicate.
+    ///
+    /// The pin predicate can be used to prevent nodes from being evicted from the cache.
+    /// It will only be called if a node is otherwise eligible for eviction.
+    pub fn new(capacity: usize, storage: S, is_pinned_predicate: fn(&N) -> bool) -> Self {
+        let storage = Arc::new(StorageEvictionHandler {
+            storage,
+            is_pinned_predicate,
+        });
         CachedNodeManager {
             nodes: LockCache::new(
                 capacity,
-                storage.clone() as Arc<dyn OnEvict<Key = K, Value = NodeWithMetadata<N>>>,
+                storage.clone() as Arc<dyn EvictionHooks<Key = K, Value = NodeWithMetadata<N>>>,
             ),
             storage,
         }
@@ -228,7 +240,7 @@ mod tests {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_reserve().returning(move |_| expected_id);
         storage.expect_get().never(); // Shouldn't query storage on add
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let id = manager.add(node).unwrap();
         assert_eq!(id, expected_id);
         let node_res = manager
@@ -245,7 +257,7 @@ mod tests {
         let expected_entry = 123;
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().never(); // Shouldn't query storage if entry is in cache
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
 
         get_read_access_or_insert_no_guard(&manager, id, expected_entry, true);
         let entry = get_method(&manager, id).unwrap();
@@ -265,7 +277,7 @@ mod tests {
             .with(eq(id))
             .returning(move |_| Ok(expected_entry));
 
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let entry = get_method(&manager, id).unwrap();
         assert!(entry == expected_entry);
     }
@@ -279,7 +291,7 @@ mod tests {
             .expect_get()
             .returning(|_| Err(storage::Error::NotFound));
 
-        let manager = CachedNodeManager::new(10, storage);
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let res = get_method(&manager, 0);
         assert!(res.is_err());
         assert!(matches!(
@@ -298,7 +310,7 @@ mod tests {
                 .times(1)
                 .with(always(), always()) // we can't make assumptions on which node will be evicted
                 .returning(|_, _| Ok(()));
-            let manager = CachedNodeManager::new(2, storage);
+            let manager = CachedNodeManager::new(2, storage, pin_nothing);
 
             get_read_access_or_insert_no_guard(&manager, 0, 123, true);
             get_read_access_or_insert_no_guard(&manager, 1, 456, true);
@@ -309,7 +321,7 @@ mod tests {
         {
             let mut storage = MockCachedNodeManagerStorage::new();
             storage.expect_set().never();
-            let manager = CachedNodeManager::new(2, storage);
+            let manager = CachedNodeManager::new(2, storage, pin_nothing);
 
             get_read_access_or_insert_no_guard(&manager, 0, 123, false);
             get_read_access_or_insert_no_guard(&manager, 1, 456, false);
@@ -332,7 +344,7 @@ mod tests {
         }
         storage.expect_checkpoint().times(1).returning(|| Ok(()));
 
-        let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
+        let manager = CachedNodeManager::new(NUM_NODES as usize, storage, pin_nothing);
         for i in 0..NUM_NODES {
             get_read_access_or_insert_no_guard(&manager, i, 123, true);
         }
@@ -349,7 +361,7 @@ mod tests {
             .times(1)
             .with(eq(id))
             .returning(|_| Ok(()));
-        let manager = CachedNodeManager::new(2, storage);
+        let manager = CachedNodeManager::new(2, storage, pin_nothing);
 
         get_read_access_or_insert_no_guard(&manager, id, entry, true);
         // Check the element is in the manager
@@ -378,7 +390,7 @@ mod tests {
             .with(eq(id))
             .returning(|_| Err(storage::Error::NotFound));
 
-        let manager = CachedNodeManager::new(2, storage);
+        let manager = CachedNodeManager::new(2, storage, pin_nothing);
         get_read_access_or_insert_no_guard(&manager, id, 123, true);
         let res = manager.delete(id);
         assert!(res.is_err());
@@ -402,6 +414,28 @@ mod tests {
     }
 
     #[test]
+    fn storage_eviction_handler_calls_is_pinned_predicate() {
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage.expect_set().never();
+        let handler = StorageEvictionHandler {
+            storage,
+            is_pinned_predicate: move |node: &i32| node == &123,
+        };
+
+        let node1 = &NodeWithMetadata {
+            node: 123,
+            is_dirty: false,
+        };
+        let node2 = &NodeWithMetadata {
+            node: 456,
+            is_dirty: false,
+        };
+
+        assert!(handler.is_pinned(&0, node1));
+        assert!(!handler.is_pinned(&1, node2));
+    }
+
+    #[test]
     fn storage_eviction_handler_on_evict_saves_dirty_nodes() {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage
@@ -409,7 +443,10 @@ mod tests {
             .times(1)
             .with(eq(0), eq(123))
             .returning(|_, _| Ok(()));
-        let handler = StorageEvictionHandler { storage };
+        let handler = StorageEvictionHandler {
+            storage,
+            is_pinned_predicate: pin_nothing,
+        };
         handler
             .on_evict(
                 0,
@@ -437,7 +474,10 @@ mod tests {
         storage
             .expect_set()
             .returning(|_, _| Err(storage::Error::NotFound));
-        let handler = StorageEvictionHandler { storage };
+        let handler = StorageEvictionHandler {
+            storage,
+            is_pinned_predicate: pin_nothing,
+        };
         let res = handler.on_evict(
             0,
             NodeWithMetadata {
@@ -450,6 +490,12 @@ mod tests {
             res.unwrap_err(),
             Error::Storage(storage::Error::NotFound)
         ));
+    }
+
+    /// Default predicate that never pins any node.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn pin_nothing(_node: &Node) -> bool {
+        false
     }
 
     mock! {
