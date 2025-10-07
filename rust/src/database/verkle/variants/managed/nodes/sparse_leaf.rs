@@ -10,7 +10,10 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::{database::verkle::crypto::Commitment, types::Value};
+use crate::{
+    database::{managed_trie::CachedCommitment, verkle::crypto::Commitment},
+    types::Value,
+};
 
 /// A value of a leaf node in a managed Verkle trie, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -32,9 +35,10 @@ pub struct ValueWithIndex {
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct SparseLeafNode<const N: usize> {
-    pub commitment: Commitment,
     pub stem: [u8; 31],
     pub values: [ValueWithIndex; N],
+    pub used_bits: [u8; 256 / 8],
+    pub commitment: CachedCommitment<Commitment>,
 }
 
 impl<const N: usize> Default for SparseLeafNode<N> {
@@ -45,9 +49,10 @@ impl<const N: usize> Default for SparseLeafNode<N> {
         });
 
         SparseLeafNode {
-            commitment: Commitment::default(),
             stem: [0; 31],
             values,
+            used_bits: [0; 256 / 8],
+            commitment: CachedCommitment::default(),
         }
     }
 }
@@ -61,8 +66,9 @@ mod tests {
         const N: usize = 2;
         let node: SparseLeafNode<N> = SparseLeafNode::default();
 
-        assert_eq!(node.commitment, Commitment::default());
         assert_eq!(node.stem, [0; 31]);
+        assert_eq!(node.used_bits, [0; 256 / 8]);
+        assert_eq!(node.commitment, CachedCommitment::default());
 
         for (i, value) in node.values.iter().enumerate() {
             assert_eq!(value.index, i as u8);
