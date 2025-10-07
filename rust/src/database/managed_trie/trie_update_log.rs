@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 
 // TODO: Do we have to deal with deletions?
+// TODO: We need to properly handle leaf nodes that get pushed down
 pub struct TrieUpdateLog<IdType> {
     pub dirty_nodes_by_level: Vec<HashMap<IdType, [u8; 32]>>,
 }
