@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn item_lifecycle_is_pinned_checks_lock_and_pinned_pos() {
         let nodes = Arc::from([RwLock::new(NodeWithMetadata {
-            node: Node::Empty,
+            node: Node::Empty(EmptyNode),
             is_dirty: false,
         })]);
         let lifecycle = ItemLifecycle { nodes };
@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
         let mut node = NodeWithMetadata {
-            node: Node::Empty,
+            node: Node::Empty(EmptyNode),
             is_dirty: false,
         };
         assert!(!node.is_dirty);
