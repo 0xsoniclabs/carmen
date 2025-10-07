@@ -8,9 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod nodes;
-
-pub use nodes::{
-    Node, NodeType, empty::EmptyNode, id::NodeId, inner::InnerNode, leaf::FullLeafNode,
-    sparse_leaf::SparseLeafNode,
-};
+/// An empty node in a managed Verkle trie.
+/// This is a zero-sized type that only exists for implementing traits on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmptyNode;

@@ -10,24 +10,24 @@
 
 use crate::{
     database::verkle::variants::managed::nodes::{
-        inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+        empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
     },
     types::NodeSize,
 };
 
+pub mod empty;
 pub mod id;
 pub mod inner;
 pub mod leaf;
 pub mod sparse_leaf;
 
-/// A node in a (file-based) Verkle trie.
+/// A node in a managed Verkle trie.
 //
 /// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
 /// dictated by the largest variant).
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
-    #[default]
-    Empty,
+    Empty(EmptyNode),
     Inner(Box<InnerNode>),
     Leaf2(Box<SparseLeafNode<2>>),
     Leaf256(Box<FullLeafNode>),
@@ -36,7 +36,7 @@ pub enum Node {
 impl Node {
     pub fn to_node_type(&self) -> NodeType {
         match self {
-            Node::Empty => NodeType::Empty,
+            Node::Empty(_) => NodeType::Empty,
             Node::Inner(_) => NodeType::Inner,
             Node::Leaf2(_) => NodeType::Leaf2,
             Node::Leaf256(_) => NodeType::Leaf256,
@@ -54,9 +54,15 @@ impl NodeSize for Node {
     }
 }
 
-/// A node type of a node in a (file-based) Verkle trie.
+impl Default for Node {
+    fn default() -> Self {
+        Node::Empty(EmptyNode)
+    }
+}
+
+/// A node type of a node in a managed Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeType {
     Empty,
     Inner,
@@ -130,7 +136,7 @@ mod tests {
 
     #[test]
     fn node_byte_size_returns_node_type_byte_size() {
-        let empty_node = Node::Empty;
+        let empty_node = Node::Empty(EmptyNode);
         let inner_node = Node::Inner(Box::default());
         let leaf2_node = Node::Leaf2(Box::default());
         let leaf256_node = Node::Leaf256(Box::default());

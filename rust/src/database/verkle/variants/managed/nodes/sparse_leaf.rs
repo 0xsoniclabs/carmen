@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{database::verkle::crypto::Commitment, types::Value};
 
-/// A value of a leaf node in a (file-based) Verkle trie, together with its index.
+/// A value of a leaf node in a managed Verkle trie, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(
@@ -26,7 +26,7 @@ pub struct ValueWithIndex {
     pub value: Value,
 }
 
-/// A sparsely populated leaf node in a (file-based) Verkle trie.
+/// A sparsely populated leaf node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
