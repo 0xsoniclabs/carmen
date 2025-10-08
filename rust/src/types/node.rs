@@ -130,7 +130,7 @@ impl NodeSize for Node {
 
 /// A node type of a node in a (file-based) Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeType {
     Empty,
     Inner,

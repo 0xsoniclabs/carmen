@@ -17,7 +17,7 @@ use std::{
 };
 
 use dashmap::DashSet;
-use quick_cache::{Lifecycle, OptionsBuilder, Weighter};
+use quick_cache::{Lifecycle, OptionsBuilder, Weighter, sync::PlaceholderGuard};
 
 use crate::{
     error::Error,
@@ -175,7 +175,18 @@ where
     /// Insert an item in the node manager, reusing a free slot if available or evicting an
     /// existing item if the cache is full.
     /// Returns the position of the inserted node in the `nodes` vector.
-    fn insert(&self, key: K, node: NodeWithMetadata<N>) -> Result<usize, Error> {
+    fn insert(
+        &self,
+        node: NodeWithMetadata<N>,
+        cache_guard: PlaceholderGuard<
+            '_,
+            K,
+            usize,
+            ByteSizeWeighter,
+            RandomState,
+            ItemLifecycle<N>,
+        >,
+    ) -> Result<usize, Error> {
         // While there should always be at least one free slot available, there is a interval in
         // which the set may be empty while another thread is inserting a new item and before it has
         // evicted an old one. In that case, we loop until a free slot is available.
@@ -188,11 +199,13 @@ where
             }
             hint::spin_loop();
         };
+        // Keep the lock to pin the element
         let mut guard = self.nodes[pos].write().unwrap();
         *guard = node;
-        drop(guard); // release lock before inserting in cache
         // Insert a new item in cache, evict an old item if necessary
-        let evicted = self.cache.insert_with_lifecycle(key, pos);
+        let evicted = cache_guard
+            .insert_with_lifecycle(pos)
+            .expect("Placeholder was removed from the cache. This happened probably because a concurrent delete operation was executed on the same key. This is not allowed.");
         self.on_evict(evicted.as_slice())?;
         Ok(pos)
     }
@@ -202,6 +215,41 @@ where
     pub fn get_element_memory_footprint() -> usize {
         mem::size_of::<RwLock<NodeWithMetadata<N>>>() // Stored wrapper in the nodes vector
     + (((mem::size_of::<K>() + mem::size_of::<usize>() + 21) as f64 * 1.5).floor() as usize).next_power_of_two() // Cache overhead per item
+    }
+
+    fn get_access<'a, T>(
+        &'a self,
+        id: K,
+        access_function: impl Fn(&'a RwLock<NodeWithMetadata<N>>) -> T + 'a,
+    ) -> Result<T, Error>
+    where
+        N: 'a,
+    {
+        loop {
+            match self.cache.get_value_or_guard(&id, None) {
+                quick_cache::sync::GuardResult::Value(pos) => {
+                    let guard = access_function(&self.nodes[pos]);
+                    if let Some(new_pos) = self.cache.peek(&id)
+                        && new_pos == pos
+                    {
+                        return Ok(guard);
+                    }
+                    continue;
+                }
+                quick_cache::sync::GuardResult::Guard(guard) => {
+                    let node = self.storage.get(id)?;
+                    let pos = self.insert(
+                        NodeWithMetadata {
+                            node,
+                            is_dirty: false,
+                        },
+                        guard,
+                    )?;
+                    return Ok(access_function(&self.nodes[pos]));
+                }
+                quick_cache::sync::GuardResult::Timeout => unreachable!(),
+            }
+        }
     }
 }
 
@@ -216,13 +264,22 @@ where
 
     fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error> {
         let id = self.storage.reserve(&node);
-        self.insert(
-            id,
-            NodeWithMetadata {
-                node,
-                is_dirty: true,
-            },
-        )?;
+        match self.cache.get_value_or_guard(&id, None) {
+            quick_cache::sync::GuardResult::Value(_) => {
+                // TODO: use an error here
+                panic!("Reserved ID already present in cache");
+            }
+            quick_cache::sync::GuardResult::Guard(guard) => {
+                let _pos = self.insert(
+                    NodeWithMetadata {
+                        node,
+                        is_dirty: true,
+                    },
+                    guard,
+                )?;
+            }
+            quick_cache::sync::GuardResult::Timeout => unreachable!(),
+        }
         Ok(id)
     }
 
@@ -230,56 +287,14 @@ where
         &self,
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
-        if let Some(pos) = self.cache.get(&id) {
-            loop {
-                let guard = self.nodes[pos].read().unwrap();
-                // The node may have been deleted from the cache in the meantime and/or re-inserted
-                if let Some(new_pos) = self.cache.peek(&id) {
-                    if new_pos == pos {
-                        return Ok(guard);
-                    } else {
-                        continue; // The node was re-inserted in the cache in a different position, retry
-                    }
-                }
-            }
-        }
-        let node = self.storage.get(id)?;
-        let pos = self.insert(
-            id,
-            NodeWithMetadata {
-                node,
-                is_dirty: false,
-            },
-        )?;
-        Ok(self.nodes[pos].read().unwrap())
+        self.get_access(id, |lock| lock.read().unwrap())
     }
 
     fn get_write_access(
         &self,
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
-        if let Some(pos) = self.cache.get(&id) {
-            loop {
-                let guard = self.nodes[pos].write().unwrap();
-                // The node may have been deleted from the cache in the meantime and/or re-inserted
-                if let Some(new_pos) = self.cache.peek(&id) {
-                    if new_pos == pos {
-                        return Ok(guard);
-                    } else {
-                        continue; // The node was re-inserted in the cache in a different position, retry.
-                    }
-                }
-            }
-        }
-        let node = self.storage.get(id)?;
-        let pos = self.insert(
-            id,
-            NodeWithMetadata {
-                node,
-                is_dirty: false,
-            },
-        )?;
-        Ok(self.nodes[pos].write().unwrap())
+        self.get_access(id, |lock| lock.write().unwrap())
     }
 
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
@@ -300,7 +315,7 @@ impl<K, N, S> Checkpointable for CachedNodeManager<K, N, S>
 where
     S: Storage<Id = K, Item = N> + Checkpointable,
     N: Default,
-    K: Eq + Hash + Copy + NodeSize,
+    K: Eq + Hash + Copy + NodeSize + std::fmt::Debug,
 {
     fn checkpoint(&self) -> Result<(), crate::storage::Error> {
         for (id, pos) in self.cache.iter() {
@@ -324,7 +339,7 @@ pub struct ItemLifecycle<N> {
     nodes: Arc<[RwLock<NodeWithMetadata<N>>]>,
 }
 
-impl<K: Eq + Hash + Copy, N> Lifecycle<K, usize> for ItemLifecycle<N> {
+impl<K: Eq + Hash + Copy + std::fmt::Debug, N> Lifecycle<K, usize> for ItemLifecycle<N> {
     type RequestState = Vec<(K, usize)>;
 
     /// Checks if an item can be evicted from the cache.
@@ -374,12 +389,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{path::Path, time::Duration};
 
+    use itertools::Itertools;
     use mockall::{
         Sequence, mock,
         predicate::{always, eq, ne},
     };
+    use quick_cache::{DefaultHashBuilder, UnitWeighter, sync::DefaultLifecycle};
 
     use super::*;
     use crate::{
@@ -428,6 +445,17 @@ mod tests {
         for case in cases {
             let mut storage = MockCachedNodeManagerStorage::new();
             storage.expect_set().returning(move |_, _| Ok(()));
+
+            storage.expect_reserve().returning({
+                let count = AtomicU64::new(0);
+                let case = case.clone();
+                move |_| {
+                    NodeId::from_idx_and_node_type(
+                        count.fetch_add(1, Ordering::SeqCst),
+                        case[count.load(Ordering::SeqCst) as usize % case.len()],
+                    )
+                }
+            });
             let num_nodes = cache_capacity
                 / (case
                     .iter()
@@ -437,20 +465,13 @@ mod tests {
 
             for i in 0..(num_nodes * 2) {
                 let node_type = case[i % case.len()];
-                let id = NodeId::from_idx_and_node_type(i as u64, node_type);
                 let _ = manager
-                    .insert(
-                        id,
-                        NodeWithMetadata {
-                            node: match node_type {
-                                NodeType::Leaf2 => Node::Leaf2(Box::default()),
-                                NodeType::Leaf256 => Node::Leaf256(Box::default()),
-                                NodeType::Inner => Node::Inner(Box::default()),
-                                NodeType::Empty => unreachable!(),
-                            },
-                            is_dirty: true,
-                        },
-                    )
+                    .add(match node_type {
+                        NodeType::Leaf2 => Node::Leaf2(Box::default()),
+                        NodeType::Leaf256 => Node::Leaf256(Box::default()),
+                        NodeType::Inner => Node::Inner(Box::default()),
+                        NodeType::Empty => unreachable!(),
+                    })
                     .unwrap();
             }
             // Iterating over the cache gives the actual elements stored in the manager
@@ -475,6 +496,19 @@ mod tests {
         let num_nodes = num_shards * 32; // 32 items per shard seems what quick_cache requires for each shard.
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_set().never();
+        storage.expect_reserve().returning({
+            let count = AtomicU64::new(0);
+            move |_| {
+                NodeId::from_idx_and_node_type(
+                    count.fetch_add(1, Ordering::SeqCst),
+                    NodeType::Leaf2,
+                )
+            }
+        });
+        // quick_cache doesn't allow querying the hot allocation directly, so we check it by filling
+        // up the cache and observing the eviction behavior. With hot_allocation = 1.0, no eviction
+        // should happen. The only reliable way to test this is to also have a shard capacity of 1,
+        // otherwise key collisions may cause evictions on the same shard.
         let manager = TestCachedNodeManager::new_with_options(
             num_nodes,
             Some(num_shards),
@@ -482,43 +516,31 @@ mod tests {
             storage,
         );
         assert_eq!(manager.cache.num_shards(), num_shards);
-        // quick_cache doesn't allow querying the hot allocation directly, so we check it by filling
-        // up the cache and observing the eviction behavior. With hot_allocation = 1.0, no eviction
-        // should happen.
-        // The only reliable way to test this is to also have a shard capacity of 1, otherwise key
-        // collisions may cause evictions on the same shard.
-        let node = NodeWithMetadata {
-            node: Node::Leaf2(Box::default()),
-            is_dirty: true, // mark as dirty to trigger eviction
-        };
-        for i in 0..manager.nodes.len() - 1 {
-            let _ = manager.insert(
-                NodeId::from_idx_and_node_type(i as u64, NodeType::Leaf2),
-                node.clone(),
-            );
+        for _ in 0..manager.nodes.len() - 1 {
+            let _ = manager.add(Node::Leaf2(Box::default())).unwrap();
         }
         assert_eq!(manager.cache.len(), manager.nodes.len() - 1);
     }
 
     #[test]
-    fn cached_node_manager_always_has_free_positions_in_free_list() {
+    fn cached_node_manager_always_has_free_positions_in_free_slots() {
         let min_size_node_type = NodeType::Leaf2;
         let max_capacity = ONE_MB;
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_set().returning(move |_, _| Ok(()));
+        storage.expect_reserve().returning({
+            let count = AtomicU64::new(0);
+            move |_| {
+                NodeId::from_idx_and_node_type(
+                    count.fetch_add(1, Ordering::SeqCst),
+                    min_size_node_type,
+                )
+            }
+        });
         let manager = TestCachedNodeManager::new(max_capacity, storage);
 
-        for i in 0..manager.nodes.len() {
-            let id = NodeId::from_idx_and_node_type(i as u64, min_size_node_type);
-            let _ = manager
-                .insert(
-                    id,
-                    NodeWithMetadata {
-                        node: Node::Leaf2(Box::default()),
-                        is_dirty: true,
-                    },
-                )
-                .unwrap();
+        for _ in 1..manager.nodes.len() {
+            let _ = manager.add(Node::Leaf2(Box::default())).unwrap();
         }
         assert!(
             !manager.free_slots.is_empty(),
@@ -574,10 +596,18 @@ mod tests {
             let manager = TestCachedNodeManager::new(ONE_MB, storage);
 
             let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            let pos = manager.insert(id, expected_node.clone()).unwrap();
-            let guard = manager.nodes[pos].read().unwrap();
-            assert_eq!(*guard, expected_node);
-            assert!(!manager.free_slots.contains(&pos));
+            match manager.cache.get_value_or_guard(&id, None) {
+                quick_cache::sync::GuardResult::Value(_) => {
+                    panic!("ID should not be present in cache");
+                }
+                quick_cache::sync::GuardResult::Guard(guard) => {
+                    let pos = manager.insert(expected_node.clone(), guard).unwrap();
+                    let guard = manager.nodes[pos].read().unwrap();
+                    assert_eq!(*guard, expected_node);
+                    assert!(!manager.free_slots.contains(&pos));
+                }
+                quick_cache::sync::GuardResult::Timeout => unreachable!(),
+            }
         }
         // Cache is full
         {
@@ -587,9 +617,17 @@ mod tests {
 
             for i in 0..manager.nodes.len() + 1 {
                 let id = NodeId::from_idx_and_node_type(i as u64, NodeType::Leaf2);
-                let pos = manager.insert(id, expected_node.clone()).unwrap();
-                let guard = manager.nodes[pos].read().unwrap();
-                assert_eq!(*guard, expected_node);
+                match manager.cache.get_value_or_guard(&id, None) {
+                    quick_cache::sync::GuardResult::Value(_) => {
+                        panic!("ID should not be present in cache");
+                    }
+                    quick_cache::sync::GuardResult::Guard(guard) => {
+                        let pos = manager.insert(expected_node.clone(), guard).unwrap();
+                        let guard = manager.nodes[pos].read().unwrap();
+                        assert_eq!(*guard, expected_node);
+                    }
+                    quick_cache::sync::GuardResult::Timeout => unreachable!(),
+                }
             }
         }
     }
@@ -616,17 +654,10 @@ mod tests {
         let id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().never(); // Shouldn't query storage if entry is in cache
+        storage.expect_reserve().returning(move |_| id);
         let manager = TestCachedNodeManager::new(ONE_MB, storage);
 
-        let _ = manager
-            .insert(
-                id,
-                NodeWithMetadata {
-                    node: expected_entry.clone(),
-                    is_dirty: false,
-                },
-            )
-            .unwrap();
+        let _ = manager.add(expected_entry.clone()).unwrap();
         let entry = get_method(&manager, id).unwrap();
         assert!(entry == expected_entry);
     }
@@ -817,70 +848,6 @@ mod tests {
     }
 
     #[rstest_reuse::apply(get_method)]
-    fn shuttle__cached_node_manager_never_returns_a_reference_to_a_non_existing_node_on_delete(
-        #[case] get_method: GetMethod,
-    ) {
-        run_shuttle_check(
-            move || {
-                let capacity = ONE_MB;
-                let id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
-                let node = NodeWithMetadata {
-                    node: Node::Leaf2(Box::default()),
-                    is_dirty: false,
-                };
-                let mut storage = MockCachedNodeManagerStorage::new();
-                let is_deleted = Arc::new(AtomicBool::new(false));
-                storage.expect_delete().times(1).with(eq(id)).returning({
-                    let is_deleted = is_deleted.clone();
-                    move |_| {
-                        is_deleted.store(true, Ordering::SeqCst);
-                        Ok(())
-                    }
-                });
-                storage.expect_get().times(0..=1).with(eq(id)).returning({
-                    let is_deleted = is_deleted.clone();
-                    move |_| {
-                        if is_deleted.load(Ordering::SeqCst) {
-                            Err(storage::Error::NotFound)
-                        } else {
-                            Ok(Node::Leaf2(Box::default()))
-                        }
-                    }
-                });
-                let manager = Arc::new(TestCachedNodeManager::new(capacity, storage));
-                *manager.nodes[0].write().unwrap() = node.clone();
-                manager.cache.insert(id, 0);
-
-                // now we spawn two threads: one that deletes the node, and one that tries to get
-                // a reference to it.
-                // the condition we want to test is that the get thread never returns a reference to
-                // a deleted (aka. empty) node.
-
-                let delete_thread = thread::spawn({
-                    let manager = manager.clone();
-                    move || {
-                        manager.delete(id).unwrap();
-                    }
-                });
-
-                let get_thread = thread::spawn({
-                    let manager = manager.clone();
-                    move || {
-                        let res = get_method(&manager, id);
-                        if let Ok(guard) = res {
-                            assert!(guard != Node::default());
-                        }
-                    }
-                });
-
-                delete_thread.join().unwrap();
-                get_thread.join().unwrap();
-            },
-            1000,
-        );
-    }
-
-    #[rstest_reuse::apply(get_method)]
     fn shuttle__cached_node_manager_never_returns_a_reference_to_a_non_existing_node_on_evict(
         #[case] get_method: GetMethod,
     ) {
@@ -971,7 +938,6 @@ mod tests {
     ) {
         run_shuttle_check(
             move || {
-                eprintln!("\n\nNew iteration\n");
                 let num_elements: usize = 3;
                 // Evict the element previous to the last one
                 let id_to_evict =
@@ -1098,12 +1064,259 @@ mod tests {
         );
     }
 
+    #[test]
+    fn shuttle_cached_node_manager_multiple_get_on_same_id_access_insert_only_once_in_cache() {
+        run_shuttle_check(
+            move || {
+                let mut storage = MockCachedNodeManagerStorage::new();
+                storage
+                    .expect_get()
+                    .times(1)
+                    .returning(|_| Ok(Node::Leaf2(Box::default())));
+                let manager = Arc::new(TestCachedNodeManager::new(ONE_MB, storage));
+                let node_id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
+                let mut handles = vec![];
+                for _ in 0..2 {
+                    let manager = manager.clone();
+                    handles.push(thread::spawn(move || {
+                        let _unused = manager.get_read_access(node_id).unwrap();
+                    }));
+                }
+
+                for handle in handles {
+                    handle.join().unwrap();
+                }
+
+                assert_eq!(manager.free_slots.len(), manager.nodes.len() - 1);
+            },
+            10000,
+        );
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+    enum Op {
+        Insert,
+        Get,
+        Delete,
+    }
+
+    impl Op {
+        fn execute(
+            self,
+            manager: Arc<CachedNodeManager<NodeId, Node, FakeStorage>>,
+            node_id: NodeId,
+        ) -> thread::JoinHandle<()> {
+            match self {
+                Op::Insert => thread::spawn(move || {
+                    // Ignore the nodeID as it's controlled by `reserve`
+                    manager.add(Node::Leaf2(Box::default())).unwrap();
+                }),
+                Op::Get => thread::spawn(move || {
+                    let guard = manager.get_read_access(node_id);
+                    if let Ok(guard) = guard {
+                        assert!(**guard != Node::default());
+                    }
+                }),
+                Op::Delete => thread::spawn(move || match manager.delete(node_id) {
+                    Ok(()) | Err(Error::Storage(storage::Error::NotFound)) => {}
+                    Err(e) => panic!("Unexpected error on delete: {e:?}"),
+                }),
+            }
+        }
+    }
+
+    struct FakeStorage {
+        next_id: AtomicU64,
+        free_list: std::sync::Mutex<Vec<NodeId>>,
+    }
+
+    impl FakeStorage {
+        fn new() -> Self {
+            FakeStorage {
+                next_id: AtomicU64::new(0),
+                free_list: std::sync::Mutex::default(),
+            }
+        }
+    }
+
+    impl Storage for FakeStorage {
+        type Id = NodeId;
+
+        type Item = Node;
+
+        fn open(_path: &Path) -> Result<Self, storage::Error>
+        where
+            Self: Sized,
+        {
+            unimplemented!()
+        }
+
+        fn get(&self, id: Self::Id) -> Result<Self::Item, storage::Error> {
+            if id.to_index() < self.next_id.load(Ordering::SeqCst)
+                && !self.free_list.lock().unwrap().contains(&id)
+            {
+                Ok(Node::Leaf2(Box::default()))
+            } else {
+                Err(storage::Error::NotFound)
+            }
+        }
+
+        fn reserve(&self, _item: &Self::Item) -> Self::Id {
+            if let Some(id) = self.free_list.lock().unwrap().pop() {
+                id
+            } else {
+                NodeId::from_idx_and_node_type(
+                    self.next_id.fetch_add(1, Ordering::SeqCst),
+                    NodeType::Leaf2,
+                )
+            }
+        }
+
+        fn set(&self, id: Self::Id, _item: &Self::Item) -> Result<(), storage::Error> {
+            if id.to_index() < self.next_id.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(storage::Error::NotFound)
+            }
+        }
+
+        fn delete(&self, id: Self::Id) -> Result<(), storage::Error> {
+            if id.to_index() < self.next_id.load(Ordering::SeqCst) {
+                self.free_list.lock().unwrap().push(id);
+                Ok(())
+            } else {
+                Err(storage::Error::NotFound)
+            }
+        }
+    }
+
+    // #[test]
+    // fn shuttle_permutations() {
+    //     let node_type = NodeType::Leaf2;
+    //     let node_ids = vec![
+    //         NodeId::from_idx_and_node_type(0, node_type),
+    //         NodeId::from_idx_and_node_type(1, node_type),
+    //         NodeId::from_idx_and_node_type(2, node_type),
+    //     ];
+
+    //     run_shuttle_check(
+    //         move || {
+    //             let mut id = 0;
+    //             let cache_sizes = (3..=5).collect::<Vec<usize>>();
+    //             let operations = vec![Op::Insert, Op::Get, Op::Delete];
+    //             for cache_size in cache_sizes {
+    //                 for operation_case in operations
+    //                     .clone()
+    //                     .into_iter()
+    //                     .cartesian_product(node_ids.clone().into_iter())
+    //                     .combinations_with_replacement(3)
+    //                 {
+    //                     let operation_case = vec![(0, Op::Insert), (0, Op::Get), (0, Op::Get)];
+    //                     println!(
+    //                         "Running case {} with cache size {cache_size}: {operation_case:?}",
+    //                         id
+    //                     );
+    //                     let manager = Arc::new(
+    //                         CachedNodeManager::<NodeId, Node, FakeStorage>::new_with_options(
+    //                             cache_size,
+    //                             Some(1), // Single shard to trigger evictions
+    //                             Some(1.0),
+    //                             FakeStorage::new(),
+    //                         ),
+    //                     );
+
+    //                     let mut handles = vec![];
+    //                     for (op, node_id) in &operation_case {
+    //                         handles.push(op.execute(manager.clone(), *node_id));
+    //                     }
+
+    //                     for handle in handles {
+    //                         handle.join().unwrap();
+    //                     }
+
+    //                     id += 1;
+    //                 }
+    //             }
+    //         },
+    //         1000,
+    //     );
+    // }
+
     #[track_caller]
     fn run_shuttle_check(test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
         #[cfg(feature = "shuttle")]
-        shuttle::check_random(test, _num_iter);
+        {
+            let mut shuttle_config = shuttle::Config::new();
+            shuttle_config.failure_persistence = shuttle::FailurePersistence::File(None);
+            let runner = shuttle::Runner::new(
+                shuttle::scheduler::RandomScheduler::new(_num_iter),
+                shuttle_config,
+            );
+            runner.run(test);
+        }
+        // shuttle::replay_from_file(test, "schedule000.txt");
         #[cfg(not(feature = "shuttle"))]
         test();
+    }
+
+    #[test]
+    fn quick_cache_test() {
+        let options = OptionsBuilder::new()
+            .shards(1)
+            .weight_capacity(800)
+            .estimated_items_capacity(100)
+            .build()
+            .unwrap();
+        let quick_cache = Arc::new(quick_cache::sync::Cache::<u64, u64>::with_options(
+            options,
+            UnitWeighter {},
+            DefaultHashBuilder::default(),
+            DefaultLifecycle::default(),
+        ));
+
+        thread::scope(|s| {
+            let thread1 = s.spawn({
+                let quick_cache = quick_cache.clone();
+                move || match quick_cache.get_value_or_guard(&0, None) {
+                    quick_cache::sync::GuardResult::Value(_) => unreachable!(),
+                    quick_cache::sync::GuardResult::Guard(placeholder_guard) => {
+                        thread::sleep(Duration::from_secs(1));
+                        eprintln!("Thread 1 inserting value");
+                    }
+                    quick_cache::sync::GuardResult::Timeout => unreachable!(),
+                }
+            });
+
+            let thread2 = s.spawn({
+                let quick_cache = quick_cache.clone();
+                move || {
+                    thread::sleep(Duration::from_millis(100));
+                    match quick_cache.get_value_or_guard(&1, None) {
+                        quick_cache::sync::GuardResult::Value(_) => unreachable!(),
+                        quick_cache::sync::GuardResult::Guard(_) => {
+                            eprintln!("Thread 2 got guard");
+                        }
+                        quick_cache::sync::GuardResult::Timeout => unreachable!(),
+                    }
+                }
+            });
+
+            let thread3 = s.spawn({
+                let quick_cache = quick_cache.clone();
+                move || {
+                    thread::sleep(Duration::from_millis(200));
+                    match quick_cache.get_value_or_guard(&0, None) {
+                        quick_cache::sync::GuardResult::Value(_) => {
+                            eprintln!("Thread 3 got value");
+                        }
+                        quick_cache::sync::GuardResult::Guard(_) => {
+                            eprintln!("Thread 3 got guard");
+                        }
+                        quick_cache::sync::GuardResult::Timeout => unreachable!(),
+                    }
+                }
+            });
+        });
     }
 
     #[test]
