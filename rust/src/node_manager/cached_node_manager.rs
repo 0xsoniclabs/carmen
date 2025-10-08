@@ -1125,70 +1125,70 @@ mod tests {
         }
     }
 
-    struct FakeStorage {
-        next_id: AtomicU64,
-        free_list: std::sync::Mutex<Vec<NodeId>>,
-    }
+    // struct FakeStorage {
+    //     next_id: AtomicU64,
+    //     free_list: std::sync::Mutex<Vec<NodeId>>,
+    // }
 
-    impl FakeStorage {
-        fn new() -> Self {
-            FakeStorage {
-                next_id: AtomicU64::new(0),
-                free_list: std::sync::Mutex::default(),
-            }
-        }
-    }
+    // impl FakeStorage {
+    //     fn new() -> Self {
+    //         FakeStorage {
+    //             next_id: AtomicU64::new(0),
+    //             free_list: std::sync::Mutex::default(),
+    //         }
+    //     }
+    // }
 
-    impl Storage for FakeStorage {
-        type Id = NodeId;
+    // impl Storage for FakeStorage {
+    //     type Id = NodeId;
 
-        type Item = Node;
+    //     type Item = Node;
 
-        fn open(_path: &Path) -> Result<Self, storage::Error>
-        where
-            Self: Sized,
-        {
-            unimplemented!()
-        }
+    //     fn open(_path: &Path) -> Result<Self, storage::Error>
+    //     where
+    //         Self: Sized,
+    //     {
+    //         unimplemented!()
+    //     }
 
-        fn get(&self, id: Self::Id) -> Result<Self::Item, storage::Error> {
-            if id.to_index() < self.next_id.load(Ordering::SeqCst)
-                && !self.free_list.lock().unwrap().contains(&id)
-            {
-                Ok(Node::Leaf2(Box::default()))
-            } else {
-                Err(storage::Error::NotFound)
-            }
-        }
+    //     fn get(&self, id: Self::Id) -> Result<Self::Item, storage::Error> {
+    //         if id.to_index() < self.next_id.load(Ordering::SeqCst)
+    //             && !self.free_list.lock().unwrap().contains(&id)
+    //         {
+    //             Ok(Node::Leaf2(Box::default()))
+    //         } else {
+    //             Err(storage::Error::NotFound)
+    //         }
+    //     }
 
-        fn reserve(&self, _item: &Self::Item) -> Self::Id {
-            if let Some(id) = self.free_list.lock().unwrap().pop() {
-                id
-            } else {
-                NodeId::from_idx_and_node_type(
-                    self.next_id.fetch_add(1, Ordering::SeqCst),
-                    NodeType::Leaf2,
-                )
-            }
-        }
+    //     fn reserve(&self, _item: &Self::Item) -> Self::Id {
+    //         if let Some(id) = self.free_list.lock().unwrap().pop() {
+    //             id
+    //         } else {
+    //             NodeId::from_idx_and_node_type(
+    //                 self.next_id.fetch_add(1, Ordering::SeqCst),
+    //                 NodeType::Leaf2,
+    //             )
+    //         }
+    //     }
 
-        fn set(&self, id: Self::Id, _item: &Self::Item) -> Result<(), storage::Error> {
-            if id.to_index() < self.next_id.load(Ordering::SeqCst) {
-                Ok(())
-            } else {
-                Err(storage::Error::NotFound)
-            }
-        }
+    //     fn set(&self, id: Self::Id, _item: &Self::Item) -> Result<(), storage::Error> {
+    //         if id.to_index() < self.next_id.load(Ordering::SeqCst) {
+    //             Ok(())
+    //         } else {
+    //             Err(storage::Error::NotFound)
+    //         }
+    //     }
 
-        fn delete(&self, id: Self::Id) -> Result<(), storage::Error> {
-            if id.to_index() < self.next_id.load(Ordering::SeqCst) {
-                self.free_list.lock().unwrap().push(id);
-                Ok(())
-            } else {
-                Err(storage::Error::NotFound)
-            }
-        }
-    }
+    //     fn delete(&self, id: Self::Id) -> Result<(), storage::Error> {
+    //         if id.to_index() < self.next_id.load(Ordering::SeqCst) {
+    //             self.free_list.lock().unwrap().push(id);
+    //             Ok(())
+    //         } else {
+    //             Err(storage::Error::NotFound)
+    //         }
+    //     }
+    // }
 
     // #[test]
     // fn shuttle_permutations() {
@@ -1211,11 +1211,10 @@ mod tests {
     //                     .cartesian_product(node_ids.clone().into_iter())
     //                     .combinations_with_replacement(3)
     //                 {
-    //                     let operation_case = vec![(0, Op::Insert), (0, Op::Get), (0, Op::Get)];
-    //                     println!(
-    //                         "Running case {} with cache size {cache_size}: {operation_case:?}",
-    //                         id
-    //                     );
+    //                     // println!(
+    //                     //     "Running case {} with cache size {cache_size}:
+    // {operation_case:?}",                     //     id
+    //                     // );
     //                     let manager = Arc::new(
     //                         CachedNodeManager::<NodeId, Node, FakeStorage>::new_with_options(
     //                             cache_size,
