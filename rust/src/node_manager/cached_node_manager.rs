@@ -231,10 +231,16 @@ where
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            let guard = self.nodes[pos].read().unwrap();
-            // The node may have been deleted from the cache in the meantime, check again.
-            if self.cache.get(&id).is_some() {
-                return Ok(guard);
+            loop {
+                let guard = self.nodes[pos].read().unwrap();
+                // The node may have been deleted from the cache in the meantime and/or re-inserted
+                if let Some(new_pos) = self.cache.peek(&id) {
+                    if new_pos == pos {
+                        return Ok(guard);
+                    } else {
+                        continue; // The node was re-inserted in the cache in a different position, retry
+                    }
+                }
             }
         }
         let node = self.storage.get(id)?;
@@ -253,10 +259,16 @@ where
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         if let Some(pos) = self.cache.get(&id) {
-            let guard = self.nodes[pos].write().unwrap();
-            // The node may have been deleted from the cache in the meantime, check again.
-            if self.cache.get(&id).is_some() {
-                return Ok(guard);
+            loop {
+                let guard = self.nodes[pos].write().unwrap();
+                // The node may have been deleted from the cache in the meantime and/or re-inserted
+                if let Some(new_pos) = self.cache.peek(&id) {
+                    if new_pos == pos {
+                        return Ok(guard);
+                    } else {
+                        continue; // The node was re-inserted in the cache in a different position, retry.
+                    }
+                }
             }
         }
         let node = self.storage.get(id)?;
