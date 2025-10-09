@@ -116,8 +116,17 @@ where
     }
 
     fn get(&self, idx: Self::Id) -> Result<Self::Item, Error> {
+        assert!(
+            self.reuse_list_file
+                .lock()
+                .unwrap()
+                .as_slice()
+                .iter()
+                .all(|&i| i != idx)
+        );
         let offset = idx * size_of::<Self::Item>() as u64;
         if self.node_file.len()? < offset + size_of::<T>() as u64 {
+            eprintln!("NodeFileStorage::get NOT FOUND");
             return Err(Error::NotFound);
         }
         // this is hopefully optimized away
@@ -136,6 +145,7 @@ where
 
     fn set(&self, idx: Self::Id, node: &Self::Item) -> Result<(), Error> {
         if idx >= self.next_idx.load(Ordering::Relaxed) {
+            eprintln!("NodeFileStorage::set NOT FOUND");
             return Err(Error::NotFound);
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
             return Err(Error::Frozen);

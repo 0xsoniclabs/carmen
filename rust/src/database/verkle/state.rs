@@ -47,14 +47,6 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     }
 }
 
-// #[cfg_attr(not(test), expect(unused))]
-// impl VerkleTrieCarmenState<ManagedVerkleTrie<FakeCache>> {
-//     pub fn new() -> Self {
-//         let trie = ManagedVerkleTrie::new(Arc::new(FakeCache::new()));
-//         Self { trie }
-//     }
-// }
-
 impl<M> VerkleTrieCarmenState<ManagedVerkleTrie<M>>
 where
     M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync,
@@ -195,14 +187,14 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 mod tests {
     use super::*;
     use crate::{
-        database::verkle::test_utils::FromIndexValues,
+        database::verkle::{FakeCache, test_utils::FromIndexValues},
         types::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate},
     };
 
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<FakeCache>>::new()) as Box<dyn CarmenState>)]
+    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<FakeCache>>::new(Arc::new(FakeCache::new()))) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]

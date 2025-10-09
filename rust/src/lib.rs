@@ -19,6 +19,7 @@ use std::{
 use crate::{
     database::{
         VerkleTrieCarmenState,
+        managed_trie::ManagedTrieNode,
         verkle::variants::managed::{FullLeafNode, InnerNode, Node, NodeId, SparseLeafNode},
     },
     error::Error,
@@ -68,12 +69,19 @@ pub fn open_carmen_db(
                 NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
-            let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
-                str::from_utf8(directory).unwrap(),
-            ))
-            .unwrap();
+            eprintln!("Opening storage at {}", str::from_utf8(directory).unwrap());
+            // let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
+            //     str::from_utf8(directory).unwrap(),
+            // ))
+            // .unwrap();
+            let storage =
+                FileStorage::open(&PathBuf::from(str::from_utf8(directory).unwrap())).unwrap();
 
-            let manager = Arc::new(CachedNodeManager::<NodeId, Node, _>::new(1000, storage));
+            let is_pinned = |node: &Node| node.get_cached_commitment().dirty == 1;
+
+            let manager = Arc::new(CachedNodeManager::<NodeId, Node, _>::new(
+                10_000, storage, is_pinned,
+            ));
 
             Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
                 database::ManagedVerkleTrie<_>,
