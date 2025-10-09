@@ -14,7 +14,6 @@ mod from_to_file;
 mod node_file_storage;
 
 pub use file_backend::*;
-#[cfg(test)]
 pub use file_storage_manager::FileStorageManager;
 use from_to_file::FromToFile;
 pub use node_file_storage::NodeFileStorage;
