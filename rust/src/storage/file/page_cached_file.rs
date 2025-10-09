@@ -18,7 +18,7 @@ use crate::storage::file::{
 /// The actual implementation of [`PageCachedFile<F>`], but without concurrency control.
 /// The generic parameter `D` controls whether to use direct I/O (`true`) or not (`false`).
 #[derive(Debug)]
-struct InnerPageCachedFile<F: FileBackend, const D: bool> {
+struct InnerPageCachedFile<F, const D: bool> {
     file: F,
     /// The logical file size, which may be smaller than the actual file size which is padded to a
     /// multiple of [`Page::SIZE`].
@@ -174,10 +174,10 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
 
 /// A wrapper around a [`FileBackend`] that caches a single page (4096 bytes) in memory.
 /// All read and write operations are performed on this page, which is flushed to the underlying
-/// file when it is dirty and a different page is accessed, or when the file is flushed or dropped.
+/// file when it is dirty and a different page is accessed, or when the file is flushed.
 /// The generic parameter `D` controls whether to use direct I/O (`true`) or not (`false`).
 #[derive(Debug)]
-pub struct PageCachedFile<F: FileBackend, const D: bool>(Mutex<InnerPageCachedFile<F, D>>);
+pub struct PageCachedFile<F, const D: bool>(Mutex<InnerPageCachedFile<F, D>>);
 
 impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
     fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
@@ -202,12 +202,6 @@ impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
 
     fn set_len(&self, size: u64) -> std::io::Result<()> {
         self.0.lock().unwrap().set_len(size)
-    }
-}
-
-impl<F: FileBackend, const D: bool> Drop for PageCachedFile<F, D> {
-    fn drop(&mut self) {
-        let _ = self.0.lock().unwrap().flush();
     }
 }
 
@@ -265,7 +259,7 @@ mod tests {
             file_len: 8192,
             page: Box::new(Page::zeroed()),
             page_index: 0,
-            page_dirty: false,
+            page_dirty: true,
         }));
 
         // Access data outside of the cached page, which should trigger a write of the old page and
@@ -273,8 +267,5 @@ mod tests {
         let mut read_data = vec![0u8; 4096];
         file.read_exact_at(&mut read_data, 4096).unwrap();
         assert_eq!(read_data, vec![1u8; 4096]);
-
-        // Prevent the destructor from running, which would trigger a flush.
-        std::mem::forget(file);
     }
 }

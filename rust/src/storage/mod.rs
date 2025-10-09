@@ -20,7 +20,7 @@ pub mod storage_with_flush_buffer;
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
 /// `Id` and `Item`.
-pub trait Storage {
+pub trait Storage: Send + Sync {
     /// The type of the ID used to identify `Self::Item` in the storage.
     type Id: Copy;
     /// The type of the item stored in the storage.
@@ -58,7 +58,7 @@ pub trait Storage {
 /// implement [`CheckpointParticipant`].
 /// Users of this trait need to ensure that when a checkpoint is requested, there is no other
 /// operation (read, write or other checkpoint) in progress.
-pub trait Checkpointable {
+pub trait Checkpointable: Send + Sync {
     /// Create a checkpoint which is guaranteed to be durable.
     fn checkpoint(&self) -> Result<(), Error>;
 }
