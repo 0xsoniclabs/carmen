@@ -9,9 +9,24 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
 
-use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
+use std::{mem::MaybeUninit, ops::Deref, path::PathBuf, sync::Arc};
 
-use crate::{database::VerkleTrieCarmenState, error::Error, types::*};
+use crate::{
+    database::{
+        VerkleTrieCarmenState,
+        managed_trie::ManagedTrieNode,
+        verkle::variants::managed::{
+            FullLeafNode, InnerNode, Node, NodeFileStorageManager, SparseLeafNode,
+        },
+    },
+    error::Error,
+    node_manager::cached_node_manager::CachedNodeManager,
+    storage::{
+        Storage,
+        file::{NoSeekFile, NodeFileStorage},
+    },
+    types::*,
+};
 
 mod database;
 mod error;
@@ -30,7 +45,7 @@ pub fn open_carmen_db(
     schema: u8,
     live_impl: LiveImpl,
     archive_impl: ArchiveImpl,
-    _directory: &[u8],
+    directory: &[u8],
 ) -> Result<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
         return Err(Error::UnsupportedSchema(schema));
@@ -43,9 +58,29 @@ pub fn open_carmen_db(
     }
 
     match live_impl {
-        LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
-            database::SimpleInMemoryVerkleTrie,
-        >::new()))),
+        // FIXME: Reusing memory for now
+        LiveImpl::Memory => {
+            type FileStorage = NodeFileStorageManager<
+                NodeFileStorage<InnerNode, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+                NodeFileStorage<FullLeafNode, NoSeekFile>,
+            >;
+            eprintln!("Opening storage at {}", str::from_utf8(directory).unwrap());
+            // let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
+            //     str::from_utf8(directory).unwrap(),
+            // ))
+            // .unwrap();
+            let storage =
+                FileStorage::open(&PathBuf::from(str::from_utf8(directory).unwrap())).unwrap();
+
+            let is_pinned = |node: &Node| node.get_commitment().is_dirty();
+
+            let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
+
+            Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+                database::ManagedVerkleTrie<_>,
+            >::new(manager))))
+        }
         LiveImpl::File => Err(Error::UnsupportedImplementation(
             "file-based live state is not yet supported".to_owned(),
         )),
