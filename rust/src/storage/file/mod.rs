@@ -19,7 +19,6 @@ mod page_utils;
 mod reuse_list_file;
 
 pub use file_backend::*;
-#[cfg(test)]
 pub use file_storage_manager::FileStorageManager;
 pub use node_file_storage::NodeFileStorage;
 #[cfg(unix)]

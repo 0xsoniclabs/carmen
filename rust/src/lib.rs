@@ -9,9 +9,27 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
 
-use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
+use std::{
+    mem::MaybeUninit,
+    ops::Deref,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use crate::{database::VerkleTrieCarmenState, error::Error, types::*};
+use crate::{
+    database::{
+        VerkleTrieCarmenState,
+        verkle::variants::managed::{FullLeafNode, InnerNode, Node, NodeId, SparseLeafNode},
+    },
+    error::Error,
+    node_manager::cached_node_manager::CachedNodeManager,
+    storage::{
+        Storage,
+        file::{FileStorageManager, NoSeekFile, NodeFileStorage},
+        storage_with_flush_buffer::StorageWithFlushBuffer,
+    },
+    types::*,
+};
 
 mod database;
 mod error;
@@ -30,7 +48,7 @@ pub fn open_carmen_db(
     schema: u8,
     live_impl: LiveImpl,
     archive_impl: ArchiveImpl,
-    _directory: &[u8],
+    directory: &[u8],
 ) -> Result<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
         return Err(Error::UnsupportedSchema(schema));
@@ -43,9 +61,24 @@ pub fn open_carmen_db(
     }
 
     match live_impl {
-        LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
-            database::SimpleInMemoryVerkleTrie,
-        >::new()))),
+        // FIXME: Reusing memory for now
+        LiveImpl::Memory => {
+            type FileStorage = FileStorageManager<
+                NodeFileStorage<InnerNode, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+                NodeFileStorage<FullLeafNode, NoSeekFile>,
+            >;
+            let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
+                str::from_utf8(directory).unwrap(),
+            ))
+            .unwrap();
+
+            let manager = Arc::new(CachedNodeManager::<NodeId, Node, _>::new(1000, storage));
+
+            Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+                database::ManagedVerkleTrie<_>,
+            >::new(manager))))
+        }
         LiveImpl::File => Err(Error::UnsupportedImplementation(
             "file-based live state is not yet supported".to_owned(),
         )),

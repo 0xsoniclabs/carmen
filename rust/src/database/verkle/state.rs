@@ -15,14 +15,18 @@ use sha3::{Digest, Keccak256};
 use crate::{
     CarmenState,
     database::verkle::{
-        FakeCache, ManagedVerkleTrie,
+        ManagedVerkleTrie,
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
-        variants::SimpleInMemoryVerkleTrie,
+        variants::{
+            SimpleInMemoryVerkleTrie,
+            managed::{Node, NodeId},
+        },
         verkle_trie::VerkleTrie,
     },
     error::Error,
+    node_manager::NodeManager,
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -43,10 +47,20 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     }
 }
 
-#[cfg_attr(not(test), expect(unused))]
-impl VerkleTrieCarmenState<ManagedVerkleTrie<FakeCache>> {
-    pub fn new() -> Self {
-        let trie = ManagedVerkleTrie::new(Arc::new(FakeCache::new()));
+// #[cfg_attr(not(test), expect(unused))]
+// impl VerkleTrieCarmenState<ManagedVerkleTrie<FakeCache>> {
+//     pub fn new() -> Self {
+//         let trie = ManagedVerkleTrie::new(Arc::new(FakeCache::new()));
+//         Self { trie }
+//     }
+// }
+
+impl<M> VerkleTrieCarmenState<ManagedVerkleTrie<M>>
+where
+    M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync,
+{
+    pub fn new(manager: Arc<M>) -> Self {
+        let trie = ManagedVerkleTrie::new(manager);
         Self { trie }
     }
 }
