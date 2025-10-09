@@ -54,7 +54,7 @@ impl<S> StorageWithFlushBuffer<S> {
 
 impl<S> Storage for StorageWithFlushBuffer<S>
 where
-    S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
+    S: Storage<Id = NodeId, Item = Node> + 'static,
 {
     type Id = NodeId;
     type Item = Node;
@@ -129,7 +129,7 @@ impl FlushWorkers {
     /// write them to the underlying storage layer.
     pub fn new<S>(flush_buffer: &Arc<FlushBuffer>, storage: &Arc<S>) -> Self
     where
-        S: Storage<Id = NodeId, Item = Node> + Send + Sync + 'static,
+        S: Storage<Id = NodeId, Item = Node> + 'static,
     {
         let shutdown = Arc::new(AtomicBool::new(false));
         let workers = (0..Self::WORKER_COUNT)
