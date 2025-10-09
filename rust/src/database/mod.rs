@@ -11,4 +11,4 @@
 pub mod managed_trie;
 pub mod verkle;
 
-pub use verkle::{SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};
+pub use verkle::{ManagedVerkleTrie, SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};
