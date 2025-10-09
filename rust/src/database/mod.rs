@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod managed_trie;
+pub mod managed_trie;
 pub mod verkle;
 
-pub use verkle::{SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};
+pub use verkle::{ManagedVerkleTrie, SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};

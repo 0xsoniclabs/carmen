@@ -72,7 +72,10 @@ where
         match self.flush_buffer.get(&id) {
             Some(value) => match value.value() {
                 Op::Set(node) => Ok(node.clone()),
-                Op::Delete => Err(Error::NotFound.into()),
+                Op::Delete => {
+                    eprintln!("StorageWithFlushBuffer::get NOT FOUND (deleted)");
+                    Err(Error::NotFound.into())
+                }
             },
             None => Ok(self.storage.get(id)?),
         }
@@ -94,6 +97,10 @@ where
     }
 
     fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
+        // if id.to_node_type() == Some(NodeType::Empty) {
+        //     return Ok(());
+        // }
+
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }

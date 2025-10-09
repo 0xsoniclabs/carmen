@@ -9,9 +9,10 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use fake_cache::FakeCache;
-#[allow(unused)]
-pub use nodes::NodeFileStorageManager;
-pub use nodes::{Node, empty::EmptyNode, id::NodeId, inner::InnerNode};
+pub use nodes::{
+    Node, NodeFileStorageManager, empty::EmptyNode, id::NodeId, inner::InnerNode,
+    leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+};
 
 use crate::{
     database::{
