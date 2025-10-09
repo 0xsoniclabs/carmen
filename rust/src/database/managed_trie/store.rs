@@ -75,6 +75,7 @@ where
                 // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                 current_lock = manager.get_write_access(new_id)?;
                 manager.delete(current_id)?;
+                update_log.delete(current_id);
                 current_id = new_id;
 
                 // No need to log the update here, we are visiting the node again next iteration.

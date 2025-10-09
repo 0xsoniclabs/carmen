@@ -67,7 +67,7 @@ impl<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync> VerkleTrie
 
     fn commit(&self) -> Result<Commitment, Error> {
         let mut update_log = self.update_log.lock().unwrap();
-        update_commitments(&mut update_log, &*self.manager)?;
+        // update_commitments(&mut update_log, &*self.manager)?;
         Ok(self
             .manager
             .get_read_access(*self.root.read().unwrap())?

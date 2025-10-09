@@ -19,7 +19,7 @@ use std::{
 use dashmap::DashMap;
 
 use crate::{
-    database::verkle::variants::managed::{Node, NodeId},
+    database::verkle::variants::managed::{Node, NodeId, NodeType},
     storage::{Checkpointable, Error, Storage},
 };
 
@@ -74,7 +74,10 @@ where
         match self.flush_buffer.get(&id) {
             Some(value) => match value.value() {
                 Op::Set(node) => Ok(node.clone()),
-                Op::Delete => Err(Error::NotFound),
+                Op::Delete => {
+                    eprintln!("StorageWithFlushBuffer::get NOT FOUND (deleted)");
+                    Err(Error::NotFound)
+                }
             },
             None => Ok(self.storage.get(id)?),
         }
@@ -96,6 +99,10 @@ where
     }
 
     fn delete(&self, id: NodeId) -> Result<(), Error> {
+        if id.to_node_type() == Some(NodeType::Empty) {
+            return Ok(());
+        }
+
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }

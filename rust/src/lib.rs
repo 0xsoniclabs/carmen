@@ -68,12 +68,15 @@ pub fn open_carmen_db(
                 NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
-            let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
-                str::from_utf8(directory).unwrap(),
-            ))
-            .unwrap();
+            eprintln!("Opening storage at {}", str::from_utf8(directory).unwrap());
+            // let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
+            //     str::from_utf8(directory).unwrap(),
+            // ))
+            // .unwrap();
+            let storage =
+                FileStorage::open(&PathBuf::from(str::from_utf8(directory).unwrap())).unwrap();
 
-            let manager = Arc::new(CachedNodeManager::<NodeId, Node, _>::new(1000, storage));
+            let manager = Arc::new(CachedNodeManager::<NodeId, Node, _>::new(10_000, storage));
 
             Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
                 database::ManagedVerkleTrie<_>,

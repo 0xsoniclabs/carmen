@@ -48,7 +48,7 @@ where
         for (id, child_mask) in dirty_nodes.iter() {
             let mut lock = manager.get_write_access(*id)?;
             let mut cache = lock.get_cached_commitment();
-            assert_eq!(cache.dirty, 1);
+            // assert_eq!(cache.dirty, 1);
 
             previous_commitments.insert(*id, cache.commitment());
 

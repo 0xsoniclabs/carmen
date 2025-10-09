@@ -23,6 +23,12 @@ impl<IdType: Eq + std::hash::Hash> TrieUpdateLog<IdType> {
         }
     }
 
+    pub fn delete(&mut self, id: IdType) {
+        for level in &mut self.dirty_nodes_by_level {
+            level.remove(&id);
+        }
+    }
+
     pub fn add(&mut self, level: u8, id: IdType, child_idx: u8) {
         let level = level as usize;
         self.dirty_nodes_by_level
