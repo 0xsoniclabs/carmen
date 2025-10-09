@@ -683,9 +683,9 @@ mod tests {
     }
 
     mockall::mock! {
-        pub Storage<T: 'static> {}
+        pub Storage<T: Send + Sync + 'static> {}
 
-        impl<T: 'static> CheckpointParticipant for Storage<T> {
+        impl<T: Send + Sync + 'static> CheckpointParticipant for Storage<T> {
             fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
 
             fn prepare(&self, checkpoint: u64) -> Result<(), Error>;
@@ -695,7 +695,7 @@ mod tests {
             fn abort(&self, checkpoint: u64) -> Result<(), Error>;
         }
 
-        impl<T: 'static> Storage for Storage<T> {
+        impl<T: Send + Sync + 'static> Storage for Storage<T> {
             type Id = u64;
             type Item = T;
 

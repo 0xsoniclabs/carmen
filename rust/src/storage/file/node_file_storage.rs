@@ -53,7 +53,7 @@ impl<T, F> NodeFileStorage<T, F> {
 
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
-    T: FromBytes + IntoBytes + Immutable,
+    T: FromBytes + IntoBytes + Immutable + Send + Sync,
     F: FileBackend,
 {
     type Id = u64;
