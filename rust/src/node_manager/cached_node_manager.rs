@@ -12,7 +12,6 @@ use std::{
     cmp::Eq,
     hash::Hash,
     ops::{Deref, DerefMut},
-    sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use dashmap::DashSet;
@@ -28,6 +27,7 @@ use crate::{
         lock_cache::{LockCache, OnEvict},
     },
     storage::{Checkpointable, Storage},
+    sync::*,
 };
 
 /// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,

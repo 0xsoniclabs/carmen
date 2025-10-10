@@ -1,12 +1,10 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
 use dashmap::DashSet;
 use quick_cache::{
     DefaultHashBuilder, Lifecycle, UnitWeighter,
     sync::{Cache, DefaultLifecycle},
 };
 
-use crate::error::Error;
+use crate::{error::Error, sync::*};
 
 /// TODO: Docblock
 pub trait OnEvict<K, V>: Send + Sync {
@@ -22,7 +20,7 @@ pub struct LockCache<K, V> {
 
 impl<K, V> LockCache<K, V>
 where
-    K: Copy + Eq + std::hash::Hash,
+    K: Copy + Eq + std::hash::Hash + std::fmt::Debug,
     V: Default,
 {
     /// TODO: Docblock
@@ -43,7 +41,6 @@ where
         );
 
         let true_capacity = faux_cache.num_shards() * faux_cache.shard_capacity() as usize;
-
         let num_slots = true_capacity + 1;
         let locks: Arc<[_]> = (0..num_slots).map(|_| RwLock::default()).collect();
         let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
@@ -228,6 +225,116 @@ mod tests {
         let _guard = cache.get_read_access_or_insert(key, insert_fn);
     }
 
+    #[track_caller]
+    fn run_shuttle_check(test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
+        #[cfg(feature = "shuttle")]
+        {
+            use std::{env, os};
+
+            match env::var("SHUTTLE_REPLAY") {
+                Ok(schedule) => {
+                    let path = if !schedule.is_empty() {
+                        schedule
+                    } else {
+                        // find all the files in the current directory that start with "schedule"
+                        let mut schedules = vec![];
+                        for entry in std::fs::read_dir(".").unwrap() {
+                            let entry = entry.unwrap();
+                            let path = entry.path();
+                            if path.is_file() {
+                                if let Some(name) = path.file_name() {
+                                    if name.to_string_lossy().starts_with("schedule") {
+                                        schedules.push(path.to_string_lossy().to_string());
+                                    }
+                                }
+                            }
+                        }
+                        schedules.sort();
+                        schedules.last().cloned().expect("No schedule files found")
+                    };
+                    shuttle::replay_from_file(test, &path);
+                }
+                Err(_) => {
+                    let mut shuttle_config = shuttle::Config::new();
+                    shuttle_config.failure_persistence = shuttle::FailurePersistence::File(None);
+                    let runner = shuttle::Runner::new(
+                        shuttle::scheduler::RandomScheduler::new(_num_iter),
+                        shuttle_config,
+                    );
+                    runner.run(test);
+                }
+            }
+        }
+        #[cfg(not(feature = "shuttle"))]
+        test();
+    }
+
+    #[test]
+    fn shuttle__cached_node_manager_never_returns_a_reference_to_a_non_existing_node_on_evict() {
+        const VALUE: i32 = i32::MAX;
+        run_shuttle_check(
+            move || {
+                let num_elements: u64 = 3;
+                // Evict the element previous to the last one
+                let logger = Arc::new(EvictionLogger::default());
+                let insert_fn = move || Ok(VALUE);
+
+                let lock_cache = Arc::new(LockCache::<u32, i32>::new(
+                    num_elements as usize,
+                    logger.clone(),
+                ));
+                // TODO: Is it requried? can we get rid of it?
+                // assert_eq!(lock_cache.cache.num_shards(), 1);
+
+                // now we spawn two threads: one that adds a new node to a full cache, which
+                // will cause eviction of an existing node, and one that
+                // tries to get a reference to the node being evicted. The
+                // condition we want to test is that the get thread never
+                // returns a reference to an evicted (aka. empty) node.
+                for i in 0..num_elements {
+                    get_read_access_or_insert_no_guard(&lock_cache, i as u32, insert_fn);
+                }
+                assert_eq!(lock_cache.cache.len(), num_elements as usize);
+
+                let add_thread = thread::spawn({
+                    let lock_cache = lock_cache.clone();
+                    move || {
+                        // Replace the entire cache with new elements
+                        for i in 0..num_elements {
+                            get_read_access_or_insert_no_guard(
+                                &lock_cache,
+                                (i + num_elements) as u32,
+                                insert_fn,
+                            );
+                            // Make the hotter element
+                            get_read_access_or_insert_no_guard(
+                                &lock_cache,
+                                (i + num_elements) as u32,
+                                insert_fn,
+                            );
+                        }
+                    }
+                });
+
+                let get_thread = thread::spawn({
+                    let lock_cache = lock_cache.clone();
+                    move || {
+                        for id_to_get in 0..num_elements {
+                            let res =
+                                lock_cache.get_read_access_or_insert(id_to_get as u32, insert_fn);
+                            if let Ok(guard) = res {
+                                assert!(*guard != i32::default());
+                            }
+                        }
+                    }
+                });
+
+                add_thread.join().unwrap();
+                get_thread.join().unwrap();
+            },
+            10000,
+        );
+    }
     #[test]
     fn items_can_be_inserted_and_removed() {
         let logger = Arc::new(EvictionLogger::default());
