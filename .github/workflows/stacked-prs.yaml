@@ -1,0 +1,25 @@
+name: PR
+
+permissions:
+  contents: read
+  checks: write
+
+on:
+  pull_request:
+    branches: [ "**/**" ]
+
+jobs:
+  targets-main:
+    name: targets main
+    runs-on: ubuntu-latest
+    steps:
+      - name: check PR targets main
+        env:
+          TARGET_BRANCH: ${{ github.base_ref }}
+        run: |
+          if [ "$TARGET_BRANCH" == "main" ]; then
+            exit 0
+          else
+            echo "Stacked PRs can not be merged."
+            exit 1
+          fi
