@@ -16,7 +16,6 @@ use crate::{
     database::verkle::variants::managed::{Node, NodeId},
     storage::{Checkpointable, Error, Storage},
     sync::*,
-    types::{Node, NodeId},
 };
 
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
