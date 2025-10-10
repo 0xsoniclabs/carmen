@@ -20,7 +20,7 @@ use dashmap::DashMap;
 
 use crate::{
     database::verkle::variants::managed::{Node, NodeId},
-    storage::{Checkpointable, Error, Storage},
+    storage::{Checkpointable, Error, RootIdProvider, Storage},
 };
 
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
@@ -113,6 +113,21 @@ where
         // problem because we will wait a little bit longer.
         while !self.flush_buffer.is_empty() {}
         self.storage.checkpoint()
+    }
+}
+
+impl<S> RootIdProvider for StorageWithFlushBuffer<S>
+where
+    S: RootIdProvider,
+{
+    type Id = S::Id;
+
+    fn get_root_id(&self, block_number: u64) -> Result<Self::Id, Error> {
+        self.storage.get_root_id(block_number)
+    }
+
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> Result<(), Error> {
+        self.storage.set_root_id(block_number, id)
     }
 }
 

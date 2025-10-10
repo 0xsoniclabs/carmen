@@ -84,3 +84,16 @@ pub trait CheckpointParticipant {
     /// data itself is not discarded. The checkpoint must have been prepared before.
     fn abort(&self, checkpoint: u64) -> Result<(), Error>;
 }
+
+/// An entity which can provide and store the root IDs for block numbers.
+pub trait RootIdProvider {
+    /// The type of the ID used to identify nodes.
+    type Id;
+
+    /// Returns the root ID for the given block number.
+    fn get_root_id(&self, block_number: u64) -> Result<Self::Id, Error>;
+
+    /// Sets the root ID for the given block number. The block number must greater than all block
+    /// numbers previously passed to `set_root_id`.
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> Result<(), Error>;
+}

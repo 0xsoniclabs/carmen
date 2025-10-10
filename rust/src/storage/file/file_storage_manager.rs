@@ -9,19 +9,21 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    fs::{self, File},
-    io::Read,
+    fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
-
-use zerocopy::IntoBytes;
 
 use crate::{
     database::verkle::variants::managed::{
         EmptyNode, FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
     },
-    storage::{CheckpointParticipant, Checkpointable, Error, Storage},
+    storage::{
+        CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage,
+        file::{
+            checkpoint_data::CheckpointData, from_to_file::FromToFile, root_ids_file::RootIdsFile,
+        },
+    },
 };
 
 /// A storage manager for Verkle trie nodes for file based storage backends.
@@ -40,6 +42,7 @@ where
     inner_nodes: S1,
     leaf_nodes_2: S2,
     leaf_nodes_256: S3,
+    root_ids_file: RootIdsFile<NodeId>,
 }
 
 impl<S1, S2, S3> FileStorageManager<S1, S2, S3>
@@ -53,6 +56,7 @@ where
     pub const LEAF_NODE_256_DIR: &str = "leaf_node_256";
     pub const COMMITTED_CHECKPOINT_FILE: &str = "committed_checkpoint.bin";
     pub const PREPARED_CHECKPOINT_FILE: &str = "prepared_checkpoint.bin";
+    pub const ROOT_IDS_FILE: &str = "root_ids.bin";
 }
 
 impl<S1, S2, S3> Storage for FileStorageManager<S1, S2, S3>
@@ -68,28 +72,27 @@ where
     fn open(dir: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(dir)?;
 
-        let commited_path = dir.join(Self::COMMITTED_CHECKPOINT_FILE);
-        if !fs::exists(&commited_path)? {
-            fs::write(&commited_path, 0u64.as_bytes())?;
-        }
-
-        let mut checkpoint = 0u64;
-        File::open(&commited_path)?.read_exact(checkpoint.as_mut_bytes())?;
+        let checkpoint_data =
+            CheckpointData::read_or_init(dir.join(Self::COMMITTED_CHECKPOINT_FILE))?;
 
         let inner_nodes = S1::open(dir.join(Self::INNER_NODE_DIR).as_path())?;
         let leaf_nodes_2 = S2::open(dir.join(Self::LEAF_NODE_2_DIR).as_path())?;
         let leaf_nodes_256 = S3::open(dir.join(Self::LEAF_NODE_256_DIR).as_path())?;
 
-        inner_nodes.ensure(checkpoint)?;
-        leaf_nodes_2.ensure(checkpoint)?;
-        leaf_nodes_256.ensure(checkpoint)?;
+        let root_ids_file =
+            RootIdsFile::open(dir.join(Self::ROOT_IDS_FILE), checkpoint_data.root_id_count)?;
+
+        inner_nodes.ensure(checkpoint_data.checkpoint_number)?;
+        leaf_nodes_2.ensure(checkpoint_data.checkpoint_number)?;
+        leaf_nodes_256.ensure(checkpoint_data.checkpoint_number)?;
 
         Ok(Self {
             dir: dir.to_path_buf(),
-            checkpoint: AtomicU64::new(checkpoint),
+            checkpoint: AtomicU64::new(checkpoint_data.checkpoint_number),
             inner_nodes,
             leaf_nodes_2,
             leaf_nodes_256,
+            root_ids_file,
         })
     }
 
@@ -176,10 +179,11 @@ where
                 return Err(err);
             }
         }
-        fs::write(
-            self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
-            new_checkpoint.as_bytes(),
-        )?;
+        CheckpointData {
+            checkpoint_number: new_checkpoint,
+            root_id_count: self.root_ids_file.count(),
+        }
+        .write(self.dir.join(Self::PREPARED_CHECKPOINT_FILE))?;
         fs::rename(
             self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
             self.dir.join(Self::COMMITTED_CHECKPOINT_FILE),
@@ -189,6 +193,23 @@ where
         }
         self.checkpoint.store(new_checkpoint, Ordering::Release);
         Ok(())
+    }
+}
+
+impl<S1, S2, S3> RootIdProvider for FileStorageManager<S1, S2, S3>
+where
+    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
+    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
+    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+{
+    type Id = NodeId;
+
+    fn get_root_id(&self, block_number: u64) -> Result<NodeId, Error> {
+        self.root_ids_file.get(block_number)
+    }
+
+    fn set_root_id(&self, block_number: u64, id: NodeId) -> Result<(), Error> {
+        self.root_ids_file.set(block_number, id)
     }
 }
 
@@ -282,6 +303,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
@@ -356,6 +378,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
@@ -424,6 +447,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
@@ -484,6 +508,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
@@ -505,6 +530,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
@@ -560,6 +586,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
@@ -609,12 +636,10 @@ mod tests {
         )).unwrap());
         // The committed checkpoint file should exist and contain the new checkpoint.
         assert_eq!(
-            fs::read(
-                dir.path()
-                    .join(FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE)
-            )
-            .unwrap(),
-            (old_checkpoint + 1).as_bytes()
+            CheckpointData::read_or_init(dir.path().join(
+                FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+            )).unwrap().checkpoint_number,
+            old_checkpoint + 1
         );
         // The checkpoint variable should be updated to the new checkpoint.
         assert_eq!(
@@ -628,12 +653,13 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let old_checkpoint = 1;
-        fs::write(
-                dir.path()
-                    .join(FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE)
-            ,old_checkpoint.as_bytes()
-            )
-            .unwrap();
+        let old_checkpoint_data = CheckpointData {
+            checkpoint_number: old_checkpoint,
+            root_id_count: 0,
+        };
+        old_checkpoint_data.write(dir.path().join(
+            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+        )).unwrap();
 
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
@@ -641,6 +667,7 @@ mod tests {
             inner_nodes: MockStorage::new(),
             leaf_nodes_2: MockStorage::new(),
             leaf_nodes_256: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
@@ -671,12 +698,10 @@ mod tests {
         )).unwrap());
         // The committed checkpoint file should exist and contain the old checkpoint.
         assert_eq!(
-            fs::read(
-                dir.path()
-                    .join(FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE)
-            )
-            .unwrap(),
-            old_checkpoint.as_bytes()
+            CheckpointData::read_or_init(dir.path().join(
+                FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+            )).unwrap().checkpoint_number,
+            old_checkpoint
         );
         // The checkpoint variable should still be the old checkpoint.
         assert_eq!(storage.checkpoint.load(Ordering::Acquire), old_checkpoint);

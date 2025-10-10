@@ -8,6 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+mod checkpoint_data;
 mod file_backend;
 mod file_storage_manager;
 mod from_to_file;
@@ -18,6 +19,7 @@ mod page_cached_file;
 #[cfg(unix)]
 mod page_utils;
 mod reuse_list_file;
+mod root_ids_file;
 
 pub use file_backend::*;
 #[cfg(test)]
