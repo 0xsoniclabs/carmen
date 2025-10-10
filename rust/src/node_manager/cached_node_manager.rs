@@ -100,9 +100,9 @@ where
 
     fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error> {
         let id = self.storage.storage.reserve(&node);
-        self.nodes.get_or_insert(id, move || {
+        let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
-                node,
+                node: node.clone(),
                 is_dirty: true,
             })
         })?;
@@ -113,28 +113,28 @@ where
         &self,
         id: Self::Id,
     ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
-        let lock = self.nodes.get_or_insert(id, || {
+        let lock = self.nodes.get_read_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: false,
             })
         })?;
-        Ok(lock.read().unwrap())
+        Ok(lock)
     }
 
     fn get_write_access(
         &self,
         id: Self::Id,
     ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
-        let lock = self.nodes.get_or_insert(id, || {
+        let lock = self.nodes.get_write_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: false,
             })
         })?;
-        Ok(lock.write().unwrap())
+        Ok(lock)
     }
 
     fn delete(&self, id: Self::Id) -> Result<(), Error> {

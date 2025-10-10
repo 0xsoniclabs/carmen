@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use dashmap::DashSet;
 use quick_cache::{
@@ -67,41 +67,79 @@ where
     }
 
     /// TODO: Docblock
-    pub fn get_or_insert(
+    fn get_access_or_insert<'a, T>(
+        &'a self,
+        key: K,
+        insert_fn: impl Fn() -> Result<V, Error>,
+        access_fn: impl Fn(&'a RwLock<V>) -> T + 'a,
+    ) -> Result<T, Error> {
+        loop {
+            match self.cache.get_value_or_guard(&key, None) {
+                quick_cache::sync::GuardResult::Value(slot) => {
+                    let slot_guard = access_fn(&self.locks[slot]);
+                    if let Some(current_slot) = self.cache.peek(&key)
+                        && current_slot == slot
+                    {
+                        return Ok(slot_guard);
+                    }
+                    continue;
+                }
+                quick_cache::sync::GuardResult::Guard(cache_guard) => {
+                    // Get value first to avoid unnecessarily allocating a slot in case it fails.
+                    let value = insert_fn()?;
+                    let slot = loop {
+                        let slot = self.free_slots.iter().next().map(|s| *s);
+                        if let Some(slot) = slot
+                            && let Some(slot) = self.free_slots.remove(&slot)
+                        {
+                            break slot;
+                        }
+                        std::hint::spin_loop();
+                    };
+                    let mut slot_guard = self.locks[slot].write().unwrap();
+                    *slot_guard = value;
+                    // NOTE: We keep the lock on the slot while inserting the key into the cache,
+                    //       thereby avoiding the key from immediately being evicted again.
+                    //       This is important since we always have to return a valid lock.
+                    cache_guard
+                        .insert(slot)
+                        .expect("cache entry should not be modified concurrently");
+                    assert!(self.cache.len() < self.locks.len());
+                    drop(slot_guard);
+
+                    // TODO: Confirm that while holding a guard inserting another key can trigger
+                    // this guard's key to be evicted. If yes, we need the
+                    // following re-check loop:
+
+                    let slot_guard = access_fn(&self.locks[slot]);
+                    if let Some(current_slot) = self.cache.peek(&key)
+                        && current_slot == slot
+                    {
+                        return Ok(slot_guard);
+                    }
+                    continue;
+                }
+                quick_cache::sync::GuardResult::Timeout => unreachable!(),
+            }
+        }
+    }
+
+    /// TODO: Docblock
+    pub fn get_read_access_or_insert(
         &self,
         key: K,
-        insert_fn: impl FnOnce() -> Result<V, Error>,
-    ) -> Result<&RwLock<V>, Error> {
-        match self.cache.get_value_or_guard(&key, None) {
-            quick_cache::sync::GuardResult::Value(v) => {
-                // TODO: Need to check again here after locking if position is still valid
-                Ok(&self.locks[v])
-            }
-            quick_cache::sync::GuardResult::Guard(guard) => {
-                // Get value first to avoid unnecessarily allocating a slot in case it fails.
-                let value = insert_fn()?;
-                let slot = loop {
-                    let slot = self.free_slots.iter().next().map(|s| *s);
-                    if let Some(slot) = slot
-                        && let Some(slot) = self.free_slots.remove(&slot)
-                    {
-                        break slot;
-                    }
-                    std::hint::spin_loop();
-                };
-                let mut lock = self.locks[slot].write().unwrap();
-                *lock = value;
-                // NOTE: We keep the lock on the slot while inserting the key into the cache,
-                //       thereby avoiding the key from immediately being evicted again.
-                //       This is important since we always have to return a valid lock.
-                guard
-                    .insert(slot)
-                    .expect("cache entry should not be modified concurrently");
-                assert!(self.cache.len() < self.locks.len());
-                Ok(&self.locks[slot])
-            }
-            quick_cache::sync::GuardResult::Timeout => unreachable!(),
-        }
+        insert_fn: impl Fn() -> Result<V, Error>,
+    ) -> Result<RwLockReadGuard<'_, V>, Error> {
+        self.get_access_or_insert(key, insert_fn, |lock| lock.read().unwrap())
+    }
+
+    /// TODO: Docblock
+    pub fn get_write_access_or_insert(
+        &self,
+        key: K,
+        insert_fn: impl Fn() -> Result<V, Error>,
+    ) -> Result<RwLockWriteGuard<'_, V>, Error> {
+        self.get_access_or_insert(key, insert_fn, |lock| lock.write().unwrap())
     }
 
     /// TODO: Docblock
@@ -181,24 +219,35 @@ mod tests {
         Err(Error::Storage(storage::Error::NotFound))
     }
 
+    /// Helper function for performing a get/insert where we don't care about the returned guard.
+    fn get_read_access_or_insert_no_guard(
+        cache: &LockCache<u32, i32>,
+        key: u32,
+        insert_fn: impl Fn() -> Result<i32, Error>,
+    ) {
+        let _guard = cache.get_read_access_or_insert(key, insert_fn);
+    }
+
     #[test]
-    fn items_can_be_inserted_and_deleted() {
+    fn items_can_be_inserted_and_removed() {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(10, logger.clone());
 
-        cache.get_or_insert(1u32, || Ok(123)).unwrap();
-        cache.get_or_insert(2u32, || Ok(456)).unwrap();
-        cache.get_or_insert(3u32, || Ok(789)).unwrap();
+        get_read_access_or_insert_no_guard(&cache, 1u32, || Ok(123));
+        get_read_access_or_insert_no_guard(&cache, 2u32, || Ok(456));
+        get_read_access_or_insert_no_guard(&cache, 3u32, || Ok(789));
 
-        let lock = cache.get_or_insert(1u32, not_found).unwrap();
-        assert_eq!(*lock.read().unwrap(), 123);
-        let lock = cache.get_or_insert(2u32, not_found).unwrap();
-        assert_eq!(*lock.read().unwrap(), 456);
-        let lock = cache.get_or_insert(3u32, not_found).unwrap();
-        assert_eq!(*lock.read().unwrap(), 789);
+        {
+            let guard = cache.get_read_access_or_insert(1u32, not_found).unwrap();
+            assert_eq!(*guard, 123);
+            let guard = cache.get_read_access_or_insert(2u32, not_found).unwrap();
+            assert_eq!(*guard, 456);
+            let guard = cache.get_read_access_or_insert(3u32, not_found).unwrap();
+            assert_eq!(*guard, 789);
+        }
 
         cache.remove(2u32);
-        let res = cache.get_or_insert(2u32, not_found);
+        let res = cache.get_read_access_or_insert(2u32, not_found);
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
     }
 
@@ -207,24 +256,25 @@ mod tests {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(2, logger.clone());
 
-        cache.get_or_insert(1u32, || Ok(123)).unwrap();
-        assert!(logger.evicted.is_empty());
-        cache.get_or_insert(2u32, || Ok(456)).unwrap();
+        get_read_access_or_insert_no_guard(&cache, 1u32, || Ok(123));
+        get_read_access_or_insert_no_guard(&cache, 2u32, || Ok(456));
         assert!(logger.evicted.is_empty());
 
         // By default quick-cache would immediately evict key 3.
-        // Since we keep a lock on it during get_or_insert (thereby pinning it), key 1 is
-        // evicted instead.
-        cache.get_or_insert(3u32, || Ok(789)).unwrap();
+        // Since we keep a lock on it during get_read_access_or_insert (thereby pinning it), key 1
+        // is evicted instead.
+        get_read_access_or_insert_no_guard(&cache, 3u32, || Ok(789));
         assert_eq!(logger.evicted.len(), 1);
         assert!(logger.evicted.contains(&(1, 123)));
 
         // Key 3 is now in the cache
-        let lock = cache.get_or_insert(3u32, not_found).unwrap();
-        assert_eq!(*lock.read().unwrap(), 789);
+        {
+            let guard = cache.get_read_access_or_insert(3u32, not_found).unwrap();
+            assert_eq!(*guard, 789);
+        }
 
         // Key 1 is not
-        let res = cache.get_or_insert(1u32, not_found);
+        let res = cache.get_read_access_or_insert(1u32, not_found);
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
 
         assert_eq!(cache.free_slots.len(), 1);
@@ -239,17 +289,18 @@ mod tests {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(2, logger.clone());
 
-        let _guard1 = cache
-            .get_or_insert(1u32, || Ok(123))
-            .unwrap()
-            .read()
-            .unwrap();
-        cache.get_or_insert(2u32, || Ok(456)).unwrap();
-        assert!(logger.evicted.is_empty());
+        let _outside_guard = cache.get_read_access_or_insert(1u32, || Ok(123)).unwrap();
 
-        // Since we now hold a lock on key 1, key 2 is evicted instead.
-        cache.get_or_insert(3u32, || Ok(789)).unwrap();
-        assert!(logger.evicted.contains(&(2, 456)));
+        {
+            let _guard = cache.get_read_access_or_insert(2u32, || Ok(456)).unwrap();
+            assert!(logger.evicted.is_empty());
+        }
+
+        {
+            // Since we now hold a lock on key 1, key 2 is evicted instead.
+            let _guard = cache.get_read_access_or_insert(3u32, || Ok(789)).unwrap();
+            assert!(logger.evicted.contains(&(2, 456)));
+        }
     }
 
     #[test]
@@ -259,8 +310,8 @@ mod tests {
 
         assert_eq!(cache.free_slots.len(), 3); // 2 + 1
 
-        cache.get_or_insert(1u32, || Ok(123)).unwrap();
-        cache.get_or_insert(2u32, || Ok(456)).unwrap();
+        get_read_access_or_insert_no_guard(&cache, 1u32, || Ok(123));
+        get_read_access_or_insert_no_guard(&cache, 2u32, || Ok(456));
         assert_eq!(cache.free_slots.len(), 1);
 
         cache.remove(1u32);
@@ -277,7 +328,7 @@ mod tests {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(2, logger.clone());
 
-        cache.get_or_insert(1u32, || Ok(123)).unwrap();
+        get_read_access_or_insert_no_guard(&cache, 1u32, || Ok(123));
         assert!(logger.evicted.is_empty());
         cache.remove(1u32);
         assert!(logger.evicted.is_empty());
