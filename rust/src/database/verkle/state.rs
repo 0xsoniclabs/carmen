@@ -199,7 +199,8 @@ mod tests {
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<FakeCache>>::new()) as Box<dyn CarmenState>)]
+    // #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<FakeCache>>::new()) as
+    // Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]

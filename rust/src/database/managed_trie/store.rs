@@ -74,6 +74,7 @@ where
 
                 // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                 current_lock = manager.get_write_access(new_id)?;
+                // TODO TEST: Transform releases lock on current id before calling delete
                 manager.delete(current_id)?;
                 update_log.delete(current_id);
                 current_id = new_id;

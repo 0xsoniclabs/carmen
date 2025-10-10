@@ -9,12 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
 
-use std::{
-    mem::MaybeUninit,
-    ops::Deref,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{mem::MaybeUninit, ops::Deref, path::PathBuf, sync::Arc};
 
 use crate::{
     database::{
@@ -26,7 +21,6 @@ use crate::{
     storage::{
         Storage,
         file::{FileStorageManager, NoSeekFile, NodeFileStorage},
-        storage_with_flush_buffer::StorageWithFlushBuffer,
     },
     types::*,
 };
