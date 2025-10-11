@@ -14,6 +14,7 @@ pub trait OnEvict<K, V>: Send + Sync {
 /// TODO: Docblock
 pub struct LockCache<K, V> {
     locks: Arc<[RwLock<V>]>,
+    pinned_pos: Arc<DashSet<usize>>,
     free_slots: Arc<DashSet<usize>>,
     cache: Cache<K, usize, UnitWeighter, DefaultHashBuilder, ItemLifecycle<K, V>>,
 }
@@ -44,7 +45,7 @@ where
         let num_slots = true_capacity + 1;
         let locks: Arc<[_]> = (0..num_slots).map(|_| RwLock::default()).collect();
         let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
-
+        let pinned_pos = Arc::new(DashSet::new());
         let cache = Cache::with_options(
             options,
             UnitWeighter,
@@ -53,6 +54,7 @@ where
                 locks: locks.clone(),
                 free_slots: free_slots.clone(),
                 evict_callback: on_evict,
+                pinned_pos: pinned_pos.clone(),
             },
         );
 
@@ -60,6 +62,7 @@ where
             locks,
             free_slots,
             cache,
+            pinned_pos,
         }
     }
 
@@ -70,7 +73,9 @@ where
         insert_fn: impl Fn() -> Result<V, Error>,
         access_fn: impl Fn(&'a RwLock<V>) -> T + 'a,
     ) -> Result<T, Error> {
+        #[allow(clippy::never_loop)]
         loop {
+            hint::spin_loop();
             match self.cache.get_value_or_guard(&key, None) {
                 quick_cache::sync::GuardResult::Value(slot) => {
                     let slot_guard = access_fn(&self.locks[slot]);
@@ -91,7 +96,7 @@ where
                         {
                             break slot;
                         }
-                        std::hint::spin_loop();
+                        hint::spin_loop();
                     };
                     let mut slot_guard = self.locks[slot].write().unwrap();
                     *slot_guard = value;
@@ -102,13 +107,15 @@ where
                         .insert(slot)
                         .expect("cache entry should not be modified concurrently");
                     assert!(self.cache.len() < self.locks.len());
+                    // Because we need to drop and reacquire the lock, the element may be evicted in
+                    // the meantime. We manually pin the element in between the two operations.
+                    // NOTE: this could be substituted with a lock downgrade operation, but that's
+                    // experimental (see https://github.com/rust-lang/rust/issues/128203)
+                    self.pinned_pos.insert(slot);
                     drop(slot_guard);
 
-                    // TODO: Confirm that while holding a guard inserting another key can trigger
-                    // this guard's key to be evicted. If yes, we need the
-                    // following re-check loop:
-
                     let slot_guard = access_fn(&self.locks[slot]);
+                    self.pinned_pos.remove(&slot);
                     if let Some(current_slot) = self.cache.peek(&key)
                         && current_slot == slot
                     {
@@ -157,6 +164,7 @@ where
 
 struct ItemLifecycle<K, V> {
     locks: Arc<[RwLock<V>]>,
+    pinned_pos: Arc<DashSet<usize>>,
     free_slots: Arc<DashSet<usize>>,
     // FIXME: Naming
     evict_callback: Arc<dyn OnEvict<K, V>>,
@@ -168,6 +176,7 @@ impl<K, V> Clone for ItemLifecycle<K, V> {
             locks: self.locks.clone(),
             free_slots: self.free_slots.clone(),
             evict_callback: self.evict_callback.clone(),
+            pinned_pos: self.pinned_pos.clone(),
         }
     }
 }
@@ -182,8 +191,12 @@ where
     fn begin_request(&self) -> Self::RequestState {}
 
     fn is_pinned(&self, _key: &K, slot: &usize) -> bool {
-        // If the lock is currently held for writing, we consider the item pinned.
-        self.locks[*slot].try_write().is_err()
+        // If the lock is currently held for writing we consider the item pinned.
+        // Additionally, it can be pinned manually by inserting its slot into `pinned_pos`.
+        // NOTE: the try_write NEEDS to be after the pinned_pos check or shuttle will deadlock as it
+        // will consider valid a case where the try_write returns a lock even if another thread
+        // holds a lock on that value
+        self.pinned_pos.contains(&slot) || self.locks[*slot].try_write().is_err()
     }
 
     fn on_evict(&self, _state: &mut Self::RequestState, key: K, slot: usize) {
@@ -301,10 +314,18 @@ mod tests {
                     move || {
                         // Replace the entire cache with new elements
                         for i in 0..num_elements {
+                            shuttle::current::set_name_for_task(
+                                shuttle::current::me(),
+                                format!("add-{i}-first-insert"),
+                            );
                             get_read_access_or_insert_no_guard(
                                 &lock_cache,
                                 (i + num_elements) as u32,
                                 insert_fn,
+                            );
+                            shuttle::current::set_name_for_task(
+                                shuttle::current::me(),
+                                format!("add-{i}-second-insert"),
                             );
                             // Make the hotter element
                             get_read_access_or_insert_no_guard(
@@ -320,6 +341,10 @@ mod tests {
                     let lock_cache = lock_cache.clone();
                     move || {
                         for id_to_get in 0..num_elements {
+                            shuttle::current::set_name_for_task(
+                                shuttle::current::me(),
+                                format!("get-{id_to_get}"),
+                            );
                             let res =
                                 lock_cache.get_read_access_or_insert(id_to_get as u32, insert_fn);
                             if let Ok(guard) = res {
