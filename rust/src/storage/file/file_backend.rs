@@ -13,8 +13,9 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::FileExt,
     path::Path,
-    sync::Mutex,
 };
+
+use crate::sync::Mutex;
 
 /// An abstraction for concurrent file operations.
 ///
@@ -128,15 +129,12 @@ mod tests {
     use std::{
         fs::{File, OpenOptions},
         io::{Read, Write},
-        sync::{
-            Arc, Barrier,
-            atomic::{AtomicU64, Ordering},
-        },
     };
 
     use super::*;
     use crate::{
         storage::file::{PageCachedFile, page_utils::Page},
+        sync::{Arc, AtomicU64, Barrier, Ordering},
         utils::test_dir::{Permissions, TestDir},
     };
 

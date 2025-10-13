@@ -10,11 +10,10 @@
 
 mod node;
 
-use std::sync::Mutex;
-
 use crate::{
     database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
     error::Error,
+    sync::Mutex,
     types::{Key, Value},
 };
 
