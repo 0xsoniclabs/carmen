@@ -235,6 +235,8 @@ where
         self.locks[*slot].try_write().is_err()
     }
 
+    /// Invokes the eviction callback, resets the slot to its default value and
+    /// marks the slot as free.
     fn on_evict(&self, _state: &mut Self::RequestState, key: K, slot: usize) {
         let value = {
             let mut lock = self.locks[slot].write().unwrap();
