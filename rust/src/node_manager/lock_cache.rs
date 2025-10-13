@@ -57,7 +57,7 @@ where
                 DefaultHashBuilder::default(),
                 DefaultLifecycle::default(),
             );
-            tmp_cache.num_shards() * tmp_cache.shard_capacity() as usize
+            tmp_cache.capacity() as usize
         };
 
         let num_slots = true_capacity + 1;
