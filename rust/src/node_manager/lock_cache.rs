@@ -60,6 +60,9 @@ where
             tmp_cache.capacity() as usize
         };
 
+        // We allocate a slot for one additional item. This way, when the cache is full, we always
+        // have a free slot we can use to insert a new item into the cache and force the
+        // eviction of an old one.
         let num_slots = true_capacity + 1;
         let locks: Arc<[_]> = (0..num_slots).map(|_| RwLock::default()).collect();
         let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
@@ -154,6 +157,7 @@ where
             match self.cache.get_value_or_guard(&key, None) {
                 quick_cache::sync::GuardResult::Value(slot) => {
                     let slot_guard = access_fn(&self.locks[slot]);
+                    // Ensure the slot is still valid (has not been evicted/removed concurrently).
                     if let Some(current_slot) = self.cache.peek(&key)
                         && current_slot == slot
                     {
@@ -199,6 +203,8 @@ where
     }
 }
 
+/// Helper type responsible for pinning items that are currently locked,
+/// and invoking the eviction callback when an item is evicted.
 struct ItemLifecycle<K, V> {
     locks: Arc<[RwLock<V>]>,
     free_slots: Arc<DashSet<usize>>,
@@ -304,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn iter_returns_all_items() {
+    fn iter_write_returns_all_items() {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(3, logger.clone());
 
@@ -436,10 +442,12 @@ mod tests {
         assert_eq!(*lifecycle.locks[0].read().unwrap(), i32::default());
     }
 
-    /// Type alias for a closure that calls either `get_read_access` or `get_write_access`
+    /// Type alias for a closure that calls either `get_read_access_or_insert` or
+    /// `get_write_access_or_insert`
     type GetOrInsertMethod<F> = fn(&LockCache<u32, i32>, u32, F) -> Result<i32, Error>;
 
-    /// Reusable rstest template to test both `get_read_access` and `get_write_access`
+    /// Reusable rstest template to test both `get_read_access_or_insert` and
+    /// `get_write_access_or_insert`
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::get_read_access((|cache, id, insert_fn| {
