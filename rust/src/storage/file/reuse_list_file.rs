@@ -147,12 +147,11 @@ mod tests {
     }
 
     #[test]
-    fn open_fails_if_file_can_not_be_written() {
+    fn open_fails_if_file_can_not_be_created() {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.join("reuse_list");
 
         let result = ReuseListFile::open(path, 0);
-        println!("{result:?}");
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
