@@ -13,14 +13,17 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use dashmap::DashSet;
 use quick_cache::{
     DefaultHashBuilder, Lifecycle, UnitWeighter,
-    sync::{Cache, DefaultLifecycle},
+    sync::{Cache, DefaultLifecycle, GuardResult},
 };
 
 use crate::error::Error;
 
 /// A trait for handling eviction events in the cache.
-pub trait OnEvict<K, V>: Send + Sync {
-    fn on_evict(&self, key: K, value: V);
+pub trait OnEvict: Send + Sync {
+    type Key;
+    type Value;
+
+    fn on_evict(&self, key: Self::Key, value: Self::Value);
 }
 
 /// A cache that holds items (`K`/`V` pairs) on which read/write locks can be acquired.
@@ -42,7 +45,7 @@ where
     /// Creates a new cache with the given capacity and eviction callback.
     ///
     /// The actual capacity might differ slightly due to rounding performed by quick-cache.
-    pub fn new(capacity: usize, on_evict: Arc<dyn OnEvict<K, V>>) -> Self {
+    pub fn new(capacity: usize, on_evict: Arc<dyn OnEvict<Key = K, Value = V>>) -> Self {
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
             .weight_capacity(capacity as u64) // unit weight per value
@@ -60,10 +63,13 @@ where
             tmp_cache.capacity() as usize
         };
 
-        // We allocate a slot for one additional item. This way, when the cache is full, we always
-        // have a free slot we can use to insert a new item into the cache and force the
-        // eviction of an old one.
-        let num_slots = true_capacity + 1;
+        // We allocate a couple of additional slots, roughly one for each concurrent thread.
+        // This way, when the cache is full, we always have a free slot we can use to insert a new
+        // item into the cache and force the eviction of an old one.
+        let extra_slots = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(1);
+        let num_slots = true_capacity + extra_slots;
         let locks: Arc<[_]> = (0..num_slots).map(|_| RwLock::default()).collect();
         let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
 
@@ -100,8 +106,9 @@ where
     }
 
     /// Accesses the value for the given key for writing.
-    /// While a write lock is held, no other read or write access to the same item is allowed,
-    /// and the item will not be evicted.
+    /// No concurrent read or write access to the same item is allowed,
+    /// and any attempt to acquire a lock will block until the write lock is released.
+    /// While a write lock is held, the item will not be evicted.
     ///
     /// If the key is not present, it is inserted using `insert_fn`.
     /// Any error returned by `insert_fn` is propagated to the caller.
@@ -140,7 +147,7 @@ where
             .filter(|(key, slot, _)| {
                 // Ensure the slot is still valid (has not been evicted/removed concurrently).
                 let current_slot = self.cache.peek(key);
-                current_slot.is_some() && current_slot.unwrap() == *slot
+                current_slot.is_some_and(|s| s == *slot)
             })
             .map(|(key, _, guard)| (key, guard))
     }
@@ -155,7 +162,7 @@ where
     ) -> Result<T, Error> {
         loop {
             match self.cache.get_value_or_guard(&key, None) {
-                quick_cache::sync::GuardResult::Value(slot) => {
+                GuardResult::Value(slot) => {
                     let slot_guard = access_fn(&self.locks[slot]);
                     // Ensure the slot is still valid (has not been evicted/removed concurrently).
                     if let Some(current_slot) = self.cache.peek(&key)
@@ -165,14 +172,14 @@ where
                     }
                     continue;
                 }
-                quick_cache::sync::GuardResult::Guard(cache_guard) => {
+                GuardResult::Guard(cache_guard) => {
                     // Get value first to avoid unnecessarily allocating a slot in case it fails.
                     let value = insert_fn()?;
                     let slot = loop {
-                        // While there should always be a free slot, another thread may
-                        // simultaneously be inserting a key and temporarily hold the
-                        // last free slot. Since this can only happen if the cache is full,
-                        // that thread will eventually evict an item and free up a slot.
+                        // While there should always be a free slot, concurrent threads may
+                        // simultaneously be inserting keys and temporarily hold all remaining
+                        // free slots. Since this can only happen if the cache is full,
+                        // those threads will eventually each evict an item and free up a slot.
                         let slot = self.free_slots.iter().next().map(|s| *s);
                         if let Some(slot) = slot
                             && let Some(slot) = self.free_slots.remove(&slot)
@@ -194,10 +201,12 @@ where
                     cache_guard
                         .insert(slot)
                         .expect("cache entry should not be modified concurrently");
+                    // In theory quick-cache can exceed its capacity if all items are pinned.
+                    // This should however never happen in practice for our usage patterns.
                     assert!(self.cache.len() < self.locks.len());
                     return Ok(slot_guard);
                 }
-                quick_cache::sync::GuardResult::Timeout => unreachable!(),
+                GuardResult::Timeout => unreachable!(),
             }
         }
     }
@@ -208,7 +217,7 @@ where
 struct ItemLifecycle<K, V> {
     locks: Arc<[RwLock<V>]>,
     free_slots: Arc<DashSet<usize>>,
-    callback: Arc<dyn OnEvict<K, V>>,
+    callback: Arc<dyn OnEvict<Key = K, Value = V>>,
 }
 
 impl<K, V> Clone for ItemLifecycle<K, V> {
@@ -231,7 +240,7 @@ where
     fn begin_request(&self) -> Self::RequestState {}
 
     fn is_pinned(&self, _key: &K, slot: &usize) -> bool {
-        // If the lock is currently held for writing, we consider the item pinned.
+        // If the lock is currently locked, we consider the item pinned.
         self.locks[*slot].try_write().is_err()
     }
 
@@ -257,7 +266,10 @@ mod tests {
         evicted: DashSet<(u32, i32)>,
     }
 
-    impl OnEvict<u32, i32> for EvictionLogger {
+    impl OnEvict for EvictionLogger {
+        type Key = u32;
+        type Value = i32;
+
         fn on_evict(&self, key: u32, value: i32) {
             self.evicted.insert((key, value));
         }
