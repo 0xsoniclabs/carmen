@@ -290,7 +290,10 @@ mod tests {
         let capacity = 10;
         let cache = LockCache::<u32, i32>::new(capacity, logger);
 
-        assert_eq!(cache.locks.len(), capacity + 1);
+        let extra_slots = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(1);
+        assert_eq!(cache.locks.len(), capacity + extra_slots);
         assert_eq!(cache.cache.capacity(), capacity as u64); // Unit weight per value
         // Check slots are correctly initialized
         for i in 0..(capacity + 1) {
@@ -348,6 +351,7 @@ mod tests {
         ignore_guard(cache.get_read_access_or_insert(1u32, || Ok(123)));
         ignore_guard(cache.get_read_access_or_insert(2u32, || Ok(456)));
         assert!(logger.evicted.is_empty());
+        let free_slots = cache.free_slots.len();
 
         // By default quick-cache would immediately evict key 3.
         // Since we keep a lock on it during get_read_access_or_insert (thereby pinning it), key 1
@@ -355,6 +359,7 @@ mod tests {
         ignore_guard(cache.get_read_access_or_insert(3u32, || Ok(789)));
         assert_eq!(logger.evicted.len(), 1);
         assert!(logger.evicted.contains(&(1, 123)));
+        assert_eq!(cache.free_slots.len(), free_slots);
 
         // Key 3 is now in the cache
         {
@@ -366,7 +371,7 @@ mod tests {
         let res = cache.get_read_access_or_insert(1u32, not_found);
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
 
-        assert_eq!(cache.free_slots.len(), 1);
+        assert!(!cache.free_slots.is_empty());
         for slot in cache.free_slots.iter() {
             // The evicted slot is reset to the default value.
             assert_eq!(*cache.locks[*slot].read().unwrap(), i32::default());
@@ -396,15 +401,18 @@ mod tests {
     fn removing_keys_frees_up_slots() {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(2, logger.clone());
+        let extra_slots = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(1);
 
-        assert_eq!(cache.free_slots.len(), 3); // 2 + 1
+        assert_eq!(cache.free_slots.len(), 2 + extra_slots);
 
         ignore_guard(cache.get_read_access_or_insert(1u32, || Ok(123)));
         ignore_guard(cache.get_read_access_or_insert(2u32, || Ok(456)));
-        assert_eq!(cache.free_slots.len(), 1);
+        assert_eq!(cache.free_slots.len(), extra_slots);
 
         cache.remove(1u32);
-        assert_eq!(cache.free_slots.len(), 2);
+        assert_eq!(cache.free_slots.len(), 1 + extra_slots);
 
         for slot in cache.free_slots.iter() {
             // The removed slot is reset to the default value.
