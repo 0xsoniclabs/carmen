@@ -129,9 +129,9 @@ mod tests {
         fs::write(path.as_path(), indices.as_bytes()).unwrap();
 
         let frozen_count = 2;
-        let cached_file = ReuseListFile::open(path, frozen_count).unwrap();
-        assert_eq!(cached_file.frozen_count, frozen_count as usize);
-        assert_eq!(cached_file.cache, indices[..frozen_count as usize]);
+        let reuse_list_file = ReuseListFile::open(path, frozen_count).unwrap();
+        assert_eq!(reuse_list_file.frozen_count, frozen_count as usize);
+        assert_eq!(reuse_list_file.cache, indices[..frozen_count as usize]);
     }
 
     #[test]
@@ -160,13 +160,13 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let cached_file = ReuseListFile {
+        let reuse_list_file = ReuseListFile {
             file: File::create(path.as_path()).unwrap(),
             cache: vec![1, 2, 3, 4, 5],
             frozen_count: 2,
         };
 
-        cached_file.write().unwrap();
+        reuse_list_file.write().unwrap();
 
         let read_indices = fs::read(path.as_path()).unwrap();
         let read_indices: Vec<u64> = read_indices
@@ -175,7 +175,7 @@ mod tests {
                 chunk.try_into().map(u64::from_le_bytes).unwrap() // slices are guaranteed to be of size 8
             })
             .collect();
-        assert_eq!(read_indices, cached_file.cache);
+        assert_eq!(read_indices, reuse_list_file.cache);
     }
 
     #[test]
@@ -185,13 +185,13 @@ mod tests {
 
         File::create(path.as_path()).unwrap();
 
-        let cached_file = ReuseListFile {
+        let reuse_list_file = ReuseListFile {
             file: File::open(path.as_path()).unwrap(),
             cache: vec![1, 2, 3, 4, 5],
             frozen_count: 2,
         };
 
-        let result = cached_file.write(); // file is opened read-only
+        let result = reuse_list_file.write(); // file is opened read-only
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
@@ -200,15 +200,15 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().join("reuse_list");
 
-        let mut cached_file = ReuseListFile {
+        let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2, 3, 4],
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.frozen_count, 2);
-        cached_file.freeze_all();
-        assert_eq!(cached_file.frozen_count, 4);
+        assert_eq!(reuse_list_file.frozen_count, 2);
+        reuse_list_file.freeze_all();
+        assert_eq!(reuse_list_file.frozen_count, 4);
     }
 
     #[test]
@@ -216,13 +216,13 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().join("reuse_list");
 
-        let cached_file = ReuseListFile {
+        let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2, 3, 4],
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.frozen_count(), 2);
+        assert_eq!(reuse_list_file.frozen_count(), 2);
     }
 
     #[test]
@@ -230,17 +230,17 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let mut cached_file = ReuseListFile {
+        let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2, 3, 4],
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.frozen_count, 2);
-        cached_file.set_frozen_count(3);
-        assert_eq!(cached_file.frozen_count, 3);
-        cached_file.set_frozen_count(0);
-        assert_eq!(cached_file.frozen_count, 0);
+        assert_eq!(reuse_list_file.frozen_count, 2);
+        reuse_list_file.set_frozen_count(3);
+        assert_eq!(reuse_list_file.frozen_count, 3);
+        reuse_list_file.set_frozen_count(0);
+        assert_eq!(reuse_list_file.frozen_count, 0);
     }
 
     #[test]
@@ -248,20 +248,20 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let mut cached_file = ReuseListFile {
+        let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2, 3, 4],
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.pop(), Some(4));
-        assert_eq!(cached_file.cache, vec![1, 2, 3]);
+        assert_eq!(reuse_list_file.pop(), Some(4));
+        assert_eq!(reuse_list_file.cache, vec![1, 2, 3]);
 
-        assert_eq!(cached_file.pop(), Some(3));
-        assert_eq!(cached_file.cache, vec![1, 2]);
+        assert_eq!(reuse_list_file.pop(), Some(3));
+        assert_eq!(reuse_list_file.cache, vec![1, 2]);
 
-        assert_eq!(cached_file.pop(), None);
-        assert_eq!(cached_file.cache, vec![1, 2]);
+        assert_eq!(reuse_list_file.pop(), None);
+        assert_eq!(reuse_list_file.cache, vec![1, 2]);
     }
 
     #[test]
@@ -269,16 +269,16 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let mut cached_file = ReuseListFile {
+        let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2],
             frozen_count: 2,
         };
 
-        cached_file.push(3);
-        assert_eq!(cached_file.cache, vec![1, 2, 3]);
-        cached_file.push(4);
-        assert_eq!(cached_file.cache, vec![1, 2, 3, 4]);
+        reuse_list_file.push(3);
+        assert_eq!(reuse_list_file.cache, vec![1, 2, 3]);
+        reuse_list_file.push(4);
+        assert_eq!(reuse_list_file.cache, vec![1, 2, 3, 4]);
     }
 
     #[test]
@@ -286,13 +286,13 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let cached_file = ReuseListFile {
+        let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2, 3, 4],
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.as_slice(), &[1, 2, 3, 4]);
+        assert_eq!(reuse_list_file.as_slice(), &[1, 2, 3, 4]);
     }
 
     #[test]
@@ -300,12 +300,12 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let cached_file = ReuseListFile {
+        let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             cache: vec![1, 2, 3, 4],
             frozen_count: 2,
         };
 
-        assert_eq!(cached_file.count(), 4);
+        assert_eq!(reuse_list_file.count(), 4);
     }
 }

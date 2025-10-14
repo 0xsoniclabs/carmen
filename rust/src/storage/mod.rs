@@ -85,7 +85,7 @@ pub trait CheckpointParticipant {
     fn abort(&self, checkpoint: u64) -> Result<(), Error>;
 }
 
-/// An entity which can provide and store the root IDs for block numbers.
+/// An entity which can provide and store IDs of a tree's root node at different block numbers.
 pub trait RootIdProvider {
     /// The type of the ID used to identify nodes.
     type Id;
