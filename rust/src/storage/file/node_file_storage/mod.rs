@@ -22,11 +22,14 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::storage::{
     CheckpointParticipant, Error, Storage,
-    file::{
-        FileBackend, from_to_file::FromToFile, node_file_storage_metadata::NodeFileStorageMetadata,
-        reuse_list_file::ReuseListFile,
-    },
+    file::{FileBackend, FromToFile},
 };
+
+mod node_file_storage_metadata;
+mod reuse_list_file;
+
+use node_file_storage_metadata::NodeFileStorageMetadata;
+use reuse_list_file::ReuseListFile;
 
 /// A file-based storage backend for elements of type `T`.
 ///

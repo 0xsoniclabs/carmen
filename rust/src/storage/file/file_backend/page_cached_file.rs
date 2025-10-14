@@ -12,7 +12,7 @@ use std::{cmp, fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path, sync::
 
 use crate::storage::file::{
     FileBackend,
-    page_utils::{O_DIRECT, O_SYNC, Page},
+    file_backend::page_utils::{O_DIRECT, O_SYNC, Page},
 };
 
 /// The actual implementation of [`PageCachedFile<F>`], but without concurrency control.

@@ -19,12 +19,15 @@ use crate::{
         EmptyNode, FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
     },
     storage::{
-        CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage,
-        file::{
-            checkpoint_data::CheckpointData, from_to_file::FromToFile, root_ids_file::RootIdsFile,
-        },
+        CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage, file::FromToFile,
     },
 };
+
+mod checkpoint_data;
+mod root_ids_file;
+
+use checkpoint_data::CheckpointData;
+use root_ids_file::RootIdsFile;
 
 /// A storage manager for Verkle trie nodes for file based storage backends.
 ///

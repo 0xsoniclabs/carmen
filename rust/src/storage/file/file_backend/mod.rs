@@ -16,6 +16,14 @@ use std::{
     sync::Mutex,
 };
 
+#[cfg(unix)]
+mod page_cached_file;
+#[cfg(unix)]
+mod page_utils;
+
+#[cfg(unix)]
+pub use page_cached_file::PageCachedFile;
+
 /// An abstraction for concurrent file operations.
 ///
 /// Implementations of this trait are required to ensure that concurrent operations are safe (in
@@ -130,7 +138,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{PageCachedFile, page_utils::Page},
+        storage::file::{PageCachedFile, file_backend::page_utils::Page},
         utils::test_dir::{Permissions, TestDir},
     };
 
