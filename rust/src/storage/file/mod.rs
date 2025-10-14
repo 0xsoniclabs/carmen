@@ -10,8 +10,9 @@
 
 mod file_backend;
 mod file_storage_manager;
-mod metadata_file;
+mod from_to_file;
 mod node_file_storage;
+mod node_file_storage_metadata;
 #[cfg(unix)]
 mod page_cached_file;
 #[cfg(unix)]

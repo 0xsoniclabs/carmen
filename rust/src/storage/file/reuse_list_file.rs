@@ -9,8 +9,9 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
+    path::Path,
 };
 
 use zerocopy::IntoBytes;
@@ -21,28 +22,34 @@ use crate::storage::Error;
 /// faster access.
 #[derive(Debug)]
 pub struct ReuseListFile {
+    /// The underlying file storing the indices.
     file: File,
+    /// A cache holding all indices, including the frozen ones.
     cache: Vec<u64>,
+    /// The number of frozen indices that can not be reused because they are part of a checkpoint.
     frozen_count: usize,
 }
 
 impl ReuseListFile {
-    /// Creates a new [`ReuseListFile`] instance, reading the existing indices from the file.
-    /// The `frozen_count` parameter specifies how many indices should be considered "frozen" and
-    /// not be reused.
-    pub fn new(file: File, frozen_count: u64) -> Result<Self, Error> {
+    /// Opens the file at `path` and reads `frozen_count` indices from it. If the file does not
+    /// exist, it is created. The `frozen_count` parameter specifies how many indices should be
+    /// considered "frozen" and not available for reuse.
+    pub fn open(path: impl AsRef<Path>, frozen_count: u64) -> Result<Self, Error> {
+        let mut file_opts = OpenOptions::new();
+        file_opts
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true);
+        let mut file = file_opts.open(path)?;
         let len = file.metadata()?.len();
-        if len < frozen_count * size_of::<u64>() as u64 || len % size_of::<u64>() as u64 != 0 {
+        if len < frozen_count * size_of::<u64>() as u64 {
             return Err(Error::DatabaseCorruption);
         }
-        let mut reuse_idxs = Vec::with_capacity(len as usize / size_of::<u64>());
-        (&file).read_to_end(&mut reuse_idxs)?;
-        let reuse_idxs = reuse_idxs
-            .chunks_exact(size_of::<u64>())
-            .map(|chunk| {
-                chunk.try_into().map(u64::from_ne_bytes).unwrap() // slices are guaranteed to be of size 8
-            })
-            .collect();
+
+        let mut reuse_idxs = vec![0u64; frozen_count as usize];
+        file.read_exact(reuse_idxs.as_mut_bytes())?;
+
         Ok(Self {
             file,
             cache: reuse_idxs,
@@ -104,7 +111,7 @@ impl ReuseListFile {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{self, OpenOptions};
+    use std::fs;
 
     use zerocopy::IntoBytes;
 
@@ -112,40 +119,40 @@ mod tests {
     use crate::utils::test_dir::{Permissions, TestDir};
 
     #[test]
-    fn new_reads_file() {
+    fn open_reads_frozen_part_of_file() {
         use super::ReuseListFile;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let indices = [1u64, 2, 3, 4, 5];
+        let indices = [1u64, 2, 3];
         fs::write(path.as_path(), indices.as_bytes()).unwrap();
 
         let frozen_count = 2;
-        let cached_file = ReuseListFile::new(File::open(path).unwrap(), frozen_count).unwrap();
-        assert_eq!(cached_file.cache, indices);
+        let cached_file = ReuseListFile::open(path, frozen_count).unwrap();
+        assert_eq!(cached_file.frozen_count, frozen_count as usize);
+        assert_eq!(cached_file.cache, indices[..frozen_count as usize]);
     }
 
     #[test]
-    fn read_returns_error_for_invalid_file_size() {
+    fn open_returns_error_for_invalid_file_size() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
         fs::write(path.as_path(), [0; 10]).unwrap();
 
         let frozen_count = 2;
-        let result = ReuseListFile::new(File::open(path).unwrap(), frozen_count);
+        let result = ReuseListFile::open(path, frozen_count);
         assert!(matches!(result, Err(Error::DatabaseCorruption)));
     }
 
     #[test]
-    fn new_fails_if_file_can_not_be_read() {
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+    fn open_fails_if_file_can_not_be_written() {
+        let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.join("reuse_list");
 
-        File::create(path.as_path()).unwrap();
-
-        let result = ReuseListFile::new(OpenOptions::new().write(true).open(path).unwrap(), 0);
+        let result = ReuseListFile::open(path, 0);
+        println!("{result:?}");
         assert!(matches!(result, Err(Error::Io(_))));
     }
 
