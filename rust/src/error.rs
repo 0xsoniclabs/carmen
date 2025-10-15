@@ -29,4 +29,8 @@ pub enum Error {
     Storage(#[from] storage::Error),
     #[error("node manager error: {0}")]
     NodeManager(String),
+    /// An illegal concurrent operation was attempted.
+    /// Not all illegal concurrent operations can be detected.
+    #[error("illegal concurrent operation: {0}")]
+    IllegalConcurrentOperation(String),
 }

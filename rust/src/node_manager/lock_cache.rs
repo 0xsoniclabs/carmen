@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 
 use dashmap::DashSet;
 use quick_cache::{
@@ -28,13 +28,21 @@ pub trait OnEvict: Send + Sync {
 
 /// A cache that holds items (`K`/`V` pairs) on which read/write locks can be acquired.
 ///
+/// The cache allows for concurrent access to its items, with one caveat: During a call to
+/// [`LockCache::remove`], no other operation on the same key is allowed. Attempting to do so
+/// will return an [`Error::IllegalConcurrentOperation`], after which the cache is in an
+/// indeterminate state.
+///
 /// The cache has a fixed capacity and evicts items when full.
 /// An eviction callback can be provided to handle evicted items.
 /// If an item is currently locked for reading or writing, it will not be evicted.
 pub struct LockCache<K, V> {
     locks: Arc<[RwLock<V>]>,
     free_slots: Arc<DashSet<usize>>,
-    cache: Cache<K, usize, UnitWeighter, DefaultHashBuilder, ItemLifecycle<K, V>>,
+    /// The quick-cache instance holds `Arc`s of slot indices into `locks`.
+    /// By using an `Arc`, we can track how many threads are currently accessing a slot,
+    /// and thereby avoid evicting items that are currently in use.
+    cache: Cache<K, Arc<usize>, UnitWeighter, DefaultHashBuilder, ItemLifecycle<K, V>>,
 }
 
 impl<K, V> LockCache<K, V>
@@ -122,34 +130,46 @@ where
 
     /// Removes the item with the given key from the cache, if it exists.
     ///
-    /// If the item is currently locked for reading or writing, this method will block
-    /// until the lock is released.
-    pub fn remove(&self, key: K) {
+    /// This function must not be called concurrently with any other operation on the same key.
+    /// If the key is currently being accessed by another thread, an error is returned, after
+    /// which the cache is in an indeterminate state.
+    pub fn remove(&self, key: K) -> Result<(), Error> {
         if let Some(slot) = self.cache.get(&key) {
-            // Get exclusive write access before removing the key,
+            // Try getting exclusive write access before removing the key,
             // ensuring that no other thread is holding a reference to it.
-            let mut guard = self.locks[slot].write().unwrap();
-            self.cache.remove(&key);
-            *guard = V::default();
-            self.free_slots.insert(slot);
+            match self.locks[*slot].try_write() {
+                Ok(mut guard) => {
+                    self.cache.remove(&key);
+                    if Arc::strong_count(&slot) > 1 {
+                        return Err(Error::IllegalConcurrentOperation(
+                            "another thread is attempting to access a key while it is being removed"
+                                .to_owned(),
+                        ));
+                    }
+                    *guard = V::default();
+                    self.free_slots.insert(*slot);
+                }
+                Err(TryLockError::WouldBlock) => {
+                    return Err(Error::IllegalConcurrentOperation(
+                        "another thread is holding a lock on a key that is being removed"
+                            .to_owned(),
+                    ));
+                }
+                Err(TryLockError::Poisoned(e)) => panic!("poisoned lock: {e:?}"),
+            }
         }
+        Ok(())
     }
 
     /// Iterates over all items in the cache, returning a write lock guard for each.
     ///
     /// The iterator will yield all items that are present in the cache at the time of
-    /// creation, unless they are removed or evicted concurrently. The iterator may
-    /// also yield items that have been added after the iterator was created.
+    /// creation, unless they are evicted concurrently. The iterator may also yield
+    /// items that have been added after the iterator was created.
     pub fn iter_write(&self) -> impl Iterator<Item = (K, RwLockWriteGuard<'_, V>)> {
         self.cache
             .iter()
-            .map(|(key, slot)| (key, slot, self.locks[slot].write().unwrap()))
-            .filter(|(key, slot, _)| {
-                // Ensure the slot is still valid (has not been evicted/removed concurrently).
-                let current_slot = self.cache.peek(key);
-                current_slot.is_some_and(|s| s == *slot)
-            })
-            .map(|(key, _, guard)| (key, guard))
+            .map(|(key, slot)| (key, self.locks[*slot].write().unwrap()))
     }
 
     /// Shared implementation for [`get_read_access_or_insert`] and [`get_write_access_or_insert`].
@@ -160,60 +180,56 @@ where
         insert_fn: impl Fn() -> Result<V, Error>,
         access_fn: impl Fn(&'a RwLock<V>) -> T + 'a,
     ) -> Result<T, Error> {
-        loop {
-            match self.cache.get_value_or_guard(&key, None) {
-                GuardResult::Value(slot) => {
-                    let slot_guard = access_fn(&self.locks[slot]);
-                    // Ensure the slot is still valid (has not been evicted/removed concurrently).
-                    if let Some(current_slot) = self.cache.peek(&key)
-                        && current_slot == slot
-                    {
-                        return Ok(slot_guard);
-                    }
-                    continue;
-                }
-                GuardResult::Guard(cache_guard) => {
-                    // Get value first to avoid unnecessarily allocating a slot in case it fails.
-                    let value = insert_fn()?;
-                    let slot = loop {
-                        // While there should always be a free slot, concurrent threads may
-                        // simultaneously be inserting keys and temporarily hold all remaining
-                        // free slots. Since this can only happen if the cache is full,
-                        // those threads will eventually each evict an item and free up a slot.
-                        let slot = self.free_slots.iter().next().map(|s| *s);
-                        if let Some(slot) = slot
-                            && let Some(slot) = self.free_slots.remove(&slot)
-                        {
-                            break slot;
-                        }
-                        std::hint::spin_loop();
-                    };
-                    let mut slot_guard = self.locks[slot].write().unwrap();
-                    *slot_guard = value;
-                    // Re-acquire the type of lock the caller requested (read or write).
-                    // We do not risk racing on the slot here since we haven't inserted it into
-                    // the cache yet.
-                    drop(slot_guard);
-                    let slot_guard = access_fn(&self.locks[slot]);
-                    // We hold the lock on the slot while inserting the key into the cache,
-                    // thereby avoiding the key from immediately being evicted again.
-                    // This is important since we always have to return a valid lock.
-                    cache_guard
-                        .insert(slot)
-                        .expect("cache entry should not be modified concurrently");
-                    // In theory quick-cache can exceed its capacity if all items are pinned.
-                    // This should however never happen in practice for our usage patterns.
-                    assert!(self.cache.len() < self.locks.len());
-                    return Ok(slot_guard);
-                }
-                GuardResult::Timeout => unreachable!(),
+        match self.cache.get_value_or_guard(&key, None) {
+            GuardResult::Value(slot) => {
+                // NOTE: After we get the slot and before we acquire the lock (this line),
+                // the `Arc::strong_count` of the slot is at least 2, so the item cannot be
+                // evicted concurrently.
+                Ok(access_fn(&self.locks[*slot]))
             }
+            GuardResult::Guard(cache_guard) => {
+                // Get value first to avoid unnecessarily allocating a slot in case it fails.
+                let value = insert_fn()?;
+                let slot = loop {
+                    // While there should always be a free slot, concurrent threads may
+                    // simultaneously be inserting keys and temporarily hold all remaining
+                    // free slots. Since this can only happen if the cache is full,
+                    // those threads will eventually each evict an item and free up a slot.
+                    let slot = self.free_slots.iter().next().map(|s| *s);
+                    if let Some(slot) = slot
+                        && let Some(slot) = self.free_slots.remove(&slot)
+                    {
+                        break slot;
+                    }
+                    std::hint::spin_loop();
+                };
+                let mut slot_guard = self.locks[slot].write().unwrap();
+                *slot_guard = value;
+                // Re-acquire the type of lock the caller requested (read or write).
+                // We do not risk racing on the slot here since we haven't inserted it into
+                // the cache yet.
+                drop(slot_guard);
+                let slot_guard = access_fn(&self.locks[slot]);
+                // We hold the lock on the slot while inserting the key into the cache,
+                // thereby avoiding the key from immediately being evicted again.
+                // This is important since we always have to return a valid lock.
+                cache_guard
+                    .insert(Arc::new(slot))
+                    .expect("cache entry should not be modified concurrently");
+                // In theory quick-cache can exceed its capacity if all items are pinned.
+                // This should however never happen in practice for our usage patterns.
+                assert!(self.cache.len() < self.locks.len());
+                Ok(slot_guard)
+            }
+            GuardResult::Timeout => unreachable!(),
         }
     }
 }
 
-/// Helper type responsible for pinning items that are currently locked,
-/// and invoking the eviction callback when an item is evicted.
+/// Helper type responsible for pinning items and invoking the eviction callback.
+///
+/// Items are considered pinned if they have an [`Arc::strong_count`] greater than 1,
+/// or if their corresponding slot is currently locked.
 struct ItemLifecycle<K, V> {
     locks: Arc<[RwLock<V>]>,
     free_slots: Arc<DashSet<usize>>,
@@ -230,7 +246,7 @@ impl<K, V> Clone for ItemLifecycle<K, V> {
     }
 }
 
-impl<K, V> Lifecycle<K, usize> for ItemLifecycle<K, V>
+impl<K, V> Lifecycle<K, Arc<usize>> for ItemLifecycle<K, V>
 where
     K: Copy,
     V: Default,
@@ -239,20 +255,20 @@ where
 
     fn begin_request(&self) -> Self::RequestState {}
 
-    fn is_pinned(&self, _key: &K, slot: &usize) -> bool {
+    fn is_pinned(&self, _key: &K, slot: &Arc<usize>) -> bool {
         // If the lock is currently locked, we consider the item pinned.
-        self.locks[*slot].try_write().is_err()
+        Arc::strong_count(slot) > 1 || self.locks[**slot].try_write().is_err()
     }
 
     /// Invokes the eviction callback, resets the slot to its default value and
     /// marks the slot as free.
-    fn on_evict(&self, _state: &mut Self::RequestState, key: K, slot: usize) {
+    fn on_evict(&self, _state: &mut Self::RequestState, key: K, slot: Arc<usize>) {
         let value = {
-            let mut lock = self.locks[slot].write().unwrap();
+            let mut lock = self.locks[*slot].write().unwrap();
             std::mem::take(&mut *lock)
         };
         self.callback.on_evict(key, value);
-        self.free_slots.insert(slot);
+        self.free_slots.insert(*slot);
     }
 }
 
@@ -319,11 +335,11 @@ mod tests {
             assert_eq!(get_fn(&cache, 3u32, not_found).unwrap(), 789);
         }
 
-        cache.remove(2u32);
+        cache.remove(2u32).unwrap();
         let res = get_fn(&cache, 2u32, not_found);
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
 
-        cache.remove(9999u32); // Removing non-existing key is a no-op
+        cache.remove(9999u32).unwrap(); // Removing non-existing key is a no-op
     }
 
     #[test]
@@ -411,7 +427,7 @@ mod tests {
         ignore_guard(cache.get_read_access_or_insert(2u32, || Ok(456)));
         assert_eq!(cache.free_slots.len(), extra_slots);
 
-        cache.remove(1u32);
+        cache.remove(1u32).unwrap();
         assert_eq!(cache.free_slots.len(), 1 + extra_slots);
 
         for slot in cache.free_slots.iter() {
@@ -421,18 +437,40 @@ mod tests {
     }
 
     #[test]
+    fn removing_locked_key_returns_error() {
+        let logger = Arc::new(EvictionLogger::default());
+        let cache = LockCache::<u32, i32>::new(2, logger.clone());
+
+        let _guard = cache.get_read_access_or_insert(1u32, || Ok(123)).unwrap();
+        let res = cache.remove(1u32);
+        assert!(matches!(res, Err(Error::IllegalConcurrentOperation(_))));
+    }
+
+    #[test]
+    fn removing_key_during_concurrent_access_returns_error() {
+        let logger = Arc::new(EvictionLogger::default());
+        let cache = Arc::new(LockCache::<u32, i32>::new(2, logger.clone()));
+        ignore_guard(cache.get_read_access_or_insert(1u32, || Ok(123)));
+
+        // We simulate a concurrent access by increasing the Arc's strong count.
+        let _slot = cache.cache.get(&1u32).unwrap();
+        let res = cache.remove(1u32);
+        assert!(matches!(res, Err(Error::IllegalConcurrentOperation(_))));
+    }
+
+    #[test]
     fn removed_items_are_not_considered_evicted() {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(2, logger.clone());
 
         ignore_guard(cache.get_read_access_or_insert(1u32, || Ok(123)));
         assert!(logger.evicted.is_empty());
-        cache.remove(1u32);
+        cache.remove(1u32).unwrap();
         assert!(logger.evicted.is_empty());
     }
 
     #[test]
-    fn item_lifecycle_is_pinned_checks_lock() {
+    fn item_lifecycle_is_pinned_checks_strong_count_and_lock() {
         let nodes: Arc<[_]> = Arc::from(vec![RwLock::default()].into_boxed_slice());
         let lifecycle = ItemLifecycle {
             locks: nodes,
@@ -440,12 +478,17 @@ mod tests {
             callback: Arc::new(EvictionLogger::default()),
         };
 
-        // Element is not pinned as it's not locked
-        assert!(!lifecycle.is_pinned(&0, &0));
+        // Element is not pinned as it's not locked and the Arc's strong count is 1
+        assert!(!lifecycle.is_pinned(&0, &Arc::new(0usize)));
+
+        // Element is pinned as its Arc's strong count is > 1
+        let arc = Arc::new(0usize);
+        let arc2 = arc.clone();
+        assert!(lifecycle.is_pinned(&0, &arc2));
 
         // Element is pinned as another thread holds a lock
         let _guard = lifecycle.locks[0].read().unwrap(); // Lock item at pos 0
-        assert!(lifecycle.is_pinned(&0, &0));
+        assert!(lifecycle.is_pinned(&0, &Arc::new(0usize)));
     }
 
     #[test]
@@ -458,7 +501,7 @@ mod tests {
             free_slots: free_slots.clone(),
             callback: logger.clone(),
         };
-        lifecycle.on_evict(&mut (), 42, 0);
+        lifecycle.on_evict(&mut (), 42, Arc::new(0usize));
         assert!(logger.evicted.contains(&(42, 123)));
         assert!(free_slots.contains(&0));
         assert_eq!(*lifecycle.locks[0].read().unwrap(), i32::default());
