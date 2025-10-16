@@ -54,9 +54,18 @@ impl Statistics {
                 acc
             },
         );
+        let mut ind = Indentation::default();
         writeln!(writer, "Node types:")?;
         for (type_name, stats) in node_statistics {
             writeln!(writer, "{} nodes, {}", type_name, stats.node_count)?;
+            ind.inc();
+            let mut kinds = stats.node_kinds.keys().collect::<Vec<_>>();
+            kinds.sort_by_key(|k| natural_key(k));
+            for kind in kinds {
+                let kind_count = stats.node_kinds[kind];
+                writeln!(writer, "{ind}{kind}: {kind_count}")?;
+            }
+            ind.dec();
         }
 
         writeln!(writer, "Node depth distribution:")?;
@@ -68,30 +77,26 @@ impl Statistics {
         let mut levels = self.level_statistics.keys().collect::<Vec<_>>();
         levels.sort();
         for level in levels {
-            let mut indentation = Indentation::default();
+            let mut ind = Indentation::default();
             let level_stats = &self.level_statistics[level];
             writeln!(writer, "Level {level}: ")?;
-            indentation.inc();
-            writeln!(
-                writer,
-                "{indentation}Total nodes: {}",
-                level_stats.node_count
-            )?;
-            indentation.inc();
+            ind.inc();
+            writeln!(writer, "{ind}Total nodes: {}", level_stats.node_count)?;
+            ind.inc();
             for (type_name, node_stats) in &level_stats.node_statistics {
                 writeln!(
                     writer,
-                    "{indentation}{} nodes: {}",
+                    "{ind}{} nodes: {}",
                     type_name, node_stats.node_count
                 )?;
-                indentation.inc();
+                ind.inc();
                 let mut kinds = node_stats.node_kinds.keys().collect::<Vec<_>>();
                 kinds.sort_by_key(|k| natural_key(k));
                 for kind in kinds {
                     let kind_count = node_stats.node_kinds[kind];
-                    writeln!(writer, "{indentation}{kind}: {kind_count}")?;
+                    writeln!(writer, "{ind}{kind}: {kind_count}")?;
                 }
-                indentation.dec();
+                ind.dec();
             }
         }
         Ok(())
