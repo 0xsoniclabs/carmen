@@ -77,6 +77,7 @@ impl Statistics {
                 "{indentation}Total nodes: {}",
                 level_stats.node_count
             )?;
+            indentation.inc();
             for (type_name, node_stats) in &level_stats.node_statistics {
                 writeln!(
                     writer,
