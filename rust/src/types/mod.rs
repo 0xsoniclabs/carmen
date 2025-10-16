@@ -9,10 +9,12 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use commitment::*;
+pub use disk_repr::DiskRepresentable;
 pub use node_size::*;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod commitment;
+mod disk_repr;
 mod node_size;
 mod update;
 
