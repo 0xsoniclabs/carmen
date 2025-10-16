@@ -18,11 +18,12 @@ use std::{
     },
 };
 
-use zerocopy::{FromBytes, Immutable, IntoBytes};
-
-use crate::storage::{
-    CheckpointParticipant, Error, Storage,
-    file::{FileBackend, FromToFile},
+use crate::{
+    storage::{
+        CheckpointParticipant, Error, Storage,
+        file::{FileBackend, FromToFile},
+    },
+    types::DiskRepresentable,
 };
 
 mod node_file_storage_metadata;
@@ -59,7 +60,7 @@ impl<T, F> NodeFileStorage<T, F> {
 
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
-    T: FromBytes + IntoBytes + Immutable + Send + Sync,
+    T: DiskRepresentable + Send + Sync,
     F: FileBackend,
 {
     type Id = u64;
@@ -120,9 +121,7 @@ where
         if self.node_file.len()? < offset + size_of::<T>() as u64 {
             return Err(Error::NotFound);
         }
-        // this is hopefully optimized away
-        let mut node = T::new_zeroed();
-        self.node_file.read_exact_at(node.as_mut_bytes(), offset)?;
+        let node = T::from_disk_repr(|buf| self.node_file.read_exact_at(buf, offset))?;
         Ok(node)
     }
 
@@ -141,7 +140,7 @@ where
             return Err(Error::Frozen);
         }
         let offset = idx * size_of::<Self::Item>() as u64;
-        self.node_file.write_all_at(node.as_bytes(), offset)?;
+        self.node_file.write_all_at(node.to_disk_repr(), offset)?;
         Ok(())
     }
 
@@ -226,6 +225,8 @@ mod tests {
         fs::{self, File},
         io::Read,
     };
+
+    use zerocopy::IntoBytes;
 
     use super::*;
     use crate::{
@@ -720,7 +721,7 @@ mod tests {
 
     impl<T, F> super::NodeFileStorage<T, F>
     where
-        T: IntoBytes + Immutable,
+        T: DiskRepresentable,
     {
         /// Creates all files for a file-based node storage in the specified directory
         /// and populates them with the provided nodes and reusable indices.
