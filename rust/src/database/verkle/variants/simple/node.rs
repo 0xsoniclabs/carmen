@@ -13,7 +13,7 @@ use crate::{
         compute_commitment::compute_leaf_node_commitment, crypto::Commitment,
         variants::managed::EmptyNode,
     },
-    statistics::{Statistics, Visitor},
+    statistics::{Statistics, TrieVisitor},
     types::{Key, Value},
 };
 
@@ -85,7 +85,7 @@ impl Node {
         }
     }
 
-    pub fn accept(&self, visitor: &mut impl Visitor<Self>, level: u8) {
+    pub fn accept(&self, visitor: &mut impl TrieVisitor<Self>, level: u8) {
         visitor.visit(self, level);
         if let Node::Inner(inner) = self {
             for child in inner.children.iter() {
@@ -240,7 +240,7 @@ impl LeafNode {
     }
 }
 
-impl Visitor<Node> for Statistics {
+impl TrieVisitor<Node> for Statistics {
     fn visit(&mut self, node: &Node, level: u8) {
         let entry = self.level_statistics.entry(level).or_default();
         entry.node_count += 1;
@@ -252,7 +252,7 @@ impl Visitor<Node> for Statistics {
     }
 }
 
-impl Visitor<InnerNode> for Statistics {
+impl TrieVisitor<InnerNode> for Statistics {
     fn visit(&mut self, node: &InnerNode, level: u8) {
         record_node_statistics(
             self,
@@ -269,7 +269,7 @@ impl Visitor<InnerNode> for Statistics {
     }
 }
 
-impl Visitor<LeafNode> for Statistics {
+impl TrieVisitor<LeafNode> for Statistics {
     fn visit(&mut self, node: &LeafNode, level: u8) {
         record_node_statistics(
             self,
@@ -281,7 +281,7 @@ impl Visitor<LeafNode> for Statistics {
     }
 }
 
-impl Visitor<EmptyNode> for Statistics {
+impl TrieVisitor<EmptyNode> for Statistics {
     fn visit(&mut self, node: &EmptyNode, level: u8) {
         record_node_statistics(self, node, level, "Empty", None::<fn(&EmptyNode) -> u64>);
     }

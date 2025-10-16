@@ -11,7 +11,10 @@
 
 use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
 
-use crate::{database::VerkleTrieCarmenState, error::Error, types::*};
+use crate::{
+    database::VerkleTrieCarmenState, error::Error,
+    statistics::formatters::writer_with_indentation::WriterWithIndentation, types::*,
+};
 
 mod database;
 mod error;
@@ -187,10 +190,10 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
     fn close(&self) -> Result<(), Error> {
         // No-op for in-memory state
         // TODO: Handle for storage-based implementation
-        let mut file = std::fs::File::create("carmen_stats.txt").unwrap();
+        let file = std::fs::File::create("carmen_stats.txt").unwrap();
         self.get_live_state()?
             .get_statistics()?
-            .print(&mut file)
+            .print(&mut [WriterWithIndentation::new(file)])
             .unwrap();
         Ok(())
     }
