@@ -10,7 +10,7 @@
 
 mod crate_crypto;
 pub mod managed;
-mod simple;
+pub(crate) mod simple;
 
 pub use crate_crypto::CrateCryptoInMemoryVerkleTrie;
 pub use simple::SimpleInMemoryVerkleTrie;

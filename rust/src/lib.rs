@@ -19,9 +19,9 @@ mod error;
 mod ffi;
 #[cfg(test)]
 mod node_manager;
+pub mod statistics;
 pub mod storage;
 pub mod types;
-
 mod utils;
 
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
@@ -121,6 +121,7 @@ pub trait CarmenState: Send + Sync {
 
     fn depth(&self) -> usize;
     fn node_count(&self) -> usize;
+    fn get_statistics(&self) -> Result<statistics::Statistics, Error>;
 }
 
 // TODO: Get rid of this once we no longer store an Arc<CarmenState> in CarmenS6Db
@@ -168,6 +169,10 @@ impl<T: CarmenState> CarmenState for Arc<T> {
     fn node_count(&self) -> usize {
         self.deref().node_count()
     }
+
+    fn get_statistics(&self) -> Result<statistics::Statistics, Error> {
+        self.deref().get_statistics()
+    }
 }
 
 /// The `S6` implementation of [`CarmenDb`].
@@ -195,6 +200,11 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
     fn close(&self) -> Result<(), Error> {
         // No-op for in-memory state
         // TODO: Handle for storage-based implementation
+        let mut file = std::fs::File::create("carmen_stats.txt").unwrap();
+        self.get_live_state()?
+            .get_statistics()?
+            .print(&mut file)
+            .unwrap();
         Ok(())
     }
 
