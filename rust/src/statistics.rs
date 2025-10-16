@@ -72,6 +72,11 @@ impl Statistics {
             let level_stats = &self.level_statistics[level];
             writeln!(writer, "Level {level}: ")?;
             indentation.inc();
+            writeln!(
+                writer,
+                "{indentation}Total nodes: {}",
+                level_stats.node_count
+            )?;
             for (type_name, node_stats) in &level_stats.node_statistics {
                 writeln!(
                     writer,
