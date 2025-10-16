@@ -42,9 +42,7 @@ impl SimpleInMemoryVerkleTrie {
 
 impl TrieStatistics for SimpleInMemoryVerkleTrie {
     fn get_statistics(&self) -> Statistics {
-        let mut stats = Statistics {
-            level_statistics: std::collections::HashMap::new(),
-        };
+        let mut stats = Statistics::default();
         self.root.lock().unwrap().accept(&mut stats, 0);
         stats
     }
