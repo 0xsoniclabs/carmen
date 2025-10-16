@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::borrow::Cow;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 /// A trait for types that can be represented as raw bytes on disk.
@@ -24,8 +26,10 @@ pub trait DiskRepresentable {
     where
         Self: Sized;
 
-    /// Returns the disk representation of the value as a byte slice.
-    fn to_disk_repr(&self) -> &[u8];
+    /// Returns the disk representation of the value as a byte slice (borrowed from self or owned
+    /// depending on whether the disk representations is the same as the in-memory representation or
+    /// needed to be serialized).
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]>;
 }
 
 impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
@@ -37,8 +41,8 @@ impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
         Ok(value)
     }
 
-    fn to_disk_repr(&self) -> &[u8] {
-        self.as_bytes()
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Borrowed(self.as_bytes())
     }
 }
 
