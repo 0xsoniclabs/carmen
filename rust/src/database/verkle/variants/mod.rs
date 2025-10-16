@@ -9,6 +9,6 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub mod managed;
-mod simple;
+pub(crate) mod simple;
 
 pub use simple::SimpleInMemoryVerkleTrie;

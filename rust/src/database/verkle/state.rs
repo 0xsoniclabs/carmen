@@ -22,6 +22,7 @@ use crate::{
         verkle_trie::VerkleTrie,
     },
     error::Error,
+    statistics::TrieStatistics,
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -42,7 +43,7 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     }
 }
 
-impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
+impl<T: VerkleTrie + TrieStatistics> CarmenState for VerkleTrieCarmenState<T> {
     fn account_exists(&self, addr: &Address) -> Result<bool, Error> {
         Ok(self.get_code_hash(addr)? != Hash::default())
     }
@@ -162,6 +163,10 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         }
 
         Ok(())
+    }
+
+    fn get_statistics(&self) -> Result<crate::statistics::Statistics, Error> {
+        Ok(self.trie.get_statistics())
     }
 }
 
