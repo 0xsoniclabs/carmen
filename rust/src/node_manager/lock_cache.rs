@@ -25,7 +25,7 @@ pub trait OnEvict: Send + Sync {
 
     /// Called when an item is evicted from the cache.
     /// This function should be fast, otherwise cache performance might be negatively affected.
-    fn on_evict(&self, key: Self::Key, value: Self::Value);
+    fn on_evict(&self, key: Self::Key, value: Self::Value) -> Result<(), Error>;
 }
 
 /// A cache that holds items (`K`/`V` pairs) on which read/write locks can be acquired.
@@ -268,13 +268,16 @@ where
 
     /// Invokes the eviction callback, resets the slot to its default value and
     /// marks the slot as free.
+    /// NOTE: this will panic if the eviction callback fails.
     fn on_evict(&self, _state: &mut Self::RequestState, key: K, slot: Arc<usize>) {
         let value = {
             let mut lock = self.locks[*slot].write().unwrap();
             std::mem::take(&mut *lock)
         };
         self.free_slots.insert(*slot);
-        self.callback.on_evict(key, value);
+        self.callback
+            .on_evict(key, value)
+            .expect("eviction callback failed");
     }
 }
 
@@ -292,8 +295,9 @@ mod tests {
         type Key = u32;
         type Value = i32;
 
-        fn on_evict(&self, key: u32, value: i32) {
+        fn on_evict(&self, key: u32, value: i32) -> Result<(), Error> {
             self.evicted.insert((key, value));
+            Ok(())
         }
     }
 
@@ -511,6 +515,31 @@ mod tests {
         assert!(logger.evicted.contains(&(42, 123)));
         assert!(free_slots.contains(&0));
         assert_eq!(*lifecycle.locks[0].read().unwrap(), i32::default());
+    }
+
+    #[test]
+    #[should_panic(expected = "eviction callback failed")]
+    fn item_lifecycle_on_evict_fails_if_callback_fails() {
+        struct FailingEvictionLogger;
+
+        impl OnEvict for FailingEvictionLogger {
+            type Key = u32;
+            type Value = i32;
+
+            fn on_evict(&self, _key: u32, _value: i32) -> Result<(), Error> {
+                Err(Error::Storage(storage::Error::NotFound))
+            }
+        }
+
+        let nodes: Arc<[_]> = Arc::from(vec![RwLock::new(123)].into_boxed_slice());
+        let free_slots = Arc::new(DashSet::new());
+        let logger = Arc::new(FailingEvictionLogger);
+        let lifecycle = ItemLifecycle {
+            locks: nodes,
+            free_slots: free_slots.clone(),
+            callback: logger.clone(),
+        };
+        lifecycle.on_evict(&mut (), 42, Arc::new(0usize));
     }
 
     /// Type alias for a closure that calls either `get_read_access_or_insert` or
