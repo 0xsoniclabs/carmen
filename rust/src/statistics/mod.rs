@@ -16,17 +16,20 @@ pub trait TrieVisitor<N> {
 #[derive(Default, Clone, Debug)]
 pub struct Statistics {
     pub level_statistics: BTreeMap<u8, LevelStatistics>,
+    pub byte_size: u64,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct LevelStatistics {
     pub node_count: u64,
+    pub byte_size: u64,
     pub node_statistics: BTreeMap<String, NodeStatistics>,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct NodeStatistics {
     pub node_count: u64,
+    pub byte_size: u64,
     pub node_kinds: BTreeMap<String, u64>,
 }
 
@@ -40,20 +43,29 @@ impl AddAssign<&NodeStatistics> for NodeStatistics {
 }
 
 impl Statistics {
-    pub fn print(&self, writers: &mut [impl StatisticsFormatter]) -> std::io::Result<()> {
-        let node_distribution = NodeDistribution::new(&self.level_statistics);
-        let node_depth_distribution = NodeDepthDistribution::new(&self.level_statistics);
-        let node_type_distribution = NodeTypeDistribution::new(&self.level_statistics);
+    pub fn print(&self, writers: &mut [Box<dyn StatisticsFormatter>]) -> std::io::Result<()> {
+        let node_distribution = Distributions::Node(NodeDistribution::new(&self.level_statistics));
+        let node_depth_distribution =
+            Distributions::NodePerLevel(NodePerLevelDistribution::new(&self.level_statistics));
+        let node_type_distribution = Distributions::NodeTypePerLevel(
+            NodeTypePerLevelDistribution::new(&self.level_statistics),
+        );
         for writer in writers {
-            writer.header()?;
-            writer.print_node_distribution(&node_distribution)?;
-            writer.print_node_depth_distribution(&node_depth_distribution)?;
-            writer.print_node_type_distribution(&node_type_distribution)?;
+            writer.print_distribution(&node_distribution)?;
+            writer.print_distribution(&node_depth_distribution)?;
+            writer.print_distribution(&node_type_distribution)?;
         }
         Ok(())
     }
 }
 
+pub enum Distributions {
+    Node(NodeDistribution),
+    NodePerLevel(NodePerLevelDistribution),
+    NodeTypePerLevel(NodeTypePerLevelDistribution),
+}
+
+#[derive(Clone, Debug)]
 pub struct NodeDistribution {
     aggregated_node_statistics: BTreeMap<String, NodeStatistics>,
     total_nodes: u64,
@@ -82,11 +94,12 @@ impl NodeDistribution {
     }
 }
 
-pub struct NodeDepthDistribution {
+#[derive(Clone, Debug)]
+pub struct NodePerLevelDistribution {
     distribution: BTreeMap<u8, u64>,
 }
 
-impl NodeDepthDistribution {
+impl NodePerLevelDistribution {
     fn new(level_statistics: &BTreeMap<u8, LevelStatistics>) -> Self {
         let mut distribution = BTreeMap::new();
         for (level, stats) in level_statistics {
@@ -96,11 +109,12 @@ impl NodeDepthDistribution {
     }
 }
 
-pub struct NodeTypeDistribution {
+#[derive(Clone, Debug)]
+pub struct NodeTypePerLevelDistribution {
     level_statistics: BTreeMap<u8, LevelStatistics>,
 }
 
-impl NodeTypeDistribution {
+impl NodeTypePerLevelDistribution {
     fn new(level_statistics: &BTreeMap<u8, LevelStatistics>) -> Self {
         Self {
             level_statistics: level_statistics.clone(),
