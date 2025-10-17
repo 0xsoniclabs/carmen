@@ -18,10 +18,7 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::{
-    database::verkle::variants::managed::{Node, NodeId},
-    storage::{Checkpointable, Error, RootIdProvider, Storage},
-};
+use crate::storage::{Checkpointable, Error, RootIdProvider, Storage};
 
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
 /// written to the underlying storage layer in background threads.
@@ -40,13 +37,20 @@ use crate::{
 /// If the id is found in the flush buffer and it is a delete operation, a not found error is
 /// returned. Only if the id is not found in the flush buffer, the underlying storage layer is
 /// queried.
-pub struct StorageWithFlushBuffer<S> {
-    flush_buffer: Arc<FlushBuffer>, // Arc for shared ownership with flush worker threads
-    storage: Arc<S>,                // Arc for shared ownership with flush worker threads
+pub struct StorageWithFlushBuffer<S>
+where
+    S: Storage,
+{
+    // Arc for shared ownership with flush worker threads
+    flush_buffer: Arc<FlushBuffer<S::Id, S::Item>>,
+    storage: Arc<S>, // Arc for shared ownership with flush worker threads
     flush_workers: FlushWorkers,
 }
 
-impl<S> StorageWithFlushBuffer<S> {
+impl<S> StorageWithFlushBuffer<S>
+where
+    S: Storage,
+{
     pub fn shutdown_flush_workers(self) -> Result<(), Error> {
         self.flush_workers.shutdown()
     }
@@ -54,10 +58,12 @@ impl<S> StorageWithFlushBuffer<S> {
 
 impl<S> Storage for StorageWithFlushBuffer<S>
 where
-    S: Storage<Id = NodeId, Item = Node> + 'static,
+    S: Storage + 'static,
+    S::Id: std::hash::Hash + Eq + Send + Sync,
+    S::Item: Clone + Send + Sync,
 {
-    type Id = NodeId;
-    type Item = Node;
+    type Id = S::Id;
+    type Item = S::Item;
 
     fn open(path: &Path) -> Result<Self, Error> {
         let storage = Arc::new(S::open(path)?);
@@ -70,7 +76,7 @@ where
         })
     }
 
-    fn get(&self, id: NodeId) -> Result<Self::Item, Error> {
+    fn get(&self, id: Self::Id) -> Result<Self::Item, Error> {
         match self.flush_buffer.get(&id) {
             Some(value) => match value.value() {
                 Op::Set(node) => Ok(node.clone()),
@@ -90,12 +96,12 @@ where
         id
     }
 
-    fn set(&self, id: NodeId, node: &Self::Item) -> Result<(), Error> {
+    fn set(&self, id: Self::Id, node: &Self::Item) -> Result<(), Error> {
         self.flush_buffer.insert(id, Op::Set(node.clone()));
         Ok(())
     }
 
-    fn delete(&self, id: NodeId) -> Result<(), Error> {
+    fn delete(&self, id: Self::Id) -> Result<(), Error> {
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }
@@ -103,7 +109,9 @@ where
 
 impl<S> Checkpointable for StorageWithFlushBuffer<S>
 where
-    S: Checkpointable,
+    S: Storage + Checkpointable,
+    S::Id: std::hash::Hash + Eq + Send + Sync,
+    S::Item: Send + Sync,
 {
     fn checkpoint(&self) -> Result<(), Error> {
         // Busy loop until all flush workers are done.
@@ -118,9 +126,9 @@ where
 
 impl<S> RootIdProvider for StorageWithFlushBuffer<S>
 where
-    S: RootIdProvider,
+    S: Storage + RootIdProvider,
 {
-    type Id = S::Id;
+    type Id = <S as RootIdProvider>::Id;
 
     fn get_root_id(&self, block_number: u64) -> Result<Self::Id, Error> {
         self.storage.get_root_id(block_number)
@@ -142,9 +150,11 @@ impl FlushWorkers {
 
     /// Creates a new set of flush workers that will process items from the flush buffer and
     /// write them to the underlying storage layer.
-    pub fn new<S>(flush_buffer: &Arc<FlushBuffer>, storage: &Arc<S>) -> Self
+    pub fn new<S>(flush_buffer: &Arc<FlushBuffer<S::Id, S::Item>>, storage: &Arc<S>) -> Self
     where
-        S: Storage<Id = NodeId, Item = Node> + 'static,
+        S: Storage + Send + Sync + 'static,
+        S::Id: Eq + std::hash::Hash + Send + Sync,
+        S::Item: Clone + Send + Sync,
     {
         let shutdown = Arc::new(AtomicBool::new(false));
         let workers = (0..Self::WORKER_COUNT)
@@ -162,12 +172,14 @@ impl FlushWorkers {
     /// The task that each flush worker runs. It processes items from the flush buffer
     /// and writes them to the underlying storage layer.
     fn task<S>(
-        flush_buffer: &FlushBuffer,
+        flush_buffer: &FlushBuffer<S::Id, S::Item>,
         storage: &S,
         shutdown: &Arc<AtomicBool>,
     ) -> Result<(), Error>
     where
-        S: Storage<Id = NodeId, Item = Node>,
+        S: Storage,
+        S::Id: Eq + std::hash::Hash + Send + Sync,
+        S::Item: Clone + Send + Sync,
     {
         loop {
             let item = flush_buffer
@@ -215,12 +227,12 @@ impl FlushWorkers {
     }
 }
 
-type FlushBuffer = DashMap<NodeId, Op>;
+type FlushBuffer<ID, N> = DashMap<ID, Op<N>>;
 
 /// An element in the flush buffer that can either be a set operation or a delete operation.
 #[derive(Debug, Clone)]
-enum Op {
-    Set(Node),
+enum Op<N> {
+    Set(N),
     Delete,
 }
 
@@ -232,7 +244,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        database::verkle::variants::managed::NodeType,
+        database::verkle::variants::managed::{Node, NodeId, NodeType},
         storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
         utils::test_dir::{Permissions, TestDir},
     };
