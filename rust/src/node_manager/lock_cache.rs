@@ -23,6 +23,8 @@ pub trait OnEvict: Send + Sync {
     type Key;
     type Value;
 
+    /// Called when an item is evicted from the cache.
+    /// This function should be fast, otherwise cache performance might be negatively affected.
     fn on_evict(&self, key: Self::Key, value: Self::Value);
 }
 
@@ -42,6 +44,9 @@ pub struct LockCache<K, V> {
     /// The quick-cache instance holds `Arc`s of slot indices into `locks`.
     /// By using an `Arc`, we can track how many threads are currently accessing a slot,
     /// and thereby avoid evicting items that are currently in use.
+    /// Importantly, since each interaction with the cache for a specific key locks its
+    /// respective shard, the lookup of a slot and the increment of its [`Arc::strong_count`]
+    /// is an atomic operation from the perspective of the [`LockCache`].
     cache: Cache<K, Arc<usize>, UnitWeighter, DefaultHashBuilder, ItemLifecycle<K, V>>,
 }
 
@@ -100,7 +105,8 @@ where
     }
 
     /// Accesses the value for the given key for reading.
-    /// Multiple concurrent read accesses to the same item are allowed.
+    /// Multiple concurrent read accesses to the same item are allowed,
+    /// but any attempt to acquire a write lock will block until all read locks are released.
     /// While a read lock is held, the item will not be evicted.
     ///
     /// If the key is not present, it is inserted using `insert_fn`.
