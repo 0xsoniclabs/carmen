@@ -15,12 +15,11 @@ use std::{
 };
 
 use crate::{
-    database::verkle::variants::managed::{
-        EmptyNode, FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
-    },
     storage::{
-        CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage, file::FromToFile,
+        CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage, StorageX,
+        file::FromToFile,
     },
+    types::{AllVariants, ToNodeType, TreeId},
 };
 
 mod checkpoint_data;
@@ -28,48 +27,49 @@ mod root_ids_file;
 
 use checkpoint_data::CheckpointData;
 use root_ids_file::RootIdsFile;
+use zerocopy::{FromBytes, IntoBytes};
 
 /// A storage manager for Verkle trie nodes for file based storage backends.
 ///
 /// In order for concurrent operations to be safe (in that there are not data races) they have to
 /// operate on different [`NodeId`]s.
-#[derive(Debug)]
-pub struct FileStorageManager<S1, S2, S3>
+//#[derive(Debug)]
+pub struct FileStorageManager<S, ID>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    S: StorageX<Id = u64>,
+    S::Item: ToNodeType,
 {
     dir: PathBuf,
     checkpoint: AtomicU64,
-    inner_nodes: S1,
-    leaf_nodes_2: S2,
-    leaf_nodes_256: S3,
-    root_ids_file: RootIdsFile<NodeId>,
+    nodes: Vec<(<S::Item as ToNodeType>::NodeType, S)>,
+    root_ids_file: RootIdsFile<ID>,
 }
 
-impl<S1, S2, S3> FileStorageManager<S1, S2, S3>
+impl<S, ID> FileStorageManager<S, ID>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    S: StorageX<Id = u64>,
+    S::Item: ToNodeType,
 {
-    pub const INNER_NODE_DIR: &str = "inner_node";
-    pub const LEAF_NODE_2_DIR: &str = "leaf_node_2";
-    pub const LEAF_NODE_256_DIR: &str = "leaf_node_256";
     pub const COMMITTED_CHECKPOINT_FILE: &str = "committed_checkpoint.bin";
     pub const PREPARED_CHECKPOINT_FILE: &str = "prepared_checkpoint.bin";
     pub const ROOT_IDS_FILE: &str = "root_ids.bin";
 }
 
-impl<S1, S2, S3> Storage for FileStorageManager<S1, S2, S3>
+impl<S, ID> Storage for FileStorageManager<S, ID>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    S: StorageX<Id = u64> + CheckpointParticipant,
+    S::Item: ToNodeType,
+    <S::Item as ToNodeType>::NodeType: AllVariants + Eq + Clone + Send + Sync + 'static,
+    ID: TreeId<NodeType = <S::Item as ToNodeType>::NodeType>
+        + FromBytes
+        + IntoBytes
+        + Copy
+        + Send
+        + Sync
+        + 'static,
 {
-    type Id = NodeId;
-    type Item = Node;
+    type Id = ID;
+    type Item = S::Item;
 
     /// Opens or creates the file backends for the individual node types in the specified directory.
     fn open(dir: &Path) -> Result<Self, Error> {
@@ -78,105 +78,94 @@ where
         let checkpoint_data =
             CheckpointData::read_or_init(dir.join(Self::COMMITTED_CHECKPOINT_FILE))?;
 
-        let inner_nodes = S1::open(dir.join(Self::INNER_NODE_DIR).as_path())?;
-        let leaf_nodes_2 = S2::open(dir.join(Self::LEAF_NODE_2_DIR).as_path())?;
-        let leaf_nodes_256 = S3::open(dir.join(Self::LEAF_NODE_256_DIR).as_path())?;
+        let nodes = <S::Item as ToNodeType>::NodeType::all_variants()
+            .iter()
+            .map(|(variant, name)| {
+                S::open(dir.join(name).as_path(), variant.clone()).map(|s| (variant.clone(), s))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let root_ids_file =
             RootIdsFile::open(dir.join(Self::ROOT_IDS_FILE), checkpoint_data.root_id_count)?;
 
-        inner_nodes.ensure(checkpoint_data.checkpoint_number)?;
-        leaf_nodes_2.ensure(checkpoint_data.checkpoint_number)?;
-        leaf_nodes_256.ensure(checkpoint_data.checkpoint_number)?;
+        for (_, node) in &nodes {
+            node.ensure(checkpoint_data.checkpoint_number)?;
+        }
 
         Ok(Self {
             dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(checkpoint_data.checkpoint_number),
-            inner_nodes,
-            leaf_nodes_2,
-            leaf_nodes_256,
+            nodes,
             root_ids_file,
         })
     }
 
-    fn get(&self, id: NodeId) -> Result<Node, Error> {
+    fn get(&self, id: Self::Id) -> Result<Self::Item, Error> {
         let idx = id.to_index();
-        match id.to_node_type().ok_or(Error::InvalidId)? {
-            NodeType::Empty => Ok(Node::Empty(EmptyNode)),
-            NodeType::Inner => {
-                let node = self.inner_nodes.get(idx)?;
-                Ok(Node::Inner(Box::new(node)))
-            }
-            NodeType::Leaf2 => {
-                let node = self.leaf_nodes_2.get(idx)?;
-                Ok(Node::Leaf2(Box::new(node)))
-            }
-            NodeType::Leaf256 => {
-                let node = self.leaf_nodes_256.get(idx)?;
-                Ok(Node::Leaf256(Box::new(node)))
-            }
-        }
+        let nt = id.to_node_type().ok_or(Error::InvalidId)?;
+
+        self.nodes
+            .iter()
+            .find(|(node_type, _)| *node_type == nt)
+            .ok_or(Error::InvalidId)?
+            .1
+            .get(idx)
     }
 
-    fn reserve(&self, node: &Node) -> NodeId {
-        match node {
-            Node::Empty(_) => NodeId::from_idx_and_node_type(0, NodeType::Empty),
-            Node::Inner(node) => {
-                let idx = self.inner_nodes.reserve(node);
-                NodeId::from_idx_and_node_type(idx, NodeType::Inner)
-            }
-            Node::Leaf2(node) => {
-                let idx = self.leaf_nodes_2.reserve(node);
-                NodeId::from_idx_and_node_type(idx, NodeType::Leaf2)
-            }
-            Node::Leaf256(node) => {
-                let idx = self.leaf_nodes_256.reserve(node);
-                NodeId::from_idx_and_node_type(idx, NodeType::Leaf256)
-            }
-        }
+    fn reserve(&self, node: &Self::Item) -> Self::Id {
+        let nt = node.to_node_type();
+        let idx = self
+            .nodes
+            .iter()
+            .find(|(node_type, _)| *node_type == nt)
+            .unwrap()
+            //.ok_or(Error::InvalidId)?
+            .1
+            .reserve(node);
+        ID::from_idx_and_node_type(idx, nt)
     }
 
-    fn set(&self, id: NodeId, node: &Node) -> Result<(), Error> {
+    fn set(&self, id: Self::Id, node: &Self::Item) -> Result<(), Error> {
         let idx = id.to_index();
-        match (node, id.to_node_type().ok_or(Error::InvalidId)?) {
-            (Node::Empty(_), NodeType::Empty) => Ok(()),
-            (Node::Inner(node), NodeType::Inner) => self.inner_nodes.set(idx, node),
-            (Node::Leaf2(node), NodeType::Leaf2) => self.leaf_nodes_2.set(idx, node),
-            (Node::Leaf256(node), NodeType::Leaf256) => self.leaf_nodes_256.set(idx, node),
-            (Node::Empty(_) | Node::Inner(_) | Node::Leaf2(_) | Node::Leaf256(_), _) => {
-                Err(Error::IdNodeTypeMismatch)
-            }
+        let nt = id.to_node_type().unwrap();
+        if node.to_node_type() != nt {
+            return Err(Error::IdNodeTypeMismatch);
         }
+        self.nodes
+            .iter()
+            .find(|(node_type, _)| *node_type == nt)
+            .unwrap()
+            //.ok_or(Error::InvalidId)?
+            .1
+            .set(idx, node)
     }
 
-    fn delete(&self, id: NodeId) -> Result<(), Error> {
+    fn delete(&self, id: Self::Id) -> Result<(), Error> {
         let idx = id.to_index();
-        match id.to_node_type().ok_or(Error::InvalidId)? {
-            NodeType::Empty => Ok(()),
-            NodeType::Inner => self.inner_nodes.delete(idx),
-            NodeType::Leaf2 => self.leaf_nodes_2.delete(idx),
-            NodeType::Leaf256 => self.leaf_nodes_256.delete(idx),
-        }
+        let nt = id.to_node_type().unwrap();
+        self.nodes
+            .iter()
+            .find(|(node_type, _)| *node_type == nt)
+            .unwrap()
+            //.ok_or(Error::InvalidId)?
+            .1
+            .delete(idx)
     }
 }
 
-impl<S1, S2, S3> Checkpointable for FileStorageManager<S1, S2, S3>
+impl<S, ID> Checkpointable for FileStorageManager<S, ID>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    S: StorageX<Id = u64> + CheckpointParticipant,
+    S::Item: ToNodeType,
+    <S::Item as ToNodeType>::NodeType: Send + Sync,
+    ID: Copy + FromBytes + IntoBytes + Send + Sync,
 {
     fn checkpoint(&self) -> Result<(), Error> {
         let current_checkpoint = self.checkpoint.load(Ordering::Acquire);
         let new_checkpoint = current_checkpoint + 1;
-        let participants = [
-            &self.inner_nodes as &dyn CheckpointParticipant,
-            &self.leaf_nodes_2,
-            &self.leaf_nodes_256,
-        ];
-        for (i, participant) in participants.iter().enumerate() {
+        for (i, (_, participant)) in self.nodes.iter().enumerate() {
             if let Err(err) = participant.prepare(new_checkpoint) {
-                for participant in participants[..i].iter().rev() {
+                for (_, participant) in self.nodes[..i].iter().rev() {
                     participant.abort(current_checkpoint)?;
                 }
                 return Err(err);
@@ -191,7 +180,7 @@ where
             self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
             self.dir.join(Self::COMMITTED_CHECKPOINT_FILE),
         )?;
-        for participant in participants.iter() {
+        for (_, participant) in self.nodes.iter() {
             participant.commit(new_checkpoint)?;
         }
         self.checkpoint.store(new_checkpoint, Ordering::Release);
@@ -199,19 +188,19 @@ where
     }
 }
 
-impl<S1, S2, S3> RootIdProvider for FileStorageManager<S1, S2, S3>
+impl<S, ID> RootIdProvider for FileStorageManager<S, ID>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    S: StorageX<Id = u64>,
+    S::Item: ToNodeType,
+    ID: Copy + FromBytes + IntoBytes,
 {
-    type Id = NodeId;
+    type Id = ID;
 
-    fn get_root_id(&self, block_number: u64) -> Result<NodeId, Error> {
+    fn get_root_id(&self, block_number: u64) -> Result<ID, Error> {
         self.root_ids_file.get(block_number)
     }
 
-    fn set_root_id(&self, block_number: u64, id: NodeId) -> Result<(), Error> {
+    fn set_root_id(&self, block_number: u64, id: ID) -> Result<(), Error> {
         self.root_ids_file.set(block_number, id)
     }
 }
@@ -224,32 +213,28 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::file::{NodeFileStorage, SeekFile},
+        storage::{
+            file::{NodeFileStorage, SeekFile},
+            test_utils::{EmptyTestNode, NonEmptyTestNode, TestNode, TestNodeId, TestNodeType},
+        },
         utils::test_dir::{Permissions, TestDir},
     };
 
     #[test]
     fn open_creates_directory_and_calls_open_on_all_storages() {
-        type FileStorageManager = super::FileStorageManager<
-            NodeFileStorage<InnerNode, SeekFile>,
-            NodeFileStorage<SparseLeafNode<2>, SeekFile>,
-            NodeFileStorage<FullLeafNode, SeekFile>,
-        >;
+        type FileStorageManager =
+            super::FileStorageManager<NodeFileStorage<TestNode, SeekFile>, TestNodeId>;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let storage = FileStorageManager::open(&dir);
         assert!(storage.is_ok());
-        let sub_dirs = [
-            FileStorageManager::INNER_NODE_DIR,
-            FileStorageManager::LEAF_NODE_2_DIR,
-            FileStorageManager::LEAF_NODE_256_DIR,
-        ];
+        let sub_dirs = TestNodeType::all_variants().iter().map(|(_, name)| name);
         let files = [
-            NodeFileStorage::<InnerNode, SeekFile>::NODE_STORE_FILE,
-            NodeFileStorage::<InnerNode, SeekFile>::REUSE_LIST_FILE,
-            NodeFileStorage::<InnerNode, SeekFile>::COMMITTED_METADATA_FILE,
+            NodeFileStorage::<TestNode, SeekFile>::NODE_STORE_FILE,
+            NodeFileStorage::<TestNode, SeekFile>::REUSE_LIST_FILE,
+            NodeFileStorage::<TestNode, SeekFile>::COMMITTED_METADATA_FILE,
         ];
-        for sub_dir in &sub_dirs {
+        for sub_dir in sub_dirs {
             assert!(fs::exists(dir.join(sub_dir)).unwrap());
             for file in &files {
                 assert!(fs::exists(dir.join(sub_dir).join(file)).unwrap());
@@ -259,22 +244,15 @@ mod tests {
 
     #[test]
     fn open_opens_existing_files() {
-        type FileStorageManager = super::FileStorageManager<
-            NodeFileStorage<InnerNode, SeekFile>,
-            NodeFileStorage<SparseLeafNode<2>, SeekFile>,
-            NodeFileStorage<FullLeafNode, SeekFile>,
-        >;
+        type FileStorageManager =
+            super::FileStorageManager<NodeFileStorage<TestNode, SeekFile>, TestNodeId>;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let sub_dirs = [
-            FileStorageManager::INNER_NODE_DIR,
-            FileStorageManager::LEAF_NODE_2_DIR,
-            FileStorageManager::LEAF_NODE_256_DIR,
-        ];
-        for sub_dir in &sub_dirs {
+        let sub_dirs = TestNodeType::all_variants().iter().map(|(_, name)| name);
+        for sub_dir in sub_dirs {
             fs::create_dir_all(dir.join(sub_dir)).unwrap();
             // because we are not writing any nodes, the node type does not matter
-            NodeFileStorage::<InnerNode, SeekFile>::create_files_for_nodes(&dir, &[], &[]).unwrap();
+            NodeFileStorage::<TestNode, SeekFile>::create_files_for_nodes(&dir, &[], &[]).unwrap();
         }
 
         let storage = FileStorageManager::open(&dir);
@@ -283,11 +261,8 @@ mod tests {
 
     #[test]
     fn open_propagates_io_errors() {
-        type FileStorageManager = super::FileStorageManager<
-            MockStorage<InnerNode>,
-            MockStorage<SparseLeafNode<2>>,
-            MockStorage<FullLeafNode>,
-        >;
+        type FileStorageManager =
+            super::FileStorageManager<NodeFileStorage<TestNode, SeekFile>, TestNodeId>;
 
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
 
@@ -303,70 +278,40 @@ mod tests {
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::new()))
+                .collect(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
         {
-            // Empty nodes are not stored. Calling get with them returns a (default) empty node.
-            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            assert_eq!(storage.get(empty_node_id).unwrap(), Node::Empty(EmptyNode));
-        }
-
-        // Node::Inner
-        {
-            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
-            let inner_node = InnerNode::default();
-            storage
-                .inner_nodes
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::Empty);
+            let node = TestNode::Empty(EmptyTestNode);
+            storage.nodes[0]
+                .1
                 .expect_get()
-                .with(eq(inner_node_id.to_index()))
-                .returning({
-                    let inner_node = inner_node.clone();
-                    move |_| Ok(inner_node.clone())
-                });
+                .with(eq(node_id.to_index()))
+                .returning(move |_| Ok(node));
             assert_eq!(
-                storage.get(inner_node_id).unwrap(),
-                Node::Inner(Box::new(inner_node))
+                storage.get(node_id).unwrap(),
+                TestNode::Empty(EmptyTestNode)
             );
         }
 
-        // Node::Leaf2
+        // Node::NonEmpty
         {
-            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
-            let leaf_node_2 = SparseLeafNode::default();
-            storage
-                .leaf_nodes_2
+            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty);
+            let node = TestNode::NonEmpty(NonEmptyTestNode::default());
+            storage.nodes[1]
+                .1
                 .expect_get()
-                .with(eq(leaf_node_2_id.to_index()))
-                .returning({
-                    let leaf_node_2 = leaf_node_2.clone();
-                    move |_| Ok(leaf_node_2.clone())
-                });
+                .with(eq(node_id.to_index()))
+                .returning(move |_| Ok(node));
             assert_eq!(
-                storage.get(leaf_node_2_id).unwrap(),
-                Node::Leaf2(Box::new(leaf_node_2))
-            );
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
-            let leaf_node_256 = FullLeafNode::default();
-            storage
-                .leaf_nodes_256
-                .expect_get()
-                .with(eq(leaf_node_256_id.to_index()))
-                .returning({
-                    let leaf_node_256 = leaf_node_256.clone();
-                    move |_| Ok(leaf_node_256.clone())
-                });
-            assert_eq!(
-                storage.get(leaf_node_256_id).unwrap(),
-                Node::Leaf256(Box::new(leaf_node_256))
+                storage.get(node_id).unwrap(),
+                TestNode::NonEmpty(NonEmptyTestNode([0; 32]))
             );
         }
     }
@@ -378,64 +323,40 @@ mod tests {
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::new()))
+                .collect(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
         {
-            // Empty nodes are not stored. Calling reserve with them always returns ID 0.
-            let empty_node_idx = 0;
+            let node_idx = 0;
+            let node = TestNode::Empty(EmptyTestNode);
+            storage.nodes[0]
+                .1
+                .expect_reserve()
+                .with(eq(node))
+                .returning(move |_| node_idx);
             assert_eq!(
-                storage.reserve(&Node::Empty(EmptyNode)),
-                NodeId::from_idx_and_node_type(empty_node_idx, NodeType::Empty)
+                storage.reserve(&TestNode::Empty(EmptyTestNode)),
+                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::Empty)
             );
         }
 
-        // Node::Inner
+        // Node::NonEmpty
         {
-            let inner_node_idx = 1;
-            let inner_node = InnerNode::default();
-            storage
-                .inner_nodes
+            let node_idx = 1;
+            let node = TestNode::NonEmpty(NonEmptyTestNode::default());
+            storage.nodes[1]
+                .1
                 .expect_reserve()
-                .with(eq(inner_node.clone()))
-                .returning(move |_| inner_node_idx);
+                .with(eq(node))
+                .returning(move |_| node_idx);
             assert_eq!(
-                storage.reserve(&Node::Inner(Box::new(inner_node))),
-                NodeId::from_idx_and_node_type(inner_node_idx, NodeType::Inner)
-            );
-        }
-
-        // Node::Leaf2
-        {
-            let leaf_node_2_idx = 2;
-            let leaf_node_2 = SparseLeafNode::<2>::default();
-            storage
-                .leaf_nodes_2
-                .expect_reserve()
-                .with(eq(leaf_node_2.clone()))
-                .returning(move |_| leaf_node_2_idx);
-            assert_eq!(
-                storage.reserve(&Node::Leaf2(Box::new(leaf_node_2))),
-                NodeId::from_idx_and_node_type(leaf_node_2_idx, NodeType::Leaf2)
-            );
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_idx = 3;
-            let leaf_node_256 = FullLeafNode::default();
-            storage
-                .leaf_nodes_256
-                .expect_reserve()
-                .with(eq(leaf_node_256.clone()))
-                .returning(move |_| leaf_node_256_idx);
-            assert_eq!(
-                storage.reserve(&Node::Leaf256(Box::new(leaf_node_256))),
-                NodeId::from_idx_and_node_type(leaf_node_256_idx, NodeType::Leaf256)
+                storage.reserve(&node),
+                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::NonEmpty)
             );
         }
     }
@@ -447,57 +368,35 @@ mod tests {
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::new()))
+                .collect(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
         {
-            // Empty nodes are not stored. Calling set with them is a no-op.
-            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            let empty_node = Node::Empty(EmptyNode);
-            assert!(storage.set(empty_node_id, &empty_node).is_ok());
+            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            let node = TestNode::Empty(EmptyTestNode);
+            storage.nodes[0]
+                .1
+                .expect_set()
+                .with(eq(node_id.to_index()), eq(node))
+                .returning(move |_, _| Ok(()));
+            assert!(storage.set(node_id, &node).is_ok());
         }
 
-        // Node::Inner
+        // Node::NonEmpty
         {
-            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
-            let inner_node = InnerNode::default();
-            storage
-                .inner_nodes
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty);
+            let node = TestNode::NonEmpty(NonEmptyTestNode::default());
+            storage.nodes[1]
+                .1
                 .expect_set()
-                .with(eq(inner_node_id.to_index()), eq(inner_node.clone()))
+                .with(eq(node_id.to_index()), eq(node))
                 .returning(move |_, _| Ok(()));
-            let inner_node = Node::Inner(Box::new(inner_node));
-            assert!(storage.set(inner_node_id, &inner_node).is_ok());
-        }
-
-        // Node::Leaf2
-        {
-            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
-            let leaf_node_2 = SparseLeafNode::default();
-            storage
-                .leaf_nodes_2
-                .expect_set()
-                .with(eq(leaf_node_2_id.to_index()), eq(leaf_node_2.clone()))
-                .returning(move |_, _| Ok(()));
-            let leaf_node_2 = Node::Leaf2(Box::new(leaf_node_2));
-            assert!(storage.set(leaf_node_2_id, &leaf_node_2).is_ok());
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
-            let leaf_node_256 = FullLeafNode::default();
-            storage
-                .leaf_nodes_256
-                .expect_set()
-                .with(eq(leaf_node_256_id.to_index()), eq(leaf_node_256.clone()))
-                .returning(move |_, _| Ok(()));
-            let leaf_node_256 = Node::Leaf256(Box::new(leaf_node_256));
-            assert!(storage.set(leaf_node_256_id, &leaf_node_256).is_ok());
+            assert!(storage.set(node_id, &node).is_ok());
         }
     }
 
@@ -508,14 +407,15 @@ mod tests {
         let storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::new()))
+                .collect(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty);
+        let node = TestNode::Empty(EmptyTestNode);
 
         assert!(matches!(
             storage.set(id, &node),
@@ -530,50 +430,33 @@ mod tests {
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::<TestNode>::new()))
+                .collect(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         // Node::Empty
         {
-            // Empty nodes are not stored. Calling delete with them is a no-op.
-            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            assert!(storage.delete(empty_node_id).is_ok());
+            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            storage.nodes[0]
+                .1
+                .expect_delete()
+                .with(eq(node_id.to_index()))
+                .returning(move |_| Ok(()));
+            assert!(storage.delete(node_id).is_ok());
         }
 
-        // Node::Inner
+        // Node::NonEmpty
         {
-            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
-            storage
-                .inner_nodes
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty);
+            storage.nodes[1]
+                .1
                 .expect_delete()
-                .with(eq(inner_node_id.to_index()))
+                .with(eq(node_id.to_index()))
                 .returning(move |_| Ok(()));
-            assert!(storage.delete(inner_node_id).is_ok());
-        }
-
-        // Node::Leaf2
-        {
-            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
-            storage
-                .leaf_nodes_2
-                .expect_delete()
-                .with(eq(leaf_node_2_id.to_index()))
-                .returning(move |_| Ok(()));
-            assert!(storage.delete(leaf_node_2_id).is_ok());
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
-            storage
-                .leaf_nodes_256
-                .expect_delete()
-                .with(eq(leaf_node_256_id.to_index()))
-                .returning(move |_| Ok(()));
-            assert!(storage.delete(leaf_node_256_id).is_ok());
+            assert!(storage.delete(node_id).is_ok());
         }
     }
 
@@ -586,46 +469,35 @@ mod tests {
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(old_checkpoint),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::<TestNode>::new()))
+                .collect(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
-        storage
-            .inner_nodes
+        storage.nodes[0]
+            .1
             .expect_prepare()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_2
-            .expect_prepare()
-            .returning(|_| Ok(()))
-            .times(1)
-            .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_256
+        storage.nodes[1]
+            .1
             .expect_prepare()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
 
-        storage
-            .inner_nodes
+        storage.nodes[0]
+            .1
             .expect_commit()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_2
-            .expect_commit()
-            .returning(|_| Ok(()))
-            .times(1)
-            .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_256
+        storage.nodes[1]
+            .1
             .expect_commit()
             .returning(|_| Ok(()))
             .times(1)
@@ -634,14 +506,19 @@ mod tests {
         assert!(storage.checkpoint().is_ok());
 
         // The prepared checkpoint file should not exist after a successful checkpoint.
-        assert!(!fs::exists(dir.path().join(
-            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
-        )).unwrap());
+        assert!(
+            !fs::exists(dir.path().join(
+                FileStorageManager::<MockStorage<TestNode>, TestNodeId>::PREPARED_CHECKPOINT_FILE
+            ))
+            .unwrap()
+        );
         // The committed checkpoint file should exist and contain the new checkpoint.
         assert_eq!(
             CheckpointData::read_or_init(dir.path().join(
-                FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
-            )).unwrap().checkpoint_number,
+                FileStorageManager::<MockStorage<TestNode>, TestNodeId>::COMMITTED_CHECKPOINT_FILE,
+            ))
+            .unwrap()
+            .checkpoint_number,
             old_checkpoint + 1
         );
         // The checkpoint variable should be updated to the new checkpoint.
@@ -660,34 +537,37 @@ mod tests {
             checkpoint_number: old_checkpoint,
             root_id_count: 0,
         };
-        old_checkpoint_data.write(dir.path().join(
-            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
-        )).unwrap();
+        old_checkpoint_data
+            .write(dir.path().join(
+                FileStorageManager::<MockStorage<TestNode>, TestNodeId>::COMMITTED_CHECKPOINT_FILE,
+            ))
+            .unwrap();
 
         let mut storage = FileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(old_checkpoint),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            nodes: TestNodeType::all_variants()
+                .iter()
+                .map(|(node_type, _)| (*node_type, MockStorage::<TestNode>::new()))
+                .collect(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
-        storage
-            .inner_nodes
+        storage.nodes[0]
+            .1
             .expect_prepare()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_2
+        storage.nodes[1]
+            .1
             .expect_prepare()
             .returning(|_| Err(Error::Io(std::io::Error::from(std::io::ErrorKind::Other))))
             .times(1)
             .in_sequence(&mut seq);
-        storage
-            .inner_nodes
+        storage.nodes[0]
+            .1
             .expect_abort()
             .returning(|_| Ok(()))
             .times(1)
@@ -696,14 +576,19 @@ mod tests {
         assert!(matches!(storage.checkpoint(), Err(Error::Io(_))));
 
         // The prepared checkpoint file should not exist after a failed checkpoint.
-        assert!(!fs::exists(dir.path().join(
-            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
-        )).unwrap());
+        assert!(
+            !fs::exists(dir.path().join(
+                FileStorageManager::<MockStorage<TestNode>, TestNodeId>::PREPARED_CHECKPOINT_FILE
+            ))
+            .unwrap()
+        );
         // The committed checkpoint file should exist and contain the old checkpoint.
         assert_eq!(
             CheckpointData::read_or_init(dir.path().join(
-                FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
-            )).unwrap().checkpoint_number,
+                FileStorageManager::<MockStorage<TestNode>, TestNodeId>::COMMITTED_CHECKPOINT_FILE,
+            ))
+            .unwrap()
+            .checkpoint_number,
             old_checkpoint
         );
         // The checkpoint variable should still be the old checkpoint.
@@ -711,9 +596,9 @@ mod tests {
     }
 
     mockall::mock! {
-        pub Storage<T: Send + Sync + 'static> {}
+        pub Storage<T: ToNodeType + Send + Sync + 'static> {}
 
-        impl<T: Send + Sync + 'static> CheckpointParticipant for Storage<T> {
+        impl<T: ToNodeType + Send + Sync + 'static> CheckpointParticipant for Storage<T> {
             fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
 
             fn prepare(&self, checkpoint: u64) -> Result<(), Error>;
@@ -723,21 +608,21 @@ mod tests {
             fn abort(&self, checkpoint: u64) -> Result<(), Error>;
         }
 
-        impl<T: Send + Sync + 'static> Storage for Storage<T> {
+        impl<T: ToNodeType + Send + Sync + 'static> StorageX for Storage<T> {
             type Id = u64;
             type Item = T;
 
-            fn open(path: &Path) -> Result<Self, Error>
+            fn open(path: &Path, et: <T as ToNodeType>::NodeType) -> Result<Self, Error>
             where
                 Self: Sized;
 
-            fn get(&self, id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
+            fn get(&self, id: <Self as StorageX>::Id) -> Result<<Self as StorageX>::Item, Error>;
 
-            fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+            fn reserve(&self, item: &<Self as StorageX>::Item) -> <Self as StorageX>::Id;
 
-            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
+            fn set(&self, id: <Self as StorageX>::Id, item: &<Self as StorageX>::Item) -> Result<(), Error>;
 
-            fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
+            fn delete(&self, id: <Self as StorageX>::Id) -> Result<(), Error>;
         }
     }
 }

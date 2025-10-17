@@ -8,11 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::mem;
+
 use crate::{
     database::verkle::variants::managed::nodes::{
         empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
     },
-    types::NodeSize,
+    types::{AllVariants, DiskRepresentable, DiskRepresentableByType, NodeSize, ToNodeType},
 };
 
 pub mod empty;
@@ -33,8 +35,10 @@ pub enum Node {
     Leaf256(Box<FullLeafNode>),
 }
 
-impl Node {
-    pub fn to_node_type(&self) -> NodeType {
+impl ToNodeType for Node {
+    type NodeType = NodeType;
+
+    fn to_node_type(&self) -> Self::NodeType {
         match self {
             Node::Empty(_) => NodeType::Empty,
             Node::Inner(_) => NodeType::Inner,
@@ -51,6 +55,46 @@ impl NodeSize for Node {
 
     fn min_non_empty_node_size() -> usize {
         NodeType::min_non_empty_node_size()
+    }
+}
+
+impl DiskRepresentableByType for Node {
+    type EnumType = NodeType;
+
+    fn from_disk_repr<E>(
+        et: &Self::EnumType,
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        match et {
+            NodeType::Empty => Ok(Node::Empty(EmptyNode)),
+            NodeType::Inner => InnerNode::from_disk_repr(read_into_buffer)
+                .map(Box::new)
+                .map(Node::Inner),
+            NodeType::Leaf2 => SparseLeafNode::from_disk_repr(read_into_buffer)
+                .map(Box::new)
+                .map(Node::Leaf2),
+            NodeType::Leaf256 => FullLeafNode::from_disk_repr(read_into_buffer)
+                .map(Box::new)
+                .map(Node::Leaf256),
+        }
+    }
+
+    fn to_disk_repr(&self) -> &[u8] {
+        match self {
+            Node::Empty(_) => &[],
+            Node::Inner(n) => n.to_disk_repr(),
+            Node::Leaf2(n) => n.to_disk_repr(),
+            Node::Leaf256(n) => n.to_disk_repr(),
+        }
+    }
+
+    fn disk_size(et: &Self::EnumType) -> usize {
+        match et {
+            NodeType::Empty => 0,
+            NodeType::Inner => mem::size_of::<InnerNode>(),
+            NodeType::Leaf2 => mem::size_of::<SparseLeafNode<2>>(),
+            NodeType::Leaf256 => mem::size_of::<FullLeafNode>(),
+        }
     }
 }
 
@@ -91,6 +135,17 @@ impl NodeSize for NodeType {
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
         NodeType::Leaf2.node_byte_size()
+    }
+}
+
+impl AllVariants for NodeType {
+    fn all_variants() -> &'static [(Self, &'static str)] {
+        &[
+            (Self::Empty, "empty_node"),
+            (Self::Inner, "inner_node"),
+            (Self::Leaf2, "leaf_node_2"),
+            (Self::Leaf256, "leaf_node_256"),
+        ]
     }
 }
 

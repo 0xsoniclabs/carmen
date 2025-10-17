@@ -10,7 +10,6 @@
 
 use std::{
     fs::{self, OpenOptions},
-    marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
         Mutex, RwLock,
@@ -20,10 +19,10 @@ use std::{
 
 use crate::{
     storage::{
-        CheckpointParticipant, Error, Storage,
+        CheckpointParticipant, Error, StorageX,
         file::{FileBackend, FromToFile},
     },
-    types::DiskRepresentable,
+    types::{DiskRepresentableByType, ToNodeType},
 };
 
 mod node_file_storage_metadata;
@@ -37,7 +36,10 @@ use reuse_list_file::ReuseListFile;
 /// Concurrent operations on non-overlapping index ranges are thread safe. Concurrent access to
 /// overlapping index ranges is undefined behavior.
 #[derive(Debug)]
-pub struct NodeFileStorage<T, F> {
+pub struct NodeFileStorage<N, F>
+where
+    N: ToNodeType,
+{
     checkpoint: AtomicU64,
     metadata: RwLock<NodeFileStorageMetadata>,
     commited_metadata_path: PathBuf,
@@ -48,29 +50,33 @@ pub struct NodeFileStorage<T, F> {
 
     reuse_list_file: Mutex<ReuseListFile>,
 
-    _node_type: PhantomData<T>,
+    et: N::NodeType,
 }
 
-impl<T, F> NodeFileStorage<T, F> {
+impl<N, F> NodeFileStorage<N, F>
+where
+    N: ToNodeType,
+{
     pub const NODE_STORE_FILE: &'static str = "node_store.bin";
     pub const REUSE_LIST_FILE: &'static str = "reuse_list.bin";
     pub const COMMITTED_METADATA_FILE: &'static str = "committed_metadata.bin";
     pub const PREPARED_METADATA_FILE: &'static str = "prepared_metadata.bin";
 }
 
-impl<T, F> Storage for NodeFileStorage<T, F>
+impl<N, F> StorageX for NodeFileStorage<N, F>
 where
-    T: DiskRepresentable + Send + Sync,
+    N: ToNodeType + DiskRepresentableByType<EnumType = N::NodeType> + Send + Sync,
+    N::NodeType: Send + Sync,
     F: FileBackend,
 {
     type Id = u64;
-    type Item = T;
+    type Item = N;
 
     /// Creates all files for a file-based node storage in the specified directory.
     /// If the directory does not exist, it will be created.
     /// If the files do not exist, they will be created.
     /// If the files exist, they will be opened and their data verified.
-    fn open(dir: &Path) -> Result<Self, Error> {
+    fn open(dir: &Path, et: <N as ToNodeType>::NodeType) -> Result<Self, Error> {
         fs::create_dir_all(dir)?;
 
         let metadata =
@@ -97,7 +103,7 @@ where
 
         let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts)?;
         let len = node_file.len()?;
-        if len < metadata.frozen_nodes * size_of::<T>() as u64 {
+        if len < metadata.frozen_nodes * N::disk_size(&et) as u64 {
             return Err(Error::DatabaseCorruption);
         }
 
@@ -112,16 +118,16 @@ where
 
             reuse_list_file: Mutex::new(reuse_list_file),
 
-            _node_type: PhantomData,
+            et,
         })
     }
 
     fn get(&self, idx: Self::Id) -> Result<Self::Item, Error> {
-        let offset = idx * size_of::<Self::Item>() as u64;
-        if self.node_file.len()? < offset + size_of::<T>() as u64 {
+        let offset = idx * N::disk_size(&self.et) as u64;
+        if self.node_file.len()? < offset + N::disk_size(&self.et) as u64 {
             return Err(Error::NotFound);
         }
-        let node = T::from_disk_repr(|buf| self.node_file.read_exact_at(buf, offset))?;
+        let node = N::from_disk_repr(&self.et, |buf| self.node_file.read_exact_at(buf, offset))?;
         Ok(node)
     }
 
@@ -139,7 +145,7 @@ where
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
             return Err(Error::Frozen);
         }
-        let offset = idx * size_of::<Self::Item>() as u64;
+        let offset = idx * N::disk_size(&self.et) as u64;
         self.node_file.write_all_at(node.to_disk_repr(), offset)?;
         Ok(())
     }
@@ -156,8 +162,9 @@ where
     }
 }
 
-impl<T, F> CheckpointParticipant for NodeFileStorage<T, F>
+impl<N, F> CheckpointParticipant for NodeFileStorage<N, F>
 where
+    N: ToNodeType,
     F: FileBackend,
 {
     fn ensure(&self, checkpoint: u64) -> Result<(), Error> {
@@ -230,11 +237,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        storage::{Error, file::SeekFile},
+        storage::{
+            Error,
+            file::SeekFile,
+            test_utils::{NonEmptyTestNode, TestNode, TestNodeType},
+        },
         utils::test_dir::{Permissions, TestDir},
     };
-
-    type TestNode = [u8; 32];
 
     type NodeFileStorage = super::NodeFileStorage<TestNode, SeekFile>;
 
@@ -244,7 +253,7 @@ mod tests {
         let path = dir.join("non_existing_dir");
         let path = path.as_path();
 
-        assert!(NodeFileStorage::open(path).is_ok());
+        assert!(NodeFileStorage::open(path, TestNodeType::NonEmpty).is_ok());
 
         assert!(fs::exists(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
@@ -255,7 +264,7 @@ mod tests {
     fn open_creates_new_files_in_empty_directory() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        assert!(NodeFileStorage::open(&dir).is_ok());
+        assert!(NodeFileStorage::open(&dir, TestNodeType::NonEmpty).is_ok());
 
         assert!(fs::exists(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
@@ -269,19 +278,19 @@ mod tests {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 1, 1);
             write_reuse_list(&dir, &[0]);
-            write_nodes(&dir, &[[0; 32]]);
+            write_nodes(&dir, &[NonEmptyTestNode([0; 32])]);
 
-            assert!(NodeFileStorage::open(&dir).is_ok());
+            assert!(NodeFileStorage::open(&dir, TestNodeType::NonEmpty).is_ok());
         }
         // metadata contains larger node count that node file sizes allows
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 2, 0);
             write_reuse_list(&dir, &[0]);
-            write_nodes(&dir, &[[0; 32]]);
+            write_nodes(&dir, &[NonEmptyTestNode([0; 32])]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir),
+                NodeFileStorage::open(&dir, TestNodeType::NonEmpty),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -290,10 +299,10 @@ mod tests {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 0, 2);
             write_reuse_list(&dir, &[0]);
-            write_nodes(&dir, &[[0; 32]]);
+            write_nodes(&dir, &[NonEmptyTestNode([0; 32])]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir),
+                NodeFileStorage::open(&dir, TestNodeType::NonEmpty),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -303,7 +312,10 @@ mod tests {
     fn open_forwards_io_errors() {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
 
-        assert!(matches!(NodeFileStorage::open(&dir), Err(Error::Io(_))));
+        assert!(matches!(
+            NodeFileStorage::open(&dir, TestNodeType::NonEmpty),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -312,12 +324,21 @@ mod tests {
 
         write_metadata(&dir, 0, 2, 0);
         write_reuse_list(&dir, &[]);
-        write_nodes(&dir, &[[0; 32], [1; 32]]);
+        write_nodes(
+            &dir,
+            &[NonEmptyTestNode([0; 32]), NonEmptyTestNode([1; 32])],
+        );
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
 
-        assert_eq!(storage.get(0).unwrap(), [0; 32]);
-        assert_eq!(storage.get(1).unwrap(), [1; 32]);
+        assert_eq!(
+            storage.get(0).unwrap(),
+            TestNode::NonEmpty(NonEmptyTestNode([0; 32]))
+        );
+        assert_eq!(
+            storage.get(1).unwrap(),
+            TestNode::NonEmpty(NonEmptyTestNode([1; 32]))
+        );
         assert!(matches!(storage.get(2).unwrap_err(), Error::NotFound));
     }
 
@@ -327,17 +348,33 @@ mod tests {
 
         write_metadata(&dir, 0, 3, 1);
         write_reuse_list(&dir, &[1]);
-        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32]]);
+        write_nodes(
+            &dir,
+            &[
+                NonEmptyTestNode([0; 32]),
+                NonEmptyTestNode([1; 32]),
+                NonEmptyTestNode([2; 32]),
+            ],
+        );
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
         reuse_list_file.push(0);
         reuse_list_file.push(2);
         drop(reuse_list_file);
 
-        assert_eq!(storage.reserve(&[0; 32]), 2); // last index in reuse list
-        assert_eq!(storage.reserve(&[0; 32]), 0); // next index in reuse list
-        assert_eq!(storage.reserve(&[0; 32]), 3); // new index
+        assert_eq!(
+            storage.reserve(&TestNode::NonEmpty(NonEmptyTestNode([0; 32]))),
+            2
+        ); // last index in reuse list
+        assert_eq!(
+            storage.reserve(&TestNode::NonEmpty(NonEmptyTestNode([0; 32]))),
+            0
+        ); // next index in reuse list
+        assert_eq!(
+            storage.reserve(&TestNode::NonEmpty(NonEmptyTestNode([0; 32]))),
+            3
+        ); // new index
     }
 
     #[test]
@@ -347,11 +384,14 @@ mod tests {
         // create a single node -> index 0 is used
         write_metadata(&dir, 0, 1, 0);
         write_reuse_list(&dir, &[]);
-        write_nodes(&dir, &[[0; 32]]);
+        write_nodes(&dir, &[NonEmptyTestNode([0; 32])]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
 
-        assert_eq!(storage.reserve(&[0; 32]), 1);
+        assert_eq!(
+            storage.reserve(&TestNode::NonEmpty(NonEmptyTestNode([0; 32]))),
+            1
+        );
     }
 
     #[test]
@@ -361,48 +401,57 @@ mod tests {
         // prepare file: write some nodes into the file
         write_metadata(&dir, 0, 2, 0);
         write_reuse_list(&dir, &[]);
-        write_nodes(&dir, &[[0; 32], [1; 32]]);
+        write_nodes(
+            &dir,
+            &[NonEmptyTestNode([0; 32]), NonEmptyTestNode([1; 32])],
+        );
 
         // create storage and call set with existing and new nodes
         {
-            let storage = NodeFileStorage::open(&dir).unwrap();
+            let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
             storage.next_idx.store(5, Ordering::Relaxed);
 
             // add new node at end
-            storage.set(2, &[4; 32]).unwrap();
+            storage
+                .set(2, &TestNode::NonEmpty(NonEmptyTestNode([4; 32])))
+                .unwrap();
             // add new node after end
-            storage.set(4, &[5; 32]).unwrap();
+            storage
+                .set(4, &TestNode::NonEmpty(NonEmptyTestNode([5; 32])))
+                .unwrap();
         }
 
         let mut node_file = File::open(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        let mut buf = [0; size_of::<TestNode>() * 5];
+        let mut buf = [0; size_of::<NonEmptyTestNode>() * 5];
         node_file.read_exact(&mut buf).unwrap();
 
         // first node remains unchanged
-        assert_eq!(&buf[..size_of::<TestNode>()], &[0; 32]);
+        assert_eq!(&buf[..size_of::<NonEmptyTestNode>()], &[0; 32]);
         // second node remains unchanged
         assert_eq!(
-            &buf[size_of::<TestNode>()..size_of::<TestNode>() * 2],
+            &buf[size_of::<NonEmptyTestNode>()..size_of::<NonEmptyTestNode>() * 2],
             &[1; 32]
         );
         // new node at index 2
         assert_eq!(
-            &buf[size_of::<TestNode>() * 2..size_of::<TestNode>() * 3],
+            &buf[size_of::<NonEmptyTestNode>() * 2..size_of::<NonEmptyTestNode>() * 3],
             &[4; 32]
         );
         // new node at index 4
-        assert_eq!(&buf[size_of::<TestNode>() * 4..], &[5; 32]);
+        assert_eq!(&buf[size_of::<NonEmptyTestNode>() * 4..], &[5; 32]);
     }
 
     #[test]
     fn set_returns_error_when_updating_frozen_node() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         storage.next_idx.store(1, Ordering::Relaxed);
         storage.metadata.write().unwrap().frozen_nodes = 1;
         assert!(matches!(
-            storage.set(0, &[0; 32]).unwrap_err(),
+            storage
+                .set(0, &TestNode::NonEmpty(NonEmptyTestNode([0; 32])))
+                .unwrap_err(),
             Error::Frozen
         ));
     }
@@ -411,9 +460,11 @@ mod tests {
     fn set_returns_error_if_index_out_of_bounds() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert!(matches!(
-            storage.set(0, &[0; 32]).unwrap_err(),
+            storage
+                .set(0, &TestNode::NonEmpty(NonEmptyTestNode([0; 32])))
+                .unwrap_err(),
             Error::NotFound
         ));
     }
@@ -426,7 +477,7 @@ mod tests {
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         storage.next_idx.store(2, Ordering::Relaxed);
         storage.delete(0).unwrap();
         storage.delete(1).unwrap();
@@ -440,7 +491,7 @@ mod tests {
     fn delete_returns_error_when_deleting_frozen_node() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         storage.next_idx.store(1, Ordering::Relaxed);
         storage.metadata.write().unwrap().frozen_nodes = 1;
         assert!(matches!(storage.delete(0).unwrap_err(), Error::Frozen));
@@ -450,7 +501,7 @@ mod tests {
     fn delete_returns_error_if_index_out_of_bounds() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
     }
 
@@ -461,7 +512,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert!(storage.ensure(checkpoint).is_ok());
         assert!(matches!(
             storage.ensure(checkpoint - 1).unwrap_err(),
@@ -480,7 +531,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert!(matches!(
             storage.prepare(checkpoint).unwrap_err(),
             Error::Checkpoint
@@ -497,7 +548,7 @@ mod tests {
 
         write_metadata(&dir, 0, 1, 1);
         write_reuse_list(&dir, &[0]);
-        write_nodes(&dir, &[[0; 32]]);
+        write_nodes(&dir, &[NonEmptyTestNode([0; 32])]);
 
         let expected_new_metadata = NodeFileStorageMetadata {
             checkpoint: 1,
@@ -505,13 +556,13 @@ mod tests {
             frozen_reuse_indices: 2,
         };
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
 
         // add one new node and one new reuse index
         storage.next_idx.store(2, Ordering::Release);
         storage
             .node_file
-            .write_all_at(&[1; 32], size_of::<TestNode>() as u64)
+            .write_all_at(&[1; 32], size_of::<NonEmptyTestNode>() as u64)
             .unwrap();
         storage.reuse_list_file.lock().unwrap().push(1);
 
@@ -519,8 +570,8 @@ mod tests {
 
         // check that nodes have been flushed
         let nodes = fs::read(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        assert_eq!(nodes[..size_of::<TestNode>()], [0; 32]);
-        assert_eq!(nodes[size_of::<TestNode>()..], [1; 32]);
+        assert_eq!(nodes[..size_of::<NonEmptyTestNode>()], [0; 32]);
+        assert_eq!(nodes[size_of::<NonEmptyTestNode>()..], [1; 32]);
 
         // check that reuse list has been flushed and frozen
         let reuse_indices = fs::read(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
@@ -548,7 +599,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert!(matches!(
             storage.commit(checkpoint).unwrap_err(),
             Error::Checkpoint
@@ -566,7 +617,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
 
         // Attempting to commit without a prepared metadata file fails.
         assert!(matches!(
@@ -608,9 +659,9 @@ mod tests {
             old_metadata.frozen_reuse_indices,
         );
         write_reuse_list(&dir, &[0]);
-        write_nodes(&dir, &[[0; 32]]);
+        write_nodes(&dir, &[NonEmptyTestNode([0; 32])]);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert_eq!(storage.checkpoint.load(Ordering::Relaxed), 1);
 
         let new_metadata = NodeFileStorageMetadata {
@@ -644,7 +695,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(&dir, TestNodeType::NonEmpty).unwrap();
         assert!(matches!(
             storage.abort(checkpoint).unwrap_err(),
             Error::Checkpoint
@@ -672,7 +723,10 @@ mod tests {
             old_metadata.frozen_reuse_indices,
         );
         write_reuse_list(&dir, &[0, 1]); // one frozen + one new
-        write_nodes(&dir, &[[0; 32], [1; 32]]); // one frozen + one new
+        write_nodes(
+            &dir,
+            &[NonEmptyTestNode([0; 32]), NonEmptyTestNode([1; 32])],
+        ); // one frozen + one new
 
         let prepared_metadata = NodeFileStorageMetadata {
             checkpoint: 2,
@@ -693,7 +747,7 @@ mod tests {
             checkpoint: AtomicU64::new(1),
             metadata: RwLock::new(prepared_metadata),
             next_idx: AtomicU64::new(2),
-            _node_type: PhantomData,
+            et: TestNodeType::NonEmpty,
         };
 
         fs::write(
@@ -715,13 +769,19 @@ mod tests {
         );
         assert_eq!(*storage.metadata.read().unwrap(), old_metadata);
         // Uncommitted data remains available
-        assert_eq!(storage.get(0).unwrap(), [0; 32]);
-        assert_eq!(storage.get(1).unwrap(), [1; 32]);
+        assert_eq!(
+            storage.get(0).unwrap(),
+            TestNode::NonEmpty(NonEmptyTestNode([0; 32]))
+        );
+        assert_eq!(
+            storage.get(1).unwrap(),
+            TestNode::NonEmpty(NonEmptyTestNode([1; 32]))
+        );
     }
 
-    impl<T, F> super::NodeFileStorage<T, F>
+    impl<N, F> super::NodeFileStorage<N, F>
     where
-        T: DiskRepresentable,
+        N: ToNodeType + DiskRepresentableByType,
     {
         /// Creates all files for a file-based node storage in the specified directory
         /// and populates them with the provided nodes and reusable indices.
@@ -729,7 +789,7 @@ mod tests {
         /// considers frozen data to exist.
         pub fn create_files_for_nodes(
             path: impl AsRef<Path>,
-            nodes: &[T],
+            nodes: &[N],
             reuse_indices: &[u64],
         ) -> Result<(), Error> {
             let path = path.as_ref();
@@ -771,7 +831,7 @@ mod tests {
         .unwrap();
     }
 
-    fn write_nodes(dir: impl AsRef<Path>, nodes: &[TestNode]) {
+    fn write_nodes(dir: impl AsRef<Path>, nodes: &[NonEmptyTestNode]) {
         fs::write(
             dir.as_ref().join(NodeFileStorage::NODE_STORE_FILE),
             nodes.as_bytes(),

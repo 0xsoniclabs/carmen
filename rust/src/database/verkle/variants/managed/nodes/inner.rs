@@ -10,9 +10,12 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::database::verkle::{
-    crypto::Commitment,
-    variants::managed::nodes::{NodeType, id::NodeId},
+use crate::{
+    database::verkle::{
+        crypto::Commitment,
+        variants::managed::nodes::{NodeType, id::NodeId},
+    },
+    types::TreeId,
 };
 
 /// An inner node in a managed Verkle trie.
@@ -36,9 +39,12 @@ impl Default for InnerNode {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::verkle::{
-        crypto::Commitment,
-        variants::managed::nodes::{NodeType, id::NodeId, inner::InnerNode},
+    use crate::{
+        database::verkle::{
+            crypto::Commitment,
+            variants::managed::nodes::{NodeType, id::NodeId, inner::InnerNode},
+        },
+        types::TreeId,
     };
 
     #[test]

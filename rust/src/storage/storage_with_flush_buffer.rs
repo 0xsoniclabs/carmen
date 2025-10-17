@@ -246,6 +246,7 @@ mod tests {
     use crate::{
         database::verkle::variants::managed::{Node, NodeId, NodeType},
         storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
+        types::{AllVariants, TreeId},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -260,13 +261,9 @@ mod tests {
         //   -> FileStorageManager
         //     -> A NodeFileStorage for each node type (InnerNode, SparseLeafNode<N>, ...)
         //       -> SeekFile
-        StorageWithFlushBuffer::<
-            FileStorageManager<
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-            >,
-        >::open(&dir)
+        StorageWithFlushBuffer::<FileStorageManager<NodeFileStorage<Node, SeekFile>, NodeId>>::open(
+            &dir,
+        )
         .unwrap();
     }
 
@@ -277,24 +274,14 @@ mod tests {
         // creates the mocks using calls to `open` on the mock type, but the mocks have no
         // expectations set up.
         let storage = StorageWithFlushBuffer::<
-            FileStorageManager<
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-            >,
+            FileStorageManager<NodeFileStorage<Node, SeekFile>, NodeId>,
         >::open(&dir)
         .unwrap();
 
         // The node store files should be locked while opened
         let file = File::open(
-            dir.join(
-                FileStorageManager::<
-                    NodeFileStorage<_, SeekFile>,
-                    NodeFileStorage<_, SeekFile>,
-                    NodeFileStorage<_, SeekFile>,
-                >::INNER_NODE_DIR,
-            )
-            .join(NodeFileStorage::<u8, SeekFile>::NODE_STORE_FILE),
+            dir.join(NodeType::all_variants().last().unwrap().1)
+                .join(NodeFileStorage::<Node, SeekFile>::NODE_STORE_FILE),
         )
         .unwrap();
         assert!(file.try_lock().is_err());

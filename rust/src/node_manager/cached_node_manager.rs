@@ -302,6 +302,7 @@ mod tests {
     use crate::{
         database::verkle::variants::managed::{EmptyNode, Node, NodeId, NodeType},
         storage::{self},
+        types::TreeId,
     };
 
     #[test]

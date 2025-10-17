@@ -10,6 +10,8 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
+use crate::types::NodeSize;
+
 /// A trait for types that can be represented as raw bytes on disk.
 /// The disk representation does not need to be the same as the in-memory representation.
 /// There is a blanket implementation for types implementing [`FromBytes`], [`IntoBytes`] and
@@ -40,6 +42,25 @@ impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
     fn to_disk_repr(&self) -> &[u8] {
         self.as_bytes()
     }
+}
+
+pub trait DiskRepresentableByType {
+    type EnumType: NodeSize;
+
+    /// Constructs the value from its disk representation. `read_into_buffer` is expected to fill
+    /// the provided buffer with the raw bytes read from disk. It is up to the implementation to
+    /// convert the buffer into the value.
+    fn from_disk_repr<E>(
+        et: &Self::EnumType,
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E>
+    where
+        Self: Sized;
+
+    /// Returns the disk representation of the value as a byte slice.
+    fn to_disk_repr(&self) -> &[u8];
+
+    fn disk_size(et: &Self::EnumType) -> usize;
 }
 
 #[cfg(test)]

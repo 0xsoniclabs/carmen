@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use commitment::*;
-pub use disk_representable::DiskRepresentable;
+pub use disk_representable::{DiskRepresentable, DiskRepresentableByType};
 pub use node_size::*;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
@@ -17,6 +17,34 @@ mod commitment;
 mod disk_representable;
 mod node_size;
 mod update;
+
+// TODO unsafe??
+pub trait AllVariants {
+    fn all_variants() -> &'static [(Self, &'static str)]
+    where
+        Self: Sized;
+}
+
+pub trait TreeId {
+    type NodeType;
+
+    /// Creates a new [`NodeId`] from a [`u64`] index and a [`NodeType`].
+    /// The index must be smaller than 2^46.
+    fn from_idx_and_node_type(idx: u64, node_type: Self::NodeType) -> Self;
+
+    /// Converts the [`NodeId`] to a [`u64`] index, stripping the prefix.
+    /// The index is guaranteed to be smaller than 2^46.
+    fn to_index(self) -> u64;
+
+    /// Converts the [`NodeId`] to a [`NodeType`], if the prefix is valid.
+    fn to_node_type(self) -> Option<Self::NodeType>;
+}
+
+pub trait ToNodeType {
+    type NodeType;
+
+    fn to_node_type(&self) -> Self::NodeType;
+}
 
 /// The Carmen live state implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
