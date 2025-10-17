@@ -273,8 +273,8 @@ where
             let mut lock = self.locks[*slot].write().unwrap();
             std::mem::take(&mut *lock)
         };
-        self.callback.on_evict(key, value);
         self.free_slots.insert(*slot);
+        self.callback.on_evict(key, value);
     }
 }
 
