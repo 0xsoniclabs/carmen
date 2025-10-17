@@ -8,21 +8,21 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{
-    fs::OpenOptions,
-    io::{Read, Seek, SeekFrom, Write},
-    os::unix::fs::FileExt,
-    path::Path,
-    sync::Mutex,
-};
+use std::{fs::OpenOptions, path::Path};
 
+mod no_seek_file;
 #[cfg(unix)]
 mod page_cached_file;
 #[cfg(unix)]
 mod page_utils;
+#[cfg(unix)]
+mod seek_file;
 
 #[cfg(unix)]
+pub use no_seek_file::NoSeekFile;
+#[cfg(unix)]
 pub use page_cached_file::PageCachedFile;
+pub use seek_file::SeekFile;
 
 /// An abstraction for concurrent file operations.
 ///
@@ -53,83 +53,12 @@ pub trait FileBackend: Send + Sync {
     fn set_len(&self, size: u64) -> std::io::Result<()>;
 }
 
-/// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using a mutex to ensure
-/// exclusive access to the file. This is suitable for platforms where `pread` and `pwrite` are not
-/// available or where seeking is required for other reasons.
-pub struct SeekFile(Mutex<std::fs::File>);
-
-impl FileBackend for SeekFile {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
-        let file = options.open(path)?;
-        file.try_lock()?;
-        Ok(Self(Mutex::new(file)))
-    }
-
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
-        let mut file = self.0.lock().unwrap();
-        file.seek(SeekFrom::Start(offset))?;
-        file.write_all(buf)
-    }
-
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
-        let mut file = self.0.lock().unwrap();
-        file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(buf)
-    }
-
-    fn flush(&self) -> std::io::Result<()> {
-        self.0.lock().unwrap().sync_all()
-    }
-
-    fn len(&self) -> std::io::Result<u64> {
-        self.0.lock().unwrap().metadata().map(|m| m.len())
-    }
-
-    fn set_len(&self, len: u64) -> std::io::Result<()> {
-        self.0.lock().unwrap().set_len(len)
-    }
-}
-
-/// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using the Unix-specific file
-/// operations `pread` and `pwrite` which do not modify the file offset. This avoids the syscall for
-/// seeking and allows for concurrent access without needing to manage a cursor.
-#[cfg(unix)]
-pub struct NoSeekFile(std::fs::File);
-
-#[cfg(unix)]
-impl FileBackend for NoSeekFile {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
-        let file = options.open(path)?;
-        file.try_lock()?;
-        Ok(Self(file))
-    }
-
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
-        self.0.write_all_at(buf, offset)
-    }
-
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
-        self.0.read_exact_at(buf, offset)
-    }
-
-    fn flush(&self) -> std::io::Result<()> {
-        self.0.sync_all()
-    }
-
-    fn len(&self) -> std::io::Result<u64> {
-        self.0.metadata().map(|m| m.len())
-    }
-
-    fn set_len(&self, len: u64) -> std::io::Result<()> {
-        self.0.set_len(len)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
         fs::{File, OpenOptions},
-        io::{Read, Write},
+        io::{Read, Seek, SeekFrom, Write},
+        os::unix::fs::FileExt,
         sync::{
             Arc, Barrier,
             atomic::{AtomicU64, Ordering},
