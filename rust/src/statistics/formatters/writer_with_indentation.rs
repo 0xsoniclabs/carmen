@@ -1,7 +1,8 @@
 use std::io::Write;
 
 use crate::statistics::{
-    NodeDepthDistribution, NodeDistribution, formatters::StatisticsFormatter, utils::natural_key,
+    Distributions, NodeDistribution, NodePerLevelDistribution, NodeTypePerLevelDistribution,
+    formatters::StatisticsFormatter, utils::natural_key,
 };
 
 pub struct WriterWithIndentation<W: Write> {
@@ -28,41 +29,22 @@ impl<W: Write> WriterWithIndentation<W> {
     pub fn reset(&mut self) {
         self.indentation.reset();
     }
-}
-
-impl<W: Write> Write for WriterWithIndentation<W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let indented_buf = format!("{}{}", self.indentation, String::from_utf8_lossy(buf));
-        self.writer
-            .write(indented_buf.as_bytes())
-            .map(|_| buf.len()) //TODO: why the hell I need this?
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.writer.flush()
-    }
-}
-
-impl<W: Write> StatisticsFormatter for WriterWithIndentation<W> {
-    fn header(&mut self) -> std::io::Result<()> {
-        self.reset();
-        self.write_all(b"--- Trie Statistics ---")
-    }
 
     fn print_node_distribution(&mut self, item: &NodeDistribution) -> std::io::Result<()> {
         self.reset();
-        self.write_fmt(format_args!("Total nodes: {}", item.total_nodes))?;
+        self.write_all(b"--- Node distribution ---\n")?;
+        self.write_all(format!("Total nodes: {}\n", item.total_nodes).as_bytes())?;
         self.inc();
-        self.write_all(b"Node types:")?;
+        self.write_all(b"Node types:\n")?;
         self.inc();
         for (type_name, stats) in &item.aggregated_node_statistics {
-            self.write_fmt(format_args!("{} nodes: {}", type_name, stats.node_count))?;
+            self.write_all(format!("{} nodes: {}\n", type_name, stats.node_count).as_bytes())?;
             self.inc();
             let mut kinds = stats.node_kinds.keys().collect::<Vec<_>>();
             kinds.sort_by_key(|k| natural_key(k));
             for kind in kinds {
                 let kind_count = stats.node_kinds[kind];
-                self.write_fmt(format_args!("{kind}: {kind_count}"))?;
+                self.write_all(format!("{kind}: {kind_count}\n").as_bytes())?;
             }
             self.dec();
         }
@@ -71,47 +53,71 @@ impl<W: Write> StatisticsFormatter for WriterWithIndentation<W> {
 
     fn print_node_depth_distribution(
         &mut self,
-        item: &NodeDepthDistribution,
+        item: &NodePerLevelDistribution,
     ) -> std::io::Result<()> {
         self.reset();
-        self.write_all(b"Node depth distribution:")?;
+        self.write_all(b"Node depth distribution:\n")?;
         for (level, count) in &item.distribution {
-            self.write_fmt(format_args!("{level}, {count}"))?;
+            self.write_all(format!("{level}, {count}\n").as_bytes())?;
         }
         Ok(())
     }
 
     fn print_node_type_distribution(
         &mut self,
-        item: &super::NodeTypeDistribution,
+        item: &NodeTypePerLevelDistribution,
     ) -> std::io::Result<()> {
         self.reset();
-        self.write_all(b"--- Node type distribution ---")?;
+        self.write_all(b"--- Node type distribution ---\n")?;
         let mut levels = item.level_statistics.keys().collect::<Vec<_>>();
         levels.sort();
         for level in levels {
-            let mut ind = Indentation::default();
             let level_stats = &item.level_statistics[level];
-            self.write_all(b"Level {level}: ")?;
-            ind.inc();
-            self.write_fmt(format_args!("{ind}Total nodes: {}", level_stats.node_count))?;
-            ind.inc();
+            self.write_all(format!("Level {level}: \n").as_bytes())?;
+            self.inc();
+            self.write_all(format!("Total nodes: {}\n", level_stats.node_count).as_bytes())?;
+            self.inc();
             for (type_name, node_stats) in &level_stats.node_statistics {
-                self.write_fmt(format_args!(
-                    "{ind}{} nodes: {}",
-                    type_name, node_stats.node_count
-                ))?;
-                ind.inc();
+                self.write_all(
+                    format!("{} nodes: {}\n", type_name, node_stats.node_count).as_bytes(),
+                )?;
+                self.inc();
                 let mut kinds = node_stats.node_kinds.keys().collect::<Vec<_>>();
                 kinds.sort_by_key(|k| natural_key(k));
                 for kind in kinds {
                     let kind_count = node_stats.node_kinds[kind];
-                    self.write_fmt(format_args!("{ind}{kind}: {kind_count}"))?;
+                    self.write_all(format!("{kind}: {kind_count}\n").as_bytes())?;
                 }
-                ind.dec();
+                self.dec();
             }
         }
         Ok(())
+    }
+}
+
+impl<W: Write> Write for WriterWithIndentation<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let indented_buf = format!("{}{}", self.indentation, String::from_utf8_lossy(buf));
+        let written_bytes = self.writer.write(indented_buf.as_bytes())?;
+        if written_bytes < indented_buf.len() {
+            Err(std::io::Error::other("Could not write all indented bytes"))
+        } else {
+            Ok(buf.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+impl<W: Write> StatisticsFormatter for WriterWithIndentation<W> {
+    fn print_distribution(&mut self, distribution: &Distributions) -> std::io::Result<()> {
+        match distribution {
+            Distributions::Node(item) => self.print_node_distribution(item),
+            Distributions::NodePerLevel(item) => self.print_node_depth_distribution(item),
+            Distributions::NodeTypePerLevel(item) => self.print_node_type_distribution(item),
+        }
     }
 }
 

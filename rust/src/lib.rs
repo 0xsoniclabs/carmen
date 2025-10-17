@@ -13,8 +13,16 @@ use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
 
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
-    database::VerkleTrieCarmenState, error::Error,
-    statistics::formatters::writer_with_indentation::WriterWithIndentation, types::*,
+    database::VerkleTrieCarmenState,
+    error::Error,
+    statistics::{
+        Statistics,
+        formatters::{
+            StatisticsFormatter, csv_writer::CSVWriter,
+            writer_with_indentation::WriterWithIndentation,
+        },
+    },
+    types::*,
 };
 
 pub mod database;
@@ -124,7 +132,7 @@ pub trait CarmenState: Send + Sync {
 
     fn depth(&self) -> usize;
     fn node_count(&self) -> usize;
-    fn get_statistics(&self) -> Result<statistics::Statistics, Error>;
+    fn get_statistics(&self) -> Result<Statistics, Error>;
 }
 
 // TODO: Get rid of this once we no longer store an Arc<CarmenState> in CarmenS6Db
@@ -173,7 +181,7 @@ impl<T: CarmenState> CarmenState for Arc<T> {
         self.deref().node_count()
     }
 
-    fn get_statistics(&self) -> Result<statistics::Statistics, Error> {
+    fn get_statistics(&self) -> Result<Statistics, Error> {
         self.deref().get_statistics()
     }
 }
@@ -204,9 +212,13 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
         // No-op for in-memory state
         // TODO: Handle for storage-based implementation
         let file = std::fs::File::create("carmen_stats.txt").unwrap();
+        let mut formatters = [
+            Box::new(WriterWithIndentation::new(file)) as Box<dyn StatisticsFormatter>,
+            Box::new(CSVWriter {}) as Box<dyn StatisticsFormatter>,
+        ];
         self.get_live_state()?
             .get_statistics()?
-            .print(&mut [WriterWithIndentation::new(file)])
+            .print(&mut formatters)
             .unwrap();
         Ok(())
     }

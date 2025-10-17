@@ -22,7 +22,7 @@ use crate::{
         verkle_trie::VerkleTrie,
     },
     error::Error,
-    statistics::TrieStatistics,
+    statistics::{Statistics, TrieStatistics},
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -183,7 +183,7 @@ impl<T: VerkleTrie + TrieStatistics> CarmenState for VerkleTrieCarmenState<T> {
         self.trie.node_count()
     }
 
-    fn get_statistics(&self) -> Result<crate::statistics::Statistics, Error> {
+    fn get_statistics(&self) -> Result<Statistics, Error> {
         Ok(self.trie.get_statistics())
     }
 }
