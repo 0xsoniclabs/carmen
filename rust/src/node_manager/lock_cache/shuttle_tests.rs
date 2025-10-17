@@ -118,7 +118,7 @@ impl std::fmt::Display for Op {
 /// Tests all permutations of operations and node IDs on the lock cache using shuttle.
 /// The test is repeated for different cache sizes.
 /// The idea is to find cases where the lock cache guarantees are violated, such as:
-/// - A `Get` operation returns a reference to a non-existing node.
+/// - An operation returns a reference to a non-existing node.
 #[test]
 fn shuttle_operation_permutations() {
     let CONCURRENT_OPS: usize = 6; // Must be >= 2
