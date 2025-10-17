@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod compute_commitment;
-mod crypto;
+pub mod crypto;
 mod embedding;
 mod state;
 #[cfg(test)]
@@ -18,4 +18,4 @@ pub mod variants;
 mod verkle_trie;
 
 pub use state::VerkleTrieCarmenState;
-pub use variants::SimpleInMemoryVerkleTrie;
+pub use variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie};

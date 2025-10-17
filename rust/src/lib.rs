@@ -11,9 +11,10 @@
 
 use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
 
+pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{database::VerkleTrieCarmenState, error::Error, types::*};
 
-mod database;
+pub mod database;
 mod error;
 mod ffi;
 #[cfg(test)]
@@ -47,6 +48,9 @@ pub fn open_carmen_db(
         LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
         >::new()))),
+        // LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+        //     database::CrateCryptoInMemoryVerkleTrie,
+        // >::new()))),
         LiveImpl::File => Err(Error::UnsupportedImplementation(
             "file-based live state is not yet supported".to_owned(),
         )),
@@ -114,6 +118,9 @@ pub trait CarmenState: Send + Sync {
     /// Applies the provided block update to the maintained state.
     #[allow(clippy::needless_lifetimes)] // using an elided lifetime here breaks automock
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> Result<(), Error>;
+
+    fn depth(&self) -> usize;
+    fn node_count(&self) -> usize;
 }
 
 // TODO: Get rid of this once we no longer store an Arc<CarmenState> in CarmenS6Db
@@ -153,6 +160,13 @@ impl<T: CarmenState> CarmenState for Arc<T> {
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> Result<(), Error> {
         self.deref().apply_block_update(block, update)
+    }
+
+    fn depth(&self) -> usize {
+        self.deref().depth()
+    }
+    fn node_count(&self) -> usize {
+        self.deref().node_count()
     }
 }
 

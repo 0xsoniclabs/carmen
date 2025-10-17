@@ -34,19 +34,24 @@ pub trait VerkleTrie: Send + Sync {
     /// The commitment can be used as cryptographic proof of the trie's state,
     /// i.e., all contained key-value pairs.
     fn commit(&self) -> Result<Commitment, Error>;
+
+    fn depth(&self) -> usize;
+
+    fn node_count(&self) -> usize;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::database::verkle::{
-        SimpleInMemoryVerkleTrie,
+        CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
         test_utils::{make_key, make_leaf_key, make_value},
     };
 
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
+    #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
     fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>) {}
 
     #[rstest_reuse::apply(all_trie_impls)]

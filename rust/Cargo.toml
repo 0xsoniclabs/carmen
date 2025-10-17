@@ -21,12 +21,23 @@ commit64b = [] # TODO: REMOVE
 [profile.dev.package.banderwagon]
 opt-level = 3
 
+[profile.bench]
+debug = true
+
 [lib]
 name = "carmen_rust"
 crate-type = ["rlib", "cdylib"]
 
 [[bench]]
 name = "file_backend"
+harness = false
+
+[[bench]]
+name = "carmen_state"
+harness = false
+
+[[bench]]
+name = "verkle_commitment"
 harness = false
 
 [dependencies]

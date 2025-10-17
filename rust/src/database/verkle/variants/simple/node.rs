@@ -9,7 +9,10 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use crate::{
-    database::verkle::{compute_commitment::compute_leaf_node_commitment, crypto::Commitment},
+    database::verkle::{
+        compute_commitment::compute_leaf_node_commitment,
+        crypto::{Commitment, Scalar},
+    },
     types::{Key, Value},
 };
 
@@ -63,12 +66,12 @@ impl Node {
         }
     }
 
-    /// Returns the current commitment of this node without recomputing it.
-    fn get_commitment(&self) -> Commitment {
+    /// Returns the current commitment of this node as a scalar without recomputing it.
+    fn get_commitment_scalar(&self) -> Scalar {
         match self {
-            Node::Empty => Commitment::default(),
-            Node::Inner(inner) => inner.commitment,
-            Node::Leaf(leaf) => leaf.commitment,
+            Node::Empty => Scalar::zero(),
+            Node::Inner(inner) => inner.commitment_scalar,
+            Node::Leaf(leaf) => leaf.commitment_scalar,
         }
     }
 
@@ -80,6 +83,22 @@ impl Node {
             Node::Leaf(leaf) => leaf.commitment_dirty,
         }
     }
+
+    pub fn depth(&self) -> usize {
+        match self {
+            Node::Empty => 0,
+            Node::Inner(inner) => inner.depth(),
+            Node::Leaf(leaf) => leaf.depth(),
+        }
+    }
+
+    pub fn node_count(&self) -> usize {
+        match self {
+            Node::Empty => 0,
+            Node::Inner(inner) => inner.node_count(),
+            Node::Leaf(leaf) => leaf.node_count(),
+        }
+    }
 }
 
 /// An inner node in the simple in-memory Verkle trie, containing up to 256 children.
@@ -87,6 +106,7 @@ impl Node {
 pub struct InnerNode {
     children: Box<[Node; 256]>,
     commitment: Commitment,
+    commitment_scalar: Scalar,
     commitment_dirty: bool,
 }
 
@@ -97,6 +117,7 @@ impl InnerNode {
         InnerNode {
             children,
             commitment: Commitment::default(),
+            commitment_scalar: Scalar::zero(),
             commitment_dirty: true,
         }
     }
@@ -142,18 +163,37 @@ impl InnerNode {
 
         for (i, child) in self.children.iter_mut().enumerate() {
             if child.commitment_is_dirty() {
-                let old_child_commitment = child.get_commitment();
-                let new_child_commitment = child.commit();
-                self.commitment.update(
-                    i as u8,
-                    old_child_commitment.to_scalar(),
-                    new_child_commitment.to_scalar(),
-                );
+                let old_child_commitment = child.get_commitment_scalar();
+                child.commit();
+                let new_child_commitment = child.get_commitment_scalar();
+                self.commitment
+                    .update(i as u8, old_child_commitment, new_child_commitment);
             }
         }
 
+        self.commitment_scalar = self.commitment.to_scalar();
         self.commitment_dirty = false;
         self.commitment
+    }
+
+    fn depth(&self) -> usize {
+        // Depth of an inner node is 1 + max depth of its children
+        let mut max_child_depth = 0;
+        for child in self.children.iter() {
+            let child_depth = child.depth();
+            if child_depth > max_child_depth {
+                max_child_depth = child_depth;
+            }
+        }
+        1 + max_child_depth
+    }
+
+    fn node_count(&self) -> usize {
+        let mut count = 1; // Count this node
+        for child in self.children.iter() {
+            count += child.node_count();
+        }
+        count
     }
 }
 
@@ -170,6 +210,7 @@ pub struct LeafNode {
     values: Box<[Value; 256]>,
     used_bits: [u8; 256 / 8],
     commitment: Commitment,
+    commitment_scalar: Scalar,
     commitment_dirty: bool,
 }
 
@@ -182,6 +223,7 @@ impl LeafNode {
             values,
             used_bits: [0; 256 / 8],
             commitment: Commitment::default(),
+            commitment_scalar: Scalar::zero(),
             commitment_dirty: true,
         }
     }
@@ -224,8 +266,17 @@ impl LeafNode {
         }
         let _span = tracy_client::span!("LeafNode::commit");
         self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
+        self.commitment_scalar = self.commitment.to_scalar();
         self.commitment_dirty = false;
         self.commitment
+    }
+
+    fn depth(&self) -> usize {
+        1 // Leaf nodes are at depth 1
+    }
+
+    fn node_count(&self) -> usize {
+        1 // Leaf node counts as one node
     }
 }
 
