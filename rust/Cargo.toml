@@ -29,8 +29,6 @@ harness = false
 [dependencies]
 # datastructures
 dashmap = { version = "6.1.0", features = ["inline"] }
-# quick_cache = { path = "../../quick-cache" }
-
 quick_cache = "0.6.17"
 # unsafe utils
 zerocopy = { version = "0.8.26", features = ["derive"] }
