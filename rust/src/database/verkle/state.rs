@@ -18,7 +18,7 @@ use crate::{
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
-        variants::SimpleInMemoryVerkleTrie,
+        variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie},
         verkle_trie::VerkleTrie,
     },
     error::Error,
@@ -38,6 +38,13 @@ pub struct VerkleTrieCarmenState<T: VerkleTrie> {
 impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     pub fn new() -> Self {
         let trie = SimpleInMemoryVerkleTrie::new();
+        Self { trie }
+    }
+}
+
+impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
+    pub fn new() -> Self {
+        let trie = CrateCryptoInMemoryVerkleTrie::new();
         Self { trie }
     }
 }
@@ -165,6 +172,14 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         }
 
         Ok(())
+    }
+
+    fn depth(&self) -> usize {
+        self.trie.depth()
+    }
+
+    fn node_count(&self) -> usize {
+        self.trie.node_count()
     }
 }
 

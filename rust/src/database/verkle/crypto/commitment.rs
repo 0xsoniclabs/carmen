@@ -11,7 +11,7 @@
 use std::sync::LazyLock;
 
 use ark_ff::{BigInteger, PrimeField};
-use banderwagon::{Element, Fr};
+use banderwagon::{Element, Fr, msm_windowed_sign::MSMPrecompWindowSigned};
 use ipa_multipoint::committer::{Committer, DefaultCommitter};
 use verkle_trie::constants::CRS;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
@@ -37,8 +37,38 @@ pub struct Commitment {
     point_bytes: [u8; 64],
 }
 
+struct AggressiveCommitter {
+    precomp: MSMPrecompWindowSigned,
+}
+
+#[allow(dead_code)]
+impl AggressiveCommitter {
+    fn new(points: &[Element]) -> Self {
+        // TODO: What is a good size?
+        let precomp = MSMPrecompWindowSigned::new(points, 12);
+        AggressiveCommitter { precomp }
+    }
+}
+
+impl Committer for AggressiveCommitter {
+    fn commit_lagrange(&self, scalars: &[Fr]) -> Element {
+        self.precomp.mul(scalars)
+    }
+
+    fn scalar_mul(&self, scalar: Fr, index: usize) -> Element {
+        let mut arr = vec![Fr::from(0u64); index + 1];
+        arr[index] = scalar;
+        self.precomp.mul(&arr)
+    }
+}
+
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
-static COMMITTER: LazyLock<DefaultCommitter> = LazyLock::new(|| DefaultCommitter::new(&CRS.G));
+static COMMITTER: LazyLock<DefaultCommitter> = LazyLock::new(|| {
+    // static COMMITTER: LazyLock<AggressiveCommitter> = LazyLock::new(|| {
+    // eprintln!("initializing default committer");
+    DefaultCommitter::new(&CRS.G)
+    // AggressiveCommitter::new(&CRS.G)
+});
 
 impl Commitment {
     /// Creates a commitment to the given sequence of scalar values.

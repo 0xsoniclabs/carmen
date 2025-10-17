@@ -55,6 +55,14 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
         let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::commit");
         Ok(self.root.lock().unwrap().commit())
     }
+
+    fn depth(&self) -> usize {
+        self.root.lock().unwrap().depth()
+    }
+
+    fn node_count(&self) -> usize {
+        self.root.lock().unwrap().node_count()
+    }
 }
 
 #[cfg(test)]

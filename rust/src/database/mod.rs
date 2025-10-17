@@ -10,4 +10,4 @@
 
 pub mod verkle;
 
-pub use verkle::{SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};
+pub use verkle::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};
