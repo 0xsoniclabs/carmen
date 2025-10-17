@@ -24,12 +24,12 @@ use crate::{
     storage::{Checkpointable, Storage},
 };
 
-/// A wrapper which dereferences to [`N`] and additionally stores its dirty status,
+/// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
 /// The node status is set to dirty when a mutable reference is requested.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct NodeWithMetadata<N> {
-    node: N,
+pub struct NodeWithMetadata<Node> {
+    node: Node,
     is_dirty: bool,
 }
 
@@ -48,24 +48,24 @@ impl<N> DerefMut for NodeWithMetadata<N> {
     }
 }
 
-/// A wrapper around a storage backend that implements the `OnEvict` trait for use with the
-/// [`LockCache`]
+/// A wrapper around a storage backend that implements the [`OnEvict`] trait
 struct StorageEvictionHandler<S> {
     storage: S,
 }
 
-impl<S> OnEvict<S::Id, NodeWithMetadata<S::Item>> for StorageEvictionHandler<S>
+impl<S> OnEvict for StorageEvictionHandler<S>
 where
     S: Storage + Send + Sync,
 {
+    type Key = S::Id;
+    type Value = NodeWithMetadata<S::Item>;
+
     /// Stores the evicted node in the underlying storage if it is dirty.
-    /// NOTE: this will panic if the storage operation fails
-    fn on_evict(&self, key: S::Id, node: NodeWithMetadata<S::Item>) {
+    fn on_evict(&self, key: S::Id, node: NodeWithMetadata<S::Item>) -> Result<(), Error> {
         if node.is_dirty {
-            self.storage
-                .set(key, &node)
-                .expect("Failed to store evicted node");
+            return self.storage.set(key, &node).map_err(Error::Storage);
         }
+        Ok(())
     }
 }
 
@@ -102,7 +102,7 @@ where
         CachedNodeManager {
             nodes: LockCache::new(
                 capacity,
-                storage.clone() as Arc<dyn OnEvict<K, NodeWithMetadata<N>>>,
+                storage.clone() as Arc<dyn OnEvict<Key = K, Value = NodeWithMetadata<N>>>,
             ),
             storage,
         }
@@ -129,7 +129,7 @@ where
     }
 
     /// Returns a read guard for a node in the node manager. If the node is not present in the
-    /// cache, it is fetched from the underlying storage and inserted into the cache.
+    /// cache, it is fetched from the underlying storage and cached.
     /// If the node does not exist in storage, returns [`crate::storage::Error::NotFound`].
     fn get_read_access(
         &self,
@@ -146,7 +146,7 @@ where
     }
 
     /// Returns a write guard for a node in the node manager. If the node is not present in the
-    /// cache, it is fetched from the underlying storage and inserted into the cache.
+    /// cache, it is fetched from the underlying storage and cached.
     /// If the node does not exist in storage, returns [`crate::storage::Error::NotFound`].
     fn get_write_access(
         &self,
@@ -164,7 +164,7 @@ where
 
     /// Deletes a node with the given ID from the node manager and the underlying storage.
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
-        self.nodes.remove(id);
+        self.nodes.remove(id)?;
         self.storage.delete(id)?;
         Ok(())
     }
@@ -178,7 +178,6 @@ where
 {
     fn checkpoint(&self) -> Result<(), crate::storage::Error> {
         for (id, mut guard) in self.nodes.iter_write() {
-            // let mut guard = lock.write().unwrap();
             if guard.is_dirty {
                 self.storage.storage.set(id, &guard.node)?;
                 guard.is_dirty = false;
@@ -411,21 +410,46 @@ mod tests {
             .with(eq(0), eq(123))
             .returning(|_, _| Ok(()));
         let handler = StorageEvictionHandler { storage };
-        handler.on_evict(
+        handler
+            .on_evict(
+                0,
+                NodeWithMetadata {
+                    node: 123,
+                    is_dirty: true,
+                },
+            )
+            .unwrap();
+        // Clean elements don't trigger storage set
+        handler
+            .on_evict(
+                1,
+                NodeWithMetadata {
+                    node: 456,
+                    is_dirty: false,
+                },
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn storage_eviction_handler_on_evict_fails_on_storage_error() {
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage
+            .expect_set()
+            .returning(|_, _| Err(storage::Error::NotFound));
+        let handler = StorageEvictionHandler { storage };
+        let res = handler.on_evict(
             0,
             NodeWithMetadata {
                 node: 123,
                 is_dirty: true,
             },
         );
-        // Clean elements don't trigger storage set
-        handler.on_evict(
-            1,
-            NodeWithMetadata {
-                node: 456,
-                is_dirty: false,
-            },
-        );
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            Error::Storage(storage::Error::NotFound)
+        ));
     }
 
     mock! {
