@@ -114,7 +114,7 @@ where
     pub fn get_read_access_or_insert(
         &self,
         key: K,
-        insert_fn: impl Fn() -> Result<V, Error>,
+        insert_fn: impl FnOnce() -> Result<V, Error>,
     ) -> Result<RwLockReadGuard<'_, V>, Error> {
         self.get_access_or_insert(key, insert_fn, |lock| lock.read().unwrap())
     }
@@ -129,7 +129,7 @@ where
     pub fn get_write_access_or_insert(
         &self,
         key: K,
-        insert_fn: impl Fn() -> Result<V, Error>,
+        insert_fn: impl FnOnce() -> Result<V, Error>,
     ) -> Result<RwLockWriteGuard<'_, V>, Error> {
         self.get_access_or_insert(key, insert_fn, |lock| lock.write().unwrap())
     }
@@ -183,8 +183,8 @@ where
     fn get_access_or_insert<'a, T>(
         &'a self,
         key: K,
-        insert_fn: impl Fn() -> Result<V, Error>,
-        access_fn: impl Fn(&'a RwLock<V>) -> T + 'a,
+        insert_fn: impl FnOnce() -> Result<V, Error>,
+        access_fn: impl FnOnce(&'a RwLock<V>) -> T + 'a,
     ) -> Result<T, Error> {
         match self.cache.get_value_or_guard(&key, None) {
             GuardResult::Value(slot) => {
