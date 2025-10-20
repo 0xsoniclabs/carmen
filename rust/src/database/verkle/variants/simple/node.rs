@@ -9,10 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use crate::{
-    database::verkle::{
-        compute_commitment::compute_leaf_node_commitment,
-        crypto::{Commitment, Scalar},
-    },
+    database::verkle::crypto::{Commitment, Scalar},
     types::{Key, Value},
 };
 
@@ -209,9 +206,15 @@ pub struct LeafNode {
     stem: [u8; 31],
     values: Box<[Value; 256]>,
     used_bits: [u8; 256 / 8],
+    c1: Commitment,
+    c1_scalar: Scalar,
+    c2: Commitment,
+    c2_scalar: Scalar,
     commitment: Commitment,
     commitment_scalar: Scalar,
     commitment_dirty: bool,
+
+    uncommitted_changes: Box<[Option<Value>; 256]>,
 }
 
 impl LeafNode {
@@ -222,9 +225,15 @@ impl LeafNode {
             stem: key[..31].try_into().unwrap(), // safe to unwrap because `Key` is 32 bytes long
             values,
             used_bits: [0; 256 / 8],
+            c1: Commitment::default(),
+            c1_scalar: Scalar::zero(),
+            c2: Commitment::default(),
+            c2_scalar: Scalar::zero(),
             commitment: Commitment::default(),
             commitment_scalar: Scalar::zero(),
             commitment_dirty: true,
+
+            uncommitted_changes: Box::new([None; 256]),
         }
     }
 
@@ -245,8 +254,11 @@ impl LeafNode {
     pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
         if key[..31] == self.stem {
             let suffix = key[31];
+            if self.uncommitted_changes[suffix as usize].is_none() {
+                self.uncommitted_changes[suffix as usize] = Some(self.values[suffix as usize]);
+            }
             self.values[suffix as usize] = *value;
-            self.used_bits[(suffix / 8) as usize] |= 1 << (suffix % 8);
+            // self.used_bits[(suffix / 8) as usize] |= 1 << (suffix % 8);
             self.commitment_dirty = true;
             return Node::Leaf(self);
         }
@@ -265,7 +277,56 @@ impl LeafNode {
             return self.commitment;
         }
         let _span = tracy_client::span!("LeafNode::commit");
-        self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
+        // self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits,
+        // &self.stem);
+        // self.commitment_scalar = self.commitment.to_scalar();
+        // self.commitment_dirty = false;
+        // self.commitment
+
+        let mut c1_changed = false;
+        let mut c2_changed = false;
+        for (i, value) in self.uncommitted_changes.iter().enumerate() {
+            let Some(value) = value else { continue };
+
+            let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
+            let prev_upper = Scalar::from_le_bytes(&value[16..]);
+            if self.used_bits[i / 8] & (1 << (i % 8)) != 0 {
+                prev_lower.set_bit128();
+            }
+
+            let mut lower = Scalar::from_le_bytes(&self.values[i][..16]);
+            let upper = Scalar::from_le_bytes(&self.values[i][16..]);
+            lower.set_bit128();
+
+            self.used_bits[i / 8] |= 1 << (i % 8);
+
+            let c = if i < 128 {
+                c1_changed = true;
+                &mut self.c1
+            } else {
+                c2_changed = true;
+                &mut self.c2
+            };
+            c.update(((i * 2) % 256) as u8, prev_lower, lower);
+            c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+        }
+        self.uncommitted_changes.fill(None);
+
+        if c1_changed {
+            self.c1_scalar = self.c1.to_scalar();
+        }
+        if c2_changed {
+            self.c2_scalar = self.c2.to_scalar();
+        }
+
+        let combined = [
+            Scalar::from(1),
+            Scalar::from_le_bytes(&self.stem),
+            self.c1_scalar,
+            self.c2_scalar,
+        ];
+        self.commitment = Commitment::new(&combined);
+
         self.commitment_scalar = self.commitment.to_scalar();
         self.commitment_dirty = false;
         self.commitment
