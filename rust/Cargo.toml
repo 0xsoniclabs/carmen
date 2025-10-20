@@ -37,7 +37,7 @@ name = "carmen_state"
 harness = false
 
 [[bench]]
-name = "verkle_commitment"
+name = "pedersen_commitment"
 harness = false
 
 [dependencies]
