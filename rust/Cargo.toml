@@ -40,6 +40,10 @@ harness = false
 name = "pedersen_commitment"
 harness = false
 
+[[bench]]
+name = "verkle_leaf_commitment"
+harness = false
+
 [dependencies]
 # datastructures
 dashmap = { version = "6.1.0", features = ["inline"] }
