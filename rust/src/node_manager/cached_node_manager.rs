@@ -24,12 +24,12 @@ use crate::{
     storage::{Checkpointable, Storage},
 };
 
-/// A wrapper which dereferences to [`Node`] and additionally stores its dirty status,
+/// A wrapper which dereferences to [`N`] and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
 /// The node status is set to dirty when a mutable reference is requested.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct NodeWithMetadata<Node> {
-    node: Node,
+pub struct NodeWithMetadata<N> {
+    node: N,
     is_dirty: bool,
 }
 
@@ -48,14 +48,14 @@ impl<N> DerefMut for NodeWithMetadata<N> {
     }
 }
 
-/// A wrapper around a storage backend that implements the [`OnEvict`] trait
+/// A wrapper around a storage backend that implements the [`OnEvict`] trait.
 struct StorageEvictionHandler<S> {
     storage: S,
 }
 
 impl<S> OnEvict for StorageEvictionHandler<S>
 where
-    S: Storage + Send + Sync,
+    S: Storage,
 {
     type Key = S::Id;
     type Value = NodeWithMetadata<S::Item>;
@@ -78,23 +78,26 @@ impl<S> Deref for StorageEvictionHandler<S> {
 }
 
 /// A node manager that caches nodes in memory, with a underlying storage backend.
-/// Nodes are retrieved from the underlying storage if they are not present in the cache, and store
-/// them back when evicted if they have been modified.
+///
+/// Nodes are retrieved from the underlying storage if they are not present in the cache, and saved
+/// to upon eviction if they have been modified.
+///
 /// It only guarantees that no access to a deleted or evicted node is possible.
-pub struct CachedNodeManager<K, N, S>
+pub struct CachedNodeManager<S>
 where
-    S: Storage<Id = K, Item = N>,
+    S: Storage,
 {
-    // Cache for storing nodes in memory
-    nodes: LockCache<K, NodeWithMetadata<N>>,
-    // Storage for managing IDs, fetching missing nodes, and saving evicted nodes to
+    // Cache for storing nodes in memory.
+    nodes: LockCache<S::Id, NodeWithMetadata<S::Item>>,
+    // Storage for managing IDs, fetching missing nodes, and storing evicted nodes.
     storage: Arc<StorageEvictionHandler<S>>,
 }
 
-impl<K: Eq + Hash + Copy + std::fmt::Debug, S, N> CachedNodeManager<K, N, S>
+impl<S> CachedNodeManager<S>
 where
-    S: Storage<Id = K, Item = N> + Send + Sync + 'static,
-    N: Default + Clone,
+    S: Storage + 'static,
+    S::Id: Eq + Hash + Copy,
+    S::Item: Default + Clone,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
     pub fn new(capacity: usize, storage: S) -> Self {
@@ -102,20 +105,21 @@ where
         CachedNodeManager {
             nodes: LockCache::new(
                 capacity,
-                storage.clone() as Arc<dyn OnEvict<Key = K, Value = NodeWithMetadata<N>>>,
+                storage.clone() as Arc<dyn OnEvict<Key = S::Id, Value = NodeWithMetadata<S::Item>>>,
             ),
             storage,
         }
     }
 }
 
-impl<K: Eq + Hash + Copy + std::fmt::Debug, N, S> NodeManager for CachedNodeManager<K, N, S>
+impl<S> NodeManager for CachedNodeManager<S>
 where
-    S: Storage<Id = K, Item = N> + 'static,
-    N: Default + Clone,
+    S: Storage + 'static,
+    S::Id: Eq + Hash + Copy,
+    S::Item: Default + Clone,
 {
-    type Id = K;
-    type NodeType = N;
+    type Id = S::Id;
+    type NodeType = S::Item;
 
     fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error> {
         let id = self.storage.reserve(&node);
@@ -163,6 +167,10 @@ where
     }
 
     /// Deletes a node with the given ID from the node manager and the underlying storage.
+    /// No concurrent calls to [`get_read_access`](Self::get_read_access) or
+    /// [`get_write_access`](Self::get_write_access) must be made for the same ID.
+    /// It is not safe to call this function multiple times for the same ID, unless allowed by
+    /// [`Self::S`].
     fn delete(&self, id: Self::Id) -> Result<(), Error> {
         self.nodes.remove(id)?;
         self.storage.delete(id)?;
@@ -170,11 +178,11 @@ where
     }
 }
 
-impl<K, N, S> Checkpointable for CachedNodeManager<K, N, S>
+impl<S> Checkpointable for CachedNodeManager<S>
 where
-    K: Eq + Hash + Copy + Send + Sync,
-    N: Default + Send + Sync,
-    S: Storage<Id = K, Item = N> + Checkpointable,
+    S: Storage + 'static + Checkpointable,
+    S::Id: Eq + Hash + Copy + Send + Sync,
+    S::Item: Default + Clone + Send + Sync,
 {
     fn checkpoint(&self) -> Result<(), crate::storage::Error> {
         for (id, mut guard) in self.nodes.iter_write() {
@@ -200,19 +208,19 @@ mod tests {
     use super::*;
     use crate::storage::{self};
 
-    type NodeId = u32;
-    type Node = i32;
+    type TestNodeId = u32;
+    type TestNode = i32;
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
-    fn not_found() -> Result<NodeWithMetadata<Node>, Error> {
+    fn not_found() -> Result<NodeWithMetadata<TestNode>, Error> {
         Err(Error::Storage(storage::Error::NotFound))
     }
 
-    /// Helper function to retrieve or insert a node and discard the guard.
-    fn get_read_access_or_insert_no_guard(
-        manager: &CachedNodeManager<NodeId, Node, MockCachedNodeManagerStorage>,
-        id: NodeId,
-        node: Node,
+    /// Helper function to insert a node into the cache.
+    fn cache_insert(
+        manager: &CachedNodeManager<MockCachedNodeManagerStorage>,
+        id: TestNodeId,
+        node: TestNode,
         is_dirty: bool,
     ) {
         let _unused = manager
@@ -247,7 +255,7 @@ mod tests {
         storage.expect_get().never(); // Shouldn't query storage if entry is in cache
         let manager = CachedNodeManager::new(10, storage);
 
-        get_read_access_or_insert_no_guard(&manager, id, expected_entry, true);
+        cache_insert(&manager, id, expected_entry, true);
         let entry = get_method(&manager, id).unwrap();
         assert!(entry == expected_entry);
     }
@@ -300,10 +308,10 @@ mod tests {
                 .returning(|_, _| Ok(()));
             let manager = CachedNodeManager::new(2, storage);
 
-            get_read_access_or_insert_no_guard(&manager, 0, 123, true);
-            get_read_access_or_insert_no_guard(&manager, 1, 456, true);
+            cache_insert(&manager, 0, 123, true);
+            cache_insert(&manager, 1, 456, true);
             // Trigger eviction with next insertion
-            get_read_access_or_insert_no_guard(&manager, 2, 789, true);
+            cache_insert(&manager, 2, 789, true);
         }
         // Clean entries are not stored
         {
@@ -311,10 +319,10 @@ mod tests {
             storage.expect_set().never();
             let manager = CachedNodeManager::new(2, storage);
 
-            get_read_access_or_insert_no_guard(&manager, 0, 123, false);
-            get_read_access_or_insert_no_guard(&manager, 1, 456, false);
+            cache_insert(&manager, 0, 123, false);
+            cache_insert(&manager, 1, 456, false);
             // Trigger eviction with next insertion
-            get_read_access_or_insert_no_guard(&manager, 2, 789, false);
+            cache_insert(&manager, 2, 789, false);
         }
     }
 
@@ -334,7 +342,7 @@ mod tests {
 
         let manager = CachedNodeManager::new(NUM_NODES as usize, storage);
         for i in 0..NUM_NODES {
-            get_read_access_or_insert_no_guard(&manager, i, 123, true);
+            cache_insert(&manager, i, 123, true);
         }
         manager.checkpoint().expect("checkpoint should succeed");
     }
@@ -351,21 +359,11 @@ mod tests {
             .returning(|_| Ok(()));
         let manager = CachedNodeManager::new(2, storage);
 
-        get_read_access_or_insert_no_guard(&manager, id, entry, true);
+        cache_insert(&manager, id, entry, true);
         // Check the element is in the manager
-        drop(
-            manager
-                .nodes
-                .get_read_access_or_insert(id, not_found)
-                .unwrap(),
-        );
+        assert_eq!(manager.nodes.iter_write().count(), 1);
         manager.delete(id).unwrap();
-        assert!(
-            manager
-                .nodes
-                .get_read_access_or_insert(id, not_found)
-                .is_err(),
-        );
+        assert_eq!(manager.nodes.iter_write().count(), 0);
     }
 
     #[test]
@@ -379,7 +377,7 @@ mod tests {
             .returning(|_| Err(storage::Error::NotFound));
 
         let manager = CachedNodeManager::new(2, storage);
-        get_read_access_or_insert_no_guard(&manager, id, 123, true);
+        cache_insert(&manager, id, 123, true);
         let res = manager.delete(id);
         assert!(res.is_err());
         assert!(matches!(
@@ -410,25 +408,17 @@ mod tests {
             .with(eq(0), eq(123))
             .returning(|_, _| Ok(()));
         let handler = StorageEvictionHandler { storage };
-        handler
-            .on_evict(
-                0,
-                NodeWithMetadata {
-                    node: 123,
-                    is_dirty: true,
-                },
-            )
-            .unwrap();
-        // Clean elements don't trigger storage set
-        handler
-            .on_evict(
-                1,
-                NodeWithMetadata {
-                    node: 456,
-                    is_dirty: false,
-                },
-            )
-            .unwrap();
+        let dirty_node = NodeWithMetadata {
+            node: 123,
+            is_dirty: true,
+        };
+        handler.on_evict(0, dirty_node).unwrap();
+        // Clean nodes don't trigger storage set
+        let clean_node = NodeWithMetadata {
+            node: 456,
+            is_dirty: false,
+        };
+        handler.on_evict(1, clean_node).unwrap();
     }
 
     #[test]
@@ -460,28 +450,32 @@ mod tests {
         }
 
         impl Storage for CachedNodeManagerStorage {
-            type Id = u32;
-            type Item = i32;
+            type Id = TestNodeId;
+            type Item = TestNode;
 
             fn open(_path: &Path) -> Result<Self, storage::Error>;
 
-            fn get(&self, _id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item,
-    storage::Error>;
+            fn get(
+                &self,
+                id: <Self as Storage>::Id,
+            ) -> Result<<Self as Storage>::Item, storage::Error>;
 
             fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
-            fn set(&self, _id: <Self as Storage>::Id, _item: &<Self as Storage>::Item) ->
-    Result<(), storage::Error>;
+            fn set(
+                &self,
+                id: <Self as Storage>::Id,
+                item: &<Self as Storage>::Item,
+            ) -> Result<(), storage::Error>;
 
             fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), storage::Error>;
         }
+
     }
 
     /// Type alias for a closure that calls either `get_read_access` or `get_write_access`
-    type GetMethod = fn(
-        &CachedNodeManager<NodeId, Node, MockCachedNodeManagerStorage>,
-        NodeId,
-    ) -> Result<Node, Error>;
+    type GetMethod =
+        fn(&CachedNodeManager<MockCachedNodeManagerStorage>, TestNodeId) -> Result<TestNode, Error>;
 
     /// Reusable rstest template to test both `get_read_access` and `get_write_access`
     #[rstest_reuse::template]

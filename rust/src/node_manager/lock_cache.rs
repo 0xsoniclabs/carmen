@@ -520,9 +520,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "eviction callback failed")]
     fn item_lifecycle_on_evict_fails_if_callback_fails() {
-        struct FailingEvictionLogger;
+        struct FailingEvictionCallback;
 
-        impl OnEvict for FailingEvictionLogger {
+        impl OnEvict for FailingEvictionCallback {
             type Key = u32;
             type Value = i32;
 
@@ -533,7 +533,7 @@ mod tests {
 
         let nodes: Arc<[_]> = Arc::from(vec![RwLock::new(123)].into_boxed_slice());
         let free_slots = Arc::new(DashSet::new());
-        let logger = Arc::new(FailingEvictionLogger);
+        let logger = Arc::new(FailingEvictionCallback);
         let lifecycle = ItemLifecycle {
             locks: nodes,
             free_slots: free_slots.clone(),
