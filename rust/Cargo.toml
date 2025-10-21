@@ -45,6 +45,12 @@ ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle.git", rev 
 verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 sha3 = "0.10.8"
 
+# testing
+shuttle = { version = "0.8.1", optional = true }
+
+[features]
+shuttle = ["quick_cache/shuttle", "dep:shuttle"]
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
@@ -53,6 +59,7 @@ bindgen = "0.72.0"
 # testing
 rstest = "0.26.1"
 rstest_reuse = "0.7.0"
+itertools = "0.14.0"
 
 # parse hex strings into byte arrays (e.g. expected hashes)
 const-hex = "1.14.1"
