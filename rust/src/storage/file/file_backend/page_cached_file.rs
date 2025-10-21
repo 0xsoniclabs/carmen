@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{cmp, fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path, sync::Mutex};
+use std::{cmp, fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path};
 
 use crate::{
     error::BTResult,
@@ -16,6 +16,7 @@ use crate::{
         FileBackend,
         file_backend::page_utils::{O_DIRECT, O_SYNC, Page},
     },
+    sync::Mutex,
 };
 
 /// The actual implementation of [`PageCachedFile<F>`], but without concurrency control.

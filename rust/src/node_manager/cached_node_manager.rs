@@ -12,7 +12,6 @@ use std::{
     cmp::Eq,
     hash::Hash,
     ops::{Deref, DerefMut},
-    sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::{
@@ -22,6 +21,7 @@ use crate::{
         lock_cache::{EvictionHooks, LockCache},
     },
     storage::{Checkpointable, Storage},
+    sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
 };
 
 /// A wrapper which dereferences to `N` and additionally stores its dirty status,

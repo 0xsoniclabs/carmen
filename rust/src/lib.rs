@@ -22,8 +22,8 @@ pub mod error;
 mod ffi;
 mod node_manager;
 pub mod storage;
+pub mod sync;
 pub mod types;
-
 mod utils;
 
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining

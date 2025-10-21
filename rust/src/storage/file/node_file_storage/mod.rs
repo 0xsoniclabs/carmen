@@ -12,10 +12,6 @@ use std::{
     fs::{self, OpenOptions},
     marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{
-        Mutex, RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
 };
 
 use crate::{
@@ -24,9 +20,9 @@ use crate::{
         CheckpointParticipant, Error, Storage,
         file::{FileBackend, FromToFile},
     },
+    sync::{AtomicU64, Mutex, Ordering, RwLock},
     types::DiskRepresentable,
 };
-
 mod node_file_storage_metadata;
 mod reuse_list_file;
 
