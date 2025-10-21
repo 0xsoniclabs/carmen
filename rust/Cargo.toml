@@ -15,6 +15,9 @@ edition = "2024"
 publish = false
 rust-version = "1.89"
 
+[features]
+commit64b = [] # TODO: REMOVE
+
 [profile.dev.package.banderwagon]
 opt-level = 3
 
