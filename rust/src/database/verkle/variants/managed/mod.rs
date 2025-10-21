@@ -19,7 +19,11 @@ use crate::{
     database::{
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
-            crypto::Commitment, variants::managed::commitment::update_commitments,
+            crypto::Commitment,
+            variants::managed::commitment::{
+                update_commitments_concurrent, update_commitments_concurrent_recursive,
+                update_commitments_sequential,
+            },
             verkle_trie::VerkleTrie,
         },
         visitor::{AcceptVisitor, NodeVisitor},
@@ -103,7 +107,15 @@ where
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
-        update_commitments(&self.update_log, &*self.manager)?;
+        // update_commitments_sequential(&self.update_log, &*self.manager)?;
+        update_commitments_concurrent(&self.update_log, &*self.manager)?;
+        // Recursive impl currently broken after rebase
+        // => bugfix ee3776bf7 not ported correctly (or it was already broken before)
+        // update_commitments_concurrent_recursive(
+        //     *self.root.read().unwrap(),
+        //     &self.update_log,
+        //     &*self.manager,
+        // )?;
         Ok(self
             .manager
             .get_read_access(*self.root.read().unwrap())?
