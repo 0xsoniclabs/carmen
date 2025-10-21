@@ -234,7 +234,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 [[package]]
 name = "banderwagon"
 version = "0.1.0"
-source = "git+https://github.com/crate-crypto/rust-verkle.git?rev=e27b8b4#e27b8b4edf1992b4afa636c2fc7983bcc27ddb88"
+source = "git+https://github.com/psalz/rust-verkle.git?rev=136ef17#136ef177dce62403eada1a9de5d385057dad27a2"
 dependencies = [
  "ark-ec",
  "ark-ed-on-bls12-381-bandersnatch",
@@ -842,7 +842,7 @@ dependencies = [
 [[package]]
 name = "ipa-multipoint"
 version = "0.1.0"
-source = "git+https://github.com/crate-crypto/rust-verkle.git?rev=e27b8b4#e27b8b4edf1992b4afa636c2fc7983bcc27ddb88"
+source = "git+https://github.com/psalz/rust-verkle.git?rev=136ef17#136ef177dce62403eada1a9de5d385057dad27a2"
 dependencies = [
  "banderwagon",
  "hex",
@@ -1904,12 +1904,12 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 [[package]]
 name = "verkle-db"
 version = "0.1.0"
-source = "git+https://github.com/crate-crypto/rust-verkle.git?rev=e27b8b4#e27b8b4edf1992b4afa636c2fc7983bcc27ddb88"
+source = "git+https://github.com/psalz/rust-verkle.git?rev=136ef17#136ef177dce62403eada1a9de5d385057dad27a2"
 
 [[package]]
 name = "verkle-trie"
 version = "0.1.0"
-source = "git+https://github.com/crate-crypto/rust-verkle.git?rev=e27b8b4#e27b8b4edf1992b4afa636c2fc7983bcc27ddb88"
+source = "git+https://github.com/psalz/rust-verkle.git?rev=136ef17#136ef177dce62403eada1a9de5d385057dad27a2"
 dependencies = [
  "anyhow",
  "banderwagon",
