@@ -46,6 +46,7 @@ impl Commitment {
     /// If fewer than 256 values are provided, the remaining values are equal to
     /// the return value of [`Scalar::zero`].
     pub fn new(values: &[Scalar]) -> Self {
+        let _span = tracy_client::span!("Commitment::new");
         // Note: The compiler should be able to eliminate this allocation, because `Fr::from` is a
         // no-op. If this is not the case and performance critical, Scalar could be marked
         // `#[repr(transparent)]` and then `iter-map-collect` and be replaced by a `transmute`.
@@ -61,7 +62,13 @@ impl Commitment {
 
     /// Updates the commitment by changing the value at the given index.
     pub fn update(&mut self, index: u8, old_value: Scalar, new_value: Scalar) {
+        let span = tracy_client::span!("Commitment::update");
         let delta = Fr::from(new_value) - Fr::from(old_value);
+        span.emit_text(&format!(
+            "index: {}. delta bits: {}",
+            index,
+            delta.0.num_bits()
+        ));
         let delta_commitment = COMMITTER.scalar_mul(delta, index as usize);
         #[cfg(not(feature = "commit64b"))]
         {
@@ -76,12 +83,14 @@ impl Commitment {
     /// Maps the commitment point to the Banderwagon scalar field,
     /// allowing it to be used as input to other commitments.
     pub fn to_scalar(self) -> Scalar {
+        let _span = tracy_client::span!("Commitment::to_scalar");
         Scalar::from(self.as_element().map_to_scalar_field())
     }
 
     /// Returns a hash corresponding to the commitment.
     /// Used for computing keys during Verkle trie state embedding.
     pub fn hash(&self) -> [u8; 32] {
+        let _span = tracy_client::span!("Commitment::hash");
         let scalar = self.as_element().map_to_scalar_field();
         scalar
             .into_bigint()
@@ -104,6 +113,7 @@ impl Commitment {
     }
 
     fn as_element(&self) -> Element {
+        let _span = tracy_client::span!("Commitment::as_element");
         // In case the byte sequence does not correspond to a point in the prime subgroup,
         // we cannot construct a banderwagon::Element from it and instead return the identity
         // element (garbage in, garbage out).
