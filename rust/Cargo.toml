@@ -40,6 +40,7 @@ harness = false
 [features]
 tracy = ["tracy-client/default"]
 shuttle = ["quick_cache/shuttle", "dep:shuttle"]
+commit64b = []                                   # TODO: REMOVE
 
 [dependencies]
 # datastructures
