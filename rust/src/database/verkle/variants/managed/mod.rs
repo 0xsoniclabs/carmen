@@ -21,7 +21,8 @@ use crate::{
         managed_trie::{self, ManagedTrieNode, TrieUpdateLog},
         verkle::{
             crypto::Commitment, keyed_update::KeyedUpdateBatch,
-            variants::managed::commitment::update_commitments, verkle_trie::VerkleTrie,
+            variants::managed::commitment::update_commitments_concurrent_recursive,
+            verkle_trie::VerkleTrie,
         },
         visitor::{AcceptVisitor, NodeVisitor},
     },
@@ -108,7 +109,13 @@ where
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
-        update_commitments(&self.update_log, &*self.manager)?;
+        // update_commitments_sequential(&self.update_log, &*self.manager)?;
+        // update_commitments_concurrent(&self.update_log, &*self.manager)?;
+        update_commitments_concurrent_recursive(
+            *self.root.read().unwrap(),
+            &self.update_log,
+            &*self.manager,
+        )?;
         Ok(self
             .manager
             .get_read_access(*self.root.read().unwrap())?

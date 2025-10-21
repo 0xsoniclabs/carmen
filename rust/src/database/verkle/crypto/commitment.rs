@@ -93,6 +93,7 @@ impl Add<Self> for Commitment {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
+        let _span = tracy_client::span!("Commitment::add");
         Commitment {
             element: self.element + rhs.element,
         }

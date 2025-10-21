@@ -8,8 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::collections::HashMap;
+use std::{ops::DerefMut, sync::atomic::Ordering};
 
+use dashmap::DashMap;
+use rayon::prelude::*;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -23,6 +25,7 @@ use crate::{
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
+    sync::{RwLockWriteGuard, atomic::AtomicUsize},
     types::{HasEmptyId, Value},
 };
 
@@ -204,90 +207,319 @@ pub enum VerkleCommitmentInput {
     Inner([VerkleNodeId; 256]),
 }
 
-/// Recomputes the commitments of all dirty nodes recorded in the given update log.
-///
-/// This function assumes the update log and the node manager to be in a consistent state:
-/// - All nodes marked as dirty in the update log must exist in the node manager.
-/// - All nodes marked as dirty in the update log must have a dirty [`VerkleCommitment`].
-/// - For a dirty inner node on level `L`, all of its children in
-///   [`VerkleCommitment::changed_indices`] must be contained in the update log on level `L+1`.
-///
-/// After successful completion, the update log is cleared.
-pub fn update_commitments(
+#[allow(dead_code)]
+pub fn update_commitments_sequential(
     log: &TrieUpdateLog<VerkleNodeId>,
-    manager: &impl NodeManager<Id = VerkleNodeId, Node = VerkleNode>,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
 ) -> BTResult<(), Error> {
+    if log.count() == 0 {
+        return Ok(());
+    }
+
+    let previous_commitments = DashMap::new();
+    for level in (0..log.levels()).rev() {
+        let dirty_nodes = log.dirty_nodes(level);
+        for id in dirty_nodes.iter() {
+            process_update(manager, *id, &previous_commitments);
+        }
+    }
+    // TODO: Test
+    log.clear();
+    Ok(())
+}
+
+pub fn process_update(
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+    id: VerkleNodeId,
+    previous_commitments: &DashMap<VerkleNodeId, Commitment>,
+) {
+    let mut lock = manager.get_write_access(id).unwrap();
+    let mut vc = lock.get_commitment();
+    assert!(!vc.is_clean());
+    previous_commitments.insert(id, vc.commitment);
+    match lock.get_commitment_input().unwrap() {
+        VerkleCommitmentInput::Leaf(values, stem) => {
+            let _span = tracy_client::span!("update leaf");
+
+            compute_leaf_node_commitment(
+                vc.changed_indices,
+                &vc.committed_values,
+                &values,
+                &stem,
+                &mut vc.committed_used_indices,
+                &mut vc.c1,
+                &mut vc.c2,
+                &mut vc.commitment,
+            );
+            vc.committed_values.fill(Value::default()); // TODO: Is this needed? Also naming of field...
+        }
+        VerkleCommitmentInput::Inner(children) => {
+            let _span = tracy_client::span!("update inner");
+
+            let changed_count = vc
+                .changed_indices
+                .iter()
+                .map(|b| b.count_ones() as usize)
+                .sum::<usize>();
+            let use_batch_update = changed_count > 32;
+
+            let mut scalars = [Scalar::zero(); 256];
+            for (i, child_id) in children.iter().enumerate() {
+                if vc.status == CommitmentStatus::Uninitialized {
+                    if !child_id.is_empty_id() {
+                        scalars[i] = manager
+                            .get_read_access(*child_id)
+                            .unwrap()
+                            .get_commitment()
+                            .commitment
+                            .to_scalar();
+                    }
+                    continue;
+                }
+
+                if vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
+                    continue;
+                }
+
+                let child_commitment = manager.get_read_access(*child_id).unwrap().get_commitment();
+                assert!(child_commitment.is_clean());
+                let prev_commitment = previous_commitments
+                    .get(child_id)
+                    .expect("previous commitment should have been set in lower level");
+                let prev_commitment = prev_commitment.to_scalar();
+
+                if use_batch_update {
+                    scalars[i] = child_commitment.commitment().to_scalar() - prev_commitment;
+                } else {
+                    vc.commitment.update(
+                        i as u8,
+                        prev_commitment,
+                        child_commitment.commitment().to_scalar(),
+                    );
+                }
+            }
+
+            if vc.status != CommitmentStatus::Uninitialized && use_batch_update {
+                vc.commitment = vc.commitment + Commitment::new(&scalars);
+            }
+
+            if vc.status == CommitmentStatus::Uninitialized {
+                vc.commitment = Commitment::new(&scalars);
+            }
+        }
+    }
+
+    vc.status = CommitmentStatus::Clean;
+    // TODO: Test this (currently not caught by any test!)
+    vc.changed_indices.fill(0);
+    lock.set_commitment(vc).unwrap();
+}
+
+pub fn update_commitments_concurrent(
+    log: &TrieUpdateLog<VerkleNodeId>,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+) -> BTResult<(), Error> {
+    const MIN_BATCH_SIZE: usize = 4;
+
     if log.count() == 0 {
         return Ok(());
     }
 
     let _span = tracy_client::span!("update_commitments");
 
-    let mut previous_commitments = HashMap::new();
+    let hardware_parallelism = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(1);
+
+    let previous_commitments = DashMap::new();
+
     for level in (0..log.levels()).rev() {
-        let dirty_nodes_ids = log.dirty_nodes(level);
-        for id in dirty_nodes_ids {
-            let mut lock = manager.get_write_access(id)?;
-            let mut vc = lock.get_commitment();
-            assert_ne!(vc.status, CommitmentStatus::Clean);
+        let dirty_nodes = log.dirty_nodes(level);
 
-            previous_commitments.insert(id, vc.commitment);
+        // TODO: How to set this? Depending on hardware + available parallelism?
+        let num_threads = if dirty_nodes.len() < MIN_BATCH_SIZE {
+            1
+        } else {
+            let batch_size = dirty_nodes.len().div_ceil(hardware_parallelism);
+            dirty_nodes.len().div_ceil(batch_size)
+        };
 
-            match lock.get_commitment_input()? {
-                VerkleCommitmentInput::Leaf(values, stem) => {
-                    let _span = tracy_client::span!("leaf node");
-
-                    compute_leaf_node_commitment(
-                        vc.changed_indices,
-                        &vc.committed_values,
-                        &values,
-                        &stem,
-                        &mut vc.committed_used_indices,
-                        &mut vc.c1,
-                        &mut vc.c2,
-                        &mut vc.commitment,
-                    );
-                }
-                VerkleCommitmentInput::Inner(children) => {
-                    let _span = tracy_client::span!("inner node");
-
-                    let mut scalars = [Scalar::zero(); 256];
-                    for (i, child_id) in children.iter().enumerate() {
-                        if vc.status == CommitmentStatus::Uninitialized {
-                            if !child_id.is_empty_id() {
-                                scalars[i] = manager
-                                    .get_read_access(*child_id)?
-                                    .get_commitment()
-                                    .commitment
-                                    .to_scalar();
-                            }
-                            continue;
-                        }
-
-                        if !vc.index_changed(i) {
-                            continue;
-                        }
-
-                        let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
-                        assert_eq!(child_commitment.status, CommitmentStatus::Clean);
-                        vc.commitment.update(
-                            i as u8,
-                            previous_commitments[child_id].to_scalar(),
-                            child_commitment.commitment.to_scalar(),
-                        );
-                    }
-
-                    if vc.status == CommitmentStatus::Uninitialized {
-                        vc.commitment = Commitment::new(&scalars);
-                    }
-                }
+        if num_threads == 1 {
+            for id in dirty_nodes {
+                process_update(manager, id, &previous_commitments);
             }
+            continue;
+        }
 
-            vc.status = CommitmentStatus::Clean;
-            vc.changed_indices.fill(0);
-            lock.set_commitment(vc)?;
+        let next_idx = AtomicUsize::new(0);
+        rayon::scope(|s| {
+            for _ in 0..num_threads {
+                let previous_commitments = &previous_commitments;
+                let dirty_nodes = &dirty_nodes;
+                let next_idx = &next_idx;
+
+                s.spawn(move |_| {
+                    let _span = tracy_client::span!("looping over dirty nodes");
+                    let total_nodes = dirty_nodes.len();
+                    loop {
+                        let idx = next_idx.fetch_add(1, Ordering::SeqCst);
+                        if idx >= total_nodes {
+                            break;
+                        }
+                        let id = dirty_nodes[idx];
+                        process_update(manager, id, previous_commitments);
+                    }
+                });
+            }
+        });
+    }
+
+    log.clear();
+    Ok(())
+}
+
+// TODO: Try returning delta instead of commitment again - just to make sure
+fn update_commitment_thread(
+    dbg_recursion_level: usize,
+    mut node: RwLockWriteGuard<'_, impl DerefMut<Target = VerkleNode>>,
+    index_in_parent: usize,
+    delta_commitment: &mut Commitment,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+    parent_is_initialized: bool,
+) {
+    // eprintln!(
+    //     "{}updating commitment in thread",
+    //     "  ".repeat(dbg_recursion_level)
+    // );
+    // eprintln!(
+    //     "{}address of delta: {:p}",
+    //     "  ".repeat(dbg_recursion_level),
+    //     delta
+    // );
+
+    let mut vc = node.get_commitment();
+    assert!(!vc.is_clean());
+
+    match node.get_commitment_input().unwrap() {
+        VerkleCommitmentInput::Leaf(values, stem) => {
+            let _span = tracy_client::span!("update leaf");
+
+            compute_leaf_node_commitment(
+                vc.changed_indices,
+                &vc.committed_values,
+                &values,
+                &stem,
+                &mut vc.committed_used_indices,
+                &mut vc.c1,
+                &mut vc.c2,
+                &mut vc.commitment,
+            );
+        }
+        VerkleCommitmentInput::Inner(children) => {
+            // eprintln!("{}its an inner", "  ".repeat(dbg_recursion_level));
+            let _span = tracy_client::span!("update inner");
+
+            let child_sum = (0..children.len())
+                .filter(|i| {
+                    // Only keep children that have either been changed, or if this node is not yet
+                    // initialized, keep all that are not empty.
+                    !(vc.status != CommitmentStatus::Uninitialized
+                        && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
+                        || children[*i].is_empty_id())
+                })
+                .collect::<Vec<_>>()
+                .par_iter()
+                .map(|i| {
+                    let i = *i;
+                    let mut delta_i = Commitment::default();
+                    // TODO: Can we get rid of one of the checks here?
+                    if vc.status == CommitmentStatus::Uninitialized
+                        && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
+                    {
+                        delta_i.update(
+                            i as u8,
+                            Scalar::zero(),
+                            manager
+                                .get_read_access(children[i])
+                                .unwrap()
+                                .get_commitment()
+                                .commitment
+                                .to_scalar(),
+                        );
+                        return delta_i;
+                    }
+
+                    // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
+                    let child_node = manager.get_write_access(children[i]).unwrap();
+                    update_commitment_thread(
+                        dbg_recursion_level + 1,
+                        child_node,
+                        i,
+                        &mut delta_i,
+                        manager,
+                        vc.status != CommitmentStatus::Uninitialized,
+                    );
+                    delta_i
+                })
+                .reduce(Commitment::default, |acc, delta_commitment| {
+                    acc + delta_commitment
+                });
+
+            if vc.status == CommitmentStatus::Uninitialized {
+                vc.commitment = child_sum;
+            } else {
+                vc.commitment = vc.commitment + child_sum;
+            }
         }
     }
+
+    if parent_is_initialized {
+        delta_commitment.update(
+            index_in_parent as u8,
+            node.get_commitment().commitment.to_scalar(),
+            vc.commitment.to_scalar(),
+        );
+    } else {
+        delta_commitment.update(
+            index_in_parent as u8,
+            Scalar::zero(),
+            vc.commitment.to_scalar(),
+        );
+    }
+
+    // eprintln!(
+    //     "{}setting delta to {:?}",
+    //     "  ".repeat(dbg_recursion_level),
+    //     delta
+    // );
+    vc.status = CommitmentStatus::Clean;
+    // TODO: Test this (currently not caught by any test!)
+    vc.changed_indices.fill(0);
+    node.set_commitment(vc).unwrap();
+}
+
+pub fn update_commitments_concurrent_recursive(
+    root_id: VerkleNodeId,
+    log: &TrieUpdateLog<VerkleNodeId>,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+) -> BTResult<(), Error> {
+    // TODO: This is still useful to have, maybe not get rid of log entirely?
+    if log.count() == 0 {
+        return Ok(());
+    }
+
+    // Don't delegate to another implementation in tests
+    #[cfg(not(test))]
+    if log.count() <= 8 {
+        return update_commitments_concurrent(log, manager);
+    }
+
+    let _span = tracy_client::span!("update_commitments_concurrent_recursive");
+
+    let mut delta_commitment = Commitment::default();
+    let root = manager.get_write_access(root_id).unwrap();
+    update_commitment_thread(0, root, 0, &mut delta_commitment, manager, false);
+
     log.clear();
     Ok(())
 }
@@ -528,7 +760,7 @@ mod tests {
         log.mark_dirty(0, root_id);
 
         // Run commitment update
-        update_commitments(&log, &manager).unwrap();
+        update_commitments_concurrent(&log, &manager).unwrap();
 
         {
             let leaf_node_commitment = manager.get_read_access(leaf_id).unwrap().get_commitment();
