@@ -48,6 +48,9 @@ ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle.git", rev 
 verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 sha3 = "0.10.8"
 
+# integration with the Tracy hybrid profiler
+tracy-client = "0.18.2"
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"

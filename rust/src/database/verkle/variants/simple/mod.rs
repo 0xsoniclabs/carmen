@@ -52,6 +52,7 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     }
 
     fn commit(&self) -> Result<Commitment, Error> {
+        let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::commit");
         Ok(self.root.lock().unwrap().commit())
     }
 }
