@@ -21,6 +21,8 @@ use crate::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, hint},
 };
 
+// #[cfg(feature = "shuttle")]
+mod shuttle_tests;
 mod test_utils;
 
 /// A trait for handling eviction events in the cache.
@@ -89,6 +91,7 @@ where
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
             .weight_capacity(capacity as u64) // unit weight per value
+            .shards(1)
             .build()
             .unwrap();
 

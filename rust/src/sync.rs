@@ -18,6 +18,7 @@ pub(crate) use std::sync::{
 pub(crate) use std::{
     hint,
     sync::{Barrier, RwLockReadGuard, RwLockWriteGuard},
+    thread,
 };
 
 #[cfg(feature = "shuttle")]
