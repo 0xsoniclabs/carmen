@@ -370,8 +370,11 @@ mod tests {
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(2, logger.clone());
 
-        ignore_guard(cache.get_read_access_or_insert(1u32, || Ok(123)));
-        ignore_guard(cache.get_read_access_or_insert(2u32, || Ok(456)));
+        let entries_to_insert = [(1u32, 123), (2u32, 456)];
+
+        for (id, item) in entries_to_insert {
+            ignore_guard(cache.get_read_access_or_insert(id, || Ok(item)));
+        }
         assert!(logger.evicted.is_empty());
         let free_slots = cache.free_slots.len();
 
@@ -380,7 +383,8 @@ mod tests {
         // is evicted instead.
         ignore_guard(cache.get_read_access_or_insert(3u32, || Ok(789)));
         assert_eq!(logger.evicted.len(), 1);
-        assert!(logger.evicted.contains(&(1, 123)));
+        let evicted_element = logger.evicted.iter().next().unwrap();
+        assert!(entries_to_insert.contains(&evicted_element));
         assert_eq!(cache.free_slots.len(), free_slots);
 
         // Key 3 is now in the cache
@@ -390,7 +394,7 @@ mod tests {
         }
 
         // Key 1 is not
-        let res = cache.get_read_access_or_insert(1u32, not_found);
+        let res = cache.get_read_access_or_insert(evicted_element.0, not_found);
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
 
         assert!(!cache.free_slots.is_empty());
