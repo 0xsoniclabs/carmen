@@ -148,6 +148,7 @@ impl InnerNode {
         if !self.commitment_dirty {
             return self.commitment;
         }
+        let _span = tracy_client::span!("InnerNode::commit");
 
         let _span = tracy_client::span!("InnerNode::commit");
         let mut values = [Scalar::zero(); 256];
