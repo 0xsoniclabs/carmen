@@ -31,7 +31,10 @@ pub struct Commitment {
     // We store a byte representation to allow for easy serialization using zerocopy.
     // Note that conversion from/to banderwagon::Element is NOT trivial (due to compression).
     // TODO: Benchmark performance impact (https://github.com/0xsoniclabs/sonic-admin/issues/373).
+    #[cfg(not(feature = "commit64b"))]
     point_bytes: [u8; 32],
+    #[cfg(feature = "commit64b")]
+    point_bytes: [u8; 64],
 }
 
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
@@ -49,7 +52,10 @@ impl Commitment {
         let point =
             COMMITTER.commit_lagrange(&values.iter().map(|v| Fr::from(*v)).collect::<Vec<Fr>>());
         Commitment {
+            #[cfg(not(feature = "commit64b"))]
             point_bytes: point.to_bytes(),
+            #[cfg(feature = "commit64b")]
+            point_bytes: point.to_bytes_uncompressed(),
         }
     }
 
@@ -57,7 +63,14 @@ impl Commitment {
     pub fn update(&mut self, index: u8, old_value: Scalar, new_value: Scalar) {
         let delta = Fr::from(new_value) - Fr::from(old_value);
         let delta_commitment = COMMITTER.scalar_mul(delta, index as usize);
-        self.point_bytes = (self.as_element() + delta_commitment).to_bytes();
+        #[cfg(not(feature = "commit64b"))]
+        {
+            self.point_bytes = (self.as_element() + delta_commitment).to_bytes();
+        }
+        #[cfg(feature = "commit64b")]
+        {
+            self.point_bytes = (self.as_element() + delta_commitment).to_bytes_uncompressed()
+        }
     }
 
     /// Maps the commitment point to the Banderwagon scalar field,
@@ -80,17 +93,42 @@ impl Commitment {
     /// Returns a compressed 32-byte representation of the commitment.
     /// Used as the state root commitment in Verkle tries.
     pub fn compress(&self) -> [u8; 32] {
-        self.point_bytes
+        #[cfg(not(feature = "commit64b"))]
+        {
+            self.point_bytes
+        }
+        #[cfg(feature = "commit64b")]
+        {
+            self.as_element().to_bytes()
+        }
     }
 
     fn as_element(&self) -> Element {
         // In case the byte sequence does not correspond to a point in the prime subgroup,
         // we cannot construct a banderwagon::Element from it and instead return the identity
         // element (garbage in, garbage out).
+        #[cfg(not(feature = "commit64b"))]
         match Element::from_bytes(&self.point_bytes) {
             Some(e) => e,
             None => Element::zero(),
         }
+        #[cfg(feature = "commit64b")]
+        {
+            Element::from_bytes_unchecked_uncompressed(self.point_bytes)
+        }
+    }
+}
+
+impl From<Element> for Commitment {
+    fn from(element: Element) -> Self {
+        #[cfg(not(feature = "commit64b"))]
+        return Commitment {
+            point_bytes: element.to_bytes(),
+        };
+        #[cfg(feature = "commit64b")]
+        return Commitment {
+            point_bytes: element.to_bytes_uncompressed(),
+        };
     }
 }
 
@@ -102,9 +140,14 @@ impl From<&Commitment> for Element {
 
 impl Default for Commitment {
     fn default() -> Self {
-        Commitment {
+        #[cfg(not(feature = "commit64b"))]
+        return Commitment {
             point_bytes: Element::zero().to_bytes(),
-        }
+        };
+        #[cfg(feature = "commit64b")]
+        return Commitment {
+            point_bytes: Element::zero().to_bytes_uncompressed(),
+        };
     }
 }
 
