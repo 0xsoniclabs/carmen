@@ -125,7 +125,7 @@ where
         let id = self.storage.reserve(&node);
         let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
-                node: node.clone(),
+                node,
                 is_dirty: true,
             })
         })?;
