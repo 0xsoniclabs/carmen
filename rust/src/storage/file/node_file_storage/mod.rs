@@ -12,19 +12,17 @@ use std::{
     fs::{self, OpenOptions},
     marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{
-        Mutex, RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
 };
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::storage::{
-    CheckpointParticipant, Error, Storage,
-    file::{FileBackend, FromToFile},
+use crate::{
+    storage::{
+        CheckpointParticipant, Error, Storage,
+        file::{FileBackend, FromToFile},
+    },
+    sync::{AtomicU64, Mutex, Ordering, RwLock},
 };
-
 mod node_file_storage_metadata;
 mod reuse_list_file;
 

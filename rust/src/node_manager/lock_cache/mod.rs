@@ -8,11 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{
-    hint,
-    num::NonZero,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError},
-};
+use std::sync::TryLockError;
 
 use dashmap::DashSet;
 use quick_cache::{
@@ -20,7 +16,10 @@ use quick_cache::{
     sync::{Cache, DefaultLifecycle, GuardResult},
 };
 
-use crate::error::Error;
+use crate::{
+    error::Error,
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, hint},
+};
 
 mod test_utils;
 
