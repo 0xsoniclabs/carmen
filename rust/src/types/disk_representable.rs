@@ -53,11 +53,17 @@ mod tests {
     fn from_disk_repr_for_zerocopy_types_calls_read_into_buffer_with_bytes_representation_and_returns_reinterpreted_data()
      {
         let value = ZerocopyableType::from_disk_repr(|buf| {
-            buf.fill(1u8);
+            buf.fill(1);
             Ok::<_, ()>(())
         })
         .unwrap();
 
-        assert_eq!(value, ZerocopyableType([1u8; 32]));
+        assert_eq!(value, ZerocopyableType([1; 32]));
+    }
+
+    #[test]
+    fn to_disk_repr_for_zerocopy_types_returns_bytes_representation() {
+        let value = ZerocopyableType([1; 32]);
+        assert_eq!(value.to_disk_repr(), [1; 32]);
     }
 }
