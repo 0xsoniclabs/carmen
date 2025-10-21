@@ -14,8 +14,7 @@ use crate::{
     database::{
         managed_trie::{ManagedTrieNode, TrieUpdateLog},
         verkle::{
-            compute_commitment::compute_leaf_node_commitment,
-            crypto::Commitment,
+            crypto::{Commitment, Scalar},
             variants::managed::{Node, NodeId},
         },
     },
@@ -53,9 +52,55 @@ where
             previous_commitments.insert(*id, cache.commitment());
 
             match lock.get_commitment_input()? {
-                VerkleCommitmentInput::Leaf(values, used_bits, stem) => {
+                VerkleCommitmentInput::Leaf(values, _used_bits, stem) => {
                     // TODO: Consider caching leaf node commitments https://github.com/0xsoniclabs/sonic-admin/issues/386
-                    cache.commitment = compute_leaf_node_commitment(&values, &used_bits, &stem);
+                    // cache.commitment = compute_leaf_node_commitment(&values, &used_bits, &stem);
+
+                    // let mut c1_changed = false;
+                    // let mut c2_changed = false;
+                    for (i, value) in cache.committed_values.iter().enumerate() {
+                        if cache.changed_slots[i] == 0 {
+                            continue;
+                        }
+
+                        let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
+                        let prev_upper = Scalar::from_le_bytes(&value[16..]);
+                        if cache.committed_used_bits[i / 8] & (1 << (i % 8)) != 0 {
+                            prev_lower.set_bit128();
+                        }
+
+                        let mut lower = Scalar::from_le_bytes(&values[i][..16]);
+                        let upper = Scalar::from_le_bytes(&values[i][16..]);
+                        lower.set_bit128();
+
+                        let c = if i < 128 {
+                            // c1_changed = true;
+                            &mut cache.c1
+                        } else {
+                            // c2_changed = true;
+                            &mut cache.c2
+                        };
+                        c.update(((i * 2) % 256) as u8, prev_lower, lower);
+                        c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+                        cache.committed_used_bits[i / 8] |= 1 << (i % 8);
+                    }
+                    cache.committed_values.fill(Value::default());
+                    cache.changed_slots.fill(0);
+
+                    // if c1_changed {
+                    //     self.c1_scalar = self.c1.to_scalar();
+                    // }
+                    // if c2_changed {
+                    //     self.c2_scalar = self.c2.to_scalar();
+                    // }
+
+                    let combined = [
+                        Scalar::from(1),
+                        Scalar::from_le_bytes(&stem),
+                        cache.c1.to_scalar(),
+                        cache.c2.to_scalar(),
+                    ];
+                    cache.commitment = Commitment::new(&combined);
                 }
                 VerkleCommitmentInput::Inner(children) => {
                     for (i, child_id) in children.iter().enumerate() {

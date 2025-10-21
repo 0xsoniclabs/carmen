@@ -12,7 +12,7 @@ use std::sync::RwLockWriteGuard;
 
 use crate::{
     database::managed_trie::{
-        CachedCommitment, TrieUpdateLog,
+        TrieUpdateLog,
         managed_trie_node::{CanStoreResult, UnionManagedTrieNode},
     },
     error::Error,
@@ -39,20 +39,16 @@ where
     loop {
         match current_lock.can_store(key, depth)? {
             CanStoreResult::Yes => {
-                let cache = CachedCommitment {
-                    dirty: 1,
-                    ..current_lock.get_cached_commitment()
-                };
+                let prev_value = current_lock.store(key, value)?;
+                let mut cache = current_lock.get_cached_commitment();
+                cache.store(key[31] as usize, prev_value);
                 current_lock.set_cached_commitment(cache)?;
                 update_log.add(depth, current_id, key[31]);
-
-                return current_lock.store(key, value);
+                return Ok(());
             }
             CanStoreResult::Descend(new_id) => {
-                let cache = CachedCommitment {
-                    dirty: 1,
-                    ..current_lock.get_cached_commitment()
-                };
+                let mut cache = current_lock.get_cached_commitment();
+                cache.dirty = 1;
                 current_lock.set_cached_commitment(cache)?;
                 update_log.add(depth, current_id, key[depth as usize]);
 

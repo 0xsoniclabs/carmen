@@ -101,7 +101,8 @@ pub trait ManagedTrieNode {
     }
 
     /// TODO: Docblock
-    fn store(&mut self, _key: &Key, _value: &Value) -> Result<(), Error> {
+    /// Returns the previous value stored at the key.
+    fn store(&mut self, _key: &Key, _value: &Value) -> Result<Value, Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::store",
             std::any::type_name::<Self>()

@@ -127,7 +127,7 @@ impl ManagedTrieNode for Node {
         }
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> Result<(), Error> {
+    fn store(&mut self, key: &Key, value: &Value) -> Result<Value, Error> {
         match self {
             Node::Empty(n) => n.store(key, value),
             Node::Inner(n) => n.store(key, value),

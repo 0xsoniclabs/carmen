@@ -119,7 +119,7 @@ impl ManagedTrieNode for SparseLeafNode<2> {
                 values
             },
             used_bits: self.used_bits,
-            commitment: CachedCommitment::default(),
+            commitment: self.commitment,
         };
         Ok(Node::Leaf256(Box::new(new_leaf)))
     }
@@ -138,7 +138,7 @@ impl ManagedTrieNode for SparseLeafNode<2> {
         Ok(Node::Inner(Box::new(inner)))
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> Result<(), Error> {
+    fn store(&mut self, key: &Key, value: &Value) -> Result<Value, Error> {
         assert_eq!(self.stem[..], key[..31]);
 
         let mut slot = None;
@@ -149,6 +149,7 @@ impl ManagedTrieNode for SparseLeafNode<2> {
                 break;
             }
         }
+        let prev_value = self.values[slot.unwrap()].value;
         self.values[slot.unwrap()] = ValueWithIndex {
             index: key[31],
             value: *value,
@@ -158,7 +159,7 @@ impl ManagedTrieNode for SparseLeafNode<2> {
         // TODO: Test
         self.used_bits[(key[31] / 8) as usize] |= 1 << (key[31] % 8);
 
-        Ok(())
+        Ok(prev_value)
     }
 
     fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {

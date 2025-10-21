@@ -82,13 +82,14 @@ impl ManagedTrieNode for FullLeafNode {
 
     // TODO: We could implement a conversion to SparseLeafNode if enough values are zero
     // => We would have to retain the used bits however!
-    fn store(&mut self, key: &Key, value: &Value) -> Result<(), Error> {
+    fn store(&mut self, key: &Key, value: &Value) -> Result<Value, Error> {
         assert_eq!(self.stem[..], key[..31]);
 
         let suffix = key[31];
+        let prev_value = self.values[suffix as usize];
         self.values[suffix as usize] = *value;
         self.used_bits[(suffix / 8) as usize] |= 1 << (suffix % 8);
-        Ok(())
+        Ok(prev_value)
     }
 
     fn get_cached_commitment(&self) -> CachedCommitment<Self::Commitment> {
