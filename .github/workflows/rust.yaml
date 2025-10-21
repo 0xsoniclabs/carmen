@@ -113,7 +113,40 @@ jobs:
       with:
         workspaces: rust
     - name: cargo test
-      run: cargo test --all-features --all-targets --no-fail-fast
+      run: cargo test --all-targets --no-fail-fast
+
+    
+  detect-shuttle-file-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lock_cache: ${{ steps.filter.outputs.shuttle_file_changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            lock_cache:
+              - 'rust/src/node_manager/lock_cache/mod.rs'
+              - 'rust/src/node_manager/cached_node_manager.rs'
+
+  shuttle-test:
+    name: shuttle test
+    if: ${{ needs.detect.outputs.shuttle_file_changed == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+    - name: install rust
+      uses: dtolnay/rust-toolchain@1.89
+    - name: load cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
+    - name: cargo test
+      run: cargo test --release --features shuttle --no-fail-fast shuttle
+
 
   miri:
     name: miri
