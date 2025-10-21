@@ -1,9 +1,14 @@
 use core::panic;
 use std::{
+    collections::HashSet,
+    env,
     io::Write,
+    num::NonZero,
     panic::{catch_unwind, panic_any},
     path::Path,
 };
+
+use itertools::Itertools;
 
 use crate::{
     error::{BTResult, Error},
@@ -13,7 +18,7 @@ use crate::{
     },
     storage,
     sync::{atomic::Ordering, *},
-    utils::shuttle::run_shuttle_check,
+    utils::shuttle::{run_shuttle_check, set_name_for_shuttle_task},
 };
 
 #[rstest_reuse::apply(get_method)]
@@ -266,6 +271,105 @@ impl PermutationTestCase {
         Self {
             cache_size,
             operations,
+        }
+    }
+}
+
+/// Tests all permutations of operations and a small set of node IDs on the lock cache using
+/// shuttle. The test is repeated for different cache sizes to stress cache contention scenarios.
+/// The idea is to find cases where the lock cache guarantees are violated, i.e. an operation
+/// returns a reference to a non-existing node or an unexpected error occurs.
+/// The permutation generates known invalid operation sequences that are expected to fail, and
+/// these are reported but do not cause the test to fail.
+/// To facilitate debugging, the test case that caused a failure is serialized to a file, and
+/// can be reloaded by setting the `SHUTTLE_SERIALIZED_CASE` environment variable.
+#[test]
+fn shuttle__operation_permutations() {
+    #[cfg(not(feature = "shuttle"))]
+    return;
+    #[allow(unreachable_code)]
+    let current_dir = env::current_dir().unwrap();
+    let CONCURRENT_OPS: usize = 6; // Must be >= 2
+    let cache_sizes = (2..=CONCURRENT_OPS + 1).collect::<Vec<usize>>();
+    let node_ids = (0..CONCURRENT_OPS as u32).collect::<Vec<u32>>();
+    let operations = vec![Op::Add, Op::Get, Op::Delete, Op::Iter];
+
+    let case_yielder: Box<dyn Iterator<Item = PermutationTestCase>> =
+        match std::env::var("SHUTTLE_SERIALIZED_CASE") {
+            Ok(_) => Box::new(vec![PermutationTestCase::deserialize(&current_dir)].into_iter()),
+            Err(_) => Box::new(cache_sizes.clone().into_iter().flat_map(move |cache_size| {
+                operations
+                    .clone()
+                    .into_iter()
+                    .cartesian_product(node_ids.clone())
+                    .map(OpWithId::from)
+                    .combinations_with_replacement(CONCURRENT_OPS)
+                    .map(move |operations| PermutationTestCase {
+                        cache_size,
+                        operations,
+                    })
+            })),
+        };
+
+    for operation_case in case_yielder {
+        let case_error_pool: Arc<std::sync::Mutex<HashSet<OpPanicStatus>>> = Arc::default();
+        operation_case.serialize(&current_dir);
+        let PermutationTestCase {
+            cache_size,
+            operations,
+        } = operation_case;
+        case_error_pool.lock().unwrap().clear();
+
+        println!("Testing case: {operations:?} with cache size {cache_size}");
+        if let Err(e) = catch_unwind(|| {
+            run_shuttle_check(
+                {
+                    let operations = operations.clone();
+                    move || {
+                        let lock_cache = Arc::new(LockCache::new_internal(
+                            cache_size,
+                            NonZero::new(1).unwrap(),
+                            Arc::new(EvictionLogger::default()),
+                        ));
+                        assert_eq!(
+                            lock_cache.cache.capacity() as usize,
+                            cache_size,
+                            "Cache capacity should match the requested size plus extra slots"
+                        );
+                        let mut handles = vec![];
+                        for OpWithId { op, id } in &operations {
+                            set_name_for_shuttle_task(format!("{op}({id})"));
+                            handles.push(op.execute(lock_cache.clone(), *id));
+                        }
+
+                        for handle in handles {
+                            handle.join().unwrap();
+                        }
+                    }
+                },
+                1000,
+            );
+        }) {
+            if let Some(error) = e.downcast_ref::<OpPanicStatus>() {
+                let mut case_error_pool = case_error_pool.lock().unwrap();
+                // Skip already known error cases
+                if case_error_pool.contains(error) {
+                    break;
+                }
+                case_error_pool.insert(error.clone());
+
+                eprintln!("\n#############################################################");
+                eprintln!("Test case failed: {operations:?} with cache size {cache_size}");
+                eprintln!("--------------------------------------------------------------");
+                if error.status == OpErrorStatus::Expected {
+                    eprintln!("Ignoring expected error on {}: {}", error.op, error.error);
+                    eprintln!("###########################################################\n");
+                } else {
+                    panic!("Unexpected error in shuttle test: {error:?}");
+                }
+            } else {
+                panic!("Unexpected error format in shuttle test: {e:?}");
+            }
         }
     }
 }
