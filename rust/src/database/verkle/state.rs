@@ -101,12 +101,15 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     fn get_hash(&self) -> Result<Hash, Error> {
         let commitment = self.trie.commit()?;
-        Ok(Hash::from(commitment.compress()))
+        let res = Ok(Hash::from(commitment.compress()));
+        tracy_client::frame_mark();
+        res
     }
 
     // TODO: Batch updates for the same account (https://github.com/0xsoniclabs/sonic-admin/issues/374)
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> Result<(), Error> {
+        let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
         for addr in update.created_accounts {
             if !self.account_exists(addr)? {
                 // Set basic account data once to set used bit in Verkle leaf.
