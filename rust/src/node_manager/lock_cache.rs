@@ -379,7 +379,6 @@ mod tests {
         let free_slots = cache.free_slots.len();
 
         // By default quick-cache would immediately evict key 3.
-        // Since we keep a lock on it during get_read_access_or_insert (thereby pinning it), key 1
         // Since we keep a lock on it during get_read_access_or_insert (thereby pinning it), one
         // of the other two keys is evicted instead.
         ignore_guard(cache.get_read_access_or_insert(3u32, || Ok(789)));
