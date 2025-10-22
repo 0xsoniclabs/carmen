@@ -79,8 +79,8 @@ impl<S> Deref for StorageEvictionHandler<S> {
 
 /// A node manager that caches nodes in memory, with a underlying storage backend.
 ///
-/// Nodes are retrieved from the underlying storage if they are not present in the cache, and saved
-/// to upon eviction if they have been modified.
+/// Nodes are retrieved from the underlying storage if they are not present in the cache, and stored
+/// back when they get evicted and they have been modified.
 pub struct CachedNodeManager<S>
 where
     S: Storage,
