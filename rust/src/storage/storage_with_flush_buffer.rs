@@ -246,6 +246,7 @@ mod tests {
     use crate::{
         database::verkle::variants::managed::{Node, NodeId, NodeType},
         storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
+        types::TreeId,
         utils::test_dir::{Permissions, TestDir},
     };
 

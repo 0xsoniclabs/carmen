@@ -21,6 +21,7 @@ use crate::{
     storage::{
         CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage, file::FromToFile,
     },
+    types::TreeId,
 };
 
 mod checkpoint_data;
@@ -225,6 +226,7 @@ mod tests {
     use super::*;
     use crate::{
         storage::file::{NodeFileStorage, SeekFile},
+        types::TreeId,
         utils::test_dir::{Permissions, TestDir},
     };
 

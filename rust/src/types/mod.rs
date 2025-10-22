@@ -10,10 +10,12 @@
 
 pub use commitment::*;
 pub use node_size::*;
+pub use tree_id::TreeId;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod commitment;
 mod node_size;
+mod tree_id;
 mod update;
 
 /// The Carmen live state implementation.

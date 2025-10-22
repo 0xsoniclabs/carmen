@@ -10,7 +10,10 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::{database::verkle::variants::managed::nodes::NodeType, types::NodeSize};
+use crate::{
+    database::verkle::variants::managed::nodes::NodeType,
+    types::{NodeSize, TreeId},
+};
 
 /// An identifier for a node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -42,9 +45,23 @@ impl NodeId {
     const PREFIX_MASK: u64 = 0x0000_C000_0000_0000;
     const INDEX_MASK: u64 = 0x0000_3FFF_FFFF_FFFF;
 
-    /// Creates a new [`NodeId`] from a [`u64`] index and a [`NodeType`].
-    /// The index must be smaller than 2^46.
-    pub fn from_idx_and_node_type(idx: u64, node_type: NodeType) -> Self {
+    fn from_u64(value: u64) -> Self {
+        let mut bytes = [0; 6];
+        bytes[0..6].copy_from_slice(&value.to_be_bytes()[2..8]);
+        NodeId(bytes)
+    }
+
+    fn to_u64(self) -> u64 {
+        let mut bytes = [0; 8];
+        bytes[2..8].copy_from_slice(&self.0);
+        u64::from_be_bytes(bytes)
+    }
+}
+
+impl TreeId for NodeId {
+    type NodeType = NodeType;
+
+    fn from_idx_and_node_type(idx: u64, node_type: NodeType) -> Self {
         assert!(
             (idx & !Self::INDEX_MASK) == 0,
             "indices cannot get this large, unless we have a bug somewhere"
@@ -58,14 +75,11 @@ impl NodeId {
         NodeId::from_u64(idx | prefix)
     }
 
-    /// Converts the [`NodeId`] to a [`u64`] index, stripping the prefix.
-    /// The index is guaranteed to be smaller than 2^46.
-    pub fn to_index(self) -> u64 {
+    fn to_index(self) -> u64 {
         self.to_u64() & Self::INDEX_MASK
     }
 
-    /// Converts the [`NodeId`] to a [`NodeType`], if the prefix is valid.
-    pub fn to_node_type(self) -> Option<NodeType> {
+    fn to_node_type(self) -> Option<NodeType> {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(NodeType::Empty),
             Self::INNER_NODE_PREFIX => Some(NodeType::Inner),
@@ -77,18 +91,6 @@ impl NodeId {
             //   corrupted.
             _ => None,
         }
-    }
-
-    fn from_u64(value: u64) -> Self {
-        let mut bytes = [0; 6];
-        bytes[0..6].copy_from_slice(&value.to_be_bytes()[2..8]);
-        NodeId(bytes)
-    }
-
-    fn to_u64(self) -> u64 {
-        let mut bytes = [0; 8];
-        bytes[2..8].copy_from_slice(&self.0);
-        u64::from_be_bytes(bytes)
     }
 }
 
