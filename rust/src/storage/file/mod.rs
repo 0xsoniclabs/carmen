@@ -9,12 +9,13 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod file_backend;
-mod file_storage_manager;
+pub mod file_storage_manager;
 mod from_to_file;
 mod node_file_storage;
 
 pub use file_backend::*;
+pub(crate) use file_storage_manager::derive_deftly_template_FileStorageManager;
 #[cfg(test)]
-pub use file_storage_manager::FileStorageManager;
-use from_to_file::FromToFile;
+pub use file_storage_manager::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeType};
+pub use from_to_file::FromToFile;
 pub use node_file_storage::NodeFileStorage;

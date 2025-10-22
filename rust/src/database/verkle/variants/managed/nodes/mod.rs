@@ -8,10 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use derive_deftly::Deftly;
+
 use crate::{
     database::verkle::variants::managed::nodes::{
-        empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+        empty::EmptyNode, id::NodeId, inner::InnerNode, leaf::FullLeafNode,
+        sparse_leaf::SparseLeafNode,
     },
+    storage::file::derive_deftly_template_FileStorageManager,
     types::NodeSize,
 };
 
@@ -25,13 +29,17 @@ pub mod sparse_leaf;
 //
 /// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
 /// dictated by the largest variant).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deftly)]
+#[derive_deftly(FileStorageManager)]
 pub enum Node {
     Empty(EmptyNode),
     Inner(Box<InnerNode>),
-    Leaf2(Box<SparseLeafNode<2>>),
+    Leaf2(Box<Leaf2Node>),
     Leaf256(Box<FullLeafNode>),
 }
+
+type Leaf2Node = SparseLeafNode<2>;
+type Leaf256Node = FullLeafNode;
 
 impl Node {
     pub fn to_node_type(&self) -> NodeType {

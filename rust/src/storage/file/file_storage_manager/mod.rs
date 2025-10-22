@@ -8,172 +8,196 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use derive_deftly::define_derive_deftly;
 
-use crate::{
-    database::verkle::variants::managed::{
-        EmptyNode, FullLeafNode, InnerNode, Node, NodeId, NodeType, SparseLeafNode,
-    },
-    storage::{
-        CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage, file::FromToFile,
-    },
-    types::TreeId,
-};
+pub mod checkpoint_data;
+pub mod root_ids_file;
 
-mod checkpoint_data;
-mod root_ids_file;
+define_derive_deftly! {
+    /// This macro is supposed to be used on node enums and generates a FileStorageManager.
+    ///
+    /// The macro expects the following:
+    ///   - The node enum must have the following shape assuming it is named `<NodeName>`:
+    ///     - There must be a variant named `Empty` that contains a type called `Empty<NodeName>`
+    ///     - All other variants must contain boxed types named `<VariantName><NodeName>`
+    ///     ```ignore
+    ///     enum Xx {
+    ///       Empty(EmptyXx),
+    ///       Aa(Box<AaXx>),
+    ///       Bb(Box<BbXx>),
+    ///     }
+    ///     ```
+    ///   - The ID type for this tree must be called `<NodeName>Id` and it must implement
+    ///     `TreeId<NodeType = NodeNameType> + Copy + FromBytes + IntoBytes + Immutable + Send +
+    ///     Sync`.
+    ///   - The node type enum must be called `<NodeName>Type` and its variants must have the same
+    ///     names as the ones of the node enum itself.
+    ///   - The ID type, the node type enum and all variant type have to be in scope at the call/
+    ///     expansion site.
+    ///
+    /// The generated FileStorageManager is named `<NodeName>FileStorageManager` and implements
+    /// `Storage<Id = <NodeName>Id, Item = <NodeName>>`.
+    FileStorageManager for enum:
 
-use checkpoint_data::CheckpointData;
-use root_ids_file::RootIdsFile;
-
-/// A storage manager for Verkle trie nodes for file based storage backends.
-///
-/// In order for concurrent operations to be safe (in that there are not data races) they have to
-/// operate on different [`NodeId`]s.
-#[derive(Debug)]
-pub struct FileStorageManager<S1, S2, S3>
-where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
-{
-    dir: PathBuf,
-    checkpoint: AtomicU64,
-    inner_nodes: S1,
-    leaf_nodes_2: S2,
-    leaf_nodes_256: S3,
-    root_ids_file: RootIdsFile<NodeId>,
+${define MANAGER_TYPE ${paste $ttype FileStorageManager}}
+${define ID ${paste $ttype Id}}
+${define STORAGE_GENERICS
+    $(
+        ${if not(approx_equal($vname, Empty)) {
+            ${paste ${upper_camel_case $vname} Storage},
+        }}
+    )
+}
+${define STORAGE_GENERICS_BOUNDS
+    $(
+        ${if not(approx_equal($vname, Empty)) {
+            ${paste ${upper_camel_case $vname} Storage}: $crate::storage::Storage<Id = u64, Item = ${paste $vname $tname}> + $crate::storage::CheckpointParticipant,
+        }}
+    )
 }
 
-impl<S1, S2, S3> FileStorageManager<S1, S2, S3>
+/// A storage manager for trie nodes for file based storage backends.
+///
+/// In order for concurrent operations to be safe (in that there are not data races) they have to
+/// operate on different node ids.
+#[derive(Debug)]
+pub struct $MANAGER_TYPE<$STORAGE_GENERICS>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    $STORAGE_GENERICS_BOUNDS
 {
-    pub const INNER_NODE_DIR: &str = "inner_node";
-    pub const LEAF_NODE_2_DIR: &str = "leaf_node_2";
-    pub const LEAF_NODE_256_DIR: &str = "leaf_node_256";
+    dir: ::std::path::PathBuf,
+    checkpoint: ::std::sync::atomic::AtomicU64,
+    $(
+        ${if not(approx_equal($vname, Empty)) {
+            ${snake_case $vname}: ${paste ${upper_camel_case $vname} Storage},
+        }}
+    )
+    root_ids_file: $crate::storage::file::file_storage_manager::root_ids_file::RootIdsFile<$ID>,
+}
+
+impl<$STORAGE_GENERICS> $MANAGER_TYPE<$STORAGE_GENERICS>
+where
+    $STORAGE_GENERICS_BOUNDS
+{
+    $(
+        ${if not(approx_equal($vname, Empty)) {
+            pub const ${paste ${shouty_snake_case $vname} _DIR}: &str = std::stringify!(${snake_case $vname});
+        }}
+    )
     pub const COMMITTED_CHECKPOINT_FILE: &str = "committed_checkpoint.bin";
     pub const PREPARED_CHECKPOINT_FILE: &str = "prepared_checkpoint.bin";
     pub const ROOT_IDS_FILE: &str = "root_ids.bin";
 }
 
-impl<S1, S2, S3> Storage for FileStorageManager<S1, S2, S3>
+impl<$STORAGE_GENERICS> $crate::storage::Storage for $MANAGER_TYPE<$STORAGE_GENERICS>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    $STORAGE_GENERICS_BOUNDS
 {
-    type Id = NodeId;
-    type Item = Node;
+    type Id = $ID;
+    type Item = $tname;
 
     /// Opens or creates the file backends for the individual node types in the specified directory.
-    fn open(dir: &Path) -> Result<Self, Error> {
+    fn open(dir: &::std::path::Path) -> Result<Self, $crate::storage::Error> {
         std::fs::create_dir_all(dir)?;
 
         let checkpoint_data =
-            CheckpointData::read_or_init(dir.join(Self::COMMITTED_CHECKPOINT_FILE))?;
+            <$crate::storage::file::file_storage_manager::checkpoint_data::CheckpointData as $crate::storage::file::FromToFile>::read_or_init(dir.join(Self::COMMITTED_CHECKPOINT_FILE))?;
 
-        let inner_nodes = S1::open(dir.join(Self::INNER_NODE_DIR).as_path())?;
-        let leaf_nodes_2 = S2::open(dir.join(Self::LEAF_NODE_2_DIR).as_path())?;
-        let leaf_nodes_256 = S3::open(dir.join(Self::LEAF_NODE_256_DIR).as_path())?;
+        $(
+            ${if not(approx_equal($vname, Empty)) {
+                let ${snake_case $vname} = ${paste ${upper_camel_case $vname} Storage}::open(dir.join(Self::${paste ${shouty_snake_case $vname} _DIR}).as_path())?;
+            }}
+        )
 
         let root_ids_file =
-            RootIdsFile::open(dir.join(Self::ROOT_IDS_FILE), checkpoint_data.root_id_count)?;
+            $crate::storage::file::file_storage_manager::root_ids_file::RootIdsFile::open(dir.join(Self::ROOT_IDS_FILE), checkpoint_data.root_id_count)?;
 
-        inner_nodes.ensure(checkpoint_data.checkpoint_number)?;
-        leaf_nodes_2.ensure(checkpoint_data.checkpoint_number)?;
-        leaf_nodes_256.ensure(checkpoint_data.checkpoint_number)?;
+        $(
+            ${if not(approx_equal($vname, Empty)) {
+                ${snake_case $vname}.ensure(checkpoint_data.checkpoint_number)?;
+            }}
+        )
 
         Ok(Self {
             dir: dir.to_path_buf(),
-            checkpoint: AtomicU64::new(checkpoint_data.checkpoint_number),
-            inner_nodes,
-            leaf_nodes_2,
-            leaf_nodes_256,
+            checkpoint: ::std::sync::atomic::AtomicU64::new(checkpoint_data.checkpoint_number),
+            $(
+                ${if not(approx_equal($vname, Empty)) {
+                    ${snake_case $vname},
+                }}
+            )
             root_ids_file,
         })
     }
 
-    fn get(&self, id: NodeId) -> Result<Node, Error> {
-        let idx = id.to_index();
-        match id.to_node_type().ok_or(Error::InvalidId)? {
-            NodeType::Empty => Ok(Node::Empty(EmptyNode)),
-            NodeType::Inner => {
-                let node = self.inner_nodes.get(idx)?;
-                Ok(Node::Inner(Box::new(node)))
-            }
-            NodeType::Leaf2 => {
-                let node = self.leaf_nodes_2.get(idx)?;
-                Ok(Node::Leaf2(Box::new(node)))
-            }
-            NodeType::Leaf256 => {
-                let node = self.leaf_nodes_256.get(idx)?;
-                Ok(Node::Leaf256(Box::new(node)))
-            }
+    fn get(&self, id: Self::Id) -> Result<Self::Item, $crate::storage::Error> {
+        let idx = $crate::types::TreeId::to_index(id);
+        match $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)? {
+            ${paste $tname Type}::Empty => Ok(Self::Item::Empty(${paste Empty $tname})),
+            $(
+                ${if not(approx_equal($vname, Empty)) {
+                    ${paste $tname Type}::$vname => {
+                        let node = self.${snake_case $vname}.get(idx)?;
+                        Ok(Self::Item::$vname(Box::new(node)))
+                    }
+                }}
+            )
         }
     }
 
-    fn reserve(&self, node: &Node) -> NodeId {
+    fn reserve(&self, node: &Self::Item) -> Self::Id {
         match node {
-            Node::Empty(_) => NodeId::from_idx_and_node_type(0, NodeType::Empty),
-            Node::Inner(node) => {
-                let idx = self.inner_nodes.reserve(node);
-                NodeId::from_idx_and_node_type(idx, NodeType::Inner)
-            }
-            Node::Leaf2(node) => {
-                let idx = self.leaf_nodes_2.reserve(node);
-                NodeId::from_idx_and_node_type(idx, NodeType::Leaf2)
-            }
-            Node::Leaf256(node) => {
-                let idx = self.leaf_nodes_256.reserve(node);
-                NodeId::from_idx_and_node_type(idx, NodeType::Leaf256)
-            }
+            Self::Item::Empty(_) => <Self::Id as $crate::types::TreeId>::from_idx_and_node_type(0, ${paste $tname Type}::Empty),
+            $(
+                ${if not(approx_equal($vname, Empty)) {
+                    Self::Item::$vname(node) => {
+                        let idx = self.${snake_case $vname}.reserve(node);
+                        <Self::Id as $crate::types::TreeId>::from_idx_and_node_type(idx, ${paste $tname Type}::$vname)
+                    }
+                }}
+            )
         }
     }
 
-    fn set(&self, id: NodeId, node: &Node) -> Result<(), Error> {
-        let idx = id.to_index();
-        match (node, id.to_node_type().ok_or(Error::InvalidId)?) {
-            (Node::Empty(_), NodeType::Empty) => Ok(()),
-            (Node::Inner(node), NodeType::Inner) => self.inner_nodes.set(idx, node),
-            (Node::Leaf2(node), NodeType::Leaf2) => self.leaf_nodes_2.set(idx, node),
-            (Node::Leaf256(node), NodeType::Leaf256) => self.leaf_nodes_256.set(idx, node),
-            (Node::Empty(_) | Node::Inner(_) | Node::Leaf2(_) | Node::Leaf256(_), _) => {
-                Err(Error::IdNodeTypeMismatch)
-            }
+    fn set(&self, id: Self::Id, node: &Self::Item) -> Result<(), $crate::storage::Error> {
+        let idx = $crate::types::TreeId::to_index(id);
+        match (node, $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)?) {
+            (Self::Item::Empty(_), ${paste $tname Type}::Empty) => Ok(()),
+            $(
+                ${if not(approx_equal($vname, Empty)) {
+                    ($tname::$vname(node), ${paste $tname Type}::$vname) => self.${snake_case $vname}.set(idx, node),
+                }}
+            )
+            _ => Err($crate::storage::Error::IdNodeTypeMismatch)
         }
     }
 
-    fn delete(&self, id: NodeId) -> Result<(), Error> {
-        let idx = id.to_index();
-        match id.to_node_type().ok_or(Error::InvalidId)? {
-            NodeType::Empty => Ok(()),
-            NodeType::Inner => self.inner_nodes.delete(idx),
-            NodeType::Leaf2 => self.leaf_nodes_2.delete(idx),
-            NodeType::Leaf256 => self.leaf_nodes_256.delete(idx),
+    fn delete(&self, id: Self::Id) -> Result<(), $crate::storage::Error> {
+        let idx = $crate::types::TreeId::to_index(id);
+        match $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)? {
+            ${paste $ttype Type}::Empty => Ok(()),
+            $(
+                ${if not(approx_equal($vname, Empty)) {
+                    ${paste $tname Type}::$vname => self.${snake_case $vname}.delete(idx),
+                }}
+            )
         }
     }
 }
 
-impl<S1, S2, S3> Checkpointable for FileStorageManager<S1, S2, S3>
+impl<$STORAGE_GENERICS> $crate::storage::Checkpointable for $MANAGER_TYPE<$STORAGE_GENERICS>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    $STORAGE_GENERICS_BOUNDS
 {
-    fn checkpoint(&self) -> Result<(), Error> {
-        let current_checkpoint = self.checkpoint.load(Ordering::Acquire);
+    fn checkpoint(&self) -> Result<(), $crate::storage::Error> {
+        let current_checkpoint = self.checkpoint.load(::std::sync::atomic::Ordering::Acquire);
         let new_checkpoint = current_checkpoint + 1;
         let participants = [
-            &self.inner_nodes as &dyn CheckpointParticipant,
-            &self.leaf_nodes_2,
-            &self.leaf_nodes_256,
+            $(
+                ${if not(approx_equal($vname, Empty)) {
+                    &self.${snake_case $vname} as &dyn $crate::storage::CheckpointParticipant,
+                }}
+            )
         ];
         for (i, participant) in participants.iter().enumerate() {
             if let Err(err) = participant.prepare(new_checkpoint) {
@@ -183,73 +207,88 @@ where
                 return Err(err);
             }
         }
-        CheckpointData {
-            checkpoint_number: new_checkpoint,
-            root_id_count: self.root_ids_file.count(),
-        }
-        .write(self.dir.join(Self::PREPARED_CHECKPOINT_FILE))?;
-        fs::rename(
+        $crate::storage::file::FromToFile::write(
+            &$crate::storage::file::file_storage_manager::checkpoint_data::CheckpointData {
+                checkpoint_number: new_checkpoint,
+                root_id_count: self.root_ids_file.count(),
+            },
+            self.dir.join(Self::PREPARED_CHECKPOINT_FILE)
+        )?;
+        ::std::fs::rename(
             self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
             self.dir.join(Self::COMMITTED_CHECKPOINT_FILE),
         )?;
         for participant in participants.iter() {
             participant.commit(new_checkpoint)?;
         }
-        self.checkpoint.store(new_checkpoint, Ordering::Release);
+        self.checkpoint.store(new_checkpoint, ::std::sync::atomic::Ordering::Release);
         Ok(())
     }
 }
 
-impl<S1, S2, S3> RootIdProvider for FileStorageManager<S1, S2, S3>
+impl<$STORAGE_GENERICS> $crate::storage::RootIdProvider for $MANAGER_TYPE<$STORAGE_GENERICS>
 where
-    S1: Storage<Id = u64, Item = InnerNode> + CheckpointParticipant,
-    S2: Storage<Id = u64, Item = SparseLeafNode<2>> + CheckpointParticipant,
-    S3: Storage<Id = u64, Item = FullLeafNode> + CheckpointParticipant,
+    $STORAGE_GENERICS_BOUNDS
 {
-    type Id = NodeId;
+    type Id = $ID;
 
-    fn get_root_id(&self, block_number: u64) -> Result<NodeId, Error> {
+    fn get_root_id(&self, block_number: u64) -> Result<Self::Id, $crate::storage::Error> {
         self.root_ids_file.get(block_number)
     }
 
-    fn set_root_id(&self, block_number: u64, id: NodeId) -> Result<(), Error> {
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> Result<(), $crate::storage::Error> {
         self.root_ids_file.set(block_number, id)
     }
 }
+}
+
+pub(crate) use derive_deftly_template_FileStorageManager;
+#[cfg(test)]
+pub use tests::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeType};
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{
+        fs,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
+    use derive_deftly::Deftly;
     use mockall::{Sequence, predicate::eq};
+    use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-    use super::*;
     use crate::{
-        storage::file::{NodeFileStorage, SeekFile},
-        types::TreeId,
+        storage::{
+            CheckpointParticipant, Checkpointable, Error, Storage,
+            file::{
+                FromToFile, NodeFileStorage, SeekFile,
+                file_storage_manager::{
+                    checkpoint_data::CheckpointData, root_ids_file::RootIdsFile,
+                },
+            },
+        },
+        types::{NodeSize, TreeId},
         utils::test_dir::{Permissions, TestDir},
     };
 
     #[test]
     fn open_creates_directory_and_calls_open_on_all_storages() {
-        type FileStorageManager = super::FileStorageManager<
-            NodeFileStorage<InnerNode, SeekFile>,
-            NodeFileStorage<SparseLeafNode<2>, SeekFile>,
-            NodeFileStorage<FullLeafNode, SeekFile>,
+        type FileStorageManager = TestNodeFileStorageManager<
+            NodeFileStorage<NonEmpty1TestNode, SeekFile>,
+            NodeFileStorage<NonEmpty2TestNode, SeekFile>,
         >;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let storage = FileStorageManager::open(&dir);
         assert!(storage.is_ok());
         let sub_dirs = [
-            FileStorageManager::INNER_NODE_DIR,
-            FileStorageManager::LEAF_NODE_2_DIR,
-            FileStorageManager::LEAF_NODE_256_DIR,
+            FileStorageManager::NON_EMPTY1_DIR,
+            FileStorageManager::NON_EMPTY2_DIR,
         ];
         let files = [
-            NodeFileStorage::<InnerNode, SeekFile>::NODE_STORE_FILE,
-            NodeFileStorage::<InnerNode, SeekFile>::REUSE_LIST_FILE,
-            NodeFileStorage::<InnerNode, SeekFile>::COMMITTED_METADATA_FILE,
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::NODE_STORE_FILE,
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::REUSE_LIST_FILE,
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::COMMITTED_METADATA_FILE,
         ];
         for sub_dir in &sub_dirs {
             assert!(fs::exists(dir.join(sub_dir)).unwrap());
@@ -261,22 +300,21 @@ mod tests {
 
     #[test]
     fn open_opens_existing_files() {
-        type FileStorageManager = super::FileStorageManager<
-            NodeFileStorage<InnerNode, SeekFile>,
-            NodeFileStorage<SparseLeafNode<2>, SeekFile>,
-            NodeFileStorage<FullLeafNode, SeekFile>,
+        type FileStorageManager = TestNodeFileStorageManager<
+            NodeFileStorage<NonEmpty1TestNode, SeekFile>,
+            NodeFileStorage<NonEmpty2TestNode, SeekFile>,
         >;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let sub_dirs = [
-            FileStorageManager::INNER_NODE_DIR,
-            FileStorageManager::LEAF_NODE_2_DIR,
-            FileStorageManager::LEAF_NODE_256_DIR,
+            FileStorageManager::NON_EMPTY1_DIR,
+            FileStorageManager::NON_EMPTY2_DIR,
         ];
         for sub_dir in &sub_dirs {
             fs::create_dir_all(dir.join(sub_dir)).unwrap();
             // because we are not writing any nodes, the node type does not matter
-            NodeFileStorage::<InnerNode, SeekFile>::create_files_for_nodes(&dir, &[], &[]).unwrap();
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::create_files_for_nodes(&dir, &[], &[])
+                .unwrap();
         }
 
         let storage = FileStorageManager::open(&dir);
@@ -285,10 +323,9 @@ mod tests {
 
     #[test]
     fn open_propagates_io_errors() {
-        type FileStorageManager = super::FileStorageManager<
-            MockStorage<InnerNode>,
-            MockStorage<SparseLeafNode<2>>,
-            MockStorage<FullLeafNode>,
+        type FileStorageManager = TestNodeFileStorageManager<
+            MockStorage<NonEmpty1TestNode>,
+            MockStorage<NonEmpty2TestNode>,
         >;
 
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
@@ -302,73 +339,54 @@ mod tests {
     fn get_forwards_to_get_of_corresponding_node_file_storage_depending_on_node_type() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let mut storage = FileStorageManager {
+        let mut storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
-        // Node::Empty
+        // TestNode::Empty
         {
-            // Empty nodes are not stored. Calling get with them returns a (default) empty node.
-            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            assert_eq!(storage.get(empty_node_id).unwrap(), Node::Empty(EmptyNode));
+            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            let node = EmptyTestNode;
+            assert_eq!(storage.get(node_id).unwrap(), TestNode::Empty(node));
         }
 
-        // Node::Inner
+        // TestNode::NonEmpty1
         {
-            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
-            let inner_node = InnerNode::default();
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty1);
+            let node = NonEmpty1TestNode::default();
             storage
-                .inner_nodes
+                .non_empty1
                 .expect_get()
-                .with(eq(inner_node_id.to_index()))
+                .with(eq(node_id.to_index()))
                 .returning({
-                    let inner_node = inner_node.clone();
-                    move |_| Ok(inner_node.clone())
+                    let node = node.clone();
+                    move |_| Ok(node.clone())
                 });
             assert_eq!(
-                storage.get(inner_node_id).unwrap(),
-                Node::Inner(Box::new(inner_node))
+                storage.get(node_id).unwrap(),
+                TestNode::NonEmpty1(Box::new(node))
             );
         }
 
-        // Node::Leaf2
+        // TestNode::NonEmpty2
         {
-            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
-            let leaf_node_2 = SparseLeafNode::default();
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty2);
+            let node = NonEmpty2TestNode::default();
             storage
-                .leaf_nodes_2
+                .non_empty2
                 .expect_get()
-                .with(eq(leaf_node_2_id.to_index()))
+                .with(eq(node_id.to_index()))
                 .returning({
-                    let leaf_node_2 = leaf_node_2.clone();
-                    move |_| Ok(leaf_node_2.clone())
+                    let node = node.clone();
+                    move |_| Ok(node.clone())
                 });
             assert_eq!(
-                storage.get(leaf_node_2_id).unwrap(),
-                Node::Leaf2(Box::new(leaf_node_2))
-            );
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
-            let leaf_node_256 = FullLeafNode::default();
-            storage
-                .leaf_nodes_256
-                .expect_get()
-                .with(eq(leaf_node_256_id.to_index()))
-                .returning({
-                    let leaf_node_256 = leaf_node_256.clone();
-                    move |_| Ok(leaf_node_256.clone())
-                });
-            assert_eq!(
-                storage.get(leaf_node_256_id).unwrap(),
-                Node::Leaf256(Box::new(leaf_node_256))
+                storage.get(node_id).unwrap(),
+                TestNode::NonEmpty2(Box::new(node))
             );
         }
     }
@@ -377,67 +395,51 @@ mod tests {
     fn reserve_forwards_to_reserve_of_corresponding_node_file_storage_depending_on_node_type() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let mut storage = FileStorageManager {
+        let mut storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
-        // Node::Empty
+        // TestNode::Empty
         {
-            // Empty nodes are not stored. Calling reserve with them always returns ID 0.
-            let empty_node_idx = 0;
+            let node_idx = 0;
+            let node = EmptyTestNode;
             assert_eq!(
-                storage.reserve(&Node::Empty(EmptyNode)),
-                NodeId::from_idx_and_node_type(empty_node_idx, NodeType::Empty)
+                storage.reserve(&TestNode::Empty(node)),
+                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::Empty)
             );
         }
 
-        // Node::Inner
+        // TestNode::NonEmpty1
         {
-            let inner_node_idx = 1;
-            let inner_node = InnerNode::default();
+            let node_idx = 1;
+            let node = NonEmpty1TestNode::default();
             storage
-                .inner_nodes
+                .non_empty1
                 .expect_reserve()
-                .with(eq(inner_node.clone()))
-                .returning(move |_| inner_node_idx);
+                .with(eq(node.clone()))
+                .returning(move |_| node_idx);
             assert_eq!(
-                storage.reserve(&Node::Inner(Box::new(inner_node))),
-                NodeId::from_idx_and_node_type(inner_node_idx, NodeType::Inner)
+                storage.reserve(&TestNode::NonEmpty1(Box::new(node))),
+                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::NonEmpty1)
             );
         }
 
-        // Node::Leaf2
+        // TestNode::NonEmpty
         {
-            let leaf_node_2_idx = 2;
-            let leaf_node_2 = SparseLeafNode::<2>::default();
+            let node_idx = 1;
+            let node = NonEmpty2TestNode::default();
             storage
-                .leaf_nodes_2
+                .non_empty2
                 .expect_reserve()
-                .with(eq(leaf_node_2.clone()))
-                .returning(move |_| leaf_node_2_idx);
+                .with(eq(node.clone()))
+                .returning(move |_| node_idx);
             assert_eq!(
-                storage.reserve(&Node::Leaf2(Box::new(leaf_node_2))),
-                NodeId::from_idx_and_node_type(leaf_node_2_idx, NodeType::Leaf2)
-            );
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_idx = 3;
-            let leaf_node_256 = FullLeafNode::default();
-            storage
-                .leaf_nodes_256
-                .expect_reserve()
-                .with(eq(leaf_node_256.clone()))
-                .returning(move |_| leaf_node_256_idx);
-            assert_eq!(
-                storage.reserve(&Node::Leaf256(Box::new(leaf_node_256))),
-                NodeId::from_idx_and_node_type(leaf_node_256_idx, NodeType::Leaf256)
+                storage.reserve(&TestNode::NonEmpty2(Box::new(node))),
+                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::NonEmpty2)
             );
         }
     }
@@ -446,60 +448,46 @@ mod tests {
     fn set_forwards_to_set_of_corresponding_node_file_storage_depending_on_node_type() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let mut storage = FileStorageManager {
+        let mut storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
-        // Node::Empty
+        // TestNode::Empty
         {
-            // Empty nodes are not stored. Calling set with them is a no-op.
-            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            let empty_node = Node::Empty(EmptyNode);
-            assert!(storage.set(empty_node_id, &empty_node).is_ok());
+            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            let node = EmptyTestNode;
+            let node = TestNode::Empty(node);
+            assert!(storage.set(node_id, &node).is_ok());
         }
 
-        // Node::Inner
+        // TestNode::NonEmpty1
         {
-            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
-            let inner_node = InnerNode::default();
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty1);
+            let node = NonEmpty1TestNode::default();
             storage
-                .inner_nodes
+                .non_empty1
                 .expect_set()
-                .with(eq(inner_node_id.to_index()), eq(inner_node.clone()))
+                .with(eq(node_id.to_index()), eq(node.clone()))
                 .returning(move |_, _| Ok(()));
-            let inner_node = Node::Inner(Box::new(inner_node));
-            assert!(storage.set(inner_node_id, &inner_node).is_ok());
+            let node = TestNode::NonEmpty1(Box::new(node));
+            assert!(storage.set(node_id, &node).is_ok());
         }
 
-        // Node::Leaf2
+        // TestNode::NonEmpty2
         {
-            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
-            let leaf_node_2 = SparseLeafNode::default();
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty2);
+            let node = NonEmpty2TestNode::default();
             storage
-                .leaf_nodes_2
+                .non_empty2
                 .expect_set()
-                .with(eq(leaf_node_2_id.to_index()), eq(leaf_node_2.clone()))
+                .with(eq(node_id.to_index()), eq(node.clone()))
                 .returning(move |_, _| Ok(()));
-            let leaf_node_2 = Node::Leaf2(Box::new(leaf_node_2));
-            assert!(storage.set(leaf_node_2_id, &leaf_node_2).is_ok());
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
-            let leaf_node_256 = FullLeafNode::default();
-            storage
-                .leaf_nodes_256
-                .expect_set()
-                .with(eq(leaf_node_256_id.to_index()), eq(leaf_node_256.clone()))
-                .returning(move |_, _| Ok(()));
-            let leaf_node_256 = Node::Leaf256(Box::new(leaf_node_256));
-            assert!(storage.set(leaf_node_256_id, &leaf_node_256).is_ok());
+            let node = TestNode::NonEmpty2(Box::new(node));
+            assert!(storage.set(node_id, &node).is_ok());
         }
     }
 
@@ -507,17 +495,16 @@ mod tests {
     fn set_returns_error_if_node_id_prefix_and_node_type_mismatch() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = FileStorageManager {
+        let storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Leaf2);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty2);
+        let node = TestNode::NonEmpty1(Box::default());
 
         assert!(matches!(
             storage.set(id, &node),
@@ -529,53 +516,40 @@ mod tests {
     fn delete_forwards_to_delete_of_corresponding_node_file_storage_depending_on_node_type() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let mut storage = FileStorageManager {
+        let mut storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(0),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
             root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
-        // Node::Empty
+        // TestNode::Empty
         {
-            // Empty nodes are not stored. Calling delete with them is a no-op.
-            let empty_node_id = NodeId::from_idx_and_node_type(0, NodeType::Empty);
-            assert!(storage.delete(empty_node_id).is_ok());
+            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            assert!(storage.delete(node_id).is_ok());
         }
 
-        // Node::Inner
+        // TestNode::NonEmpty1
         {
-            let inner_node_id = NodeId::from_idx_and_node_type(1, NodeType::Inner);
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty1);
             storage
-                .inner_nodes
+                .non_empty1
                 .expect_delete()
-                .with(eq(inner_node_id.to_index()))
+                .with(eq(node_id.to_index()))
                 .returning(move |_| Ok(()));
-            assert!(storage.delete(inner_node_id).is_ok());
+            assert!(storage.delete(node_id).is_ok());
         }
 
-        // Node::Leaf2
+        // TestNode::NonEmpty2
         {
-            let leaf_node_2_id = NodeId::from_idx_and_node_type(2, NodeType::Leaf2);
+            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty2);
             storage
-                .leaf_nodes_2
+                .non_empty2
                 .expect_delete()
-                .with(eq(leaf_node_2_id.to_index()))
+                .with(eq(node_id.to_index()))
                 .returning(move |_| Ok(()));
-            assert!(storage.delete(leaf_node_2_id).is_ok());
-        }
-
-        // Node::Leaf256
-        {
-            let leaf_node_256_id = NodeId::from_idx_and_node_type(3, NodeType::Leaf256);
-            storage
-                .leaf_nodes_256
-                .expect_delete()
-                .with(eq(leaf_node_256_id.to_index()))
-                .returning(move |_| Ok(()));
-            assert!(storage.delete(leaf_node_256_id).is_ok());
+            assert!(storage.delete(node_id).is_ok());
         }
     }
 
@@ -585,49 +559,36 @@ mod tests {
 
         let old_checkpoint = 1;
 
-        let mut storage = FileStorageManager {
+        let mut storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(old_checkpoint),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
         storage
-            .inner_nodes
+            .non_empty1
             .expect_prepare()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
         storage
-            .leaf_nodes_2
-            .expect_prepare()
-            .returning(|_| Ok(()))
-            .times(1)
-            .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_256
+            .non_empty2
             .expect_prepare()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
 
         storage
-            .inner_nodes
+            .non_empty1
             .expect_commit()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
         storage
-            .leaf_nodes_2
-            .expect_commit()
-            .returning(|_| Ok(()))
-            .times(1)
-            .in_sequence(&mut seq);
-        storage
-            .leaf_nodes_256
+            .non_empty2
             .expect_commit()
             .returning(|_| Ok(()))
             .times(1)
@@ -637,12 +598,12 @@ mod tests {
 
         // The prepared checkpoint file should not exist after a successful checkpoint.
         assert!(!fs::exists(dir.path().join(
-            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
         )).unwrap());
         // The committed checkpoint file should exist and contain the new checkpoint.
         assert_eq!(
             CheckpointData::read_or_init(dir.path().join(
-                FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
             )).unwrap().checkpoint_number,
             old_checkpoint + 1
         );
@@ -663,33 +624,32 @@ mod tests {
             root_id_count: 0,
         };
         old_checkpoint_data.write(dir.path().join(
-            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
         )).unwrap();
 
-        let mut storage = FileStorageManager {
+        let mut storage = TestNodeFileStorageManager {
             dir: dir.path().to_path_buf(),
             checkpoint: AtomicU64::new(old_checkpoint),
-            inner_nodes: MockStorage::new(),
-            leaf_nodes_2: MockStorage::new(),
-            leaf_nodes_256: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
         storage
-            .inner_nodes
+            .non_empty1
             .expect_prepare()
             .returning(|_| Ok(()))
             .times(1)
             .in_sequence(&mut seq);
         storage
-            .leaf_nodes_2
+            .non_empty2
             .expect_prepare()
             .returning(|_| Err(Error::Io(std::io::Error::from(std::io::ErrorKind::Other))))
             .times(1)
             .in_sequence(&mut seq);
         storage
-            .inner_nodes
+            .non_empty1
             .expect_abort()
             .returning(|_| Ok(()))
             .times(1)
@@ -699,12 +659,12 @@ mod tests {
 
         // The prepared checkpoint file should not exist after a failed checkpoint.
         assert!(!fs::exists(dir.path().join(
-            FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
         )).unwrap());
         // The committed checkpoint file should exist and contain the old checkpoint.
         assert_eq!(
             CheckpointData::read_or_init(dir.path().join(
-                FileStorageManager::<MockStorage<_>, MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
             )).unwrap().checkpoint_number,
             old_checkpoint
         );
@@ -729,7 +689,7 @@ mod tests {
             type Id = u64;
             type Item = T;
 
-            fn open(path: &Path) -> Result<Self, Error>
+            fn open(path: &std::path::Path) -> Result<Self, Error>
             where
                 Self: Sized;
 
@@ -742,4 +702,75 @@ mod tests {
             fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
         }
     }
+
+    pub type TestNodeId = [u8; 9];
+
+    impl TreeId for TestNodeId {
+        type NodeType = TestNodeType;
+
+        fn from_idx_and_node_type(idx: u64, node_type: Self::NodeType) -> Self {
+            let upper = match node_type {
+                TestNodeType::Empty => 0x00,
+                TestNodeType::NonEmpty1 => 0x01,
+                TestNodeType::NonEmpty2 => 0x02,
+            };
+            let mut id = [0; 9];
+            id[0] = upper;
+            id[1..].copy_from_slice(&idx.to_be_bytes());
+            id
+        }
+
+        fn to_index(self) -> u64 {
+            let mut idx = [0; 8];
+            idx.copy_from_slice(&self[1..]);
+            u64::from_be_bytes(idx)
+        }
+
+        fn to_node_type(self) -> Option<Self::NodeType> {
+            match self[0] {
+                0x00 => Some(TestNodeType::Empty),
+                0x01 => Some(TestNodeType::NonEmpty1),
+                0x02 => Some(TestNodeType::NonEmpty2),
+                _ => None,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
+    #[derive_deftly(FileStorageManager)]
+    pub enum TestNode {
+        Empty(EmptyTestNode),
+        NonEmpty1(Box<NonEmpty1TestNode>),
+        NonEmpty2(Box<NonEmpty2TestNode>),
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum TestNodeType {
+        Empty,
+        NonEmpty1,
+        NonEmpty2,
+    }
+
+    impl NodeSize for TestNodeType {
+        fn node_byte_size(&self) -> usize {
+            match self {
+                TestNodeType::Empty => size_of::<EmptyTestNode>(),
+                TestNodeType::NonEmpty1 => size_of::<NonEmpty1TestNode>(),
+                TestNodeType::NonEmpty2 => size_of::<NonEmpty2TestNode>(),
+            }
+        }
+
+        fn min_non_empty_node_size() -> usize {
+            size_of::<NonEmpty1TestNode>()
+        }
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+    pub struct EmptyTestNode;
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+    pub struct NonEmpty1TestNode(pub [u8; 16]);
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+    pub struct NonEmpty2TestNode(pub [u8; 32]);
 }
