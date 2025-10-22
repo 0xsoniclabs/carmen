@@ -55,6 +55,9 @@ derive-deftly = "1.3.0"
 # integration with the Tracy hybrid profiler
 tracy-client = { version = "0.18.2", default-features = false }
 
+# parallelism utilities
+rayon = "1.11.0"
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"

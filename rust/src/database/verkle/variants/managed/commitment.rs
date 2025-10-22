@@ -8,8 +8,15 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
+use dashmap::DashMap;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -102,97 +109,101 @@ pub enum VerkleCommitmentInput {
 
 pub fn update_commitments(
     log: &TrieUpdateLog<NodeId>,
-    manager: &impl NodeManager<Id = NodeId, NodeType = Node>,
+    manager: &(impl NodeManager<Id = NodeId, NodeType = Node> + Send + Sync),
 ) -> Result<(), Error> {
     if log.count() == 0 {
         return Ok(());
     }
 
-    let mut previous_commitments = HashMap::new();
+    // TODO: How to set this? Depending on hardware + available parallelism?
+    let num_threads = 2;
+
+    let previous_commitments = DashMap::new();
+
     for level in (0..log.levels()).rev() {
         let dirty_nodes = log.dirty_nodes(level);
-        for id in dirty_nodes.iter() {
-            let mut lock = manager.get_write_access(*id)?;
-            let mut vc = lock.get_commitment();
-            assert_eq!(vc.dirty, 1);
+        let next_idx = AtomicUsize::new(0);
+        rayon::scope(|s| {
+            for _ in 0..num_threads {
+                let previous_commitments = &previous_commitments;
+                let dirty_nodes = &dirty_nodes;
+                let next_idx = &next_idx;
 
-            previous_commitments.insert(*id, vc.commitment);
-
-            match lock.get_commitment_input()? {
-                VerkleCommitmentInput::Leaf(values, stem) => {
-                    // TODO: Consider caching leaf node commitments https://github.com/0xsoniclabs/sonic-admin/issues/386
-                    // vc.commitment = update_leaf_node_commitment(&values, &used_bits, &stem);
-
-                    // let mut c1_changed = false;
-                    // let mut c2_changed = false;
-                    for (i, value) in vc.committed_values.iter().enumerate() {
-                        if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                            continue;
+                s.spawn(move |_| {
+                    let _span = tracy_client::span!("looping over dirty nodes");
+                    let total_nodes = dirty_nodes.len();
+                    loop {
+                        let idx = next_idx.fetch_add(1, Ordering::SeqCst);
+                        if idx >= total_nodes {
+                            break;
                         }
-
-                        let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
-                        let prev_upper = Scalar::from_le_bytes(&value[16..]);
-                        if vc.committed_used_slots[i / 8] & (1 << (i % 8)) != 0 {
-                            prev_lower.set_bit128();
+                        let id = dirty_nodes[idx];
+                        let mut lock = manager.get_write_access(id).unwrap();
+                        let mut vc = lock.get_commitment();
+                        assert_eq!(vc.dirty, 1);
+                        previous_commitments.insert(id, vc.commitment);
+                        match lock.get_commitment_input().unwrap() {
+                            VerkleCommitmentInput::Leaf(values, stem) => {
+                                let _span = tracy_client::span!("update leaf");
+                                for (i, value) in vc.committed_values.iter().enumerate() {
+                                    if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                                        continue;
+                                    }
+                                    let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
+                                    let prev_upper = Scalar::from_le_bytes(&value[16..]);
+                                    if vc.committed_used_slots[i / 8] & (1 << (i % 8)) != 0 {
+                                        prev_lower.set_bit128();
+                                    }
+                                    let mut lower = Scalar::from_le_bytes(&values[i][..16]);
+                                    let upper = Scalar::from_le_bytes(&values[i][16..]);
+                                    lower.set_bit128();
+                                    let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
+                                    c.update(((i * 2) % 256) as u8, prev_lower, lower);
+                                    c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+                                    vc.committed_used_slots[i / 8] |= 1 << (i % 8);
+                                }
+                                vc.committed_values.fill(Value::default());
+                                let combined = [
+                                    Scalar::from(1),
+                                    Scalar::from_le_bytes(&stem),
+                                    vc.c1.to_scalar(),
+                                    vc.c2.to_scalar(),
+                                ];
+                                vc.commitment = Commitment::new(&combined);
+                            }
+                            VerkleCommitmentInput::Inner(children) => {
+                                let _span = tracy_client::span!("update inner");
+                                for (i, child_id) in children.iter().enumerate() {
+                                    if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                                        continue;
+                                    }
+                                    let child_commitment = manager
+                                        .get_read_access(*child_id)
+                                        .unwrap()
+                                        .get_commitment();
+                                    assert_eq!(child_commitment.dirty, 0);
+                                    let prev_commitment = previous_commitments
+                                        .get(child_id)
+                                        .expect("previous commitment should have been set in lower level");
+                                    let prev_commitment = prev_commitment.to_scalar();
+                                    vc.commitment.update(
+                                        i as u8,
+                                        prev_commitment,
+                                        child_commitment.commitment().to_scalar(),
+                                    );
+                                }
+                            }
                         }
-
-                        let mut lower = Scalar::from_le_bytes(&values[i][..16]);
-                        let upper = Scalar::from_le_bytes(&values[i][16..]);
-                        lower.set_bit128();
-
-                        let c = if i < 128 {
-                            // c1_changed = true;
-                            &mut vc.c1
-                        } else {
-                            // c2_changed = true;
-                            &mut vc.c2
-                        };
-                        c.update(((i * 2) % 256) as u8, prev_lower, lower);
-                        c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
-                        vc.committed_used_slots[i / 8] |= 1 << (i % 8);
+                        vc.dirty = 0;
+                        // TODO: Test this (currently not caught by any test!)
+                        vc.changed.fill(0);
+                        lock.set_commitment(vc).unwrap();
                     }
-                    vc.committed_values.fill(Value::default());
-                    vc.changed.fill(0);
-
-                    // if c1_changed {
-                    //     self.c1_scalar = self.c1.to_scalar();
-                    // }
-                    // if c2_changed {
-                    //     self.c2_scalar = self.c2.to_scalar();
-                    // }
-
-                    let combined = [
-                        Scalar::from(1),
-                        Scalar::from_le_bytes(&stem),
-                        vc.c1.to_scalar(),
-                        vc.c2.to_scalar(),
-                    ];
-                    vc.commitment = Commitment::new(&combined);
-                }
-                VerkleCommitmentInput::Inner(children) => {
-                    for (i, child_id) in children.iter().enumerate() {
-                        if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                            continue;
-                        }
-
-                        let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
-                        assert_eq!(child_commitment.dirty, 0);
-                        vc.commitment.update(
-                            i as u8,
-                            previous_commitments[child_id].to_scalar(),
-                            child_commitment.commitment.to_scalar(),
-                        );
-                    }
-                }
+                });
             }
-
-            vc.dirty = 0;
-            // TODO: Test this (currently not caught by any test!)
-            vc.changed.fill(0);
-            lock.set_commitment(vc)?;
-        }
+        });
     }
-    // TODO: Test
+
     log.clear();
     Ok(())
 }
