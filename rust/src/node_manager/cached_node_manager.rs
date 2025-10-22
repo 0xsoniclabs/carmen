@@ -95,7 +95,7 @@ impl<S> CachedNodeManager<S>
 where
     S: Storage + 'static,
     S::Id: Eq + Hash + Copy,
-    S::Item: Default + Clone,
+    S::Item: Default,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity and storage backend.
     pub fn new(capacity: usize, storage: S) -> Self {
@@ -114,7 +114,7 @@ impl<S> NodeManager for CachedNodeManager<S>
 where
     S: Storage + 'static,
     S::Id: Eq + Hash + Copy,
-    S::Item: Default + Clone,
+    S::Item: Default,
 {
     type Id = S::Id;
     type NodeType = S::Item;
