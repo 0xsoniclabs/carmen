@@ -1,3 +1,6 @@
 /target
 # Db
 *.bin
+# Shuttle
+schedule*.txt
+shuttle_permutation_case.bin
