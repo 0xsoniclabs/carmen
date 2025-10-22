@@ -29,10 +29,6 @@ var (
 
 func TestAccountsAreInitiallyUnknown(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		if config.Schema == 6 {
-			t.Skip("Schema 6 does not support account existence checks")
-		}
-
 		account_state, _ := state.Exists(address1)
 		if account_state != false {
 			t.Errorf("Initial account is not unknown, got %v", account_state)
@@ -42,10 +38,6 @@ func TestAccountsAreInitiallyUnknown(t *testing.T) {
 
 func TestAccountsCanBeCreated(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		if config.Schema == 6 {
-			t.Skip("Schema 6 does not support account existence checks")
-		}
-
 		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
 		if account_state != true {
