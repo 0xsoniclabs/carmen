@@ -393,7 +393,7 @@ mod tests {
             assert_eq!(*guard, 789);
         }
 
-        // The evicted key is gone
+        // Evicted key is gone
         let res = cache.get_read_access_or_insert(evicted_element.0, not_found);
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
 
