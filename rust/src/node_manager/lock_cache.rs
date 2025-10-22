@@ -380,7 +380,8 @@ mod tests {
 
         // By default quick-cache would immediately evict key 3.
         // Since we keep a lock on it during get_read_access_or_insert (thereby pinning it), key 1
-        // is evicted instead.
+// Since we keep a lock on it during get_read_access_or_insert (thereby pinning it), one
+// of the other two keys is evicted instead.
         ignore_guard(cache.get_read_access_or_insert(3u32, || Ok(789)));
         assert_eq!(logger.evicted.len(), 1);
         let evicted_element = logger.evicted.iter().next().unwrap();
