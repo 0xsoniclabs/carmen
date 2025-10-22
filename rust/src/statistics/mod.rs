@@ -13,6 +13,33 @@ pub trait TrieVisitor<N> {
     fn visit(&mut self, node: &N, level: u8);
 }
 
+/// Records statistics for the given node in the provided [Statistics] object.
+pub fn record_node_statistics<N>(
+    stats: &mut Statistics,
+    node: &N,
+    level: u8,
+    type_name: &str,
+    count_subnodes: Option<impl Fn(&N) -> u64>,
+) {
+    let level_entry = stats
+        .level_statistics
+        .get_mut(&level)
+        .expect("should only be called from Node::visit");
+    level_entry.node_count += 1;
+    let node_entry = level_entry
+        .node_statistics
+        .entry(type_name.to_string())
+        .or_default();
+    node_entry.node_count += 1;
+    if let Some(get_count) = count_subnodes {
+        let count = get_count(node);
+        *node_entry
+            .node_kinds
+            .entry(format!("{type_name}_{count}"))
+            .or_insert(0) += 1;
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Statistics {
     pub level_statistics: BTreeMap<u8, LevelStatistics>,

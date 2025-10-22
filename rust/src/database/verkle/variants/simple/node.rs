@@ -8,13 +8,15 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::sync::LazyLock;
+
 use crate::{
     database::verkle::{
         compute_commitment::compute_leaf_node_commitment,
         crypto::{Commitment, Scalar},
     },
-    statistics::{Statistics, TrieVisitor},
-    types::{Key, Value},
+    statistics::{Statistics, TrieVisitor, record_node_statistics},
+    types::{Key, NodeSize, Value},
 };
 
 /// A node in the simple in-memory Verkle trie.
@@ -359,7 +361,9 @@ impl TrieVisitor<Node> for Statistics {
         let entry = self.level_statistics.entry(level).or_default();
         entry.node_count += 1;
         match node {
-            Node::Empty => self.visit(&EmptyNode, level), //TODO: this will become a proper node
+            Node::Empty => {
+                record_node_statistics(self, node, level, "Empty", None::<fn(&Node) -> u64>);
+            }
             Node::Inner(inner) => self.visit(inner, level),
             Node::Leaf(leaf) => self.visit(leaf, level),
         }
@@ -392,39 +396,6 @@ impl TrieVisitor<LeafNode> for Statistics {
             "Leaf",
             Some(|n: &LeafNode| n.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
         );
-    }
-}
-
-impl TrieVisitor<EmptyNode> for Statistics {
-    fn visit(&mut self, node: &EmptyNode, level: u8) {
-        record_node_statistics(self, node, level, "Empty", None::<fn(&EmptyNode) -> u64>);
-    }
-}
-
-/// Records statistics for the given node in the provided [Statistics] object.
-fn record_node_statistics<N>(
-    stats: &mut Statistics,
-    node: &N,
-    level: u8,
-    type_name: &str,
-    get_count: Option<impl Fn(&N) -> u64>,
-) {
-    let entry = stats
-        .level_statistics
-        .get_mut(&level)
-        .expect("should only be called from Node::visit");
-    entry.node_count += 1;
-    let node_entry = entry
-        .node_statistics
-        .entry(type_name.to_string())
-        .or_default();
-    node_entry.node_count += 1;
-    if let Some(get_count) = get_count {
-        let count = get_count(node);
-        *node_entry
-            .node_kinds
-            .entry(format!("{type_name}_{count}"))
-            .or_insert(0) += 1;
     }
 }
 
