@@ -1,1 +1,4 @@
 /target
+# Shuttle
+schedule*.txt
+shuttle_permutation_case.bin
