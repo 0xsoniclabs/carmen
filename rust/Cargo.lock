@@ -258,6 +258,7 @@ dependencies = [
  "ipa-multipoint",
  "mockall",
  "quick_cache",
+ "rayon",
  "rstest",
  "rstest_reuse",
  "sha3",
