@@ -8,6 +8,7 @@
 ///     - `none`: do not persist failures.
 ///     - any other value or unset: print failures to stdout.
 #[track_caller]
+#[allow(dead_code)]
 pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
     #[cfg(feature = "shuttle")]
     {
@@ -58,6 +59,7 @@ pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: us
 
 /// Helper function to set the name of the current shuttle task.
 /// No-op if shuttle is not enabled.
+#[allow(dead_code)]
 pub fn set_name_for_shuttle_task(_name: String) {
     #[cfg(feature = "shuttle")]
     shuttle::current::set_name_for_task(shuttle::current::me(), _name);

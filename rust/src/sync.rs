@@ -15,7 +15,11 @@ pub(crate) use std::sync::{
 };
 #[cfg(not(feature = "shuttle"))]
 #[cfg(test)]
-pub(crate) use std::sync::{Barrier, RwLockReadGuard, RwLockWriteGuard};
+pub(crate) use std::{
+    hint,
+    sync::{Barrier, RwLockReadGuard, RwLockWriteGuard},
+    thread,
+};
 
 #[cfg(feature = "shuttle")]
 #[allow(unused_imports)]
