@@ -8,15 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::LazyLock;
-
 use crate::{
-    database::verkle::{
-        compute_commitment::compute_leaf_node_commitment,
-        crypto::{Commitment, Scalar},
-    },
-    statistics::{Statistics, TrieVisitor, record_node_statistics},
-    types::{Key, NodeSize, Value},
+    database::verkle::crypto::{Commitment, Scalar},
+    statistics::{NodeStatisticVisitor, TrieVisitor},
+    types::{Key, Value},
 };
 
 /// A node in the simple in-memory Verkle trie.
@@ -356,44 +351,34 @@ impl LeafNode {
     }
 }
 
-impl TrieVisitor<Node> for Statistics {
+impl TrieVisitor<Node> for NodeStatisticVisitor {
     fn visit(&mut self, node: &Node, level: u8) {
         match node {
             Node::Empty => {
-                record_node_statistics(self, node, level, "Empty", None::<fn(&Node) -> u64>);
+                self.record_node_statistics(node, level, "Empty", None::<fn(&Node) -> u64>);
             }
-            Node::Inner(inner) => self.visit(inner, level),
-            Node::Leaf(leaf) => self.visit(leaf, level),
+            Node::Leaf(node) => {
+                self.record_node_statistics(
+                    node,
+                    level,
+                    "Leaf",
+                    Some(|n: &LeafNode| n.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
+                );
+            }
+            Node::Inner(node) => {
+                self.record_node_statistics(
+                    node,
+                    level,
+                    "Inner",
+                    Some(|n: &InnerNode| {
+                        n.children
+                            .iter()
+                            .filter(|c| !matches!(c, Node::Empty))
+                            .count() as u64
+                    }),
+                );
+            }
         }
-    }
-}
-
-impl TrieVisitor<InnerNode> for Statistics {
-    fn visit(&mut self, node: &InnerNode, level: u8) {
-        record_node_statistics(
-            self,
-            node,
-            level,
-            "Inner",
-            Some(|n: &InnerNode| {
-                n.children
-                    .iter()
-                    .filter(|c| !matches!(c, Node::Empty))
-                    .count() as u64
-            }),
-        );
-    }
-}
-
-impl TrieVisitor<LeafNode> for Statistics {
-    fn visit(&mut self, node: &LeafNode, level: u8) {
-        record_node_statistics(
-            self,
-            node,
-            level,
-            "Leaf",
-            Some(|n: &LeafNode| n.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
-        );
     }
 }
 

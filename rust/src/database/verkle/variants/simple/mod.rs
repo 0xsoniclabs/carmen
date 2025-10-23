@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use crate::{
     database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
     error::Error,
-    statistics::{Statistics, TrieStatistics},
+    statistics::{NodeStatisticVisitor, Statistics, TrieStatistics},
     types::{Key, Value},
 };
 
@@ -42,9 +42,9 @@ impl SimpleInMemoryVerkleTrie {
 
 impl TrieStatistics for SimpleInMemoryVerkleTrie {
     fn get_statistics(&self) -> Statistics {
-        let mut stats = Statistics::default();
-        self.root.lock().unwrap().accept(&mut stats, 0);
-        stats
+        let mut visitor = NodeStatisticVisitor::default();
+        self.root.lock().unwrap().accept(&mut visitor, 0);
+        visitor.statistics
     }
 }
 

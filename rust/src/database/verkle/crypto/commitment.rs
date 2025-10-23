@@ -63,11 +63,11 @@ impl Committer for AggressiveCommitter {
 }
 
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
-static COMMITTER: LazyLock<DefaultCommitter> = LazyLock::new(|| {
-    // static COMMITTER: LazyLock<AggressiveCommitter> = LazyLock::new(|| {
+// static COMMITTER: LazyLock<DefaultCommitter> = LazyLock::new(|| {
+static COMMITTER: LazyLock<AggressiveCommitter> = LazyLock::new(|| {
     // eprintln!("initializing default committer");
-    DefaultCommitter::new(&CRS.G)
-    // AggressiveCommitter::new(&CRS.G)
+    // DefaultCommitter::new(&CRS.G)
+    AggressiveCommitter::new(&CRS.G)
 });
 
 impl Commitment {
