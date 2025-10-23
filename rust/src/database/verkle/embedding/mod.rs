@@ -10,7 +10,10 @@
 
 pub mod code;
 
+use std::{convert::Infallible, sync::LazyLock};
+
 use crypto_bigint::U256;
+use quick_cache::sync::Cache;
 
 use crate::{
     database::verkle::crypto::{Commitment, Scalar},
@@ -66,33 +69,46 @@ pub fn get_storage_key(address: &Address, key: &Key) -> Key {
     get_trie_key(address, &tree_index, suffix)
 }
 
-/// Computes the Verkle trie key for the given address, tree index, and sub index.
+/// Retries the Verkle trie key for the given address, tree index, and sub index from a cache or
+/// computes it if it is not cached.
 ///
 /// The key is computed by:
 ///   - `C = Commit([2+256*64, address_low, address_high, tree_index_low, tree_index_high])`
 ///   - `H = Hash(C)`
 ///   - `K = append(H[..31], subIndex)`
 fn get_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
-    // Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
+    fn compute_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
+        // Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
 
-    let mut expanded = [0u8; 32];
-    expanded[12..].copy_from_slice(address);
+        let mut expanded = [0u8; 32];
+        expanded[12..].copy_from_slice(address);
 
-    let mut values = [Scalar::zero(); 5];
-    values[0] = Scalar::from(2 + 256 * 64);
-    values[1] = Scalar::from_le_bytes(&expanded[..16]);
-    values[2] = Scalar::from_le_bytes(&expanded[16..]);
+        let mut values = [Scalar::zero(); 5];
+        values[0] = Scalar::from(2 + 256 * 64);
+        values[1] = Scalar::from_le_bytes(&expanded[..16]);
+        values[2] = Scalar::from_le_bytes(&expanded[16..]);
 
-    let index = tree_index.to_le_bytes();
-    values[3] = Scalar::from_le_bytes(&index[..16]);
-    values[4] = Scalar::from_le_bytes(&index[16..]);
+        let index = tree_index.to_le_bytes();
+        values[3] = Scalar::from_le_bytes(&index[..16]);
+        values[4] = Scalar::from_le_bytes(&index[16..]);
 
-    let hash = Commitment::new(&values).hash();
+        let hash = Commitment::new(&values).hash();
 
-    let mut result: Key = [0; 32];
-    result[..31].copy_from_slice(&hash[..31]);
-    result[31] = sub_index;
-    result
+        let mut result: Key = [0; 32];
+        result[..31].copy_from_slice(&hash[..31]);
+        result[31] = sub_index;
+        result
+    }
+
+    const EMBEDDING_CACHE_SIZE: usize = 1_000_000;
+    static EMBEDDING_CACHE: LazyLock<Cache<(Address, U256, u8), Key>> =
+        LazyLock::new(|| Cache::new(EMBEDDING_CACHE_SIZE));
+
+    EMBEDDING_CACHE
+        .get_or_insert_with(&(*address, *tree_index, sub_index), || {
+            Ok::<_, Infallible>(compute_trie_key(address, tree_index, sub_index))
+        })
+        .unwrap() // this cannot fail
 }
 
 #[cfg(test)]
