@@ -80,8 +80,7 @@ where
             metadata.frozen_reuse_indices,
         )?;
         if reuse_list_file
-            .as_slice()
-            .iter()
+            .all_indices()
             .any(|&idx| idx >= metadata.frozen_nodes)
         {
             return Err(Error::DatabaseCorruption);
@@ -117,7 +116,9 @@ where
 
     fn get(&self, idx: Self::Id) -> Result<Self::Item, Error> {
         let offset = idx * size_of::<Self::Item>() as u64;
-        if self.node_file.len()? < offset + size_of::<T>() as u64 {
+        if self.node_file.len()? < offset + size_of::<T>() as u64
+            || self.reuse_list_file.lock().unwrap().contains(idx)
+        {
             return Err(Error::NotFound);
         }
         // this is hopefully optimized away
@@ -135,7 +136,9 @@ where
     }
 
     fn set(&self, idx: Self::Id, node: &Self::Item) -> Result<(), Error> {
-        if idx >= self.next_idx.load(Ordering::Relaxed) {
+        if idx >= self.next_idx.load(Ordering::Relaxed)
+            || self.reuse_list_file.lock().unwrap().contains(idx)
+        {
             return Err(Error::NotFound);
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
             return Err(Error::Frozen);
@@ -146,7 +149,9 @@ where
     }
 
     fn delete(&self, idx: Self::Id) -> Result<(), Error> {
-        if idx >= self.next_idx.load(Ordering::Relaxed) {
+        if idx >= self.next_idx.load(Ordering::Relaxed)
+            || self.reuse_list_file.lock().unwrap().contains(idx)
+        {
             Err(Error::NotFound)
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
             Err(Error::Frozen)
@@ -175,9 +180,8 @@ where
 
         self.node_file.flush()?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
-        reuse_list_file.write()?;
-        reuse_list_file.freeze_all();
-        let frozen_reuse_indices = reuse_list_file.count();
+        reuse_list_file.freeze_temporarily_and_write_to_disk()?;
+        let frozen_reuse_indices = reuse_list_file.frozen_count();
 
         let new = NodeFileStorageMetadata {
             checkpoint,
@@ -199,6 +203,7 @@ where
         if checkpoint != prepared_metadata.checkpoint {
             return Err(Error::Checkpoint);
         }
+        self.reuse_list_file.lock().unwrap().freeze_permanently();
         fs::rename(&self.prepared_metadata_path, &self.commited_metadata_path)?;
         self.checkpoint.store(checkpoint, Ordering::Release);
         Ok(())
@@ -211,10 +216,11 @@ where
         fs::remove_file(&self.prepared_metadata_path)?;
         let committed_metadata =
             NodeFileStorageMetadata::read_or_init(&self.commited_metadata_path)?;
-        self.reuse_list_file
-            .lock()
-            .unwrap()
-            .set_frozen_count(committed_metadata.frozen_reuse_indices as usize);
+        let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
+        reuse_list_file.unfreeze_temp();
+        if reuse_list_file.frozen_count() != committed_metadata.frozen_reuse_indices as usize {
+            return Err(Error::Checkpoint);
+        }
         *self.metadata.write().unwrap() = committed_metadata;
         Ok(())
     }
@@ -306,18 +312,42 @@ mod tests {
     }
 
     #[test]
-    fn get_reads_data_if_index_in_bounds() {
+    fn get_reads_data_when_index_in_bounds_and_not_in_reuse_list() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        write_metadata(&dir, 0, 2, 0);
-        write_reuse_list(&dir, &[]);
-        write_nodes(&dir, &[[0; 32], [1; 32]]);
+        write_metadata(&dir, 0, 3, 1);
+        write_reuse_list(&dir, &[1]);
+        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32]]);
 
         let storage = NodeFileStorage::open(&dir).unwrap();
 
         assert_eq!(storage.get(0).unwrap(), [0; 32]);
-        assert_eq!(storage.get(1).unwrap(), [1; 32]);
-        assert!(matches!(storage.get(2).unwrap_err(), Error::NotFound));
+        assert!(matches!(storage.get(1).unwrap_err(), Error::NotFound)); // in reuse list
+        assert_eq!(storage.get(2).unwrap(), [2; 32]);
+        assert!(matches!(storage.get(3).unwrap_err(), Error::NotFound)); // out of bounds
+    }
+
+    #[test]
+    fn get_returns_error_when_index_larger_than_highest_assigned_index() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = NodeFileStorage::open(&dir).unwrap();
+        assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
+
+        assert!(matches!(storage.get(0).unwrap_err(), Error::NotFound)); // in reuse list
+    }
+
+    #[test]
+    fn get_returns_error_when_index_in_reuse_list() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        write_metadata(&dir, 0, 1, 1);
+        write_reuse_list(&dir, &[0]);
+        write_nodes(&dir, &[[0; 32]]);
+
+        let storage = NodeFileStorage::open(&dir).unwrap();
+
+        assert!(matches!(storage.get(0).unwrap_err(), Error::NotFound)); // in reuse list
     }
 
     #[test]
@@ -400,6 +430,7 @@ mod tests {
         let storage = NodeFileStorage::open(&dir).unwrap();
         storage.next_idx.store(1, Ordering::Relaxed);
         storage.metadata.write().unwrap().frozen_nodes = 1;
+
         assert!(matches!(
             storage.set(0, &[0; 32]).unwrap_err(),
             Error::Frozen
@@ -407,10 +438,26 @@ mod tests {
     }
 
     #[test]
-    fn set_returns_error_if_index_out_of_bounds() {
+    fn set_returns_error_when_updating_index_in_reuse_list() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let storage = NodeFileStorage::open(&dir).unwrap();
+        storage.next_idx.store(1, Ordering::Relaxed);
+        storage.reuse_list_file.lock().unwrap().push(0);
+
+        assert!(matches!(
+            storage.set(0, &[0; 32]).unwrap_err(),
+            Error::NotFound
+        ));
+    }
+
+    #[test]
+    fn set_returns_error_if_index_larger_than_highest_assigned_index() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = NodeFileStorage::open(&dir).unwrap();
+        assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
+
         assert!(matches!(
             storage.set(0, &[0; 32]).unwrap_err(),
             Error::NotFound
@@ -446,8 +493,22 @@ mod tests {
     }
 
     #[test]
-    fn delete_returns_error_if_index_out_of_bounds() {
+    fn delete_returns_error_if_index_larger_than_highest_assigned_index() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = NodeFileStorage::open(&dir).unwrap();
+        assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
+
+        assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
+    }
+
+    #[test]
+    fn delete_returns_error_if_index_in_reuse_list() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        write_metadata(&dir, 0, 1, 1);
+        write_reuse_list(&dir, &[0]);
+        write_nodes(&dir, &[[0; 32]]);
 
         let storage = NodeFileStorage::open(&dir).unwrap();
         assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
@@ -660,7 +721,7 @@ mod tests {
 
         let old_metadata = NodeFileStorageMetadata {
             checkpoint: 1,
-            frozen_nodes: 1,
+            frozen_nodes: 2,
             frozen_reuse_indices: 1,
         };
 
@@ -670,12 +731,12 @@ mod tests {
             old_metadata.frozen_nodes,
             old_metadata.frozen_reuse_indices,
         );
-        write_reuse_list(&dir, &[0, 1]); // one frozen + one new
-        write_nodes(&dir, &[[0; 32], [1; 32]]); // one frozen + one new
+        write_reuse_list(&dir, &[0, 2]); // one frozen + one new
+        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32], [3; 32]]); // two frozen + one new
 
         let prepared_metadata = NodeFileStorageMetadata {
             checkpoint: 2,
-            frozen_nodes: 2,
+            frozen_nodes: 4,
             frozen_reuse_indices: 2,
         };
 
@@ -691,7 +752,7 @@ mod tests {
             ),
             checkpoint: AtomicU64::new(1),
             metadata: RwLock::new(prepared_metadata),
-            next_idx: AtomicU64::new(2),
+            next_idx: AtomicU64::new(4),
             _node_type: PhantomData,
         };
 
@@ -713,9 +774,10 @@ mod tests {
             old_metadata.frozen_reuse_indices as usize
         );
         assert_eq!(*storage.metadata.read().unwrap(), old_metadata);
-        // Uncommitted data remains available
-        assert_eq!(storage.get(0).unwrap(), [0; 32]);
+        // Committed data remains available
         assert_eq!(storage.get(1).unwrap(), [1; 32]);
+        // Uncommitted data becomes modifiable again
+        assert!(storage.set(3, &[3; 32]).is_ok());
     }
 
     impl<T, F> super::NodeFileStorage<T, F>
