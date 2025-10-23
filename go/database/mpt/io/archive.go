@@ -225,6 +225,10 @@ func ImportArchiveWithConfig(logger *Log, directory string, in io.Reader, nodeCo
 }
 
 func ImportLiveAndArchive(logger *Log, directory string, in io.Reader) error {
+	return ImportLiveAndArchiveWithConfig(logger, directory, in, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+}
+
+func ImportLiveAndArchiveWithConfig(logger *Log, directory string, in io.Reader, nodeConfig mpt.NodeCacheConfig, archiveConfig mpt.ArchiveConfig) error {
 	// check that the destination directory is an empty directory
 	if err := checkEmptyDirectory(directory); err != nil {
 		return err
