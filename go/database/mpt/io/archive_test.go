@@ -179,7 +179,7 @@ func TestIO_LiveAndArchive_Import_IncorrectMagicNumberIsNoticed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot write magic number: %v", err)
 	}
-	err = importArchive(nil, t.TempDir(), t.TempDir(), b, mpt.NodeCacheConfig{})
+	err = importArchive(nil, t.TempDir(), t.TempDir(), b, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 	if err == nil {
 		t.Fatal("import must fail")
 	}

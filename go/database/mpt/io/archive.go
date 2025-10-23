@@ -58,10 +58,10 @@ var archiveMagicNumber []byte = []byte("Fantom-Archive-State")
 const archiveFormatVersion = byte(1)
 
 func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Writer) error {
-	return ExportArchiveWithConfig(ctx, logger, directory, out, mpt.NodeCacheConfig{})
+	return ExportArchiveWithConfig(ctx, logger, directory, out, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 }
 
-func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string, out io.Writer, nodeConfig mpt.NodeCacheConfig) error {
+func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string, out io.Writer, nodeConfig mpt.NodeCacheConfig, archiveConfig mpt.ArchiveConfig) error {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -72,7 +72,7 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 	}
 
 	logger.Printf("opening archive: %s", directory)
-	archive, err := mpt.OpenArchiveTrie(directory, info.Config, nodeConfig, mpt.ArchiveConfig{})
+	archive, err := mpt.OpenArchiveTrie(directory, info.Config, nodeConfig, archiveConfig)
 	if err != nil {
 		return err
 	}
@@ -209,17 +209,17 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 }
 
 func ImportArchive(logger *Log, directory string, in io.Reader) error {
-	return ImportArchiveWithConfig(logger, directory, in, mpt.NodeCacheConfig{})
+	return ImportArchiveWithConfig(logger, directory, in, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 }
 
-func ImportArchiveWithConfig(logger *Log, directory string, in io.Reader, nodeConfig mpt.NodeCacheConfig) error {
+func ImportArchiveWithConfig(logger *Log, directory string, in io.Reader, nodeConfig mpt.NodeCacheConfig, archiveConfig mpt.ArchiveConfig) error {
 	// check that the destination directory is an empty directory
 	if err := checkEmptyDirectory(directory); err != nil {
 		return err
 	}
 	liveDbDir := path.Join(directory, "tmp-live-db")
 	return errors.Join(
-		importArchive(logger, liveDbDir, directory, in, nodeConfig),
+		importArchive(logger, liveDbDir, directory, in, nodeConfig, archiveConfig),
 		os.RemoveAll(liveDbDir), // live db is deleted at the end
 	)
 }
@@ -231,10 +231,10 @@ func ImportLiveAndArchive(logger *Log, directory string, in io.Reader) error {
 	}
 	liveDbDir := path.Join(directory, "live")
 	archiveDbDir := path.Join(directory, "archive")
-	return importArchive(logger, liveDbDir, archiveDbDir, in, mpt.NodeCacheConfig{})
+	return importArchive(logger, liveDbDir, archiveDbDir, in, nodeConfig, archiveConfig)
 }
 
-func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader, nodeConfig mpt.NodeCacheConfig) (err error) {
+func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader, nodeConfig mpt.NodeCacheConfig, archiveConfig mpt.ArchiveConfig) (err error) {
 	// Start by checking the magic number.
 	buffer := make([]byte, len(archiveMagicNumber))
 	if _, err := io.ReadFull(in, buffer); err != nil {
@@ -267,7 +267,7 @@ func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader, no
 	}()
 
 	// Create an empty archive.
-	archive, err := mpt.OpenArchiveTrie(archiveDbDir, mpt.S5ArchiveConfig, nodeConfig, mpt.ArchiveConfig{})
+	archive, err := mpt.OpenArchiveTrie(archiveDbDir, mpt.S5ArchiveConfig, nodeConfig, archiveConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create empty state: %w", err)
 	}
