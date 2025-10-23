@@ -22,19 +22,28 @@ import (
 func TestConfigurations_ContainGoAndCppImplementations(t *testing.T) {
 	goSeen := false
 	cppSeen := false
+	goS6seen := false
+
 	for _, config := range experimental.GetDatabaseConfigurations() {
 		if strings.HasPrefix(string(config.Variant), "go") {
 			goSeen = true
+			if config.Schema == 6 {
+				goS6seen = true
+			}
 		}
 		if strings.HasPrefix(string(config.Variant), "cpp") {
 			cppSeen = true
 		}
+
 	}
 	if !goSeen {
 		t.Errorf("missing Go based implementations")
 	}
 	if !cppSeen {
 		t.Errorf("missing C++ based implementations")
+	}
+	if !goS6seen {
+		t.Errorf("missing Go based Verkle Trie (schema 6) implementation")
 	}
 }
 

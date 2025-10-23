@@ -16,6 +16,7 @@ import (
 
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
+	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
 // GetDatabaseConfigurations returns a list of experimental database configurations

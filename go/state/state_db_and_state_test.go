@@ -26,6 +26,7 @@ import (
 
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
+	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
 func TestCarmen_CanHandleMaximumBalance(t *testing.T) {

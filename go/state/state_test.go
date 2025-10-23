@@ -29,6 +29,7 @@ import (
 	"golang.org/x/exp/maps"
 
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
+	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
 var (

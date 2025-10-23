@@ -20,6 +20,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/state"
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
+	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
 func TestStateConfigs_ContainsConfigurations(t *testing.T) {

@@ -26,6 +26,8 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"go.uber.org/mock/gomock"
+
+	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
 var (
