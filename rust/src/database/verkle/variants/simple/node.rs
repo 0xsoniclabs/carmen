@@ -358,8 +358,6 @@ impl LeafNode {
 
 impl TrieVisitor<Node> for Statistics {
     fn visit(&mut self, node: &Node, level: u8) {
-        let entry = self.level_statistics.entry(level).or_default();
-        entry.node_count += 1;
         match node {
             Node::Empty => {
                 record_node_statistics(self, node, level, "Empty", None::<fn(&Node) -> u64>);

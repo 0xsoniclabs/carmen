@@ -21,10 +21,7 @@ pub fn record_node_statistics<N>(
     type_name: &str,
     count_subnodes: Option<impl Fn(&N) -> u64>,
 ) {
-    let level_entry = stats
-        .level_statistics
-        .get_mut(&level)
-        .expect("should only be called from Node::visit");
+    let level_entry = stats.level_statistics.entry(level).or_default();
     level_entry.node_count += 1;
     let node_entry = level_entry
         .node_statistics
@@ -43,20 +40,17 @@ pub fn record_node_statistics<N>(
 #[derive(Default, Clone, Debug)]
 pub struct Statistics {
     pub level_statistics: BTreeMap<u8, LevelStatistics>,
-    pub byte_size: u64,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct LevelStatistics {
     pub node_count: u64,
-    pub byte_size: u64,
     pub node_statistics: BTreeMap<String, NodeStatistics>,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct NodeStatistics {
     pub node_count: u64,
-    pub byte_size: u64,
     pub node_kinds: BTreeMap<String, u64>,
 }
 
