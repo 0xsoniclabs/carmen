@@ -13,12 +13,13 @@ package io
 import (
 	"bytes"
 	"context"
-	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"path"
 	"strings"
 	"testing"
+
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/mpt"
 )
 
 func TestIO_Archive_ExportAndImport(t *testing.T) {
@@ -178,7 +179,7 @@ func TestIO_LiveAndArchive_Import_IncorrectMagicNumberIsNoticed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot write magic number: %v", err)
 	}
-	err = importArchive(nil, t.TempDir(), t.TempDir(), b)
+	err = importArchive(nil, t.TempDir(), t.TempDir(), b, mpt.NodeCacheConfig{})
 	if err == nil {
 		t.Fatal("import must fail")
 	}
