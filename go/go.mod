@@ -10,9 +10,10 @@
 
 module github.com/0xsoniclabs/carmen/go
 
-go 1.24.0
+go 1.24.2
 
 require (
+	github.com/0xsoniclabs/tracy v0.0.0-20251027125423-00a5ab7968fb
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a
 	github.com/ethereum/go-ethereum v1.16.5
 	github.com/ethereum/go-verkle v0.2.2

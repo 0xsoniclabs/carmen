@@ -41,10 +41,12 @@ impl SimpleInMemoryVerkleTrie {
 
 impl VerkleTrie for SimpleInMemoryVerkleTrie {
     fn lookup(&self, key: &Key) -> Result<Value, Error> {
+        let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::lookup");
         Ok(self.root.lock().unwrap().lookup(key, 0))
     }
 
     fn store(&self, key: &Key, value: &Value) -> Result<(), Error> {
+        let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::store");
         let mut root_lock = self.root.lock().unwrap();
         let root = std::mem::replace(&mut *root_lock, Node::Empty);
         *root_lock = root.store(key, 0, value);
@@ -52,6 +54,7 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     }
 
     fn commit(&self) -> Result<Commitment, Error> {
+        let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::commit");
         Ok(self.root.lock().unwrap().commit())
     }
 }
