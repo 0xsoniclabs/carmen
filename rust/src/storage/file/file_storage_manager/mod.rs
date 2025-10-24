@@ -27,11 +27,11 @@ define_derive_deftly! {
     ///       Bb(Box<BbXx>),
     ///     }
     ///     ```
+    ///   - The node type enum must be called `<NodeName>Type` and its variants must have the same
+    ///     names as the ones of the node enum itself.
     ///   - The ID type for this tree must be called `<NodeName>Id` and it must implement
     ///     `TreeId<NodeType = NodeNameType> + Copy + FromBytes + IntoBytes + Immutable + Send +
     ///     Sync`.
-    ///   - The node type enum must be called `<NodeName>Type` and its variants must have the same
-    ///     names as the ones of the node enum itself.
     ///   - The ID type, the node type enum and all variant type have to be in scope at the call/
     ///     expansion site.
     ///

@@ -35,7 +35,7 @@ pub enum Node {
     Empty(EmptyNode),
     Inner(Box<InnerNode>),
     Leaf2(Box<Leaf2Node>),
-    Leaf256(Box<FullLeafNode>),
+    Leaf256(Box<Leaf256Node>),
 }
 
 type Leaf2Node = SparseLeafNode<2>;
