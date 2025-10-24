@@ -244,8 +244,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        database::verkle::variants::managed::{Node, NodeId, NodeType},
-        storage::file::{FileStorageManager, NodeFileStorage, SeekFile},
+        storage::file::{
+            NodeFileStorage, SeekFile, TestNode, TestNodeFileStorageManager, TestNodeId,
+            TestNodeType,
+        },
         types::TreeId,
         utils::test_dir::{Permissions, TestDir},
     };
@@ -262,11 +264,7 @@ mod tests {
         //     -> A NodeFileStorage for each node type (InnerNode, SparseLeafNode<N>, ...)
         //       -> SeekFile
         StorageWithFlushBuffer::<
-            FileStorageManager<
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-            >,
+            TestNodeFileStorageManager<NodeFileStorage<_, SeekFile>, NodeFileStorage<_, SeekFile>>,
         >::open(&dir)
         .unwrap();
     }
@@ -278,22 +276,17 @@ mod tests {
         // creates the mocks using calls to `open` on the mock type, but the mocks have no
         // expectations set up.
         let storage = StorageWithFlushBuffer::<
-            FileStorageManager<
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-                NodeFileStorage<_, SeekFile>,
-            >,
+            TestNodeFileStorageManager<NodeFileStorage<_, SeekFile>, NodeFileStorage<_, SeekFile>>,
         >::open(&dir)
         .unwrap();
 
         // The node store files should be locked while opened
         let file = File::open(
             dir.join(
-                FileStorageManager::<
+                TestNodeFileStorageManager::<
                     NodeFileStorage<_, SeekFile>,
                     NodeFileStorage<_, SeekFile>,
-                    NodeFileStorage<_, SeekFile>,
-                >::INNER_NODE_DIR,
+                >::NON_EMPTY1_DIR,
             )
             .join(NodeFileStorage::<u8, SeekFile>::NODE_STORE_FILE),
         )
@@ -320,14 +313,14 @@ mod tests {
             },
         };
 
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let node = TestNode::NonEmpty1(Box::default());
 
         storage.flush_buffer.insert(id, Op::Set(node.clone()));
 
         let result = storage.get(id).unwrap();
         assert_eq!(result, node);
-        // Node is kept for eventual flush.
+        // TestNode is kept for eventual flush.
         assert!(storage.flush_buffer.get(&id).is_some());
     }
 
@@ -342,7 +335,7 @@ mod tests {
             },
         };
 
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
         storage.flush_buffer.insert(id, Op::Delete);
 
         let result = storage.get(id);
@@ -351,8 +344,8 @@ mod tests {
 
     #[test]
     fn get_returns_node_from_storage_if_not_in_buffer() {
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let node = TestNode::NonEmpty1(Box::default());
 
         let mut mock_storage = MockStorage::new();
         mock_storage.expect_get().with(eq(id)).returning({
@@ -375,8 +368,8 @@ mod tests {
 
     #[test]
     fn reserve_retrieves_id_from_underlying_storage_layer_and_removes_from_buffer() {
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let node = TestNode::NonEmpty1(Box::default());
 
         let mut mock_storage = MockStorage::new();
         mock_storage
@@ -400,8 +393,8 @@ mod tests {
 
     #[test]
     fn set_inserts_set_op_into_buffer() {
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let node = TestNode::NonEmpty1(Box::default());
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -423,7 +416,7 @@ mod tests {
 
     #[test]
     fn delete_inserts_delete_op_into_buffer() {
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -445,8 +438,8 @@ mod tests {
 
     #[test]
     fn checkpoint_waits_until_buffer_is_empty_then_calls_checkpoint_on_underlying_storage_layer() {
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let node = TestNode::NonEmpty1(Box::default());
 
         let mut mock_storage = MockStorage::new();
         mock_storage
@@ -545,8 +538,8 @@ mod tests {
             std::thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
         }];
 
-        let id = NodeId::from_idx_and_node_type(0, NodeType::Inner);
-        let node = Node::Inner(Box::default());
+        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let node = TestNode::NonEmpty1(Box::default());
 
         flush_buffer.insert(id, Op::Set(node.clone()));
 
@@ -601,8 +594,8 @@ mod tests {
         }
 
         impl Storage for Storage {
-            type Id = NodeId;
-            type Item = Node;
+            type Id = TestNodeId;
+            type Item = TestNode;
 
             fn open(_path: &Path) -> Result<Self, Error>;
 

@@ -45,6 +45,9 @@ ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle.git", rev 
 verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle.git", rev = "e27b8b4" }
 sha3 = "0.10.8"
 
+# macro helpers
+derive-deftly = "1.3.0"
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
