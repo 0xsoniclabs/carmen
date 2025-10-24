@@ -21,7 +21,7 @@ use crate::{
         variants::SimpleInMemoryVerkleTrie,
         verkle_trie::VerkleTrie,
     },
-    error::Error,
+    error::{BTResult, Error},
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -43,11 +43,11 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
 }
 
 impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
-    fn account_exists(&self, addr: &Address) -> Result<bool, Error> {
+    fn account_exists(&self, addr: &Address) -> BTResult<bool, Error> {
         Ok(self.get_code_hash(addr)? != Hash::default())
     }
 
-    fn get_balance(&self, addr: &Address) -> Result<U256, Error> {
+    fn get_balance(&self, addr: &Address) -> BTResult<U256, Error> {
         let key = get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
         let mut result = U256::default();
@@ -55,20 +55,20 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         Ok(result)
     }
 
-    fn get_nonce(&self, addr: &Address) -> Result<Nonce, Error> {
+    fn get_nonce(&self, addr: &Address) -> BTResult<Nonce, Error> {
         let key = get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
         // Safe to unwrap: Always 8 bytes
         Ok(value[8..16].try_into().unwrap())
     }
 
-    fn get_storage_value(&self, addr: &Address, key: &Key) -> Result<Value, Error> {
+    fn get_storage_value(&self, addr: &Address, key: &Key) -> BTResult<Value, Error> {
         let key = get_storage_key(addr, key);
         let value = self.trie.lookup(&key)?;
         Ok(Value::from(value))
     }
 
-    fn get_code(&self, addr: &Address, code_buf: &mut [MaybeUninit<u8>]) -> Result<usize, Error> {
+    fn get_code(&self, addr: &Address, code_buf: &mut [MaybeUninit<u8>]) -> BTResult<usize, Error> {
         let len = self.get_code_len(addr)?;
         let chunk_count = len / 31 + 1;
         let mut chunks = Vec::with_capacity(chunk_count as usize);
@@ -86,27 +86,27 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         Ok(len as usize)
     }
 
-    fn get_code_hash(&self, addr: &Address) -> Result<Hash, Error> {
+    fn get_code_hash(&self, addr: &Address) -> BTResult<Hash, Error> {
         let key = get_code_hash_key(addr);
         let value = self.trie.lookup(&key)?;
         Ok(Hash::from(value))
     }
 
-    fn get_code_len(&self, addr: &Address) -> Result<u32, Error> {
+    fn get_code_len(&self, addr: &Address) -> BTResult<u32, Error> {
         let key = get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
         // Safe to unwrap - slice is always 4 bytes
         Ok(u32::from_be_bytes(value[4..8].try_into().unwrap()))
     }
 
-    fn get_hash(&self) -> Result<Hash, Error> {
+    fn get_hash(&self) -> BTResult<Hash, Error> {
         let commitment = self.trie.commit()?;
         Ok(Hash::from(commitment.compress()))
     }
 
     // TODO: Batch updates for the same account (https://github.com/0xsoniclabs/sonic-admin/issues/374)
     #[allow(clippy::needless_lifetimes)]
-    fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> Result<(), Error> {
+    fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> BTResult<(), Error> {
         for addr in update.created_accounts {
             if !self.account_exists(addr)? {
                 // Set basic account data once to set used bit in Verkle leaf.

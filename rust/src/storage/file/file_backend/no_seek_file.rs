@@ -10,7 +10,7 @@
 
 use std::{fs::OpenOptions, os::unix::fs::FileExt, path::Path};
 
-use crate::storage::file::FileBackend;
+use crate::{error::BTResult, storage::file::FileBackend};
 
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using the Unix-specific file
 /// operations `pread` and `pwrite` which do not modify the file offset. This avoids the syscall for
@@ -18,30 +18,30 @@ use crate::storage::file::FileBackend;
 pub struct NoSeekFile(std::fs::File);
 
 impl FileBackend for NoSeekFile {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
+    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error> {
         let file = options.open(path)?;
-        file.try_lock()?;
+        file.try_lock().map_err(std::io::Error::from)?;
         Ok(Self(file))
     }
 
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
-        self.0.write_all_at(buf, offset)
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error> {
+        self.0.write_all_at(buf, offset).map_err(Into::into)
     }
 
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
-        self.0.read_exact_at(buf, offset)
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> BTResult<(), std::io::Error> {
+        self.0.read_exact_at(buf, offset).map_err(Into::into)
     }
 
-    fn flush(&self) -> std::io::Result<()> {
-        self.0.sync_all()
+    fn flush(&self) -> BTResult<(), std::io::Error> {
+        self.0.sync_all().map_err(Into::into)
     }
 
-    fn len(&self) -> std::io::Result<u64> {
-        self.0.metadata().map(|m| m.len())
+    fn len(&self) -> BTResult<u64, std::io::Error> {
+        self.0.metadata().map(|m| m.len()).map_err(Into::into)
     }
 
-    fn set_len(&self, len: u64) -> std::io::Result<()> {
-        self.0.set_len(len)
+    fn set_len(&self, len: u64) -> BTResult<(), std::io::Error> {
+        self.0.set_len(len).map_err(Into::into)
     }
 }
 

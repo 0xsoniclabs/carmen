@@ -10,9 +10,12 @@
 
 use std::{cmp, fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path, sync::Mutex};
 
-use crate::storage::file::{
-    FileBackend,
-    file_backend::page_utils::{O_DIRECT, O_SYNC, Page},
+use crate::{
+    error::BTResult,
+    storage::file::{
+        FileBackend,
+        file_backend::page_utils::{O_DIRECT, O_SYNC, Page},
+    },
 };
 
 /// The actual implementation of [`PageCachedFile<F>`], but without concurrency control.
@@ -33,7 +36,7 @@ struct InnerPageCachedFile<F, const D: bool> {
 // synchronization on top using a mutex.
 impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     /// See [`FileBackend::open`].
-    fn open(path: &Path, mut options: OpenOptions) -> std::io::Result<Self> {
+    fn open(path: &Path, mut options: OpenOptions) -> BTResult<Self, std::io::Error> {
         let file = F::open(path, options.clone())?;
         let file_len = file.len()?;
         let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
@@ -60,7 +63,7 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     }
 
     /// See [`FileBackend::write_all_at`].
-    fn write_all_at(&mut self, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    fn write_all_at(&mut self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error> {
         self.change_page(offset)?;
 
         let start_in_page = offset as usize - self.page_index as usize * Page::SIZE;
@@ -79,9 +82,9 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     }
 
     /// See [`FileBackend::read_exact_at`].
-    fn read_exact_at(&mut self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    fn read_exact_at(&mut self, buf: &mut [u8], offset: u64) -> BTResult<(), std::io::Error> {
         if offset + buf.len() as u64 > self.file_len {
-            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
         }
 
         self.change_page(offset)?;
@@ -99,7 +102,7 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     }
 
     /// See [`FileBackend::flush`].
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> BTResult<(), std::io::Error> {
         if self.page_dirty {
             self.file
                 .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
@@ -109,19 +112,19 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     }
 
     /// See [`FileBackend::len`].
-    fn len(&self) -> Result<u64, std::io::Error> {
+    fn len(&self) -> BTResult<u64, std::io::Error> {
         Ok(self.file_len)
     }
 
     /// See [`FileBackend::set_len`].
-    fn set_len(&mut self, len: u64) -> std::io::Result<()> {
+    fn set_len(&mut self, len: u64) -> BTResult<(), std::io::Error> {
         self.file_len = len;
         self.file.set_len(len)
     }
 
     /// Load the page containing the given offset into memory, flushing the current page if dirty.
     /// If the offset is already within the currently loaded page, this is a no-op.
-    fn change_page(&mut self, offset: u64) -> std::io::Result<()> {
+    fn change_page(&mut self, offset: u64) -> BTResult<(), std::io::Error> {
         if offset < self.page_index * Page::SIZE as u64
             || offset >= (self.page_index + 1) * Page::SIZE as u64
         {
@@ -180,27 +183,27 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
 pub struct PageCachedFile<F, const D: bool>(Mutex<InnerPageCachedFile<F, D>>);
 
 impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
+    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error> {
         Ok(Self(Mutex::new(InnerPageCachedFile::open(path, options)?)))
     }
 
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error> {
         self.0.lock().unwrap().write_all_at(buf, offset)
     }
 
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> BTResult<(), std::io::Error> {
         self.0.lock().unwrap().read_exact_at(buf, offset)
     }
 
-    fn flush(&self) -> std::io::Result<()> {
+    fn flush(&self) -> BTResult<(), std::io::Error> {
         self.0.lock().unwrap().flush()
     }
 
-    fn len(&self) -> Result<u64, std::io::Error> {
+    fn len(&self) -> BTResult<u64, std::io::Error> {
         self.0.lock().unwrap().len()
     }
 
-    fn set_len(&self, size: u64) -> std::io::Result<()> {
+    fn set_len(&self, size: u64) -> BTResult<(), std::io::Error> {
         self.0.lock().unwrap().set_len(size)
     }
 }

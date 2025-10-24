@@ -11,7 +11,7 @@
 use dashmap::DashSet;
 
 use crate::{
-    error::Error,
+    error::{BTResult, Error},
     node_manager::lock_cache::{EvictionHooks, LockCache},
 };
 
@@ -25,20 +25,20 @@ impl EvictionHooks for EvictionLogger {
     type Key = u32;
     type Value = i32;
 
-    fn on_evict(&self, key: u32, value: i32) -> Result<(), Error> {
+    fn on_evict(&self, key: u32, value: i32) -> BTResult<(), Error> {
         self.evicted.insert((key, value));
         Ok(())
     }
 }
 
 /// Helper function for performing a get/insert where we don't care about the returned guard.
-pub fn ignore_guard<T>(result: Result<T, Error>) {
+pub fn ignore_guard<T>(result: BTResult<T, Error>) {
     let _guard = result.unwrap();
 }
 
 /// Type alias for a closure that calls either `get_read_access_or_insert` or
 /// `get_write_access_or_insert`
-pub type GetOrInsertMethod<F> = fn(&LockCache<u32, i32>, u32, &F) -> Result<i32, Error>;
+pub type GetOrInsertMethod<F> = fn(&LockCache<u32, i32>, u32, &F) -> BTResult<i32, Error>;
 
 /// Reusable rstest template to test both `get_read_access_or_insert` and
 /// `get_write_access_or_insert`

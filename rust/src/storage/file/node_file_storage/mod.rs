@@ -20,9 +20,12 @@ use std::{
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::storage::{
-    CheckpointParticipant, Error, Storage,
-    file::{FileBackend, FromToFile},
+use crate::{
+    error::BTResult,
+    storage::{
+        CheckpointParticipant, Error, Storage,
+        file::{FileBackend, FromToFile},
+    },
 };
 
 mod node_file_storage_metadata;
@@ -69,7 +72,7 @@ where
     /// If the directory does not exist, it will be created.
     /// If the files do not exist, they will be created.
     /// If the files exist, they will be opened and their data verified.
-    fn open(dir: &Path) -> Result<Self, Error> {
+    fn open(dir: &Path) -> BTResult<Self, Error> {
         fs::create_dir_all(dir)?;
 
         let metadata =
@@ -83,7 +86,7 @@ where
             .all_indices()
             .any(|&idx| idx >= metadata.frozen_nodes)
         {
-            return Err(Error::DatabaseCorruption);
+            return Err(Error::DatabaseCorruption.into());
         }
 
         let mut file_opts = OpenOptions::new();
@@ -96,7 +99,7 @@ where
         let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts)?;
         let len = node_file.len()?;
         if len < metadata.frozen_nodes * size_of::<T>() as u64 {
-            return Err(Error::DatabaseCorruption);
+            return Err(Error::DatabaseCorruption.into());
         }
 
         Ok(Self {
@@ -114,12 +117,12 @@ where
         })
     }
 
-    fn get(&self, idx: Self::Id) -> Result<Self::Item, Error> {
+    fn get(&self, idx: Self::Id) -> BTResult<Self::Item, Error> {
         let offset = idx * size_of::<Self::Item>() as u64;
         if self.node_file.len()? < offset + size_of::<T>() as u64
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
-            return Err(Error::NotFound);
+            return Err(Error::NotFound.into());
         }
         // this is hopefully optimized away
         let mut node = T::new_zeroed();
@@ -135,26 +138,26 @@ where
             .unwrap_or_else(|| self.next_idx.fetch_add(1, Ordering::Relaxed))
     }
 
-    fn set(&self, idx: Self::Id, node: &Self::Item) -> Result<(), Error> {
+    fn set(&self, idx: Self::Id, node: &Self::Item) -> BTResult<(), Error> {
         if idx >= self.next_idx.load(Ordering::Relaxed)
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
-            return Err(Error::NotFound);
+            return Err(Error::NotFound.into());
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
-            return Err(Error::Frozen);
+            return Err(Error::Frozen.into());
         }
         let offset = idx * size_of::<Self::Item>() as u64;
         self.node_file.write_all_at(node.as_bytes(), offset)?;
         Ok(())
     }
 
-    fn delete(&self, idx: Self::Id) -> Result<(), Error> {
+    fn delete(&self, idx: Self::Id) -> BTResult<(), Error> {
         if idx >= self.next_idx.load(Ordering::Relaxed)
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
-            Err(Error::NotFound)
+            Err(Error::NotFound.into())
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
-            Err(Error::Frozen)
+            Err(Error::Frozen.into())
         } else {
             self.reuse_list_file.lock().unwrap().push(idx);
             Ok(())
@@ -166,16 +169,16 @@ impl<T, F> CheckpointParticipant for NodeFileStorage<T, F>
 where
     F: FileBackend,
 {
-    fn ensure(&self, checkpoint: u64) -> Result<(), Error> {
+    fn ensure(&self, checkpoint: u64) -> BTResult<(), Error> {
         if checkpoint != self.checkpoint.load(Ordering::Relaxed) {
-            return Err(Error::Checkpoint);
+            return Err(Error::Checkpoint.into());
         }
         Ok(())
     }
 
-    fn prepare(&self, checkpoint: u64) -> Result<(), Error> {
+    fn prepare(&self, checkpoint: u64) -> BTResult<(), Error> {
         if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
-            return Err(Error::Checkpoint);
+            return Err(Error::Checkpoint.into());
         }
 
         self.node_file.flush()?;
@@ -194,14 +197,14 @@ where
         Ok(())
     }
 
-    fn commit(&self, checkpoint: u64) -> Result<(), Error> {
+    fn commit(&self, checkpoint: u64) -> BTResult<(), Error> {
         if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
-            return Err(Error::Checkpoint);
+            return Err(Error::Checkpoint.into());
         }
         let prepared_metadata =
             NodeFileStorageMetadata::read_or_init(&self.prepared_metadata_path)?;
         if checkpoint != prepared_metadata.checkpoint {
-            return Err(Error::Checkpoint);
+            return Err(Error::Checkpoint.into());
         }
         self.reuse_list_file.lock().unwrap().freeze_permanently();
         fs::rename(&self.prepared_metadata_path, &self.commited_metadata_path)?;
@@ -209,9 +212,9 @@ where
         Ok(())
     }
 
-    fn abort(&self, checkpoint: u64) -> Result<(), Error> {
+    fn abort(&self, checkpoint: u64) -> BTResult<(), Error> {
         if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
-            return Err(Error::Checkpoint);
+            return Err(Error::Checkpoint.into());
         }
         fs::remove_file(&self.prepared_metadata_path)?;
         let committed_metadata =
@@ -219,7 +222,7 @@ where
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
         reuse_list_file.unfreeze_temp();
         if reuse_list_file.frozen_count() != committed_metadata.frozen_reuse_indices as usize {
-            return Err(Error::Checkpoint);
+            return Err(Error::Checkpoint.into());
         }
         *self.metadata.write().unwrap() = committed_metadata;
         Ok(())
@@ -235,6 +238,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        error::BTError,
         storage::{Error, file::SeekFile},
         utils::test_dir::{Permissions, TestDir},
     };
@@ -286,7 +290,7 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir),
+                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -298,7 +302,7 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir),
+                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -308,7 +312,10 @@ mod tests {
     fn open_forwards_io_errors() {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
 
-        assert!(matches!(NodeFileStorage::open(&dir), Err(Error::Io(_))));
+        assert!(matches!(
+            NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -333,7 +340,10 @@ mod tests {
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
 
         // index 0 is the next index to be assigned, and was therefore not yet assigned
-        assert!(matches!(storage.get(0).unwrap_err(), Error::NotFound));
+        assert!(matches!(
+            storage.get(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]
@@ -346,7 +356,11 @@ mod tests {
 
         let storage = NodeFileStorage::open(&dir).unwrap();
 
-        assert!(matches!(storage.get(0).unwrap_err(), Error::NotFound)); // in reuse list
+        // in reuse list
+        assert!(matches!(
+            storage.get(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]
@@ -431,8 +445,8 @@ mod tests {
         storage.metadata.write().unwrap().frozen_nodes = 1;
 
         assert!(matches!(
-            storage.set(0, &[0; 32]).unwrap_err(),
-            Error::Frozen
+            storage.set(0, &[0; 32]).map_err(BTError::into_inner),
+            Err(Error::Frozen)
         ));
     }
 
@@ -445,8 +459,8 @@ mod tests {
         storage.reuse_list_file.lock().unwrap().push(0);
 
         assert!(matches!(
-            storage.set(0, &[0; 32]).unwrap_err(),
-            Error::NotFound
+            storage.set(0, &[0; 32]).map_err(BTError::into_inner),
+            Err(Error::NotFound)
         ));
     }
 
@@ -458,8 +472,8 @@ mod tests {
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
 
         assert!(matches!(
-            storage.set(0, &[0; 32]).unwrap_err(),
-            Error::NotFound
+            storage.set(0, &[0; 32]).map_err(BTError::into_inner),
+            Err(Error::NotFound)
         ));
     }
 
@@ -488,7 +502,10 @@ mod tests {
         let storage = NodeFileStorage::open(&dir).unwrap();
         storage.next_idx.store(1, Ordering::Relaxed);
         storage.metadata.write().unwrap().frozen_nodes = 1;
-        assert!(matches!(storage.delete(0).unwrap_err(), Error::Frozen));
+        assert!(matches!(
+            storage.delete(0).map_err(BTError::into_inner),
+            Err(Error::Frozen)
+        ));
     }
 
     #[test]
@@ -498,7 +515,10 @@ mod tests {
         let storage = NodeFileStorage::open(&dir).unwrap();
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
 
-        assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
+        assert!(matches!(
+            storage.delete(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]
@@ -510,7 +530,10 @@ mod tests {
         write_nodes(&dir, &[[0; 32]]);
 
         let storage = NodeFileStorage::open(&dir).unwrap();
-        assert!(matches!(storage.delete(0).unwrap_err(), Error::NotFound));
+        assert!(matches!(
+            storage.delete(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]
@@ -523,12 +546,12 @@ mod tests {
         let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(storage.ensure(checkpoint).is_ok());
         assert!(matches!(
-            storage.ensure(checkpoint - 1).unwrap_err(),
-            Error::Checkpoint
+            storage.ensure(checkpoint - 1).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
         assert!(matches!(
-            storage.ensure(checkpoint + 1).unwrap_err(),
-            Error::Checkpoint
+            storage.ensure(checkpoint + 1).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
     }
 
@@ -541,12 +564,12 @@ mod tests {
 
         let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(
-            storage.prepare(checkpoint).unwrap_err(),
-            Error::Checkpoint
+            storage.prepare(checkpoint).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
         assert!(matches!(
-            storage.prepare(checkpoint + 2).unwrap_err(),
-            Error::Checkpoint
+            storage.prepare(checkpoint + 2).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
     }
 
@@ -609,12 +632,12 @@ mod tests {
 
         let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(
-            storage.commit(checkpoint).unwrap_err(),
-            Error::Checkpoint
+            storage.commit(checkpoint).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
         assert!(matches!(
-            storage.commit(checkpoint + 2).unwrap_err(),
-            Error::Checkpoint
+            storage.commit(checkpoint + 2).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
     }
 
@@ -629,8 +652,8 @@ mod tests {
 
         // Attempting to commit without a prepared metadata file fails.
         assert!(matches!(
-            storage.commit(checkpoint + 1).unwrap_err(),
-            Error::Checkpoint
+            storage.commit(checkpoint + 1).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
 
         fs::write(
@@ -645,8 +668,8 @@ mod tests {
         .unwrap();
 
         assert!(matches!(
-            storage.commit(checkpoint + 1).unwrap_err(),
-            Error::Checkpoint
+            storage.commit(checkpoint + 1).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
     }
 
@@ -705,12 +728,12 @@ mod tests {
 
         let storage = NodeFileStorage::open(dir.path()).unwrap();
         assert!(matches!(
-            storage.abort(checkpoint).unwrap_err(),
-            Error::Checkpoint
+            storage.abort(checkpoint).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
         assert!(matches!(
-            storage.abort(checkpoint + 2).unwrap_err(),
-            Error::Checkpoint
+            storage.abort(checkpoint + 2).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
         ));
     }
 
@@ -801,7 +824,7 @@ mod tests {
             path: impl AsRef<Path>,
             nodes: &[T],
             reuse_indices: &[u64],
-        ) -> Result<(), Error> {
+        ) -> BTResult<(), Error> {
             let path = path.as_ref();
 
             fs::create_dir_all(path)?;

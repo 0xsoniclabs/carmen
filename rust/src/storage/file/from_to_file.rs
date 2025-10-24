@@ -16,13 +16,13 @@ use std::{
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::storage::Error;
+use crate::{error::BTResult, storage::Error};
 
 /// An extension trait for types that can be read from and written to files as byte slices.
 pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
     /// Creates a new instance by reading from the file at the given path.
     /// If the file does not exist, it is created and initialized with the default value.
-    fn read_or_init(path: impl AsRef<Path>) -> Result<Self, Error> {
+    fn read_or_init(path: impl AsRef<Path>) -> BTResult<Self, Error> {
         let path = path.as_ref();
         if !fs::exists(path)? {
             fs::write(path, Self::default().as_bytes())?;
@@ -31,7 +31,7 @@ pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
         let mut file = File::open(path)?;
         let len = file.metadata()?.len();
         if len != size_of::<Self>() as u64 {
-            return Err(Error::DatabaseCorruption);
+            return Err(Error::DatabaseCorruption.into());
         }
 
         let mut this = Self::default();
@@ -41,7 +41,7 @@ pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
     }
 
     /// Writes self's byte representation to the file at the given path.
-    fn write(&self, path: impl AsRef<Path>) -> Result<(), Error> {
+    fn write(&self, path: impl AsRef<Path>) -> BTResult<(), Error> {
         fs::write(path.as_ref(), self.as_bytes())?;
         Ok(())
     }
@@ -52,7 +52,10 @@ mod tests {
     use zerocopy::IntoBytes;
 
     use super::*;
-    use crate::utils::test_dir::{Permissions, TestDir};
+    use crate::{
+        error::BTError,
+        utils::test_dir::{Permissions, TestDir},
+    };
 
     #[derive(Debug, Clone, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
@@ -95,7 +98,10 @@ mod tests {
         fs::write(&path, [0u8; 10]).unwrap();
 
         let result = Dummy::read_or_init(path);
-        assert!(matches!(result, Err(Error::DatabaseCorruption)));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::DatabaseCorruption)
+        ));
     }
 
     #[test]
@@ -107,7 +113,10 @@ mod tests {
         tempdir.set_permissions(Permissions::WriteOnly).unwrap();
 
         let result = Dummy::read_or_init(&path);
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -133,7 +142,10 @@ mod tests {
         let path = tempdir.join("data");
 
         let result = Dummy::default().write(&path);
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]

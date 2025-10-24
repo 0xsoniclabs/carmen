@@ -10,7 +10,10 @@
 
 use zerocopy::{FromBytes, Immutable, transmute_ref};
 
-use crate::types::{Address, Key, Nonce, U256, Value};
+use crate::{
+    error::BTResult,
+    types::{Address, Key, Nonce, U256, Value},
+};
 
 /// A new balance for an account.
 #[derive(Debug, Clone, Default, PartialEq, Eq, FromBytes, Immutable)]
@@ -64,19 +67,20 @@ const VERSION_0: u8 = 0;
 // cpp/state/update.h:Update::FromBytes
 impl<'d> Update<'d> {
     /// Parses an update from its encoded form.
-    pub fn from_encoded(mut bytes: &'d [u8]) -> Result<Self, String> {
+    pub fn from_encoded(mut bytes: &'d [u8]) -> BTResult<Self, String> {
         if bytes.len() < 1 + 6 * 4 {
             return Err(format!(
                 "encoded update has length {}, but minimum length is 1 + 6 * 4 = 25",
                 bytes.len()
-            ));
+            )
+            .into());
         }
 
         let bytes = &mut bytes;
 
         let version = read_slice(bytes, 1)?[0];
         if version != VERSION_0 {
-            return Err(format!("invalid version number: {version}"));
+            return Err(format!("invalid version number: {version}").into());
         }
 
         let deleted_accounts_len = u32::from_be_bytes(read_array(bytes)?) as usize;
@@ -123,7 +127,7 @@ impl<'d> Update<'d> {
     }
 }
 
-fn read_slice<'d>(bytes: &mut &'d [u8], len: usize) -> Result<&'d [u8], String> {
+fn read_slice<'d>(bytes: &mut &'d [u8], len: usize) -> BTResult<&'d [u8], String> {
     if bytes.len() < len {
         return Err("not enough bytes to read".into());
     }
@@ -132,7 +136,7 @@ fn read_slice<'d>(bytes: &mut &'d [u8], len: usize) -> Result<&'d [u8], String> 
     Ok(data)
 }
 
-fn read_array<const N: usize>(bytes: &mut &[u8]) -> Result<[u8; N], String> {
+fn read_array<const N: usize>(bytes: &mut &[u8]) -> BTResult<[u8; N], String> {
     if bytes.len() < N {
         return Err("not enough bytes to read".into());
     }
@@ -145,7 +149,7 @@ fn read_array<const N: usize>(bytes: &mut &[u8]) -> Result<[u8; N], String> {
 fn read_slice_of_arrays<'d, const N: usize>(
     bytes: &mut &'d [u8],
     len: usize,
-) -> Result<&'d [[u8; N]], String> {
+) -> BTResult<&'d [[u8; N]], String> {
     let data = read_slice(bytes, len * N)?;
     let data = data as *const [u8] as *const [u8; N];
     // Safety:
@@ -161,6 +165,7 @@ fn read_slice_of_arrays<'d, const N: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::BTError;
 
     #[test]
     fn read_slice_returns_slice_of_requested_length_and_advances_buffer() {
@@ -174,7 +179,7 @@ mod tests {
     fn read_slice_returns_error_if_buffer_shorter_than_requested_length() {
         let mut bytes = [1, 2, 3, 4, 5].as_slice();
         assert_eq!(
-            read_slice(&mut bytes, 6),
+            read_slice(&mut bytes, 6).map_err(BTError::into_inner),
             Err("not enough bytes to read".into())
         );
     }
@@ -191,7 +196,7 @@ mod tests {
     fn read_array_returns_error_if_buffer_shorter_than_requested_length() {
         let mut bytes = [1, 2, 3, 4, 5].as_slice();
         assert_eq!(
-            read_array::<6>(&mut bytes),
+            read_array::<6>(&mut bytes).map_err(BTError::into_inner),
             Err("not enough bytes to read".into())
         );
     }
@@ -208,7 +213,7 @@ mod tests {
     fn read_slice_of_arrays_returns_error_if_buffer_shorter_than_requested_length() {
         let mut bytes = [1, 2, 3, 4, 5].as_slice();
         assert_eq!(
-            read_slice_of_arrays::<2>(&mut bytes, 3),
+            read_slice_of_arrays::<2>(&mut bytes, 3).map_err(BTError::into_inner),
             Err("not enough bytes to read".into())
         );
     }
@@ -362,7 +367,10 @@ mod tests {
         encoded_update.extend_from_slice(&(update.slots.len() as u32).to_be_bytes());
 
         let decoded_update = Update::from_encoded(&encoded_update);
-        assert_eq!(decoded_update, Err("invalid version number: 1".to_owned()));
+        assert_eq!(
+            decoded_update.map_err(BTError::into_inner),
+            Err("invalid version number: 1".to_owned())
+        );
     }
 
     /// This test checks for every read operation in `Update::from_encoded` that in the case the

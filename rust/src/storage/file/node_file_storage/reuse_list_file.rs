@@ -17,7 +17,7 @@ use std::{
 
 use zerocopy::IntoBytes;
 
-use crate::storage::Error;
+use crate::{error::BTResult, storage::Error};
 
 /// A wrapper around a file storing reuse list indices, which caches the indices in memory for
 /// faster access.
@@ -41,7 +41,7 @@ impl ReuseListFile {
     /// Opens the file at `path` and reads `frozen_count` indices from it. If the file does not
     /// exist, it is created. The `frozen_count` parameter specifies how many indices should be
     /// considered "frozen" and not available for reuse.
-    pub fn open(path: impl AsRef<Path>, frozen_count: u64) -> Result<Self, Error> {
+    pub fn open(path: impl AsRef<Path>, frozen_count: u64) -> BTResult<Self, Error> {
         let mut file_opts = OpenOptions::new();
         file_opts
             .create(true)
@@ -51,7 +51,7 @@ impl ReuseListFile {
         let mut file = file_opts.open(path)?;
         let len = file.metadata()?.len();
         if len < frozen_count * size_of::<u64>() as u64 {
-            return Err(Error::DatabaseCorruption);
+            return Err(Error::DatabaseCorruption.into());
         }
 
         let mut frozen_indices = vec![0u64; frozen_count as usize];
@@ -69,7 +69,7 @@ impl ReuseListFile {
     /// Temporarily freezes all currently cached indices, in a way that they can be unfrozen again
     /// using [`Self::unfreeze_temp`] or be permanently frozen using [`Self::freeze_permanently`].
     /// The newly frozen indices are appended to the file on disk.
-    pub fn freeze_temporarily_and_write_to_disk(&mut self) -> Result<(), Error> {
+    pub fn freeze_temporarily_and_write_to_disk(&mut self) -> BTResult<(), Error> {
         self.temp_frozen_indices.append(&mut self.reusable_indices);
 
         let data = self.temp_frozen_indices.as_bytes();
@@ -130,7 +130,10 @@ mod tests {
     use zerocopy::IntoBytes;
 
     use super::*;
-    use crate::utils::test_dir::{Permissions, TestDir};
+    use crate::{
+        error::BTError,
+        utils::test_dir::{Permissions, TestDir},
+    };
 
     #[test]
     fn open_reads_frozen_part_of_file() {
@@ -158,7 +161,10 @@ mod tests {
 
         let frozen_count = 2;
         let result = ReuseListFile::open(path, frozen_count);
-        assert!(matches!(result, Err(Error::DatabaseCorruption)));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::DatabaseCorruption)
+        ));
     }
 
     #[test]
@@ -167,7 +173,10 @@ mod tests {
         let path = dir.join("reuse_list");
 
         let result = ReuseListFile::open(path, 0);
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -217,7 +226,10 @@ mod tests {
         };
 
         let result = reuse_list_file.freeze_temporarily_and_write_to_disk(); // file is opened read-only
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]

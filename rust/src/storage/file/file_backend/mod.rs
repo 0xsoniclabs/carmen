@@ -24,6 +24,8 @@ pub use no_seek_file::NoSeekFile;
 pub use page_cached_file::PageCachedFile;
 pub use seek_file::SeekFile;
 
+use crate::error::BTResult;
+
 /// An abstraction for concurrent file operations.
 ///
 /// Implementations of this trait are required to ensure that concurrent operations are safe (in
@@ -33,24 +35,24 @@ pub use seek_file::SeekFile;
 #[cfg_attr(test, mockall::automock)]
 pub trait FileBackend: Send + Sync {
     /// Opens a file at the given path with the specified options and tries to acquire a file lock.
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self>
+    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error>
     where
         Self: Sized;
 
     /// Writes the entire content of `buf` starting at the given `offset`.
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()>;
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error>;
 
     /// Fills the entire `buf` with data read from the file starting at the given `offset`.
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()>;
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> BTResult<(), std::io::Error>;
 
     /// Flushes all changes to disk.
-    fn flush(&self) -> std::io::Result<()>;
+    fn flush(&self) -> BTResult<(), std::io::Error>;
 
     /// Returns the size of this file in bytes.
-    fn len(&self) -> Result<u64, std::io::Error>;
+    fn len(&self) -> BTResult<u64, std::io::Error>;
 
     /// Truncates or extends the underlying file, updating the size of this file to become `size`.
-    fn set_len(&self, size: u64) -> std::io::Result<()>;
+    fn set_len(&self, size: u64) -> BTResult<(), std::io::Error>;
 }
 
 #[cfg(test)]
@@ -71,7 +73,7 @@ mod tests {
         utils::test_dir::{Permissions, TestDir},
     };
 
-    type OpenBackendFn = fn(&Path, OpenOptions) -> std::io::Result<Arc<dyn FileBackend>>;
+    type OpenBackendFn = fn(&Path, OpenOptions) -> BTResult<Arc<dyn FileBackend>, std::io::Error>;
 
     #[rstest_reuse::template]
     #[rstest::rstest]

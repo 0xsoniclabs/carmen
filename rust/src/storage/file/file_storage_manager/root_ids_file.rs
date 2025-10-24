@@ -22,7 +22,7 @@ use std::{
 use quick_cache::sync::Cache;
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::storage::Error;
+use crate::{error::BTResult, storage::Error};
 
 /// A wrapper around a file storing root IDs, the ID of a tree's root node at a given block number.
 /// Recently used IDs are cached in memory for faster access.
@@ -44,7 +44,7 @@ where
 
     /// Opens the file at `path` and fills the cache with the ids corresponding to the highest block
     /// numbers. If the file does not exist, it is created.
-    pub fn open(path: impl AsRef<Path>, frozen_count: u64) -> Result<Self, Error> {
+    pub fn open(path: impl AsRef<Path>, frozen_count: u64) -> BTResult<Self, Error> {
         let mut file_opts = OpenOptions::new();
         file_opts
             .create(true)
@@ -54,7 +54,7 @@ where
         let mut file = file_opts.open(path)?;
         let len = file.metadata()?.len();
         if len < frozen_count * size_of::<ID>() as u64 {
-            return Err(Error::DatabaseCorruption);
+            return Err(Error::DatabaseCorruption.into());
         }
 
         let cache = Cache::new(Self::CACHE_SIZE);
@@ -77,13 +77,13 @@ where
     }
 
     /// Retrieves the root ID for `block_number`, either from the cache or by reading it from disk.
-    pub fn get(&self, block_number: u64) -> Result<ID, Error> {
+    pub fn get(&self, block_number: u64) -> BTResult<ID, Error> {
         if let Some(id) = self.cache.get(&block_number) {
             return Ok(id);
         }
 
         if block_number >= self.id_count.load(Ordering::Relaxed) {
-            return Err(Error::NotFound);
+            return Err(Error::NotFound.into());
         }
 
         let offset = block_number * size_of::<ID>() as u64;
@@ -99,9 +99,9 @@ where
     }
 
     /// Adds root ID `id` for `block_number` to the cache and writes it out to disk.
-    pub fn set(&self, block_number: u64, mut id: ID) -> Result<(), Error> {
+    pub fn set(&self, block_number: u64, mut id: ID) -> BTResult<(), Error> {
         if block_number < self.id_count.load(Ordering::Relaxed) {
-            return Err(Error::Frozen);
+            return Err(Error::Frozen.into());
         }
 
         let mut file = self.file.lock().unwrap();
@@ -129,7 +129,10 @@ mod tests {
     use zerocopy::IntoBytes;
 
     use super::*;
-    use crate::utils::test_dir::{Permissions, TestDir};
+    use crate::{
+        error::BTError,
+        utils::test_dir::{Permissions, TestDir},
+    };
 
     type Id = [u8; 6];
     type RootIdsFile = super::RootIdsFile<Id>;
@@ -164,7 +167,10 @@ mod tests {
 
         let frozen_count = 2;
         let result = RootIdsFile::open(path, frozen_count);
-        assert!(matches!(result, Err(Error::DatabaseCorruption)));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::DatabaseCorruption)
+        ));
     }
 
     #[test]
@@ -173,7 +179,10 @@ mod tests {
         let path = dir.join("root_ids");
 
         let result = RootIdsFile::open(path, 0);
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -233,7 +242,10 @@ mod tests {
         };
 
         let result = root_ids_file.get(0); // file is opened read-only
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -286,6 +298,9 @@ mod tests {
         let block_number = 0;
 
         let result = root_ids_file.set(block_number, id);
-        assert!(matches!(result, Err(Error::Io(_))));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 }

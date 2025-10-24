@@ -10,7 +10,7 @@
 
 use crate::{
     database::verkle::crypto::Commitment,
-    error::Error,
+    error::{BTResult, Error},
     types::{Key, Value},
 };
 
@@ -25,23 +25,26 @@ use crate::{
 pub trait VerkleTrie: Send + Sync {
     /// Retrieves the value associated with the given key.
     /// Returns the default [`Value`] if the key does not exist.
-    fn lookup(&self, key: &Key) -> Result<Value, Error>;
+    fn lookup(&self, key: &Key) -> BTResult<Value, Error>;
 
     /// Stores the value for the given key.
-    fn store(&self, key: &Key, value: &Value) -> Result<(), Error>;
+    fn store(&self, key: &Key, value: &Value) -> BTResult<(), Error>;
 
     /// Computes and returns the current root commitment of the trie.
     /// The commitment can be used as cryptographic proof of the trie's state,
     /// i.e., all contained key-value pairs.
-    fn commit(&self) -> Result<Commitment, Error>;
+    fn commit(&self) -> BTResult<Commitment, Error>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::verkle::{
-        SimpleInMemoryVerkleTrie,
-        test_utils::{make_key, make_leaf_key, make_value},
+    use crate::{
+        database::verkle::{
+            SimpleInMemoryVerkleTrie,
+            test_utils::{make_key, make_leaf_key, make_value},
+        },
+        error::BTError,
     };
 
     #[rstest_reuse::template]
@@ -58,7 +61,10 @@ mod tests {
 
     #[rstest_reuse::apply(all_trie_impls)]
     fn commitment_of_empty_trie_is_default_commitment(#[case] trie: Box<dyn VerkleTrie>) {
-        assert_eq!(trie.commit(), Ok(Commitment::default()));
+        assert_eq!(
+            trie.commit().map_err(BTError::into_inner),
+            Ok(Commitment::default())
+        );
     }
 
     #[rstest_reuse::apply(all_trie_impls)]

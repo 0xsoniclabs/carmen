@@ -15,6 +15,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::error::BTResult;
+
 /// An enum representing different UNIX file permissions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Permissions {
@@ -49,7 +51,7 @@ pub struct TestDir {
 
 impl TestDir {
     /// Creates a new temporary `TestDir` with the specified permissions.
-    pub fn try_new(permission: Permissions) -> std::io::Result<Self> {
+    pub fn try_new(permission: Permissions) -> BTResult<Self, std::io::Error> {
         let dir = tempfile::tempdir()?;
         set_permissions(dir.path(), permission)?;
         Ok(Self { dir: dir.keep() })
@@ -61,7 +63,7 @@ impl TestDir {
     }
 
     /// Recursively sets the permissions of the test directory and its contents.
-    pub fn set_permissions(&self, permission: Permissions) -> std::io::Result<()> {
+    pub fn set_permissions(&self, permission: Permissions) -> BTResult<(), std::io::Error> {
         set_permissions(&self.dir, permission)
     }
 }
@@ -101,7 +103,7 @@ impl Drop for TestDir {
 }
 
 /// Recursively set permissions for a directory and its contents
-pub fn set_permissions(dir: &Path, permission: Permissions) -> std::io::Result<()> {
+pub fn set_permissions(dir: &Path, permission: Permissions) -> BTResult<(), std::io::Error> {
     // First make root directory readable so we can list its contents.
     fs::set_permissions(dir, Permissions::ReadOnly.into())?;
     for entry in std::fs::read_dir(dir)? {

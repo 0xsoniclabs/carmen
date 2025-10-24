@@ -13,7 +13,7 @@ use std::{
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use crate::error::Error;
+use crate::error::{BTResult, Error};
 pub mod cached_node_manager;
 mod lock_cache;
 
@@ -36,24 +36,24 @@ pub trait NodeManager {
     type NodeType;
 
     /// Adds the given node to the node manager and returns an ID for it.
-    fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error>;
+    fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error>;
 
     /// Returns a read guard for a node in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
     fn get_read_access(
         &self,
         id: Self::Id,
-    ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error>;
+    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error>;
 
     /// Returns a write guard for a node in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
     fn get_write_access(
         &self,
         id: Self::Id,
-    ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>;
+    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>;
 
     /// Deletes a node with the given ID from the node manager.
     /// The ID may be reused in the future, when adding new nodes using
     /// [`NodeManager::add`].
-    fn delete(&self, id: Self::Id) -> Result<(), Error>;
+    fn delete(&self, id: Self::Id) -> BTResult<(), Error>;
 }

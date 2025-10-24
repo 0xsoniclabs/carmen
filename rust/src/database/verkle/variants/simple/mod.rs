@@ -14,7 +14,7 @@ use std::sync::Mutex;
 
 use crate::{
     database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
-    error::Error,
+    error::{BTResult, Error},
     types::{Key, Value},
 };
 
@@ -40,18 +40,18 @@ impl SimpleInMemoryVerkleTrie {
 }
 
 impl VerkleTrie for SimpleInMemoryVerkleTrie {
-    fn lookup(&self, key: &Key) -> Result<Value, Error> {
+    fn lookup(&self, key: &Key) -> BTResult<Value, Error> {
         Ok(self.root.lock().unwrap().lookup(key, 0))
     }
 
-    fn store(&self, key: &Key, value: &Value) -> Result<(), Error> {
+    fn store(&self, key: &Key, value: &Value) -> BTResult<(), Error> {
         let mut root_lock = self.root.lock().unwrap();
         let root = std::mem::replace(&mut *root_lock, Node::Empty);
         *root_lock = root.store(key, 0, value);
         Ok(())
     }
 
-    fn commit(&self) -> Result<Commitment, Error> {
+    fn commit(&self) -> BTResult<Commitment, Error> {
         Ok(self.root.lock().unwrap().commit())
     }
 }

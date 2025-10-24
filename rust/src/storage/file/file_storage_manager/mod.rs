@@ -97,7 +97,7 @@ where
     type Item = $tname;
 
     /// Opens or creates the file backends for the individual node types in the specified directory.
-    fn open(dir: &::std::path::Path) -> Result<Self, $crate::storage::Error> {
+    fn open(dir: &::std::path::Path) -> $crate::error::BTResult<Self, $crate::storage::Error> {
         std::fs::create_dir_all(dir)?;
 
         let checkpoint_data =
@@ -130,7 +130,7 @@ where
         })
     }
 
-    fn get(&self, id: Self::Id) -> Result<Self::Item, $crate::storage::Error> {
+    fn get(&self, id: Self::Id) -> $crate::error::BTResult<Self::Item, $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
         match $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)? {
             ${paste $tname Type}::Empty => Ok(Self::Item::Empty(${paste Empty $tname})),
@@ -159,7 +159,7 @@ where
         }
     }
 
-    fn set(&self, id: Self::Id, node: &Self::Item) -> Result<(), $crate::storage::Error> {
+    fn set(&self, id: Self::Id, node: &Self::Item) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
         match (node, $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)?) {
             (Self::Item::Empty(_), ${paste $tname Type}::Empty) => Ok(()),
@@ -168,11 +168,11 @@ where
                     ($tname::$vname(node), ${paste $tname Type}::$vname) => self.${snake_case $vname}.set(idx, node),
                 }}
             )
-            _ => Err($crate::storage::Error::IdNodeTypeMismatch)
+            _ => Err($crate::storage::Error::IdNodeTypeMismatch.into())
         }
     }
 
-    fn delete(&self, id: Self::Id) -> Result<(), $crate::storage::Error> {
+    fn delete(&self, id: Self::Id) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
         match $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)? {
             ${paste $ttype Type}::Empty => Ok(()),
@@ -189,7 +189,7 @@ impl<$STORAGE_GENERICS> $crate::storage::Checkpointable for $MANAGER_TYPE<$STORA
 where
     $STORAGE_GENERICS_BOUNDS
 {
-    fn checkpoint(&self) -> Result<(), $crate::storage::Error> {
+    fn checkpoint(&self) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let current_checkpoint = self.checkpoint.load(::std::sync::atomic::Ordering::Acquire);
         let new_checkpoint = current_checkpoint + 1;
         let participants = [
@@ -232,11 +232,11 @@ where
 {
     type Id = $ID;
 
-    fn get_root_id(&self, block_number: u64) -> Result<Self::Id, $crate::storage::Error> {
+    fn get_root_id(&self, block_number: u64) -> $crate::error::BTResult<Self::Id, $crate::storage::Error> {
         self.root_ids_file.get(block_number)
     }
 
-    fn set_root_id(&self, block_number: u64, id: Self::Id) -> Result<(), $crate::storage::Error> {
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> $crate::error::BTResult<(), $crate::storage::Error> {
         self.root_ids_file.set(block_number, id)
     }
 }
@@ -258,6 +258,7 @@ mod tests {
     use zerocopy::{FromBytes, Immutable, IntoBytes};
 
     use crate::{
+        error::{BTError, BTResult},
         storage::{
             CheckpointParticipant, Checkpointable, Error, Storage,
             file::{
@@ -332,7 +333,10 @@ mod tests {
 
         let path = dir.join("non_existent_dir");
 
-        assert!(matches!(FileStorageManager::open(&path), Err(Error::Io(_))));
+        assert!(matches!(
+            FileStorageManager::open(&path).map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
@@ -507,7 +511,7 @@ mod tests {
         let node = TestNode::NonEmpty1(Box::default());
 
         assert!(matches!(
-            storage.set(id, &node),
+            storage.set(id, &node).map_err(BTError::into_inner),
             Err(Error::IdNodeTypeMismatch)
         ));
     }
@@ -645,7 +649,7 @@ mod tests {
         storage
             .non_empty2
             .expect_prepare()
-            .returning(|_| Err(Error::Io(std::io::Error::from(std::io::ErrorKind::Other))))
+            .returning(|_| Err(Error::Io(std::io::Error::from(std::io::ErrorKind::Other)).into()))
             .times(1)
             .in_sequence(&mut seq);
         storage
@@ -655,7 +659,10 @@ mod tests {
             .times(1)
             .in_sequence(&mut seq);
 
-        assert!(matches!(storage.checkpoint(), Err(Error::Io(_))));
+        assert!(matches!(
+            storage.checkpoint().map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
 
         // The prepared checkpoint file should not exist after a failed checkpoint.
         assert!(!fs::exists(dir.path().join(
@@ -676,30 +683,30 @@ mod tests {
         pub Storage<T: Send + Sync + 'static> {}
 
         impl<T: Send + Sync + 'static> CheckpointParticipant for Storage<T> {
-            fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
+            fn ensure(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-            fn prepare(&self, checkpoint: u64) -> Result<(), Error>;
+            fn prepare(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-            fn commit(&self, checkpoint: u64) -> Result<(), Error>;
+            fn commit(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-            fn abort(&self, checkpoint: u64) -> Result<(), Error>;
+            fn abort(&self, checkpoint: u64) -> BTResult<(), Error>;
         }
 
         impl<T: Send + Sync + 'static> Storage for Storage<T> {
             type Id = u64;
             type Item = T;
 
-            fn open(path: &std::path::Path) -> Result<Self, Error>
+            fn open(path: &std::path::Path) -> BTResult<Self, Error>
             where
                 Self: Sized;
 
-            fn get(&self, id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
+            fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 
             fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
-            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
+            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
 
-            fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
+            fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
         }
     }
 

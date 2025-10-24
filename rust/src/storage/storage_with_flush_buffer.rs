@@ -18,7 +18,10 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::storage::{Checkpointable, Error, RootIdProvider, Storage};
+use crate::{
+    error::BTResult,
+    storage::{Checkpointable, Error, RootIdProvider, Storage},
+};
 
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
 /// written to the underlying storage layer in background threads.
@@ -51,7 +54,7 @@ impl<S> StorageWithFlushBuffer<S>
 where
     S: Storage,
 {
-    pub fn shutdown_flush_workers(self) -> Result<(), Error> {
+    pub fn shutdown_flush_workers(self) -> BTResult<(), Error> {
         self.flush_workers.shutdown()
     }
 }
@@ -65,7 +68,7 @@ where
     type Id = S::Id;
     type Item = S::Item;
 
-    fn open(path: &Path) -> Result<Self, Error> {
+    fn open(path: &Path) -> BTResult<Self, Error> {
         let storage = Arc::new(S::open(path)?);
         let flush_buffer = Arc::new(DashMap::new());
         let workers = FlushWorkers::new(&flush_buffer, &storage);
@@ -76,11 +79,11 @@ where
         })
     }
 
-    fn get(&self, id: Self::Id) -> Result<Self::Item, Error> {
+    fn get(&self, id: Self::Id) -> BTResult<Self::Item, Error> {
         match self.flush_buffer.get(&id) {
             Some(value) => match value.value() {
                 Op::Set(node) => Ok(node.clone()),
-                Op::Delete => Err(Error::NotFound),
+                Op::Delete => Err(Error::NotFound.into()),
             },
             None => Ok(self.storage.get(id)?),
         }
@@ -96,12 +99,12 @@ where
         id
     }
 
-    fn set(&self, id: Self::Id, node: &Self::Item) -> Result<(), Error> {
+    fn set(&self, id: Self::Id, node: &Self::Item) -> BTResult<(), Error> {
         self.flush_buffer.insert(id, Op::Set(node.clone()));
         Ok(())
     }
 
-    fn delete(&self, id: Self::Id) -> Result<(), Error> {
+    fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }
@@ -113,7 +116,7 @@ where
     S::Id: std::hash::Hash + Eq + Send + Sync,
     S::Item: Send + Sync,
 {
-    fn checkpoint(&self) -> Result<(), Error> {
+    fn checkpoint(&self) -> BTResult<(), Error> {
         // Busy loop until all flush workers are done.
         // Because there are no concurrent operations, len() might only return a number that is
         // higher that the actual number of items (in case an element of the flush buffer
@@ -130,18 +133,18 @@ where
 {
     type Id = <S as RootIdProvider>::Id;
 
-    fn get_root_id(&self, block_number: u64) -> Result<Self::Id, Error> {
+    fn get_root_id(&self, block_number: u64) -> BTResult<Self::Id, Error> {
         self.storage.get_root_id(block_number)
     }
 
-    fn set_root_id(&self, block_number: u64, id: Self::Id) -> Result<(), Error> {
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), Error> {
         self.storage.set_root_id(block_number, id)
     }
 }
 
 /// A wrapper around a set of flush worker threads that allows to shut them down gracefully.
 struct FlushWorkers {
-    workers: Vec<std::thread::JoinHandle<Result<(), Error>>>,
+    workers: Vec<std::thread::JoinHandle<BTResult<(), Error>>>,
     shutdown: Arc<AtomicBool>, // Arc for shared ownership with flush worker threads
 }
 
@@ -175,7 +178,7 @@ impl FlushWorkers {
         flush_buffer: &FlushBuffer<S::Id, S::Item>,
         storage: &S,
         shutdown: &Arc<AtomicBool>,
-    ) -> Result<(), Error>
+    ) -> BTResult<(), Error>
     where
         S: Storage,
         S::Id: Eq + std::hash::Hash + Send + Sync,
@@ -218,7 +221,7 @@ impl FlushWorkers {
         }
     }
 
-    pub fn shutdown(self) -> Result<(), Error> {
+    pub fn shutdown(self) -> BTResult<(), Error> {
         self.shutdown.store(true, Ordering::SeqCst);
         for worker in self.workers {
             worker.join().unwrap()?;
@@ -244,6 +247,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        error::BTError,
         storage::file::{
             NodeFileStorage, SeekFile, TestNode, TestNodeFileStorageManager, TestNodeId,
             TestNodeType,
@@ -339,7 +343,10 @@ mod tests {
         storage.flush_buffer.insert(id, Op::Delete);
 
         let result = storage.get(id);
-        assert!(matches!(result, Err(Error::NotFound)));
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]
@@ -590,22 +597,22 @@ mod tests {
         pub Storage {}
 
         impl Checkpointable for Storage {
-            fn checkpoint(&self) -> Result<(), Error>;
+            fn checkpoint(&self) -> BTResult<(), Error>;
         }
 
         impl Storage for Storage {
             type Id = TestNodeId;
             type Item = TestNode;
 
-            fn open(_path: &Path) -> Result<Self, Error>;
+            fn open(_path: &Path) -> BTResult<Self, Error>;
 
-            fn get(&self, id: <Self as Storage>::Id) -> Result<<Self as Storage>::Item, Error>;
+            fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 
             fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
-            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> Result<(), Error>;
+            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
 
-            fn delete(&self, id: <Self as Storage>::Id) -> Result<(), Error>;
+            fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
         }
     }
 }

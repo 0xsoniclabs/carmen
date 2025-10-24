@@ -12,6 +12,7 @@
 use std::path::Path;
 
 pub use self::error::Error;
+use crate::error::BTResult;
 
 mod error;
 pub mod file;
@@ -30,23 +31,23 @@ pub trait Storage: Send + Sync {
     /// checkpoint.
     /// Depending on the implementation, the path is required to be a directory or a
     /// file.
-    fn open(path: &Path) -> Result<Self, Error>
+    fn open(path: &Path) -> BTResult<Self, Error>
     where
         Self: Sized;
 
     /// Returns the item with the given ID.
-    fn get(&self, id: Self::Id) -> Result<Self::Item, Error>;
+    fn get(&self, id: Self::Id) -> BTResult<Self::Item, Error>;
 
     /// Reserves a new ID for the given item.
     /// IDs are only unique at a give point in time, but may be reused if this item is deleted.
     fn reserve(&self, item: &Self::Item) -> Self::Id;
 
     /// Stores the item with the given ID.
-    fn set(&self, id: Self::Id, item: &Self::Item) -> Result<(), Error>;
+    fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), Error>;
 
     /// Deletes the item with the given ID.
     /// The ID may be reused in the future.
-    fn delete(&self, id: Self::Id) -> Result<(), Error>;
+    fn delete(&self, id: Self::Id) -> BTResult<(), Error>;
 }
 
 /// An entity which can create durable checkpoints of its state.
@@ -60,7 +61,7 @@ pub trait Storage: Send + Sync {
 /// operation (read, write or other checkpoint) in progress.
 pub trait Checkpointable: Send + Sync {
     /// Create a checkpoint which is guaranteed to be durable.
-    fn checkpoint(&self) -> Result<(), Error>;
+    fn checkpoint(&self) -> BTResult<(), Error>;
 }
 
 /// An entity which participates in a two-phase commit protocol.
@@ -70,19 +71,19 @@ pub trait Checkpointable: Send + Sync {
 /// there is no other operation (read, write or other checkpoint) in progress.
 pub trait CheckpointParticipant {
     /// Checks that `checkpoint` is the latest checkpoint the participant has committed to.
-    fn ensure(&self, checkpoint: u64) -> Result<(), Error>;
+    fn ensure(&self, checkpoint: u64) -> BTResult<(), Error>;
 
     /// Prepares the given checkpoint, but does not commit to it yet.
     /// A prepared checkpoint can be either committed or aborted.
-    fn prepare(&self, checkpoint: u64) -> Result<(), Error>;
+    fn prepare(&self, checkpoint: u64) -> BTResult<(), Error>;
 
     /// Commits the given checkpoint, making it durable. The checkpoint must have been
     /// prepared before. Failing to commit a prepared checkpoint is an irrecoverable error.
-    fn commit(&self, checkpoint: u64) -> Result<(), Error>;
+    fn commit(&self, checkpoint: u64) -> BTResult<(), Error>;
 
     /// Aborts the given checkpoint, reverting any preparations done in the prepare phase. The node
     /// data itself is not discarded. The checkpoint must have been prepared before.
-    fn abort(&self, checkpoint: u64) -> Result<(), Error>;
+    fn abort(&self, checkpoint: u64) -> BTResult<(), Error>;
 }
 
 /// An entity which can provide and store IDs of a tree's root node at different block numbers.
@@ -91,9 +92,9 @@ pub trait RootIdProvider {
     type Id;
 
     /// Returns the root ID for the given block number.
-    fn get_root_id(&self, block_number: u64) -> Result<Self::Id, Error>;
+    fn get_root_id(&self, block_number: u64) -> BTResult<Self::Id, Error>;
 
     /// Sets the root ID for the given block number. The block number must greater than all block
     /// numbers previously passed to `set_root_id`.
-    fn set_root_id(&self, block_number: u64, id: Self::Id) -> Result<(), Error>;
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), Error>;
 }

@@ -21,7 +21,10 @@ use std::{
     time::Instant,
 };
 
-use carmen_rust::storage::file::{FileBackend, NoSeekFile, PageCachedFile, SeekFile};
+use carmen_rust::{
+    error::BTResult,
+    storage::file::{FileBackend, NoSeekFile, PageCachedFile, SeekFile},
+};
 use criterion::{
     BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput, criterion_group,
     criterion_main, measurement::WallTime,
@@ -122,7 +125,7 @@ impl Display for Operation {
 /// The function takes a [`Path`] and [`OpenOptions`] and returns a tuple of the opened backend
 /// and a string identifying the backend.
 pub type BackendOpenFn =
-    fn(&Path, OpenOptions) -> std::io::Result<(Arc<dyn FileBackend>, &'static str)>;
+    fn(&Path, OpenOptions) -> BTResult<(Arc<dyn FileBackend>, &'static str), std::io::Error>;
 
 /// Returns an iterator over functions that open different `FileBackend` implementations.
 /// Each function returns a tuple of the opened backend and a string identifying the backend.

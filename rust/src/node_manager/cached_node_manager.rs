@@ -16,7 +16,7 @@ use std::{
 };
 
 use crate::{
-    error::Error,
+    error::{BTResult, Error},
     node_manager::{
         NodeManager,
         lock_cache::{EvictionHooks, LockCache},
@@ -66,9 +66,9 @@ where
     }
 
     /// Stores the evicted node in the underlying storage if it is dirty.
-    fn on_evict(&self, key: S::Id, node: NodeWithMetadata<S::Item>) -> Result<(), Error> {
+    fn on_evict(&self, key: S::Id, node: NodeWithMetadata<S::Item>) -> BTResult<(), Error> {
         if node.is_dirty {
-            return self.storage.set(key, &node).map_err(Error::Storage);
+            return self.storage.set(key, &node).map_err(Into::into);
         }
         Ok(())
     }
@@ -132,7 +132,7 @@ where
     type Id = S::Id;
     type NodeType = S::Item;
 
-    fn add(&self, node: Self::NodeType) -> Result<Self::Id, Error> {
+    fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error> {
         let id = self.storage.reserve(&node);
         let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
@@ -149,7 +149,7 @@ where
     fn get_read_access(
         &self,
         id: Self::Id,
-    ) -> Result<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
+    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
         let lock = self.nodes.get_read_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
@@ -166,7 +166,7 @@ where
     fn get_write_access(
         &self,
         id: Self::Id,
-    ) -> Result<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
+    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
         let lock = self.nodes.get_write_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
@@ -182,7 +182,7 @@ where
     /// [`get_write_access`](Self::get_write_access) must be made for the same ID.
     /// It is not safe to call this function multiple times for the same ID, unless allowed by
     /// [`Self::S`].
-    fn delete(&self, id: Self::Id) -> Result<(), Error> {
+    fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
         self.nodes.remove(id)?;
         self.storage.delete(id)?;
         Ok(())
@@ -195,7 +195,7 @@ where
     S::Id: Eq + Hash + Copy + Send + Sync,
     S::Item: Default + Clone + Send + Sync,
 {
-    fn checkpoint(&self) -> Result<(), crate::storage::Error> {
+    fn checkpoint(&self) -> BTResult<(), crate::storage::Error> {
         for (id, mut guard) in self.nodes.iter_write() {
             if guard.is_dirty {
                 self.storage.storage.set(id, &guard.node)?;
@@ -217,14 +217,14 @@ mod tests {
     };
 
     use super::*;
-    use crate::storage::{self};
+    use crate::{error::BTError, storage};
 
     type TestNodeId = u32;
     type TestNode = i32;
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
-    fn not_found() -> Result<NodeWithMetadata<TestNode>, Error> {
-        Err(Error::Storage(storage::Error::NotFound))
+    fn not_found() -> BTResult<NodeWithMetadata<TestNode>, Error> {
+        Err(Error::Storage(storage::Error::NotFound).into())
     }
 
     /// Helper function to insert a node into the cache.
@@ -296,14 +296,13 @@ mod tests {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage
             .expect_get()
-            .returning(|_| Err(storage::Error::NotFound));
+            .returning(|_| Err(storage::Error::NotFound.into()));
 
         let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let res = get_method(&manager, 0);
-        assert!(res.is_err());
         assert!(matches!(
-            res.err().unwrap(),
-            Error::Storage(storage::Error::NotFound)
+            res.map_err(BTError::into_inner),
+            Err(Error::Storage(storage::Error::NotFound))
         ));
     }
 
@@ -385,15 +384,14 @@ mod tests {
             .expect_delete()
             .times(1)
             .with(eq(id))
-            .returning(|_| Err(storage::Error::NotFound));
+            .returning(|_| Err(storage::Error::NotFound.into()));
 
         let manager = CachedNodeManager::new(2, storage, pin_nothing);
         cache_insert(&manager, id, 123, true);
         let res = manager.delete(id);
-        assert!(res.is_err());
         assert!(matches!(
-            res.unwrap_err(),
-            Error::Storage(storage::Error::NotFound)
+            res.map_err(BTError::into_inner),
+            Err(Error::Storage(storage::Error::NotFound))
         ));
     }
 
@@ -462,7 +460,7 @@ mod tests {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage
             .expect_set()
-            .returning(|_, _| Err(storage::Error::NotFound));
+            .returning(|_, _| Err(storage::Error::NotFound.into()));
         let handler = StorageEvictionHandler {
             storage,
             is_pinned_predicate: pin_nothing,
@@ -476,8 +474,8 @@ mod tests {
         );
         assert!(res.is_err());
         assert!(matches!(
-            res.unwrap_err(),
-            Error::Storage(storage::Error::NotFound)
+            res.map_err(BTError::into_inner),
+            Err(Error::Storage(storage::Error::NotFound))
         ));
     }
 
@@ -491,19 +489,19 @@ mod tests {
         pub CachedNodeManagerStorage {}
 
         impl Checkpointable for CachedNodeManagerStorage {
-            fn checkpoint(&self) -> Result<(), storage::Error>;
+            fn checkpoint(&self) -> BTResult<(), storage::Error>;
         }
 
         impl Storage for CachedNodeManagerStorage {
             type Id = TestNodeId;
             type Item = TestNode;
 
-            fn open(_path: &Path) -> Result<Self, storage::Error>;
+            fn open(_path: &Path) -> BTResult<Self, storage::Error>;
 
             fn get(
                 &self,
                 id: <Self as Storage>::Id,
-            ) -> Result<<Self as Storage>::Item, storage::Error>;
+            ) -> BTResult<<Self as Storage>::Item, storage::Error>;
 
             fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
@@ -511,16 +509,18 @@ mod tests {
                 &self,
                 id: <Self as Storage>::Id,
                 item: &<Self as Storage>::Item,
-            ) -> Result<(), storage::Error>;
+            ) -> BTResult<(), storage::Error>;
 
-            fn delete(&self, _id: <Self as Storage>::Id) -> Result<(), storage::Error>;
+            fn delete(&self, _id: <Self as Storage>::Id) -> BTResult<(), storage::Error>;
         }
 
     }
 
     /// Type alias for a closure that calls either `get_read_access` or `get_write_access`
-    type GetMethod =
-        fn(&CachedNodeManager<MockCachedNodeManagerStorage>, TestNodeId) -> Result<TestNode, Error>;
+    type GetMethod = fn(
+        &CachedNodeManager<MockCachedNodeManagerStorage>,
+        TestNodeId,
+    ) -> BTResult<TestNode, Error>;
 
     /// Reusable rstest template to test both `get_read_access` and `get_write_access`
     #[rstest_reuse::template]

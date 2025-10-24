@@ -20,7 +20,7 @@ use quick_cache::{
     sync::{Cache, DefaultLifecycle, GuardResult},
 };
 
-use crate::error::Error;
+use crate::error::{BTResult, Error};
 
 mod test_utils;
 
@@ -37,7 +37,7 @@ pub trait EvictionHooks: Send + Sync {
 
     /// Called when an item is evicted from the cache.
     /// This function should be fast, otherwise cache performance might be negatively affected.
-    fn on_evict(&self, _key: Self::Key, _value: Self::Value) -> Result<(), Error> {
+    fn on_evict(&self, _key: Self::Key, _value: Self::Value) -> BTResult<(), Error> {
         Ok(())
     }
 }
@@ -136,8 +136,8 @@ where
     pub fn get_read_access_or_insert(
         &self,
         key: K,
-        insert_fn: impl FnOnce() -> Result<V, Error>,
-    ) -> Result<RwLockReadGuard<'_, V>, Error> {
+        insert_fn: impl FnOnce() -> BTResult<V, Error>,
+    ) -> BTResult<RwLockReadGuard<'_, V>, Error> {
         self.get_access_or_insert(key, insert_fn, |lock| lock.read().unwrap())
     }
 
@@ -151,8 +151,8 @@ where
     pub fn get_write_access_or_insert(
         &self,
         key: K,
-        insert_fn: impl FnOnce() -> Result<V, Error>,
-    ) -> Result<RwLockWriteGuard<'_, V>, Error> {
+        insert_fn: impl FnOnce() -> BTResult<V, Error>,
+    ) -> BTResult<RwLockWriteGuard<'_, V>, Error> {
         self.get_access_or_insert(key, insert_fn, |lock| lock.write().unwrap())
     }
 
@@ -161,7 +161,7 @@ where
     /// This function must not be called concurrently with any other operation on the same key.
     /// If the key is currently being accessed by another thread, an error is returned, after
     /// which the cache is in an indeterminate state.
-    pub fn remove(&self, key: K) -> Result<(), Error> {
+    pub fn remove(&self, key: K) -> BTResult<(), Error> {
         if let Some(slot) = self.cache.get(&key) {
             // Try getting exclusive write access before removing the key,
             // ensuring that no other thread is holding a reference to it.
@@ -172,7 +172,7 @@ where
                         return Err(Error::IllegalConcurrentOperation(
                             "another thread is attempting to access a key while it is being removed"
                                 .to_owned(),
-                        ));
+                        ).into());
                     }
                     *guard = V::default();
                     self.free_slots.insert(*slot);
@@ -181,7 +181,8 @@ where
                     return Err(Error::IllegalConcurrentOperation(
                         "another thread is holding a lock on a key that is being removed"
                             .to_owned(),
-                    ));
+                    )
+                    .into());
                 }
                 Err(TryLockError::Poisoned(e)) => panic!("poisoned lock: {e:?}"),
             }
@@ -205,9 +206,9 @@ where
     fn get_access_or_insert<'a, T>(
         &'a self,
         key: K,
-        insert_fn: impl FnOnce() -> Result<V, Error>,
+        insert_fn: impl FnOnce() -> BTResult<V, Error>,
         access_fn: impl FnOnce(&'a RwLock<V>) -> T + 'a,
-    ) -> Result<T, Error> {
+    ) -> BTResult<T, Error> {
         match self.cache.get_value_or_guard(&key, None) {
             GuardResult::Value(slot) => {
                 // NOTE: After we get the slot and before we acquire the lock (this line),
@@ -316,14 +317,15 @@ where
 mod tests {
     use super::*;
     use crate::{
+        error::BTError,
         node_manager::lock_cache::test_utils::{
             EvictionLogger, GetOrInsertMethod, get_method, ignore_guard,
         },
         storage,
     };
 
-    fn not_found() -> Result<i32, Error> {
-        Err(Error::Storage(storage::Error::NotFound))
+    fn not_found() -> BTResult<i32, Error> {
+        Err(Error::Storage(storage::Error::NotFound).into())
     }
 
     #[test]
@@ -346,9 +348,9 @@ mod tests {
 
     #[rstest_reuse::apply(get_method)]
     fn items_can_be_inserted_and_removed(
-        #[case] get_fn: GetOrInsertMethod<fn() -> Result<i32, Error>>,
+        #[case] get_fn: GetOrInsertMethod<fn() -> BTResult<i32, Error>>,
     ) {
-        type InsertFn = fn() -> Result<i32, Error>;
+        type InsertFn = fn() -> BTResult<i32, Error>;
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(10, logger.clone());
 
@@ -364,7 +366,10 @@ mod tests {
 
         cache.remove(2u32).unwrap();
         let res = get_fn(&cache, 2u32, &(not_found as InsertFn));
-        assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
+        assert!(matches!(
+            res.map_err(BTError::into_inner),
+            Err(Error::Storage(storage::Error::NotFound))
+        ));
 
         cache.remove(9999u32).unwrap(); // Removing non-existing key is a no-op
     }
@@ -416,7 +421,10 @@ mod tests {
 
         // Evicted key is gone
         let res = cache.get_read_access_or_insert(evicted_item.0, not_found);
-        assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
+        assert!(matches!(
+            res.map_err(BTError::into_inner),
+            Err(Error::Storage(storage::Error::NotFound))
+        ));
 
         assert!(!cache.free_slots.is_empty());
         for slot in cache.free_slots.iter() {
@@ -474,7 +482,10 @@ mod tests {
 
         let _guard = cache.get_read_access_or_insert(1u32, || Ok(123)).unwrap();
         let res = cache.remove(1u32);
-        assert!(matches!(res, Err(Error::IllegalConcurrentOperation(_))));
+        assert!(matches!(
+            res.map_err(BTError::into_inner),
+            Err(Error::IllegalConcurrentOperation(_))
+        ));
     }
 
     #[test]
@@ -486,7 +497,10 @@ mod tests {
         // We simulate a concurrent access by increasing the Arc's strong count.
         let _slot = cache.cache.get(&1u32).unwrap();
         let res = cache.remove(1u32);
-        assert!(matches!(res, Err(Error::IllegalConcurrentOperation(_))));
+        assert!(matches!(
+            res.map_err(BTError::into_inner),
+            Err(Error::IllegalConcurrentOperation(_))
+        ));
     }
 
     #[test]
@@ -563,8 +577,8 @@ mod tests {
             type Key = u32;
             type Value = i32;
 
-            fn on_evict(&self, _key: u32, _value: i32) -> Result<(), Error> {
-                Err(Error::Storage(storage::Error::NotFound))
+            fn on_evict(&self, _key: u32, _value: i32) -> BTResult<(), Error> {
+                Err(Error::Storage(storage::Error::NotFound).into())
             }
         }
 

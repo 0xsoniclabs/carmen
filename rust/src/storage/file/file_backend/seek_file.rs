@@ -15,7 +15,7 @@ use std::{
     sync::Mutex,
 };
 
-use crate::storage::file::FileBackend;
+use crate::{error::BTResult, storage::file::FileBackend};
 
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using a mutex to ensure
 /// exclusive access to the file. This is suitable for platforms where `pread` and `pwrite` are not
@@ -23,34 +23,39 @@ use crate::storage::file::FileBackend;
 pub struct SeekFile(Mutex<std::fs::File>);
 
 impl FileBackend for SeekFile {
-    fn open(path: &Path, options: OpenOptions) -> std::io::Result<Self> {
+    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error> {
         let file = options.open(path)?;
-        file.try_lock()?;
+        file.try_lock().map_err(std::io::Error::from)?;
         Ok(Self(Mutex::new(file)))
     }
 
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error> {
         let mut file = self.0.lock().unwrap();
         file.seek(SeekFrom::Start(offset))?;
-        file.write_all(buf)
+        file.write_all(buf).map_err(Into::into)
     }
 
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> BTResult<(), std::io::Error> {
         let mut file = self.0.lock().unwrap();
         file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(buf)
+        file.read_exact(buf).map_err(Into::into)
     }
 
-    fn flush(&self) -> std::io::Result<()> {
-        self.0.lock().unwrap().sync_all()
+    fn flush(&self) -> BTResult<(), std::io::Error> {
+        self.0.lock().unwrap().sync_all().map_err(Into::into)
     }
 
-    fn len(&self) -> std::io::Result<u64> {
-        self.0.lock().unwrap().metadata().map(|m| m.len())
+    fn len(&self) -> BTResult<u64, std::io::Error> {
+        self.0
+            .lock()
+            .unwrap()
+            .metadata()
+            .map(|m| m.len())
+            .map_err(Into::into)
     }
 
-    fn set_len(&self, len: u64) -> std::io::Result<()> {
-        self.0.lock().unwrap().set_len(len)
+    fn set_len(&self, len: u64) -> BTResult<(), std::io::Error> {
+        self.0.lock().unwrap().set_len(len).map_err(Into::into)
     }
 }
 
