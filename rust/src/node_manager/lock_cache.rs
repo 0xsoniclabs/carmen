@@ -24,7 +24,7 @@ pub trait EvictionHooks: Send + Sync {
     type Value;
 
     /// Determines whether the given item is currently pinned and should not be evicted.
-    /// This hook is only called if the item otherwise eligible for eviction.
+    /// This hook is only called if the item it otherwise eligible for eviction.
     fn is_pinned(&self, _key: &Self::Key, _value: &Self::Value) -> bool {
         false
     }
@@ -512,27 +512,30 @@ mod tests {
             }
         }
 
-        let nodes: Arc<[_]> = Arc::from(vec![RwLock::new(123), RwLock::new(42)].into_boxed_slice());
+        let locks: Arc<[_]> = Arc::from(vec![RwLock::new(123), RwLock::new(42)].into_boxed_slice());
         let lifecycle = ItemLifecycle {
-            locks: nodes,
+            locks,
             free_slots: Arc::new(DashSet::new()),
             hooks: Arc::new(PinnedHook {}),
         };
 
+        // The key does not matter for this test
+        let some_key = 33;
+
         // Item is not pinned as it's not locked and the Arc's strong count is 1
-        assert!(!lifecycle.is_pinned(&0, &Arc::new(0usize)));
+        assert!(!lifecycle.is_pinned(&some_key, &Arc::new(0usize)));
 
         // Item is pinned as its Arc's strong count is > 1
         let arc = Arc::new(0usize);
         let arc2 = arc.clone();
-        assert!(lifecycle.is_pinned(&0, &arc2));
+        assert!(lifecycle.is_pinned(&some_key, &arc2));
 
         // Item is pinned as another thread holds a lock
         let _guard = lifecycle.locks[0].read().unwrap(); // Lock item at pos 0
-        assert!(lifecycle.is_pinned(&0, &Arc::new(0usize)));
+        assert!(lifecycle.is_pinned(&some_key, &Arc::new(0usize)));
 
         // Item is pinned as the hook says so
-        assert!(lifecycle.is_pinned(&1, &Arc::new(1usize)));
+        assert!(lifecycle.is_pinned(&some_key, &Arc::new(1usize))); // value at index 1 is 42
     }
 
     #[test]
