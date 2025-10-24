@@ -68,7 +68,7 @@ impl ReuseListFile {
 
     /// Temporarily freezes all currently cached indices, in a way that they can be unfrozen again
     /// using [`Self::unfreeze_temp`] or be permanently frozen using [`Self::freeze_permanently`].
-    /// The newly frozen indices are written to disk.
+    /// The newly frozen indices are appended to the file on disk.
     pub fn freeze_temporarily_and_write_to_disk(&mut self) -> Result<(), Error> {
         self.temp_frozen_indices.append(&mut self.reusable_indices);
 
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn freeze_temporarily_and_write_to_disk_moves_unfrozen_indices_into_temporarily_frozen_indices_and_appends_them_to_disk()
+    fn freeze_temporarily_and_write_to_disk__moves_unfrozen_indices_into_temporarily_frozen_indices_and_appends_them_to_disk()
      {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");

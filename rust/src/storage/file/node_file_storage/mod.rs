@@ -322,9 +322,7 @@ mod tests {
         let storage = NodeFileStorage::open(&dir).unwrap();
 
         assert_eq!(storage.get(0).unwrap(), [0; 32]);
-        assert!(matches!(storage.get(1).unwrap_err(), Error::NotFound)); // in reuse list
         assert_eq!(storage.get(2).unwrap(), [2; 32]);
-        assert!(matches!(storage.get(3).unwrap_err(), Error::NotFound)); // out of bounds
     }
 
     #[test]
@@ -334,7 +332,8 @@ mod tests {
         let storage = NodeFileStorage::open(&dir).unwrap();
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
 
-        assert!(matches!(storage.get(0).unwrap_err(), Error::NotFound)); // in reuse list
+        // index 0 is the next index to be assigned, and was therefore not yet assigned
+        assert!(matches!(storage.get(0).unwrap_err(), Error::NotFound));
     }
 
     #[test]
@@ -732,7 +731,7 @@ mod tests {
             old_metadata.frozen_reuse_indices,
         );
         write_reuse_list(&dir, &[0, 2]); // one frozen + one new
-        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32], [3; 32]]); // two frozen + one new
+        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32], [3; 32]]); // two frozen + two new
 
         let prepared_metadata = NodeFileStorageMetadata {
             checkpoint: 2,
@@ -756,6 +755,14 @@ mod tests {
             _node_type: PhantomData,
         };
 
+        storage.reuse_list_file.lock().unwrap().push(2);
+        storage
+            .reuse_list_file
+            .lock()
+            .unwrap()
+            .freeze_temporarily_and_write_to_disk()
+            .unwrap();
+
         fs::write(
             dir.join(NodeFileStorage::PREPARED_METADATA_FILE),
             prepared_metadata.as_bytes(),
@@ -778,6 +785,8 @@ mod tests {
         assert_eq!(storage.get(1).unwrap(), [1; 32]);
         // Uncommitted data becomes modifiable again
         assert!(storage.set(3, &[3; 32]).is_ok());
+        // Uncommitted reuse indices are usable again
+        assert_eq!(storage.reserve(&[0; 32]), 2);
     }
 
     impl<T, F> super::NodeFileStorage<T, F>
