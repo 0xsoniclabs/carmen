@@ -1,3 +1,5 @@
+github.com/HerbertJordan/tracy v0.0.0-20251024153628-9d78846a993f h1:FP0+Xs8oDYNqlmyVFruULXmf6MM1qaIvNss848sjZ7k=
+github.com/HerbertJordan/tracy v0.0.0-20251024153628-9d78846a993f/go.mod h1:qEVaKHeu0yUFdlGhLPw/jOTH4haBwbua1WGlO+hND6E=
 github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDOSA=
 github.com/StackExchange/wmi v1.2.1/go.mod h1:rcmrprowKIVzvc+NUiLncP2uuArMWLCbu9SBzvHz7e8=
 github.com/bits-and-blooms/bitset v1.20.0 h1:2F+rfL86jE2d/bmw7OhqUg2Sj/1rURkBn3MdfoPyRVU=

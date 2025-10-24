@@ -10,7 +10,7 @@
 
 module github.com/0xsoniclabs/carmen/go
 
-go 1.24.0
+go 1.24.2
 
 require (
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a
@@ -29,6 +29,7 @@ require (
 )
 
 require (
+	github.com/HerbertJordan/tracy v0.0.0-20251024153628-9d78846a993f // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/consensys/gnark-crypto v0.18.0 // indirect
