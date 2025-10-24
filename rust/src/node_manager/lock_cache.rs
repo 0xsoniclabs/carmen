@@ -19,13 +19,21 @@ use quick_cache::{
 use crate::error::Error;
 
 /// A trait for handling eviction events in the cache.
-pub trait OnEvict: Send + Sync {
+pub trait EvictionHooks: Send + Sync {
     type Key;
     type Value;
 
+    /// Determines whether the given item is currently pinned and should not be evicted.
+    /// This hook is only called if the item otherwise eligible for eviction.
+    fn is_pinned(&self, _key: &Self::Key, _value: &Self::Value) -> bool {
+        false
+    }
+
     /// Called when an item is evicted from the cache.
     /// This function should be fast, otherwise cache performance might be negatively affected.
-    fn on_evict(&self, key: Self::Key, value: Self::Value) -> Result<(), Error>;
+    fn on_evict(&self, _key: Self::Key, _value: Self::Value) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// A cache that holds items (`K`/`V` pairs) on which read/write locks can be acquired.
@@ -58,7 +66,7 @@ where
     /// Creates a new cache with the given capacity and eviction callback.
     ///
     /// The actual capacity might differ slightly due to rounding performed by quick-cache.
-    pub fn new(capacity: usize, on_evict: Arc<dyn OnEvict<Key = K, Value = V>>) -> Self {
+    pub fn new(capacity: usize, hooks: Arc<dyn EvictionHooks<Key = K, Value = V>>) -> Self {
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
             .weight_capacity(capacity as u64) // unit weight per value
@@ -93,7 +101,7 @@ where
             ItemLifecycle {
                 locks: locks.clone(),
                 free_slots: free_slots.clone(),
-                callback: on_evict,
+                hooks,
             },
         );
 
@@ -239,7 +247,7 @@ where
 struct ItemLifecycle<K, V> {
     locks: Arc<[RwLock<V>]>,
     free_slots: Arc<DashSet<usize>>,
-    callback: Arc<dyn OnEvict<Key = K, Value = V>>,
+    hooks: Arc<dyn EvictionHooks<Key = K, Value = V>>,
 }
 
 impl<K, V> Clone for ItemLifecycle<K, V> {
@@ -247,7 +255,7 @@ impl<K, V> Clone for ItemLifecycle<K, V> {
         ItemLifecycle {
             locks: self.locks.clone(),
             free_slots: self.free_slots.clone(),
-            callback: self.callback.clone(),
+            hooks: self.hooks.clone(),
         }
     }
 }
@@ -261,9 +269,18 @@ where
 
     fn begin_request(&self) -> Self::RequestState {}
 
-    fn is_pinned(&self, _key: &K, slot: &Arc<usize>) -> bool {
+    fn is_pinned(&self, key: &K, slot: &Arc<usize>) -> bool {
+        // If another thread is currently holding a reference to the slot,
+        // we cannot evict the contained item.
+        if Arc::strong_count(slot) > 1 {
+            return true;
+        }
         // If the lock is currently locked, we consider the item pinned.
-        Arc::strong_count(slot) > 1 || self.locks[**slot].try_write().is_err()
+        // If not, we let the hook decide.
+        match self.locks[**slot].try_write() {
+            Ok(guard) => self.hooks.is_pinned(key, &guard),
+            Err(_) => true,
+        }
     }
 
     /// Invokes the eviction callback, resets the slot to its default value and
@@ -275,7 +292,7 @@ where
             std::mem::take(&mut *lock)
         };
         self.free_slots.insert(*slot);
-        self.callback
+        self.hooks
             .on_evict(key, value)
             .expect("eviction callback failed");
     }
@@ -291,7 +308,7 @@ mod tests {
         evicted: DashSet<(u32, i32)>,
     }
 
-    impl OnEvict for EvictionLogger {
+    impl EvictionHooks for EvictionLogger {
         type Key = u32;
         type Value = i32;
 
@@ -484,25 +501,38 @@ mod tests {
     }
 
     #[test]
-    fn item_lifecycle_is_pinned_checks_strong_count_and_lock() {
-        let nodes: Arc<[_]> = Arc::from(vec![RwLock::default()].into_boxed_slice());
+    fn item_lifecycle_is_pinned_checks_strong_count_and_lock_and_hook() {
+        struct PinnedHook {}
+        impl EvictionHooks for PinnedHook {
+            type Key = u32;
+            type Value = usize;
+
+            fn is_pinned(&self, _key: &u32, value: &usize) -> bool {
+                *value == 42
+            }
+        }
+
+        let nodes: Arc<[_]> = Arc::from(vec![RwLock::new(123), RwLock::new(42)].into_boxed_slice());
         let lifecycle = ItemLifecycle {
             locks: nodes,
             free_slots: Arc::new(DashSet::new()),
-            callback: Arc::new(EvictionLogger::default()),
+            hooks: Arc::new(PinnedHook {}),
         };
 
-        // Element is not pinned as it's not locked and the Arc's strong count is 1
+        // Item is not pinned as it's not locked and the Arc's strong count is 1
         assert!(!lifecycle.is_pinned(&0, &Arc::new(0usize)));
 
-        // Element is pinned as its Arc's strong count is > 1
+        // Item is pinned as its Arc's strong count is > 1
         let arc = Arc::new(0usize);
         let arc2 = arc.clone();
         assert!(lifecycle.is_pinned(&0, &arc2));
 
-        // Element is pinned as another thread holds a lock
+        // Item is pinned as another thread holds a lock
         let _guard = lifecycle.locks[0].read().unwrap(); // Lock item at pos 0
         assert!(lifecycle.is_pinned(&0, &Arc::new(0usize)));
+
+        // Item is pinned as the hook says so
+        assert!(lifecycle.is_pinned(&1, &Arc::new(1usize)));
     }
 
     #[test]
@@ -513,7 +543,7 @@ mod tests {
         let lifecycle = ItemLifecycle {
             locks: nodes,
             free_slots: free_slots.clone(),
-            callback: logger.clone(),
+            hooks: logger.clone(),
         };
         lifecycle.on_evict(&mut (), 42, Arc::new(0usize));
         assert!(logger.evicted.contains(&(42, 123)));
@@ -526,7 +556,7 @@ mod tests {
     fn item_lifecycle_on_evict_fails_if_callback_fails() {
         struct FailingEvictionCallback;
 
-        impl OnEvict for FailingEvictionCallback {
+        impl EvictionHooks for FailingEvictionCallback {
             type Key = u32;
             type Value = i32;
 
@@ -541,7 +571,7 @@ mod tests {
         let lifecycle = ItemLifecycle {
             locks: nodes,
             free_slots: free_slots.clone(),
-            callback: logger.clone(),
+            hooks: logger.clone(),
         };
         lifecycle.on_evict(&mut (), 42, Arc::new(0usize));
     }
