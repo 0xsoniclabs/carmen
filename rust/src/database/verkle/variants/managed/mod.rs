@@ -12,5 +12,3 @@ mod nodes;
 
 #[allow(unused)]
 pub use nodes::NodeFileStorageManager;
-#[cfg(test)]
-pub use nodes::{Node, NodeType, empty::EmptyNode, id::NodeId};
