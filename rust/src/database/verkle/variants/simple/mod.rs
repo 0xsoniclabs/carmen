@@ -41,6 +41,7 @@ impl SimpleInMemoryVerkleTrie {
 
 impl VerkleTrie for SimpleInMemoryVerkleTrie {
     fn lookup(&self, key: &Key) -> BTResult<Value, Error> {
+        let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::lookup");
         Ok(self.root.lock().unwrap().lookup(key, 0))
     }
 
@@ -52,6 +53,7 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
+        let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::commit");
         Ok(self.root.lock().unwrap().commit())
     }
 }

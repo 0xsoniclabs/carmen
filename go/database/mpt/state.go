@@ -21,6 +21,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/tracy"
 )
 
 //go:generate mockgen -source state.go -destination state_mocks.go -package mpt
@@ -331,6 +332,8 @@ func (s *MptState) GetRootId() NodeId {
 }
 
 func (s *MptState) GetHash() (hash common.Hash, err error) {
+	zone := tracy.ZoneBegin("GetHash")
+	defer zone.End()
 	hash, hints, err := s.trie.UpdateHashes()
 	if hints != nil {
 		hints.Release()
@@ -339,6 +342,8 @@ func (s *MptState) GetHash() (hash common.Hash, err error) {
 }
 
 func (s *MptState) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
+	zone := tracy.ZoneBegin("Apply")
+	defer zone.End()
 	if err := update.ApplyTo(s); err != nil {
 		return nil, err
 	}

@@ -139,6 +139,7 @@ impl InnerNode {
             return self.commitment;
         }
 
+        let _span = tracy_client::span!("InnerNode::commit");
         for (i, child) in self.children.iter_mut().enumerate() {
             if child.commitment_is_dirty() {
                 let old_child_commitment = child.get_commitment();
@@ -221,6 +222,7 @@ impl LeafNode {
         if !self.commitment_dirty {
             return self.commitment;
         }
+        let _span = tracy_client::span!("LeafNode::commit");
         self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
         self.commitment_dirty = false;
         self.commitment
