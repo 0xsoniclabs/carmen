@@ -24,7 +24,7 @@ pub trait EvictionHooks: Send + Sync {
     type Value;
 
     /// Determines whether the given item is currently pinned and should not be evicted.
-    /// This hook is only called if the item it otherwise eligible for eviction.
+    /// This hook is only called if the item is otherwise eligible for eviction.
     fn is_pinned(&self, _key: &Self::Key, _value: &Self::Value) -> bool {
         false
     }
