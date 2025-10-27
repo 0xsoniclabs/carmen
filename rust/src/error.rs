@@ -134,7 +134,11 @@ impl<E> Deref for BTError<E> {
 
 impl<E: std::fmt::Debug> std::fmt::Debug for BTError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.inner.error)
+        write!(
+            f,
+            "{:?}\nBacktrace:\n{}",
+            self.inner.error, self.inner.backtrace
+        )
     }
 }
 
@@ -235,13 +239,16 @@ mod tests {
     }
 
     #[test]
-    fn debug_forwards_to_inner_error() {
+    fn debug_prints_inner_error_and_backtrace() {
         let error = Error::UnsupportedSchema(0);
         let bt_error: BTError<_> = error.into();
 
         assert_eq!(
             format!("{bt_error:?}"),
-            format!("{:?}", bt_error.inner.error)
+            format!(
+                "{:?}\nBacktrace:\n{}",
+                bt_error.inner.error, bt_error.inner.backtrace
+            )
         );
     }
 
