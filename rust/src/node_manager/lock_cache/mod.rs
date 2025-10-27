@@ -251,7 +251,7 @@ where
                 // This should however never happen in practice for our usage patterns.
                 if self.cache.len() >= self.locks.len() {
                     return Err(Error::CorruptedState(
-                "lock cache's cache size is equal or bigger than the number of slots. This may have happened because an insert operation was executed with all cache entries marked as pinned".to_owned(),
+            "LockCache's cache size is equal or bigger than the number of slots. This may have happened because an insert operation was executed with all cache entries marked as pinned".to_owned(),
             ));
                 }
                 Ok(slot_guard)
@@ -523,11 +523,11 @@ mod tests {
     #[test]
     fn exceeding_maximum_size_returns_corrupted_state_error() {
         let logger = Arc::new(EvictionLogger::default());
-        let cache = LockCache::<u32, i32>::new_with_extra_slots(1, 1, logger.clone());
+        let cache =
+            LockCache::<u32, i32>::new_internal(1, NonZero::new(1).unwrap(), logger.clone());
 
         let _guard = cache.get_read_access_or_insert(1u32, || Ok(123)).unwrap();
         let res = cache.get_read_access_or_insert(2u32, || Ok(456));
-        assert!(res.is_err());
         assert!(matches!(res, Err(Error::CorruptedState(_))));
     }
 
