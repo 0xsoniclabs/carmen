@@ -31,8 +31,8 @@ mod bindings {
                     | crate::storage::Error::InvalidId
                     | crate::storage::Error::Checkpoint,
                 )
-                | Error::NodeManager(_)
-                | Error::IllegalConcurrentOperation(_) => Result_kResult_InternalError,
+                | Error::IllegalConcurrentOperation(_)
+                | Error::CorruptedState(_) => Result_kResult_InternalError,
                 Error::Storage(crate::storage::Error::DatabaseCorruption) => {
                     Result_kResult_CorruptedDatabase
                 }

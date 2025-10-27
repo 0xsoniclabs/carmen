@@ -242,12 +242,18 @@ where
                 // We hold the lock on the slot while inserting the key into the cache,
                 // thereby avoiding the key from immediately being evicted again.
                 // This is important since we always have to return a valid lock.
-                cache_guard
-                    .insert(Arc::new(slot))
-                    .expect("cache entry should not be modified concurrently");
+                cache_guard.insert(Arc::new(slot)).map_err(|_| {
+                    Error::IllegalConcurrentOperation(
+                        "another thread removed the key while it was being inserted".to_owned(),
+                    )
+                })?;
                 // In theory quick-cache can exceed its capacity if all items are pinned.
                 // This should however never happen in practice for our usage patterns.
-                assert!(self.cache.len() < self.locks.len());
+                if self.cache.len() >= self.locks.len() {
+                    return Err(Error::CorruptedState(
+                "lock cache's cache size is equal or bigger than the number of slots. This may have happened because an insert operation was executed with all cache entries marked as pinned".to_owned(),
+            ));
+                }
                 Ok(slot_guard)
             }
             GuardResult::Timeout => unreachable!(),
@@ -512,6 +518,17 @@ mod tests {
         assert!(logger.evicted.is_empty());
         cache.remove(1u32).unwrap();
         assert!(logger.evicted.is_empty());
+    }
+
+    #[test]
+    fn exceeding_maximum_size_returns_corrupted_state_error() {
+        let logger = Arc::new(EvictionLogger::default());
+        let cache = LockCache::<u32, i32>::new_with_extra_slots(1, 1, logger.clone());
+
+        let _guard = cache.get_read_access_or_insert(1u32, || Ok(123)).unwrap();
+        let res = cache.get_read_access_or_insert(2u32, || Ok(456));
+        assert!(res.is_err());
+        assert!(matches!(res, Err(Error::CorruptedState(_))));
     }
 
     #[test]
