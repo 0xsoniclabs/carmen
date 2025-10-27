@@ -51,6 +51,7 @@ pub enum Node {
 
 type Leaf2Node = SparseLeafNode<2>;
 type Leaf256Node = FullLeafNode;
+
 impl TrieVisitor<Node> for NodeStatisticVisitor {
     fn visit(&mut self, node: &Node, level: u8) {
         match node {
