@@ -36,7 +36,11 @@ struct InnerPageCachedFile<F, const D: bool> {
 // using a mutex.
 impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     /// See [`FileBackend::open`].
-    fn open(path: &Path, mut options: OpenOptions) -> BTResult<Self, std::io::Error> {
+    fn open(
+        path: &Path,
+        mut options: OpenOptions,
+        _chunk_size: usize,
+    ) -> BTResult<Self, std::io::Error> {
         let file = options.open(path)?;
         let file_len = file.metadata()?.len();
         let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
@@ -46,7 +50,7 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
         if D {
             options.custom_flags(O_DIRECT | O_SYNC);
         }
-        let file = F::open(path, options)?;
+        let file = F::open(path, options, Page::SIZE)?;
 
         let mut page = Page::zeroed();
         if padded_len != 0 {
@@ -154,8 +158,14 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
 pub struct PageCachedFile<F, const D: bool>(Mutex<InnerPageCachedFile<F, D>>);
 
 impl<F: FileBackend, const D: bool> FileBackend for PageCachedFile<F, D> {
-    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error> {
-        Ok(Self(Mutex::new(InnerPageCachedFile::open(path, options)?)))
+    fn open(
+        path: &Path,
+        options: OpenOptions,
+        chunk_size: usize,
+    ) -> BTResult<Self, std::io::Error> {
+        Ok(Self(Mutex::new(InnerPageCachedFile::open(
+            path, options, chunk_size,
+        )?)))
     }
 
     fn write_all_at(&self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error> {

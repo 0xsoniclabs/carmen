@@ -35,7 +35,11 @@ pub struct MultiPageCachedFile<const P: usize, F: FileBackend, const D: bool> {
 }
 
 impl<const P: usize, F: FileBackend, const D: bool> FileBackend for MultiPageCachedFile<P, F, D> {
-    fn open(path: &Path, mut options: OpenOptions) -> BTResult<Self, std::io::Error> {
+    fn open(
+        path: &Path,
+        mut options: OpenOptions,
+        _chunk_size: usize,
+    ) -> BTResult<Self, std::io::Error> {
         let file = options.clone().open(path)?;
         let file_len = file.metadata()?.len();
         let padded_len = file_len.div_ceil(Page::SIZE as u64) * Page::SIZE as u64;
@@ -45,7 +49,7 @@ impl<const P: usize, F: FileBackend, const D: bool> FileBackend for MultiPageCac
         if D {
             options.custom_flags(O_DIRECT | O_SYNC);
         }
-        let file = F::open(path, options)?;
+        let file = F::open(path, options, Page::SIZE)?;
 
         let pages = (0..P)
             .map(|page_index| {

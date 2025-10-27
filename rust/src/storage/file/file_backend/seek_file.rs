@@ -22,7 +22,11 @@ use crate::{error::BTResult, storage::file::FileBackend, sync::Mutex};
 pub struct SeekFile(Mutex<std::fs::File>);
 
 impl FileBackend for SeekFile {
-    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error> {
+    fn open(
+        path: &Path,
+        options: OpenOptions,
+        _chunk_size: usize,
+    ) -> BTResult<Self, std::io::Error> {
         let file = options.open(path)?;
         file.try_lock().map_err(std::io::Error::from)?;
         Ok(Self(Mutex::new(file)))

@@ -32,14 +32,17 @@ use crate::error::BTResult;
 
 /// An abstraction for concurrent file operations.
 ///
-/// Implementations of this trait are required to ensure that concurrent operations are safe (in
-/// that there are no data races) as long as they operate on non-overlapping regions of the file.
-/// When called with overlapping regions, the behavior is undefined and may lead to data corruption.
+/// Implementations of this trait are required to ensure that concurrent operations are safe and
+/// free of data races.
+/// All read and write operations must use offsets that are multiples of the
+/// specified chunk size and buffers whose lengths are exactly equal to the chunk size.
+/// If implementations rely on this invariant they are required to check it, and return an
+/// error if it is violated.
 #[allow(clippy::len_without_is_empty)]
 #[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait FileBackend: Send + Sync {
     /// Opens a file at the given path with the specified options and tries to acquire a file lock.
-    fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error>
+    fn open(path: &Path, options: OpenOptions, chunk_size: usize) -> BTResult<Self, std::io::Error>
     where
         Self: Sized;
 
@@ -66,6 +69,8 @@ mod tests {
         os::unix::fs::FileExt,
     };
 
+    use zerocopy::IntoBytes;
+
     use super::*;
     use crate::{
         storage::file::{MultiPageCachedFile, PageCachedFile, file_backend::page_utils::Page},
@@ -77,67 +82,68 @@ mod tests {
         utils::test_dir::{Permissions, TestDir},
     };
 
-    type OpenBackendFn = fn(&Path, OpenOptions) -> BTResult<Arc<dyn FileBackend>, std::io::Error>;
+    type OpenBackendFn =
+        fn(&Path, OpenOptions, usize) -> BTResult<Arc<dyn FileBackend>, std::io::Error>;
 
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::seek_file(
-        (|path, options| {
-            <SeekFile as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <SeekFile as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::no_seek_file(
-        (|path, options| {
-            <NoSeekFile as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <NoSeekFile as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__seek_file__direct_io(
-        (|path, options| {
-            <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__no_seek_file__direct_io(
-        (|path, options| {
-            <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__seek_file__no_direct_io(
-        (|path, options| {
-            <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::page_cached_file__no_seek_file__no_direct_io(
-        (|path, options| {
-            <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__seek_file__direct_io(
-        (|path, options| {
-            <MultiPageCachedFile<3, SeekFile, true> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <MultiPageCachedFile<3, SeekFile, true> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__no_seek_file__direct_io(
-        (|path, options| {
-            <MultiPageCachedFile<3, NoSeekFile, true> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <MultiPageCachedFile<3, NoSeekFile, true> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__seek_file__no_direct_io(
-        (|path, options| {
-            <MultiPageCachedFile<3, SeekFile, false> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <MultiPageCachedFile<3, SeekFile, false> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__no_seek_file__no_direct_io(
-        (|path, options| {
-            <MultiPageCachedFile<3, NoSeekFile, false> as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <MultiPageCachedFile<3, NoSeekFile, false> as FileBackend>::open(path, options, chunk_size)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
@@ -151,7 +157,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        assert!(open_backend_fn(path.as_path(), options.clone()).is_ok());
+        assert!(open_backend_fn(path.as_path(), options.clone(), 1).is_ok());
         assert!(std::fs::exists(path).unwrap());
     }
 
@@ -168,7 +174,7 @@ mod tests {
             file.write_all(&[0; 10]).unwrap();
         }
 
-        assert!(open_backend_fn(path.as_path(), options.clone()).is_ok());
+        assert!(open_backend_fn(path.as_path(), options.clone(), 1).is_ok());
     }
 
     #[rstest_reuse::apply(open_backend)]
@@ -180,11 +186,11 @@ mod tests {
         options.create(true).read(true).write(true);
 
         // Open the file once and lock it.
-        let file = open_backend_fn(path.as_path(), options.clone());
+        let file = open_backend_fn(path.as_path(), options.clone(), 1);
         assert!(file.is_ok());
 
         // Try to open it again, while the first on is still open. This should fail.
-        let file = open_backend_fn(path.as_path(), options.clone());
+        let file = open_backend_fn(path.as_path(), options.clone(), 1);
         assert_eq!(
             file.map(|_| ()).unwrap_err().kind(),
             std::io::ErrorKind::WouldBlock
@@ -203,7 +209,7 @@ mod tests {
         options.read(true).write(true);
 
         assert_eq!(
-            open_backend_fn(path.as_path(), options.clone())
+            open_backend_fn(path.as_path(), options.clone(), 1)
                 .map(|_| ())
                 .unwrap_err()
                 .kind(),
@@ -220,19 +226,18 @@ mod tests {
         options.create(true).read(true).write(true);
 
         let data = [1; 10];
-        let offset = 5;
+        let offset = 10;
 
         {
-            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone(), data.len()).unwrap();
             backend.write_all_at(&data, offset).unwrap();
             backend.flush().unwrap();
         }
-        // file: [_, _, _, _, _, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
         let mut file = File::open(path).unwrap();
-        let mut buf = vec![0; 15];
+        let mut buf = [0; 20];
         file.read_exact(&mut buf).unwrap();
-        assert_eq!(buf[5..], data);
+        assert_eq!(buf[10..], data);
     }
 
     #[rstest_reuse::apply(open_backend)]
@@ -249,14 +254,14 @@ mod tests {
         let offset = 0;
 
         {
-            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone(), data.len()).unwrap();
             backend.write_all_at(&data, offset).unwrap();
             backend.flush().unwrap();
         }
 
         let file = File::open(path).unwrap();
         assert_eq!(file.metadata().unwrap().len(), data.len() as u64);
-        let mut buf = vec![0; Page::SIZE * 3];
+        let mut buf = [0; Page::SIZE * 3];
         file.read_exact_at(&mut buf, offset).unwrap();
         assert_eq!(buf, data);
     }
@@ -274,7 +279,7 @@ mod tests {
         let offset2 = 10000;
 
         {
-            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
+            let backend = open_backend_fn(path.as_path(), options.clone(), data.len()).unwrap();
             backend.write_all_at(&data, offset1).unwrap();
             backend.write_all_at(&data, offset2).unwrap();
             backend.flush().unwrap();
@@ -303,19 +308,14 @@ mod tests {
 
         {
             let mut file = File::create(path.as_path()).unwrap();
-            let buf = vec![1; 10];
-            file.write_all(&buf).unwrap();
-            let buf = vec![0; 5];
-            file.write_all(&buf).unwrap();
+            let buf = [[1u8; 10], [2; 10]];
+            file.write_all(buf.as_bytes()).unwrap();
         }
-        // file: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
-        // read:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [0; 10];
-        backend.read_exact_at(&mut buf, 5).unwrap();
-        assert_eq!(buf[..5], [1; 5]);
-        assert_eq!(buf[5..], [0; 5]);
+        let backend = open_backend_fn(path.as_path(), options.clone(), buf.len()).unwrap();
+        backend.read_exact_at(&mut buf, 10).unwrap();
+        assert_eq!(buf, [2; 10]);
     }
 
     #[rstest_reuse::apply(open_backend)]
@@ -336,8 +336,8 @@ mod tests {
             file.write_all(&data).unwrap();
         }
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [0; Page::SIZE * 3];
+        let backend = open_backend_fn(path.as_path(), options.clone(), buf.len()).unwrap();
         backend.read_exact_at(&mut buf, offset).unwrap();
         assert_eq!(buf, data);
     }
@@ -362,8 +362,8 @@ mod tests {
             file.write_all(&data).unwrap();
         }
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [1];
+        let backend = open_backend_fn(path.as_path(), options.clone(), buf.len()).unwrap();
         backend.read_exact_at(&mut buf, offset1).unwrap();
         assert_eq!(buf, data);
         backend.read_exact_at(&mut buf, offset2).unwrap();
@@ -383,8 +383,8 @@ mod tests {
         }
         // The file exists but is empty.
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         let mut buf = [0; 5];
+        let backend = open_backend_fn(path.as_path(), options.clone(), buf.len()).unwrap();
         let res = backend.read_exact_at(&mut buf, 5);
         assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
     }
@@ -393,6 +393,7 @@ mod tests {
     fn access_same_page_in_parallel_does_not_deadlock(#[case] open_backend_fn: OpenBackendFn) {
         const THREADS: usize = 128;
         const PAGES: usize = 100;
+        const BUF_LEN: usize = Page::SIZE / THREADS;
 
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("test_file.bin");
@@ -407,7 +408,7 @@ mod tests {
             file.write_all(&data).unwrap();
         }
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone(), BUF_LEN).unwrap();
 
         let barrier = Barrier::new(THREADS);
 
@@ -416,7 +417,6 @@ mod tests {
                 let barrier = &barrier;
                 let backend = Arc::clone(&backend);
                 s.spawn(move || {
-                    const BUF_LEN: usize = Page::SIZE / THREADS;
                     barrier.wait(); // ensure that all threads have at least been spawned before any starts performing I/O
                     for page in 0..PAGES {
                         let mut buf = [0; BUF_LEN];
@@ -438,8 +438,9 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        backend.write_all_at(&[1; 10], 0).unwrap();
+        let buf = [1; 10];
+        let backend = open_backend_fn(path.as_path(), options.clone(), buf.len()).unwrap();
+        backend.write_all_at(&buf, 0).unwrap();
         backend.flush().unwrap();
 
         let mut file = File::open(path.as_path()).unwrap();
@@ -456,8 +457,9 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        backend.write_all_at(&[1; 10], 0).unwrap();
+        let buf = [0; 10];
+        let backend = open_backend_fn(path.as_path(), options.clone(), buf.len()).unwrap();
+        backend.write_all_at(&buf, 0).unwrap();
         assert_eq!(backend.len().unwrap(), 10);
     }
 
@@ -469,7 +471,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone(), 32).unwrap();
 
         let iteration = AtomicU64::new(0);
 

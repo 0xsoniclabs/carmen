@@ -61,14 +61,18 @@ impl AccessPattern {
     fn offset(self, iter: u64, chunk_size: usize, file_size: usize) -> u64 {
         match self {
             AccessPattern::Static => 0,
-            AccessPattern::Linear => (iter * chunk_size as u64) % file_size as u64,
+            AccessPattern::Linear => {
+                ((iter * chunk_size as u64) % file_size as u64) / chunk_size as u64
+                    * chunk_size as u64
+            }
             AccessPattern::Random => {
                 // splitmix64
                 let rand = iter + 0x9e3779b97f4a7c15;
                 let rand = (rand ^ (rand >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
                 let rand = (rand ^ (rand >> 27)).wrapping_mul(0x94d049bb133111eb);
                 let rand = rand ^ (rand >> 31);
-                (rand.wrapping_mul(chunk_size as u64)) % file_size as u64
+                ((rand.wrapping_mul(chunk_size as u64)) % file_size as u64) / chunk_size as u64
+                    * chunk_size as u64
             }
         }
     }
@@ -128,117 +132,125 @@ impl Display for Operation {
 /// The function takes a [`Path`] and [`OpenOptions`] and returns a tuple of the opened backend
 /// and a string identifying the backend.
 pub type BackendOpenFn =
-    fn(&Path, OpenOptions) -> BTResult<(Arc<dyn FileBackend>, &'static str), std::io::Error>;
+    fn(&Path, OpenOptions, usize) -> BTResult<(Arc<dyn FileBackend>, &'static str), std::io::Error>;
 
 /// Returns an iterator over functions that open different `FileBackend` implementations.
 /// Each function returns a tuple of the opened backend and a string identifying the backend.
 pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
     [
-        (|path, options| {
-            <SeekFile as FileBackend>::open(path, options)
+        (|path, options, chunk_size| {
+            <SeekFile as FileBackend>::open(path, options, chunk_size)
                 .map(|f| (Arc::new(f) as Arc<dyn FileBackend>, "SeekFile"))
         }) as BackendOpenFn,
         #[cfg(unix)]
         {
-            (|path, options| {
-                <NoSeekFile as FileBackend>::open(path, options)
+            (|path, options, chunk_size| {
+                <NoSeekFile as FileBackend>::open(path, options, chunk_size)
                     .map(|f| (Arc::new(f) as Arc<dyn FileBackend>, "NoSeekFile"))
             }) as BackendOpenFn
         },
         #[cfg(unix)]
         {
-            (|path, options| {
-                <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options).map(|f| {
+            (|path, options, chunk_size| {
+                <PageCachedFile<SeekFile, true> as FileBackend>::open(path, options, chunk_size)
+                    .map(|f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "PageCachedFile<SeekFile, true>",
+                        )
+                    })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options, chunk_size| {
+                <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options, chunk_size)
+                    .map(|f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "PageCachedFile<NoSeekFile, true>",
+                        )
+                    })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options, chunk_size| {
+                <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options, chunk_size)
+                    .map(|f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "PageCachedFile<SeekFile, false>",
+                        )
+                    })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options, chunk_size| {
+                <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options, chunk_size)
+                    .map(|f| {
+                        (
+                            Arc::new(f) as Arc<dyn FileBackend>,
+                            "PageCachedFile<NoSeekFile, false>",
+                        )
+                    })
+            }) as BackendOpenFn
+        },
+        #[cfg(unix)]
+        {
+            (|path, options, chunk_size| {
+                <MultiPageCachedFile<8, SeekFile, true> as FileBackend>::open(
+                    path, options, chunk_size,
+                )
+                .map(|f| {
                     (
                         Arc::new(f) as Arc<dyn FileBackend>,
-                        "PageCachedFile<SeekFile, true>",
+                        "MultiPageCachedFile<8, SeekFile, true>",
                     )
                 })
             }) as BackendOpenFn
         },
         #[cfg(unix)]
         {
-            (|path, options| {
-                <PageCachedFile<NoSeekFile, true> as FileBackend>::open(path, options).map(|f| {
+            (|path, options, chunk_size| {
+                <MultiPageCachedFile<8, NoSeekFile, true> as FileBackend>::open(
+                    path, options, chunk_size,
+                )
+                .map(|f| {
                     (
                         Arc::new(f) as Arc<dyn FileBackend>,
-                        "PageCachedFile<NoSeekFile, true>",
+                        "MultiPageCachedFile<8, NoSeekFile, true>",
                     )
                 })
             }) as BackendOpenFn
         },
         #[cfg(unix)]
         {
-            (|path, options| {
-                <PageCachedFile<SeekFile, false> as FileBackend>::open(path, options).map(|f| {
+            (|path, options, chunk_size| {
+                <MultiPageCachedFile<8, SeekFile, false> as FileBackend>::open(
+                    path, options, chunk_size,
+                )
+                .map(|f| {
                     (
                         Arc::new(f) as Arc<dyn FileBackend>,
-                        "PageCachedFile<SeekFile, false>",
+                        "MultiPageCachedFile<8, SeekFile, false>",
                     )
                 })
             }) as BackendOpenFn
         },
         #[cfg(unix)]
         {
-            (|path, options| {
-                <PageCachedFile<NoSeekFile, false> as FileBackend>::open(path, options).map(|f| {
+            (|path, options, chunk_size| {
+                <MultiPageCachedFile<8, NoSeekFile, false> as FileBackend>::open(
+                    path, options, chunk_size,
+                )
+                .map(|f| {
                     (
                         Arc::new(f) as Arc<dyn FileBackend>,
-                        "PageCachedFile<NoSeekFile, false>",
+                        "MultiPageCachedFile<8, NoSeekFile, false>",
                     )
                 })
-            }) as BackendOpenFn
-        },
-        #[cfg(unix)]
-        {
-            (|path, options| {
-                <MultiPageCachedFile<8, SeekFile, true> as FileBackend>::open(path, options).map(
-                    |f| {
-                        (
-                            Arc::new(f) as Arc<dyn FileBackend>,
-                            "MultiPageCachedFile<8, SeekFile, true>",
-                        )
-                    },
-                )
-            }) as BackendOpenFn
-        },
-        #[cfg(unix)]
-        {
-            (|path, options| {
-                <MultiPageCachedFile<8, NoSeekFile, true> as FileBackend>::open(path, options).map(
-                    |f| {
-                        (
-                            Arc::new(f) as Arc<dyn FileBackend>,
-                            "MultiPageCachedFile<8, NoSeekFile, true>",
-                        )
-                    },
-                )
-            }) as BackendOpenFn
-        },
-        #[cfg(unix)]
-        {
-            (|path, options| {
-                <MultiPageCachedFile<8, SeekFile, false> as FileBackend>::open(path, options).map(
-                    |f| {
-                        (
-                            Arc::new(f) as Arc<dyn FileBackend>,
-                            "MultiPageCachedFile<8, SeekFile, false>",
-                        )
-                    },
-                )
-            }) as BackendOpenFn
-        },
-        #[cfg(unix)]
-        {
-            (|path, options| {
-                <MultiPageCachedFile<8, NoSeekFile, false> as FileBackend>::open(path, options).map(
-                    |f| {
-                        (
-                            Arc::new(f) as Arc<dyn FileBackend>,
-                            "MultiPageCachedFile<8, NoSeekFile, false>",
-                        )
-                    },
-                )
             }) as BackendOpenFn
         },
     ]
@@ -342,7 +354,7 @@ fn file_backend_benchmark(
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
 
-    let (backend, backend_name) = backend_fn(path, options.clone()).unwrap();
+    let (backend, backend_name) = backend_fn(path, options.clone(), chunk_size).unwrap();
 
     let mut completed_iterations = 0u64;
     g.throughput(Throughput::Bytes(chunk_size as u64));

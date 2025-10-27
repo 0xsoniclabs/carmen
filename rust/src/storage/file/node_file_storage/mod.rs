@@ -112,7 +112,11 @@ where
             .read(true)
             .write(true);
 
-        let node_file = F::open(dir.join(Self::NODE_STORE_FILE).as_path(), file_opts)?;
+        let node_file = F::open(
+            dir.join(Self::NODE_STORE_FILE).as_path(),
+            file_opts,
+            T::size(),
+        )?;
         let len = node_file.len()?;
         if len < metadata.nodes * size_of::<T>() as u64 {
             return Err(Error::DatabaseCorruption.into());
