@@ -10,6 +10,7 @@
 
 use crate::{
     database::verkle::{compute_commitment::compute_leaf_node_commitment, crypto::Commitment},
+    statistics::{NodeStatisticVisitor, TrieVisitor},
     types::{Key, Value},
 };
 
@@ -78,6 +79,15 @@ impl Node {
             Node::Empty => false,
             Node::Inner(inner) => inner.commitment_dirty,
             Node::Leaf(leaf) => leaf.commitment_dirty,
+        }
+    }
+
+    pub fn accept(&self, visitor: &mut impl TrieVisitor<Self>, level: u8) {
+        visitor.visit(self, level);
+        if let Node::Inner(inner) = self {
+            for child in inner.children.iter() {
+                child.accept(visitor, level + 1);
+            }
         }
     }
 }
@@ -227,6 +237,37 @@ impl LeafNode {
         self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
         self.commitment_dirty = false;
         self.commitment
+    }
+}
+
+impl TrieVisitor<Node> for NodeStatisticVisitor {
+    fn visit(&mut self, node: &Node, level: u8) {
+        match node {
+            Node::Empty => {
+                self.record_node_statistics(node, level, "Empty", None::<fn(&Node) -> u64>);
+            }
+            Node::Leaf(node) => {
+                self.record_node_statistics(
+                    node,
+                    level,
+                    "Leaf",
+                    Some(|n: &LeafNode| n.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
+                );
+            }
+            Node::Inner(node) => {
+                self.record_node_statistics(
+                    node,
+                    level,
+                    "Inner",
+                    Some(|n: &InnerNode| {
+                        n.children
+                            .iter()
+                            .filter(|c| !matches!(c, Node::Empty))
+                            .count() as u64
+                    }),
+                );
+            }
+        }
     }
 }
 

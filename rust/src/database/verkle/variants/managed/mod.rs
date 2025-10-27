@@ -26,6 +26,7 @@ use crate::{
     },
     error::Error,
     node_manager::NodeManager,
+    statistics::{NodeStatisticVisitor, Statistics, TrieStatistics},
     types::{Key, Value},
 };
 
@@ -37,6 +38,20 @@ pub struct ManagedVerkleTrie<M: NodeManager<Id = NodeId, NodeType = Node> + Send
     root: RwLock<NodeId>,
     manager: Arc<M>,
     update_log: TrieUpdateLog<NodeId>,
+}
+
+impl<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync> TrieStatistics
+    for ManagedVerkleTrie<M>
+{
+    fn get_statistics(&self) -> Statistics {
+        let mut visitor = NodeStatisticVisitor::default();
+        let root = self
+            .manager
+            .get_read_access(*self.root.read().unwrap())
+            .unwrap();
+        root.accept(&mut visitor, &self.manager, 0);
+        visitor.statistics
+    }
 }
 
 impl<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync> ManagedVerkleTrie<M> {

@@ -8,13 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod node;
+pub mod node;
 
 use std::sync::Mutex;
 
 use crate::{
     database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
     error::Error,
+    statistics::{NodeStatisticVisitor, Statistics, TrieStatistics},
     types::{Key, Value},
 };
 
@@ -36,6 +37,14 @@ impl SimpleInMemoryVerkleTrie {
         SimpleInMemoryVerkleTrie {
             root: Mutex::new(Node::Empty),
         }
+    }
+}
+
+impl TrieStatistics for SimpleInMemoryVerkleTrie {
+    fn get_statistics(&self) -> Statistics {
+        let mut visitor = NodeStatisticVisitor::default();
+        self.root.lock().unwrap().accept(&mut visitor, 0);
+        visitor.statistics
     }
 }
 
