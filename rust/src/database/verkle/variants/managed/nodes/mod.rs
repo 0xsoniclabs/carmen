@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::sync::Arc;
+
 use derive_deftly::Deftly;
 
 use crate::{
@@ -22,6 +24,8 @@ use crate::{
         },
     },
     error::Error,
+    node_manager::NodeManager,
+    statistics::{NodeStatisticVisitor, TrieVisitor},
     storage::file::derive_deftly_template_FileStorageManager,
     types::{Key, NodeSize, Value},
 };
@@ -47,6 +51,62 @@ pub enum Node {
 
 type Leaf2Node = SparseLeafNode<2>;
 type Leaf256Node = FullLeafNode;
+impl TrieVisitor<Node> for NodeStatisticVisitor {
+    fn visit(&mut self, node: &Node, level: u8) {
+        match node {
+            Node::Empty(empty_node) => {
+                self.record_node_statistics(
+                    empty_node,
+                    level,
+                    "Empty",
+                    None::<fn(&EmptyNode) -> u64>,
+                );
+            }
+            Node::Inner(inner_node) => {
+                self.record_node_statistics(
+                    inner_node,
+                    level,
+                    "Inner",
+                    Some(move |inner_node: &Box<InnerNode>| {
+                        inner_node
+                            .children
+                            .iter()
+                            .filter(|child| child.to_node_type().unwrap() != NodeType::Empty)
+                            .count() as u64
+                    }),
+                );
+            }
+            Node::Leaf2(leaf2) => {
+                self.record_node_statistics(
+                    leaf2,
+                    level,
+                    "Leaf",
+                    Some(move |leaf2: &Box<SparseLeafNode<2>>| {
+                        leaf2
+                            .used_bits
+                            .iter()
+                            .map(|byte| byte.count_ones() as u64)
+                            .sum::<u64>()
+                    }),
+                );
+            }
+            Node::Leaf256(full_leaf_node) => {
+                self.record_node_statistics(
+                    full_leaf_node,
+                    level,
+                    "Leaf",
+                    Some(move |leaf_node: &Box<FullLeafNode>| {
+                        leaf_node
+                            .used_bits
+                            .iter()
+                            .map(|byte| byte.count_ones() as u64)
+                            .sum::<u64>()
+                    }),
+                );
+            }
+        }
+    }
+}
 
 impl Node {
     pub fn to_node_type(&self) -> NodeType {
@@ -64,6 +124,21 @@ impl Node {
             Node::Inner(n) => n.get_commitment_input(),
             Node::Leaf2(n) => n.get_commitment_input(),
             Node::Leaf256(n) => n.get_commitment_input(),
+        }
+    }
+
+    pub fn accept(
+        &self,
+        visitor: &mut impl TrieVisitor<Self>,
+        manager: &Arc<impl NodeManager<Id = NodeId, NodeType = Node>>,
+        level: u8,
+    ) {
+        visitor.visit(self, level);
+        if let Node::Inner(inner) = self {
+            for child_id in inner.children.iter() {
+                let child = manager.get_read_access(*child_id).unwrap(); // TODO: Error handling
+                child.accept(visitor, &manager.clone(), level + 1);
+            }
         }
     }
 }

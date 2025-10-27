@@ -11,6 +11,7 @@
 
 use std::{mem::MaybeUninit, ops::Deref, path::PathBuf, sync::Arc};
 
+pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
         VerkleTrieCarmenState,
@@ -21,6 +22,13 @@ use crate::{
     },
     error::Error,
     node_manager::cached_node_manager::CachedNodeManager,
+    statistics::{
+        Statistics,
+        formatters::{
+            StatisticsFormatter, csv_writer::CSVWriter,
+            writer_with_indentation::WriterWithIndentation,
+        },
+    },
     storage::{
         Storage,
         file::{NoSeekFile, NodeFileStorage},
@@ -32,9 +40,9 @@ mod database;
 mod error;
 mod ffi;
 mod node_manager;
+pub mod statistics;
 pub mod storage;
 pub mod types;
-
 mod utils;
 
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
@@ -148,6 +156,8 @@ pub trait CarmenState: Send + Sync {
     /// Applies the provided block update to the maintained state.
     #[allow(clippy::needless_lifetimes)] // using an elided lifetime here breaks automock
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> Result<(), Error>;
+
+    fn get_statistics(&self) -> Result<Statistics, Error>;
 }
 
 // TODO: Get rid of this once we no longer store an Arc<CarmenState> in CarmenS6Db
@@ -188,6 +198,10 @@ impl<T: CarmenState> CarmenState for Arc<T> {
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> Result<(), Error> {
         self.deref().apply_block_update(block, update)
     }
+
+    fn get_statistics(&self) -> Result<Statistics, Error> {
+        self.deref().get_statistics()
+    }
 }
 
 /// The `S6` implementation of [`CarmenDb`].
@@ -215,6 +229,15 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
     fn close(&self) -> Result<(), Error> {
         // No-op for in-memory state
         // TODO: Handle for storage-based implementation
+        let file = std::fs::File::create("carmen_stats.txt").unwrap();
+        let mut formatters = [
+            Box::new(WriterWithIndentation::new(file)) as Box<dyn StatisticsFormatter>,
+            Box::new(CSVWriter {}) as Box<dyn StatisticsFormatter>,
+        ];
+        self.get_live_state()?
+            .get_statistics()?
+            .print(&mut formatters)
+            .unwrap();
         Ok(())
     }
 
