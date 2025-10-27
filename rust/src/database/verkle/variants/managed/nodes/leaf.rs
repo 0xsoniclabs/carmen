@@ -10,7 +10,7 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::{database::verkle::crypto::Commitment, types::Value};
+use crate::{database::verkle::variants::managed::commitment::VerkleCommitment, types::Value};
 
 /// A leaf node with 256 children in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -18,17 +18,17 @@ use crate::{database::verkle::crypto::Commitment, types::Value};
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct FullLeafNode {
-    pub commitment: Commitment,
     pub stem: [u8; 31],
     pub values: [Value; 256],
+    pub commitment: VerkleCommitment,
 }
 
 impl Default for FullLeafNode {
     fn default() -> Self {
         FullLeafNode {
-            commitment: Commitment::default(),
             stem: [0; 31],
             values: [Value::default(); 256],
+            commitment: VerkleCommitment::default(),
         }
     }
 }
@@ -40,8 +40,8 @@ mod tests {
     #[test]
     fn full_leaf_node_default_returns_leaf_node_with_all_values_set_to_default() {
         let node: FullLeafNode = FullLeafNode::default();
-        assert_eq!(node.commitment, Commitment::default());
         assert_eq!(node.stem, [0; 31]);
         assert_eq!(node.values, [Value::default(); 256]);
+        assert_eq!(node.commitment, VerkleCommitment::default());
     }
 }

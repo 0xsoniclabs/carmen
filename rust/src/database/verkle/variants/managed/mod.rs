@@ -8,6 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+mod commitment;
 mod nodes;
 
 #[allow(unused)]
