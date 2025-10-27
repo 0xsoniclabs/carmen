@@ -55,7 +55,7 @@ struct BTErrorInner<E> {
 
 // Ideally, we would have `impl<E> From<E> for BTError<E>` but that causes conflicts with other
 // implementations which essentially provide instantiations of `impl<E, F: Into<E>> From<F> for
-// BTError<E>`. Without the latter one the `?` stops working, which es very undesirable. Therefore,
+// BTError<E>`. Without the latter one the `?` stops working, which is very undesirable. Therefore,
 // we provide the non-generic implementations which we actually need.
 
 impl<F: Into<Error>> From<F> for BTError<Error> {
