@@ -75,7 +75,7 @@ impl From<Op> for u8 {
 }
 
 impl TryFrom<u8> for Op {
-    type Error = ();
+    type Error = std::num::IntErrorKind;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -83,7 +83,18 @@ impl TryFrom<u8> for Op {
             1 => Ok(Op::Get),
             2 => Ok(Op::Delete),
             3 => Ok(Op::Iter),
-            _ => Err(()),
+            _ => Err(std::num::IntErrorKind::PosOverflow),
+        }
+    }
+}
+
+impl std::fmt::Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Add => write!(f, "Add"),
+            Op::Get => write!(f, "Get"),
+            Op::Delete => write!(f, "Delete"),
+            Op::Iter => write!(f, "Iter"),
         }
     }
 }
@@ -158,17 +169,6 @@ impl Op {
     }
 }
 
-impl std::fmt::Display for Op {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Op::Add => write!(f, "Add"),
-            Op::Get => write!(f, "Get"),
-            Op::Delete => write!(f, "Delete"),
-            Op::Iter => write!(f, "Iter"),
-        }
-    }
-}
-
 /// An operation with an associated node ID with serialization/deserialization support.
 #[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 struct OpWithId {
@@ -177,16 +177,23 @@ struct OpWithId {
 }
 
 impl OpWithId {
+    /// Serialize the operation with ID into the given byte vector.
     fn serialize(&self, bytes: &mut Vec<u8>) {
         bytes.extend_from_slice(&u8::from(self.op).to_le_bytes());
         bytes.extend_from_slice(&self.id.to_le_bytes());
     }
 
+    /// Deserialize the operation with ID from the given byte slice.
     fn deserialize(bytes: &[u8]) -> Self {
         let op: Op = Op::try_from(bytes[0]).unwrap();
         let id: [u8; 4] = bytes[1..5].try_into().unwrap();
         let id = u32::from_le_bytes(id);
         Self { op, id }
+    }
+
+    /// Get the size of the serialized operation with ID in bytes.
+    fn size() -> usize {
+        std::mem::size_of::<u8>() + std::mem::size_of::<u32>()
     }
 }
 
@@ -229,15 +236,21 @@ impl PermutationCase {
     /// Deserialize the permutation case from [`Self::PATH`]
     fn deserialize() -> Self {
         let bytes = std::fs::read(Self::PATH).unwrap();
+        if bytes.len() < std::mem::size_of::<usize>() {
+            panic!("Serialized case file is too small");
+        }
+
         let mut operations = vec![];
-        let mut i = 0;
         let sizeof_usize = std::mem::size_of::<usize>();
-        let cache_size = usize::from_le_bytes(bytes[i..i + sizeof_usize].try_into().unwrap());
-        i += sizeof_usize;
-        while i + 5 <= bytes.len() {
+        let cache_size = usize::from_le_bytes(bytes[0..sizeof_usize].try_into().unwrap());
+        let mut i = sizeof_usize;
+        while i + OpWithId::size() <= bytes.len() {
             let op = OpWithId::deserialize(&bytes[i..]);
             operations.push(op);
-            i += 5;
+            i += OpWithId::size();
+        }
+        if i != bytes.len() {
+            panic!("Serialized case file has extra bytes");
         }
         Self {
             cache_size,
@@ -337,5 +350,63 @@ fn shuttle_operation_permutations() {
                 panic!("Panic in shuttle test: {e:?}");
             }
         }
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn op_conversion_from_and_to_u8_works() {
+        assert_eq!(Op::try_from(u8::from(Op::Add)).unwrap(), Op::Add);
+        assert_eq!(Op::try_from(u8::from(Op::Get)).unwrap(), Op::Get);
+        assert_eq!(Op::try_from(u8::from(Op::Delete)).unwrap(), Op::Delete);
+        assert_eq!(Op::try_from(u8::from(Op::Iter)).unwrap(), Op::Iter);
+        assert!(Op::try_from(4).is_err());
+    }
+
+    // TODO: tests for Op::execute and Op::handle_invalid_state
+
+    #[test]
+    fn op_with_id_serialization_and_deserialization_work() {
+        let op_with_id = OpWithId {
+            op: Op::Delete,
+            id: 12345,
+        };
+        let mut bytes = vec![];
+        op_with_id.serialize(&mut bytes);
+        let deserialized_op_with_id = OpWithId::deserialize(&bytes);
+        assert_eq!(op_with_id, deserialized_op_with_id);
+    }
+
+    #[test]
+    fn op_with_id_deserialize_panics_on_invalid_buffer() {
+        // Invalid op
+        let bytes = [255];
+        let res = catch_unwind(|| OpWithId::deserialize(&bytes));
+        assert!(res.is_err());
+
+        // Buffer too small
+        let bytes = [2, 0]; // Valid Op but incomplete ID
+        let res = catch_unwind(|| OpWithId::deserialize(&bytes));
+        assert!(res.is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "Serialized case file is too small")]
+    fn permutation_case_deserialize_panics_on_small_file() {
+        std::fs::write(PermutationCase::PATH, vec![0u8; 2]).unwrap();
+        let _ = PermutationCase::deserialize();
+    }
+
+    #[test]
+    #[should_panic]
+    fn permutation_case_deserialize_panics_on_invalid_op() {
+        let mut bytes = vec![];
+        let cache_size: usize = 10;
+        bytes.extend_from_slice(&cache_size.to_le_bytes());
+        bytes.push(255); // Invalid Op
+        std::fs::write(PermutationCase::PATH, &bytes).unwrap();
+        let _ = PermutationCase::deserialize();
     }
 }
