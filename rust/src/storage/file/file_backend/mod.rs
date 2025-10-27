@@ -48,11 +48,10 @@ pub trait FileBackend: Send + Sync {
     /// Flushes all changes to disk.
     fn flush(&self) -> BTResult<(), std::io::Error>;
 
-    /// Returns the size of this file in bytes.
+    /// Returns the size of this file in bytes. This size may be larger than the logical size if the
+    /// file. Implementations only have to ensure, that reads up to the offset returned by this
+    /// method succeed.
     fn len(&self) -> BTResult<u64, std::io::Error>;
-
-    /// Truncates or extends the underlying file, updating the size of this file to become `size`.
-    fn set_len(&self, size: u64) -> BTResult<(), std::io::Error>;
 }
 
 #[cfg(test)]
@@ -123,8 +122,7 @@ mod tests {
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        assert_eq!(backend.len().unwrap(), 0);
+        assert!(open_backend_fn(path.as_path(), options.clone()).is_ok());
         assert!(std::fs::exists(path).unwrap());
     }
 
@@ -141,8 +139,7 @@ mod tests {
             file.write_all(&[0; 10]).unwrap();
         }
 
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        assert_eq!(backend.len().unwrap(), 10);
+        assert!(open_backend_fn(path.as_path(), options.clone()).is_ok());
     }
 
     #[rstest_reuse::apply(open_backend)]
@@ -204,7 +201,6 @@ mod tests {
         // file: [_, _, _, _, _, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
         let mut file = File::open(path).unwrap();
-        assert_eq!(file.metadata().unwrap().len(), 15);
         let mut buf = vec![0; 15];
         file.read_exact(&mut buf).unwrap();
         assert_eq!(buf[5..], data);
@@ -254,7 +250,6 @@ mod tests {
         }
 
         let mut file = File::open(path).unwrap();
-        assert_eq!(file.metadata().unwrap().len(), offset2 + 1);
         let mut buf = [0; 1];
         file.seek(SeekFrom::Start(offset1)).unwrap();
         file.read_exact(&mut buf).unwrap();
@@ -403,34 +398,21 @@ mod tests {
     }
 
     #[rstest_reuse::apply(open_backend)]
-    fn flush_flushes_file_and_sets_length(#[case] open_backend_fn: OpenBackendFn) {
+    fn flush_flushes_file(#[case] open_backend_fn: OpenBackendFn) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("test_file.bin");
 
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
 
-        // flush with no changes
-        {
-            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-            backend.flush().unwrap();
+        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
+        backend.write_all_at(&[1; 10], 0).unwrap();
+        backend.flush().unwrap();
 
-            let file = File::open(path.as_path()).unwrap();
-            assert_eq!(file.metadata().unwrap().len(), 0);
-        }
-
-        // flush with changes
-        {
-            let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-            backend.write_all_at(&[1; 10], 0).unwrap();
-            backend.flush().unwrap();
-
-            let mut file = File::open(path.as_path()).unwrap();
-            assert_eq!(file.metadata().unwrap().len(), 10);
-            let mut buf = [0; 10];
-            file.read_exact(&mut buf).unwrap();
-            assert_eq!(buf, [1; 10]);
-        }
+        let mut file = File::open(path.as_path()).unwrap();
+        let mut buf = [0; 10];
+        file.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, [1; 10]);
     }
 
     #[rstest_reuse::apply(open_backend)]
@@ -444,22 +426,6 @@ mod tests {
         let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
         backend.write_all_at(&[1; 10], 0).unwrap();
         assert_eq!(backend.len().unwrap(), 10);
-    }
-
-    #[rstest_reuse::apply(open_backend)]
-    fn set_len_sets_length(#[case] open_backend_fn: OpenBackendFn) {
-        let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = tempdir.join("test_file.bin");
-
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).write(true);
-
-        let backend = open_backend_fn(path.as_path(), options.clone()).unwrap();
-        backend.write_all_at(&[1; 200], 0).unwrap();
-        backend.set_len(100).unwrap();
-
-        let check_file = File::open(path.as_path()).unwrap();
-        assert_eq!(check_file.metadata().unwrap().len(), 100);
     }
 
     #[rstest_reuse::apply(open_backend)]

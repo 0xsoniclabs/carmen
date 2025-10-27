@@ -53,10 +53,6 @@ impl FileBackend for SeekFile {
             .map(|m| m.len())
             .map_err(Into::into)
     }
-
-    fn set_len(&self, len: u64) -> BTResult<(), std::io::Error> {
-        self.0.lock().unwrap().set_len(len).map_err(Into::into)
-    }
 }
 
 // Note: The tests for `SeekFile as FileBackend` are in `file_backend.rs`.

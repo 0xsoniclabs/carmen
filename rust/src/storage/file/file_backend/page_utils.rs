@@ -16,7 +16,7 @@ pub const O_SYNC: i32 = 1052672; // from libc::O_SYNC
 /// A page aligned (4096 bytes) byte buffer.
 #[derive(Debug)]
 #[repr(align(4096))]
-pub struct Page([u8; 4096]);
+pub struct Page([u8; Self::SIZE]);
 
 impl Page {
     /// The size of a page in bytes, which is typically 4 KiB on most SSDs.
@@ -25,8 +25,8 @@ impl Page {
     pub const SIZE: usize = 4096;
 
     /// Creates a new page initialized to zero.
-    pub fn zeroed() -> Self {
-        Self([0; 4096])
+    pub fn zeroed() -> Box<Self> {
+        Box::new(Self([0; Self::SIZE]))
     }
 }
 

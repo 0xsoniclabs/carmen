@@ -39,10 +39,6 @@ impl FileBackend for NoSeekFile {
     fn len(&self) -> BTResult<u64, std::io::Error> {
         self.0.metadata().map(|m| m.len()).map_err(Into::into)
     }
-
-    fn set_len(&self, len: u64) -> BTResult<(), std::io::Error> {
-        self.0.set_len(len).map_err(Into::into)
-    }
 }
 
 // Note: The tests for `NoSeekFile as FileBackend` are in `file_backend.rs`.
