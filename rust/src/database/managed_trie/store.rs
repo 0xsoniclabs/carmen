@@ -40,17 +40,17 @@ where
         match current_lock.can_store(key, depth)? {
             CanStoreResult::Yes(slot_idx) => {
                 let prev_value = current_lock.store(key, value)?;
-                let mut com = current_lock.get_commitment();
-                com.store(slot_idx, prev_value);
-                current_lock.set_commitment(com)?;
-                update_log.add(depth, current_id);
+                let mut trie_commitment = current_lock.get_commitment();
+                trie_commitment.store(slot_idx, prev_value);
+                current_lock.set_commitment(trie_commitment)?;
+                update_log.add(depth as usize, current_id);
                 return Ok(());
             }
             CanStoreResult::Descend(child_idx, new_id) => {
-                let mut com = current_lock.get_commitment();
-                com.modify_child(child_idx);
-                current_lock.set_commitment(com)?;
-                update_log.add(depth, current_id);
+                let mut trie_commitment = current_lock.get_commitment();
+                trie_commitment.modify_child(child_idx);
+                current_lock.set_commitment(trie_commitment)?;
+                update_log.add(depth as usize, current_id);
 
                 parent_lock = Some(current_lock);
                 current_lock = manager.get_write_access(new_id)?;
@@ -72,7 +72,7 @@ where
                 current_lock = manager.get_write_access(new_id)?;
                 // TODO TEST: Transform releases lock on current id before calling delete
                 manager.delete(current_id)?;
-                update_log.delete(depth, current_id);
+                update_log.delete(depth as usize, current_id);
                 current_id = new_id;
 
                 // No need to log the update here, we are visiting the node again next iteration.
@@ -88,7 +88,7 @@ where
                 }
                 // TODO TEST: We need to update a leaf and then reparent it, before recomputing
                 //            commitments
-                update_log.move_down(current_id, depth);
+                update_log.move_down(current_id, depth as usize);
                 current_lock = manager.get_write_access(new_id)?;
                 current_id = new_id;
 

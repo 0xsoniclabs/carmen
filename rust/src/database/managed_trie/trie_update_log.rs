@@ -14,32 +14,29 @@ use dashmap::DashSet;
 
 /// The type has interior mutability to allow concurrent updates.
 pub struct TrieUpdateLog<ID> {
-    pub dirty_nodes_by_level: RwLock<Vec<DashSet<ID>>>,
+    dirty_nodes_by_level: RwLock<Vec<DashSet<ID>>>,
 }
 
-impl<ID: Eq + std::hash::Hash> TrieUpdateLog<ID> {
+impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
     pub fn new() -> Self {
-        let mut dirty_nodes_by_level = Vec::new();
-        dirty_nodes_by_level.resize_with(256, || DashSet::new());
         TrieUpdateLog {
-            dirty_nodes_by_level: RwLock::new(dirty_nodes_by_level),
+            dirty_nodes_by_level: RwLock::new(Vec::new()),
         }
     }
 
-    pub fn add(&self, level: u8, id: ID) {
+    pub fn add(&self, level: usize, id: ID) {
         let guard = self.access_level(level);
-        guard[level as usize].insert(id);
+        guard[level].insert(id);
     }
 
     #[allow(clippy::needless_pass_by_value)]
-    pub fn delete(&self, level: u8, id: ID) {
+    pub fn delete(&self, level: usize, id: ID) {
         let guard = self.access_level(level);
-        guard[level as usize].remove(&id);
+        guard[level].remove(&id);
     }
 
-    pub fn move_down(&self, id: ID, from_level: u8) {
+    pub fn move_down(&self, id: ID, from_level: usize) {
         let guard = self.access_level(from_level + 1);
-        let from_level = from_level as usize;
         if guard[from_level].remove(&id).is_some() {
             guard[from_level + 1].insert(id);
         }
@@ -50,19 +47,29 @@ impl<ID: Eq + std::hash::Hash> TrieUpdateLog<ID> {
         guard.iter().map(DashSet::len).sum()
     }
 
+    pub fn levels(&self) -> usize {
+        let guard = self.dirty_nodes_by_level.read().unwrap();
+        guard.len()
+    }
+
+    pub fn dirty_nodes(&self, level: usize) -> Vec<ID> {
+        let guard = self.access_level(level);
+        guard[level].iter().map(|entry| *entry.key()).collect()
+    }
+
     pub fn clear(&self) {
         self.dirty_nodes_by_level.write().unwrap().clear();
     }
 
-    fn access_level(&self, level: u8) -> RwLockReadGuard<'_, Vec<DashSet<ID>>> {
+    fn access_level(&self, level: usize) -> RwLockReadGuard<'_, Vec<DashSet<ID>>> {
         let guard = self.dirty_nodes_by_level.read().unwrap();
-        if guard.len() > level as usize {
+        if guard.len() > level {
             return guard;
         }
 
         drop(guard);
         let mut guard = self.dirty_nodes_by_level.write().unwrap();
-        guard.resize_with((level as usize) + 1, || DashSet::new());
+        guard.resize_with((level) + 1, || DashSet::new());
         drop(guard);
         self.dirty_nodes_by_level.read().unwrap()
     }

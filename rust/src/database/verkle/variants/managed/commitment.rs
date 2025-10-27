@@ -94,29 +94,34 @@ pub fn update_commitments(
     log: &TrieUpdateLog<NodeId>,
     manager: &impl NodeManager<Id = NodeId, NodeType = Node>,
 ) -> Result<(), Error> {
+    if log.count() == 0 {
+        return Ok(());
+    }
+
     let mut previous_commitments = HashMap::new();
-    for dirty_nodes in log.dirty_nodes_by_level.read().unwrap().iter().rev() {
+    for level in (0..log.levels()).rev() {
+        let dirty_nodes = log.dirty_nodes(level);
         for id in dirty_nodes.iter() {
             let mut lock = manager.get_write_access(*id)?;
-            let mut com = lock.get_commitment();
-            assert_eq!(com.dirty, 1);
+            let mut vc = lock.get_commitment();
+            assert_eq!(vc.dirty, 1);
 
-            previous_commitments.insert(*id, com.commitment);
+            previous_commitments.insert(*id, vc.commitment);
 
             match lock.get_commitment_input()? {
                 VerkleCommitmentInput::Leaf(values, stem) => {
                     // TODO: Consider caching leaf node commitments https://github.com/0xsoniclabs/sonic-admin/issues/386
-                    com.commitment = compute_leaf_node_commitment(&values, &com.used_slots, &stem);
+                    vc.commitment = compute_leaf_node_commitment(&values, &vc.used_slots, &stem);
                 }
                 VerkleCommitmentInput::Inner(children) => {
                     for (i, child_id) in children.iter().enumerate() {
-                        if com.changed[i / 8] & (1 << (i % 8)) == 0 {
+                        if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
                             continue;
                         }
 
                         let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
                         assert_eq!(child_commitment.dirty, 0);
-                        com.commitment.update(
+                        vc.commitment.update(
                             i as u8,
                             previous_commitments[child_id].to_scalar(),
                             child_commitment.commitment.to_scalar(),
@@ -125,10 +130,10 @@ pub fn update_commitments(
                 }
             }
 
-            com.dirty = 0;
+            vc.dirty = 0;
             // TODO: Test this (currently not caught by any test!)
-            com.changed.fill(0);
-            lock.set_commitment(com)?;
+            vc.changed.fill(0);
+            lock.set_commitment(vc)?;
         }
     }
     // TODO: Test
