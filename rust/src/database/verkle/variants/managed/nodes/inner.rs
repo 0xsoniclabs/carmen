@@ -11,9 +11,9 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::verkle::{
-        crypto::Commitment,
-        variants::managed::nodes::{NodeType, id::NodeId},
+    database::verkle::variants::managed::{
+        commitment::VerkleCommitment,
+        nodes::{NodeType, id::NodeId},
     },
     types::TreeId,
 };
@@ -24,15 +24,15 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct InnerNode {
-    pub commitment: Commitment,
-    pub values: [NodeId; 256],
+    pub children: [NodeId; 256],
+    pub commitment: VerkleCommitment,
 }
 
 impl Default for InnerNode {
     fn default() -> Self {
         InnerNode {
-            commitment: Commitment::default(),
-            values: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
+            children: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
+            commitment: VerkleCommitment::default(),
         }
     }
 }
@@ -40,17 +40,13 @@ impl Default for InnerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::verkle::{
-        crypto::Commitment,
-        variants::managed::nodes::{NodeType, id::NodeId, inner::InnerNode},
-    };
 
     #[test]
-    fn inner_node_default_returns_inner_node_with_all_values_set_to_empty_node_id() {
+    fn inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
         let node: InnerNode = InnerNode::default();
-        assert_eq!(node.commitment, Commitment::default());
+        assert_eq!(node.commitment, VerkleCommitment::default());
         assert_eq!(
-            node.values,
+            node.children,
             [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256]
         );
     }
