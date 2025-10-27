@@ -10,7 +10,7 @@
 
 use std::{
     fmt::Display,
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::Write,
     ops::Deref,
     path::Path,
@@ -245,6 +245,20 @@ pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
 }
 
 fn file_backend_benchmark_matrix(c: &mut Criterion) {
+    let dirty_bytes = fs::read_to_string("/proc/sys/vm/dirty_bytes")
+        .unwrap()
+        .trim()
+        .parse::<u64>()
+        .unwrap();
+
+    if dirty_bytes == 0 || dirty_bytes > ONE_GB as u64 {
+        eprintln!(
+            "WARNING: The OS page cache is not limited to 1GB or less, as recommended. \
+            This might lead to inaccurate benchmark results. \
+            Set `vm.dirty_bytes = 1073741824` in /etc/sysctl.conf then run `sudo sysctl -p` to apply the changes."
+        );
+    }
+
     let plot_config = PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
 
     // Note: At least on Ubuntu, reading and writing to a file which is located directly in `/tmp`
