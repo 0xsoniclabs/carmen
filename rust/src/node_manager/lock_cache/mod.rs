@@ -10,6 +10,7 @@
 
 use std::{
     hint,
+    num::NonZero,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError},
 };
 
@@ -75,18 +76,16 @@ where
         // We allocate a couple of additional slots, roughly one for each concurrent thread.
         // This way, when the cache is full, we always have a free slot we can use to insert a new
         // item into the cache and force the eviction of an old one.
-        let extra_slots = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(1);
-        Self::new_with_extra_slots(capacity, extra_slots, hooks)
+        let extra_slots = std::thread::available_parallelism().unwrap_or(NonZero::new(1).unwrap());
+        Self::new_internal(capacity, extra_slots, hooks)
     }
 
     /// Creates a new cache with the given capacity + extra slots and eviction callback.
-    ///
     /// The actual capacity might differ slightly due to rounding performed by quick-cache.
-    fn new_with_extra_slots(
+    /// This is mainly useful for testing.
+    fn new_internal(
         capacity: usize,
-        extra_slots: usize,
+        extra_slots: NonZero<usize>,
         hooks: Arc<dyn EvictionHooks<Key = K, Value = V>>,
     ) -> Self {
         let options = quick_cache::OptionsBuilder::new()
@@ -106,7 +105,7 @@ where
             tmp_cache.capacity() as usize
         };
 
-        let num_slots = true_capacity + extra_slots;
+        let num_slots = true_capacity + extra_slots.get();
         let locks: Arc<[_]> = (0..num_slots).map(|_| RwLock::default()).collect();
         let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
 
