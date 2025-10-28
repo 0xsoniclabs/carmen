@@ -345,22 +345,25 @@ mod tests {
     }
 
     #[rstest_reuse::apply(get_method)]
-    fn items_can_be_inserted_and_removed(#[case] get_fn: GetOrInsertMethod) {
+    fn items_can_be_inserted_and_removed(
+        #[case] get_fn: GetOrInsertMethod<fn() -> Result<i32, Error>>,
+    ) {
+        type InsertFn = fn() -> Result<i32, Error>;
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(10, logger.clone());
 
-        ignore_guard(get_fn(&cache, 1u32, Arc::new(|| Ok(123))));
-        ignore_guard(get_fn(&cache, 2u32, Arc::new(|| Ok(456))));
-        ignore_guard(get_fn(&cache, 3u32, Arc::new(|| Ok(789))));
+        ignore_guard(get_fn(&cache, 1u32, &((|| Ok(123)) as InsertFn)));
+        ignore_guard(get_fn(&cache, 2u32, &((|| Ok(456)) as InsertFn)));
+        ignore_guard(get_fn(&cache, 3u32, &((|| Ok(789)) as InsertFn)));
 
         {
-            assert_eq!(get_fn(&cache, 1u32, Arc::new(not_found)).unwrap(), 123);
-            assert_eq!(get_fn(&cache, 2u32, Arc::new(not_found)).unwrap(), 456);
-            assert_eq!(get_fn(&cache, 3u32, Arc::new(not_found)).unwrap(), 789);
+            assert_eq!(get_fn(&cache, 1u32, &(not_found as InsertFn)).unwrap(), 123);
+            assert_eq!(get_fn(&cache, 2u32, &(not_found as InsertFn)).unwrap(), 456);
+            assert_eq!(get_fn(&cache, 3u32, &(not_found as InsertFn)).unwrap(), 789);
         }
 
         cache.remove(2u32).unwrap();
-        let res = get_fn(&cache, 2u32, Arc::new(not_found));
+        let res = get_fn(&cache, 2u32, &(not_found as InsertFn));
         assert!(matches!(res, Err(Error::Storage(storage::Error::NotFound))));
 
         cache.remove(9999u32).unwrap(); // Removing non-existing key is a no-op

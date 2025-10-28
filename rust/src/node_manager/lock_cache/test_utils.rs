@@ -38,22 +38,18 @@ pub fn ignore_guard<T>(result: Result<T, Error>) {
 
 /// Type alias for a closure that calls either `get_read_access_or_insert` or
 /// `get_write_access_or_insert`
-pub type GetOrInsertMethod = fn(
-    &LockCache<u32, i32>,
-    u32,
-    std::sync::Arc<dyn Fn() -> Result<i32, Error>>,
-) -> Result<i32, Error>;
+pub type GetOrInsertMethod<F> = fn(&LockCache<u32, i32>, u32, &F) -> Result<i32, Error>;
 
 /// Reusable rstest template to test both `get_read_access_or_insert` and
 /// `get_write_access_or_insert`
 #[rstest_reuse::template]
 #[rstest::rstest]
 #[case::get_read_access((|cache, id, insert_fn| {
-        let guard = cache.get_read_access_or_insert(id, || insert_fn())?;
+        let guard = cache.get_read_access_or_insert(id, insert_fn)?;
         Ok(*guard)
-    }) as crate::node_manager::lock_cache::test_utils::GetOrInsertMethod)]
+    }) as crate::node_manager::lock_cache::test_utils::GetOrInsertMethod<_>)]
 #[case::get_write_access((|cache, id, insert_fn| {
-        let guard = cache.get_write_access_or_insert(id, || insert_fn())?;
+        let guard = cache.get_write_access_or_insert(id, insert_fn)?;
         Ok(*guard)
-    }) as crate::node_manager::lock_cache::test_utils::GetOrInsertMethod)]
+    }) as crate::node_manager::lock_cache::test_utils::GetOrInsertMethod<_>)]
 fn get_method(#[case] f: GetOrInsertMethod) {}
