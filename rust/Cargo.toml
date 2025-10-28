@@ -26,6 +26,9 @@ crate-type = ["rlib", "cdylib"]
 name = "file_backend"
 harness = false
 
+[features]
+tracy = ["tracy-client/default"]
+
 [dependencies]
 # datastructures
 dashmap = { version = "6.1.0", features = ["inline"] }
