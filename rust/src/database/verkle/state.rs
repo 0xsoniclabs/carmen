@@ -117,7 +117,6 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     fn get_hash(&self) -> Result<Hash, Error> {
         let commitment = self.trie.commit()?;
         let res = Ok(Hash::from(commitment.compress()));
-        tracy_client::frame_mark();
         res
     }
 
