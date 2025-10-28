@@ -132,7 +132,7 @@ jobs:
         workspaces: rust
     - name: cargo miri test
       env:
-        MIRIFLAGS: "-Zmiri-backtrace=full"
+        MIRIFLAGS: "-Zmiri-backtrace=full -Zmiri-disable-isolation"
       run: cargo +nightly miri test --no-fail-fast ffi
 
   unused-deps:
