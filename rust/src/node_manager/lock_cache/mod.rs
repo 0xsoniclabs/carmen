@@ -80,9 +80,8 @@ where
         Self::new_internal(capacity, extra_slots, hooks)
     }
 
-    /// Creates a new cache with the given capacity + extra slots and eviction callback.
-    /// The actual capacity might differ slightly due to rounding performed by quick-cache.
-    /// This is mainly useful for testing.
+    /// Internal constructor that allows to specify the number of `extra_slots` directly.
+    /// This is required for testing.
     fn new_internal(
         capacity: usize,
         extra_slots: NonZero<usize>,
@@ -347,8 +346,6 @@ mod tests {
 
     #[rstest_reuse::apply(get_method)]
     fn items_can_be_inserted_and_removed(#[case] get_fn: GetOrInsertMethod) {
-        use crate::node_manager::lock_cache::test_utils::ignore_guard;
-
         let logger = Arc::new(EvictionLogger::default());
         let cache = LockCache::<u32, i32>::new(10, logger.clone());
 
