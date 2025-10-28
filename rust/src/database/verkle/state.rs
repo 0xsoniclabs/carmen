@@ -28,6 +28,7 @@ use crate::{
     error::Error,
     node_manager::NodeManager,
     statistics::{Statistics, TrieStatistics},
+    storage::{self, Checkpointable},
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -58,7 +59,7 @@ where
     }
 }
 
-impl<T: VerkleTrie + TrieStatistics> CarmenState for VerkleTrieCarmenState<T> {
+impl<T: VerkleTrie + TrieStatistics + Checkpointable> CarmenState for VerkleTrieCarmenState<T> {
     fn account_exists(&self, addr: &Address) -> Result<bool, Error> {
         Ok(self.get_code_hash(addr)? != Hash::default())
     }
@@ -184,6 +185,11 @@ impl<T: VerkleTrie + TrieStatistics> CarmenState for VerkleTrieCarmenState<T> {
 
     fn get_statistics(&self) -> Result<Statistics, Error> {
         Ok(self.trie.get_statistics())
+    }
+
+    fn checkpoint(&self) -> Result<(), Error> {
+        self.trie.checkpoint()?;
+        Ok(())
     }
 }
 

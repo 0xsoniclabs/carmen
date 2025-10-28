@@ -27,6 +27,7 @@ use crate::{
     error::Error,
     node_manager::NodeManager,
     statistics::{NodeStatisticVisitor, Statistics, TrieStatistics},
+    storage::{self, Checkpointable},
     types::{Key, Value},
 };
 
@@ -84,6 +85,14 @@ impl<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync> VerkleTrie
             .get_read_access(*self.root.read().unwrap())?
             .get_commitment()
             .commitment())
+    }
+}
+
+impl<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync + Checkpointable> Checkpointable
+    for ManagedVerkleTrie<M>
+{
+    fn checkpoint(&self) -> Result<(), storage::Error> {
+        self.manager.checkpoint()
     }
 }
 

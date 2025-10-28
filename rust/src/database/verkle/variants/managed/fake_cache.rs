@@ -17,6 +17,7 @@ use crate::{
     database::verkle::variants::managed::{Node, NodeId, nodes::empty::EmptyNode},
     error::Error,
     node_manager::NodeManager,
+    storage::{self, Checkpointable},
     types::TreeId,
 };
 
@@ -90,6 +91,12 @@ impl NodeManager for FakeCache {
 
     fn delete(&self, id: NodeId) -> Result<(), Error> {
         let _lock = self.nodes[id.to_index() as usize].write().unwrap(); // Dummy access just to properly represent locking behavior
+        Ok(())
+    }
+}
+
+impl Checkpointable for FakeCache {
+    fn checkpoint(&self) -> Result<(), storage::Error> {
         Ok(())
     }
 }
