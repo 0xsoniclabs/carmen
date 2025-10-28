@@ -17,7 +17,7 @@ use crate::{
         VerkleTrieCarmenState,
         managed_trie::ManagedTrieNode,
         verkle::variants::managed::{
-            FullLeafNode, InnerNode, Node, NodeFileStorageManager, SparseLeafNode,
+            FullLeafNode, InnerNode, Node, NodeFileStorageManager, NodeId, SparseLeafNode,
         },
     },
     error::Error,
@@ -28,10 +28,12 @@ use crate::{
             StatisticsFormatter, csv_writer::CSVWriter,
             writer_with_indentation::WriterWithIndentation,
         },
+        storage_stats::StorageStatistics,
     },
     storage::{
         Storage,
         file::{NoSeekFile, NodeFileStorage},
+        storage_with_flush_buffer::StorageWithFlushBuffer,
     },
     types::*,
 };
@@ -74,12 +76,13 @@ pub fn open_carmen_db(
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
             eprintln!("Opening storage at {}", str::from_utf8(directory).unwrap());
-            // let storage = StorageWithFlushBuffer::<FileStorage>::open(&PathBuf::from(
-            //     str::from_utf8(directory).unwrap(),
-            // ))
-            // .unwrap();
-            let storage =
-                FileStorage::open(&PathBuf::from(str::from_utf8(directory).unwrap())).unwrap();
+            // FIXME: This collects statistics about storage operations
+            let storage = StorageStatistics::<NodeId, Node, FileStorage>::open(&PathBuf::from(
+                str::from_utf8(directory).unwrap(),
+            ))
+            .unwrap();
+            // let storage =
+            //     FileStorage::open(&PathBuf::from(str::from_utf8(directory).unwrap())).unwrap();
 
             let is_pinned = |node: &Node| node.get_commitment().is_dirty();
 

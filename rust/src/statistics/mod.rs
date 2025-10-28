@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, ops::AddAssign};
 use crate::statistics::formatters::StatisticsFormatter;
 
 pub mod formatters;
+pub mod storage_stats;
 mod utils;
 
 /// Trait for collecting statistics from a trie.
