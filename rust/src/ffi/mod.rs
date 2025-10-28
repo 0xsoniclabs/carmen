@@ -12,15 +12,15 @@ mod exported;
 
 #[allow(non_upper_case_globals, non_camel_case_types, non_snake_case, unused)]
 mod bindings {
-    use crate::error::Error;
+    use crate::error::{BTError, Error};
 
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-    impl From<Error> for Result {
-        fn from(error: Error) -> Self {
+    impl From<BTError<Error>> for Result {
+        fn from(error: BTError<Error>) -> Self {
             eprintln!("Returning error via FFI: {error:?}");
 
-            match error {
+            match error.into_inner() {
                 Error::UnsupportedSchema(_) => Result_kResult_UnsupportedSchema,
                 Error::UnsupportedOperation(_) => Result_kResult_UnsupportedOperation,
                 Error::UnsupportedImplementation(_) => Result_kResult_UnsupportedImplementation,

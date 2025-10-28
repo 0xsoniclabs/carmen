@@ -87,7 +87,7 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
             }
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -120,7 +120,7 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.checkpoint() {
         Ok(_) => bindings::Result_kResult_Success,
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -152,7 +152,7 @@ unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) -> bindings::Result {
     let db = unsafe { db.inner_to_ref_scoped(&token) };
     match db.close() {
         Ok(_) => bindings::Result_kResult_Success,
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -244,7 +244,7 @@ unsafe extern "C" fn Carmen_Rust_GetLiveState(
             }
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -296,7 +296,7 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(
             }
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -391,7 +391,7 @@ unsafe extern "C" fn Carmen_Rust_AccountExists(
             unsafe { std::ptr::write(out_state as *mut u8, exists as u8) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -443,7 +443,7 @@ unsafe extern "C" fn Carmen_Rust_GetBalance(
             unsafe { std::ptr::write(out_balance as *mut U256, balance) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -495,7 +495,7 @@ unsafe extern "C" fn Carmen_Rust_GetNonce(
             unsafe { std::ptr::write(out_nonce as _, nonce) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -556,7 +556,7 @@ unsafe extern "C" fn Carmen_Rust_GetStorageValue(
             unsafe { std::ptr::write(out_value as *mut Value, value) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -619,7 +619,7 @@ unsafe extern "C" fn Carmen_Rust_GetCode(
             unsafe { std::ptr::write(out_length, len as u32) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -671,7 +671,7 @@ unsafe extern "C" fn Carmen_Rust_GetCodeHash(
             unsafe { std::ptr::write(out_hash as *mut Hash, code_hash) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -723,7 +723,7 @@ unsafe extern "C" fn Carmen_Rust_GetCodeSize(
             unsafe { std::ptr::write(out_length, code_size) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -773,7 +773,7 @@ unsafe extern "C" fn Carmen_Rust_Apply(
     };
     match state.apply_block_update(block, update) {
         Ok(_) => bindings::Result_kResult_Success,
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -816,7 +816,7 @@ unsafe extern "C" fn Carmen_Rust_GetHash(
             unsafe { std::ptr::write(out_hash as *mut Hash, hash) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
@@ -869,7 +869,7 @@ unsafe extern "C" fn Carmen_Rust_GetMemoryFootprint(
             unsafe { std::ptr::write(out, Box::into_raw(msg) as *mut c_char) };
             bindings::Result_kResult_Success
         }
-        Err(err) => err.into_inner().into(),
+        Err(err) => err.into(),
     }
 }
 
