@@ -1,6 +1,8 @@
-use std::{collections::HashMap, io::Write, path::Path, sync::Mutex};
+// TODO: Add timestamp since last access to element
+// TODO: Operations per seconds
+use std::{io::Write, path::Path};
 
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 
 use crate::{storage::Storage, types::TreeId};
 
@@ -33,28 +35,49 @@ where
 }
 
 pub struct StorageFileStatistics {
+    op_with_time_stats: DashSet<(StorageOperation, u128, u64)>,
     file: std::sync::Mutex<std::fs::File>,
 }
 
 impl StorageFileStatistics {
+    const BUFFER_SIZE: usize = 100000;
+
     fn new(path: &Path) -> Self {
         let mut file =
             std::fs::File::create(path).expect("Failed to create storage operation stats file");
         file.write_all("Op,Timestamp,Offset\n".as_bytes())
             .expect("Failed to write header to statistics file");
         Self {
+            op_with_time_stats: DashSet::with_capacity(Self::BUFFER_SIZE),
             file: std::sync::Mutex::new(file),
         }
     }
 
-    fn write_with_timestamp(&self, op: StorageOperation, offset: u64) {
+    fn add(&self, op: StorageOperation, offset: u64) {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("Time went backwards")
             .as_micros();
+        self.op_with_time_stats.insert((op, timestamp, offset));
+        if self.op_with_time_stats.len() >= Self::BUFFER_SIZE {
+            self.flush();
+        }
+    }
+
+    fn flush(&self) {
         let mut file = self.file.lock().unwrap();
-        writeln!(file, "{op},{timestamp},{offset}")
-            .expect("Failed to write operation with timestamp");
+        for entry in self.op_with_time_stats.iter() {
+            let (op, timestamp, offset) = *entry;
+            writeln!(file, "{op},{timestamp},{offset}")
+                .expect("Failed to write operation statistics to file");
+            self.op_with_time_stats.remove(&entry);
+        }
+    }
+}
+
+impl Drop for StorageFileStatistics {
+    fn drop(&mut self) {
+        self.flush();
     }
 }
 
@@ -120,23 +143,22 @@ where
 
     fn get(&self, id: Self::Id) -> Result<Self::Item, crate::storage::Error> {
         self.count_op(StorageOperation::Get);
-        self.op_with_stats
-            .write_with_timestamp(StorageOperation::Get, id.to_index());
+        self.op_with_stats.add(StorageOperation::Get, id.to_index());
         let item = self.storage.get(id)?;
         Ok(item)
     }
 
     fn reserve(&self, item: &Self::Item) -> Self::Id {
         self.count_op(StorageOperation::Reserve);
+        let id = self.storage.reserve(item);
         self.op_with_stats
-            .write_with_timestamp(StorageOperation::Reserve, 0);
-        self.storage.reserve(item)
+            .add(StorageOperation::Reserve, id.to_index());
+        id
     }
 
     fn set(&self, id: Self::Id, item: &Self::Item) -> Result<(), crate::storage::Error> {
         self.count_op(StorageOperation::Set);
-        self.op_with_stats
-            .write_with_timestamp(StorageOperation::Set, id.to_index());
+        self.op_with_stats.add(StorageOperation::Set, id.to_index());
         self.storage.set(id, item)?;
         Ok(())
     }
@@ -144,7 +166,7 @@ where
     fn delete(&self, id: Self::Id) -> Result<(), crate::storage::Error> {
         self.count_op(StorageOperation::Delete);
         self.op_with_stats
-            .write_with_timestamp(StorageOperation::Delete, id.to_index());
+            .add(StorageOperation::Delete, id.to_index());
         self.storage.delete(id)
     }
 }
