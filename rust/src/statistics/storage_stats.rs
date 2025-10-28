@@ -66,12 +66,15 @@ impl StorageFileStatistics {
 
     fn flush(&self) {
         let mut file = self.file.lock().unwrap();
+        let mut entry_to_remove = Vec::with_capacity(Self::BUFFER_SIZE);
         for entry in self.op_with_time_stats.iter() {
             let (op, timestamp, offset) = *entry;
             writeln!(file, "{op},{timestamp},{offset}")
                 .expect("Failed to write operation statistics to file");
-            self.op_with_time_stats.remove(&entry);
+            entry_to_remove.push(*entry);
         }
+        self.op_with_time_stats
+            .retain(|e| !entry_to_remove.contains(e));
     }
 }
 
