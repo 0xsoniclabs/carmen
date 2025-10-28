@@ -161,6 +161,8 @@ pub trait CarmenState: Send + Sync {
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> Result<(), Error>;
 
     fn get_statistics(&self) -> Result<Statistics, Error>;
+
+    fn checkpoint(&self) -> Result<(), Error>;
 }
 
 // TODO: Get rid of this once we no longer store an Arc<CarmenState> in CarmenS6Db
@@ -205,6 +207,10 @@ impl<T: CarmenState> CarmenState for Arc<T> {
     fn get_statistics(&self) -> Result<Statistics, Error> {
         self.deref().get_statistics()
     }
+
+    fn checkpoint(&self) -> Result<(), Error> {
+        self.deref().checkpoint()
+    }
 }
 
 /// The `S6` implementation of [`CarmenDb`].
@@ -241,6 +247,8 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
             .get_statistics()?
             .print(&mut formatters)
             .unwrap();
+        // FIXME: Persist the storage with a checkpoint
+        self.live_state.checkpoint()?;
         Ok(())
     }
 

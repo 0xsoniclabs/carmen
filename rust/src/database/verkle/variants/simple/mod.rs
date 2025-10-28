@@ -16,6 +16,7 @@ use crate::{
     database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
     error::Error,
     statistics::{NodeStatisticVisitor, Statistics, TrieStatistics},
+    storage::{self, Checkpointable},
     types::{Key, Value},
 };
 
@@ -65,6 +66,13 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     fn commit(&self) -> Result<Commitment, Error> {
         let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::commit");
         Ok(self.root.lock().unwrap().commit())
+    }
+}
+
+impl Checkpointable for SimpleInMemoryVerkleTrie {
+    fn checkpoint(&self) -> Result<(), storage::Error> {
+        // In-memory trie does not need to do anything for checkpointing.
+        Ok(())
     }
 }
 

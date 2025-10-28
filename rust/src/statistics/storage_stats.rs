@@ -4,7 +4,10 @@ use std::{io::Write, path::Path};
 
 use dashmap::{DashMap, DashSet};
 
-use crate::{storage::Storage, types::TreeId};
+use crate::{
+    storage::{Checkpointable, Storage},
+    types::TreeId,
+};
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 enum StorageOperation {
@@ -171,5 +174,14 @@ where
         self.op_with_stats
             .add(StorageOperation::Delete, id.to_index());
         self.storage.delete(id)
+    }
+}
+
+impl<I: TreeId, N, S> Checkpointable for StorageStatistics<I, N, S>
+where
+    S: Storage<Id = I, Item = N> + Checkpointable,
+{
+    fn checkpoint(&self) -> Result<(), crate::storage::Error> {
+        self.storage.checkpoint()
     }
 }
