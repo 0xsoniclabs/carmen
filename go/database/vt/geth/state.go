@@ -23,6 +23,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/0xsoniclabs/tracy"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
@@ -177,10 +178,13 @@ func (s *verkleState) GetCodeHash(address common.Address) (common.Hash, error) {
 }
 
 func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
-	return false, fmt.Errorf("not supported: verkle trie does not support has empty storage")
+	return true, nil
+	// return false, fmt.Errorf("not supported: verkle trie does not support has empty storage")
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
+	zone := tracy.ZoneBegin("GetHash")
+	defer zone.End()
 	return common.Hash(s.verkle.Hash()), nil
 }
 
@@ -233,6 +237,8 @@ func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) 
 }
 
 func (s *verkleState) Apply(block uint64, update common.Update) error {
+	zone := tracy.ZoneBegin("Apply")
+	defer zone.End()
 	if err := update.ApplyTo(s); err != nil {
 		return err
 	}

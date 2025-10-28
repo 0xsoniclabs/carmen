@@ -61,3 +61,9 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/ethereum/go-ethereum => /home/psalz/sonic/go-ethereum
+
+replace github.com/ethereum/go-verkle => /home/psalz/sonic/go-verkle
+
+replace github.com/crate-crypto/go-ipa => /home/psalz/OSS/go-ipa
