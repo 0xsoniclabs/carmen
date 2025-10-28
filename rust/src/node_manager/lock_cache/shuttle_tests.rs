@@ -3,6 +3,7 @@ use std::{
     collections::HashSet,
     env,
     io::Write,
+    num::NonZero,
     panic::{catch_unwind, panic_any},
     path::Path,
 };
@@ -22,33 +23,30 @@ use crate::{
 
 #[rstest_reuse::apply(get_method)]
 fn shuttle_cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_once(
-    #[case] get_fn: GetOrInsertMethod,
+    #[case] get_fn: GetOrInsertMethod<dyn Fn() -> Result<i32, Error>>,
 ) {
     run_shuttle_check(
         move || {
             let insert_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let insert_fn = {
                 let insert_count = insert_count.clone();
-                Arc::new(move || {
+                move || {
                     insert_count.fetch_add(1, Ordering::SeqCst);
                     Ok(42)
-                })
+                }
             };
             let id = 0;
-            let cache = Arc::new(LockCache::new(10, Arc::new(EvictionLogger::default())));
+            let cache = LockCache::new(10, Arc::new(EvictionLogger::default()));
 
-            let mut handles = vec![];
-            for _ in 0..2 {
-                let cache = cache.clone();
-                let insert_fn = insert_fn.clone();
-                handles.push(thread::spawn(move || {
-                    ignore_guard(get_fn(&cache, id, insert_fn));
-                }));
-            }
-
-            for handle in handles {
-                handle.join().unwrap();
-            }
+            thread::scope(|s| {
+                for _ in 0..2 {
+                    let cache = &cache;
+                    let insert_fn = &insert_fn as &(dyn Fn() -> Result<i32, Error> + Send + Sync);
+                    s.spawn(move || {
+                        ignore_guard(get_fn(cache, id, insert_fn));
+                    });
+                }
+            });
 
             assert_eq!(insert_count.load(Ordering::SeqCst), 1);
         },
@@ -312,9 +310,9 @@ fn shuttle_operation_permutations() {
                 {
                     let operations = operations.clone();
                     move || {
-                        let lock_cache = Arc::new(LockCache::new_with_extra_slots(
+                        let lock_cache = Arc::new(LockCache::new_internal(
                             cache_size,
-                            1,
+                            NonZero::new(1).unwrap(),
                             Arc::new(EvictionLogger::default()),
                         ));
                         assert_eq!(
