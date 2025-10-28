@@ -1,8 +1,10 @@
 use core::panic;
 use std::{
     collections::HashSet,
+    env,
     io::Write,
     panic::{catch_unwind, panic_any},
+    path::Path,
 };
 
 use itertools::Itertools;
@@ -214,17 +216,17 @@ impl std::fmt::Debug for OpWithId {
 
 /// A test case for shuttle operation permutations with serialization/deserialization support.
 #[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
-struct PermutationCase {
+struct PermutationTestCase {
     cache_size: usize,
     operations: Vec<OpWithId>,
 }
 
-impl PermutationCase {
+impl PermutationTestCase {
     const PATH: &str = "shuttle_permutation_case.bin";
 
     /// Serialize the permutation case to [`Self::PATH`]
-    fn serialize(&self) {
-        let mut file = std::fs::File::create(Self::PATH).unwrap();
+    fn serialize(&self, path: &Path) {
+        let mut file = std::fs::File::create(path.join(Self::PATH)).unwrap();
         let mut bytes = vec![];
         bytes.extend_from_slice(&self.cache_size.to_le_bytes());
         for operation in &self.operations {
@@ -234,8 +236,8 @@ impl PermutationCase {
     }
 
     /// Deserialize the permutation case from [`Self::PATH`]
-    fn deserialize() -> Self {
-        let bytes = std::fs::read(Self::PATH).unwrap();
+    fn deserialize(path: &Path) -> Self {
+        let bytes = std::fs::read(path.join(Self::PATH)).unwrap();
         if bytes.len() < std::mem::size_of::<usize>() {
             panic!("Serialized case file is too small");
         }
@@ -272,14 +274,15 @@ fn shuttle_operation_permutations() {
     #[cfg(not(feature = "shuttle"))]
     return;
     #[allow(unreachable_code)]
+    let current_dir = env::current_dir().unwrap();
     let CONCURRENT_OPS: usize = 6; // Must be >= 2
     let cache_sizes = (2..=CONCURRENT_OPS + 1).collect::<Vec<usize>>();
     let node_ids = (0..CONCURRENT_OPS as u32).collect::<Vec<u32>>();
     let operations = vec![Op::Add, Op::Get, Op::Delete, Op::Iter];
 
-    let case_yielder: Box<dyn Iterator<Item = PermutationCase>> =
+    let case_yielder: Box<dyn Iterator<Item = PermutationTestCase>> =
         match std::env::var("SHUTTLE_SERIALIZED_CASE") {
-            Ok(_) => Box::new(vec![PermutationCase::deserialize()].into_iter()),
+            Ok(_) => Box::new(vec![PermutationTestCase::deserialize(&current_dir)].into_iter()),
             Err(_) => Box::new(cache_sizes.clone().into_iter().flat_map(move |cache_size| {
                 operations
                     .clone()
@@ -287,7 +290,7 @@ fn shuttle_operation_permutations() {
                     .cartesian_product(node_ids.clone())
                     .map(OpWithId::from)
                     .combinations_with_replacement(CONCURRENT_OPS)
-                    .map(move |operations| PermutationCase {
+                    .map(move |operations| PermutationTestCase {
                         cache_size,
                         operations,
                     })
@@ -296,8 +299,8 @@ fn shuttle_operation_permutations() {
 
     for operation_case in case_yielder {
         let case_error_pool: Arc<std::sync::Mutex<HashSet<(Op, String)>>> = Arc::default();
-        operation_case.serialize();
-        let PermutationCase {
+        operation_case.serialize(&current_dir);
+        let PermutationTestCase {
             cache_size,
             operations,
         } = operation_case;
@@ -333,28 +336,34 @@ fn shuttle_operation_permutations() {
                 1000,
             );
         }) {
-            let error = e.downcast_ref::<(Op, String)>().unwrap();
-            let mut case_error_pool = case_error_pool.lock().unwrap();
-            // Skip already known error cases
-            if case_error_pool.contains(error) {
-                break;
-            }
-            case_error_pool.insert(error.clone());
-            eprintln!("\n#############################################################");
-            eprintln!("Test case failed: {operations:?} with cache size {cache_size}");
-            eprintln!("--------------------------------------------------------------");
-            if error.1.contains("Expected error") {
-                eprintln!("Ignoring expected error: {}", error.1);
-                eprintln!("###########################################################\n");
+            if let Some(error) = e.downcast_ref::<(Op, String)>() {
+                let mut case_error_pool = case_error_pool.lock().unwrap();
+                // Skip already known error cases
+                if case_error_pool.contains(error) {
+                    break;
+                }
+                case_error_pool.insert(error.clone());
+                eprintln!("\n#############################################################");
+                eprintln!("Test case failed: {operations:?} with cache size {cache_size}");
+                eprintln!("--------------------------------------------------------------");
+                if error.1.contains("Expected error") {
+                    eprintln!("Ignoring expected error: {}", error.1);
+                    eprintln!("###########################################################\n");
+                } else {
+                    panic!("Unexpected error in shuttle test: {e:?}");
+                }
             } else {
-                panic!("Panic in shuttle test: {e:?}");
+                panic!("Unexpected error format in shuttle test: {e:?}");
             }
         }
     }
 }
 
 mod tests {
+    use std::panic::AssertUnwindSafe;
+
     use super::*;
+    use crate::utils::test_dir::{Permissions, TestDir};
 
     #[test]
     fn op_conversion_from_and_to_u8_works() {
@@ -365,7 +374,53 @@ mod tests {
         assert!(Op::try_from(4).is_err());
     }
 
-    // TODO: tests for Op::execute and Op::handle_invalid_state
+    #[rstest::rstest]
+    fn handle_invalid_state_panics_on_unexpected_errors(
+        #[values(Op::Add, Op::Get, Op::Iter)] op: Op,
+    ) {
+        let res = catch_unwind(|| {
+            op.handle_invalid_state(&Error::CorruptedState("unexpected string".into()));
+        })
+        .unwrap_err();
+        let message = res.downcast_ref::<(Op, String)>().unwrap();
+        assert_eq!(message.0, op);
+        assert_eq!(
+            message.1,
+            format!("Unexpected error on {op}: CorruptedState(\"unexpected string\")")
+        );
+    }
+
+    #[rstest::rstest]
+    #[case(Op::Add, Error::CorruptedState("lock cache's cache size is equal or bigger than the number of slots. This may have happened because an insert operation was executed with all cache entries marked as pinned".into()))]
+    #[case(Op::Add, Error::CorruptedState("another thread removed the key while it was being inserted".into()))]
+    #[case(Op::Delete, Error::CorruptedState("some delete error".into()))]
+    fn handle_invalid_state_panics_on_expected_error(#[case] op: Op, #[case] error: Error) {
+        let res = catch_unwind(AssertUnwindSafe(|| {
+            op.handle_invalid_state(&error);
+        }))
+        .unwrap_err();
+        let message = res.downcast_ref::<(Op, String)>().unwrap();
+        assert_eq!(message.0, op);
+        assert_eq!(message.1, format!("Expected error on {op}: {error:?}"));
+    }
+
+    #[test]
+    fn handle_invalid_state_ignores_expected_get_not_found_error() {
+        let op = Op::Get;
+        // Should not panic
+        op.handle_invalid_state(&Error::Storage(storage::Error::NotFound));
+    }
+
+    #[rstest::rstest]
+    #[case(Op::Add)]
+    #[case(Op::Get)]
+    #[case(Op::Delete)]
+    #[case(Op::Iter)]
+    fn op_execute_joins_without_panicking_on_successful_operations(#[case] op: Op) {
+        let cache = Arc::new(LockCache::new(10, Arc::new(EvictionLogger::default())));
+        let handle = op.execute(cache, 0);
+        handle.join().unwrap();
+    }
 
     #[test]
     fn op_with_id_serialization_and_deserialization_work() {
@@ -393,20 +448,55 @@ mod tests {
     }
 
     #[test]
+    fn permutation_test_case_serialize_and_deserialize_work() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let original_case = PermutationTestCase {
+            cache_size: 5,
+            operations: vec![
+                OpWithId { op: Op::Add, id: 1 },
+                OpWithId { op: Op::Get, id: 2 },
+                OpWithId {
+                    op: Op::Delete,
+                    id: 3,
+                },
+            ],
+        };
+        original_case.serialize(&dir);
+        let deserialized_case = PermutationTestCase::deserialize(&dir);
+        assert_eq!(original_case, deserialized_case);
+    }
+
+    #[test]
     #[should_panic(expected = "Serialized case file is too small")]
-    fn permutation_case_deserialize_panics_on_small_file() {
-        std::fs::write(PermutationCase::PATH, vec![0u8; 2]).unwrap();
-        let _ = PermutationCase::deserialize();
+    fn permutation_test_case_deserialize_panics_on_small_file() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        std::fs::write(dir.join(PermutationTestCase::PATH), vec![0u8; 2]).unwrap();
+        let _ = PermutationTestCase::deserialize(&dir);
     }
 
     #[test]
     #[should_panic]
-    fn permutation_case_deserialize_panics_on_invalid_op() {
+    fn permutation_test_case_deserialize_panics_on_invalid_op() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let mut bytes = vec![];
         let cache_size: usize = 10;
         bytes.extend_from_slice(&cache_size.to_le_bytes());
         bytes.push(255); // Invalid Op
-        std::fs::write(PermutationCase::PATH, &bytes).unwrap();
-        let _ = PermutationCase::deserialize();
+        std::fs::write(dir.join(PermutationTestCase::PATH), &bytes).unwrap();
+        let _ = PermutationTestCase::deserialize(&dir);
+    }
+
+    #[test]
+    #[should_panic(expected = "Serialized case file has extra bytes")]
+    fn permutation_test_case_deserialize_panics_on_extra_bytes() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let mut bytes = vec![];
+        let cache_size: usize = 10;
+        bytes.extend_from_slice(&cache_size.to_le_bytes());
+        let op_with_id = OpWithId { op: Op::Add, id: 1 };
+        op_with_id.serialize(&mut bytes);
+        bytes.push(0); // Extra byte
+        std::fs::write(dir.join(PermutationTestCase::PATH), &bytes).unwrap();
+        let _ = PermutationTestCase::deserialize(&dir);
     }
 }
