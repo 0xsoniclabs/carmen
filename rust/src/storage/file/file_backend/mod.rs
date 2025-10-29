@@ -49,8 +49,8 @@ pub trait FileBackend: Send + Sync {
     fn flush(&self) -> BTResult<(), std::io::Error>;
 
     /// Returns the physical size of this file on disk in bytes. This size may be larger than the
-    /// logical size of the file. Implementations only have to ensure that reads up to the
-    /// offset returned by this method succeed.
+    /// logical size of the file. Implementations have to ensure that reads up to the offset
+    /// returned by this method succeed.
     fn len(&self) -> BTResult<u64, std::io::Error>;
 }
 
