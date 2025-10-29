@@ -252,7 +252,7 @@ where
                 if self.cache.len() >= self.locks.len() {
                     return Err(Error::CorruptedState(
             "LockCache's cache size is equal or bigger than the number of slots. This may have happened because an insert operation was executed with all cache entries marked as pinned".to_owned(),
-            ));
+            ).into());
                 }
                 Ok(slot_guard)
             }
@@ -528,7 +528,10 @@ mod tests {
 
         let _guard = cache.get_read_access_or_insert(1u32, || Ok(123)).unwrap();
         let res = cache.get_read_access_or_insert(2u32, || Ok(456));
-        assert!(matches!(res, Err(Error::CorruptedState(_))));
+        assert!(matches!(
+            res.unwrap_err().into_inner(),
+            Error::CorruptedState(_)
+        ));
     }
 
     #[test]
