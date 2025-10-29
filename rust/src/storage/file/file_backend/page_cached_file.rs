@@ -117,39 +117,42 @@ impl<F: FileBackend, const D: bool> InnerPageCachedFile<F, D> {
     /// Load the page containing the given offset into memory, flushing the current page if dirty.
     /// If the offset is already within the currently loaded page, this is a no-op.
     fn change_page(&mut self, offset: u64) -> BTResult<(), std::io::Error> {
-        if offset < self.page_index * Page::SIZE as u64
-            || offset >= (self.page_index + 1) * Page::SIZE as u64
+        if (self.page_index * Page::SIZE as u64..(self.page_index + 1) * Page::SIZE as u64)
+            .contains(&offset)
         {
-            if self.page_dirty {
-                self.file
-                    .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
-                self.file_len = cmp::max(self.file_len, (self.page_index + 1) * Page::SIZE as u64);
-            }
-
-            self.page_index = offset / Page::SIZE as u64;
-            if D {
-                if self.file_len < (self.page_index + 1) * Page::SIZE as u64 {
-                    self.page.fill(0);
-                } else {
-                    self.file
-                        .read_exact_at(&mut self.page, self.page_index * Page::SIZE as u64)?;
-                }
-            } else {
-                // Without O_DIRECT, the file size is not padded and we may read a partial page.
-                let len = cmp::min(
-                    self.file_len
-                        .saturating_sub(self.page_index * Page::SIZE as u64)
-                        as usize,
-                    Page::SIZE,
-                );
-                self.file
-                    .read_exact_at(&mut self.page[..len], self.page_index * Page::SIZE as u64)?;
-                // In case we read a partial page, set the remainder to zero.
-                self.page[len..].fill(0);
-            }
-
-            self.page_dirty = false;
+            // Page is already loaded.
+            return Ok(());
         }
+
+        if self.page_dirty {
+            self.file
+                .write_all_at(&self.page, self.page_index * Page::SIZE as u64)?;
+            self.file_len = cmp::max(self.file_len, (self.page_index + 1) * Page::SIZE as u64);
+        }
+
+        self.page_index = offset / Page::SIZE as u64;
+        if D {
+            if self.file_len < (self.page_index + 1) * Page::SIZE as u64 {
+                self.page.fill(0);
+            } else {
+                self.file
+                    .read_exact_at(&mut self.page, self.page_index * Page::SIZE as u64)?;
+            }
+        } else {
+            // Without O_DIRECT, the file size is not padded and we may read a partial page.
+            let len = cmp::min(
+                self.file_len
+                    .saturating_sub(self.page_index * Page::SIZE as u64) as usize,
+                Page::SIZE,
+            );
+            self.file
+                .read_exact_at(&mut self.page[..len], self.page_index * Page::SIZE as u64)?;
+            // In case we read a partial page, set the remainder to zero.
+            self.page[len..].fill(0);
+        }
+
+        self.page_dirty = false;
+
         Ok(())
     }
 }
