@@ -9,5 +9,6 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod trie_commitment;
+mod trie_update_log;
 
 pub use trie_commitment::TrieCommitment;
