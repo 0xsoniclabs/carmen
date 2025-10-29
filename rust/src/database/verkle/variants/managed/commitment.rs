@@ -107,6 +107,70 @@ pub enum VerkleCommitmentInput {
     Inner([NodeId; 256]),
 }
 
+pub fn process_update(
+    manager: &(impl NodeManager<Id = NodeId, NodeType = Node> + Send + Sync),
+    id: NodeId,
+    previous_commitments: &DashMap<NodeId, Commitment>,
+) {
+    let mut lock = manager.get_write_access(id).unwrap();
+    let mut vc = lock.get_commitment();
+    assert_eq!(vc.dirty, 1);
+    previous_commitments.insert(id, vc.commitment);
+    match lock.get_commitment_input().unwrap() {
+        VerkleCommitmentInput::Leaf(values, stem) => {
+            let _span = tracy_client::span!("update leaf");
+            for (i, value) in vc.committed_values.iter().enumerate() {
+                if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                    continue;
+                }
+                let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
+                let prev_upper = Scalar::from_le_bytes(&value[16..]);
+                if vc.committed_used_slots[i / 8] & (1 << (i % 8)) != 0 {
+                    prev_lower.set_bit128();
+                }
+                let mut lower = Scalar::from_le_bytes(&values[i][..16]);
+                let upper = Scalar::from_le_bytes(&values[i][16..]);
+                lower.set_bit128();
+                let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
+                c.update(((i * 2) % 256) as u8, prev_lower, lower);
+                c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+                vc.committed_used_slots[i / 8] |= 1 << (i % 8);
+            }
+            vc.committed_values.fill(Value::default());
+            let combined = [
+                Scalar::from(1),
+                Scalar::from_le_bytes(&stem),
+                vc.c1.to_scalar(),
+                vc.c2.to_scalar(),
+            ];
+            vc.commitment = Commitment::new(&combined);
+        }
+        VerkleCommitmentInput::Inner(children) => {
+            let _span = tracy_client::span!("update inner");
+            for (i, child_id) in children.iter().enumerate() {
+                if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                    continue;
+                }
+                let child_commitment = manager.get_read_access(*child_id).unwrap().get_commitment();
+                assert_eq!(child_commitment.dirty, 0);
+                let prev_commitment = previous_commitments
+                    .get(child_id)
+                    .expect("previous commitment should have been set in lower level");
+                let prev_commitment = prev_commitment.to_scalar();
+                vc.commitment.update(
+                    i as u8,
+                    prev_commitment,
+                    child_commitment.commitment().to_scalar(),
+                );
+            }
+        }
+    }
+    vc.dirty = 0;
+    // TODO: Test this (currently not caught by any test!)
+    vc.changed.fill(0);
+    lock.set_commitment(vc).unwrap();
+}
+
 pub fn update_commitments(
     log: &TrieUpdateLog<NodeId>,
     manager: &(impl NodeManager<Id = NodeId, NodeType = Node> + Send + Sync),
@@ -134,6 +198,13 @@ pub fn update_commitments(
             dirty_nodes.len().div_ceil(batch_size)
         };
 
+        if num_threads == 1 {
+            for id in dirty_nodes {
+                process_update(manager, id, &previous_commitments);
+            }
+            continue;
+        }
+
         let next_idx = AtomicUsize::new(0);
         rayon::scope(|s| {
             for _ in 0..num_threads {
@@ -150,66 +221,7 @@ pub fn update_commitments(
                             break;
                         }
                         let id = dirty_nodes[idx];
-                        let mut lock = manager.get_write_access(id).unwrap();
-                        let mut vc = lock.get_commitment();
-                        assert_eq!(vc.dirty, 1);
-                        previous_commitments.insert(id, vc.commitment);
-                        match lock.get_commitment_input().unwrap() {
-                            VerkleCommitmentInput::Leaf(values, stem) => {
-                                let _span = tracy_client::span!("update leaf");
-                                for (i, value) in vc.committed_values.iter().enumerate() {
-                                    if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                                        continue;
-                                    }
-                                    let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
-                                    let prev_upper = Scalar::from_le_bytes(&value[16..]);
-                                    if vc.committed_used_slots[i / 8] & (1 << (i % 8)) != 0 {
-                                        prev_lower.set_bit128();
-                                    }
-                                    let mut lower = Scalar::from_le_bytes(&values[i][..16]);
-                                    let upper = Scalar::from_le_bytes(&values[i][16..]);
-                                    lower.set_bit128();
-                                    let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
-                                    c.update(((i * 2) % 256) as u8, prev_lower, lower);
-                                    c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
-                                    vc.committed_used_slots[i / 8] |= 1 << (i % 8);
-                                }
-                                vc.committed_values.fill(Value::default());
-                                let combined = [
-                                    Scalar::from(1),
-                                    Scalar::from_le_bytes(&stem),
-                                    vc.c1.to_scalar(),
-                                    vc.c2.to_scalar(),
-                                ];
-                                vc.commitment = Commitment::new(&combined);
-                            }
-                            VerkleCommitmentInput::Inner(children) => {
-                                let _span = tracy_client::span!("update inner");
-                                for (i, child_id) in children.iter().enumerate() {
-                                    if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                                        continue;
-                                    }
-                                    let child_commitment = manager
-                                        .get_read_access(*child_id)
-                                        .unwrap()
-                                        .get_commitment();
-                                    assert_eq!(child_commitment.dirty, 0);
-                                    let prev_commitment = previous_commitments
-                                        .get(child_id)
-                                        .expect("previous commitment should have been set in lower level");
-                                    let prev_commitment = prev_commitment.to_scalar();
-                                    vc.commitment.update(
-                                        i as u8,
-                                        prev_commitment,
-                                        child_commitment.commitment().to_scalar(),
-                                    );
-                                }
-                            }
-                        }
-                        vc.dirty = 0;
-                        // TODO: Test this (currently not caught by any test!)
-                        vc.changed.fill(0);
-                        lock.set_commitment(vc).unwrap();
+                        process_update(manager, id, previous_commitments);
                     }
                 });
             }
