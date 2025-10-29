@@ -27,7 +27,7 @@ use crate::{
     node_manager::NodeManager,
     statistics::{NodeStatisticVisitor, TrieVisitor},
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{Key, NodeSize, Value},
+    types::{Key, NodeSize, TreeId, Value},
 };
 
 pub mod empty;
@@ -86,7 +86,8 @@ impl TrieVisitor<Node> for NodeStatisticVisitor {
                     "Leaf",
                     Some(move |leaf2: &Box<SparseLeafNode<2>>| {
                         leaf2
-                            .used_bits
+                            .commitment
+                            .committed_used_slots
                             .iter()
                             .map(|byte| byte.count_ones() as u64)
                             .sum::<u64>()
@@ -115,7 +116,8 @@ impl TrieVisitor<Node> for NodeStatisticVisitor {
                     "Leaf",
                     Some(move |leaf_node: &Box<FullLeafNode>| {
                         leaf_node
-                            .used_bits
+                            .commitment
+                            .committed_used_slots
                             .iter()
                             .map(|byte| byte.count_ones() as u64)
                             .sum::<u64>()
