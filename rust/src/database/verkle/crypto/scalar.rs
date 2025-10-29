@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::ops::Sub;
+
 use ark_ff::{BigInteger, fields::PrimeField};
 use banderwagon::Fr;
 
@@ -40,6 +42,14 @@ impl Scalar {
         let mut bytes = self.0.into_bigint().to_bytes_le();
         bytes[16] |= 0x01;
         self.0 = Fr::from_le_bytes_mod_order(&bytes);
+    }
+}
+
+impl Sub<Self> for Scalar {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Scalar(self.0 - rhs.0)
     }
 }
 

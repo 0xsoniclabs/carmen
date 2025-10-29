@@ -147,6 +147,15 @@ pub fn process_update(
         }
         VerkleCommitmentInput::Inner(children) => {
             let _span = tracy_client::span!("update inner");
+
+            let changed_count = vc
+                .changed
+                .iter()
+                .map(|b| b.count_ones() as usize)
+                .sum::<usize>();
+            let use_batch_update = changed_count > 32;
+
+            let mut deltas = [Scalar::zero(); 256];
             for (i, child_id) in children.iter().enumerate() {
                 if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
                     continue;
@@ -157,11 +166,19 @@ pub fn process_update(
                     .get(child_id)
                     .expect("previous commitment should have been set in lower level");
                 let prev_commitment = prev_commitment.to_scalar();
-                vc.commitment.update(
-                    i as u8,
-                    prev_commitment,
-                    child_commitment.commitment().to_scalar(),
-                );
+
+                if use_batch_update {
+                    deltas[i] = child_commitment.commitment().to_scalar() - prev_commitment;
+                } else {
+                    vc.commitment.update(
+                        i as u8,
+                        prev_commitment,
+                        child_commitment.commitment().to_scalar(),
+                    );
+                }
+            }
+            if use_batch_update {
+                vc.commitment = vc.commitment + Commitment::new(&deltas);
             }
         }
     }
