@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::LazyLock;
+use std::{ops::Add, sync::LazyLock};
 
 use ark_ff::{BigInteger, PrimeField};
 use banderwagon::{Element, Fr};
@@ -125,6 +125,20 @@ impl Commitment {
         #[cfg(feature = "commit64b")]
         {
             Element::from_bytes_unchecked_uncompressed(self.point_bytes)
+        }
+    }
+}
+
+impl Add<Self> for Commitment {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let sum_point = self.as_element() + rhs.as_element();
+        Commitment {
+            #[cfg(not(feature = "commit64b"))]
+            point_bytes: sum_point.to_bytes(),
+            #[cfg(feature = "commit64b")]
+            point_bytes: sum_point.to_bytes_uncompressed(),
         }
     }
 }
