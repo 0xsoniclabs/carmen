@@ -8,6 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+mod managed_trie_node;
 mod trie_commitment;
 
+#[expect(unused)]
+pub use managed_trie_node::ManagedTrieNode;
 pub use trie_commitment::TrieCommitment;
