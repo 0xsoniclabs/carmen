@@ -11,6 +11,7 @@
 mod commitment;
 mod opening;
 mod scalar;
+mod window_signed_committer;
 
 pub use commitment::Commitment;
 #[expect(unused)]

@@ -12,11 +12,10 @@ use std::sync::LazyLock;
 
 use ark_ff::{BigInteger, PrimeField};
 use banderwagon::{Element, Fr};
-use ipa_multipoint::committer::{Committer, DefaultCommitter};
-use verkle_trie::constants::CRS;
+use ipa_multipoint::committer::Committer;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::database::verkle::crypto::Scalar;
+use crate::database::verkle::crypto::{Scalar, window_signed_committer::WindowSignedCommitter};
 
 /// A vector commitment to a sequence of 256 scalar values, using the Pedersen commitment scheme
 /// on the Banderwagon curve.
@@ -36,7 +35,7 @@ pub struct Commitment {
 }
 
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
-static COMMITTER: LazyLock<DefaultCommitter> = LazyLock::new(|| DefaultCommitter::new(&CRS.G));
+static COMMITTER: LazyLock<WindowSignedCommitter> = LazyLock::new(WindowSignedCommitter::new);
 
 impl Commitment {
     /// Creates a commitment to the given sequence of scalar values.
