@@ -55,12 +55,12 @@ impl ManagedTrieNode for EmptyNode {
             let inner = InnerNode::default();
             Ok(Node::Inner(Box::new(inner)))
         } else {
-            let new_leaf = SparseLeafNode::<2> {
+            let new_leaf = SparseLeafNode::<1> {
                 // Safe to unwrap: Slice is always 31 bytes
                 stem: key[..31].try_into().unwrap(),
                 ..Default::default()
             };
-            Ok(Node::Leaf2(Box::new(new_leaf)))
+            Ok(Node::Leaf1(Box::new(new_leaf)))
         }
     }
 
