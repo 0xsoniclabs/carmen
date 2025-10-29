@@ -19,8 +19,8 @@ use crate::{
 /// it after the node has been modified.
 ///
 /// NOTE: While this type is meant to be part of trie nodes, a dirty commitment should never
-/// be persisted to disk. The dirty flag is nevertheless part of the on-disk representation,
-/// so that the entire node can be transmuted to/from bytes using zerocopy.
+/// be persisted to disk. The dirty flag and changed bits are nevertheless part of the on-disk
+/// representation, so that the entire node can be transmuted to/from bytes using zerocopy.
 /// Related issue: https://github.com/0xsoniclabs/sonic-admin/issues/373
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
