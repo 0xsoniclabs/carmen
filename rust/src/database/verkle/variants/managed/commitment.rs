@@ -115,17 +115,29 @@ pub fn update_commitments(
     log: &TrieUpdateLog<VerkleNodeId>,
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
 ) -> BTResult<(), Error> {
+    const MIN_BATCH_SIZE: usize = 4;
+
     if log.count() == 0 {
         return Ok(());
     }
 
-    // TODO: How to set this? Depending on hardware + available parallelism?
-    let num_threads = 2;
+    let hardware_parallelism = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(1);
 
     let previous_commitments = DashMap::new();
 
     for level in (0..log.levels()).rev() {
         let dirty_nodes = log.dirty_nodes(level);
+
+        // TODO: How to set this? Depending on hardware + available parallelism?
+        let num_threads = if dirty_nodes.len() < MIN_BATCH_SIZE {
+            1
+        } else {
+            let batch_size = dirty_nodes.len().div_ceil(hardware_parallelism);
+            dirty_nodes.len().div_ceil(batch_size)
+        };
+
         let next_idx = AtomicUsize::new(0);
         rayon::scope(|s| {
             for _ in 0..num_threads {
