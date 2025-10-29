@@ -14,7 +14,7 @@ use dashmap::DashSet;
 
 /// A log of nodes that are being modified during updates to a managed trie, allowing for the batch
 /// recomputation of commitments afterwards. Nodes are identified by an `ID` type, and are organized
-/// by their level in the trie.
+/// by their depth in the trie.
 ///
 /// The log has interior mutability to allow concurrent updates.
 pub struct TrieUpdateLog<ID> {
@@ -30,25 +30,25 @@ impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
         }
     }
 
-    /// Marks the node with the given `id` at the specified `level` as dirty,
+    /// Marks the node with the given `id` at the specified `depth` as dirty,
     /// indicating that it has been modified and its commitment needs to be updated.
-    pub fn mark_dirty(&self, level: usize, id: ID) {
-        let guard = self.access_level(level);
-        guard[level].insert(id);
+    pub fn mark_dirty(&self, depth: usize, id: ID) {
+        let guard = self.access_level(depth);
+        guard[depth].insert(id);
     }
 
-    /// Deletes the node with the given `id` from the specified `level` from the log.
+    /// Deletes the node with the given `id` at the specified `depth` from the log.
     #[allow(clippy::needless_pass_by_value)]
-    pub fn delete(&self, level: usize, id: ID) {
-        let guard = self.access_level(level);
-        guard[level].remove(&id);
+    pub fn delete(&self, depth: usize, id: ID) {
+        let guard = self.access_level(depth);
+        guard[depth].remove(&id);
     }
 
-    /// Moves the node with the given `id` from the specified `from_level` to the next level down.
-    pub fn move_down(&self, from_level: usize, id: ID) {
-        let guard = self.access_level(from_level + 1);
-        if guard[from_level].remove(&id).is_some() {
-            guard[from_level + 1].insert(id);
+    /// Moves the node with the given `id` from the specified `from_depth` to the next level down.
+    pub fn move_down(&self, from_depth: usize, id: ID) {
+        let guard = self.access_level(from_depth + 1);
+        if guard[from_depth].remove(&id).is_some() {
+            guard[from_depth + 1].insert(id);
         }
     }
 
@@ -58,16 +58,16 @@ impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
         guard.iter().map(DashSet::len).sum()
     }
 
-    /// Returns the number of levels with dirty nodes.
+    /// Returns the number of levels for which dirty nodes have been logged.
     pub fn levels(&self) -> usize {
         let guard = self.dirty_nodes_by_level.read().unwrap();
         guard.len()
     }
 
-    /// Returns a vector of all dirty node IDs at the specified `level`.
-    pub fn dirty_nodes(&self, level: usize) -> Vec<ID> {
-        let guard = self.access_level(level);
-        guard[level].iter().map(|entry| *entry.key()).collect()
+    /// Returns a vector of all dirty node IDs at the specified `depth`.
+    pub fn dirty_nodes(&self, depth: usize) -> Vec<ID> {
+        let guard = self.access_level(depth);
+        guard[depth].iter().map(|entry| *entry.key()).collect()
     }
 
     /// Clears all dirty nodes from the log.
