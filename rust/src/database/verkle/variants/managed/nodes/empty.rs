@@ -56,12 +56,12 @@ impl ManagedTrieNode for EmptyNode {
         } else {
             // TODO: Deleting empty node from NodeManager after transforming will lead to cache
             // misses https://github.com/0xsoniclabs/sonic-admin/issues/385
-            let new_leaf = SparseLeafNode::<2> {
+            let new_leaf = SparseLeafNode::<1> {
                 // Safe to unwrap: Slice is always 31 bytes
                 stem: key[..31].try_into().unwrap(),
                 ..Default::default()
             };
-            Ok(StoreAction::HandleTransform(Node::Leaf2(Box::new(
+            Ok(StoreAction::HandleTransform(Node::Leaf1(Box::new(
                 new_leaf,
             ))))
         }

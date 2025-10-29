@@ -37,7 +37,7 @@ where
     let mut depth = 0;
 
     loop {
-        match current_lock.next_store_action(key, depth, current_id)? {
+        match current_lock.next_store_actione_action(key, depth, current_id)? {
             StoreAction::Store(slot_idx) => {
                 let prev_value = current_lock.store(key, value)?;
                 let mut trie_commitment = current_lock.get_commitment();

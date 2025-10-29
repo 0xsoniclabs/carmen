@@ -75,7 +75,7 @@ pub trait ManagedTrieNode {
     /// Returns information about the next action required to store a value at the given key.
     fn next_store_action(
         &self,
-        _key: &Key,
+       next_store_actioney,
         _depth: u8,
         _self_id: Self::Id,
     ) -> Result<StoreAction<Self::Id, Self::Union>, Error>;

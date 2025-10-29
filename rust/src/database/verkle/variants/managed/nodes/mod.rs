@@ -45,10 +45,12 @@ pub mod sparse_leaf;
 pub enum Node {
     Empty(EmptyNode),
     Inner(Box<InnerNode>),
+    Leaf1(Box<Leaf1Node>),
     Leaf2(Box<Leaf2Node>),
     Leaf256(Box<Leaf256Node>),
 }
 
+type Leaf1Node = SparseLeafNode<1>;
 type Leaf2Node = SparseLeafNode<2>;
 type Leaf256Node = FullLeafNode;
 
@@ -91,6 +93,21 @@ impl TrieVisitor<Node> for NodeStatisticVisitor {
                     }),
                 );
             }
+            Node::Leaf1(sparse_leaf_node) => {
+                self.record_node_statistics(
+                    sparse_leaf_node,
+                    level,
+                    "Leaf",
+                    Some(move |leaf1: &Box<SparseLeafNode<1>>| {
+                        leaf1
+                            .commitment
+                            .committed_used_slots
+                            .iter()
+                            .map(|byte| byte.count_ones() as u64)
+                            .sum::<u64>()
+                    }),
+                );
+            }
             Node::Leaf256(full_leaf_node) => {
                 self.record_node_statistics(
                     full_leaf_node,
@@ -114,6 +131,7 @@ impl Node {
         match self {
             Node::Empty(_) => NodeType::Empty,
             Node::Inner(_) => NodeType::Inner,
+            Node::Leaf1(_) => NodeType::Leaf1,
             Node::Leaf2(_) => NodeType::Leaf2,
             Node::Leaf256(_) => NodeType::Leaf256,
         }
@@ -123,6 +141,7 @@ impl Node {
         match self {
             Node::Empty(n) => n.get_commitment_input(),
             Node::Inner(n) => n.get_commitment_input(),
+            Node::Leaf1(n) => n.get_commitment_input(),
             Node::Leaf2(n) => n.get_commitment_input(),
             Node::Leaf256(n) => n.get_commitment_input(),
         }
@@ -171,6 +190,7 @@ impl ManagedTrieNode for Node {
         match self {
             Node::Empty(n) => n.lookup(key, depth),
             Node::Inner(n) => n.lookup(key, depth),
+            Node::Leaf1(n) => n.lookup(key, depth),
             Node::Leaf2(n) => n.lookup(key, depth),
             Node::Leaf256(n) => n.lookup(key, depth),
         }
@@ -183,10 +203,11 @@ impl ManagedTrieNode for Node {
         self_id: Self::Id,
     ) -> Result<StoreAction<Self::Id, Self::Union>, Error> {
         match self {
-            Node::Empty(n) => n.next_store_action(key, depth, self_id),
-            Node::Inner(n) => n.next_store_action(key, depth, self_id),
-            Node::Leaf2(n) => n.next_store_action(key, depth, self_id),
-            Node::Leaf256(n) => n.next_store_action(key, depth, self_id),
+            Node::Empty(n) => n.next_store_action(key, depth),
+            Node::Inner(n) => n.next_store_action(key, depth),
+            Node::Leaf1(n) => n.next_store_action(key, depth),
+            Node::Leaf2(n) => n.next_store_action(key, depth),
+            Node::Leaf256(n) => n.next_store_action(key, depth),
         }
     }
 
@@ -194,6 +215,7 @@ impl ManagedTrieNode for Node {
         match self {
             Node::Empty(n) => n.replace_child(key, depth, new),
             Node::Inner(n) => n.replace_child(key, depth, new),
+            Node::Leaf1(n) => n.replace_child(key, depth, new),
             Node::Leaf2(n) => n.replace_child(key, depth, new),
             Node::Leaf256(n) => n.replace_child(key, depth, new),
         }
@@ -203,6 +225,7 @@ impl ManagedTrieNode for Node {
         match self {
             Node::Empty(n) => n.store(key, value),
             Node::Inner(n) => n.store(key, value),
+            Node::Leaf1(n) => n.store(key, value),
             Node::Leaf2(n) => n.store(key, value),
             Node::Leaf256(n) => n.store(key, value),
         }
@@ -212,6 +235,7 @@ impl ManagedTrieNode for Node {
         match self {
             Node::Empty(n) => n.get_commitment(),
             Node::Inner(n) => n.get_commitment(),
+            Node::Leaf1(n) => n.get_commitment(),
             Node::Leaf2(n) => n.get_commitment(),
             Node::Leaf256(n) => n.get_commitment(),
         }
@@ -221,6 +245,7 @@ impl ManagedTrieNode for Node {
         match self {
             Node::Empty(n) => n.set_commitment(cache),
             Node::Inner(n) => n.set_commitment(cache),
+            Node::Leaf1(n) => n.set_commitment(cache),
             Node::Leaf2(n) => n.set_commitment(cache),
             Node::Leaf256(n) => n.set_commitment(cache),
         }
@@ -233,6 +258,7 @@ impl ManagedTrieNode for Node {
 pub enum NodeType {
     Empty,
     Inner,
+    Leaf1,
     Leaf2,
     Leaf256,
 }
@@ -251,13 +277,17 @@ impl NodeSize for NodeType {
             NodeType::Leaf256 => {
                 std::mem::size_of::<Box<FullLeafNode>>() + std::mem::size_of::<FullLeafNode>()
             }
+            NodeType::Leaf1 => {
+                std::mem::size_of::<Box<SparseLeafNode<1>>>()
+                    + std::mem::size_of::<SparseLeafNode<1>>()
+            }
         };
         std::mem::size_of::<Node>() + inner_size
     }
 
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        NodeType::Leaf2.node_byte_size()
+        NodeType::Leaf1.node_byte_size()
     }
 }
 
@@ -297,7 +327,7 @@ mod tests {
     fn node_type_min_non_empty_node_size_returns_size_of_smallest_non_empty_node() {
         assert_eq!(
             NodeType::min_non_empty_node_size(),
-            Node::Leaf2(Box::default()).node_byte_size()
+            Node::Leaf1(Box::default()).node_byte_size()
         );
     }
 
@@ -305,6 +335,7 @@ mod tests {
     fn node_byte_size_returns_node_type_byte_size() {
         let empty_node = Node::Empty(EmptyNode);
         let inner_node = Node::Inner(Box::default());
+        let leaf1_node = Node::Leaf1(Box::default());
         let leaf2_node = Node::Leaf2(Box::default());
         let leaf256_node = Node::Leaf256(Box::default());
 
@@ -315,6 +346,10 @@ mod tests {
         assert_eq!(
             NodeType::Inner.node_byte_size(),
             inner_node.node_byte_size()
+        );
+        assert_eq!(
+            NodeType::Leaf1.node_byte_size(),
+            leaf1_node.node_byte_size()
         );
         assert_eq!(
             NodeType::Leaf2.node_byte_size(),

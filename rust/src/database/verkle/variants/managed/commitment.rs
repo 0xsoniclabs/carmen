@@ -45,7 +45,7 @@ pub struct VerkleCommitment {
     commitment: Commitment,
     /// A bitfield indicating which slots in a leaf node have been used before.
     /// This allows to distinguish between empty slots and slots that have been set to zero.
-    committed_used_slots: [u8; 256 / 8],
+    pub committed_used_slots: [u8; 256 / 8],
     /// Whether the commitment is dirty and needs to be recomputed.
     // bool does not implement FromBytes, so we use u8 instead
     dirty: u8,

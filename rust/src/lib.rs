@@ -72,6 +72,7 @@ pub fn open_carmen_db(
         LiveImpl::Memory => {
             type FileStorage = NodeFileStorageManager<
                 NodeFileStorage<InnerNode, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
                 NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
