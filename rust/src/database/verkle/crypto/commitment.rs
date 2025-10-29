@@ -38,27 +38,41 @@ pub struct Commitment {
 }
 
 struct AggressiveCommitter {
+    precomp_first_five: MSMPrecompWindowSigned,
     precomp: MSMPrecompWindowSigned,
 }
 
 #[allow(dead_code)]
 impl AggressiveCommitter {
     fn new(points: &[Element]) -> Self {
+        let (points_five, _) = points.split_at(5);
+        let precomp_first_five = MSMPrecompWindowSigned::new(points_five, 16);
         // TODO: What is a good size?
         let precomp = MSMPrecompWindowSigned::new(points, 12);
-        AggressiveCommitter { precomp }
+        AggressiveCommitter {
+            precomp_first_five,
+            precomp,
+        }
     }
 }
 
 impl Committer for AggressiveCommitter {
     fn commit_lagrange(&self, scalars: &[Fr]) -> Element {
+        if scalars.len() <= 5 {
+            return self.precomp_first_five.mul(scalars);
+        }
+
         self.precomp.mul(scalars)
     }
 
     fn scalar_mul(&self, scalar: Fr, index: usize) -> Element {
         let mut arr = vec![Fr::from(0u64); index + 1];
         arr[index] = scalar;
-        self.precomp.mul(&arr)
+        if index < 5 {
+            self.precomp_first_five.mul(&arr)
+        } else {
+            self.precomp.mul(&arr)
+        }
     }
 }
 
