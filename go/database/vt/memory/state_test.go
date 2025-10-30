@@ -768,3 +768,34 @@ type refTestDb struct {
 func (db *refTestDb) NodeReader(stateRoot geth_common.Hash) (database.NodeReader, error) {
 	panic("NodeReader not implemented")
 }
+
+func BenchmarkState_Insert(b *testing.B) {
+	trie := newState()
+	counter := uint64(0)
+	for b.Loop() {
+		trie.Apply(counter, common.Update{
+			Balances: []common.BalanceUpdate{{
+				Account: toAddress(4*counter + 0),
+				Balance: amount.New(4*counter + 0),
+			}, {
+				Account: toAddress(4*counter + 1),
+				Balance: amount.New(4*counter + 1),
+			}, {
+				Account: toAddress(4*counter + 2),
+				Balance: amount.New(4*counter + 2),
+			}, {
+				Account: toAddress(4*counter + 3),
+				Balance: amount.New(4*counter + 3),
+			}},
+		})
+		_, err := trie.GetHash()
+		require.NoError(b, err)
+	}
+}
+
+func toAddress(i uint64) common.Address {
+	return common.Address{
+		byte(i >> 0), byte(i >> 8), byte(i >> 16), byte(i >> 24),
+		byte(i >> 32), byte(i >> 40), byte(i >> 48), byte(i >> 56),
+	}
+}
