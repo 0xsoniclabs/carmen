@@ -12,6 +12,7 @@ package experimental
 
 import (
 	vtgeth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
+	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/reference" // < todo: switch to memory
 	vtref "github.com/0xsoniclabs/carmen/go/database/vt/reference"
 	"github.com/0xsoniclabs/carmen/go/state"
 )
@@ -28,6 +29,16 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Schema:  6,
 		Archive: state.NoArchive,
 	}: vtref.NewState, // < to be replaced with a better performing implementation, but go-memory is required to exist for testing
+	{
+		Variant: "go-memory-seq",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: vtmemory.NewState,
+	{
+		Variant: "go-memory-par",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: vtmemory.NewState,
 	{
 		Variant: "go-reference",
 		Schema:  6,

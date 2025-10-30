@@ -20,6 +20,21 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+func Benchmark_Commit256Elements(b *testing.B) {
+	var random banderwagon.Fr
+	random.SetBytes(hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4"))
+	config := getConfig() // < the polynomial commit "engine"
+
+	// All 0, but one point is set to `value`
+	poly := make([]banderwagon.Fr, VectorSize)
+	for i := range VectorSize {
+		poly[i] = random
+	}
+	for b.Loop() {
+		config.Commit(poly)
+	}
+}
+
 func Benchmark_PolySingleUpdate(b *testing.B) {
 	var random banderwagon.Fr
 	random.SetBytes(hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4"))
