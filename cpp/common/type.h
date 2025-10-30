@@ -25,7 +25,8 @@
 namespace carmen {
 
 template <typename T>
-concept Trivial = std::is_trivially_default_constructible_v<T> &&
+concept Trivial =
+    std::is_trivially_default_constructible_v<T> &&
     std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
 constexpr int kHashLength = 32;

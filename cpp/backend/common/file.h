@@ -50,7 +50,7 @@ concept File = requires(F a) {
   // All files must be open-able through a static factory function.
   {
     F::Open(std::declval<const std::filesystem::path&>())
-    } -> std::same_as<absl::StatusOr<F>>;
+  } -> std::same_as<absl::StatusOr<F>>;
 
   // Each file implementation must support the extraction of the number of
   // pages.
@@ -58,12 +58,12 @@ concept File = requires(F a) {
   // LoadPage is intended to be used for fetching a single page from the file.
   {
     a.LoadPage(PageId{}, std::declval<std::span<std::byte, F::kPageSize>>())
-    } -> std::same_as<absl::Status>;
+  } -> std::same_as<absl::Status>;
   // StorePage is intended to be used for fetching a single page from the file.
   {
     a.StorePage(PageId{},
                 std::declval<std::span<const std::byte, F::kPageSize>>())
-    } -> std::same_as<absl::Status>;
+  } -> std::same_as<absl::Status>;
   // Each file has to support a flush operation after which data previously
   // written must be persisted on disk.
   { a.Flush() } -> std::same_as<absl::Status>;

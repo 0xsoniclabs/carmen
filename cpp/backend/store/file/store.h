@@ -189,10 +189,10 @@ class FileStoreBase {
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
 requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
-    absl::StatusOr<FileStoreBase<K, V, F, page_size, eager_hashing>>
-    FileStoreBase<K, V, F, page_size, eager_hashing>::Open(
-        Context&, const std::filesystem::path& directory,
-        std::size_t hash_branching_factor) {
+absl::StatusOr<FileStoreBase<K, V, F, page_size, eager_hashing>>
+FileStoreBase<K, V, F, page_size, eager_hashing>::Open(
+    Context&, const std::filesystem::path& directory,
+    std::size_t hash_branching_factor) {
   // Make sure the directory exists.
   RETURN_IF_ERROR(CreateDirectory(directory));
   ASSIGN_OR_RETURN(auto file, F<kFilePageSize>::Open(directory / "data.dat"));
@@ -221,8 +221,9 @@ FileStoreBase<K, V, F, page_size, eager_hashing>::FileStoreBase(
 
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
-requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>> absl::Status
-FileStoreBase<K, V, F, page_size, eager_hashing>::Set(const K& key, V value) {
+requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
+absl::Status FileStoreBase<K, V, F, page_size, eager_hashing>::Set(const K& key,
+                                                                   V value) {
   num_pages_ = std::max(num_pages_, key / kNumElementsPerPage + 1);
   ASSIGN_OR_RETURN(Page & page,
                    pool_->template Get<Page>(key / kNumElementsPerPage));
@@ -237,9 +238,9 @@ FileStoreBase<K, V, F, page_size, eager_hashing>::Set(const K& key, V value) {
 
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
-requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>> absl::StatusOr<V>
-FileStoreBase<K, V, F, page_size, eager_hashing>::Get(const K& key)
-const {
+requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
+absl::StatusOr<V> FileStoreBase<K, V, F, page_size, eager_hashing>::Get(
+    const K& key) const {
   static const V kDefault{};
   auto page_id = key / kNumElementsPerPage;
   if (page_id >= num_pages_) {
@@ -253,14 +254,15 @@ const {
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
 requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
-    absl::StatusOr<Hash>
-    FileStoreBase<K, V, F, page_size, eager_hashing>::GetHash()
-const { return hashes_->GetHash(); }
+absl::StatusOr<Hash> FileStoreBase<K, V, F, page_size, eager_hashing>::GetHash()
+    const {
+  return hashes_->GetHash();
+}
 
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
-requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>> absl::Status
-FileStoreBase<K, V, F, page_size, eager_hashing>::Flush() {
+requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
+absl::Status FileStoreBase<K, V, F, page_size, eager_hashing>::Flush() {
   if (pool_) {
     RETURN_IF_ERROR(pool_->Flush());
   }
@@ -272,8 +274,8 @@ FileStoreBase<K, V, F, page_size, eager_hashing>::Flush() {
 
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
-requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>> absl::Status
-FileStoreBase<K, V, F, page_size, eager_hashing>::Close() {
+requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
+absl::Status FileStoreBase<K, V, F, page_size, eager_hashing>::Close() {
   RETURN_IF_ERROR(Flush());
   if (pool_) {
     RETURN_IF_ERROR(pool_->Close());
@@ -283,9 +285,9 @@ FileStoreBase<K, V, F, page_size, eager_hashing>::Close() {
 
 template <typename K, Trivial V, template <std::size_t> class F,
           std::size_t page_size, bool eager_hashing>
-requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>> MemoryFootprint
-FileStoreBase<K, V, F, page_size, eager_hashing>::GetMemoryFootprint()
-const {
+requires File<F<sizeof(ArrayPage<V, page_size / sizeof(V)>)>>
+MemoryFootprint
+FileStoreBase<K, V, F, page_size, eager_hashing>::GetMemoryFootprint() const {
   MemoryFootprint res(*this);
   res.Add("pool", pool_->GetMemoryFootprint());
   res.Add("hashes", hashes_->GetMemoryFootprint());

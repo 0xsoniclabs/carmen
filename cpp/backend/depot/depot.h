@@ -26,29 +26,31 @@ namespace carmen::backend::depot {
 // Defines the interface expected for a Depot D mapping integral keys to
 // byte array values of various lengths.
 template <typename D>
-concept Depot = requires(D a, const D b) {
-  // A depot must expose a key type.
-  std::integral<typename D::key_type>;
+concept Depot =
+    requires(D a, const D b) {
+      // A depot must expose a key type.
+      std::integral<typename D::key_type>;
 
-  // Depots must be movable.
-  std::is_move_constructible_v<D>;
-  std::is_move_assignable_v<D>;
+      // Depots must be movable.
+      std::is_move_constructible_v<D>;
+      std::is_move_assignable_v<D>;
 
-  // Set data for given key.
-  {
-    a.Set(std::declval<typename D::key_type>(),
-          std::declval<std::span<const std::byte>>())
-    } -> std::same_as<absl::Status>;
-  // Retrieves data from Depot. Not found status is returned when not found.
-  {
-    b.Get(std::declval<typename D::key_type>())
-    } -> std::same_as<absl::StatusOr<std::span<const std::byte>>>;
-  // Retrieves size of data from Depot. Not found status is returned when not
-  {
-    b.GetSize(std::declval<typename D::key_type>())
-    } -> std::same_as<absl::StatusOr<std::uint32_t>>;
-}
-// Depots must satisfy the requirements for backend data structures.
-&&HashableStructure<D>;
+      // Set data for given key.
+      {
+        a.Set(std::declval<typename D::key_type>(),
+              std::declval<std::span<const std::byte>>())
+      } -> std::same_as<absl::Status>;
+      // Retrieves data from Depot. Not found status is returned when not found.
+      {
+        b.Get(std::declval<typename D::key_type>())
+      } -> std::same_as<absl::StatusOr<std::span<const std::byte>>>;
+      // Retrieves size of data from Depot. Not found status is returned when
+      // not
+      {
+        b.GetSize(std::declval<typename D::key_type>())
+      } -> std::same_as<absl::StatusOr<std::uint32_t>>;
+    }
+    // Depots must satisfy the requirements for backend data structures.
+    && HashableStructure<D>;
 
 }  // namespace carmen::backend::depot

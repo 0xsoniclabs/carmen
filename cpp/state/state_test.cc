@@ -10,7 +10,7 @@
 
 #include "archive/leveldb/archive.h"
 #include "state/configurations.h"
-//#include "state/state_test_suite.h"
+// #include "state/state_test_suite.h"
 
 namespace carmen {
 namespace {

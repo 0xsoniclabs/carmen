@@ -62,7 +62,7 @@ class IndexHandler : public IndexHandlerBase<typename Index::key_type,
   IndexHandler(Context ctx, TempDir dir, Index idx)
       : ctx_(std::move(ctx)),
         temp_dir_(std::move(dir)),
-        index_(std::move(idx)){};
+        index_(std::move(idx)) {};
 
   Context ctx_;
   TempDir temp_dir_;
@@ -86,7 +86,7 @@ class IndexHandler<LevelDbKeySpace<K, I>> : public IndexHandlerBase<K, I> {
 
  private:
   IndexHandler(TempDir dir, LevelDbKeySpace<K, I> idx)
-      : temp_dir_(std::move(dir)), index_(std::move(idx)){};
+      : temp_dir_(std::move(dir)), index_(std::move(idx)) {};
 
   TempDir temp_dir_;
   LevelDbKeySpace<K, I> index_;

@@ -36,33 +36,33 @@ concept Archive = requires(A a, const A b) {
   // Adds the changes of the given block to this archive.
   {
     a.Add(std::declval<BlockId>(), std::declval<Update>())
-    } -> std::same_as<absl::Status>;
+  } -> std::same_as<absl::Status>;
 
   // Allows to test whether an account exists at the given block height.
   {
     a.Exists(std::declval<BlockId>(), std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<bool>>;
+  } -> std::same_as<absl::StatusOr<bool>>;
 
   // Allows to fetch a historic balance values for a given account.
   {
     a.GetBalance(std::declval<BlockId>(), std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Balance>>;
+  } -> std::same_as<absl::StatusOr<Balance>>;
 
   // Allows to fetch a historic code values for a given account.
   {
     a.GetCode(std::declval<BlockId>(), std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Code>>;
+  } -> std::same_as<absl::StatusOr<Code>>;
 
   // Allows to fetch a historic nonce values for a given account.
   {
     a.GetNonce(std::declval<BlockId>(), std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Nonce>>;
+  } -> std::same_as<absl::StatusOr<Nonce>>;
 
   // Allows to fetch a historic value for a given slot.
   {
     a.GetStorage(std::declval<BlockId>(), std::declval<Address>(),
                  std::declval<Key>())
-    } -> std::same_as<absl::StatusOr<Value>>;
+  } -> std::same_as<absl::StatusOr<Value>>;
 
   // Computes a hash for the entire archive up until the given block.
   { a.GetHash(std::declval<BlockId>()) } -> std::same_as<absl::StatusOr<Hash>>;
@@ -70,7 +70,7 @@ concept Archive = requires(A a, const A b) {
   // Obtains a full list of addresses encountered up until the given block.
   {
     a.GetAccountList(std::declval<BlockId>())
-    } -> std::same_as<absl::StatusOr<std::vector<Address>>>;
+  } -> std::same_as<absl::StatusOr<std::vector<Address>>>;
 
   // Obtains the last block included in this archive, 0 if empty.
   { a.GetLatestBlock() } -> std::same_as<absl::StatusOr<BlockId>>;
@@ -78,13 +78,13 @@ concept Archive = requires(A a, const A b) {
   // Obtains a hash on the content of the given hash at the given block height.
   {
     a.GetAccountHash(std::declval<BlockId>(), std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Hash>>;
+  } -> std::same_as<absl::StatusOr<Hash>>;
 
   // Verifies that the content of this archive up until the given block.
   {
     a.Verify(std::declval<BlockId>(), std::declval<Hash>(),
              std::declval<absl::FunctionRef<void(std::string_view)>>())
-    } -> std::same_as<absl::Status>;
+  } -> std::same_as<absl::Status>;
 
   // An archive must have the basic properties of a structure, including Open,
   // Close, and Flush support.

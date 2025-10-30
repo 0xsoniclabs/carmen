@@ -28,8 +28,8 @@ struct Unit {};
 template <Trivial Key, Trivial Value = Unit>
 struct ABSL_ATTRIBUTE_PACKED Entry {
   Entry() = default;
-  Entry(Key key) : key(key){};
-  Entry(Key key, Value value) : key(key), value(value){};
+  Entry(Key key) : key(key) {};
+  Entry(Key key, Value value) : key(key), value(value) {};
 
   bool operator==(const Entry&) const = default;
 

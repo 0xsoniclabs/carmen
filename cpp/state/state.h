@@ -36,27 +36,27 @@ concept State = requires(S s, const S c) {
   {
     S::Open(std::declval<std::filesystem::path>(),
             /*with_archive=*/std::declval<bool>())
-    } -> std::same_as<absl::StatusOr<S>>;
+  } -> std::same_as<absl::StatusOr<S>>;
 
   // Obtains the current state of the given account.
   {
     c.GetAccountState(std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<AccountState>>;
+  } -> std::same_as<absl::StatusOr<AccountState>>;
 
   // Obtains the current balance of the given account.
   {
     c.GetBalance(std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Balance>>;
+  } -> std::same_as<absl::StatusOr<Balance>>;
 
   // Obtains the current nonce of the given account.
   {
     c.GetNonce(std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Nonce>>;
+  } -> std::same_as<absl::StatusOr<Nonce>>;
 
   // Obtains the current value of the given storage slot.
   {
     c.GetStorageValue(std::declval<Address>(), std::declval<Key>())
-    } -> std::same_as<absl::StatusOr<Value>>;
+  } -> std::same_as<absl::StatusOr<Value>>;
 
   // Obtains the current code of the given account.
   { c.GetCode(std::declval<Address>()) } -> std::same_as<absl::StatusOr<Code>>;
@@ -64,17 +64,17 @@ concept State = requires(S s, const S c) {
   // Obtains the size of the current code of the given account.
   {
     c.GetCodeSize(std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<std::uint32_t>>;
+  } -> std::same_as<absl::StatusOr<std::uint32_t>>;
 
   // Obtains the hash of the current code of the given account.
   {
     c.GetCodeHash(std::declval<Address>())
-    } -> std::same_as<absl::StatusOr<Hash>>;
+  } -> std::same_as<absl::StatusOr<Hash>>;
 
   // Applies the given block updates to this state.
   {
     s.Apply(std::declval<BlockId>(), std::declval<Update>())
-    } -> std::same_as<absl::Status>;
+  } -> std::same_as<absl::Status>;
 
   // Obtains a state hash providing a unique cryptographic fingerprint of the
   // entire maintained current state (does not include archive data).

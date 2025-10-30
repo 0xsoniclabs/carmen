@@ -24,7 +24,7 @@ namespace carmen::backend {
 template <typename P>
 concept EvictionPolicy = requires(P a) {
   // Policies must be initializable by the pool size.
-  {P(std::size_t{})};
+  { P(std::size_t{}) };
   // Informs the policy that a page slot has been read.
   { a.Read(std::size_t{}) } -> std::same_as<void>;
   // Informs the policy that a page slot has been updated.

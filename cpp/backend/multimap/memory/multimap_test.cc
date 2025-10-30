@@ -27,9 +27,8 @@ using ::testing::UnorderedElementsAre;
 template <typename K, typename V>
 std::vector<std::pair<K, V>> Enumerate(const InMemoryMultiMap<K, V>& map) {
   std::vector<std::pair<K, V>> res;
-  map.ForEach([&](const K& key, const V& value) {
-    res.push_back({key, value});
-  });
+  map.ForEach(
+      [&](const K& key, const V& value) { res.push_back({key, value}); });
   return res;
 }
 
@@ -37,10 +36,7 @@ template <typename K, typename V>
 std::vector<std::pair<K, V>> Enumerate(const K& key,
                                        const InMemoryMultiMap<K, V>& map) {
   std::vector<std::pair<K, V>> res;
-  map.ForEach(key,
-              [&](const V& value) {
-                res.push_back({key, value});
-              })
+  map.ForEach(key, [&](const V& value) { res.push_back({key, value}); })
       .IgnoreError();
   return res;
 }

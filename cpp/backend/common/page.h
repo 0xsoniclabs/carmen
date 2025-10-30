@@ -31,10 +31,10 @@ concept Page =
     alignof(P) % kFileSystemPageSize == 0 &&
     // To be used in page pools, pages must also be trivially default
     // constructable and destructible.
-    std::is_trivially_default_constructible_v<P>&& std::
-        is_trivially_destructible_v<P>&& std::is_convertible_v<
-            P, std::span<std::byte, sizeof(P)>>&& std::
-            is_convertible_v<const P, std::span<const std::byte, sizeof(P)>>;
+    std::is_trivially_default_constructible_v<P> &&
+    std::is_trivially_destructible_v<P> &&
+    std::is_convertible_v<P, std::span<std::byte, sizeof(P)>> &&
+    std::is_convertible_v<const P, std::span<const std::byte, sizeof(P)>>;
 
 // Computes the required page size based on a use case specific needed page
 // size. The required page size is the smallest multiple of the file system's
