@@ -14,34 +14,39 @@ import (
 	"fmt"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
+	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
+	"github.com/0xsoniclabs/tracy"
 )
 
 // Key is a fixed-size byte array used to address values in the trie.
-type Key [32]byte
+type Key = trie.Key
 
 // Value is a fixed-size byte array used to represent data stored in the trie.
-type Value [32]byte
+type Value = trie.Value
 
 // Trie implements an all-in-memory version of a Verkle trie as specified by
 // Ethereum. It provides a basic key-value store with fixed-length keys and
 // values and the ability to provide a cryptographic commitment of the trie's
 // state using Pedersen commitments.
 //
-// This implementation is not optimized for performance or storage efficiency,
-// but serves as a reference for the trie structure and operations. It is
-// not intended for production use.
+// This implementation is optimized for performance, but does not offer
+// persistence. It is not intended for production use.
 //
 // For an overview of the Verkle trie structure, see
 // https://blog.ethereum.org/2021/12/02/verkle-tree-structure
 type Trie struct {
-	root node
+	config TrieConfig
+	root   node
 }
 
-func (t *Trie) Dump() {
-	if t.root == nil {
-		fmt.Printf("Empty trie\n")
-	}
-	t.root.dump("")
+// TrieConfig holds configuration options for the Trie.
+type TrieConfig struct {
+	ParallelCommit bool
+}
+
+// NewTrie creates a new empty Trie with the specified configuration.
+func NewTrie(config TrieConfig) *Trie {
+	return &Trie{config: config}
 }
 
 // Get retrieves the value associated with the given key from the trie. All keys
@@ -67,5 +72,38 @@ func (t *Trie) Commit() commit.Commitment {
 	if t.root == nil {
 		return commit.Identity()
 	}
+	if t.config.ParallelCommit {
+		return t.commit_parallel()
+	}
+	return t.commit_sequential()
+}
+
+func (t *Trie) commit_sequential() commit.Commitment {
 	return t.root.commit()
+}
+
+func (t *Trie) commit_parallel() commit.Commitment {
+	// Phase 1: collect tasks to be done in parallel
+	tasks := make([]*task, 0, 1024)
+	zone := tracy.ZoneBegin("trie::commit_parallel::collect_tasks")
+	t.root.collectCommitTasks(&tasks)
+	zone.End()
+
+	// Phase 2: run tasks in parallel
+	zone = tracy.ZoneBegin("trie::commit_parallel::run_tasks")
+	runTasks(tasks)
+	zone.End()
+
+	// Phase 3: fetch new root commitment
+	zone2 := tracy.ZoneBegin("trie::commit_parallel::fetch_root_commitment")
+	defer zone2.End()
+	return t.root.commit()
+}
+
+func (t *Trie) Dump() {
+	if t.root == nil {
+		fmt.Printf("Empty trie\n")
+		return
+	}
+	t.root.dump("")
 }

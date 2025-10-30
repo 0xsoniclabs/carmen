@@ -56,8 +56,9 @@ func TestBasicDataKey_CompareWithGethResults(t *testing.T) {
 		{}, {1}, {2}, {1, 19: 2},
 	}
 
+	embedding := Embedding{}
 	for _, address := range addresses {
-		have := getBasicDataKey(address)
+		have := embedding.GetBasicDataKey(address)
 		want := trie.Key(utils.BasicDataKey(address[:]))
 		require.Equal(t, want, have, "address=%x", address)
 	}
@@ -68,8 +69,9 @@ func TestCodeHashKey_CompareWithGethResults(t *testing.T) {
 		{}, {1}, {2}, {1, 19: 2},
 	}
 
+	embedding := Embedding{}
 	for _, address := range addresses {
-		have := getCodeHashKey(address)
+		have := embedding.GetCodeHashKey(address)
 		want := trie.Key(utils.CodeHashKey(address[:]))
 		require.Equal(t, want, have, "address=%x", address)
 	}
@@ -77,8 +79,9 @@ func TestCodeHashKey_CompareWithGethResults(t *testing.T) {
 
 func TestGetCodeChunkKey_CompareWithGethResults(t *testing.T) {
 
+	embedding := Embedding{}
 	getKey := func(address int, chunkNumber int) trie.Key {
-		return getCodeChunkKey(
+		return embedding.GetCodeChunkKey(
 			common.Address{byte(address)},
 			chunkNumber,
 		)
@@ -103,9 +106,10 @@ func TestGetCodeChunkKey_CompareWithGethResults(t *testing.T) {
 }
 
 func TestGetStorageKey_CompareWithGethResults(t *testing.T) {
+	embedding := Embedding{}
 
 	getKey := func(address int, key int) trie.Key {
-		return getStorageKey(
+		return embedding.GetStorageKey(
 			common.Address{byte(address)},
 			common.Key{byte(key)},
 		)
