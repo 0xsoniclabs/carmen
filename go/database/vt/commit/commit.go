@@ -36,6 +36,8 @@ func Identity() Commitment {
 
 // Commit creates a new commitment to a vector of values.
 func Commit(values [VectorSize]Value) Commitment {
+	//zone := tracy.ZoneBegin("pedersen::commit")
+	//defer zone.End()
 	// This function creates a commitment to a vector of values using
 	// the Pedersen hash function and the Banderwagon curve.
 	elements := make([]banderwagon.Fr, VectorSize)
