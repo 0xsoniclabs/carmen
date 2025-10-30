@@ -27,12 +27,17 @@ pub enum LookupResult<ID> {
 #[expect(unused)]
 pub enum StoreAction<ID, U> {
     /// Indicates that the value can be stored directly in this node.
-    /// The contained `usize` is the index of the slot in which the value will be stored.
-    Store(usize),
+    Store {
+        /// The index of the slot in which the value will be stored.
+        index: usize,
+    },
     /// Indicates that the value cannot be stored in this node.
-    /// The contained `(usize, ID)` is the index and ID of the child node that should be
-    /// descended into.
-    Descend(usize, ID),
+    Descend {
+        /// The index of the child to descend into.
+        index: usize,
+        /// The ID of the child to descend into.
+        id: ID,
+    },
     /// Indicates that a new node had to be created at this node's depth, which is the
     /// new parent of this node. The contained `U` is the new node.
     HandleReparent(U),
@@ -109,7 +114,7 @@ pub trait ManagedTrieNode {
     fn get_commitment(&self) -> Self::Commitment;
 
     /// Sets the commitment associated with this node.
-    fn set_commitment(&mut self, _cache: Self::Commitment) -> Result<(), Error> {
+    fn set_commitment(&mut self, _commitment: Self::Commitment) -> Result<(), Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::set_commitment",
             std::any::type_name::<Self>()
