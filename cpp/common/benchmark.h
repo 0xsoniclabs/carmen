@@ -64,7 +64,7 @@ struct NamedType {
 #define _INTERNAL_TO_NAMED_TYPE(TYPE)                          \
   ::carmen::common::internal::NamedType<                       \
       ::carmen::common::internal::ArgType<void(TYPE)>::type> { \
-#TYPE                                                      \
+    #TYPE                                                      \
   }
 
 // Defines a list of types that can be used to instantiate a generic benchmark

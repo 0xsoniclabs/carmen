@@ -268,7 +268,7 @@ absl::StatusOr<PosixFile> PosixFile::Open(const std::filesystem::path& path) {
   int fd;
 #ifdef O_DIRECT
   // When using O_DIRECT, all read/writes must use aligned memory locations!
-  fd = open(path.string().c_str(), O_CREAT | O_DIRECT | O_RDWR);
+  fd = open(path.string().c_str(), O_CREAT | O_DIRECT | O_RDWR, 0600);
 #else
   fd = open(path.string().c_str(), O_CREAT | O_RDWR);
 #endif
