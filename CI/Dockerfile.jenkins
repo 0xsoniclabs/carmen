@@ -1,0 +1,54 @@
+FROM golang:1.25
+
+ENV RUST_VERSION=1.89.0
+
+# Install dependencies and keep image small as described in best practices
+# https://docs.docker.com/build/building/best-practices/
+RUN apt-get update && apt-get install -y \
+  git \
+  make \
+  wget \
+  clang-19 \
+  clang-format-19 \
+  build-essential \
+  && rm -rf /var/lib/apt/lists/*
+RUN gcc --version
+RUN clang-19 --version
+
+# Install Bazel
+ENV USER=jenkins
+ENV PATH=/usr/local/bin:$PATH
+RUN \
+  wget https://github.com/bazelbuild/bazelisk/releases/download/v1.26.0/bazelisk-linux-amd64; \
+  chmod +x bazelisk-linux-amd64; \
+  mv bazelisk-linux-amd64 /usr/local/bin/bazel; \
+  wget https://github.com/bazelbuild/buildtools/releases/download/v8.2.1/buildifier-linux-amd64; \
+  chmod +x buildifier-linux-amd64; \
+  mv buildifier-linux-amd64 /usr/local/bin/buildifier; 
+RUN bazel version
+
+# Install Rust
+# adapted from https://github.com/rust-lang/docker-rust/blob/3aad80112be66bf796c202713029d7ba93dff7fa/stable/bullseye/Dockerfile
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN wget "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"; \
+    chmod +x rustup-init; \
+    ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION; \
+    rm rustup-init; \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME;
+RUN rustup --version
+RUN cargo --version
+RUN rustc --version
+
+# Patch golang cache directory:
+# Because of user id forwarding, the home directory may not exist in the container
+# Go would fall back to / (root) in this case, which is not writable,
+# create a cache directory and make it writable for everyone
+RUN mkdir -p /.cache && chmod 777 /.cache 
+
+# Install coverage reports upload tool
+# https://docs.codecov.com/docs/codecov-uploader
+RUN curl -Os https://cli.codecov.io/latest/linux/codecov && \
+  chmod +x codecov && \
+  mv codecov /usr/local/bin
