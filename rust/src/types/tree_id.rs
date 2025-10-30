@@ -8,16 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-/// A trait for types that are used as IDs for nodes in a tree structure.
-pub trait TreeId {
-    type NodeType;
+use crate::types::ToNodeType;
 
-    /// Creates a new ID from a [`u64`] index and a [`Self::NodeType`].
+/// A trait for types that are used as IDs for nodes in a tree structure.
+pub trait TreeId: ToNodeType {
+    /// Creates a new ID from a [`u64`] index and a node type.
     fn from_idx_and_node_type(idx: u64, node_type: Self::NodeType) -> Self;
 
     /// Converts the ID to a [`u64`] index, stripping the prefix.
     fn to_index(self) -> u64;
-
-    /// Converts the ID to a [`Self::NodeType`], if the prefix is valid.
-    fn to_node_type(self) -> Option<Self::NodeType>;
 }

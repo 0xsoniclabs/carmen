@@ -9,10 +9,12 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use node_size::*;
+pub use to_node_type::ToNodeType;
 pub use tree_id::TreeId;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod node_size;
+mod to_node_type;
 mod tree_id;
 mod update;
 
