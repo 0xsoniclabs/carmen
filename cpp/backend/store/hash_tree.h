@@ -28,7 +28,7 @@ namespace carmen::backend::store {
 // An interface for a source of page data if needed by the HashTree.
 class PageSource {
  public:
-  virtual ~PageSource(){};
+  virtual ~PageSource() {};
   // Requests a view on the data of the given page.
   virtual absl::StatusOr<std::span<const std::byte>> GetPageData(PageId id) = 0;
 };

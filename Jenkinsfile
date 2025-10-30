@@ -9,7 +9,12 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pipeline {
-    agent { label 'pr' }
+    agent {
+        dockerfile {
+            filename 'CI/Dockerfile.jenkins'
+            label 'pr'
+        }
+    }
 
     options {
         timestamps ()
@@ -19,8 +24,8 @@ pipeline {
 
     environment {
         GOMEMLIMIT = '5GiB'
-        CC = 'clang-14'
-        CXX = 'clang++-14'
+        CC = 'clang-19'
+        CXX = 'clang++-19'
     }
 
     stages {
@@ -53,7 +58,7 @@ pipeline {
 
                 stage('Check C++ sources formatting') {
                     steps {
-                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format --dry-run -Werror '
+                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format-19 --dry-run -Werror '
                     }
                 }
 
@@ -66,8 +71,6 @@ pipeline {
 
                 stage('Build Rust library') {
                     steps {
-                        sh 'rustup update'
-                        sh 'rustup default stable'
                         sh 'cd rust && cargo build --release'
                     }
                 }
