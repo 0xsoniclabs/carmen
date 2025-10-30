@@ -102,6 +102,10 @@ func (c Commitment) Update(position byte, old, new Value) Commitment {
 	return res
 }
 
+func (c Commitment) Add(other Commitment) {
+	c.point.Add(&c.point, &other.point)
+}
+
 // The configuration for the Inner Product Argument (IPA) library used in this
 // package to create commitments and openings and to verify them. This config
 // also contains the generator points and the curve parameters used for the

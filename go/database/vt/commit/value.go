@@ -52,3 +52,9 @@ func (v *Value) SetBit128() {
 	bytes[15] = bytes[15] | 0x01
 	v.scalar.SetBytes(bytes[:])
 }
+
+func (v *Value) Sub(other Value) *Value {
+	var result Value
+	v.scalar.Sub(&v.scalar, &other.scalar)
+	return &result
+}

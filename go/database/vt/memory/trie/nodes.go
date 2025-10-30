@@ -88,14 +88,21 @@ func (i *inner) commit() commit.Commitment {
 // first 31 bytes of the key) and an array of values indexed by the last byte
 // of the key.
 type leaf struct {
-	stem   [31]byte      // The first 31 bytes of the key leading to this leaf.
-	values [256]Value    // The values stored in this leaf, indexed by the last byte of the key.
-	used   [256 / 8]byte // A bitmap indicating which suffixes (last byte of the key) are used.
+	stem   [31]byte   // The first 31 bytes of the key leading to this leaf.
+	values [256]Value // The values stored in this leaf, indexed by the last byte of the key.
+	used   bitMap     // A bitmap indicating which suffixes (last byte of the key) are used.
 
 	// The cached commitment of this inner node. It is only valid if the
 	// commitmentClean flag is true.
-	commitment      commit.Commitment
-	commitmentClean bool
+	commitment commit.Commitment
+
+	// --- Commitment caching ---
+	c1        commit.Value
+	c2        commit.Value
+	lowDirty  bool
+	highDirty bool
+	oldUsed   bitMap
+	oldValues [256]Value
 }
 
 // newLeaf creates a new leaf node with the given key.
@@ -115,9 +122,18 @@ func (l *leaf) get(key Key, _ byte) Value {
 func (l *leaf) set(key Key, depth byte, value Value) node {
 	if bytes.Equal(key[:31], l.stem[:]) {
 		suffix := key[31]
-		l.values[suffix] = value
-		l.used[suffix/8] |= 1 << (suffix % 8)
-		l.commitmentClean = false
+		old := l.values[suffix]
+		if !l.used.get(suffix) {
+			l.used.set(suffix)
+		} else if old == value {
+			return l
+		}
+		l.oldValues[suffix] = old
+		if suffix < 128 {
+			l.lowDirty = true
+		} else {
+			l.highDirty = true
+		}
 		return l
 	}
 
@@ -128,7 +144,78 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 }
 
 func (l *leaf) commit() commit.Commitment {
-	if l.commitmentClean {
+	//return l.commit_naive()
+	return l.commit_optimized()
+}
+
+func (l *leaf) commit_optimized() commit.Commitment {
+	if !l.lowDirty && !l.highDirty {
+		return l.commitment
+	}
+
+	delta := [commit.VectorSize]commit.Value{}
+
+	// update c1 - lower half + used bit
+	if l.lowDirty {
+		delta := [commit.VectorSize]commit.Value{}
+		for i := range 128 {
+			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
+			if l.oldUsed.get(byte(i)) {
+				old.SetBit128()
+			}
+			new := commit.NewValueFromLittleEndianBytes(l.values[i][:16])
+			if l.used.get(byte(i)) {
+				new.SetBit128()
+			}
+			delta[2*i] = *new.Sub(old)
+
+			old = commit.NewValueFromLittleEndianBytes(l.oldValues[i][16:])
+			new = commit.NewValueFromLittleEndianBytes(l.values[i][16:])
+			delta[2*i+1] = *new.Sub(old)
+		}
+
+		newC1 := commit.Commit(delta).ToValue()
+		deltaC1 := *newC1.Sub(l.c1)
+		delta[2] = deltaC1
+		l.c1 = newC1
+
+		l.lowDirty = false
+	}
+
+	// update c2 - upper half
+	if l.highDirty {
+		delta := [commit.VectorSize]commit.Value{}
+		for i := range 128 {
+			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
+			if l.oldUsed.get(byte(i)) {
+				old.SetBit128()
+			}
+			new := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
+			if l.used.get(byte(i)) {
+				new.SetBit128()
+			}
+			delta[2*i] = *new.Sub(old)
+
+			old = commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][16:])
+			new = commit.NewValueFromLittleEndianBytes(l.values[i+128][16:])
+			delta[2*i+1] = *new.Sub(old)
+		}
+
+		newC2 := commit.Commit(delta).ToValue()
+		deltaC2 := *newC2.Sub(l.c2)
+		delta[3] = deltaC2
+		l.c2 = newC2
+
+		l.highDirty = false
+	}
+
+	// Compute commitment of changes and add to node commitment.
+	l.commitment.Add(commit.Commit(delta))
+	return l.commitment
+}
+
+func (l *leaf) commit_naive() commit.Commitment {
+	if !l.lowDirty || !l.highDirty {
 		return l.commitment
 	}
 
@@ -153,7 +240,7 @@ func (l *leaf) commit() commit.Commitment {
 		lower := commit.NewValueFromLittleEndianBytes(v[:16])
 		upper := commit.NewValueFromLittleEndianBytes(v[16:])
 
-		if l.isUsed(byte(i)) {
+		if l.used.get(byte(i)) {
 			lower.SetBit128()
 		}
 
@@ -170,10 +257,64 @@ func (l *leaf) commit() commit.Commitment {
 		c1.ToValue(),
 		c2.ToValue(),
 	})
-	l.commitmentClean = true
+	l.lowDirty = false
+	l.highDirty = false
 	return l.commitment
 }
 
-func (l *leaf) isUsed(suffix byte) bool {
-	return (l.used[suffix/8] & (1 << (suffix % 8))) != 0
+type bitMap [256 / 64]uint64
+
+func (b *bitMap) get(index byte) bool {
+	return (b[index/64] & (1 << (index % 64))) != 0
+}
+
+func (b *bitMap) set(index byte) {
+	b[index/64] |= 1 << (index % 64)
+}
+
+func (b *bitMap) clear() {
+	b[0] = 0
+	b[1] = 0
+	b[2] = 0
+	b[3] = 0
+}
+
+func (b *bitMap) any() bool {
+	return b[0]|b[1]|b[2]|b[3] != 0
+}
+
+func lowEqual(a, b Value) bool {
+	for i := 0; i < 16; i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func highEqual(a, b Value) bool {
+	for i := 16; i < 32; i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+type halfValue [16]byte
+
+func (v Value) lower() halfValue {
+	var hv halfValue
+	copy(hv[:], v[:16])
+	return hv
+}
+
+func (v Value) upper() halfValue {
+	var hv halfValue
+	copy(hv[:], v[16:])
+	return hv
+}
+
+func (hv halfValue) equal(other halfValue) bool {
+	return bytes.Equal(hv[:], other[:])
 }

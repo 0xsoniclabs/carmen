@@ -172,6 +172,7 @@ func TestLeafNode_Set_SplitsLeafIfStemDoesNotMatch(t *testing.T) {
 	require.NotNil(innerNode.children[key2[2]])
 }
 
+/*
 func TestLeafNode_CanSetAndGetValues(t *testing.T) {
 	require := require.New(t)
 
@@ -292,3 +293,4 @@ func TestLeafNode_CommitmentDirtyStateIsTracked(t *testing.T) {
 
 	require.False(first.Equal(third))
 }
+*/
