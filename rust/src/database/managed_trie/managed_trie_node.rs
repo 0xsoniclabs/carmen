@@ -25,7 +25,7 @@ pub enum LookupResult<ID> {
 
 /// The result of a call to [`ManagedTrieNode::next_store_action`].
 #[expect(unused)]
-pub enum StoreAction<ID> {
+pub enum StoreAction<ID, U> {
     /// Indicates that the value can be stored directly in this node.
     /// The contained `usize` is the index of the slot in which the value will be stored.
     Store(usize),
@@ -33,12 +33,12 @@ pub enum StoreAction<ID> {
     /// The contained `(usize, ID)` is the index and ID of the child node that should be
     /// descended into.
     Descend(usize, ID),
-    /// Indicates that a new node needs to be created at this node's depth, which becomes
-    /// the parent of this node.
-    Reparent,
-    /// Indicates that this node needs to be transformed before the value can be stored
-    /// in it or one of its children.
-    Transform,
+    /// Indicates that a new node had to be created at this node's depth, which is the
+    /// new parent of this node. The contained `U` is the new node.
+    HandleReparent(U),
+    /// Indicates that this node had to be transformed before the value could be stored
+    /// in it or one of its children. The contained `U` is the transformed node.
+    HandleTransform(U),
 }
 
 /// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)
@@ -69,45 +69,18 @@ pub trait ManagedTrieNode {
     /// The type used for cryptographic commitments.
     type Commitment: TrieCommitment;
 
-    /// Looks up the value associated with the given key in the trie node.
-    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
-        Err(Error::UnsupportedOperation(format!(
-            "{}::lookup",
-            std::any::type_name::<Self>()
-        )))
-    }
+    /// Looks up the value associated with the given key in this node.
+    #[expect(unused)]
+    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error>;
 
     /// Returns information about the next action required to store a value at the given key.
-    fn next_store_action(&self, _key: &Key, _depth: u8) -> Result<StoreAction<Self::Id>, Error> {
-        Err(Error::UnsupportedOperation(format!(
-            "{}::next_store_action",
-            std::any::type_name::<Self>()
-        )))
-    }
-
-    /// Transforms this node into a different node type to accommodate a new value at the given key.
-    ///
-    /// It is only valid to call this method if
-    /// [`next_store_action`](ManagedTrieNode::next_store_action) returned
-    /// [`StoreAction::Transform`].
-    fn transform(&self, _key: &Key, _depth: u8) -> Result<Self::Union, Error> {
-        Err(Error::UnsupportedOperation(format!(
-            "{}::transform",
-            std::any::type_name::<Self>()
-        )))
-    }
-
-    /// Creates a new node that becomes the parent of this node.
-    ///
-    /// It is only valid to call this method if
-    /// [`next_store_action`](ManagedTrieNode::next_store_action) returned
-    /// [`StoreAction::Reparent`].
-    fn reparent(&self, _key: &Key, _depth: u8, _self_id: Self::Id) -> Result<Self::Union, Error> {
-        Err(Error::UnsupportedOperation(format!(
-            "{}::reparent",
-            std::any::type_name::<Self>()
-        )))
-    }
+    #[expect(unused)]
+    fn next_store_action(
+        &self,
+        _key: &Key,
+        _depth: u8,
+        _self_id: Self::Id,
+    ) -> Result<StoreAction<Self::Id, Self::Union>, Error>;
 
     /// Replaces the child node at the given key with a new node ID.
     fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::Id) -> Result<(), Error> {
@@ -123,6 +96,8 @@ pub trait ManagedTrieNode {
     /// It is only valid to call this method if
     /// [`next_store_action`](ManagedTrieNode::next_store_action) returned
     /// [`StoreAction::Store`].
+    // NOTE: We cannot directly do this inside of `next_store_action` because that method
+    //       takes `&self` instead of `&mut self`.
     fn store(&mut self, _key: &Key, _value: &Value) -> Result<Value, Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::store",
@@ -158,8 +133,21 @@ mod tests {
         type Id = u32;
         type Commitment = TestCommitment;
 
+        fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
+            unimplemented!()
+        }
+
+        fn next_store_action(
+            &self,
+            _key: &Key,
+            _depth: u8,
+            _self_id: Self::Id,
+        ) -> Result<StoreAction<Self::Id, Self::Union>, Error> {
+            unimplemented!()
+        }
+
         fn get_commitment(&self) -> Self::Commitment {
-            TestCommitment {}
+            unimplemented!()
         }
     }
 
@@ -168,33 +156,16 @@ mod tests {
         let mut node = TestNode;
 
         assert!(matches!(
-            node.lookup(&Key::default(), 0),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::lookup"
-        ));
-        assert!(matches!(
-            node.next_store_action(&Key::default(), 0),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::next_store_action"
-        ));
-        assert!(matches!(
-            node.transform(&Key::default(), 0),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::transform"
-        ));
-        assert!(matches!(
-            node.reparent(&Key::default(), 0, 0),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::reparent"
-        ));
-        assert!(matches!(
             node.replace_child(&Key::default(), 0, 0),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::replace_child"
+            Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::replace_child")
         ));
         assert!(matches!(
             node.store(&Key::default(), &Value::default()),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::store"
+            Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::store")
         ));
-        let commitment = node.get_commitment();
         assert!(matches!(
-            node.set_commitment(commitment),
-            Err(Error::UnsupportedOperation(e)) if e == "TestNode::set_commitment"
+            node.set_commitment(TestCommitment{}),
+            Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::set_commitment")
         ));
     }
 }
