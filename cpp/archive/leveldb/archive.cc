@@ -726,7 +726,7 @@ class Archive {
 LevelDbArchive::LevelDbArchive(LevelDbArchive&&) = default;
 
 LevelDbArchive::LevelDbArchive(std::unique_ptr<internal::Archive> archive)
-    : impl_(std::move(archive)){};
+    : impl_(std::move(archive)) {};
 
 LevelDbArchive& LevelDbArchive::operator=(LevelDbArchive&&) = default;
 
