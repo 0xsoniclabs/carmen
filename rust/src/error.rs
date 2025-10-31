@@ -284,17 +284,27 @@ mod tests {
     fn backtrace_returns_captured_backtrace() {
         let backtrace_string = b().unwrap_err().backtrace().to_string();
         let lines: Vec<_> = backtrace_string.lines().collect();
-        assert_eq!(
-            lines[0],
-            "   0: <carmen_rust::error::BTError<carmen_rust::error::Error> as core::convert::From<F>>::from",
-        );
-        assert!(lines[1].starts_with("             at ./src/error.rs"));
-        assert_eq!(
-            lines[2],
-            "   1: <core::result::Result<T,F> as core::ops::try_trait::FromResidual<core::result::Result<core::convert::Infallible,E>>>::from_residual"
-        );
-        assert_eq!(lines[4], "   2: carmen_rust::error::tests::b",);
-        assert!(lines[5].starts_with("             at ./src/error.rs"));
+        #[cfg(debug_assertions)]
+        {
+            assert_eq!(
+                lines[0],
+                "   0: <carmen_rust::error::BTError<carmen_rust::error::Error> as core::convert::From<F>>::from",
+            );
+            assert!(lines[1].starts_with("             at ./src/error.rs"));
+            assert_eq!(
+                lines[2],
+                "   1: <core::result::Result<T,F> as core::ops::try_trait::FromResidual<core::result::Result<core::convert::Infallible,E>>>::from_residual"
+            );
+            assert_eq!(lines[4], "   2: carmen_rust::error::tests::b",);
+            assert!(lines[5].starts_with("             at ./src/error.rs"));
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            assert_eq!(
+                lines[0],
+                "   0: <carmen_rust::error::BTError<carmen_rust::error::Error> as core::convert::From<F>>::from",
+            );
+        }
     }
 
     fn a() -> Result<(), Error> {
