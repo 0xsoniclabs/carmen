@@ -304,7 +304,7 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 		return // nothing to do
 	}
 
-	leafDelta := [commit.VectorSize]commit.Value{}
+	leafDelta := [2]commit.Commitment{}
 
 	// create a task for updating C1
 	childTasks := make([]*task, 0, 2)
@@ -342,7 +342,9 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 				deltaC1 := newC1.ToValue()
 				deltaC1 = *deltaC1.Sub(l.c1.ToValue())
 
-				leafDelta[2] = deltaC1
+				poly := [commit.VectorSize]commit.Value{}
+				poly[2] = deltaC1
+				leafDelta[0] = commit.Commit(poly)
 				l.c1 = newC1
 
 				l.lowDirty = false
@@ -386,7 +388,9 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 				deltaC2 := newC2.ToValue()
 				deltaC2 = *deltaC2.Sub(l.c2.ToValue())
 
-				leafDelta[3] = deltaC2
+				poly := [commit.VectorSize]commit.Value{}
+				poly[3] = deltaC2
+				leafDelta[1] = commit.Commit(poly)
 				l.c2 = newC2
 
 				l.highDirty = false
@@ -400,7 +404,12 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 		//fmt.Sprintf("leaf_%p_agg", l),
 		func() {
 			// Compute commitment of changes and add to node commitment.
-			l.commitment.Add(commit.Commit(leafDelta))
+			if leafDelta[0] != (commit.Commitment{}) {
+				l.commitment.Add(leafDelta[0])
+			}
+			if leafDelta[1] != (commit.Commitment{}) {
+				l.commitment.Add(leafDelta[1])
+			}
 			l.oldValuesSet.clear()
 			l.oldUsed = l.used
 		},

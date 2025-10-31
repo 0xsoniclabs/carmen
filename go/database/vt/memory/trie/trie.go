@@ -12,7 +12,6 @@ package trie
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
@@ -110,12 +109,9 @@ func (t *Trie) commit_parallel() commit.Commitment {
 
 		// Process tasks until all are done.
 		pos := atomic.Int32{}
-		var wg sync.WaitGroup
 		// TODO: re-use workers;
-		wg.Add(NumWorkers)
 		for range NumWorkers {
 			go func() {
-				defer wg.Done()
 				zone := tracy.ZoneBegin("trie::commit_parallel::worker")
 				defer zone.End()
 				for {
@@ -126,14 +122,38 @@ func (t *Trie) commit_parallel() commit.Commitment {
 
 					// Run this task and all tasks that become ready as a result.
 					task := workList[next]
-					for i := 0; task != nil; i++ {
-						runTasks.Add(1)
+					for task != nil {
 						task = task.run()
+						runTasks.Add(1)
 					}
 				}
 			}()
 		}
-		wg.Wait()
+
+		// This thread also helps with running tasks.
+		// TODO: clean up the code to avoid duplication.
+		zone1 := tracy.ZoneBegin("trie::commit_parallel::main_worker")
+		for {
+			next := pos.Add(1) - 1
+			if int(next) >= len(workList) {
+				break
+			}
+
+			// Run this task and all tasks that become ready as a result.
+			task := workList[next]
+			for task != nil {
+				task = task.run()
+				runTasks.Add(1)
+			}
+		}
+		zone1.End()
+
+		// The scheduled tasks are very short, so we just do a busy wait here.
+		// until all tasks are done.
+		zone2 := tracy.ZoneBegin("trie::commit_parallel::wait_for_completion")
+		for runTasks.Load() < uint32(len(tasks)) {
+		}
+		zone2.End()
 
 		if want, got := len(tasks), int(runTasks.Load()); want != got {
 			panic(fmt.Sprintf("not all tasks were run: want %d, got %d", want, got))
