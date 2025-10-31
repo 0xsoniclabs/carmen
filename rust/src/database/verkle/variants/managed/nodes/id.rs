@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::verkle::variants::managed::nodes::NodeType,
-    types::{NodeSize, TreeId},
+    types::{NodeSize, ToNodeType, TreeId},
 };
 
 /// An identifier for a node in a managed Verkle trie.
@@ -58,9 +58,25 @@ impl NodeId {
     }
 }
 
-impl TreeId for NodeId {
+impl ToNodeType for NodeId {
     type NodeType = NodeType;
 
+    fn to_node_type(&self) -> Option<NodeType> {
+        match self.to_u64() & Self::PREFIX_MASK {
+            Self::EMPTY_NODE_PREFIX => Some(NodeType::Empty),
+            Self::INNER_NODE_PREFIX => Some(NodeType::Inner),
+            Self::LEAF_NODE_2_PREFIX => Some(NodeType::Leaf2),
+            Self::LEAF_NODE_256_PREFIX => Some(NodeType::Leaf256),
+            // There are only two ways to create a NodeId:
+            // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
+            // - Deserializing from a file which may hold invalid prefixes in case the data was
+            //   corrupted.
+            _ => None,
+        }
+    }
+}
+
+impl TreeId for NodeId {
     fn from_idx_and_node_type(idx: u64, node_type: NodeType) -> Self {
         assert!(
             (idx & !Self::INDEX_MASK) == 0,
@@ -77,20 +93,6 @@ impl TreeId for NodeId {
 
     fn to_index(self) -> u64 {
         self.to_u64() & Self::INDEX_MASK
-    }
-
-    fn to_node_type(self) -> Option<NodeType> {
-        match self.to_u64() & Self::PREFIX_MASK {
-            Self::EMPTY_NODE_PREFIX => Some(NodeType::Empty),
-            Self::INNER_NODE_PREFIX => Some(NodeType::Inner),
-            Self::LEAF_NODE_2_PREFIX => Some(NodeType::Leaf2),
-            Self::LEAF_NODE_256_PREFIX => Some(NodeType::Leaf256),
-            // There are only two ways to create a NodeId:
-            // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
-            // - Deserializing from a file which may hold invalid prefixes in case the data was
-            //   corrupted.
-            _ => None,
-        }
     }
 }
 
