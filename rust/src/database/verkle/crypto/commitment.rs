@@ -8,11 +8,11 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{ops::Add, sync::LazyLock};
+use std::{cell::RefCell, ops::Add, sync::LazyLock};
 
 use ark_ff::{BigInteger, PrimeField};
 use banderwagon::{Element, Fr, msm_windowed_sign::MSMPrecompWindowSigned};
-use ipa_multipoint::committer::{Committer, DefaultCommitter};
+use ipa_multipoint::committer::Committer;
 use verkle_trie::constants::CRS;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
@@ -45,11 +45,14 @@ struct AggressiveCommitter {
 #[allow(dead_code)]
 impl AggressiveCommitter {
     fn new(points: &[Element]) -> Self {
+        // Take the first five elements and use a more aggressive optimization strategy
+        // since they are used for computing storage keys.
+
         let (points_five, _) = points.split_at(5);
         let precomp_first_five = MSMPrecompWindowSigned::new(points_five, 16);
-        // TODO: What is a good size?
-        let precomp = MSMPrecompWindowSigned::new(points, 12);
-        AggressiveCommitter {
+        let precomp = MSMPrecompWindowSigned::new(points, 8);
+
+        Self {
             precomp_first_five,
             precomp,
         }
@@ -61,16 +64,27 @@ impl Committer for AggressiveCommitter {
         if scalars.len() <= 5 {
             return self.precomp_first_five.mul(scalars);
         }
-
-        self.precomp.mul(scalars)
+        self.precomp.mul(&scalars[..scalars.len().min(256)])
     }
 
     fn scalar_mul(&self, scalar: Fr, index: usize) -> Element {
-        let mut arr = vec![Fr::from(0u64); index + 1];
-        arr[index] = scalar;
         if index < 5 {
+            let mut arr = [Fr::from(0u64); 5];
+            arr[index] = scalar;
             self.precomp_first_five.mul(&arr)
+            // thread_local! {
+            //     static SCALARS: RefCell<[Fr; 5]> = RefCell::new([Fr::from(0u64); 5]);
+            // }
+            // SCALARS.with(|scalars| {
+            //     let mut scalars_borrow = scalars.borrow_mut();
+            //     scalars_borrow[index] = scalar;
+            //     let result = self.precomp_first_five.mul(&scalars_borrow[..]);
+            //     scalars_borrow[index] = Fr::from(0u64);
+            //     result
+            // })
         } else {
+            let mut arr = [Fr::from(0u64); 256];
+            arr[index] = scalar;
             self.precomp.mul(&arr)
         }
     }
@@ -79,6 +93,7 @@ impl Committer for AggressiveCommitter {
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
 // static COMMITTER: LazyLock<DefaultCommitter> = LazyLock::new(|| {
 static COMMITTER: LazyLock<AggressiveCommitter> = LazyLock::new(|| {
+    // eprintln!("initializing default committer");
     // DefaultCommitter::new(&CRS.G)
     AggressiveCommitter::new(&CRS.G)
 });
