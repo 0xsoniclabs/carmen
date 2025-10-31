@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
+	"github.com/0xsoniclabs/tracy"
 )
 
 // ---- Nodes ----
@@ -70,6 +71,8 @@ func (i *inner) set(key Key, depth byte, value Value) node {
 }
 
 func (i *inner) commit() commit.Commitment {
+	zone := tracy.ZoneBegin("inner::commit")
+	defer zone.End()
 	//return i.commit_naive()
 	return i.commit_optimized()
 }
@@ -215,6 +218,8 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 }
 
 func (l *leaf) commit() commit.Commitment {
+	zone := tracy.ZoneBegin("leaf::commit")
+	defer zone.End()
 	//return l.commit_naive()
 	return l.commit_optimized()
 }
