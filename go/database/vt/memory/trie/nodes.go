@@ -12,6 +12,7 @@ package trie
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 )
@@ -97,18 +98,23 @@ type leaf struct {
 	commitment commit.Commitment
 
 	// --- Commitment caching ---
-	c1        commit.Value
-	c2        commit.Value
-	lowDirty  bool
-	highDirty bool
-	oldUsed   bitMap
-	oldValues [256]Value
+	c1           commit.Commitment
+	c2           commit.Commitment
+	lowDirty     bool
+	highDirty    bool
+	oldUsed      bitMap
+	oldValues    [256]Value
+	oldValuesSet bitMap // < whether oldValues[i] is set to a meaningful value
 }
 
 // newLeaf creates a new leaf node with the given key.
 func newLeaf(key Key) *leaf {
 	return &leaf{
 		stem: [31]byte(key[:31]),
+		commitment: commit.Commit([256]commit.Value{
+			commit.NewValue(1), // TODO: avoid recomputing this every time
+			commit.NewValueFromLittleEndianBytes(key[:31]),
+		}),
 	}
 }
 
@@ -123,12 +129,16 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 	if bytes.Equal(key[:31], l.stem[:]) {
 		suffix := key[31]
 		old := l.values[suffix]
+		l.values[suffix] = value
 		if !l.used.get(suffix) {
 			l.used.set(suffix)
 		} else if old == value {
 			return l
 		}
-		l.oldValues[suffix] = old
+		if !l.oldValuesSet.get(suffix) {
+			l.oldValuesSet.set(suffix)
+			l.oldValues[suffix] = old
+		}
 		if suffix < 128 {
 			l.lowDirty = true
 		} else {
@@ -153,7 +163,7 @@ func (l *leaf) commit_optimized() commit.Commitment {
 		return l.commitment
 	}
 
-	delta := [commit.VectorSize]commit.Value{}
+	leafDelta := [commit.VectorSize]commit.Value{}
 
 	// update c1 - lower half + used bit
 	if l.lowDirty {
@@ -174,9 +184,17 @@ func (l *leaf) commit_optimized() commit.Commitment {
 			delta[2*i+1] = *new.Sub(old)
 		}
 
-		newC1 := commit.Commit(delta).ToValue()
-		deltaC1 := *newC1.Sub(l.c1)
-		delta[2] = deltaC1
+		newC1 := l.c1
+		if l.c1 == (commit.Commitment{}) {
+			newC1 = commit.Commit(delta)
+		} else {
+			newC1.Add(commit.Commit(delta))
+		}
+
+		deltaC1 := newC1.ToValue()
+		deltaC1 = *deltaC1.Sub(l.c1.ToValue())
+
+		leafDelta[2] = deltaC1
 		l.c1 = newC1
 
 		l.lowDirty = false
@@ -187,11 +205,11 @@ func (l *leaf) commit_optimized() commit.Commitment {
 		delta := [commit.VectorSize]commit.Value{}
 		for i := range 128 {
 			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
-			if l.oldUsed.get(byte(i)) {
+			if l.oldUsed.get(byte(i + 128)) {
 				old.SetBit128()
 			}
 			new := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
-			if l.used.get(byte(i)) {
+			if l.used.get(byte(i + 128)) {
 				new.SetBit128()
 			}
 			delta[2*i] = *new.Sub(old)
@@ -201,21 +219,31 @@ func (l *leaf) commit_optimized() commit.Commitment {
 			delta[2*i+1] = *new.Sub(old)
 		}
 
-		newC2 := commit.Commit(delta).ToValue()
-		deltaC2 := *newC2.Sub(l.c2)
-		delta[3] = deltaC2
+		newC2 := l.c2
+		if newC2 == (commit.Commitment{}) {
+			newC2 = commit.Commit(delta)
+		} else {
+			newC2.Add(commit.Commit(delta))
+		}
+
+		deltaC2 := newC2.ToValue()
+		deltaC2 = *deltaC2.Sub(l.c2.ToValue())
+
+		leafDelta[3] = deltaC2
 		l.c2 = newC2
 
 		l.highDirty = false
 	}
 
 	// Compute commitment of changes and add to node commitment.
-	l.commitment.Add(commit.Commit(delta))
+	l.commitment.Add(commit.Commit(leafDelta))
+	l.oldValuesSet.clear()
+	l.oldUsed = l.used
 	return l.commitment
 }
 
 func (l *leaf) commit_naive() commit.Commitment {
-	if !l.lowDirty || !l.highDirty {
+	if !l.lowDirty && !l.highDirty {
 		return l.commitment
 	}
 
@@ -251,6 +279,9 @@ func (l *leaf) commit_naive() commit.Commitment {
 	c1 := commit.Commit(values[0])
 	c2 := commit.Commit(values[1])
 
+	fmt.Printf("\tnaive c1: %x\n", c1.ToValue())
+	fmt.Printf("\tnaive c2: %x\n", c2.ToValue())
+
 	l.commitment = commit.Commit([256]commit.Value{
 		commit.NewValue(1),
 		commit.NewValueFromLittleEndianBytes(l.stem[:]),
@@ -260,6 +291,10 @@ func (l *leaf) commit_naive() commit.Commitment {
 	l.lowDirty = false
 	l.highDirty = false
 	return l.commitment
+}
+
+func (l *leaf) isUsed(index byte) bool {
+	return l.used.get(index)
 }
 
 type bitMap [256 / 64]uint64

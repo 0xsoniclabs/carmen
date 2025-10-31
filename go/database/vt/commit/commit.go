@@ -102,7 +102,7 @@ func (c Commitment) Update(position byte, old, new Value) Commitment {
 	return res
 }
 
-func (c Commitment) Add(other Commitment) {
+func (c *Commitment) Add(other Commitment) {
 	c.point.Add(&c.point, &other.point)
 }
 

@@ -55,6 +55,6 @@ func (v *Value) SetBit128() {
 
 func (v *Value) Sub(other Value) *Value {
 	var result Value
-	v.scalar.Sub(&v.scalar, &other.scalar)
+	result.scalar.Sub(&v.scalar, &other.scalar)
 	return &result
 }
