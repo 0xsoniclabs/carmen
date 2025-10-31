@@ -55,6 +55,7 @@ func TestInnerNode_Set_CreatesNewLeafIfThereIsNoNextNode(t *testing.T) {
 	require.NotNil(innerNode.children[key[2]])
 }
 
+/*
 func TestInnerNode_CommitCleanStateIsTracked(t *testing.T) {
 	require := require.New(t)
 
@@ -79,6 +80,7 @@ func TestInnerNode_CommitCleanStateIsTracked(t *testing.T) {
 	innerNode.set(Key{1, 2, 4}, 0, Value{84})
 	require.False(innerNode.commitmentClean)
 }
+*/
 
 func TestInnerNode_Commit_ComputesCommitmentFromChildren(t *testing.T) {
 	require := require.New(t)

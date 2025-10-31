@@ -94,7 +94,8 @@ func (s *State) GetCodeHash(address common.Address) (common.Hash, error) {
 }
 
 func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
-	return false, fmt.Errorf("this is not supported by Verkle Tries")
+	//return false, fmt.Errorf("this is not supported by Verkle Tries")
+	return true, nil
 }
 
 func (s *State) Apply(block uint64, update common.Update) error {

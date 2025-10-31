@@ -35,8 +35,12 @@ type inner struct {
 
 	// The cached commitment of this inner node. It is only valid if the
 	// commitmentClean flag is true.
-	commitment      commit.Commitment
-	commitmentClean bool
+	commitment commit.Commitment
+
+	// --- Commitment caching ---
+	dirtyChildValues     bitMap
+	oldChildrenValues    [256]commit.Value
+	oldChildrenValuesSet bitMap
 }
 
 func (i *inner) get(key Key, depth byte) Value {
@@ -48,18 +52,54 @@ func (i *inner) get(key Key, depth byte) Value {
 }
 
 func (i *inner) set(key Key, depth byte, value Value) node {
-	i.commitmentClean = false
 	pos := key[depth]
 	next := i.children[pos]
+	if !i.oldChildrenValuesSet.get(pos) {
+		i.oldChildrenValuesSet.set(pos)
+		if next != nil {
+			i.oldChildrenValues[pos] = next.commit().ToValue()
+		}
+	}
 	if next == nil {
 		next = newLeaf(key)
 	}
 	i.children[pos] = next.set(key, depth+1, value)
+	i.dirtyChildValues.set(pos)
 	return i
 }
 
 func (i *inner) commit() commit.Commitment {
-	if i.commitmentClean {
+	//return i.commit_naive()
+	return i.commit_optimized()
+}
+
+func (i *inner) commit_optimized() commit.Commitment {
+	if !i.dirtyChildValues.any() {
+		return i.commitment
+	}
+
+	delta := [commit.VectorSize]commit.Value{}
+	for j := range i.children {
+		if i.dirtyChildValues.get(byte(j)) {
+			old := i.oldChildrenValues[j]
+			new := i.children[j].commit().ToValue()
+			delta[j] = *new.Sub(old)
+		}
+	}
+
+	// Update the commitment of this inner node.
+	if i.commitment == (commit.Commitment{}) {
+		i.commitment = commit.Commit(delta)
+	} else {
+		i.commitment.Add(commit.Commit(delta))
+	}
+	i.dirtyChildValues.clear()
+	i.oldChildrenValuesSet.clear()
+	return i.commitment
+}
+
+func (i *inner) commit_naive() commit.Commitment {
+	if !i.dirtyChildValues.any() {
 		return i.commitment
 	}
 
@@ -79,7 +119,7 @@ func (i *inner) commit() commit.Commitment {
 		}
 	}
 	i.commitment = commit.Commit(children)
-	i.commitmentClean = true
+	i.dirtyChildValues.clear()
 	return i.commitment
 }
 
