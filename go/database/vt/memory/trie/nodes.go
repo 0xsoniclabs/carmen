@@ -209,6 +209,9 @@ func (l *leaf) commit_optimized() commit.Commitment {
 	if l.lowDirty {
 		delta := [commit.VectorSize]commit.Value{}
 		for i := range 128 {
+			if !l.oldValuesSet.get(byte(i)) {
+				continue
+			}
 			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
 			if l.oldUsed.get(byte(i)) {
 				old.SetBit128()
@@ -244,6 +247,9 @@ func (l *leaf) commit_optimized() commit.Commitment {
 	if l.highDirty {
 		delta := [commit.VectorSize]commit.Value{}
 		for i := range 128 {
+			if !l.oldValuesSet.get(byte(i + 128)) {
+				continue
+			}
 			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
 			if l.oldUsed.get(byte(i + 128)) {
 				old.SetBit128()
