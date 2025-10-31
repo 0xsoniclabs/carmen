@@ -26,6 +26,9 @@ type node interface {
 	get(key Key, depth byte) Value
 	set(Key Key, depth byte, value Value) node
 	commit() commit.Commitment
+
+	// -- experimental parallel commit support --
+	collectCommitTasks(tasks *[]*task) // < in order of dependencies
 }
 
 // ---- Inner nodes ----
@@ -67,7 +70,70 @@ func (i *inner) set(key Key, depth byte, value Value) node {
 	}
 	i.children[pos] = next.set(key, depth+1, value)
 	i.dirtyChildValues.set(pos)
+	//fmt.Printf("Marking dirty for inner node %p at pos %d\n", i, pos)
 	return i
+}
+
+func (i *inner) collectCommitTasks(tasks *[]*task) {
+	if !i.dirtyChildValues.any() {
+		return
+	}
+
+	// Produce one task for every dirty child.
+	directChildTasks := make([]*task, 0, 256)
+	delta := [commit.VectorSize]commit.Value{}
+	for j := range i.children {
+		if i.dirtyChildValues.get(byte(j)) {
+			lengthBefore := len(*tasks)
+			i.children[j].collectCommitTasks(tasks)
+			childTasks := (*tasks)[lengthBefore:]
+
+			var child *task
+			numDependencies := 0
+			if len(childTasks) > 0 {
+				child = childTasks[len(childTasks)-1]
+				numDependencies = 1
+			}
+
+			task := newTask(
+				//fmt.Sprintf("inner_node_%p_child_%d", i, j),
+				func() {
+					old := i.oldChildrenValues[j]
+					new := i.children[j].commit().ToValue()
+					delta[j] = *new.Sub(old)
+				},
+				numDependencies,
+			)
+			if child != nil {
+				child.parentTask = task
+			}
+
+			directChildTasks = append(directChildTasks, task)
+		}
+	}
+
+	// Add the aggregation task updating this inner node's commitment.
+	aggTask := newTask(
+		//fmt.Sprintf("inner_node_%p_agg", i),
+		func() {
+			if i.commitment == (commit.Commitment{}) {
+				i.commitment = commit.Commit(delta)
+			} else {
+				i.commitment.Add(commit.Commit(delta))
+			}
+			//fmt.Printf("Clearing dirty for inner node %p\n", i)
+			i.dirtyChildValues.clear()
+			i.oldChildrenValuesSet.clear()
+		},
+		len(directChildTasks),
+	)
+
+	// Set up dependencies.
+	for _, childTask := range directChildTasks {
+		childTask.parentTask = aggTask
+	}
+	*tasks = append(*tasks, directChildTasks...)
+	*tasks = append(*tasks, aggTask)
 }
 
 func (i *inner) commit() commit.Commitment {
@@ -81,6 +147,8 @@ func (i *inner) commit_optimized() commit.Commitment {
 	if !i.dirtyChildValues.any() {
 		return i.commitment
 	}
+
+	//fmt.Printf("Inner node %p has dirty children\n", i)
 
 	delta := [commit.VectorSize]commit.Value{}
 	for j := range i.children {
@@ -215,6 +283,122 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 	res := &inner{}
 	res.children[l.stem[depth]] = l
 	return res.set(key, depth, value)
+}
+
+func (l *leaf) collectCommitTasks(tasks *[]*task) {
+	if !l.lowDirty && !l.highDirty {
+		return // nothing to do
+	}
+
+	leafDelta := [commit.VectorSize]commit.Value{}
+
+	// create a task for updating C1
+	childTasks := make([]*task, 0, 2)
+	if l.lowDirty {
+		childTasks = append(childTasks, newTask(
+			//fmt.Sprintf("leaf_%p_update_c1", l),
+			func() {
+				delta := [commit.VectorSize]commit.Value{}
+				for i := range 128 {
+					if !l.oldValuesSet.get(byte(i)) {
+						continue
+					}
+					old := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
+					if l.oldUsed.get(byte(i)) {
+						old.SetBit128()
+					}
+					new := commit.NewValueFromLittleEndianBytes(l.values[i][:16])
+					if l.used.get(byte(i)) {
+						new.SetBit128()
+					}
+					delta[2*i] = *new.Sub(old)
+
+					old = commit.NewValueFromLittleEndianBytes(l.oldValues[i][16:])
+					new = commit.NewValueFromLittleEndianBytes(l.values[i][16:])
+					delta[2*i+1] = *new.Sub(old)
+				}
+
+				newC1 := l.c1
+				if l.c1 == (commit.Commitment{}) {
+					newC1 = commit.Commit(delta)
+				} else {
+					newC1.Add(commit.Commit(delta))
+				}
+
+				deltaC1 := newC1.ToValue()
+				deltaC1 = *deltaC1.Sub(l.c1.ToValue())
+
+				leafDelta[2] = deltaC1
+				l.c1 = newC1
+
+				l.lowDirty = false
+			},
+			0,
+		))
+	}
+
+	// create a task for updating C2
+	if l.highDirty {
+		childTasks = append(childTasks, newTask(
+			//fmt.Sprintf("leaf_%p_update_c2", l),
+			func() {
+				delta := [commit.VectorSize]commit.Value{}
+				for i := range 128 {
+					if !l.oldValuesSet.get(byte(i + 128)) {
+						continue
+					}
+					old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
+					if l.oldUsed.get(byte(i + 128)) {
+						old.SetBit128()
+					}
+					new := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
+					if l.used.get(byte(i + 128)) {
+						new.SetBit128()
+					}
+					delta[2*i] = *new.Sub(old)
+
+					old = commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][16:])
+					new = commit.NewValueFromLittleEndianBytes(l.values[i+128][16:])
+					delta[2*i+1] = *new.Sub(old)
+				}
+
+				newC2 := l.c2
+				if newC2 == (commit.Commitment{}) {
+					newC2 = commit.Commit(delta)
+				} else {
+					newC2.Add(commit.Commit(delta))
+				}
+
+				deltaC2 := newC2.ToValue()
+				deltaC2 = *deltaC2.Sub(l.c2.ToValue())
+
+				leafDelta[3] = deltaC2
+				l.c2 = newC2
+
+				l.highDirty = false
+			},
+			0,
+		))
+	}
+
+	// Create the aggregation task
+	aggTask := newTask(
+		//fmt.Sprintf("leaf_%p_agg", l),
+		func() {
+			// Compute commitment of changes and add to node commitment.
+			l.commitment.Add(commit.Commit(leafDelta))
+			l.oldValuesSet.clear()
+			l.oldUsed = l.used
+		},
+		len(childTasks),
+	)
+
+	// Set up dependencies.
+	for _, childTask := range childTasks {
+		childTask.parentTask = aggTask
+	}
+	*tasks = append(*tasks, childTasks...)
+	*tasks = append(*tasks, aggTask)
 }
 
 func (l *leaf) commit() commit.Commitment {

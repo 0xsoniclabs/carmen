@@ -11,7 +11,11 @@
 package trie
 
 import (
+	"sync"
+	"sync/atomic"
+
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
+	"github.com/0xsoniclabs/tracy"
 )
 
 // Key is a fixed-size byte array used to address values in the trie.
@@ -58,5 +62,113 @@ func (t *Trie) Commit() commit.Commitment {
 	if t.root == nil {
 		return commit.Identity()
 	}
+	return t.commit_parallel()
+	//return t.commit_sequential()
+}
+
+func (t *Trie) commit_sequential() commit.Commitment {
 	return t.root.commit()
+}
+
+func (t *Trie) commit_parallel() commit.Commitment {
+
+	//fmt.Printf("\nNewRound\n")
+
+	const NumWorkers = 8
+	// Phase 1: collect tasks to be done in parallel
+	tasks := make([]*task, 0, 1024)
+	zone := tracy.ZoneBegin("trie::commit_parallel::collect_tasks")
+	t.root.collectCommitTasks(&tasks)
+	zone.End()
+
+	// Phase 2: run tasks in parallel
+	if /*true ||*/ len(tasks) < 20 {
+		// For small number of tasks, run sequentially to avoid overhead.
+		for _, task := range tasks {
+			task.action()
+			/*
+				if task.numDependencies.Load() != 0 {
+					panic(fmt.Sprintf("task %s which is %d of %d has unresolved dependencies", task.name, i, len(tasks)))
+				}
+				task.run()
+			*/
+		}
+	} else {
+
+		runTasks := atomic.Uint32{}
+
+		// Collect all tasks ready to run (no dependencies).
+		workList := make([]*task, 0, len(tasks))
+		for _, task := range tasks {
+			if task.numDependencies.Load() == 0 {
+				workList = append(workList, task)
+			}
+		}
+
+		// Process tasks until all are done.
+		pos := atomic.Int32{}
+		var wg sync.WaitGroup
+		// TODO: re-use workers;
+		wg.Add(NumWorkers)
+		for range NumWorkers {
+			go func() {
+				defer wg.Done()
+				zone := tracy.ZoneBegin("trie::commit_parallel::worker")
+				defer zone.End()
+				for {
+					next := pos.Add(1) - 1
+					if int(next) >= len(workList) {
+						return
+					}
+
+					// Run this task and all tasks that become ready as a result.
+					task := workList[next]
+					for i := 0; task != nil; i++ {
+						runTasks.Add(1)
+						task = task.run()
+					}
+				}
+			}()
+		}
+		wg.Wait()
+
+		//fmt.Printf("Committed trie in parallel, ran %d / %d tasks\n", runTasks.Load(), len(tasks))
+	}
+
+	// Phase 3: fetch new root commitment
+	zone2 := tracy.ZoneBegin("trie::commit_parallel::fetch_root_commitment")
+	defer zone2.End()
+	return t.root.commit()
+}
+
+type task struct {
+	//name            string // debug name
+	action          func()
+	numDependencies atomic.Int32
+	parentTask      *task
+}
+
+func newTask(
+	//name string,
+	action func(),
+	numDependencies int,
+) *task {
+	t := &task{ /*name: name,*/ action: action}
+	t.numDependencies.Store(int32(numDependencies))
+	return t
+}
+
+// run executes the task's action and returns an optional parent task that may
+// now be ready to run.
+func (t *task) run() *task {
+	zone := tracy.ZoneBegin("trie::commit_parallel::task::run")
+	defer zone.End()
+	t.action()
+	if t.parentTask == nil {
+		return nil
+	}
+	if t.parentTask.numDependencies.Add(-1) != 0 {
+		return nil // not ready yet
+	}
+	return t.parentTask // ready to run
 }
