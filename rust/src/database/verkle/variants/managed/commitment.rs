@@ -120,6 +120,16 @@ pub fn process_update(
     match lock.get_commitment_input().unwrap() {
         VerkleCommitmentInput::Leaf(values, stem) => {
             let _span = tracy_client::span!("update leaf");
+
+            let changed_count = vc
+                .changed
+                .iter()
+                .map(|b| b.count_ones() as usize)
+                .sum::<usize>();
+            let use_batch_update = changed_count > 32;
+
+            let mut deltas_c1 = [Scalar::zero(); 256];
+            let mut deltas_c2 = [Scalar::zero(); 256];
             for (i, value) in vc.committed_values.iter().enumerate() {
                 if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
                     continue;
@@ -132,10 +142,24 @@ pub fn process_update(
                 let mut lower = Scalar::from_le_bytes(&values[i][..16]);
                 let upper = Scalar::from_le_bytes(&values[i][16..]);
                 lower.set_bit128();
-                let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
-                c.update(((i * 2) % 256) as u8, prev_lower, lower);
-                c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+                if use_batch_update {
+                    if i < 128 {
+                        deltas_c1[(i * 2) % 256] = lower - prev_lower;
+                        deltas_c1[(i * 2 + 1) % 256] = upper - prev_upper;
+                    } else {
+                        deltas_c2[(i * 2) % 256] = lower - prev_lower;
+                        deltas_c2[(i * 2 + 1) % 256] = upper - prev_upper;
+                    }
+                } else {
+                    let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
+                    c.update(((i * 2) % 256) as u8, prev_lower, lower);
+                    c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+                }
                 vc.committed_used_slots[i / 8] |= 1 << (i % 8);
+            }
+            if use_batch_update {
+                vc.c1 = vc.c1 + Commitment::new(&deltas_c1);
+                vc.c2 = vc.c2 + Commitment::new(&deltas_c2);
             }
             vc.committed_values.fill(Value::default());
             let combined = [
