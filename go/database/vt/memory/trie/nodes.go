@@ -81,7 +81,7 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 
 	// Produce one task for every dirty child.
 	directChildTasks := make([]*task, 0, 256)
-	delta := [commit.VectorSize]commit.Value{}
+	delta := [commit.VectorSize]commit.Commitment{}
 	for j := range i.children {
 		if i.dirtyChildValues.get(byte(j)) {
 			lengthBefore := len(*tasks)
@@ -100,7 +100,9 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 				func() {
 					old := i.oldChildrenValues[j]
 					new := i.children[j].commit().ToValue()
-					delta[j] = *new.Sub(old)
+					poly := [commit.VectorSize]commit.Value{}
+					poly[j] = *new.Sub(old)
+					delta[j] = commit.Commit(poly)
 				},
 				numDependencies,
 			)
@@ -111,15 +113,29 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 			directChildTasks = append(directChildTasks, task)
 		}
 	}
+	*tasks = append(*tasks, directChildTasks...)
 
 	// Add the aggregation task updating this inner node's commitment.
 	aggTask := newTask(
 		//fmt.Sprintf("inner_node_%p_agg", i),
 		func() {
+			// Sum up the individual deltas from the children.
+			deltaCommitment := commit.Commitment{}
+			for _, d := range delta {
+				if d == (commit.Commitment{}) {
+					continue
+				}
+				if deltaCommitment == (commit.Commitment{}) {
+					deltaCommitment = d
+				} else {
+					deltaCommitment.Add(d)
+				}
+			}
+
 			if i.commitment == (commit.Commitment{}) {
-				i.commitment = commit.Commit(delta)
+				i.commitment = deltaCommitment
 			} else {
-				i.commitment.Add(commit.Commit(delta))
+				i.commitment.Add(deltaCommitment)
 			}
 			//fmt.Printf("Clearing dirty for inner node %p\n", i)
 			i.dirtyChildValues.clear()
@@ -127,12 +143,10 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 		},
 		len(directChildTasks),
 	)
-
-	// Set up dependencies.
 	for _, childTask := range directChildTasks {
 		childTask.parentTask = aggTask
 	}
-	*tasks = append(*tasks, directChildTasks...)
+
 	*tasks = append(*tasks, aggTask)
 }
 

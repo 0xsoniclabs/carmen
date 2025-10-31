@@ -11,6 +11,7 @@
 package trie
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -82,16 +83,18 @@ func (t *Trie) commit_parallel() commit.Commitment {
 	zone.End()
 
 	// Phase 2: run tasks in parallel
-	if /*true ||*/ len(tasks) < 20 {
+	if false { // = debug task dependencies
+		for i, task := range tasks {
+			if task.numDependencies.Load() != 0 {
+				//panic(fmt.Sprintf("task %s which is %d of %d has unresolved dependencies", task.name, i, len(tasks)))
+				panic(fmt.Sprintf("task %d of %d has unresolved dependencies", i, len(tasks)))
+			}
+			task.run()
+		}
+	} else if len(tasks) < 20 {
 		// For small number of tasks, run sequentially to avoid overhead.
 		for _, task := range tasks {
 			task.action()
-			/*
-				if task.numDependencies.Load() != 0 {
-					panic(fmt.Sprintf("task %s which is %d of %d has unresolved dependencies", task.name, i, len(tasks)))
-				}
-				task.run()
-			*/
 		}
 	} else {
 
@@ -132,6 +135,9 @@ func (t *Trie) commit_parallel() commit.Commitment {
 		}
 		wg.Wait()
 
+		if want, got := len(tasks), int(runTasks.Load()); want != got {
+			panic(fmt.Sprintf("not all tasks were run: want %d, got %d", want, got))
+		}
 		//fmt.Printf("Committed trie in parallel, ran %d / %d tasks\n", runTasks.Load(), len(tasks))
 	}
 
