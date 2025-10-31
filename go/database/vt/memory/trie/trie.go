@@ -167,8 +167,6 @@ func newTask(
 // run executes the task's action and returns an optional parent task that may
 // now be ready to run.
 func (t *task) run() *task {
-	zone := tracy.ZoneBegin("trie::commit_parallel::task::run")
-	defer zone.End()
 	t.action()
 	if t.parentTask == nil {
 		return nil

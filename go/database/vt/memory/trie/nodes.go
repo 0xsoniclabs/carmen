@@ -151,8 +151,6 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 }
 
 func (i *inner) commit() commit.Commitment {
-	zone := tracy.ZoneBegin("inner::commit")
-	defer zone.End()
 	//return i.commit_naive()
 	return i.commit_optimized()
 }
@@ -161,6 +159,8 @@ func (i *inner) commit_optimized() commit.Commitment {
 	if !i.dirtyChildValues.any() {
 		return i.commitment
 	}
+	zone := tracy.ZoneBegin("inner::commit")
+	defer zone.End()
 
 	//fmt.Printf("Inner node %p has dirty children\n", i)
 
@@ -416,8 +416,6 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 }
 
 func (l *leaf) commit() commit.Commitment {
-	zone := tracy.ZoneBegin("leaf::commit")
-	defer zone.End()
 	//return l.commit_naive()
 	return l.commit_optimized()
 }
@@ -426,6 +424,8 @@ func (l *leaf) commit_optimized() commit.Commitment {
 	if !l.lowDirty && !l.highDirty {
 		return l.commitment
 	}
+	zone := tracy.ZoneBegin("leaf::commit")
+	defer zone.End()
 
 	leafDelta := [commit.VectorSize]commit.Value{}
 
