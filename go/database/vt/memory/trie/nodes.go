@@ -13,6 +13,7 @@ package trie
 import (
 	"bytes"
 	"fmt"
+	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 )
@@ -150,12 +151,32 @@ type leaf struct {
 // newLeaf creates a new leaf node with the given key.
 func newLeaf(key Key) *leaf {
 	return &leaf{
-		stem: [31]byte(key[:31]),
-		commitment: commit.Commit([256]commit.Value{
-			commit.NewValue(1), // TODO: avoid recomputing this every time
-			commit.NewValueFromLittleEndianBytes(key[:31]),
-		}),
+		stem:       [31]byte(key[:31]),
+		commitment: commitmentForStem(key[:31]),
 	}
+}
+
+var (
+	_emptyStemCommitment     commit.Commitment // TODO: initialize directly, without sync.Once, once tracy in Commit is removed
+	_emptyStemCommitmentOnce sync.Once
+)
+
+func getEmptyStemCommitment() commit.Commitment {
+	_emptyStemCommitmentOnce.Do(func() {
+		_emptyStemCommitment = commit.Commit([256]commit.Value{
+			commit.NewValue(1),
+		})
+	})
+	return _emptyStemCommitment
+}
+
+func commitmentForStem(stem []byte) commit.Commitment {
+	delta := commit.Commit([256]commit.Value{
+		1: commit.NewValueFromLittleEndianBytes(stem),
+	})
+	res := getEmptyStemCommitment()
+	res.Add(delta)
+	return res
 }
 
 func (l *leaf) get(key Key, _ byte) Value {
