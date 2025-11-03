@@ -15,7 +15,8 @@ use crate::{
 };
 
 /// The result of a call to [`ManagedTrieNode::lookup`].
-#[expect(unused)]
+#[cfg_attr(not(test), expect(unused))]
+#[derive(Debug)]
 pub enum LookupResult<ID> {
     /// Indicates that the value associated with the key was found in this node.
     Value(Value),
@@ -24,7 +25,8 @@ pub enum LookupResult<ID> {
 }
 
 /// The result of a call to [`ManagedTrieNode::next_store_action`].
-#[expect(unused)]
+#[cfg_attr(not(test), expect(unused))]
+#[derive(Debug)]
 pub enum StoreAction<ID, U> {
     /// Indicates that the value can be stored directly in this node.
     Store {
@@ -46,6 +48,9 @@ pub enum StoreAction<ID, U> {
     HandleTransform(U),
 }
 
+/// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
+pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {}
+
 /// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)
 /// trie (Verkle, Binary, Merkle-Patricia, ...).
 ///
@@ -63,7 +68,6 @@ pub enum StoreAction<ID, U> {
 ///
 /// Since not all lifecycle methods make sense for all node types, the trait provides default
 /// implementations that return an [`Error::UnsupportedOperation`] for most methods.
-#[cfg_attr(not(test), expect(unused))]
 pub trait ManagedTrieNode {
     /// The union type (enum) that encompasses all node types in the trie.
     type Union;
@@ -75,11 +79,9 @@ pub trait ManagedTrieNode {
     type Commitment: TrieCommitment;
 
     /// Looks up the value associated with the given key in this node.
-    #[expect(unused)]
     fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error>;
 
     /// Returns information about the next action required to store a value at the given key.
-    #[expect(unused)]
     fn next_store_action(
         &self,
         _key: &Key,
@@ -111,7 +113,6 @@ pub trait ManagedTrieNode {
     }
 
     /// Returns the commitment associated with this node.
-    #[expect(unused)]
     fn get_commitment(&self) -> Self::Commitment;
 
     /// Sets the commitment associated with this node.

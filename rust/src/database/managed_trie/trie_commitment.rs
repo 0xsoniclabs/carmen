@@ -14,7 +14,6 @@ use crate::types::Value;
 ///
 /// Implementors of this trait receive notifications about modifications
 /// to children and slots, allowing them to update their commitments accordingly.
-#[cfg_attr(not(test), expect(unused))]
 pub trait TrieCommitment {
     /// Indicates that the child at the given index has been modified.
     fn modify_child(&mut self, index: usize);

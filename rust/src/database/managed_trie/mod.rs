@@ -8,10 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+mod lookup;
 mod managed_trie_node;
+mod store;
+#[cfg(test)]
+mod test_utils;
 mod trie_commitment;
 mod trie_update_log;
 
-#[expect(unused)]
 pub use managed_trie_node::ManagedTrieNode;
 pub use trie_commitment::TrieCommitment;
+pub use trie_update_log::TrieUpdateLog;
