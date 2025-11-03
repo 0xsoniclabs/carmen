@@ -38,7 +38,6 @@ impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
     }
 
     /// Deletes the node with the given `id` at the specified `depth` from the log.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn delete(&self, depth: usize, id: ID) {
         let guard = self.access_level(depth);
         guard[depth].remove(&id);
@@ -85,7 +84,7 @@ impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
 
         drop(guard);
         let mut guard = self.dirty_nodes_by_level.write().unwrap();
-        guard.resize_with((level) + 1, || DashSet::new());
+        guard.resize_with(level + 1, || DashSet::new());
         drop(guard);
         self.dirty_nodes_by_level.read().unwrap()
     }
