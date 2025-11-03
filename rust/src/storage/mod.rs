@@ -53,7 +53,7 @@ pub trait Storage: Send + Sync {
     fn close(self) -> BTResult<(), Error>;
 }
 
-/// An entity which can create durable checkpoints of its state.
+/// An entity which can create durable checkpoints of its state that can be restored later.
 /// This trait is used for entities which may hold volatile state in memory, but which are not
 /// directly responsible for storing that state durably. Therefore, they only need to flush their
 /// state to the underlying layer and call `checkpoint` on that layer, but are not participating in
@@ -64,7 +64,12 @@ pub trait Storage: Send + Sync {
 /// operation (read, write or other checkpoint) in progress.
 pub trait Checkpointable: Send + Sync {
     /// Create a checkpoint which is guaranteed to be durable.
-    fn checkpoint(&self) -> BTResult<(), Error>;
+    fn checkpoint(&self) -> BTResult<u64, Error>;
+
+    /// Restores the state on disk to the state at the given checkpoint.
+    /// If this operation succeeds, the next open call should be able to open the state without
+    /// any errors.
+    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
 }
 
 /// An entity which participates in a two-phase commit protocol.
@@ -87,6 +92,13 @@ pub trait CheckpointParticipant {
     /// Aborts the given checkpoint, reverting any preparations done in the prepare phase. The node
     /// data itself is not discarded. The checkpoint must have been prepared before.
     fn abort(&self, checkpoint: u64) -> BTResult<(), Error>;
+
+    /// Restores the state on disk to the state at the given checkpoint.
+    /// If this operation succeeds, the next open call should be able to open the state without
+    /// any errors.
+    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>
+    where
+        Self: Sized;
 }
 
 /// An entity which can provide and store IDs of a tree's root node at different block numbers.

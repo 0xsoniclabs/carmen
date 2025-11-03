@@ -12,6 +12,7 @@ use std::{
     cmp::Eq,
     hash::Hash,
     ops::{Deref, DerefMut},
+    path::Path,
 };
 
 use crate::{
@@ -195,21 +196,27 @@ where
     S::Id: Eq + Hash + Copy + Send + Sync,
     S::Item: Default + Clone + Send + Sync,
 {
-    fn checkpoint(&self) -> BTResult<(), crate::storage::Error> {
+    fn checkpoint(&self) -> BTResult<u64, crate::storage::Error> {
         for (id, mut guard) in self.nodes.iter_write() {
             if guard.is_dirty {
                 self.storage.storage.set(id, &guard.node)?;
                 guard.is_dirty = false;
             }
         }
-        self.storage.storage.checkpoint()?;
-        Ok(())
+        self.storage.storage.checkpoint()
+    }
+
+    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), crate::storage::Error> {
+        S::restore(path, checkpoint)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{
+        path::Path,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use mockall::{
         mock,
@@ -348,13 +355,63 @@ mod tests {
                 .with(eq(i), eq(node))
                 .returning(move |_, _| Ok(()));
         }
-        storage.expect_checkpoint().times(1).returning(|| Ok(()));
+        storage.expect_checkpoint().times(1).returning(|| Ok(1));
 
         let manager = CachedNodeManager::new(NUM_NODES as usize, storage, pin_nothing);
         for i in 0..NUM_NODES {
             cache_insert(&manager, i, 123, true);
         }
         manager.checkpoint().expect("checkpoint should succeed");
+    }
+
+    #[test]
+    fn cached_node_manager_restore_calls_restore_on_underlying_storage() {
+        static RESTORE_CALLED: AtomicBool = AtomicBool::new(false);
+
+        struct CheckRestoreStorage;
+
+        impl Storage for CheckRestoreStorage {
+            type Id = u32;
+            type Item = i32;
+
+            fn open(_path: &Path) -> BTResult<Self, storage::Error> {
+                unimplemented!()
+            }
+
+            fn get(&self, _id: Self::Id) -> BTResult<Self::Item, storage::Error> {
+                unimplemented!()
+            }
+
+            fn reserve(&self, _item: &Self::Item) -> Self::Id {
+                unimplemented!()
+            }
+
+            fn set(&self, _id: Self::Id, _item: &Self::Item) -> BTResult<(), storage::Error> {
+                unimplemented!()
+            }
+
+            fn delete(&self, _id: Self::Id) -> BTResult<(), storage::Error> {
+                unimplemented!()
+            }
+
+            fn close(self) -> BTResult<(), storage::Error> {
+                unimplemented!()
+            }
+        }
+
+        impl Checkpointable for CheckRestoreStorage {
+            fn checkpoint(&self) -> BTResult<u64, crate::storage::Error> {
+                unimplemented!()
+            }
+
+            fn restore(_path: &Path, _checkpoint: u64) -> BTResult<(), crate::storage::Error> {
+                RESTORE_CALLED.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+        }
+
+        CachedNodeManager::<CheckRestoreStorage>::restore(Path::new("/some/path"), 1).unwrap();
+        assert!(RESTORE_CALLED.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -489,7 +546,9 @@ mod tests {
         pub CachedNodeManagerStorage {}
 
         impl Checkpointable for CachedNodeManagerStorage {
-            fn checkpoint(&self) -> BTResult<(), storage::Error>;
+            fn checkpoint(&self) -> BTResult<u64, storage::Error>;
+
+            fn restore(path: &Path, checkpoint: u64) -> BTResult<(), storage::Error>;
         }
 
         impl Storage for CachedNodeManagerStorage {

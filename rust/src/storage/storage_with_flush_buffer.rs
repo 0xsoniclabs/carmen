@@ -124,7 +124,7 @@ where
     S::Id: std::hash::Hash + Eq + Send + Sync,
     S::Item: Send + Sync,
 {
-    fn checkpoint(&self) -> BTResult<(), Error> {
+    fn checkpoint(&self) -> BTResult<u64, Error> {
         // Busy loop until all flush workers are done.
         // Because there are no concurrent operations, len() might only return a number that is
         // higher that the actual number of items (in case an element of the flush buffer
@@ -132,6 +132,10 @@ where
         // problem because we will wait a little bit longer.
         while !self.flush_buffer.is_empty() {}
         self.storage.checkpoint()
+    }
+
+    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error> {
+        S::restore(path, checkpoint)
     }
 }
 
@@ -477,7 +481,7 @@ mod tests {
         mock_storage
             .expect_checkpoint()
             .times(1)
-            .returning(|| Ok(()));
+            .returning(|| Ok(1));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -512,6 +516,56 @@ mod tests {
         // flush should call flush on the underlying storage layer and return
         assert!(thread.is_finished());
         assert!(thread.join().is_ok());
+    }
+
+    #[test]
+    fn restore_calls_restore_on_underlying_storage() {
+        static RESTORE_CALLED: AtomicBool = AtomicBool::new(false);
+
+        struct CheckRestoreStorage;
+
+        impl Storage for CheckRestoreStorage {
+            type Id = u32;
+            type Item = i32;
+
+            fn open(_path: &Path) -> BTResult<Self, Error> {
+                unimplemented!()
+            }
+
+            fn get(&self, _id: Self::Id) -> BTResult<Self::Item, Error> {
+                unimplemented!()
+            }
+
+            fn reserve(&self, _item: &Self::Item) -> Self::Id {
+                unimplemented!()
+            }
+
+            fn set(&self, _id: Self::Id, _item: &Self::Item) -> BTResult<(), Error> {
+                unimplemented!()
+            }
+
+            fn delete(&self, _id: Self::Id) -> BTResult<(), Error> {
+                unimplemented!()
+            }
+
+            fn close(self) -> BTResult<(), Error> {
+                unimplemented!()
+            }
+        }
+
+        impl Checkpointable for CheckRestoreStorage {
+            fn checkpoint(&self) -> BTResult<u64, crate::storage::Error> {
+                unimplemented!()
+            }
+
+            fn restore(_path: &Path, _checkpoint: u64) -> BTResult<(), crate::storage::Error> {
+                RESTORE_CALLED.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+        }
+
+        StorageWithFlushBuffer::<CheckRestoreStorage>::restore(Path::new("/some/path"), 1).unwrap();
+        assert!(RESTORE_CALLED.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -595,7 +649,9 @@ mod tests {
         pub Storage {}
 
         impl Checkpointable for Storage {
-            fn checkpoint(&self) -> BTResult<(), Error>;
+            fn checkpoint(&self) -> BTResult<u64, Error>;
+
+            fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
         }
 
         impl Storage for Storage {

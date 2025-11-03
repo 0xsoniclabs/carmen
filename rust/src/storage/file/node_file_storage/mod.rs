@@ -20,7 +20,12 @@ use crate::{
         CheckpointParticipant, Error, Storage,
         file::{
             FileBackend, FromToFile,
-            node_file_storage::node_file_storage_metadata::NodeFileStorageCheckpointMetadata,
+            node_file_storage::{
+                node_file_storage_metadata::{
+                    NodeFileStorageCheckpointMetadata, NodeFileStorageMetadata,
+                },
+                reuse_list_file::ReuseListFile,
+            },
         },
     },
     sync::{
@@ -31,9 +36,6 @@ use crate::{
 };
 mod node_file_storage_metadata;
 mod reuse_list_file;
-
-use node_file_storage_metadata::NodeFileStorageMetadata;
-use reuse_list_file::ReuseListFile;
 
 /// A file-based storage backend for elements of type `T`.
 ///
@@ -134,7 +136,8 @@ where
 
     fn get(&self, idx: Self::Id) -> BTResult<Self::Item, Error> {
         let offset = idx * T::size() as u64;
-        if self.node_file.len()? < offset + T::size() as u64
+        if idx >= self.next_idx.load(Ordering::Relaxed)
+            || self.node_file.len()? < offset + T::size() as u64
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
             return Err(Error::NotFound.into());
@@ -257,6 +260,24 @@ where
         }
         self.frozen_nodes
             .store(committed_metadata.frozen_nodes, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error> {
+        let committed_metadata = NodeFileStorageCheckpointMetadata::read_or_init(
+            path.join(Self::COMMITTED_METADATA_FILE),
+        )?;
+        if checkpoint != committed_metadata.checkpoint {
+            return Err(Error::Checkpoint.into());
+        }
+        let metadata = NodeFileStorageMetadata {
+            last_checkpoint: committed_metadata.checkpoint,
+            nodes: committed_metadata.frozen_nodes,
+            frozen_nodes: committed_metadata.frozen_nodes,
+            reuse_indices: committed_metadata.frozen_reuse_indices,
+            frozen_reuse_indices: committed_metadata.frozen_reuse_indices,
+        };
+        metadata.write(path.join(Self::METADATA_FILE))?;
         Ok(())
     }
 }
@@ -932,6 +953,70 @@ mod tests {
         assert!(storage.set(3, &[3; 32]).is_ok());
         // Uncommitted reuse indices are usable again
         assert_eq!(storage.reserve(&[0; 32]), 2);
+    }
+
+    #[test]
+    fn restore_overwrites_metadata_with_committed_metadata() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let committed_metadata = NodeFileStorageCheckpointMetadata {
+            checkpoint: 1,
+            frozen_nodes: 2,
+            frozen_reuse_indices: 3,
+        };
+        committed_metadata
+            .write(dir.join(NodeFileStorage::COMMITTED_METADATA_FILE))
+            .unwrap();
+
+        let metadata = NodeFileStorageMetadata {
+            last_checkpoint: 1,
+            nodes: 3,
+            frozen_nodes: 4,
+            reuse_indices: 5,
+            frozen_reuse_indices: 6,
+        };
+        metadata
+            .write(dir.join(NodeFileStorage::METADATA_FILE))
+            .unwrap();
+
+        NodeFileStorage::restore(&dir, 1).unwrap();
+
+        let metadata =
+            NodeFileStorageMetadata::read_or_init(dir.join(NodeFileStorage::METADATA_FILE))
+                .unwrap();
+        assert_eq!(
+            metadata,
+            NodeFileStorageMetadata {
+                last_checkpoint: committed_metadata.checkpoint,
+                nodes: committed_metadata.frozen_nodes,
+                frozen_nodes: committed_metadata.frozen_nodes,
+                reuse_indices: committed_metadata.frozen_reuse_indices,
+                frozen_reuse_indices: committed_metadata.frozen_reuse_indices,
+            }
+        );
+    }
+
+    #[test]
+    fn restore_fails_if_checkpoint_does_not_match_committed_metadata() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let committed_metadata = NodeFileStorageCheckpointMetadata {
+            checkpoint: 1,
+            frozen_nodes: 0,
+            frozen_reuse_indices: 0,
+        };
+        committed_metadata
+            .write(dir.join(NodeFileStorage::COMMITTED_METADATA_FILE))
+            .unwrap();
+
+        assert!(matches!(
+            NodeFileStorage::restore(&dir, 0).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
+        ));
+        assert!(matches!(
+            NodeFileStorage::restore(&dir, 2).map_err(BTError::into_inner),
+            Err(Error::Checkpoint)
+        ));
     }
 
     impl<T, F> super::NodeFileStorage<T, F>
