@@ -20,7 +20,6 @@ use crate::{
 mod database;
 pub mod error;
 mod ffi;
-#[cfg(test)]
 mod node_manager;
 pub mod storage;
 pub mod types;

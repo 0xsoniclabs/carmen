@@ -24,7 +24,7 @@ use crate::{
     storage::{Checkpointable, Storage},
 };
 
-/// A wrapper which dereferences to [`N`] and additionally stores its dirty status,
+/// A wrapper which dereferences to `N` and additionally stores its dirty status,
 /// indicating whether it needs to be flushed to storage.
 /// The node status is set to dirty when a mutable reference is requested.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -96,6 +96,7 @@ where
     storage: Arc<StorageEvictionHandler<S>>,
 }
 
+#[cfg_attr(not(test), expect(unused))]
 impl<S> CachedNodeManager<S>
 where
     S: Storage + 'static,
@@ -180,8 +181,7 @@ where
     /// Deletes a node with the given ID from the node manager and the underlying storage.
     /// No concurrent calls to [`get_read_access`](Self::get_read_access) or
     /// [`get_write_access`](Self::get_write_access) must be made for the same ID.
-    /// It is not safe to call this function multiple times for the same ID, unless allowed by
-    /// [`Self::S`].
+    /// It is not safe to call this function multiple times for the same ID, unless allowed by `S`.
     fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
         self.nodes.remove(id)?;
         self.storage.delete(id)?;
