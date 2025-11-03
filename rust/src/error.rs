@@ -284,6 +284,9 @@ mod tests {
     fn backtrace_returns_captured_backtrace() {
         let backtrace_string = b().unwrap_err().backtrace().to_string();
         let lines: Vec<_> = backtrace_string.lines().collect();
+        // We use the presence of debug assertions as a proxy to detect whether this is a release
+        // build or not, since this affects the produced backtrace. This will break if debug
+        // assertions are enabled for release builds.
         #[cfg(debug_assertions)]
         {
             assert_eq!(
