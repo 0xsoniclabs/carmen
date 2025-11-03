@@ -157,18 +157,30 @@ pub fn process_update(
                 }
                 vc.committed_used_slots[i / 8] |= 1 << (i % 8);
             }
+            let prev_c1 = vc.c1;
+            let prev_c2 = vc.c2;
             if use_batch_update {
                 vc.c1 = vc.c1 + Commitment::new(&deltas_c1);
                 vc.c2 = vc.c2 + Commitment::new(&deltas_c2);
             }
             vc.committed_values.fill(Value::default());
-            let combined = [
-                Scalar::from(1),
-                Scalar::from_le_bytes(&stem),
-                vc.c1.to_scalar(),
-                vc.c2.to_scalar(),
-            ];
-            vc.commitment = Commitment::new(&combined);
+            if vc.commitment == Commitment::default() {
+                let combined = [
+                    Scalar::from(1),
+                    Scalar::from_le_bytes(&stem),
+                    vc.c1.to_scalar(),
+                    vc.c2.to_scalar(),
+                ];
+                vc.commitment = Commitment::new(&combined);
+            } else {
+                let deltas = [
+                    Scalar::zero(),
+                    Scalar::zero(),
+                    vc.c1.to_scalar() - prev_c1.to_scalar(),
+                    vc.c2.to_scalar() - prev_c2.to_scalar(),
+                ];
+                vc.commitment = vc.commitment + Commitment::new(&deltas);
+            }
         }
         VerkleCommitmentInput::Inner(children) => {
             let _span = tracy_client::span!("update inner");
