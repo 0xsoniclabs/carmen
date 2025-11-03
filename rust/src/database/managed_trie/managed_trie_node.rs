@@ -111,6 +111,7 @@ pub trait ManagedTrieNode {
     }
 
     /// Returns the commitment associated with this node.
+    #[expect(unused)]
     fn get_commitment(&self) -> Self::Commitment;
 
     /// Sets the commitment associated with this node.
