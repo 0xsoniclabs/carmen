@@ -36,7 +36,18 @@ type Value [32]byte
 // For an overview of the Verkle trie structure, see
 // https://blog.ethereum.org/2021/12/02/verkle-tree-structure
 type Trie struct {
-	root node
+	config TrieConfig
+	root   node
+}
+
+type TrieConfig struct {
+	ParallelCommit bool
+}
+
+func NewTrie(config TrieConfig) *Trie {
+	return &Trie{
+		config: config,
+	}
 }
 
 // Get retrieves the value associated with the given key from the trie. All keys
@@ -62,8 +73,10 @@ func (t *Trie) Commit() commit.Commitment {
 	if t.root == nil {
 		return commit.Identity()
 	}
-	return t.commit_parallel()
-	//return t.commit_sequential()
+	if t.config.ParallelCommit {
+		return t.commit_parallel()
+	}
+	return t.commit_sequential()
 }
 
 func (t *Trie) commit_sequential() commit.Commitment {

@@ -16,6 +16,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -33,9 +34,12 @@ type State struct {
 }
 
 // NewState creates a new, empty in-memory state instance.
-func NewState(_ state.Parameters) (state.State, error) {
+func NewState(params state.Parameters) (state.State, error) {
+	config := trie.TrieConfig{
+		ParallelCommit: strings.HasSuffix(string(params.Variant), "-par"),
+	}
 	return &State{
-		trie: &trie.Trie{},
+		trie: trie.NewTrie(config),
 	}, nil
 }
 

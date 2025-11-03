@@ -28,6 +28,16 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Schema:  6,
 		Archive: state.NoArchive,
 	}: vtmemory.NewState,
+	{
+		Variant: "go-memory-seq",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: vtmemory.NewState,
+	{
+		Variant: "go-memory-par",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: vtmemory.NewState,
 }
 
 func init() {
