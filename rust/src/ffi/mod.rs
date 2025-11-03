@@ -29,13 +29,14 @@ mod bindings {
                     | crate::storage::Error::Frozen
                     | crate::storage::Error::IdNodeTypeMismatch
                     | crate::storage::Error::InvalidId
-                    | crate::storage::Error::Checkpoint,
+                    | crate::storage::Error::Checkpoint
+                    | crate::storage::Error::Internal(_),
                 )
                 | Error::IllegalConcurrentOperation(_)
                 | Error::CorruptedState(_) => Result_kResult_InternalError,
-                Error::Storage(crate::storage::Error::DatabaseCorruption) => {
-                    Result_kResult_CorruptedDatabase
-                }
+                Error::Storage(
+                    crate::storage::Error::DatabaseCorruption | crate::storage::Error::DirtyOpen,
+                ) => Result_kResult_CorruptedDatabase,
                 Error::Storage(crate::storage::Error::Io(_)) => Result_kResult_IOError,
             }
         }

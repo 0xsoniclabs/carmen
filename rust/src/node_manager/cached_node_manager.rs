@@ -512,6 +512,8 @@ mod tests {
             ) -> BTResult<(), storage::Error>;
 
             fn delete(&self, _id: <Self as Storage>::Id) -> BTResult<(), storage::Error>;
+
+            fn close(self) -> BTResult<(), storage::Error>;
         }
 
     }

@@ -48,15 +48,6 @@ where
     flush_workers: FlushWorkers,
 }
 
-impl<S> StorageWithFlushBuffer<S>
-where
-    S: Storage,
-{
-    pub fn shutdown_flush_workers(self) -> BTResult<(), Error> {
-        self.flush_workers.shutdown()
-    }
-}
-
 impl<S> Storage for StorageWithFlushBuffer<S>
 where
     S: Storage + 'static,
@@ -106,6 +97,25 @@ where
         self.flush_buffer.insert(id, Op::Delete);
         Ok(())
     }
+
+    fn close(self) -> BTResult<(), Error> {
+        // Busy loop until all flush workers are done.
+        // Because there are no concurrent operations, len() might only return a number that is
+        // higher that the actual number of items (in case an element of the flush buffer
+        // was removed by a flush worker while iterating over the shards). This is however not a
+        // problem because we will wait a little bit longer.
+        while !self.flush_buffer.is_empty() {
+            std::hint::spin_loop();
+        }
+        self.flush_workers.shutdown()?;
+        let storage = Arc::into_inner(self.storage).ok_or_else(|| {
+            Error::Internal(
+                "storage reference count is not 1 although flush workers are shut down".into(),
+            )
+        })?;
+        storage.close()?;
+        Ok(())
+    }
 }
 
 impl<S> Checkpointable for StorageWithFlushBuffer<S>
@@ -151,7 +161,7 @@ impl FlushWorkers {
 
     /// Creates a new set of flush workers that will process items from the flush buffer and
     /// write them to the underlying storage layer.
-    pub fn new<S>(flush_buffer: &Arc<FlushBuffer<S::Id, S::Item>>, storage: &Arc<S>) -> Self
+    fn new<S>(flush_buffer: &Arc<FlushBuffer<S::Id, S::Item>>, storage: &Arc<S>) -> Self
     where
         S: Storage + Send + Sync + 'static,
         S::Id: Eq + std::hash::Hash + Send + Sync,
@@ -219,7 +229,7 @@ impl FlushWorkers {
         }
     }
 
-    pub fn shutdown(self) -> BTResult<(), Error> {
+    fn shutdown(self) -> BTResult<(), Error> {
         self.shutdown.store(true, Ordering::SeqCst);
         for worker in self.workers {
             worker.join().unwrap()?;
@@ -442,6 +452,23 @@ mod tests {
     }
 
     #[test]
+    fn close_calls_close_on_underlying_storage_layer() {
+        let mut mock_storage = MockStorage::new();
+        mock_storage.expect_close().times(1).returning(|| Ok(()));
+
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(DashMap::new()),
+            storage: Arc::new(mock_storage),
+            flush_workers: FlushWorkers {
+                workers: Vec::new(),
+                shutdown: Arc::new(AtomicBool::new(false)),
+            },
+        };
+
+        storage_with_flush_buffer.close().unwrap();
+    }
+
+    #[test]
     fn checkpoint_waits_until_buffer_is_empty_then_calls_checkpoint_on_underlying_storage_layer() {
         let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
@@ -485,33 +512,6 @@ mod tests {
         // flush should call flush on the underlying storage layer and return
         assert!(thread.is_finished());
         assert!(thread.join().is_ok());
-    }
-
-    #[test]
-    fn shutdown_flush_workers_calls_shutdown_on_flush_workers() {
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let shutdown_received = Arc::new(AtomicUsize::new(0));
-        let workers = vec![{
-            let shutdown = shutdown.clone();
-            let shutdown_received = shutdown_received.clone();
-            std::thread::spawn(move || {
-                while !shutdown.load(Ordering::SeqCst) {
-                    std::thread::yield_now(); // Simulate worker doing work
-                }
-                shutdown_received.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-        }];
-
-        let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(DashMap::new()),
-            storage: Arc::new(MockStorage::new()),
-            flush_workers: FlushWorkers { workers, shutdown },
-        };
-
-        assert_eq!(shutdown_received.load(Ordering::SeqCst), 0);
-        storage_with_flush_buffer.shutdown_flush_workers().unwrap();
-        assert_eq!(shutdown_received.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -611,6 +611,8 @@ mod tests {
             fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
 
             fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+
+            fn close(self) -> BTResult<(), Error>;
         }
     }
 }

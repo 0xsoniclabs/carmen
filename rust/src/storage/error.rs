@@ -25,8 +25,12 @@ pub enum Error {
     Checkpoint,
     #[error("database corrupted")]
     DatabaseCorruption,
+    #[error("opening the database failed: the database was not properly closed")]
+    DirtyOpen,
     #[error("IO error in storage: {0}")]
     Io(#[from] std::io::Error),
+    #[error("internal logic error: {0}")]
+    Internal(String),
 }
 
 impl PartialEq for Error {
@@ -37,7 +41,9 @@ impl PartialEq for Error {
             | (Error::IdNodeTypeMismatch, Error::IdNodeTypeMismatch)
             | (Error::InvalidId, Error::InvalidId)
             | (Error::Checkpoint, Error::Checkpoint)
+            | (Error::DirtyOpen, Error::DirtyOpen)
             | (Error::DatabaseCorruption, Error::DatabaseCorruption) => true,
+            (Error::Internal(a), Error::Internal(b)) => a == b,
             (Error::Io(a), Error::Io(b)) => {
                 a.kind() == b.kind()
                     && a.raw_os_error() == b.raw_os_error()
@@ -50,7 +56,9 @@ impl PartialEq for Error {
                 | Error::InvalidId
                 | Error::Checkpoint
                 | Error::DatabaseCorruption
-                | Error::Io(_),
+                | Error::DirtyOpen
+                | Error::Io(_)
+                | Error::Internal(_),
                 _,
             ) => false,
         }

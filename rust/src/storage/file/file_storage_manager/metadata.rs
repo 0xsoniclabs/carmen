@@ -12,14 +12,14 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::storage::file::from_to_file::FromToFile;
 
-/// Data stored in the checkpoint file.
+/// Metadata stored in the metadata or checkpoint metadata file.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
-pub struct CheckpointData {
+pub struct Metadata {
     /// The checkpoint number.
     pub checkpoint_number: u64,
     /// The number of root IDs that are part of this checkpoint.
     pub root_id_count: u64,
 }
 
-impl FromToFile for CheckpointData {}
+impl FromToFile for Metadata {}

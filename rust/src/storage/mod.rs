@@ -48,6 +48,9 @@ pub trait Storage: Send + Sync {
     /// Deletes the item with the given ID.
     /// The ID may be reused in the future.
     fn delete(&self, id: Self::Id) -> BTResult<(), Error>;
+
+    /// Closes the storage, flushing any pending changes to disk.
+    fn close(self) -> BTResult<(), Error>;
 }
 
 /// An entity which can create durable checkpoints of its state.

@@ -10,7 +10,7 @@
 
 use derive_deftly::define_derive_deftly;
 
-pub mod checkpoint_data;
+pub mod metadata;
 pub mod root_ids_file;
 
 define_derive_deftly! {
@@ -84,8 +84,10 @@ where
             pub const ${paste ${shouty_snake_case $vname} _DIR}: &str = std::stringify!(${snake_case $vname});
         }}
     )
-    pub const COMMITTED_CHECKPOINT_FILE: &str = "committed_checkpoint.bin";
-    pub const PREPARED_CHECKPOINT_FILE: &str = "prepared_checkpoint.bin";
+    pub const DB_DIRTY_FILE: &str = "db_dirty.bin";
+    pub const METADATA_FILE: &str = "checkpoint.bin";
+    pub const COMMITTED_METADATA_FILE: &str = "committed_checkpoint.bin";
+    pub const PREPARED_METADATA_FILE: &str = "prepared_checkpoint.bin";
     pub const ROOT_IDS_FILE: &str = "root_ids.bin";
 }
 
@@ -100,8 +102,14 @@ where
     fn open(dir: &::std::path::Path) -> $crate::error::BTResult<Self, $crate::storage::Error> {
         std::fs::create_dir_all(dir)?;
 
-        let checkpoint_data =
-            <$crate::storage::file::file_storage_manager::checkpoint_data::CheckpointData as $crate::storage::file::FromToFile>::read_or_init(dir.join(Self::COMMITTED_CHECKPOINT_FILE))?;
+        if ::std::fs::exists(dir.join(Self::DB_DIRTY_FILE))? {
+            return Err($crate::storage::Error::DirtyOpen.into());
+        }
+
+        ::std::fs::File::create(dir.join(Self::DB_DIRTY_FILE))?;
+
+        let metadata =
+            <$crate::storage::file::file_storage_manager::metadata::Metadata as $crate::storage::file::FromToFile>::read_or_init(dir.join(Self::METADATA_FILE))?;
 
         $(
             ${if not(approx_equal($vname, Empty)) {
@@ -110,17 +118,17 @@ where
         )
 
         let root_ids_file =
-            $crate::storage::file::file_storage_manager::root_ids_file::RootIdsFile::open(dir.join(Self::ROOT_IDS_FILE), checkpoint_data.root_id_count)?;
+            $crate::storage::file::file_storage_manager::root_ids_file::RootIdsFile::open(dir.join(Self::ROOT_IDS_FILE), metadata.root_id_count)?;
 
         $(
             ${if not(approx_equal($vname, Empty)) {
-                ${snake_case $vname}.ensure(checkpoint_data.checkpoint_number)?;
+                ${snake_case $vname}.ensure(metadata.checkpoint_number)?;
             }}
         )
 
         Ok(Self {
             dir: dir.to_path_buf(),
-            checkpoint: $crate::sync::atomic::AtomicU64::new(checkpoint_data.checkpoint_number),
+            checkpoint: $crate::sync::atomic::AtomicU64::new(metadata.checkpoint_number),
             $(
                 ${if not(approx_equal($vname, Empty)) {
                     ${snake_case $vname},
@@ -183,6 +191,23 @@ where
             )
         }
     }
+
+    fn close(self) -> $crate::error::BTResult<(), $crate::storage::Error> {
+        $(
+            ${if not(approx_equal($vname, Empty)) {
+                self.${snake_case $vname}.close()?;
+            }}
+        )
+        <$crate::storage::file::file_storage_manager::metadata::Metadata as $crate::storage::file::FromToFile>::write(
+            &$crate::storage::file::file_storage_manager::metadata::Metadata {
+                checkpoint_number: self.checkpoint.load(::std::sync::atomic::Ordering::Acquire),
+                root_id_count: self.root_ids_file.count(),
+            },
+            self.dir.join(Self::METADATA_FILE)
+        )?;
+        ::std::fs::remove_file(self.dir.join(Self::DB_DIRTY_FILE))?;
+        Ok(())
+    }
 }
 
 impl<$STORAGE_GENERICS> $crate::storage::Checkpointable for $MANAGER_TYPE<$STORAGE_GENERICS>
@@ -208,15 +233,15 @@ where
             }
         }
         $crate::storage::file::FromToFile::write(
-            &$crate::storage::file::file_storage_manager::checkpoint_data::CheckpointData {
+            &$crate::storage::file::file_storage_manager::metadata::Metadata {
                 checkpoint_number: new_checkpoint,
                 root_id_count: self.root_ids_file.count(),
             },
-            self.dir.join(Self::PREPARED_CHECKPOINT_FILE)
+            self.dir.join(Self::PREPARED_METADATA_FILE)
         )?;
         ::std::fs::rename(
-            self.dir.join(Self::PREPARED_CHECKPOINT_FILE),
-            self.dir.join(Self::COMMITTED_CHECKPOINT_FILE),
+            self.dir.join(Self::PREPARED_METADATA_FILE),
+            self.dir.join(Self::COMMITTED_METADATA_FILE),
         )?;
         for participant in participants.iter() {
             participant.commit(new_checkpoint)?;
@@ -248,7 +273,7 @@ pub use tests::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeType};
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::fs::{self, File};
 
     use derive_deftly::Deftly;
     use mockall::{Sequence, predicate::eq};
@@ -260,9 +285,7 @@ mod tests {
             CheckpointParticipant, Checkpointable, Error, Storage,
             file::{
                 FromToFile, NodeFileStorage, SeekFile,
-                file_storage_manager::{
-                    checkpoint_data::CheckpointData, root_ids_file::RootIdsFile,
-                },
+                file_storage_manager::{metadata::Metadata, root_ids_file::RootIdsFile},
             },
         },
         sync::atomic::{AtomicU64, Ordering},
@@ -271,7 +294,7 @@ mod tests {
     };
 
     #[test]
-    fn open_creates_directory_and_calls_open_on_all_storages() {
+    fn open_creates_directory_and_calls_open_on_all_storages_and_creates_db_dirty_file() {
         type FileStorageManager = TestNodeFileStorageManager<
             NodeFileStorage<NonEmpty1TestNode, SeekFile>,
             NodeFileStorage<NonEmpty2TestNode, SeekFile>,
@@ -287,7 +310,7 @@ mod tests {
         let files = [
             NodeFileStorage::<NonEmpty1TestNode, SeekFile>::NODE_STORE_FILE,
             NodeFileStorage::<NonEmpty1TestNode, SeekFile>::REUSE_LIST_FILE,
-            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::COMMITTED_METADATA_FILE,
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::METADATA_FILE,
         ];
         for sub_dir in &sub_dirs {
             assert!(fs::exists(dir.join(sub_dir)).unwrap());
@@ -295,6 +318,7 @@ mod tests {
                 assert!(fs::exists(dir.join(sub_dir).join(file)).unwrap());
             }
         }
+        assert!(fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
     }
 
     #[test]
@@ -312,12 +336,29 @@ mod tests {
         for sub_dir in &sub_dirs {
             fs::create_dir_all(dir.join(sub_dir)).unwrap();
             // because we are not writing any nodes, the node type does not matter
-            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::create_files_for_nodes(&dir, &[], &[])
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::create_files(&dir, &[], 0, &[], 0)
                 .unwrap();
         }
 
         let storage = FileStorageManager::open(&dir);
         assert!(storage.is_ok());
+    }
+
+    #[test]
+    fn open_fails_if_db_dirty_flag_file_exists() {
+        type FileStorageManager = TestNodeFileStorageManager<
+            MockStorage<NonEmpty1TestNode>,
+            MockStorage<NonEmpty2TestNode>,
+        >;
+
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        File::create(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap();
+
+        assert!(matches!(
+            FileStorageManager::open(&dir).map_err(BTError::into_inner),
+            Err(Error::DirtyOpen)
+        ));
     }
 
     #[test]
@@ -342,11 +383,11 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let mut storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(0),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         // TestNode::Empty
@@ -398,11 +439,11 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let mut storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(0),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         // TestNode::Empty
@@ -451,11 +492,11 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let mut storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(0),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         // TestNode::Empty
@@ -498,11 +539,11 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(0),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty2);
@@ -519,11 +560,11 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let mut storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(0),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         // TestNode::Empty
@@ -556,17 +597,67 @@ mod tests {
     }
 
     #[test]
+    fn close_calls_close_on_all_storages_and_writes_metadata_and_removes_db_dirty_file() {
+        type TestNodeFileStorageManager = super::TestNodeFileStorageManager<
+            MockStorage<NonEmpty1TestNode>,
+            MockStorage<NonEmpty2TestNode>,
+        >;
+
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let mut storage = TestNodeFileStorageManager {
+            dir: dir.to_path_buf(),
+            checkpoint: AtomicU64::new(0),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::open(dir.join("root_ids"), 0).unwrap(),
+        };
+
+        File::create(dir.join(TestNodeFileStorageManager::DB_DIRTY_FILE)).unwrap();
+
+        storage
+            .non_empty1
+            .expect_close()
+            .returning(|| Ok(()))
+            .times(1);
+        storage
+            .non_empty2
+            .expect_close()
+            .returning(|| Ok(()))
+            .times(1);
+        storage
+            .root_ids_file
+            .set(
+                0,
+                TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty),
+            )
+            .unwrap();
+
+        storage.close().unwrap();
+
+        assert_eq!(
+            fs::read(dir.join(TestNodeFileStorageManager::METADATA_FILE)).unwrap(),
+            Metadata {
+                checkpoint_number: 0,
+                root_id_count: 1,
+            }
+            .as_bytes()
+        );
+        assert!(!fs::exists(dir.join(TestNodeFileStorageManager::DB_DIRTY_FILE)).unwrap());
+    }
+
+    #[test]
     fn checkpoint_follows_correct_sequence_for_two_phase_commit() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let old_checkpoint = 1;
 
         let mut storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(old_checkpoint),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
@@ -599,13 +690,13 @@ mod tests {
         assert!(storage.checkpoint().is_ok());
 
         // The prepared checkpoint file should not exist after a successful checkpoint.
-        assert!(!fs::exists(dir.path().join(
-            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
+        assert!(!fs::exists(dir.join(
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
         )).unwrap());
         // The committed checkpoint file should exist and contain the new checkpoint.
         assert_eq!(
-            CheckpointData::read_or_init(dir.path().join(
-                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+            Metadata::read_or_init(dir.join(
+                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
             )).unwrap().checkpoint_number,
             old_checkpoint + 1
         );
@@ -621,20 +712,20 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let old_checkpoint = 1;
-        let old_checkpoint_data = CheckpointData {
+        let old_metadata = Metadata {
             checkpoint_number: old_checkpoint,
             root_id_count: 0,
         };
-        old_checkpoint_data.write(dir.path().join(
-            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+        old_metadata.write(dir.join(
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
         )).unwrap();
 
         let mut storage = TestNodeFileStorageManager {
-            dir: dir.path().to_path_buf(),
+            dir: dir.to_path_buf(),
             checkpoint: AtomicU64::new(old_checkpoint),
             non_empty1: MockStorage::new(),
             non_empty2: MockStorage::new(),
-            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.path().join("root_ids"), 0).unwrap(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.join("root_ids"), 0).unwrap(),
         };
 
         let mut seq = Sequence::new();
@@ -663,13 +754,13 @@ mod tests {
         ));
 
         // The prepared checkpoint file should not exist after a failed checkpoint.
-        assert!(!fs::exists(dir.path().join(
-            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_CHECKPOINT_FILE
+        assert!(!fs::exists(dir.join(
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
         )).unwrap());
         // The committed checkpoint file should exist and contain the old checkpoint.
         assert_eq!(
-            CheckpointData::read_or_init(dir.path().join(
-                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_CHECKPOINT_FILE,
+            Metadata::read_or_init(dir.join(
+                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
             )).unwrap().checkpoint_number,
             old_checkpoint
         );
@@ -705,6 +796,8 @@ mod tests {
             fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
 
             fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+
+            fn close(self) -> BTResult<(), Error>;
         }
     }
 
