@@ -145,13 +145,6 @@ impl Commitment {
         Scalar::from(self.as_element().map_to_scalar_field())
     }
 
-    pub fn batch_to_scalar(commitments: &[Commitment]) -> Vec<Scalar> {
-        let _span = tracy_client::span!("Commitment::batch_to_scalar");
-        let elements: Vec<_> = commitments.iter().map(Self::as_element).collect();
-        let mapped = Element::batch_map_to_scalar_field(&elements);
-        mapped.into_iter().map(Scalar::from).collect()
-    }
-
     /// Returns a hash corresponding to the commitment.
     /// Used for computing keys during Verkle trie state embedding.
     pub fn hash(&self) -> [u8; 32] {
