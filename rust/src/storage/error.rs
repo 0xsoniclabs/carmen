@@ -23,7 +23,7 @@ pub enum Error {
     InvalidId,
     #[error("checkpoint creation failed")]
     Checkpoint,
-    #[error("invalid file size")]
+    #[error("database corrupted")]
     DatabaseCorruption,
     #[error("IO error in storage: {0}")]
     Io(#[from] std::io::Error),

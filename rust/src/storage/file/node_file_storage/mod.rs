@@ -21,7 +21,7 @@ use crate::{
         file::{FileBackend, FromToFile},
     },
     sync::{
-        Mutex, RwLock,
+        Mutex,
         atomic::{AtomicU64, Ordering},
     },
     types::DiskRepresentable,
@@ -39,12 +39,12 @@ use reuse_list_file::ReuseListFile;
 #[derive(Debug)]
 pub struct NodeFileStorage<T, F> {
     checkpoint: AtomicU64,
-    metadata: RwLock<NodeFileStorageMetadata>,
-    commited_metadata_path: PathBuf,
+    committed_metadata_path: PathBuf,
     prepared_metadata_path: PathBuf,
 
     node_file: F,
     next_idx: AtomicU64,
+    frozen_nodes: AtomicU64,
 
     reuse_list_file: Mutex<ReuseListFile>,
 
@@ -79,9 +79,10 @@ where
         let reuse_list_file = ReuseListFile::open(
             dir.join(Self::REUSE_LIST_FILE),
             metadata.frozen_reuse_indices,
+            metadata.frozen_reuse_indices,
         )?;
         if reuse_list_file
-            .all_indices()
+            .frozen_indices()
             .any(|&idx| idx >= metadata.frozen_nodes)
         {
             return Err(Error::DatabaseCorruption.into());
@@ -102,12 +103,12 @@ where
 
         Ok(Self {
             checkpoint: AtomicU64::new(metadata.checkpoint),
-            metadata: RwLock::new(metadata),
-            commited_metadata_path: dir.join(Self::COMMITTED_METADATA_FILE),
+            committed_metadata_path: dir.join(Self::COMMITTED_METADATA_FILE),
             prepared_metadata_path: dir.join(Self::PREPARED_METADATA_FILE),
 
             node_file,
             next_idx: AtomicU64::new(metadata.frozen_nodes),
+            frozen_nodes: AtomicU64::new(metadata.frozen_nodes),
 
             reuse_list_file: Mutex::new(reuse_list_file),
 
@@ -139,7 +140,7 @@ where
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
             return Err(Error::NotFound.into());
-        } else if idx < self.metadata.read().unwrap().frozen_nodes {
+        } else if idx < self.frozen_nodes.load(Ordering::Relaxed) {
             return Err(Error::Frozen.into());
         }
         let offset = idx * T::size() as u64;
@@ -153,7 +154,7 @@ where
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
             Err(Error::NotFound.into())
-        } else if idx < self.metadata.read().unwrap().frozen_nodes {
+        } else if idx < self.frozen_nodes.load(Ordering::Relaxed) {
             Err(Error::Frozen.into())
         } else {
             self.reuse_list_file.lock().unwrap().push(idx);
@@ -174,28 +175,29 @@ where
     }
 
     fn prepare(&self, checkpoint: u64) -> BTResult<(), Error> {
-        if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
+        if checkpoint != self.checkpoint.load(Ordering::Relaxed) + 1 {
             return Err(Error::Checkpoint.into());
         }
 
         self.node_file.flush()?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
-        reuse_list_file.freeze_temporarily_and_write_to_disk()?;
-        let frozen_reuse_indices = reuse_list_file.frozen_count();
+        reuse_list_file.write_to_disk()?;
+        reuse_list_file.freeze_temporarily();
+        let frozen_reuse_indices = reuse_list_file.frozen_count() as u64;
 
-        let new = NodeFileStorageMetadata {
+        let frozen_nodes = self.next_idx.load(Ordering::Relaxed);
+        let prepared_metadata = NodeFileStorageMetadata {
             checkpoint,
-            frozen_nodes: self.next_idx.load(Ordering::Acquire),
-            frozen_reuse_indices: frozen_reuse_indices as u64,
+            frozen_nodes,
+            frozen_reuse_indices,
         };
-        let mut metadata = self.metadata.write().unwrap();
-        *metadata = new;
-        metadata.write(&self.prepared_metadata_path)?;
+        self.frozen_nodes.store(frozen_nodes, Ordering::Relaxed);
+        prepared_metadata.write(&self.prepared_metadata_path)?;
         Ok(())
     }
 
     fn commit(&self, checkpoint: u64) -> BTResult<(), Error> {
-        if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
+        if checkpoint != self.checkpoint.load(Ordering::Relaxed) + 1 {
             return Err(Error::Checkpoint.into());
         }
         let prepared_metadata =
@@ -204,24 +206,25 @@ where
             return Err(Error::Checkpoint.into());
         }
         self.reuse_list_file.lock().unwrap().freeze_permanently();
-        fs::rename(&self.prepared_metadata_path, &self.commited_metadata_path)?;
-        self.checkpoint.store(checkpoint, Ordering::Release);
+        fs::rename(&self.prepared_metadata_path, &self.committed_metadata_path)?;
+        self.checkpoint.store(checkpoint, Ordering::Relaxed);
         Ok(())
     }
 
     fn abort(&self, checkpoint: u64) -> BTResult<(), Error> {
-        if checkpoint != self.checkpoint.load(Ordering::Acquire) + 1 {
+        if checkpoint != self.checkpoint.load(Ordering::Relaxed) + 1 {
             return Err(Error::Checkpoint.into());
         }
         fs::remove_file(&self.prepared_metadata_path)?;
         let committed_metadata =
-            NodeFileStorageMetadata::read_or_init(&self.commited_metadata_path)?;
+            NodeFileStorageMetadata::read_or_init(&self.committed_metadata_path)?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
         reuse_list_file.unfreeze_temp();
         if reuse_list_file.frozen_count() != committed_metadata.frozen_reuse_indices as usize {
             return Err(Error::Checkpoint.into());
         }
-        *self.metadata.write().unwrap() = committed_metadata;
+        self.frozen_nodes
+            .store(committed_metadata.frozen_nodes, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -441,7 +444,7 @@ mod tests {
 
         let storage = NodeFileStorage::open(&dir).unwrap();
         storage.next_idx.store(1, Ordering::Relaxed);
-        storage.metadata.write().unwrap().frozen_nodes = 1;
+        storage.frozen_nodes.store(1, Ordering::Relaxed);
 
         assert!(matches!(
             storage.set(0, &[0; 32]).map_err(BTError::into_inner),
@@ -500,7 +503,7 @@ mod tests {
 
         let storage = NodeFileStorage::open(&dir).unwrap();
         storage.next_idx.store(1, Ordering::Relaxed);
-        storage.metadata.write().unwrap().frozen_nodes = 1;
+        storage.frozen_nodes.store(1, Ordering::Relaxed);
         assert!(matches!(
             storage.delete(0).map_err(BTError::into_inner),
             Err(Error::Frozen)
@@ -580,7 +583,7 @@ mod tests {
         write_reuse_list(&dir, &[0]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let expected_new_metadata = NodeFileStorageMetadata {
+        let expected_prepared_metadata = NodeFileStorageMetadata {
             checkpoint: 1,
             frozen_nodes: 2,
             frozen_reuse_indices: 2,
@@ -589,7 +592,7 @@ mod tests {
         let storage = NodeFileStorage::open(dir.path()).unwrap();
 
         // add one new node and one new reuse index
-        storage.next_idx.store(2, Ordering::Release);
+        storage.next_idx.store(2, Ordering::Relaxed);
         storage
             .node_file
             .write_all_at(&[1; 32], size_of::<TestNode>() as u64)
@@ -611,15 +614,18 @@ mod tests {
         let cached_file = storage.reuse_list_file.lock().unwrap();
         assert_eq!(cached_file.frozen_count(), 2);
 
+        // check that in-memory frozen node count has been updated
+        assert_eq!(
+            storage.frozen_nodes.load(Ordering::Relaxed),
+            expected_prepared_metadata.frozen_nodes
+        );
+
         // check that prepared metadata has been written
         let prepared_metadata = NodeFileStorageMetadata::read_or_init(
             dir.join(NodeFileStorage::PREPARED_METADATA_FILE),
         )
         .unwrap();
-        assert_eq!(prepared_metadata, expected_new_metadata);
-
-        // check that in-memory metadata has been updated
-        assert_eq!(*storage.metadata.read().unwrap(), expected_new_metadata);
+        assert_eq!(prepared_metadata, expected_prepared_metadata);
     }
 
     #[test]
@@ -740,7 +746,7 @@ mod tests {
     fn abort_removes_prepared_metadata_and_restores_committed_metadata() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let old_metadata = NodeFileStorageMetadata {
+        let committed_metadata = NodeFileStorageMetadata {
             checkpoint: 1,
             frozen_nodes: 2,
             frozen_reuse_indices: 1,
@@ -748,9 +754,9 @@ mod tests {
 
         write_metadata(
             &dir,
-            old_metadata.checkpoint,
-            old_metadata.frozen_nodes,
-            old_metadata.frozen_reuse_indices,
+            committed_metadata.checkpoint,
+            committed_metadata.frozen_nodes,
+            committed_metadata.frozen_reuse_indices,
         );
         write_reuse_list(&dir, &[0, 2]); // one frozen + one new
         write_nodes(&dir, &[[0; 32], [1; 32], [2; 32], [3; 32]]); // two frozen + two new
@@ -764,45 +770,48 @@ mod tests {
         let mut opts = OpenOptions::new();
         opts.read(true).write(true);
         let storage = NodeFileStorage {
-            commited_metadata_path: dir.join(NodeFileStorage::COMMITTED_METADATA_FILE),
+            committed_metadata_path: dir.join(NodeFileStorage::COMMITTED_METADATA_FILE),
             prepared_metadata_path: dir.join(NodeFileStorage::PREPARED_METADATA_FILE),
             node_file: SeekFile::open(dir.join(NodeFileStorage::NODE_STORE_FILE).as_path(), opts)
                 .unwrap(),
             reuse_list_file: Mutex::new(
-                ReuseListFile::open(dir.join(NodeFileStorage::REUSE_LIST_FILE), 1).unwrap(),
+                ReuseListFile::open(dir.join(NodeFileStorage::REUSE_LIST_FILE), 1, 1).unwrap(),
             ),
             checkpoint: AtomicU64::new(1),
-            metadata: RwLock::new(prepared_metadata),
             next_idx: AtomicU64::new(4),
+            frozen_nodes: AtomicU64::new(4),
             _node_type: PhantomData,
         };
 
-        storage.reuse_list_file.lock().unwrap().push(2);
-        storage
-            .reuse_list_file
-            .lock()
-            .unwrap()
-            .freeze_temporarily_and_write_to_disk()
-            .unwrap();
+        // simulate prepared state
+        {
+            let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
+            reuse_list_file.push(2);
+            reuse_list_file.write_to_disk().unwrap();
+            reuse_list_file.freeze_temporarily();
 
-        fs::write(
-            dir.join(NodeFileStorage::PREPARED_METADATA_FILE),
-            prepared_metadata.as_bytes(),
-        )
-        .unwrap();
+            fs::write(
+                dir.join(NodeFileStorage::PREPARED_METADATA_FILE),
+                prepared_metadata.as_bytes(),
+            )
+            .unwrap();
+        }
 
         storage.abort(2).unwrap();
 
         assert!(!fs::exists(dir.join(NodeFileStorage::PREPARED_METADATA_FILE)).unwrap());
         assert_eq!(
             fs::read(dir.join(NodeFileStorage::COMMITTED_METADATA_FILE)).unwrap(),
-            old_metadata.as_bytes()
+            committed_metadata.as_bytes()
         );
         assert_eq!(
             storage.reuse_list_file.lock().unwrap().frozen_count(),
-            old_metadata.frozen_reuse_indices as usize
+            committed_metadata.frozen_reuse_indices as usize
         );
-        assert_eq!(*storage.metadata.read().unwrap(), old_metadata);
+        assert_eq!(
+            storage.frozen_nodes.load(Ordering::Relaxed),
+            committed_metadata.frozen_nodes
+        );
         // Committed data remains available
         assert_eq!(storage.get(1).unwrap(), [1; 32]);
         // Uncommitted data becomes modifiable again
