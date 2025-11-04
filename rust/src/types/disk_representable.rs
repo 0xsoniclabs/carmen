@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, mem};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -30,6 +30,9 @@ pub trait DiskRepresentable {
     /// depending on whether the disk representations is the same as the in-memory representation or
     /// needed to be serialized).
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]>;
+
+    /// Returns the size of the disk representation in bytes.
+    fn size() -> usize;
 }
 
 impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
@@ -43,6 +46,10 @@ impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.as_bytes())
+    }
+
+    fn size() -> usize {
+        mem::size_of::<Self>()
     }
 }
 

@@ -116,8 +116,8 @@ where
     }
 
     fn get(&self, idx: Self::Id) -> Result<Self::Item, Error> {
-        let offset = idx * size_of::<Self::Item>() as u64;
-        if self.node_file.len()? < offset + size_of::<T>() as u64
+        let offset = idx * T::size() as u64;
+        if self.node_file.len()? < offset + T::size() as u64
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
             return Err(Error::NotFound);
@@ -142,8 +142,9 @@ where
         } else if idx < self.metadata.read().unwrap().frozen_nodes {
             return Err(Error::Frozen);
         }
-        let offset = idx * size_of::<Self::Item>() as u64;
-        self.node_file.write_all_at(node.to_disk_repr(), offset)?;
+        let offset = idx * T::size() as u64;
+        self.node_file
+            .write_all_at(node.to_disk_repr().as_ref(), offset)?;
         Ok(())
     }
 
