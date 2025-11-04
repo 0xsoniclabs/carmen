@@ -129,25 +129,11 @@ impl<const P: usize, F: FileBackend, const D: bool> MultiPageCachedFile<P, F, D>
 
     /// Loads the given page at the given page index from the underlying file.
     fn load_page(&self, page: &mut Page, page_index: u64) -> BTResult<(), std::io::Error> {
-        let file_len = self.file_len.load(Ordering::Relaxed);
-
-        if D {
-            if self.file_len.load(Ordering::Acquire) < (page_index + 1) * Page::SIZE as u64 {
-                page.fill(0);
-            } else {
-                self.file
-                    .read_exact_at(page, page_index * Page::SIZE as u64)?;
-            }
+        if self.file_len.load(Ordering::Acquire) < (page_index + 1) * Page::SIZE as u64 {
+            page.fill(0);
         } else {
-            // Without O_DIRECT, the file size is not padded and we may read a partial page.
-            let len = cmp::min(
-                file_len.saturating_sub(page_index * Page::SIZE as u64) as usize,
-                Page::SIZE,
-            );
             self.file
-                .read_exact_at(&mut page[..len], page_index * Page::SIZE as u64)?;
-            // In case we read a partial page, set the remainder to zero.
-            page[len..].fill(0);
+                .read_exact_at(page, page_index * Page::SIZE as u64)?;
         }
 
         Ok(())
