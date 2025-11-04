@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn accessing_non_cached_page_blocks_page_becomes_available() {
+    fn accessing_non_cached_page_blocks_until_page_becomes_available() {
         let file = MockFileBackend::new();
         let file = MultiPageCachedFile::<_, _, true> {
             file,
@@ -258,22 +258,23 @@ mod tests {
         // Locking the second cached page should succeed immediately.
         assert!(file.change_page(Page::SIZE as u64).is_ok());
 
-        // Locking the first page should block until the guard to it is dropped.
+        // Locking the third page should block until the guard to page one is dropped,
+        // since it occupies the same cache slot.
         let handle = std::thread::spawn({
             let file = Arc::clone(&file);
             move || assert!(file.change_page(2 * Page::SIZE as u64).is_ok())
         });
 
         std::thread::sleep(std::time::Duration::from_millis(100));
-        // The guard to page 1 is not yet dropped, so trying to lock the page in the thread should
-        // still block.
+        // The guard to page one is not yet dropped, so trying to lock page three in the thread
+        // should still block.
         assert!(!handle.is_finished());
 
         drop(locked_page1);
 
         std::thread::sleep(std::time::Duration::from_millis(100));
-        // The guard to page 1 is dropped, so the thread should have been able to lock page 2 and
-        // finish.
+        // The guard to page one is dropped, so the thread should have been able to lock page three
+        // and finish.
         assert!(handle.is_finished());
     }
 }
