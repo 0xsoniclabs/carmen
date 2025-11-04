@@ -22,7 +22,7 @@ use crate::{
 /// A wrapper around a [`FileBackend`] that caches multiple pages (4096 bytes) in memory.
 /// All read and write operations are performed on these pages, which are flushed to the underlying
 /// file when they are dirty and a different page needs to be accessed, or when the file is flushed.
-/// All file operations use direct I/O to bypass the OS page cache.
+/// If `D` is true, file operations will use direct I/O to bypass the OS page cache.
 #[derive(Debug)]
 pub struct MultiPageCachedFile<const P: usize, F: FileBackend, const D: bool> {
     file: F,
@@ -48,12 +48,10 @@ impl<const P: usize, F: FileBackend, const D: bool> FileBackend for MultiPageCac
             .map(|page_index| {
                 let mut page = Page::zeroed();
                 let offset = (page_index * Page::SIZE) as u64;
-                if offset >= padded_len {
-                    Ok((page, page_index as u64))
-                } else {
-                    file.read_exact_at(&mut page, offset)
-                        .map(|_| (page, page_index as u64))
+                if offset < padded_len {
+                    file.read_exact_at(&mut page, offset)?;
                 }
+                BTResult::Ok((page, page_index as u64))
             })
             .collect::<Result<Vec<_>, _>>()?
             .try_into()
@@ -153,7 +151,7 @@ impl<const P: usize, F: FileBackend, const D: bool> MultiPageCachedFile<P, F, D>
     }
 }
 
-// Note: The tests for `PageCachedFile<F> as FileBackend` are in `file_backend.rs`.
+// Note: The tests for `MultiPageCachedFile<F> as FileBackend` are in `file_backend.rs`.
 
 #[cfg(test)]
 mod tests {
@@ -163,7 +161,7 @@ mod tests {
     use crate::storage::file::MockFileBackend;
 
     #[test]
-    fn access_of_cache_data_does_not_trigger_io_operations() {
+    fn accessing_cache_data_does_not_trigger_io_operations() {
         // no expectations on the mock because there should not be no I/O operations.
         let file = MockFileBackend::new();
         let file = MultiPageCachedFile::<_, _, true> {
@@ -182,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn access_non_cached_data_triggers_write_of_old_and_read_of_new_page() {
+    fn accessing_non_cached_data_triggers_write_of_old_and_read_of_new_page() {
         let mut file = MockFileBackend::new();
         file.expect_write_all_at()
             .withf(|buf, offset| {
@@ -215,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn access_cached_page_blocks_until_this_page_becomes_available() {
+    fn accessing_cached_page_blocks_until_this_page_becomes_available() {
         let file = MockFileBackend::new();
         let file = MultiPageCachedFile::<_, _, true> {
             file,
@@ -245,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn access_non_cached_page_blocks_until_any_page_becomes_available() {
+    fn accessing_non_cached_page_blocks_page_becomes_available() {
         let file = MockFileBackend::new();
         let file = MultiPageCachedFile::<_, _, true> {
             file,
@@ -254,26 +252,28 @@ mod tests {
         };
         let file = Arc::new(file);
 
-        let _locked_page1 = file.change_page(0).unwrap();
-        let _locked_page2 = file.change_page(Page::SIZE as u64).unwrap();
+        // Lock the first cached page.
+        let locked_page1 = file.change_page(0).unwrap();
 
-        // Try to access a non-cached page from another thread. This should block until one of the
-        // first two locks is dropped.
+        // Locking the second cached page should succeed immediately.
+        assert!(file.change_page(Page::SIZE as u64).is_ok());
+
+        // Locking the first page should block until the guard to it is dropped.
         let handle = std::thread::spawn({
             let file = Arc::clone(&file);
-            move || {
-                let _locked_page = file.change_page(2 * Page::SIZE as u64).unwrap();
-            }
+            move || assert!(file.change_page(2 * Page::SIZE as u64).is_ok())
         });
 
         std::thread::sleep(std::time::Duration::from_millis(100));
+        // The guard to page 1 is not yet dropped, so trying to lock the page in the thread should
+        // still block.
         assert!(!handle.is_finished());
 
-        drop(_locked_page1);
+        drop(locked_page1);
 
         std::thread::sleep(std::time::Duration::from_millis(100));
+        // The guard to page 1 is dropped, so the thread should have been able to lock page 2 and
+        // finish.
         assert!(handle.is_finished());
-
-        drop(_locked_page2);
     }
 }
