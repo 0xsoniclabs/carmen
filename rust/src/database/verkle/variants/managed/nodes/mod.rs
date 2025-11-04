@@ -47,11 +47,17 @@ pub enum Node {
     Inner(Box<InnerNode>),
     Leaf1(Box<Leaf1Node>),
     Leaf2(Box<Leaf2Node>),
+    Leaf21(Box<Leaf21Node>),
+    Leaf64(Box<Leaf64Node>),
+    Leaf141(Box<Leaf141Node>),
     Leaf256(Box<Leaf256Node>),
 }
 
 type Leaf1Node = SparseLeafNode<1>;
 type Leaf2Node = SparseLeafNode<2>;
+type Leaf21Node = SparseLeafNode<21>;
+type Leaf64Node = SparseLeafNode<64>;
+type Leaf141Node = SparseLeafNode<141>;
 type Leaf256Node = FullLeafNode;
 
 impl TrieVisitor<Node> for NodeStatisticVisitor {
@@ -84,14 +90,7 @@ impl TrieVisitor<Node> for NodeStatisticVisitor {
                     leaf2,
                     level,
                     "Leaf",
-                    Some(move |leaf2: &Box<SparseLeafNode<2>>| {
-                        leaf2
-                            .commitment
-                            .committed_used_slots
-                            .iter()
-                            .map(|byte| byte.count_ones() as u64)
-                            .sum::<u64>()
-                    }),
+                    Some(move |leaf2: &Box<SparseLeafNode<2>>| 2),
                 );
             }
             Node::Leaf1(sparse_leaf_node) => {
@@ -99,14 +98,31 @@ impl TrieVisitor<Node> for NodeStatisticVisitor {
                     sparse_leaf_node,
                     level,
                     "Leaf",
-                    Some(move |leaf1: &Box<SparseLeafNode<1>>| {
-                        leaf1
-                            .commitment
-                            .committed_used_slots
-                            .iter()
-                            .map(|byte| byte.count_ones() as u64)
-                            .sum::<u64>()
-                    }),
+                    Some(move |leaf1: &Box<SparseLeafNode<1>>| 1),
+                );
+            }
+            Node::Leaf21(sparse_leaf_node) => {
+                self.record_node_statistics(
+                    sparse_leaf_node,
+                    level,
+                    "Leaf",
+                    Some(move |leaf21: &Box<SparseLeafNode<21>>| 21),
+                );
+            }
+            Node::Leaf64(sparse_leaf_node) => {
+                self.record_node_statistics(
+                    sparse_leaf_node,
+                    level,
+                    "Leaf",
+                    Some(move |leaf64: &Box<SparseLeafNode<64>>| 64),
+                );
+            }
+            Node::Leaf141(sparse_leaf_node) => {
+                self.record_node_statistics(
+                    sparse_leaf_node,
+                    level,
+                    "Leaf",
+                    Some(move |leaf141: &Box<SparseLeafNode<141>>| 141),
                 );
             }
             Node::Leaf256(full_leaf_node) => {
@@ -115,12 +131,12 @@ impl TrieVisitor<Node> for NodeStatisticVisitor {
                     level,
                     "Leaf",
                     Some(move |leaf_node: &Box<FullLeafNode>| {
-                        leaf_node
-                            .commitment
-                            .committed_used_slots
-                            .iter()
-                            .map(|byte| byte.count_ones() as u64)
-                            .sum::<u64>()
+                        256
+                        // leaf_node
+                        //     .values
+                        //     .iter()
+                        //     .filter(|value| **value != Value::default())
+                        //     .count() as u64
                     }),
                 );
             }
@@ -136,6 +152,9 @@ impl Node {
             Node::Leaf1(_) => NodeType::Leaf1,
             Node::Leaf2(_) => NodeType::Leaf2,
             Node::Leaf256(_) => NodeType::Leaf256,
+            Node::Leaf21(_) => NodeType::Leaf21,
+            Node::Leaf64(_) => NodeType::Leaf64,
+            Node::Leaf141(_) => NodeType::Leaf141,
         }
     }
 
@@ -146,6 +165,9 @@ impl Node {
             Node::Leaf1(n) => n.get_commitment_input(),
             Node::Leaf2(n) => n.get_commitment_input(),
             Node::Leaf256(n) => n.get_commitment_input(),
+            Node::Leaf21(n) => n.get_commitment_input(),
+            Node::Leaf64(n) => n.get_commitment_input(),
+            Node::Leaf141(n) => n.get_commitment_input(),
         }
     }
 
@@ -195,6 +217,9 @@ impl ManagedTrieNode for Node {
             Node::Leaf1(n) => n.lookup(key, depth),
             Node::Leaf2(n) => n.lookup(key, depth),
             Node::Leaf256(n) => n.lookup(key, depth),
+            Node::Leaf21(n) => n.lookup(key, depth),
+            Node::Leaf64(n) => n.lookup(key, depth),
+            Node::Leaf141(n) => n.lookup(key, depth),
         }
     }
 
@@ -205,11 +230,14 @@ impl ManagedTrieNode for Node {
         self_id: Self::Id,
     ) -> Result<StoreAction<Self::Id, Self::Union>, Error> {
         match self {
-            Node::Empty(n) => n.next_store_action(key, depth),
-            Node::Inner(n) => n.next_store_action(key, depth),
-            Node::Leaf1(n) => n.next_store_action(key, depth),
-            Node::Leaf2(n) => n.next_store_action(key, depth),
-            Node::Leaf256(n) => n.next_store_action(key, depth),
+            Node::Empty(n) => n.next_store_action(key, depth, self_id),
+            Node::Inner(n) => n.next_store_action(key, depth, self_id),
+            Node::Leaf1(n) => n.next_store_action(key, depth, self_id),
+            Node::Leaf2(n) => n.next_store_action(key, depth, self_id),
+            Node::Leaf256(n) => n.next_store_action(key, depth, self_id),
+            Node::Leaf21(n) => n.next_store_action(key, depth, self_id),
+            Node::Leaf64(n) => n.next_store_action(key, depth, self_id),
+            Node::Leaf141(n) => n.next_store_action(key, depth, self_id),
         }
     }
 
@@ -220,6 +248,9 @@ impl ManagedTrieNode for Node {
             Node::Leaf1(n) => n.replace_child(key, depth, new),
             Node::Leaf2(n) => n.replace_child(key, depth, new),
             Node::Leaf256(n) => n.replace_child(key, depth, new),
+            Node::Leaf21(n) => n.replace_child(key, depth, new),
+            Node::Leaf64(n) => n.replace_child(key, depth, new),
+            Node::Leaf141(n) => n.replace_child(key, depth, new),
         }
     }
 
@@ -230,6 +261,9 @@ impl ManagedTrieNode for Node {
             Node::Leaf1(n) => n.store(key, value),
             Node::Leaf2(n) => n.store(key, value),
             Node::Leaf256(n) => n.store(key, value),
+            Node::Leaf21(n) => n.store(key, value),
+            Node::Leaf64(n) => n.store(key, value),
+            Node::Leaf141(n) => n.store(key, value),
         }
     }
 
@@ -240,6 +274,9 @@ impl ManagedTrieNode for Node {
             Node::Leaf1(n) => n.get_commitment(),
             Node::Leaf2(n) => n.get_commitment(),
             Node::Leaf256(n) => n.get_commitment(),
+            Node::Leaf21(n) => n.get_commitment(),
+            Node::Leaf64(n) => n.get_commitment(),
+            Node::Leaf141(n) => n.get_commitment(),
         }
     }
 
@@ -250,6 +287,9 @@ impl ManagedTrieNode for Node {
             Node::Leaf1(n) => n.set_commitment(cache),
             Node::Leaf2(n) => n.set_commitment(cache),
             Node::Leaf256(n) => n.set_commitment(cache),
+            Node::Leaf21(n) => n.set_commitment(cache),
+            Node::Leaf64(n) => n.set_commitment(cache),
+            Node::Leaf141(n) => n.set_commitment(cache),
         }
     }
 }
@@ -262,6 +302,9 @@ pub enum NodeType {
     Inner,
     Leaf1,
     Leaf2,
+    Leaf21,
+    Leaf64,
+    Leaf141,
     Leaf256,
 }
 
@@ -272,16 +315,28 @@ impl NodeSize for NodeType {
             NodeType::Inner => {
                 std::mem::size_of::<Box<InnerNode>>() + std::mem::size_of::<InnerNode>()
             }
+            NodeType::Leaf1 => {
+                std::mem::size_of::<Box<SparseLeafNode<1>>>()
+                    + std::mem::size_of::<SparseLeafNode<1>>()
+            }
             NodeType::Leaf2 => {
                 std::mem::size_of::<Box<SparseLeafNode<2>>>()
                     + std::mem::size_of::<SparseLeafNode<2>>()
             }
+            NodeType::Leaf21 => {
+                std::mem::size_of::<Box<SparseLeafNode<21>>>()
+                    + std::mem::size_of::<SparseLeafNode<21>>()
+            }
+            NodeType::Leaf64 => {
+                std::mem::size_of::<Box<SparseLeafNode<64>>>()
+                    + std::mem::size_of::<SparseLeafNode<64>>()
+            }
+            NodeType::Leaf141 => {
+                std::mem::size_of::<Box<SparseLeafNode<141>>>()
+                    + std::mem::size_of::<SparseLeafNode<141>>()
+            }
             NodeType::Leaf256 => {
                 std::mem::size_of::<Box<FullLeafNode>>() + std::mem::size_of::<FullLeafNode>()
-            }
-            NodeType::Leaf1 => {
-                std::mem::size_of::<Box<SparseLeafNode<1>>>()
-                    + std::mem::size_of::<SparseLeafNode<1>>()
             }
         };
         std::mem::size_of::<Node>() + inner_size

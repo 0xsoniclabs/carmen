@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::borrow::Cow;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -15,22 +17,65 @@ use crate::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
             Node,
-            commitment::{VerkleCommitment, VerkleCommitmentInput},
+            commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
             nodes::{NodeType, id::NodeId},
         },
     },
     error::Error,
-    types::{Key, TreeId},
+    types::{DiskRepresentable, Key, TreeId},
 };
 
 /// An inner node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
-#[repr(C)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InnerNode {
     pub children: [NodeId; 256],
     pub commitment: VerkleCommitment,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Immutable, FromBytes, IntoBytes, Unaligned)]
+#[repr(C)]
+pub struct OnDiskInnerNode {
+    pub children: [NodeId; 256],
+    pub commitment: OnDiskVerkleCommitment,
+}
+
+impl From<&InnerNode> for OnDiskInnerNode {
+    fn from(node: &InnerNode) -> Self {
+        OnDiskInnerNode {
+            children: node.children,
+            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+        }
+    }
+}
+
+impl From<OnDiskInnerNode> for InnerNode {
+    fn from(node: OnDiskInnerNode) -> Self {
+        InnerNode {
+            children: node.children,
+            commitment: VerkleCommitment::from(node.commitment),
+        }
+    }
+}
+
+impl DiskRepresentable for InnerNode {
+    fn from_disk_repr<E>(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        OnDiskInnerNode::from_disk_repr(read_into_buffer).map(Into::into)
+    }
+
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Owned(OnDiskInnerNode::from(self).to_disk_repr().into_owned())
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<OnDiskInnerNode>()
+    }
 }
 
 impl InnerNode {

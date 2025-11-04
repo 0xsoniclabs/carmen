@@ -33,7 +33,7 @@ use crate::{
 
 mod commitment;
 mod fake_cache;
-mod nodes;
+pub mod nodes;
 
 pub struct ManagedVerkleTrie<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync> {
     root: RwLock<NodeId>,

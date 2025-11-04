@@ -29,7 +29,7 @@ use crate::{
     },
     error::Error,
     node_manager::NodeManager,
-    types::Value,
+    types::{DiskRepresentable, Value},
 };
 
 /// A commitment of managed verkle trie node, together with metadata required to recompute
@@ -39,26 +39,63 @@ use crate::{
 /// be persisted to disk. The dirty flag is nevertheless part of the on-disk representation,
 /// so that the entire node can be transmuted to/from bytes using zerocopy.
 /// Related issue: https://github.com/0xsoniclabs/sonic-admin/issues/373
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
-#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VerkleCommitment {
     commitment: Commitment,
     /// A bitfield indicating which slots in a leaf node have been used before.
     /// This allows to distinguish between empty slots and slots that have been set to zero.
     pub committed_used_slots: [u8; 256 / 8],
-    /// Whether the commitment is dirty and needs to be recomputed.
-    // bool does not implement FromBytes, so we use u8 instead
-    dirty: u8,
-
     // FIXME Just hacking - these are only needed for Verkle leaf nodes
     // TODO: Also store scalars?
     c1: Commitment,
     c2: Commitment,
+    /// Whether the commitment is dirty and needs to be recomputed.
+    // bool does not implement FromBytes, so we use u8 instead
+    dirty: u8,
     // TODO Naming
     committed_values: [Value; 256],
     /// A bitfield indicating which children or slots have been changed since
     /// the last commitment computation.
     changed: [u8; 256 / 8],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
+#[repr(C)]
+pub struct OnDiskVerkleCommitment {
+    commitment: Commitment,
+    /// A bitfield indicating which slots in a leaf node have been used before.
+    /// This allows to distinguish between empty slots and slots that have been set to zero.
+    pub committed_used_slots: [u8; 256 / 8],
+    // FIXME Just hacking - these are only needed for Verkle leaf nodes
+    // TODO: Also store scalars?
+    // c1: Commitment,
+    // c2: Commitment,
+    // TODO: Enable again
+}
+
+impl From<OnDiskVerkleCommitment> for VerkleCommitment {
+    fn from(odvc: OnDiskVerkleCommitment) -> Self {
+        VerkleCommitment {
+            commitment: odvc.commitment,
+            committed_used_slots: odvc.committed_used_slots,
+            c1: Commitment::default(),
+            c2: Commitment::default(),
+            dirty: 0,
+            committed_values: [Value::default(); 256],
+            changed: [0u8; 256 / 8],
+        }
+    }
+}
+
+impl From<&VerkleCommitment> for OnDiskVerkleCommitment {
+    fn from(value: &VerkleCommitment) -> Self {
+        OnDiskVerkleCommitment {
+            commitment: value.commitment,
+            committed_used_slots: value.committed_used_slots,
+            // c1: value.c1,
+            // c2: value.c2,
+        }
+    }
 }
 
 impl VerkleCommitment {

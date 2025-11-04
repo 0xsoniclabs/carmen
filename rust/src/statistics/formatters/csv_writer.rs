@@ -14,7 +14,7 @@ impl CSVWriter {
 
     fn print_node_distribution(distribution: &NodeDistribution) -> std::io::Result<()> {
         let mut wtr = Self::init("node_distribution")?;
-        wtr.write_all(b"Node Type,Node Subtype, Node Count\n")?;
+        wtr.write_all(b"Node Type,Node Subtype,Node Count\n")?;
         for (type_name, stats) in &distribution.aggregated_node_statistics {
             wtr.write_all(
                 format!("{},{},{}\n", type_name, type_name, stats.node_count).as_bytes(),

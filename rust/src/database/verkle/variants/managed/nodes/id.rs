@@ -42,6 +42,9 @@ impl NodeId {
     const LEAF_NODE_1_PREFIX: u64 = 0x0000_4000_0000_0000;
     const LEAF_NODE_2_PREFIX: u64 = 0x0000_6000_0000_0000;
     const LEAF_NODE_256_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_21_PREFIX: u64 = 0x0000_A000_0000_0000;
+    const LEAF_NODE_64_PREFIX: u64 = 0x0000_C000_0000_0000;
+    const LEAF_NODE_141_PREFIX: u64 = 0x0000_E000_0000_0000;
 
     const PREFIX_MASK: u64 = 0x0000_E000_0000_0000;
     const INDEX_MASK: u64 = 0x0000_1FFF_FFFF_FFFF;
@@ -73,6 +76,9 @@ impl TreeId for NodeId {
             NodeType::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             NodeType::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             NodeType::Leaf256 => Self::LEAF_NODE_256_PREFIX,
+            NodeType::Leaf21 => Self::LEAF_NODE_21_PREFIX,
+            NodeType::Leaf64 => Self::LEAF_NODE_64_PREFIX,
+            NodeType::Leaf141 => Self::LEAF_NODE_141_PREFIX,
         };
         NodeId::from_u64(idx | prefix)
     }
@@ -88,6 +94,9 @@ impl TreeId for NodeId {
             Self::LEAF_NODE_1_PREFIX => Some(NodeType::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(NodeType::Leaf2),
             Self::LEAF_NODE_256_PREFIX => Some(NodeType::Leaf256),
+            Self::LEAF_NODE_21_PREFIX => Some(NodeType::Leaf21),
+            Self::LEAF_NODE_64_PREFIX => Some(NodeType::Leaf64),
+            Self::LEAF_NODE_141_PREFIX => Some(NodeType::Leaf141),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
             // - Deserializing from a file which may hold invalid prefixes in case the data was

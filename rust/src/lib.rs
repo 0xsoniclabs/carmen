@@ -74,6 +74,9 @@ pub fn open_carmen_db(
                 NodeFileStorage<InnerNode, NoSeekFile>,
                 NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
                 NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<64>, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<141>, NoSeekFile>,
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
             eprintln!("Opening storage at {}", str::from_utf8(directory).unwrap());
@@ -265,5 +268,51 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
         Err(Error::UnsupportedOperation(
             "get_memory_footprint is not yet implemented".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        database::verkle::variants::managed::nodes::sparse_leaf::ValueWithIndex,
+        storage::Checkpointable,
+    };
+
+    #[test]
+    fn test_open_carmen_db_invalid_schema() {
+        type FileStorage = NodeFileStorageManager<
+            NodeFileStorage<InnerNode, NoSeekFile>,
+            NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
+            NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+            NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
+            NodeFileStorage<SparseLeafNode<64>, NoSeekFile>,
+            NodeFileStorage<SparseLeafNode<141>, NoSeekFile>,
+            NodeFileStorage<FullLeafNode, NoSeekFile>,
+        >;
+        // FIXME: This collects statistics about storage operations
+        let storage =
+            StorageStatistics::<NodeId, Node, FileStorage>::open(&PathBuf::from("./aaaa")).unwrap();
+        let mut leaf1 = SparseLeafNode::<1>::default();
+        leaf1.values[0] = ValueWithIndex {
+            index: 0,
+            value: [1u8; 32],
+        };
+        let node = Node::Leaf1(Box::new(leaf1));
+
+        let mut leaf256 = FullLeafNode::default();
+        leaf256.values[0] = [2u8; 32];
+        let node_full = Node::Leaf256(Box::new(leaf256));
+        let id = storage.reserve(&node);
+        eprintln!("Fist Id: {:?}", id);
+        storage.set(id, &node).unwrap();
+        let id = storage.reserve(&node);
+        eprintln!("Second Id: {:?}", id);
+        storage.set(id, &node).unwrap();
+        storage.checkpoint().unwrap();
+
+        // let id = storage.reserve(&node_full);
+        // storage.set(id, &node_full).unwrap();
+        // storage.checkpoint().unwrap();
     }
 }
