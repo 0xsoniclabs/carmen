@@ -190,7 +190,6 @@ impl<const N: usize> Default for SparseLeafNode<N> {
     }
 }
 
-// TODO: Implement for generic N?
 // => Ensuring that entries are sorted could make things a lot easier
 impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
     type Union = Node;
@@ -261,102 +260,6 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         Ok(())
     }
 }
-
-// // TODO: This needs to be generic over N
-// impl ManagedTrieNode for SparseLeafNode<1> {
-//     type Union = Node;
-//     type Id = NodeId;
-//     type Commitment = VerkleCommitment;
-
-//     fn lookup(&self, key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
-//         if key[..31] != self.stem[..] {
-//             return Ok(LookupResult::Value(Value::default()));
-//         }
-
-//         for ValueWithIndex { index, value } in &self.values {
-//             if *index == key[31] {
-//                 return Ok(LookupResult::Value(*value));
-//             }
-//         }
-//         Ok(LookupResult::Value(Value::default()))
-//     }
-
-//     fn can_store(&self, key: &Key, _depth: u8) -> Result<CanStoreResult<Self::Id>, Error> {
-//         if key[..31] != self.stem[..] {
-//             return Ok(CanStoreResult::Reparent);
-//         }
-
-//         // TODO: Need to thoroughly test this behavior
-//         for ValueWithIndex { index, value } in &self.values {
-//             if *index == key[31] || *value == Value::default() {
-//                 return Ok(CanStoreResult::Yes(key[31] as usize));
-//             }
-//         }
-//         Ok(CanStoreResult::Transform)
-//     }
-
-//     fn transform(&self, key: &Key, depth: u8) -> Result<Self::Union, Error> {
-//         assert!(matches!(
-//             self.can_store(key, depth)?,
-//             CanStoreResult::Transform
-//         ));
-
-//         assert_eq!(key[..31], self.stem[..]);
-//         let mut values = [ValueWithIndex::default(); 2];
-//         values[..1].copy_from_slice(&self.values);
-//         // If the stems match, we have to convert to a full leaf.
-//         let new_leaf = Leaf2Node {
-//             stem: self.stem,
-//             values,
-//             // TODO Test: Commitment is preserved
-//             commitment: self.commitment,
-//         };
-//         Ok(Node::Leaf2(Box::new(new_leaf)))
-//     }
-
-//     fn reparent(&self, key: &Key, depth: u8, self_id: NodeId) -> Result<Self::Union, Error> {
-//         assert!(matches!(
-//             self.can_store(key, depth)?,
-//             CanStoreResult::Reparent
-//         ));
-
-//         // Otherwise, we have to re-parent.
-//         let pos = self.stem[depth as usize];
-//         // TODO: Need better ctor
-//         let mut inner = InnerNode::default();
-//         inner.children[pos as usize] = self_id;
-//         Ok(Node::Inner(Box::new(inner)))
-//     }
-
-//     fn store(&mut self, key: &Key, value: &Value) -> Result<Value, Error> {
-//         assert_eq!(self.stem[..], key[..31]);
-
-//         let mut slot = None;
-//         // TODO: Need to thoroughly test this behavior
-//         for (i, ValueWithIndex { index, value: v }) in self.values.iter().enumerate() {
-//             if *index == key[31] || *v == Value::default() {
-//                 slot = Some(i);
-//                 break;
-//             }
-//         }
-//         let prev_value = self.values[slot.unwrap()].value;
-//         self.values[slot.unwrap()] = ValueWithIndex {
-//             index: key[31],
-//             value: *value,
-//         };
-
-//         Ok(prev_value)
-//     }
-
-//     fn get_commitment(&self) -> Self::Commitment {
-//         self.commitment
-//     }
-
-//     fn set_commitment(&mut self, cache: Self::Commitment) -> Result<(), Error> {
-//         self.commitment = cache;
-//         Ok(())
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

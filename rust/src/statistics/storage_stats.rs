@@ -1,6 +1,11 @@
 // TODO: Add timestamp since last access to element
 // TODO: Operations per seconds
-use std::{io::Write, path::Path};
+use std::{
+    io::Write,
+    path::Path,
+    sync::{Arc, Mutex, atomic::AtomicBool},
+    thread::JoinHandle,
+};
 
 use dashmap::{DashMap, DashSet};
 
@@ -38,21 +43,39 @@ where
 }
 
 pub struct StorageFileStatistics {
-    op_with_time_stats: DashSet<(StorageOperation, u128, u64)>,
-    file: std::sync::Mutex<std::fs::File>,
+    op_with_time_stats: Arc<DashSet<(StorageOperation, u128, u64)>>,
+    stop_signal: Arc<std::sync::atomic::AtomicBool>,
+    flush_worker: JoinHandle<()>,
 }
 
 impl StorageFileStatistics {
     const BUFFER_SIZE: usize = 100000;
 
     fn new(path: &Path) -> Self {
-        let mut file =
-            std::fs::File::create(path).expect("Failed to create storage operation stats file");
-        file.write_all("Op,Timestamp,Offset\n".as_bytes())
+        let file = Mutex::new(
+            std::fs::File::create(path).expect("Failed to create storage operation stats file"),
+        );
+        file.lock()
+            .unwrap()
+            .write_all("Op,Timestamp,Offset\n".as_bytes())
             .expect("Failed to write header to statistics file");
+        let stop_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let op_with_time_stats = Arc::new(DashSet::with_capacity(Self::BUFFER_SIZE));
+        let flush_worker = {
+            let stop_signal = stop_signal.clone();
+            let op_with_time_stats = op_with_time_stats.clone();
+            std::thread::spawn(move || {
+                while !stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    Self::flush(&op_with_time_stats, &file);
+                }
+                Self::flush(&op_with_time_stats, &file); // Final flush on stop
+            })
+        };
         Self {
-            op_with_time_stats: DashSet::with_capacity(Self::BUFFER_SIZE),
-            file: std::sync::Mutex::new(file),
+            op_with_time_stats,
+            stop_signal,
+            flush_worker,
         }
     }
 
@@ -62,28 +85,28 @@ impl StorageFileStatistics {
             .expect("Time went backwards")
             .as_micros();
         self.op_with_time_stats.insert((op, timestamp, offset));
-        if self.op_with_time_stats.len() >= Self::BUFFER_SIZE {
-            self.flush();
-        }
     }
 
-    fn flush(&self) {
-        let mut file = self.file.lock().unwrap();
+    fn flush(op_executed: &DashSet<(StorageOperation, u128, u64)>, file: &Mutex<std::fs::File>) {
+        let mut file = file.lock().unwrap();
         let mut entry_to_remove = Vec::with_capacity(Self::BUFFER_SIZE);
-        for entry in self.op_with_time_stats.iter() {
+        for entry in op_executed.iter() {
             let (op, timestamp, offset) = *entry;
             writeln!(file, "{op},{timestamp},{offset}")
                 .expect("Failed to write operation statistics to file");
             entry_to_remove.push(*entry);
         }
-        self.op_with_time_stats
-            .retain(|e| !entry_to_remove.contains(e));
+        op_executed.retain(|e| !entry_to_remove.contains(e));
     }
 }
 
 impl Drop for StorageFileStatistics {
     fn drop(&mut self) {
-        self.flush();
+        self.stop_signal
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        while !self.flush_worker.is_finished() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     }
 }
 
