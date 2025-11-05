@@ -58,7 +58,6 @@ shuttle = { version = "0.8.1", optional = true }
 # integration with the Tracy hybrid profiler
 tracy-client = { version = "0.18.2", default-features = false }
 
-
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
