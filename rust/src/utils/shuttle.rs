@@ -21,43 +21,38 @@
 pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
     #[cfg(feature = "shuttle")]
     {
-        match std::env::var("SHUTTLE_REPLAY") {
-            Ok(schedule) => {
-                let path = if !schedule.is_empty() {
-                    schedule
-                } else {
-                    // Get the last created schedule file in the current directory
-                    let mut schedules = vec![];
-                    for entry in std::fs::read_dir(".").unwrap() {
-                        let entry = entry.unwrap();
-                        let path = entry.path();
-                        if path.is_file() {
-                            if let Some(name) = path.file_name() {
-                                if name.to_string_lossy().starts_with("schedule") {
-                                    schedules.push(path.to_string_lossy().to_string());
-                                }
-                            }
-                        }
+        if let Ok(schedule) = std::env::var("SHUTTLE_REPLAY") {
+            let path = if !schedule.is_empty() {
+                schedule
+            } else {
+                // Get the last created schedule file in the current directory
+                let mut schedules = vec![];
+                for entry in std::fs::read_dir(".").unwrap() {
+                    let entry = entry.unwrap();
+                    let path = entry.path();
+                    if path.is_file()
+                        && let Some(name) = path.file_name()
+                        && name.to_string_lossy().starts_with("schedule")
+                    {
+                        schedules.push(path.to_string_lossy().to_string());
                     }
-                    schedules.sort();
-                    schedules.last().cloned().expect("No schedule files found")
-                };
-                shuttle::replay_from_file(_test, &path);
-            }
-            Err(_) => {
-                let mut shuttle_config = shuttle::Config::new();
-                shuttle_config.failure_persistence = match std::env::var("SHUTTLE_PERSISTENCE_MODE")
-                {
-                    Ok(mode) if mode == "file" => shuttle::FailurePersistence::File(None),
-                    _ => shuttle::FailurePersistence::Print,
-                };
+                }
+                schedules.sort();
+                schedules.last().cloned().expect("No schedule files found")
+            };
+            shuttle::replay_from_file(_test, &path);
+        } else {
+            let mut shuttle_config = shuttle::Config::new();
+            shuttle_config.failure_persistence = match std::env::var("SHUTTLE_PERSISTENCE_MODE") {
+                Ok(mode) if mode == "file" => shuttle::FailurePersistence::File(None),
+                _ => shuttle::FailurePersistence::Print,
+            };
 
-                let runner = shuttle::Runner::new(
-                    shuttle::scheduler::RandomScheduler::new(_num_iter),
-                    shuttle_config,
-                );
-                runner.run(_test);
-            }
+            let runner = shuttle::Runner::new(
+                shuttle::scheduler::RandomScheduler::new(_num_iter),
+                shuttle_config,
+            );
+            runner.run(_test);
         }
     }
 }
