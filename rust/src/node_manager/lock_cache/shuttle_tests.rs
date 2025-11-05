@@ -14,6 +14,7 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
 ) {
     run_shuttle_check(
         move || {
+            const ID: u32 = 0;
             let insert_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let insert_fn = {
                 let insert_count = insert_count.clone();
@@ -22,7 +23,6 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
                     Ok(42)
                 }
             };
-            let id = 0;
             let cache = LockCache::new(10, Arc::new(EvictionLogger::default()));
 
             thread::scope(|s| {
@@ -30,7 +30,7 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
                     let cache = &cache;
                     let insert_fn = &insert_fn as &(dyn Fn() -> BTResult<i32, Error> + Send + Sync);
                     s.spawn(move || {
-                        ignore_guard(get_fn(cache, id, insert_fn));
+                        ignore_guard(get_fn(cache, ID, insert_fn));
                     });
                 }
             });
