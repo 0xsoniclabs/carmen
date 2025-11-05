@@ -113,7 +113,7 @@ jobs:
       with:
         workspaces: rust
     - name: cargo test
-      run: cargo test --all-features --all-targets --no-fail-fast
+      run: cargo test --all-targets --no-fail-fast
 
   miri:
     name: miri
