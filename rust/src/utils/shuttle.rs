@@ -17,7 +17,7 @@
 ///     - `file`: persist failures to a file.
 ///     - any other value or unset: print failures to stdout.
 #[track_caller]
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
     #[cfg(feature = "shuttle")]
     {
