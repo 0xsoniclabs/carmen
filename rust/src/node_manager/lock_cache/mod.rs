@@ -22,6 +22,8 @@ use crate::{
 };
 
 #[cfg(test)]
+mod shuttle_tests;
+#[cfg(test)]
 mod test_utils;
 
 /// A trait for handling eviction events in the cache.

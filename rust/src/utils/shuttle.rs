@@ -17,7 +17,6 @@
 ///       `CARMEN_SHUTTLE_REPLAY`.
 ///     - any other value or unset: print failed schedules to stdout.
 #[track_caller]
-#[expect(unused)]
 pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
     #[cfg(feature = "shuttle")]
     {

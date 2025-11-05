@@ -12,4 +12,7 @@
 pub(crate) use std::{hint, sync::*, thread};
 
 #[cfg(feature = "shuttle")]
-pub(crate) use shuttle::{hint, sync::*, thread};
+#[cfg(test)]
+pub(crate) use shuttle::thread;
+#[cfg(feature = "shuttle")]
+pub(crate) use shuttle::{hint, sync::*};
