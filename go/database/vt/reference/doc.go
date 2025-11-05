@@ -23,4 +23,4 @@
 // implementation and is not optimized for performance or memory usage. It is
 // also lacking sufficient testing and error handling. It is only intended
 // to be used as a reference for the Verkle trie implementation in Carmen.
-package memory
+package reference

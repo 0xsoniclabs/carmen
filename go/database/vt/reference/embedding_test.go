@@ -8,13 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package memory
+package reference
 
 import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/database/vt/memory/trie"
+	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"

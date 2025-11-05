@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package memory
+package reference
 
 // chunk is a 31-byte chunk of some EVM code prefixed by the number of bytes
 // in the prefix of the chunk that is part of the data section of a push
