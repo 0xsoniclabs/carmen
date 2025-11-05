@@ -10,13 +10,15 @@
 
 use std::{
     collections::HashMap,
+    ops::DerefMut,
     sync::{
-        Arc,
+        Arc, RwLockWriteGuard,
         atomic::{AtomicUsize, Ordering},
     },
 };
 
 use dashmap::DashMap;
+use rayon::Scope;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -281,6 +283,226 @@ pub fn update_commitments(
             }
         });
     }
+
+    log.clear();
+    Ok(())
+}
+
+// TODO: Instead of returning a delta, return commitment (needs self position)
+fn update_commitment_thread(
+    dbg_recursion_level: usize,
+    scope: &Scope<'_>,
+    mut node: RwLockWriteGuard<'_, impl DerefMut<Target = Node>>,
+    delta: &mut Scalar,
+    manager: &(impl NodeManager<Id = NodeId, NodeType = Node> + Send + Sync),
+) {
+    // eprintln!(
+    //     "{}updating commitment in thread",
+    //     "  ".repeat(dbg_recursion_level)
+    // );
+    // eprintln!(
+    //     "{}address of delta: {:p}",
+    //     "  ".repeat(dbg_recursion_level),
+    //     delta
+    // );
+
+    let mut vc = node.get_commitment();
+    assert_eq!(vc.dirty, 1); // FIXME: Why is this assertion failing with bertha?
+
+    match node.get_commitment_input().unwrap() {
+        VerkleCommitmentInput::Leaf(values, stem) => {
+            // eprintln!("{}its a leaf", "  ".repeat(dbg_recursion_level));
+            let _span = tracy_client::span!("update leaf");
+
+            let changed_count = vc
+                .changed
+                .iter()
+                .map(|b| b.count_ones() as usize)
+                .sum::<usize>();
+            let use_batch_update = changed_count > 32;
+
+            let mut deltas_c1 = [Scalar::zero(); 256];
+            let mut deltas_c2 = [Scalar::zero(); 256];
+            for (i, value) in vc.committed_values.iter().enumerate() {
+                if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                    continue;
+                }
+                let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
+                let prev_upper = Scalar::from_le_bytes(&value[16..]);
+                if vc.committed_used_slots[i / 8] & (1 << (i % 8)) != 0 {
+                    prev_lower.set_bit128();
+                }
+                let mut lower = Scalar::from_le_bytes(&values[i][..16]);
+                let upper = Scalar::from_le_bytes(&values[i][16..]);
+                lower.set_bit128();
+                if use_batch_update {
+                    if i < 128 {
+                        deltas_c1[(i * 2) % 256] = lower - prev_lower;
+                        deltas_c1[(i * 2 + 1) % 256] = upper - prev_upper;
+                    } else {
+                        deltas_c2[(i * 2) % 256] = lower - prev_lower;
+                        deltas_c2[(i * 2 + 1) % 256] = upper - prev_upper;
+                    }
+                } else {
+                    let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
+                    c.update(((i * 2) % 256) as u8, prev_lower, lower);
+                    c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+                }
+                vc.committed_used_slots[i / 8] |= 1 << (i % 8);
+            }
+            let prev_c1 = vc.c1;
+            let prev_c2 = vc.c2;
+            if use_batch_update {
+                vc.c1 = vc.c1 + Commitment::new(&deltas_c1);
+                vc.c2 = vc.c2 + Commitment::new(&deltas_c2);
+            }
+            vc.committed_values.fill(Value::default());
+            if vc.commitment == Commitment::default() {
+                let combined = [
+                    Scalar::from(1),
+                    Scalar::from_le_bytes(&stem),
+                    vc.c1.to_scalar(),
+                    vc.c2.to_scalar(),
+                ];
+                vc.commitment = Commitment::new(&combined);
+            } else {
+                let deltas = [
+                    Scalar::zero(),
+                    Scalar::zero(),
+                    vc.c1.to_scalar() - prev_c1.to_scalar(),
+                    vc.c2.to_scalar() - prev_c2.to_scalar(),
+                ];
+                vc.commitment = vc.commitment + Commitment::new(&deltas);
+            }
+        }
+        VerkleCommitmentInput::Inner(children) => {
+            // eprintln!("{}its an inner", "  ".repeat(dbg_recursion_level));
+            let _span = tracy_client::span!("update inner");
+
+            let changed_count = vc
+                .changed
+                .iter()
+                .map(|b| b.count_ones() as usize)
+                .sum::<usize>();
+            let use_batch_update = changed_count > 32;
+
+            use rayon::prelude::*;
+
+            let mut deltas = [Scalar::zero(); 256];
+
+            deltas.par_iter_mut().enumerate().for_each(|(i, delta_i)| {
+                if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                    return;
+                }
+                // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
+                let child_node = manager.get_write_access(children[i]).unwrap();
+                update_commitment_thread(
+                    dbg_recursion_level + 1,
+                    scope,
+                    child_node,
+                    delta_i,
+                    manager,
+                );
+            });
+
+            /*             let mut deltas = &mut deltas[..];
+            rayon::scope(|s| {
+                for (i, child_id) in children.iter().enumerate() {
+                    let (mut first, rest) = deltas.split_first_mut().unwrap();
+                    deltas = rest;
+                    if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                        continue;
+                    }
+                    eprintln!(
+                        "{}spawning update for child {} with delta pointer {:p}",
+                        "  ".repeat(dbg_recursion_level),
+                        i,
+                        &mut deltas[i]
+                    );
+                    let child_id = *child_id;
+                    let deltas = &mut deltas;
+                    s.spawn(move |s| {
+                        let child_node = manager.get_write_access(child_id).unwrap();
+                        update_commitment_thread(
+                            dbg_recursion_level + 1,
+                            s,
+                            child_node,
+                            &mut deltas[i],
+                            manager,
+                        );
+                        eprintln!("delta for child {} is {:?}", i, deltas[i]);
+                    });
+                }
+            }); */
+            // std::thread::sleep(std::time::Duration::from_millis(500));
+            if use_batch_update {
+                vc.commitment = vc.commitment + Commitment::new(&deltas);
+            } else {
+                // TODO: Just get rid of non-batched for this implementation?
+                for (i, _) in children.iter().enumerate() {
+                    if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                        continue;
+                    }
+                    // eprintln!(
+                    //     "{}updating child {} with delta {:?}",
+                    //     "  ".repeat(dbg_recursion_level),
+                    //     i,
+                    //     deltas[i]
+                    // );
+                    vc.commitment.update(i as u8, Scalar::zero(), deltas[i]);
+                }
+            }
+        }
+    }
+
+    *delta = vc.commitment.to_scalar() - node.get_commitment().commitment().to_scalar();
+    // eprintln!(
+    //     "{}setting delta to {:?}",
+    //     "  ".repeat(dbg_recursion_level),
+    //     delta
+    // );
+    vc.dirty = 0;
+    // TODO: Test this (currently not caught by any test!)
+    vc.changed.fill(0);
+    node.set_commitment(vc).unwrap();
+}
+
+pub fn update_commitments_concurrent_recursive(
+    root_id: NodeId,
+    log: &TrieUpdateLog<NodeId>,
+    manager: &(impl NodeManager<Id = NodeId, NodeType = Node> + Send + Sync),
+) -> Result<(), Error> {
+    // TODO: This is still useful to have, maybe not get rid of log entirely?
+    if log.count() == 0 {
+        return Ok(());
+    }
+
+    let span = tracy_client::span!("update leaf");
+    span.emit_text(&format!("log count: {}", log.count()));
+
+    // if log.count() <= 8 {
+    //     return update_commitments(log, manager);
+    // }
+
+    // let previous_commitments = DashMap::<NodeId, Commitment>::new();
+    rayon::scope(|s| {
+        s.spawn(|s| {
+            let mut delta = Scalar::zero();
+            let root = manager.get_write_access(root_id).unwrap();
+            update_commitment_thread(0, s, root, &mut delta, manager);
+
+            // let _span = tracy_client::span!("looping over dirty nodes");
+            // let total_nodes = dirty_nodes.len();
+            // loop {
+            //     let idx = next_idx.fetch_add(1, Ordering::SeqCst);
+            //     if idx >= total_nodes {
+            //         break;
+            //     }
+            //     let id = dirty_nodes[idx];
+            //     process_update(manager, id, previous_commitments);
+            // }
+        });
+    });
 
     log.clear();
     Ok(())

@@ -18,7 +18,10 @@ use crate::{
     database::{
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
-            crypto::Commitment, variants::managed::commitment::update_commitments,
+            crypto::Commitment,
+            variants::managed::commitment::{
+                update_commitments, update_commitments_concurrent_recursive,
+            },
             verkle_trie::VerkleTrie,
         },
     },
@@ -62,7 +65,12 @@ impl<M: NodeManager<Id = NodeId, NodeType = Node> + Send + Sync> VerkleTrie
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
-        update_commitments(&self.update_log, &*self.manager)?;
+        // update_commitments(&self.update_log, &*self.manager)?;
+        update_commitments_concurrent_recursive(
+            *self.root.read().unwrap(),
+            &self.update_log,
+            &*self.manager,
+        )?;
         Ok(self
             .manager
             .get_read_access(*self.root.read().unwrap())?
