@@ -9,7 +9,13 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 #[cfg(not(feature = "shuttle"))]
+#[cfg(test)]
+pub(crate) use std::thread;
+#[cfg(not(feature = "shuttle"))]
 pub(crate) use std::{hint, sync::*};
 
+#[cfg(feature = "shuttle")]
+#[cfg(test)]
+pub(crate) use shuttle::thread;
 #[cfg(feature = "shuttle")]
 pub(crate) use shuttle::{hint, sync::*};
