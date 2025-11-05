@@ -104,8 +104,7 @@ impl<const P: usize, F: FileBackend, const D: bool> FileBackend for MultiPageCac
     fn flush(&self) -> BTResult<(), std::io::Error> {
         for mut locked_page in self.pages.iter_dirty_locked() {
             let page_index = locked_page.page_index();
-            self.file
-                .write_all_at(&locked_page, page_index * Page::SIZE as u64)?;
+            self.store_page(&locked_page, page_index)?;
             locked_page.mark_clean();
         }
         self.file.flush()
@@ -162,8 +161,9 @@ mod tests {
 
     #[test]
     fn accessing_cache_data_does_not_trigger_io_operations() {
-        // no expectations on the mock because there should not be no I/O operations.
-        let file = MockFileBackend::new();
+        let mut file = MockFileBackend::new();
+        file.expect_read_exact_at().never();
+        file.expect_write_all_at().never();
         let file = MultiPageCachedFile::<_, _, true> {
             file,
             file_len: AtomicU64::new(Page::SIZE as u64),
