@@ -18,7 +18,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use rayon::Scope;
+use rayon::{Scope, prelude::*};
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -327,9 +327,9 @@ pub fn update_commitments(
 // TODO: Instead of returning a delta, return commitment (needs self position)
 fn update_commitment_thread(
     dbg_recursion_level: usize,
-    scope: &Scope<'_>,
     mut node: RwLockWriteGuard<'_, impl DerefMut<Target = VerkleNode>>,
-    delta: &mut Scalar,
+    index_in_parent: usize,
+    delta_commitment: &mut Commitment,
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
 ) {
     // eprintln!(
@@ -415,117 +415,103 @@ fn update_commitment_thread(
             // eprintln!("{}its an inner", "  ".repeat(dbg_recursion_level));
             let _span = tracy_client::span!("update inner");
 
-            let changed_count = vc
-                .changed
-                .iter()
-                .map(|b| b.count_ones() as usize)
-                .sum::<usize>();
-            let use_batch_update = changed_count > 32;
+            let mut child_delta_commitments = [Commitment::default(); 256];
 
-            use rayon::prelude::*;
+            child_delta_commitments
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, delta_i)| {
+                    if vc.initialized == 0 && vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                        // FIXME HACK: New nodes that are reparented are not marked as dirty in
+                        // parent - need to recurse here anyway. For other
+                        // implementations this was not an issue since we
+                        // always worked through the log. => We should
+                        // probably mark as dirty in parent?
+                        if manager
+                            .get_read_access(children[i])
+                            .unwrap()
+                            .get_commitment()
+                            .is_dirty()
+                        {
+                            let child_node = manager.get_write_access(children[i]).unwrap();
+                            update_commitment_thread(
+                                dbg_recursion_level + 1,
+                                child_node,
+                                i,
+                                delta_i,
+                                manager,
+                            );
+                            return;
+                        }
 
-            let mut deltas = [Scalar::zero(); 256];
-
-            deltas.par_iter_mut().enumerate().for_each(|(i, delta_i)| {
-                if vc.initialized == 0 && vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                    // FIXME HACK: New nodes that are reparented are not marked as dirty in parent -
-                    // need to recurse here anyway. For other implementations this was not an
-                    // issue since we always worked through the log.
-                    // => We should probably mark as dirty in parent?
-                    if manager
-                        .get_read_access(children[i])
-                        .unwrap()
-                        .get_commitment()
-                        .is_dirty()
-                    {
-                        let child_node = manager.get_write_access(children[i]).unwrap();
-                        update_commitment_thread(
-                            dbg_recursion_level + 1,
-                            scope,
-                            child_node,
-                            delta_i,
-                            manager,
+                        delta_i.update(
+                            i as u8,
+                            Scalar::zero(),
+                            manager
+                                .get_read_access(children[i])
+                                .unwrap()
+                                .get_commitment()
+                                .commitment()
+                                .to_scalar(),
                         );
+
                         return;
                     }
 
-                    *delta_i = manager
-                        .get_read_access(children[i])
-                        .unwrap()
-                        .get_commitment()
-                        .commitment
-                        .to_scalar();
-                    return;
-                }
-
-                if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                    return;
-                }
-                // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
-                let child_node = manager.get_write_access(children[i]).unwrap();
-                update_commitment_thread(
-                    dbg_recursion_level + 1,
-                    scope,
-                    child_node,
-                    delta_i,
-                    manager,
-                );
-            });
-
-            /*             let mut deltas = &mut deltas[..];
-            rayon::scope(|s| {
-                for (i, child_id) in children.iter().enumerate() {
-                    let (mut first, rest) = deltas.split_first_mut().unwrap();
-                    deltas = rest;
                     if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                        continue;
+                        return;
                     }
-                    eprintln!(
-                        "{}spawning update for child {} with delta pointer {:p}",
-                        "  ".repeat(dbg_recursion_level),
+                    // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
+                    let child_node = manager.get_write_access(children[i]).unwrap();
+                    update_commitment_thread(
+                        dbg_recursion_level + 1,
+                        child_node,
                         i,
-                        &mut deltas[i]
+                        delta_i,
+                        manager,
                     );
-                    let child_id = *child_id;
-                    let deltas = &mut deltas;
-                    s.spawn(move |s| {
-                        let child_node = manager.get_write_access(child_id).unwrap();
-                        update_commitment_thread(
-                            dbg_recursion_level + 1,
-                            s,
-                            child_node,
-                            &mut deltas[i],
-                            manager,
-                        );
-                        eprintln!("delta for child {} is {:?}", i, deltas[i]);
-                    });
-                }
-            }); */
-            // std::thread::sleep(std::time::Duration::from_millis(500));
-            if vc.initialized == 0 {
-                vc.commitment = Commitment::new(&deltas);
-                vc.initialized = 1;
-            } else if use_batch_update {
-                vc.commitment = vc.commitment + Commitment::new(&deltas);
-            } else {
-                // TODO: Just get rid of non-batched for this implementation?
-                for (i, _) in children.iter().enumerate() {
+                });
+
+            let _span = tracy_client::span!("sum up child delta commitments");
+            let delta_commitment = child_delta_commitments
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, c)| {
                     if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                        continue;
+                        None
+                    } else {
+                        Some(c)
                     }
-                    // eprintln!(
-                    //     "{}updating child {} with delta {:?}",
-                    //     "  ".repeat(dbg_recursion_level),
-                    //     i,
-                    //     deltas[i]
-                    // );
-                    vc.commitment.update(i as u8, Scalar::zero(), deltas[i]);
-                }
+                })
+                .collect::<Vec<_>>()
+                .into_par_iter()
+                .chunks(4)
+                .fold(Commitment::default, |acc, chunk| {
+                    let mut res = acc;
+                    for c in chunk {
+                        res = res + c;
+                    }
+                    res
+                })
+                .reduce(Commitment::default, |acc, delta_commitment| {
+                    acc + delta_commitment
+                });
+
+            if vc.initialized == 0 {
+                vc.commitment = delta_commitment;
+                vc.initialized = 1;
+            } else {
+                vc.commitment = vc.commitment + delta_commitment;
             }
         }
     }
 
-    *delta = vc.commitment.to_scalar() - node.get_commitment().commitment().to_scalar();
+    // let delta = vc.commitment.to_scalar() - node.get_commitment().commitment().to_scalar();
+    delta_commitment.update(
+        index_in_parent as u8,
+        node.get_commitment().commitment().to_scalar(),
+        vc.commitment.to_scalar(),
+    );
     // eprintln!(
     //     "{}setting delta to {:?}",
     //     "  ".repeat(dbg_recursion_level),
@@ -541,38 +527,21 @@ pub fn update_commitments_concurrent_recursive(
     root_id: VerkleNodeId,
     log: &TrieUpdateLog<VerkleNodeId>,
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
-) -> Result<(), Error> {
+) -> BTResult<(), Error> {
     // TODO: This is still useful to have, maybe not get rid of log entirely?
     if log.count() == 0 {
         return Ok(());
     }
 
-    let span = tracy_client::span!("update leaf");
-    span.emit_text(&format!("log count: {}", log.count()));
+    if log.count() <= 8 {
+        return update_commitments(log, manager);
+    }
 
-    // if log.count() <= 8 {
-    //     return update_commitments(log, manager);
-    // }
+    let _span = tracy_client::span!("update_commitments_concurrent_recursive");
 
-    // let previous_commitments = DashMap::<NodeId, Commitment>::new();
-    rayon::scope(|s| {
-        s.spawn(|s| {
-            let mut delta = Scalar::zero();
-            let root = manager.get_write_access(root_id).unwrap();
-            update_commitment_thread(0, s, root, &mut delta, manager);
-
-            // let _span = tracy_client::span!("looping over dirty nodes");
-            // let total_nodes = dirty_nodes.len();
-            // loop {
-            //     let idx = next_idx.fetch_add(1, Ordering::SeqCst);
-            //     if idx >= total_nodes {
-            //         break;
-            //     }
-            //     let id = dirty_nodes[idx];
-            //     process_update(manager, id, previous_commitments);
-            // }
-        });
-    });
+    let mut delta_commitment = Commitment::default();
+    let root = manager.get_write_access(root_id).unwrap();
+    update_commitment_thread(0, root, 0, &mut delta_commitment, manager);
 
     log.clear();
     Ok(())
