@@ -1,7 +1,3 @@
 /target
 # Db
-committed_checkpoint.bin
-committed_metadata.bin
-node_store.bin
-root_ids.bin
-reuse_list.bin
+*.bin
