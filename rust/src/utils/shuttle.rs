@@ -48,11 +48,8 @@ pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: us
                 let mut shuttle_config = shuttle::Config::new();
                 shuttle_config.failure_persistence = match std::env::var("SHUTTLE_PERSISTENCE_MODE")
                 {
-                    Ok(mode) => match mode.as_str() {
-                        "file" => shuttle::FailurePersistence::File(None),
-                        _ => shuttle::FailurePersistence::Print,
-                    },
-                    Err(_) => shuttle::FailurePersistence::Print,
+                    Ok(mode) if mode == "file" => shuttle::FailurePersistence::File(None),
+                    _ => shuttle::FailurePersistence::Print,
                 };
 
                 let runner = shuttle::Runner::new(
