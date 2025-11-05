@@ -12,5 +12,4 @@
 pub(crate) use std::{hint, sync::*};
 
 #[cfg(feature = "shuttle")]
-#[allow(unused_imports)]
 pub(crate) use shuttle::{hint, sync::*, thread};
