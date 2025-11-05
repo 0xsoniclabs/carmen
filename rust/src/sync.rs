@@ -9,15 +9,15 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 #[cfg(not(feature = "shuttle"))]
-pub(crate) use std::sync::{
-    Arc, Mutex, RwLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
-};
-#[cfg(not(feature = "shuttle"))]
 #[cfg(test)]
+pub(crate) use std::sync::Barrier;
+#[cfg(not(feature = "shuttle"))]
 pub(crate) use std::{
     hint,
-    sync::{Barrier, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
 };
 
 #[cfg(feature = "shuttle")]

@@ -9,11 +9,12 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
 
-use std::{mem::MaybeUninit, ops::Deref, sync::Arc};
+use std::{mem::MaybeUninit, ops::Deref};
 
 use crate::{
     database::VerkleTrieCarmenState,
     error::{BTResult, Error},
+    sync::Arc,
     types::*,
 };
 
