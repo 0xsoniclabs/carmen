@@ -265,6 +265,8 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 name = "carmen"
 version = "0.1.0"
 dependencies = [
+ "ark-ec",
+ "ark-ed-on-bls12-381-bandersnatch",
  "ark-ff",
  "banderwagon",
  "bindgen",
