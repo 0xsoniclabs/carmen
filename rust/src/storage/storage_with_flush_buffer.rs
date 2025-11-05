@@ -17,6 +17,7 @@ use crate::{
     storage::{Checkpointable, Error, RootIdProvider, Storage},
     sync::{Arc, AtomicBool, Ordering},
 };
+
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
 /// written to the underlying storage layer in background threads.
 ///
