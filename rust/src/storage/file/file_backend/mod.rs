@@ -65,7 +65,10 @@ mod tests {
     use super::*;
     use crate::{
         storage::file::{PageCachedFile, file_backend::page_utils::Page},
-        sync::{Arc, AtomicU64, Barrier, Ordering},
+        sync::{
+            Arc, Barrier,
+            atomic::{AtomicU64, Ordering},
+        },
         utils::test_dir::{Permissions, TestDir},
     };
 

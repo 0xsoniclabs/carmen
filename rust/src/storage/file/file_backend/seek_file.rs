@@ -12,10 +12,9 @@ use std::{
     fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
-    sync::Mutex,
 };
 
-use crate::{error::BTResult, storage::file::FileBackend};
+use crate::{error::BTResult, storage::file::FileBackend, sync::Mutex};
 
 /// A wrapper around [`std::fs::File`] that implements [`FileBackend`] using a mutex to ensure
 /// exclusive access to the file. This is suitable for platforms where `pread` and `pwrite` are not

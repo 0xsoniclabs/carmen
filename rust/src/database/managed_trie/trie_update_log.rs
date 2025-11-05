@@ -8,9 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::{RwLock, RwLockReadGuard};
-
 use dashmap::DashSet;
+
+use crate::sync::{RwLock, RwLockReadGuard};
 
 /// A log of nodes that are being modified during updates to a managed trie, allowing for the batch
 /// recomputation of commitments afterwards. Nodes are identified by an `ID` type, and are organized

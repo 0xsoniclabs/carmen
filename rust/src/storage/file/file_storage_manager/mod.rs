@@ -66,7 +66,7 @@ where
     $STORAGE_GENERICS_BOUNDS
 {
     dir: ::std::path::PathBuf,
-    checkpoint: ::std::sync::atomic::AtomicU64,
+    checkpoint: $crate::sync::atomic::AtomicU64,
     $(
         ${if not(approx_equal($vname, Empty)) {
             ${snake_case $vname}: ${paste ${upper_camel_case $vname} Storage},
@@ -120,7 +120,7 @@ where
 
         Ok(Self {
             dir: dir.to_path_buf(),
-            checkpoint: ::std::sync::atomic::AtomicU64::new(checkpoint_data.checkpoint_number),
+            checkpoint: $crate::sync::atomic::AtomicU64::new(checkpoint_data.checkpoint_number),
             $(
                 ${if not(approx_equal($vname, Empty)) {
                     ${snake_case $vname},
@@ -190,7 +190,7 @@ where
     $STORAGE_GENERICS_BOUNDS
 {
     fn checkpoint(&self) -> $crate::error::BTResult<(), $crate::storage::Error> {
-        let current_checkpoint = self.checkpoint.load(::std::sync::atomic::Ordering::Acquire);
+        let current_checkpoint = self.checkpoint.load($crate::sync::atomic::Ordering::Acquire);
         let new_checkpoint = current_checkpoint + 1;
         let participants = [
             $(
@@ -221,7 +221,7 @@ where
         for participant in participants.iter() {
             participant.commit(new_checkpoint)?;
         }
-        self.checkpoint.store(new_checkpoint, ::std::sync::atomic::Ordering::Release);
+        self.checkpoint.store(new_checkpoint, $crate::sync::atomic::Ordering::Release);
         Ok(())
     }
 }
@@ -248,10 +248,7 @@ pub use tests::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeType};
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        sync::atomic::{AtomicU64, Ordering},
-    };
+    use std::fs;
 
     use derive_deftly::Deftly;
     use mockall::{Sequence, predicate::eq};
@@ -268,6 +265,7 @@ mod tests {
                 },
             },
         },
+        sync::atomic::{AtomicU64, Ordering},
         types::{NodeSize, TreeId},
         utils::test_dir::{Permissions, TestDir},
     };

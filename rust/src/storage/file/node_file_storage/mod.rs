@@ -20,7 +20,10 @@ use crate::{
         CheckpointParticipant, Error, Storage,
         file::{FileBackend, FromToFile},
     },
-    sync::{AtomicU64, Mutex, Ordering, RwLock},
+    sync::{
+        Mutex, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
     types::DiskRepresentable,
 };
 mod node_file_storage_metadata;

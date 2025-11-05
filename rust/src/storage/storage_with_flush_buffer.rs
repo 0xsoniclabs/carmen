@@ -15,7 +15,10 @@ use dashmap::DashMap;
 use crate::{
     error::BTResult,
     storage::{Checkpointable, Error, RootIdProvider, Storage},
-    sync::{Arc, AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
