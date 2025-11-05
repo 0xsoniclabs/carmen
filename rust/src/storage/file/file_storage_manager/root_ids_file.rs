@@ -13,16 +13,19 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
-    sync::{
-        Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
 };
 
 use quick_cache::sync::Cache;
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::{error::BTResult, storage::Error};
+use crate::{
+    error::BTResult,
+    storage::Error,
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 /// A wrapper around a file storing root IDs, the ID of a tree's root node at a given block number.
 /// Recently used IDs are cached in memory for faster access.
