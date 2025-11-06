@@ -15,8 +15,7 @@ use crate::{
 };
 
 /// The result of a call to [`ManagedTrieNode::lookup`].
-#[cfg_attr(not(test), expect(unused))]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LookupResult<ID> {
     /// Indicates that the value associated with the key was found in this node.
     Value(Value),
@@ -25,8 +24,7 @@ pub enum LookupResult<ID> {
 }
 
 /// The result of a call to [`ManagedTrieNode::next_store_action`].
-#[cfg_attr(not(test), expect(unused))]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum StoreAction<ID, U> {
     /// Indicates that the value can be stored directly in this node.
     Store {
