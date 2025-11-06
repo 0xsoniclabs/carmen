@@ -16,7 +16,10 @@ use crate::{
         FileBackend,
         file_backend::page_utils::{O_DIRECT, O_SYNC, Page, PageGuard, Pages},
     },
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        thread,
+    },
 };
 
 /// A wrapper around a [`FileBackend`] that caches multiple pages (4096 bytes) in memory.
@@ -64,40 +67,41 @@ impl<const P: usize, F: FileBackend, const D: bool> FileBackend for MultiPageCac
         })
     }
 
-    fn write_all_at(&self, buf: &[u8], offset: u64) -> BTResult<(), std::io::Error> {
-        let mut locked_page = self.change_page(offset)?;
+    fn write_all_at(&self, mut buf: &[u8], mut offset: u64) -> BTResult<(), std::io::Error> {
+        let mut locked_pages: [Option<PageGuard>; P] = self.get_pages(buf, offset)?;
 
-        let start_in_page = offset as usize - locked_page.page_index() as usize * Page::SIZE;
-        let end_in_page = cmp::min(start_in_page + buf.len(), Page::SIZE);
-        let len = end_in_page - start_in_page;
-
-        locked_page[start_in_page..end_in_page].copy_from_slice(&buf[..len]);
+        for locked_page in locked_pages.iter_mut().flatten() {
+            let start_in_page = offset as usize - locked_page.page_index() as usize * Page::SIZE;
+            let end_in_page = cmp::min(start_in_page + buf.len(), Page::SIZE);
+            let len = end_in_page - start_in_page;
+            locked_page[start_in_page..end_in_page].copy_from_slice(&buf[..len]);
+            buf = &buf[len..];
+            offset += len as u64;
+        }
 
         self.file_len
-            .fetch_max(offset + len as u64, Ordering::Release);
+            .fetch_max(offset + buf.len() as u64, Ordering::Release);
 
-        if buf.len() > len {
-            self.write_all_at(&buf[len..], offset + len as u64)?;
-        }
         Ok(())
     }
 
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> BTResult<(), std::io::Error> {
+    fn read_exact_at(&self, mut buf: &mut [u8], mut offset: u64) -> BTResult<(), std::io::Error> {
         if offset + buf.len() as u64 > self.file_len.load(Ordering::Acquire) {
             return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
         }
 
-        let locked_page = self.change_page(offset)?;
+        let locked_pages: [Option<PageGuard>; P] = self.get_pages(buf, offset)?;
 
-        let start_in_page = offset as usize - locked_page.page_index() as usize * Page::SIZE;
-        let end_in_page = cmp::min(start_in_page + buf.len(), Page::SIZE);
-        let len = end_in_page - start_in_page;
+        for locked_page in locked_pages.iter().flatten() {
+            let start_in_page = offset as usize - locked_page.page_index() as usize * Page::SIZE;
+            let end_in_page = cmp::min(start_in_page + buf.len(), Page::SIZE);
+            let len = end_in_page - start_in_page;
 
-        buf[..len].copy_from_slice(&locked_page[start_in_page..end_in_page]);
-
-        if buf.len() > len {
-            self.read_exact_at(&mut buf[len..], offset + len as u64)?;
+            buf[..len].copy_from_slice(&locked_page[start_in_page..end_in_page]);
+            buf = &mut buf[len..];
+            offset += len as u64;
         }
+
         Ok(())
     }
 
@@ -136,17 +140,57 @@ impl<const P: usize, F: FileBackend, const D: bool> MultiPageCachedFile<P, F, D>
         Ok(())
     }
 
-    /// Returns a locked page that contains the data for the given offset.
+    /// Returns a locked page that contains the data for the given offset, or `None` if this would
+    /// block.
     ///
     /// This function loads the page containing the given offset into memory, flushing the currently
     /// cached data if dirty. If the offset is already within the currently loaded page, this is
     /// a no-op.
-    fn change_page(&'_ self, offset: u64) -> BTResult<PageGuard<'_>, std::io::Error> {
+    fn change_page(&'_ self, offset: u64) -> BTResult<Option<PageGuard<'_>>, std::io::Error> {
         self.pages.get_page_for_offset(
             offset,
             |page, page_index| self.load_page(page, page_index),
             |page, page_index| self.store_page(page, page_index),
         )
+    }
+
+    /// Acquires locked pages for all pages needed to cover the given buffer at the given offset.
+    fn get_pages(
+        &self,
+        buf: &[u8],
+        offset: u64,
+    ) -> BTResult<[Option<PageGuard<'_>>; P], std::io::Error> {
+        if buf.len() > P * Page::SIZE {
+            panic!(
+                "buffer size exceeds sum of all caches: {} > {}",
+                buf.len(),
+                P * Page::SIZE
+            );
+        }
+
+        let mut locked_pages: [Option<PageGuard>; P] = std::array::from_fn(|_| None);
+        'acquire_retry: loop {
+            let mut offset = offset;
+            let mut buf = buf;
+            for i in 0..P {
+                let Some(locked_page) = self.change_page(offset)? else {
+                    locked_pages = std::array::from_fn(|_| None); // Release all previously acquired locks
+                    thread::yield_now();
+                    continue 'acquire_retry;
+                };
+
+                locked_pages[i] = Some(locked_page);
+                let len = cmp::min(buf.len(), Page::SIZE - (offset as usize % Page::SIZE));
+
+                if buf.len() == len {
+                    break;
+                }
+                buf = &buf[len..];
+                offset += len as u64;
+            }
+            break;
+        }
+        Ok(locked_pages)
     }
 }
 
@@ -222,14 +266,14 @@ mod tests {
         };
         let file = Arc::new(file);
 
-        let _locked_page = file.change_page(0).unwrap();
+        let _locked_page = file.get_pages(&[], 0).unwrap();
 
         // Try to access the same page from another thread. This should block until the first lock
         // is dropped.
         let handle = std::thread::spawn({
             let file = Arc::clone(&file);
             move || {
-                let _locked_page = file.change_page(0).unwrap();
+                let _locked_page = file.get_pages(&[], 0).unwrap();
             }
         });
 
@@ -253,16 +297,16 @@ mod tests {
         let file = Arc::new(file);
 
         // Lock the first cached page.
-        let locked_page1 = file.change_page(0).unwrap();
+        let locked_page1 = file.get_pages(&[], 0).unwrap();
 
         // Locking the second cached page should succeed immediately.
-        assert!(file.change_page(Page::SIZE as u64).is_ok());
+        assert!(file.get_pages(&[], Page::SIZE as u64).is_ok());
 
         // Locking the third page should block until the guard to page one is dropped,
         // since it occupies the same cache slot.
         let handle = std::thread::spawn({
             let file = Arc::clone(&file);
-            move || assert!(file.change_page(2 * Page::SIZE as u64).is_ok())
+            move || assert!(file.get_pages(&[], 2 * Page::SIZE as u64).is_ok())
         });
 
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -276,5 +320,18 @@ mod tests {
         // The guard to page one is dropped, so the thread should have been able to lock page three
         // and finish.
         assert!(handle.is_finished());
+    }
+
+    #[test]
+    #[should_panic(expected = "buffer size exceeds sum of all caches")]
+    fn acquiring_pages_for_buffer_which_is_larger_than_all_pages_panics() {
+        let file = MockFileBackend::new();
+        let file = MultiPageCachedFile::<_, _, true> {
+            file,
+            file_len: AtomicU64::new(0),
+            pages: Pages::new([(Page::zeroed(), 0), (Page::zeroed(), 1)]),
+        };
+
+        file.get_pages(&[0u8; 3 * Page::SIZE], 0).unwrap();
     }
 }

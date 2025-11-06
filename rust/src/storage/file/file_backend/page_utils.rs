@@ -8,7 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::TryLockError,
+};
 
 use crate::{
     error::BTResult,
@@ -135,9 +138,10 @@ impl<const P: usize> Pages<P> {
         })
     }
 
-    /// Returns a page which contains the data for the specified offset.
-    /// `load_page` is called to load the page data from disk if the requested page is not currently
-    /// cached.
+    /// Returns a page which contains the data for the specified offset, or `None` if this would
+    /// block.
+    /// `load_page` is called to load the page data from disk if the requested page is
+    /// not currently cached.
     /// `store_page` is called to write back the page data to disk if the cached page is dirty and
     /// needs to be remapped.
     pub fn get_page_for_offset(
@@ -145,10 +149,14 @@ impl<const P: usize> Pages<P> {
         offset: u64,
         load_page: impl Fn(&mut Page, u64) -> BTResult<(), std::io::Error>,
         store_page: impl Fn(&Page, u64) -> BTResult<(), std::io::Error>,
-    ) -> BTResult<PageGuard<'_>, std::io::Error> {
+    ) -> BTResult<Option<PageGuard<'_>>, std::io::Error> {
         let requested_page_index = offset / Page::SIZE as u64;
         let index_of_cached_page = requested_page_index as usize % P;
-        let mut page_guard = self.pages[index_of_cached_page].lock().unwrap();
+        let mut page_guard = match self.pages[index_of_cached_page].try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => return Ok(None),
+            Err(e) => panic!("{e:?}"),
+        };
 
         if page_guard.page_index != requested_page_index {
             if page_guard.dirty {
@@ -159,6 +167,6 @@ impl<const P: usize> Pages<P> {
             page_guard.page_index = requested_page_index;
         }
 
-        Ok(PageGuard { page_guard })
+        Ok(Some(PageGuard { page_guard }))
     }
 }

@@ -118,25 +118,25 @@ mod tests {
     )]
     #[case::multi_page_cached_file__seek_file__direct_io(
         (|path, options| {
-            <MultiPageCachedFile<8, SeekFile, true> as FileBackend>::open(path, options)
+            <MultiPageCachedFile<3, SeekFile, true> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__no_seek_file__direct_io(
         (|path, options| {
-            <MultiPageCachedFile<8, NoSeekFile, true> as FileBackend>::open(path, options)
+            <MultiPageCachedFile<3, NoSeekFile, true> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__seek_file__no_direct_io(
         (|path, options| {
-            <MultiPageCachedFile<8, SeekFile, false> as FileBackend>::open(path, options)
+            <MultiPageCachedFile<3, SeekFile, false> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
     #[case::multi_page_cached_file__no_seek_file__no_direct_io(
         (|path, options| {
-            <MultiPageCachedFile<8, NoSeekFile, false> as FileBackend>::open(path, options)
+            <MultiPageCachedFile<3, NoSeekFile, false> as FileBackend>::open(path, options)
                 .map(|f| Arc::new(f) as Arc<dyn FileBackend>)
         }) as OpenBackendFn
     )]
@@ -236,6 +236,8 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn write_all_at_can_write_across_pages(#[case] open_backend_fn: OpenBackendFn) {
+        // This test writes data that spans 3 pages.
+        // This requires the MultiPageCachedFile to have at least 3 pages in its cache.
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("test_file.bin");
 
@@ -317,6 +319,8 @@ mod tests {
 
     #[rstest_reuse::apply(open_backend)]
     fn read_exact_at_can_read_across_pages(#[case] open_backend_fn: OpenBackendFn) {
+        // This test reads data that spans 3 pages.
+        // This requires the MultiPageCachedFile to have at least 3 pages in its cache.
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("test_file.bin");
 
