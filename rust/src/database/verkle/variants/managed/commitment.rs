@@ -110,6 +110,26 @@ pub enum VerkleCommitmentInput {
     Inner([VerkleNodeId; 256]),
 }
 
+pub fn update_commitments_sequential(
+    log: &TrieUpdateLog<VerkleNodeId>,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+) -> BTResult<(), Error> {
+    if log.count() == 0 {
+        return Ok(());
+    }
+
+    let previous_commitments = DashMap::new();
+    for level in (0..log.levels()).rev() {
+        let dirty_nodes = log.dirty_nodes(level);
+        for id in dirty_nodes.iter() {
+            process_update(manager, *id, &previous_commitments);
+        }
+    }
+    // TODO: Test
+    log.clear();
+    Ok(())
+}
+
 pub fn process_update(
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
     id: VerkleNodeId,
