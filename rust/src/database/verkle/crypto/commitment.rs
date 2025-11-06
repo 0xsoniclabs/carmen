@@ -86,9 +86,10 @@ impl Committer for AggressiveCommitter {
         //     //     result
         //     // })
         // } else {
-        let mut arr = [Fr::from(0u64); 256];
-        arr[index] = scalar;
-        self.precomp.mul(&arr)
+        // let mut arr = [Fr::from(0u64); 256];
+        // arr[index] = scalar;
+        // self.precomp.mul(&arr)
+        self.precomp.mul_index(scalar, index)
         // }
     }
 }

@@ -40,6 +40,12 @@ impl MSMPrecomp {
         }
         Element(result)
     }
+
+    pub fn mul_index(&self, scalar: Fr, index: usize) -> Element {
+        let mut result = EdwardsProjective::zero();
+        self.precomp_points[index].scalar_mul(&scalar, &mut result);
+        Element(result)
+    }
 }
 
 impl PrecompPoint {
