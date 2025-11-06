@@ -10,7 +10,6 @@
 
 use std::{num::NonZero, sync::TryLockError};
 
-use dashmap::DashSet;
 use quick_cache::{
     DefaultHashBuilder, Lifecycle, UnitWeighter,
     sync::{Cache, DefaultLifecycle, GuardResult},
@@ -56,7 +55,7 @@ pub trait EvictionHooks: Send + Sync {
 /// If an item is currently locked for reading or writing, it will not be evicted.
 pub struct LockCache<K, V> {
     locks: Arc<[RwLock<V>]>,
-    free_slots: Arc<DashSet<usize>>,
+    free_slots: Arc<crossbeam_queue::ArrayQueue<usize>>,
     /// The quick-cache instance holds `Arc`s of slot indices into `locks`.
     /// By using an `Arc`, we can track how many threads are currently accessing a slot,
     /// and thereby avoid evicting items that are currently in use.
@@ -108,7 +107,11 @@ where
 
         let num_slots = true_capacity + extra_slots.get();
         let locks: Arc<[_]> = (0..num_slots).map(|_| RwLock::default()).collect();
-        let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
+        // let free_slots = Arc::new(DashSet::from_iter(0..num_slots));
+        let free_slots = Arc::new(crossbeam_queue::ArrayQueue::new(num_slots));
+        for i in 0..num_slots {
+            free_slots.push(i).unwrap();
+        }
 
         let cache = Cache::with_options(
             options,
@@ -177,7 +180,7 @@ where
                         ).into());
                     }
                     *guard = V::default();
-                    self.free_slots.insert(*slot);
+                    self.free_slots.push(*slot).unwrap(); // should never be full
                 }
                 Err(TryLockError::WouldBlock) => {
                     return Err(Error::IllegalConcurrentOperation(
@@ -227,10 +230,8 @@ where
                     // simultaneously be inserting keys and temporarily hold all remaining
                     // free slots. Since this can only happen if the cache is full,
                     // those threads will eventually each evict an item and free up a slot.
-                    let slot = self.free_slots.iter().next().map(|s| *s);
-                    if let Some(slot) = slot
-                        && let Some(slot) = self.free_slots.remove(&slot)
-                    {
+                    let slot = self.free_slots.pop();
+                    if let Some(slot) = slot {
                         break slot;
                     }
                     hint::spin_loop();
@@ -275,7 +276,7 @@ where
 /// or if their corresponding slot is currently locked.
 struct ItemLifecycle<K, V> {
     locks: Arc<[RwLock<V>]>,
-    free_slots: Arc<DashSet<usize>>,
+    free_slots: Arc<crossbeam_queue::ArrayQueue<usize>>,
     hooks: Arc<dyn EvictionHooks<Key = K, Value = V>>,
 }
 
@@ -320,7 +321,7 @@ where
             let mut lock = self.locks[*slot].write().unwrap();
             std::mem::take(&mut *lock)
         };
-        self.free_slots.insert(*slot);
+        self.free_slots.push(*slot).unwrap(); // should never be full
         self.hooks
             .on_evict(key, value)
             .expect("eviction callback failed");
@@ -329,6 +330,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crossbeam_queue::ArrayQueue;
+
     use super::*;
     use crate::{
         error::BTError,
@@ -354,9 +357,9 @@ mod tests {
         assert_eq!(cache.locks.len(), capacity + extra_slots);
         assert_eq!(cache.cache.capacity(), capacity as u64); // Unit weight per value
         // Check slots are correctly initialized
-        for i in 0..(capacity + 1) {
-            assert!(cache.free_slots.contains(&i));
-            assert_eq!(*cache.locks[i].read().unwrap(), i32::default());
+        assert!(cache.free_slots.len() == capacity + extra_slots);
+        for i in 0..(capacity + extra_slots) {
+            assert!(cache.free_slots.pop().unwrap() == i);
         }
     }
 
@@ -372,9 +375,10 @@ mod tests {
         assert_eq!(cache.locks.len(), capacity + extra_slots.get());
         assert_eq!(cache.cache.capacity(), capacity as u64); // Unit weight per value
         // Check slots are correctly initialized
-        for i in 0..(capacity + extra_slots.get()) {
-            assert!(cache.free_slots.contains(&i));
-            assert_eq!(*cache.locks[i].read().unwrap(), i32::default());
+        let extra_slots = extra_slots.get();
+        assert!(cache.free_slots.len() == capacity + extra_slots);
+        for i in 0..(capacity + extra_slots) {
+            assert!(cache.free_slots.pop().unwrap() == i);
         }
     }
 
@@ -459,9 +463,9 @@ mod tests {
         ));
 
         assert!(!cache.free_slots.is_empty());
-        for slot in cache.free_slots.iter() {
+        while let Some(slot) = cache.free_slots.pop() {
             // The evicted slot is reset to the default value.
-            assert_eq!(*cache.locks[*slot].read().unwrap(), i32::default());
+            assert_eq!(*cache.locks[slot].read().unwrap(), i32::default());
         }
     }
 
@@ -501,9 +505,9 @@ mod tests {
         cache.remove(1u32).unwrap();
         assert_eq!(cache.free_slots.len(), 1 + extra_slots);
 
-        for slot in cache.free_slots.iter() {
+        while let Some(slot) = cache.free_slots.pop() {
             // The removed slot is reset to the default value.
-            assert_eq!(*cache.locks[*slot].read().unwrap(), i32::default());
+            assert_eq!(*cache.locks[slot].read().unwrap(), i32::default());
         }
     }
 
@@ -583,7 +587,7 @@ mod tests {
         let locks: Arc<[_]> = Arc::from(vec![RwLock::new(123), RwLock::new(42)].into_boxed_slice());
         let lifecycle = ItemLifecycle {
             locks,
-            free_slots: Arc::new(DashSet::new()),
+            free_slots: Arc::new(ArrayQueue::new(10)),
             hooks: Arc::new(PinnedHook {}),
         };
 
@@ -609,7 +613,7 @@ mod tests {
     #[test]
     fn item_lifecycle_on_evict_invokes_callback_and_resets_slot() {
         let nodes: Arc<[_]> = Arc::from(vec![RwLock::new(123)].into_boxed_slice());
-        let free_slots = Arc::new(DashSet::new());
+        let free_slots = Arc::new(ArrayQueue::new(10));
         let logger = Arc::new(EvictionLogger::default());
         let lifecycle = ItemLifecycle {
             locks: nodes,
@@ -618,7 +622,14 @@ mod tests {
         };
         lifecycle.on_evict(&mut (), 42, Arc::new(0usize));
         assert!(logger.evicted.contains(&(42, 123)));
-        assert!(free_slots.contains(&0));
+        let mut is_in_free_slots = false;
+        while let Some(slot) = free_slots.pop() {
+            if slot == 0usize {
+                is_in_free_slots = true;
+                break;
+            }
+        }
+        assert!(is_in_free_slots);
         assert_eq!(*lifecycle.locks[0].read().unwrap(), i32::default());
     }
 
@@ -637,7 +648,7 @@ mod tests {
         }
 
         let nodes: Arc<[_]> = Arc::from(vec![RwLock::new(123)].into_boxed_slice());
-        let free_slots = Arc::new(DashSet::new());
+        let free_slots = Arc::new(ArrayQueue::new(10));
         let logger = Arc::new(FailingEvictionCallback);
         let lifecycle = ItemLifecycle {
             locks: nodes,
