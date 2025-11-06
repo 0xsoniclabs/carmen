@@ -8,20 +8,21 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-/// Helper function to run a test with `shuttle` using the random scheduler for `_max_iter`
+/// Helper function to run a test with [shuttle](https://docs.rs/shuttle) using the random scheduler for `_num_iter`
 /// iterations.
-/// It uses two environment variables to control its behavior:
-/// - `SHUTTLE_REPLAY` to replay a run from the latest schedule file (if empty) or a specific one
-///   (if set).
-/// - `SHUTTLE_PERSISTENCE_MODE` to set the failure persistence mode. Values are:
-///     - `file`: persist failures to a file.
-///     - any other value or unset: print failures to stdout.
+/// It supports two environment variables to control its behavior:
+/// - `CARMEN_SHUTTLE_REPLAY` to replay a run from the latest schedule file (if empty) or a specific
+///   one (if set).
+/// - `CARMEN_SHUTTLE_PERSIST` to persist schedules for failing tests. Values are:
+///     - `file`: persist failed schedules to a file, which can then be replayed using
+///       `CARMEN_SHUTTLE_REPLAY`.
+///     - any other value or unset: print failed schedules to stdout.
 #[track_caller]
-#[allow(dead_code)]
+#[expect(unused)]
 pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: usize) {
     #[cfg(feature = "shuttle")]
     {
-        if let Ok(schedule) = std::env::var("SHUTTLE_REPLAY") {
+        if let Ok(schedule) = std::env::var("CARMEN_SHUTTLE_REPLAY") {
             let path = if !schedule.is_empty() {
                 schedule
             } else {
@@ -43,7 +44,7 @@ pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: us
             shuttle::replay_from_file(_test, &path);
         } else {
             let mut shuttle_config = shuttle::Config::new();
-            shuttle_config.failure_persistence = match std::env::var("SHUTTLE_PERSISTENCE_MODE") {
+            shuttle_config.failure_persistence = match std::env::var("CARMEN_SHUTTLE_PERSIST") {
                 Ok(mode) if mode == "file" => shuttle::FailurePersistence::File(None),
                 _ => shuttle::FailurePersistence::Print,
             };
@@ -58,8 +59,7 @@ pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: us
 }
 
 /// Helper function to set the name of the current shuttle task.
-/// No-op if shuttle is not enabled.
-#[allow(dead_code)]
+#[expect(unused)]
 pub fn set_name_for_shuttle_task(_name: String) {
     #[cfg(feature = "shuttle")]
     shuttle::current::set_name_for_task(shuttle::current::me(), _name);
