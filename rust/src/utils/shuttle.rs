@@ -11,8 +11,7 @@
 /// Helper function to run a test with [shuttle](https://docs.rs/shuttle) using the random scheduler for `_num_iter`
 /// iterations.
 /// It supports two environment variables to control its behavior:
-/// - `CARMEN_SHUTTLE_REPLAY` to replay a run from the latest schedule file (if empty) or a specific
-///   one (if set).
+/// - `CARMEN_SHUTTLE_REPLAY` to replay from the specified file or the latest file if empty.
 /// - `CARMEN_SHUTTLE_PERSIST` to persist schedules for failing tests. Values are:
 ///     - `file`: persist failed schedules to a file, which can then be replayed using
 ///       `CARMEN_SHUTTLE_REPLAY`.
