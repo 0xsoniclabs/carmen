@@ -124,13 +124,13 @@ impl Op {
     /// - A reference to a non-existing node is returned
     /// - An unexpected error occurs
     fn execute(self, cache: Arc<LockCache<u32, i32>>, id: u32) -> thread::JoinHandle<()> {
-        match self {
-            Op::Add => thread::spawn(move || {
+        thread::spawn(move || match self {
+            Op::Add => {
                 if let Err(e) = cache.get_read_access_or_insert(id, || Ok(42)) {
                     self.handle_invalid_state(&e.into_inner());
                 }
-            }),
-            Op::Get => thread::spawn(move || {
+            }
+            Op::Get => {
                 let guard = cache.get_read_access_or_insert(id, || {
                     Err(Error::Storage(storage::Error::NotFound).into())
                 });
@@ -140,22 +140,25 @@ impl Op {
                     }
                     Err(e) => self.handle_invalid_state(&e.into_inner()),
                 }
-            }),
-            Op::Delete => thread::spawn(move || {
+            }
+            Op::Delete => {
                 if let Err(e) = cache.remove(id) {
                     self.handle_invalid_state(&e.into_inner());
                 }
-            }),
-            Op::Iter => thread::spawn(move || {
+            }
+            Op::Iter => {
                 for (_, guard) in cache.iter_write() {
                     assert!(*guard != i32::default());
                 }
-            }),
-        }
+            }
+        })
     }
+
     /// Handle an invalid state error according to the operation type.
-    /// Errors are classified into expected and unexpected ones, and panics are raised accordingly.
-    /// If the error does not indicate an invalid state, the function returns silently.
+    /// There are three categories of errors:
+    /// - Expected recoverable errors (e.g., Get on a non-existing node)
+    /// - Expected unrecoverable errors (e.g., Simultaneous get and delete)
+    /// - Unexpected errors that represent a bug in the lock cache implementation
     #[track_caller]
     fn handle_invalid_state(self, error: &Error) {
         let expected = match self {
@@ -262,14 +265,12 @@ impl PermutationTestCase {
         let mut operations = vec![];
         let sizeof_usize = std::mem::size_of::<usize>();
         let cache_size = usize::from_le_bytes(bytes[0..sizeof_usize].try_into().unwrap());
-        let mut i = sizeof_usize;
-        while i + OpWithId::size() <= bytes.len() {
-            let op = OpWithId::deserialize(&bytes[i..]);
-            operations.push(op);
-            i += OpWithId::size();
-        }
-        if i != bytes.len() {
+        let bytes = &bytes[sizeof_usize..];
+        if !bytes.len().is_multiple_of(OpWithId::size()) {
             panic!("Serialized case file has extra bytes");
+        }
+        for chunk in bytes.chunks_exact(OpWithId::size()) {
+            operations.push(OpWithId::deserialize(chunk));
         }
         Self {
             cache_size,
