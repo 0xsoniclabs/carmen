@@ -253,8 +253,8 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
 
     if dirty_bytes == 0 || dirty_bytes > ONE_GB as u64 {
         eprintln!(
-            "WARNING: The OS page cache is not limited to 1GB or less, as recommended. \
-            This might lead to inaccurate benchmark results. \
+            "WARNING: The OS page cache is too big, which may lead to inaccurate benchmark results. \
+            We recommend to limit it to 1GB or less. \
             Set `vm.dirty_bytes = 1073741824` in /etc/sysctl.conf then run `sudo sysctl -p` to apply the changes."
         );
     }
