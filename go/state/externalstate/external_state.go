@@ -50,7 +50,7 @@ const (
 )
 
 type externalBindings interface {
-	OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
+	OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
 	Flush(database unsafe.Pointer) C.enum_Result
 	Close(database unsafe.Pointer) C.enum_Result
 	ReleaseDatabase(database unsafe.Pointer) C.enum_Result
@@ -73,8 +73,8 @@ type externalBindings interface {
 type rustBindings struct {
 }
 
-func (r rustBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
+func (r rustBindings) OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Rust_OpenDatabase(schema, liveImpl, liveImplLen, archiveImpl, archiveImplLen, dir, dirLen, outDatabase)
 }
 
 func (r rustBindings) Flush(database unsafe.Pointer) C.enum_Result {
@@ -148,8 +148,8 @@ func (r rustBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64
 type cppBindings struct {
 }
 
-func (c cppBindings) OpenDatabase(schema C.uint8_t, liveImpl C.enum_LiveImpl, archiveImpl C.enum_ArchiveImpl, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_OpenDatabase(schema, liveImpl, archiveImpl, dir, dirLen, outDatabase)
+func (c cppBindings) OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
+	return C.Carmen_Cpp_OpenDatabase(schema, liveImpl, liveImplLen, archiveImpl, archiveImplLen, dir, dirLen, outDatabase)
 }
 
 func (c cppBindings) Flush(database unsafe.Pointer) C.enum_Result {
@@ -233,24 +233,18 @@ type ExternalState struct {
 	bindings externalBindings
 }
 
-func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl externalImpl) (state.State, error) {
+func newState(impl string, params state.Parameters, extImpl externalImpl) (state.State, error) {
 	if err := os.MkdirAll(filepath.Join(params.Directory, "live"), 0700); err != nil {
 		return nil, err
 	}
 	dir := C.CString(params.Directory)
 	defer C.free(unsafe.Pointer(dir))
 
-	archive := 0
-	switch params.Archive {
-	case state.ArchiveType(""), state.NoArchive:
-		archive = 0
-	case state.LevelDbArchive:
-		archive = 1
-	case state.SqliteArchive:
-		archive = 2
-	default:
-		return nil, fmt.Errorf("%w: unsupported archive type %v", state.UnsupportedConfiguration, params.Archive)
-	}
+	implStr := C.CString(impl)
+	defer C.free(unsafe.Pointer(implStr))
+
+	archiveStr := C.CString(string(params.Archive)) // Ensure params.Archive is converted to string
+	defer C.free(unsafe.Pointer(archiveStr))
 
 	var bindings externalBindings
 
@@ -264,7 +258,7 @@ func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl externalImp
 	}
 
 	db := unsafe.Pointer(nil)
-	result := bindings.OpenDatabase(C.C_Schema(params.Schema), impl, C.enum_ArchiveImpl(archive), dir, C.int(len(params.Directory)), &db)
+	result := bindings.OpenDatabase(C.C_Schema(params.Schema), implStr, C.int(len(impl)), archiveStr, C.int(len(params.Archive)), dir, C.int(len(params.Directory)), &db)
 	if result != C.kResult_Success {
 		return nil, fmt.Errorf("failed to create external database instance for parameters %v (error code %v)", params, result)
 	}
@@ -292,19 +286,19 @@ func newState(impl C.enum_LiveImpl, params state.Parameters, extImpl externalImp
 }
 
 func newRustInMemoryState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_Memory, params, externalImplRust)
+	return newState("memory", params, externalImplRust)
 }
 
 func newCppInMemoryState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_Memory, params, externalImplCpp)
+	return newState("memory", params, externalImplCpp)
 }
 
 func newCppFileBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_File, params, externalImplCpp)
+	return newState("file", params, externalImplCpp)
 }
 
 func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
-	return newState(C.kLive_LevelDb, params, externalImplCpp)
+	return newState("leveldb", params, externalImplCpp)
 }
 
 func (s *ExternalState) CreateAccount(address common.Address) error {

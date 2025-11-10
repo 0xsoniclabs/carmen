@@ -33,32 +33,33 @@ mod utils;
 /// state information, the information is loaded.
 pub fn open_carmen_db(
     schema: u8,
-    live_impl: LiveImpl,
-    archive_impl: ArchiveImpl,
+    live_impl: &[u8],
+    archive_impl: &[u8],
     _directory: &[u8],
 ) -> BTResult<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
         return Err(Error::UnsupportedSchema(schema).into());
     }
 
-    if !matches!(archive_impl, ArchiveImpl::None) {
+    if !matches!(archive_impl, b"none") {
         return Err(
             Error::UnsupportedImplementation("archive is not yet supported".to_owned()).into(),
         );
     }
 
     match live_impl {
-        LiveImpl::Memory => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+        b"memory" => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
         >::new()))),
-        LiveImpl::File => Err(Error::UnsupportedImplementation(
+        b"file" => Err(Error::UnsupportedImplementation(
             "file-based live state is not yet supported".to_owned(),
         )
         .into()),
-        LiveImpl::LevelDb => Err(Error::UnsupportedImplementation(
+        b"leveldb" => Err(Error::UnsupportedImplementation(
             "LevelDB-based live state is not supported".to_owned(),
         )
         .into()),
+        _ => Err(Error::UnsupportedImplementation("unknown live implementation".to_owned()).into()),
     }
 }
 

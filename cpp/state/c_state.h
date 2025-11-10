@@ -47,16 +47,6 @@ extern "C" {
 #define C_Hash void*
 #define C_AccountState void*
 
-// An enumeration of supported live state implementations.
-enum LiveImpl { kLive_Memory = 0, kLive_File = 1, kLive_LevelDb = 2 };
-
-// An enumeration of supported archive state implementations.
-enum ArchiveImpl {
-  kArchive_None = 0,
-  kArchive_LevelDb = 1,
-  kArchive_Sqlite = 2
-};
-
 enum Result {
   kResult_Success = 0,
   kResult_CorruptedDatabase = 1,
@@ -82,9 +72,10 @@ enum Result {
 // creation of the state instance failed, an error is returned and the output
 // pointer is not written to.
 DUPLICATE_FOR_LANGS(enum Result,
-                    OpenDatabase(C_Schema schema, enum LiveImpl live_impl,
-                                 enum ArchiveImpl archive_impl,
-                                 const char* directory, int length,
+                    OpenDatabase(C_Schema schema, const char* live_impl,
+                                 int live_impl_length, const char* archive_impl,
+                                 int archive_impl_length, const char* directory,
+                                 int directory_length,
                                  C_Database* out_database));
 
 // Flushes all committed database information to disk to guarantee permanent
@@ -115,7 +106,7 @@ DUPLICATE_FOR_LANGS(enum Result,
 // height into the output parameter `out_state`. The resulting state must be
 // released and must not outlive the life time of the provided database. This
 // function will return an error if called with a database that was opened with
-// ArchiveImpl::kArchive_None.
+// ArchiveImpl "none".
 DUPLICATE_FOR_LANGS(enum Result,
                     GetArchiveState(C_Database database, uint64_t block,
                                     C_State* out_state));

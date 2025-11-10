@@ -17,7 +17,7 @@ use crate::{
     CarmenDb, CarmenState,
     ffi::bindings,
     open_carmen_db,
-    types::{Address, ArchiveImpl, Hash, Key, LiveImpl, U256, Update, Value},
+    types::{Address, Hash, Key, U256, Update, Value},
 };
 
 /// The size of the buffer that gets passed to `Carmen_Rust_GetCode`.
@@ -37,7 +37,13 @@ const MAX_CODE_SIZE: usize = if cfg!(miri) { 25 } else { 25000 };
 /// error is returned and the output pointer is not written to.
 ///
 /// # Safety
-/// - `directory` must be a valid pointer to a byte array of length `length`
+/// - `live_impl` must be a valid pointer to a byte array of length `live_impl_len`
+/// - `live_impl` must be valid for reads for the duration of the call
+/// - `live_impl` must not be mutated for the duration of the call
+/// - `archive_impl` must be a valid pointer to a byte array of length `archive_impl_len`
+/// - `archive_impl` must be valid for reads for the duration of the call
+/// - `archive_impl` must not be mutated for the duration of the call
+/// - `directory` must be a valid pointer to a byte array of length `directory_len`
 /// - `directory` must be valid for reads for the duration of the call
 /// - `directory` must not be mutated for the duration of the call
 /// - `out_database` must be a valid pointer to a `*mut c_void`
@@ -45,34 +51,47 @@ const MAX_CODE_SIZE: usize = if cfg!(miri) { 25 } else { 25000 };
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     schema: u8,
-    live_impl: bindings::LiveImpl,
-    archive_impl: bindings::ArchiveImpl,
+    live_impl: *const c_char,
+    live_impl_len: c_int,
+    archive_impl: *const c_char,
+    archive_impl_len: c_int,
     directory: *const c_char,
-    length: c_int,
+    directory_len: c_int,
     database_out: *mut *mut c_void,
 ) -> bindings::Result {
     let token = LifetimeToken;
-    if directory.is_null() || length <= 0 || database_out.is_null() {
+    if live_impl.is_null()
+        || live_impl_len <= 0
+        || archive_impl.is_null()
+        || archive_impl_len <= 0
+        || directory.is_null()
+        || directory_len <= 0
+        || database_out.is_null()
+    {
         return bindings::Result_kResult_InvalidArguments;
     }
-    let live_impl = match live_impl {
-        bindings::LiveImpl_kLive_Memory => LiveImpl::Memory,
-        bindings::LiveImpl_kLive_File => LiveImpl::File,
-        bindings::LiveImpl_kLive_LevelDb => LiveImpl::LevelDb,
-        _ => return bindings::Result_kResult_InvalidArguments,
-    };
-    let archive_impl = match archive_impl {
-        bindings::ArchiveImpl_kArchive_None => ArchiveImpl::None,
-        bindings::ArchiveImpl_kArchive_LevelDb => ArchiveImpl::LevelDb,
-        bindings::ArchiveImpl_kArchive_Sqlite => ArchiveImpl::Sqlite,
-        _ => return bindings::Result_kResult_InvalidArguments,
+    // SAFETY:
+    // - `live_impl` is a valid pointer to a byte array of length `live_impl_len` (precondition)
+    // - `live_impl` is valid for reads for the duration of the call (precondition)
+    // - `live_impl` is not mutated for the duration of the call (precondition)
+    let live_impl = unsafe {
+        slice_from_raw_parts_scoped(live_impl as *const u8, live_impl_len as usize, &token)
     };
     // SAFETY:
-    // - `directory` is a valid pointer to a byte array of length `length` (precondition)
+    // - `archive_impl` is a valid pointer to a byte array of length `archive_impl_length`
+    //   (precondition)
+    // - `archive_impl` is valid for reads for the duration of the call (precondition)
+    // - `archive_impl` is not mutated for the duration of the call (precondition)
+    let archive_impl = unsafe {
+        slice_from_raw_parts_scoped(archive_impl as *const u8, archive_impl_len as usize, &token)
+    };
+    // SAFETY:
+    // - `directory` is a valid pointer to a byte array of length `directory_len` (precondition)
     // - `directory` is valid for reads for the duration of the call (precondition)
     // - `directory` is not mutated for the duration of the call (precondition)
-    let directory =
-        unsafe { slice_from_raw_parts_scoped(directory as *const u8, length as usize, &token) };
+    let directory = unsafe {
+        slice_from_raw_parts_scoped(directory as *const u8, directory_len as usize, &token)
+    };
     let db = open_carmen_db(schema, live_impl, archive_impl, directory);
     match db {
         Ok(db) => {
@@ -1075,7 +1094,7 @@ unsafe fn slice_from_raw_parts_mut_scoped<'s, T>(
 #[allow(unused)]
 const COMPILE_TIME_CHECK_THAT_SIGNATURES_MATCH_SIGNATURES_GENERATED_FROM_C_HEADER: () = {
     assert_same_signature(
-        Carmen_Rust_OpenDatabase as unsafe extern "C" fn(_, _, _, _, _, _) -> _,
+        Carmen_Rust_OpenDatabase as unsafe extern "C" fn(_, _, _, _, _, _, _, _) -> _,
         bindings::Carmen_Rust_OpenDatabase,
     );
     assert_same_signature(
@@ -1170,49 +1189,55 @@ mod tests {
 
     #[test]
     fn carmen_rust_open_database_returns_non_null_pointers() {
-        let live_impls = [LiveImpl::Memory, LiveImpl::File, LiveImpl::LevelDb];
-        let archive_impls = [ArchiveImpl::None, ArchiveImpl::LevelDb, ArchiveImpl::Sqlite];
-        for live_impl in live_impls {
-            for archive_impl in archive_impls {
-                unsafe {
-                    let dir = "dir";
-                    let mut out_database = std::ptr::null_mut();
-                    let result = Carmen_Rust_OpenDatabase(
-                        6,
-                        live_impl as u8 as u32,
-                        archive_impl as u8 as u32,
-                        dir.as_ptr() as *const c_char,
-                        dir.len() as i32,
-                        &mut out_database,
-                    );
-                    if result == bindings::Result_kResult_Success {
-                        assert!(!out_database.is_null());
-                        let db_ref = &mut *(out_database as *mut DbWrapper);
-                        assert!(!db_ref.inner.is_null());
-                        Carmen_Rust_ReleaseDatabase(out_database);
-                    } else {
-                        assert_eq!(result, bindings::Result_kResult_UnsupportedImplementation);
-                    }
-                }
+        unsafe {
+            let live = "memory";
+            let archive = "memory";
+            let dir = "dir";
+            let mut out_database = std::ptr::null_mut();
+            let result = Carmen_Rust_OpenDatabase(
+                6,
+                live.as_ptr() as *const c_char,
+                live.len() as i32,
+                archive.as_ptr() as *const c_char,
+                archive.len() as i32,
+                dir.as_ptr() as *const c_char,
+                dir.len() as i32,
+                &mut out_database,
+            );
+            if result == bindings::Result_kResult_Success {
+                assert!(!out_database.is_null());
+                let db_ref = &mut *(out_database as *mut DbWrapper);
+                assert!(!db_ref.inner.is_null());
+                Carmen_Rust_ReleaseDatabase(out_database);
+            } else {
+                assert_eq!(result, bindings::Result_kResult_UnsupportedImplementation);
             }
         }
     }
 
     #[test]
     fn carmen_rust_open_database_checks_that_arguments_are_valid() {
-        let dir = "dir";
+        let live_impl = "memory";
+        let live_impl_len = live_impl.len() as i32;
+        let live_impl = "memory".as_ptr() as *const c_char;
 
+        let archive_impl = "memory";
+        let archive_impl_len = archive_impl.len() as i32;
+        let archive_impl = archive_impl.as_ptr() as *const c_char;
+
+        let dir = "dir";
         let dir_len = dir.len() as i32;
         let dir = dir.as_ptr() as *const c_char;
-        let live_impl = 0; // bindings::LiveImpl_kLive_Memory
-        let archive_impl = 0; // bindings::ArchiveImpl_kArchive_None
+
         let mut out_database = std::ptr::null_mut();
 
         unsafe {
             let result = Carmen_Rust_OpenDatabase(
                 6,
-                9999, // invalid
+                std::ptr::null(), // invalid
+                live_impl_len,
                 archive_impl,
+                archive_impl_len,
                 dir,
                 dir_len,
                 &mut out_database,
@@ -1222,7 +1247,9 @@ mod tests {
             let result = Carmen_Rust_OpenDatabase(
                 6,
                 live_impl,
-                9999, // invalid
+                live_impl_len,
+                std::ptr::null(), // invalid
+                archive_impl_len,
                 dir,
                 dir_len,
                 &mut out_database,
@@ -1232,7 +1259,9 @@ mod tests {
             let result = Carmen_Rust_OpenDatabase(
                 6,
                 live_impl,
+                live_impl_len,
                 archive_impl,
+                archive_impl_len,
                 std::ptr::null(), // invalid
                 dir_len,
                 &mut out_database,
@@ -1242,7 +1271,9 @@ mod tests {
             let result = Carmen_Rust_OpenDatabase(
                 6,
                 live_impl,
+                live_impl_len,
                 archive_impl,
+                archive_impl_len,
                 dir,
                 0, // invalid
                 &mut out_database,
@@ -1252,7 +1283,9 @@ mod tests {
             let result = Carmen_Rust_OpenDatabase(
                 6,
                 live_impl,
+                live_impl_len,
                 archive_impl,
+                archive_impl_len,
                 dir,
                 dir_len,
                 std::ptr::null_mut(), // invalid
@@ -1264,12 +1297,16 @@ mod tests {
     #[test]
     fn carmen_rust_open_database_returns_error_as_int() {
         unsafe {
+            let live = "memory";
+            let archive = "none";
             let dir = "dir";
             let mut out_database = std::ptr::null_mut();
             let result = Carmen_Rust_OpenDatabase(
-                5, // unsupported schema version
-                LiveImpl::Memory as u8 as u32,
-                ArchiveImpl::None as u8 as u32,
+                5, // unsupported schema version,
+                live.as_ptr() as *const c_char,
+                live.len() as i32,
+                archive.as_ptr() as *const c_char,
+                archive.len() as i32,
                 dir.as_ptr() as *const c_char,
                 dir.len() as i32,
                 &mut out_database,

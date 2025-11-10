@@ -205,34 +205,34 @@ Database* OpenDatabase(const std::filesystem::path& directory,
 }
 
 template <template <class A> class Config, template <typename C> class State>
-Database* Open(const std::filesystem::path& directory, ArchiveImpl archive) {
-  switch (archive) {
-    case kArchive_None:
-      // We have no none-archive implementation, so we take the LevelDB one and
-      // disable it.
-      return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
-          directory, false);
-    case kArchive_LevelDb:
-      return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
-          directory, true);
-    case kArchive_Sqlite:
-      return OpenDatabase<State<Config<archive::sqlite::SqliteArchive>>>(
-          directory, true);
+Database* Open(const std::filesystem::path& directory, const char* archive,
+               int) {
+  if (std::strcmp(archive, "none") == 0) {
+    // We have no none-archive implementation, so we take the LevelDB one and
+    // disable it.
+    return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
+        directory, false);
+  } else if (std::strcmp(archive, "leveldb") == 0) {
+    return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
+        directory, true);
+  } else if (std::strcmp(archive, "sqlite") == 0) {
+    return OpenDatabase<State<Config<archive::sqlite::SqliteArchive>>>(
+        directory, true);
   }
   return nullptr;
 }
 
 template <template <class A> class Config>
 Database* Open(const std::filesystem::path& directory, std::uint8_t schema,
-               ArchiveImpl archive) {
+               const char* archive, int archive_length) {
   switch (schema) {
     case 0:  // default option is schema 1, fall-through
     case 1:
-      return Open<Config, s1::State>(directory, archive);
+      return Open<Config, s1::State>(directory, archive, archive_length);
     case 2:
-      return Open<Config, s2::State>(directory, archive);
+      return Open<Config, s2::State>(directory, archive, archive_length);
     case 3:
-      return Open<Config, s3::State>(directory, archive);
+      return Open<Config, s3::State>(directory, archive, archive_length);
   }
   return nullptr;
 }
@@ -242,23 +242,23 @@ Database* Open(const std::filesystem::path& directory, std::uint8_t schema,
 
 extern "C" {
 
-Result Carmen_Cpp_OpenDatabase(C_Schema schema, LiveImpl state,
-                               ArchiveImpl archive, const char* directory,
-                               int length, C_Database* out_database) {
+Result Carmen_Cpp_OpenDatabase(C_Schema schema, const char* state, int,
+                               const char* archive, int archive_length,
+                               const char* directory, int length,
+                               C_Database* out_database) {
   std::string_view dir(directory, length);
-  switch (state) {
-    case kLive_Memory:
-      *out_database =
-          carmen::Open<carmen::InMemoryConfig>(dir, schema, archive);
-      return kResult_Success;
-    case kLive_File:
-      *out_database =
-          carmen::Open<carmen::FileBasedConfig>(dir, schema, archive);
-      return kResult_Success;
-    case kLive_LevelDb:
-      *out_database =
-          carmen::Open<carmen::LevelDbBasedConfig>(dir, schema, archive);
-      return kResult_Success;
+  if (std::strcmp(state, "memory") == 0) {
+    *out_database = carmen::Open<carmen::InMemoryConfig>(dir, schema, archive,
+                                                         archive_length);
+    return kResult_Success;
+  } else if (std::strcmp(state, "file") == 0) {
+    *out_database = carmen::Open<carmen::FileBasedConfig>(dir, schema, archive,
+                                                          archive_length);
+    return kResult_Success;
+  } else if (std::strcmp(state, "leveldb") == 0) {
+    *out_database = carmen::Open<carmen::LevelDbBasedConfig>(
+        dir, schema, archive, archive_length);
+    return kResult_Success;
   }
   return kResult_InternalError;
 }
