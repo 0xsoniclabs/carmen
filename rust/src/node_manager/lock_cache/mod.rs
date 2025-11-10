@@ -356,6 +356,24 @@ mod tests {
         }
     }
 
+    #[rstest::rstest]
+    fn new_internal_creates_cache_with_correct_capacity(
+        #[values(0, 5, 100)] capacity: usize,
+        #[values(1, 10, 200)] extra_slots: usize,
+    ) {
+        let logger = Arc::new(EvictionLogger::default());
+        let extra_slots = NonZero::new(extra_slots).unwrap();
+        let cache = LockCache::<u32, i32>::new_internal(capacity, extra_slots, logger);
+
+        assert_eq!(cache.locks.len(), capacity + extra_slots.get());
+        assert_eq!(cache.cache.capacity(), capacity as u64); // Unit weight per value
+        // Check slots are correctly initialized
+        for i in 0..(capacity + extra_slots.get()) {
+            assert!(cache.free_slots.contains(&i));
+            assert_eq!(*cache.locks[i].read().unwrap(), i32::default());
+        }
+    }
+
     #[rstest_reuse::apply(get_method)]
     fn items_can_be_inserted_and_removed(
         #[case] get_fn: GetOrInsertMethod<fn() -> BTResult<i32, Error>>,
