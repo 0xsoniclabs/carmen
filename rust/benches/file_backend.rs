@@ -14,11 +14,7 @@ use std::{
     io::Write,
     ops::Deref,
     path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Instant,
+    sync::Arc,
 };
 
 #[cfg(unix)]
@@ -31,6 +27,10 @@ use criterion::{
     BenchmarkGroup, BenchmarkId, Criterion, PlotConfiguration, Throughput, criterion_group,
     criterion_main, measurement::WallTime,
 };
+
+use crate::utils::execute_with_threads;
+
+mod utils;
 
 const ONE_GB: usize = 1024 * 1024 * 1024;
 const FILE_SIZE: usize = 10 * ONE_GB; // 10GB
@@ -306,39 +306,22 @@ fn file_backend_benchmark(
             let chunk_size = *chunk_size;
             let threads = *threads;
             b.iter_custom(|iterations| {
-                let start_toggle = &AtomicBool::new(false);
-                let duration = std::thread::scope(|s| {
-                    let mut handles = Vec::with_capacity(threads);
-                    for thread in 0..threads {
-                        handles.push(s.spawn(move || {
-                            let mut data = vec![0; chunk_size];
-                            while !start_toggle.load(Ordering::Acquire) {
-                                std::hint::spin_loop();
-                            }
-                            let start = Instant::now();
-                            for iter in ((completed_iterations + thread as u64)
-                                ..(completed_iterations + iterations))
-                                .step_by(threads)
-                            {
-                                let offset = access.offset(iter, chunk_size);
-                                operation.execute(backend.deref(), &mut data, offset, iter);
-                            }
-                            let end = Instant::now();
-                            (start, end)
-                        }));
-                    }
-                    start_toggle.store(true, Ordering::Release);
-
-                    let times: Vec<_> = handles
-                        .into_iter()
-                        .map(|handle| handle.join().unwrap())
-                        .collect();
-                    let first_start = times.iter().map(|(start, _)| *start).min().unwrap();
-                    let last_end = times.iter().map(|(_, end)| *end).max().unwrap();
-                    last_end.duration_since(first_start)
-                });
-                completed_iterations += iterations;
-                duration
+                execute_with_threads(
+                    threads as u64,
+                    iterations,
+                    |i| *i,
+                    &mut completed_iterations,
+                    || vec![0u8; chunk_size],
+                    |iter, data| {
+                        operation.execute(
+                            backend.deref(),
+                            data,
+                            access.offset(iter, chunk_size),
+                            iter,
+                        );
+                        Ok(())
+                    },
+                )
             });
         },
     );
