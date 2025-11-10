@@ -97,7 +97,7 @@ jobs:
       with:
         workspaces: rust
     - name: cargo build
-      run: cargo build --all-features --all-targets
+      run: cargo build --all-targets
 
   test:
     name: test
