@@ -37,7 +37,6 @@ pub struct VerkleCommitment {
     changed: [u8; 256 / 8],
 }
 
-#[cfg_attr(not(test), expect(unused))]
 impl VerkleCommitment {
     pub fn commitment(&self) -> Commitment {
         self.commitment

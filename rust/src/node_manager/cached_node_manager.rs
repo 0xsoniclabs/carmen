@@ -96,7 +96,6 @@ where
     storage: Arc<StorageEvictionHandler<S>>,
 }
 
-#[cfg_attr(not(test), expect(unused))]
 impl<S> CachedNodeManager<S>
 where
     S: Storage + 'static,
