@@ -22,6 +22,7 @@ use crate::{
     },
     storage::{Checkpointable, Storage},
     sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
+    types::{HasEmptyId, HasEmptyNode},
 };
 
 /// A wrapper which dereferences to `N` and additionally stores its dirty status,
@@ -101,7 +102,7 @@ impl<S> CachedNodeManager<S>
 where
     S: Storage + 'static,
     S::Id: Eq + Hash + Copy,
-    S::Item: Default,
+    S::Item: Default + HasEmptyNode,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity, storage backend, and pin
     /// predicate.
@@ -127,13 +128,17 @@ where
 impl<S> NodeManager for CachedNodeManager<S>
 where
     S: Storage + 'static,
-    S::Id: Eq + Hash + Copy,
-    S::Item: Default,
+    S::Id: Eq + Hash + Copy + HasEmptyId,
+    S::Item: Default + HasEmptyNode,
 {
     type Id = S::Id;
     type NodeType = S::Item;
 
     fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error> {
+        if node.is_empty_node() {
+            // No need to cache empty nodes
+            return Ok(Self::Id::make_empty_id());
+        }
         let id = self.storage.reserve(&node);
         let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
@@ -151,6 +156,9 @@ where
         &self,
         id: Self::Id,
     ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
+        if id.is_empty_id() {
+            return Self::NodeType::make_empty_node().into();
+        }
         let lock = self.nodes.get_read_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
@@ -221,6 +229,19 @@ mod tests {
 
     type TestNodeId = u32;
     type TestNode = i32;
+
+    impl HasEmptyNode for TestNode {
+        fn is_empty_node(&self) -> bool {
+            false
+        }
+
+        fn make_empty_node() -> Self
+        where
+            Self: Sized,
+        {
+            panic!("Not implemented for TestNode");
+        }
+    }
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
     fn not_found() -> BTResult<NodeWithMetadata<TestNode>, Error> {
