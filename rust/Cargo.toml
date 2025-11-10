@@ -82,6 +82,7 @@ criterion = "0.7.0"
 tempfile = "3.20.0"
 
 [lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(coverage)'] }
 macro_use_extern_crate = "warn"
 unused_unsafe = "warn"
 

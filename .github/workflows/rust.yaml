@@ -115,6 +115,27 @@ jobs:
     - name: cargo test
       run: cargo test --all-targets --no-fail-fast
 
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+    - name: install rust
+      uses: dtolnay/rust-toolchain@1.89
+    - name: load cache
+      uses: Swatinem/rust-cache@v2
+    - name: install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: generate code coverage
+      run: cargo llvm-cov --all-targets --codecov --output-path codecov.json
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: codecov.json
+        fail_ci_if_error: true
+        verbose: true
+
   miri:
     name: miri
     runs-on: ubuntu-latest
