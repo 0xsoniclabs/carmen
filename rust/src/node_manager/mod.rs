@@ -30,7 +30,6 @@ mod lock_cache;
 /// instead a wrapper type which dereferences to [`NodeManager::NodeType`]. This abstraction allows
 /// for the node manager to associate metadata with each node, for example to implement smart cache
 /// eviction.
-#[cfg_attr(not(test), expect(unused))]
 pub trait NodeManager {
     /// The ID type used to identify nodes in the node manager.
     type Id;
