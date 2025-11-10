@@ -3,7 +3,7 @@
 use std::{
     io::Write,
     path::Path,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, Mutex},
     thread::JoinHandle,
 };
 
