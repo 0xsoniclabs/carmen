@@ -14,8 +14,9 @@ use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
-            FullLeafNode, InnerNode, VerkleNode, VerkleNodeId,
+            InnerNode, VerkleNode, VerkleNodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
+            nodes::make_smallest_leaf_node_for,
         },
     },
     error::{BTResult, Error},
@@ -48,6 +49,33 @@ pub struct SparseLeafNode<const N: usize> {
 }
 
 impl<const N: usize> SparseLeafNode<N> {
+    /// Creates a sparse leaf node from existing stem, values, and commitment.
+    /// Returns an error if there are more than N non-zero values.
+    pub fn from_existing(
+        stem: [u8; 31],
+        values: &[ValueWithIndex],
+        commitment: VerkleCommitment,
+    ) -> BTResult<Self, Error> {
+        let mut leaf = SparseLeafNode {
+            stem,
+            commitment,
+            ..Default::default()
+        };
+
+        // Insert values from previous leaf using get_slot_for to ensure no duplicate indices.
+        for vwi in values.iter() {
+            if vwi.value == Value::default() {
+                continue;
+            }
+            let slot = Self::get_slot_for(&leaf.values, vwi.index).ok_or(Error::CorruptedState(
+                "too many non-zero values to fit into sparse leaf".to_owned(),
+            ))?;
+            leaf.values[slot] = *vwi;
+        }
+
+        Ok(leaf)
+    }
+
     /// Returns the values and stem of this leaf node as commitment input.
     // TODO: This should not have to pass 256 values: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
@@ -61,13 +89,12 @@ impl<const N: usize> SparseLeafNode<N> {
     /// Returns a slot for storing a value with the given index, or `None` if no such slot exists.
     /// A slot is suitable if it either already holds the given index, or if it is empty
     /// (i.e., holds the default value).
-    fn get_slot_for(&self, index: u8) -> Option<usize> {
+    fn get_slot_for(values: &[ValueWithIndex], index: u8) -> Option<usize> {
         let mut empty_slot = None;
         // We always do a linear search over all values to ensure that we never hold the same index
         // twice in different slots. By starting the search at the given index we are very likely
         // to find the matching slot immediately in practice (if index < N).
-        for (i, vwi) in self
-            .values
+        for (i, vwi) in values
             .iter()
             .enumerate()
             .cycle()
@@ -133,27 +160,19 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         }
 
         // If we have a free/matching slot, we can store the value directly.
-        if self.get_slot_for(key[31]).is_some() {
+        if Self::get_slot_for(&self.values, key[31]).is_some() {
             return Ok(StoreAction::Store {
                 index: key[31] as usize,
             });
         }
 
-        // If the stems match but we don't have a free/matching slot, convert to a full leaf.
-        let new_leaf = FullLeafNode {
-            stem: self.stem,
-            values: {
-                let mut values = [Value::default(); 256];
-                for ValueWithIndex { index, value } in &self.values {
-                    values[*index as usize] = *value;
-                }
-                values
-            },
-            commitment: self.commitment,
-        };
-        Ok(StoreAction::HandleTransform(VerkleNode::Leaf256(Box::new(
-            new_leaf,
-        ))))
+        // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
+        Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
+            N + 1,
+            self.stem,
+            &self.values,
+            self.commitment,
+        )?))
     }
 
     fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
@@ -164,7 +183,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             .into());
         }
 
-        let slot = self.get_slot_for(key[31]).ok_or(Error::CorruptedState(
+        let slot = Self::get_slot_for(&self.values, key[31]).ok_or(Error::CorruptedState(
             "no available slot for storing value in sparse leaf".to_owned(),
         ))?;
         let prev_value = self.values[slot].value;
@@ -292,6 +311,110 @@ mod tests {
     }
 
     #[test]
+    fn from_existing_copies_stem_and_values_and_commitment_correctly() {
+        let mut commitment = VerkleCommitment::default();
+        commitment.store(2, VALUE1);
+
+        // Case 1: Contains an index that fits at the corresponding slot in a SparseLeaf<3>.
+        {
+            let values = [ValueWithIndex {
+                index: 2,
+                value: VALUE1,
+            }];
+            let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
+            assert_eq!(node.stem, STEM);
+            assert_eq!(node.commitment, commitment);
+            // Index is put into the correct slot
+            assert_eq!(node.values[0].index, 0);
+            assert_eq!(node.values[0].value, Value::default());
+            assert_eq!(node.values[1].index, 1);
+            assert_eq!(node.values[1].value, Value::default());
+            assert_eq!(node.values[2], values[0]);
+        }
+
+        // Case 2: Index does not have a corresponding slot in a SparseLeaf<3>.
+        {
+            let values = [ValueWithIndex {
+                index: 18,
+                value: VALUE1,
+            }];
+            let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
+            // The value is put into the first available slot.
+            // Note that the search begins at slot 18 % 3, which happens to be 0.
+            assert_eq!(node.values[0], values[0]);
+        }
+
+        // Case 3: The first index does not fit, but the second one would have.
+        {
+            let values = [
+                ValueWithIndex {
+                    index: 18,
+                    value: VALUE1,
+                },
+                ValueWithIndex {
+                    index: 0,
+                    value: VALUE1,
+                },
+                ValueWithIndex {
+                    index: 1,
+                    value: VALUE1,
+                },
+            ];
+            let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
+            // Since the first slot is taken by index 18, index 0 and 1 get shifted back by one.
+            assert_eq!(node.values[0], values[0]);
+            assert_eq!(node.values[1], values[1]);
+            assert_eq!(node.values[2], values[2]);
+        }
+
+        // Case 4: There are more values that can fit into a SparseLeaf<2>, but some of them are
+        // zero and can be skipped.
+        {
+            let values = [
+                ValueWithIndex {
+                    index: 20,
+                    value: VALUE1,
+                },
+                ValueWithIndex {
+                    index: 0,
+                    value: Value::default(),
+                },
+                ValueWithIndex {
+                    index: 1,
+                    value: VALUE1,
+                },
+            ];
+            let node = SparseLeafNode::<2>::from_existing(STEM, &values, commitment).unwrap();
+            assert_eq!(node.values[0], values[0]);
+            assert_eq!(node.values[1], values[2]);
+        }
+    }
+
+    #[test]
+    fn from_existing_returns_error_if_too_many_non_zero_values_are_provided() {
+        let values = [
+            ValueWithIndex {
+                index: 0,
+                value: VALUE1,
+            },
+            ValueWithIndex {
+                index: 1,
+                value: VALUE1,
+            },
+            ValueWithIndex {
+                index: 2,
+                value: VALUE1,
+            },
+        ];
+        let commitment = VerkleCommitment::default();
+        let result = SparseLeafNode::<2>::from_existing(STEM, &values, commitment);
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::CorruptedState(e)) if e.contains("too many non-zero values to fit into sparse leaf")
+        ));
+    }
+
+    #[test]
     fn get_commitment_input_returns_values_and_stem() {
         let node = make_leaf::<2>();
         let mut expected_values = [Value::default(); 256];
@@ -310,21 +433,21 @@ mod tests {
         let mut node = make_leaf::<7>();
 
         // Matching index
-        let slot = node.get_slot_for(INDEX_1);
+        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, INDEX_1);
         assert_eq!(slot, Some(0));
 
         // Matching index has precedence over empty slot
         node.values[1].value = Value::default();
-        let slot = node.get_slot_for(INDEX_1 + 3);
+        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, INDEX_1 + 3);
         assert_eq!(slot, Some(3));
 
         // No matching index, so we return first empty slot
-        let slot = node.get_slot_for(250);
+        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, 250);
         assert_eq!(slot, Some(1));
 
         // No matching index and no empty slot
         node.values[1].value = VALUE_1;
-        let slot = node.get_slot_for(250);
+        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, 250);
         assert_eq!(slot, None);
     }
 

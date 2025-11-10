@@ -17,7 +17,10 @@ use crate::{
             VerkleNodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
             nodes::{
-                empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+                empty::EmptyNode,
+                inner::InnerNode,
+                leaf::FullLeafNode,
+                sparse_leaf::{SparseLeafNode, ValueWithIndex},
             },
         },
     },
@@ -43,6 +46,7 @@ pub enum VerkleNode {
     Inner(Box<InnerVerkleNode>),
     Leaf2(Box<Leaf2VerkleNode>),
     Leaf256(Box<Leaf256VerkleNode>),
+    // Make sure to adjust smallest_leaf_type_for when adding new leaf types.
 }
 
 type EmptyVerkleNode = EmptyNode;
@@ -51,6 +55,15 @@ type Leaf2VerkleNode = SparseLeafNode<2>;
 type Leaf256VerkleNode = FullLeafNode;
 
 impl VerkleNode {
+    /// Returns the smallest leaf node type capable of storing `n` values.
+    pub fn smallest_leaf_type_for(n: usize) -> VerkleNodeKind {
+        match n {
+            0..=2 => VerkleNodeKind::Leaf2,
+            3..=256 => VerkleNodeKind::Leaf256,
+            _ => panic!("no leaf type for more than 256 values"),
+        }
+    }
+
     /// Returns the commitment input for computing the commitment of this node.
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         match self {
@@ -191,6 +204,36 @@ impl NodeSize for VerkleNodeKind {
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
         VerkleNodeKind::Leaf2.node_byte_size()
+    }
+}
+
+/// Creates the smallest leaf node capable of storing `n` values, initialized with the given
+/// `stem`, `values` and `commitment`.
+pub fn make_smallest_leaf_node_for(
+    n: usize,
+    stem: [u8; 31],
+    values: &[ValueWithIndex],
+    commitment: VerkleCommitment,
+) -> BTResult<VerkleNode, Error> {
+    match VerkleNode::smallest_leaf_type_for(n) {
+        VerkleNodeKind::Leaf2 => Ok(VerkleNode::Leaf2(Box::new(
+            SparseLeafNode::<2>::from_existing(stem, values, commitment)?,
+        ))),
+        VerkleNodeKind::Leaf256 => {
+            let mut new_leaf = FullLeafNode {
+                stem,
+                commitment,
+                ..Default::default()
+            };
+            for v in values {
+                new_leaf.values[v.index as usize] = v.value;
+            }
+            Ok(VerkleNode::Leaf256(Box::new(new_leaf)))
+        }
+        VerkleNodeKind::Empty | VerkleNodeKind::Inner => Err(Error::CorruptedState(
+            "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
+        )
+        .into()),
     }
 }
 
