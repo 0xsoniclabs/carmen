@@ -6,6 +6,21 @@ use std::{
 
 use carmen_rust::error::BTResult;
 
+/// Returns true with the given probability (in percentage)
+#[allow(dead_code)]
+pub fn with_prob(prob: u16) -> bool {
+    fastrand::f32() < (prob as f32) / 100.0
+}
+
+/// Returns an iterator over powers of 2 up to the number of available threads
+#[allow(dead_code)]
+pub fn pow_2_threads() -> impl Iterator<Item = usize> {
+    (1..=thread::available_parallelism().unwrap().get())
+        .filter(|x| (x - 1) & x == 0)
+        .collect::<Vec<_>>()
+        .into_iter()
+}
+
 /// Executes the given operation in parallel using the specified number of threads.
 /// Thread-local data can be created using the `op_data` closure, and iteration id can be customized
 /// using the `get_id` closure.
