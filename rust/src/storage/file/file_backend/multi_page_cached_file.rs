@@ -155,6 +155,7 @@ impl<const P: usize, F: FileBackend, const D: bool> MultiPageCachedFile<P, F, D>
     }
 
     /// Acquires locked pages for all pages needed to cover the given buffer at the given offset.
+    /// This will spin until all pages are available.
     fn get_pages(
         &self,
         buf: &[u8],
