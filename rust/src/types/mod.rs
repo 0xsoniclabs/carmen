@@ -9,11 +9,13 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use disk_representable::DiskRepresentable;
+pub use has_empty_node::{HasEmptyId, HasEmptyNode};
 pub use node_size::*;
 pub use tree_id::TreeId;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod disk_representable;
+mod has_empty_node;
 mod node_size;
 mod tree_id;
 mod update;
