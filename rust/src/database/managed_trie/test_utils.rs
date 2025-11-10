@@ -1,6 +1,5 @@
 use std::{
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicU32},
     thread,
     time::Duration,
 };
@@ -12,6 +11,7 @@ use crate::{
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicU32},
     types::{Key, Value},
 };
 
