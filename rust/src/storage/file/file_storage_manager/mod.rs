@@ -315,7 +315,7 @@ mod tests {
                 file_storage_manager::{metadata::Metadata, root_ids_file::RootIdsFile},
             },
         },
-        sync::atomic::{AtomicBool, AtomicU64, Ordering},
+        sync::atomic::{AtomicU64, Ordering},
         types::{NodeSize, TreeId},
         utils::test_dir::{Permissions, TestDir},
     };
@@ -804,121 +804,30 @@ mod tests {
     #[test]
     fn restore_calls_restore_on_all_storages_and_overwrites_metadata_with_committed_metadata_and_removes_db_dirty_file()
      {
-        static RESTORE_CALLED1: AtomicBool = AtomicBool::new(false);
-        static RESTORE_CALLED2: AtomicBool = AtomicBool::new(false);
+        type FileStorageManager = TestNodeFileStorageManager<
+            MockStorage<NonEmpty1TestNode>,
+            MockStorage<NonEmpty2TestNode>,
+        >;
 
-        struct CheckRestoreStorage1;
+        let dir = TestDir::try_new(Permissions::ReadWrite)
+            .unwrap()
+            .join("restore_test");
+        fs::create_dir_all(&dir).unwrap();
 
-        impl Storage for CheckRestoreStorage1 {
-            type Id = u64;
-            type Item = NonEmpty1TestNode;
-
-            fn open(_path: &Path) -> BTResult<Self, Error> {
-                unimplemented!()
-            }
-
-            fn get(&self, _id: Self::Id) -> BTResult<Self::Item, Error> {
-                unimplemented!()
-            }
-
-            fn reserve(&self, _item: &Self::Item) -> Self::Id {
-                unimplemented!()
-            }
-
-            fn set(&self, _id: Self::Id, _item: &Self::Item) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-
-            fn delete(&self, _id: Self::Id) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-
-            fn close(self) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-        }
-
-        impl CheckpointParticipant for CheckRestoreStorage1 {
-            fn ensure(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn prepare(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn commit(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn abort(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn restore(_path: &Path, _checkpoint: u64) -> BTResult<(), Error> {
-                RESTORE_CALLED1.store(true, Ordering::Relaxed);
-                Ok(())
-            }
-        }
-
-        struct CheckRestoreStorage2;
-
-        impl Storage for CheckRestoreStorage2 {
-            type Id = u64;
-            type Item = NonEmpty2TestNode;
-
-            fn open(_path: &Path) -> BTResult<Self, Error> {
-                unimplemented!()
-            }
-
-            fn get(&self, _id: Self::Id) -> BTResult<Self::Item, Error> {
-                unimplemented!()
-            }
-
-            fn reserve(&self, _item: &Self::Item) -> Self::Id {
-                unimplemented!()
-            }
-
-            fn set(&self, _id: Self::Id, _item: &Self::Item) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-
-            fn delete(&self, _id: Self::Id) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-
-            fn close(self) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-        }
-
-        impl CheckpointParticipant for CheckRestoreStorage2 {
-            fn ensure(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn prepare(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn commit(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn abort(&self, _checkpoint: u64) -> BTResult<(), Error> {
-                todo!()
-            }
-
-            fn restore(_path: &Path, _checkpoint: u64) -> BTResult<(), Error> {
-                RESTORE_CALLED2.store(true, Ordering::Relaxed);
-                Ok(())
-            }
-        }
-
-        type FileStorageManager =
-            TestNodeFileStorageManager<CheckRestoreStorage1, CheckRestoreStorage2>;
-
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let ctx = MockStorage::<NonEmpty1TestNode>::restore_context();
+        ctx.expect()
+            .withf(|path: &Path, checkpoint| {
+                path.to_str().unwrap().contains("restore_test") && *checkpoint == 1
+            })
+            .returning(|_, _| Ok(()))
+            .times(1);
+        let ctx = MockStorage::<NonEmpty2TestNode>::restore_context();
+        ctx.expect()
+            .withf(|path: &Path, checkpoint| {
+                path.to_str().unwrap().contains("restore_test") && *checkpoint == 1
+            })
+            .returning(|_, _| Ok(()))
+            .times(1);
 
         File::create(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap();
 
@@ -932,9 +841,6 @@ mod tests {
             .unwrap();
 
         FileStorageManager::restore(&dir, checkpoint_number).unwrap();
-
-        assert!(RESTORE_CALLED1.load(Ordering::Relaxed));
-        assert!(RESTORE_CALLED2.load(Ordering::Relaxed));
 
         assert_eq!(
             fs::read(dir.join(FileStorageManager::METADATA_FILE)).unwrap(),
