@@ -42,6 +42,12 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     }
 }
 
+impl Default for VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     fn account_exists(&self, addr: &Address) -> BTResult<bool, Error> {
         Ok(self.get_code_hash(addr)? != Hash::default())

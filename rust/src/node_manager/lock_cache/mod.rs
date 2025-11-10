@@ -133,7 +133,6 @@ where
     ///
     /// If the key is not present, it is inserted using `insert_fn`.
     /// Any error returned by `insert_fn` is propagated to the caller.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn get_read_access_or_insert(
         &self,
         key: K,
@@ -149,7 +148,6 @@ where
     ///
     /// If the key is not present, it is inserted using `insert_fn`.
     /// Any error returned by `insert_fn` is propagated to the caller.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn get_write_access_or_insert(
         &self,
         key: K,
@@ -163,7 +161,6 @@ where
     /// This function must not be called concurrently with any other operation on the same key.
     /// If the key is currently being accessed by another thread, an error is returned, after
     /// which the cache is in an indeterminate state.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn remove(&self, key: K) -> BTResult<(), Error> {
         if let Some(slot) = self.cache.get(&key) {
             // Try getting exclusive write access before removing the key,

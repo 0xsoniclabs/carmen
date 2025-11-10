@@ -38,6 +38,12 @@ impl SimpleInMemoryVerkleTrie {
     }
 }
 
+impl Default for SimpleInMemoryVerkleTrie {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VerkleTrie for SimpleInMemoryVerkleTrie {
     fn lookup(&self, key: &Key) -> BTResult<Value, Error> {
         let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::lookup");
