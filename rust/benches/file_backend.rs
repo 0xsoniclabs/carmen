@@ -10,7 +10,7 @@
 
 use std::{
     fmt::Display,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::Write,
     ops::Deref,
     path::Path,
@@ -33,7 +33,7 @@ use crate::utils::execute_with_threads;
 mod utils;
 
 const ONE_GB: usize = 1024 * 1024 * 1024;
-const FILE_SIZE: usize = 10 * ONE_GB; // 10GB
+const FILE: &str = "benchmark_file_backend.bin";
 
 /// Defines the access pattern for the benchmark.
 #[derive(Debug, Clone, Copy)]
@@ -57,17 +57,17 @@ impl AccessPattern {
     }
 
     /// Returns the offset for the given iteration and chunk size.
-    fn offset(self, iter: u64, chunk_size: usize) -> u64 {
+    fn offset(self, iter: u64, chunk_size: usize, file_size: usize) -> u64 {
         match self {
             AccessPattern::Static => 0,
-            AccessPattern::Linear => (iter * chunk_size as u64) % FILE_SIZE as u64,
+            AccessPattern::Linear => (iter * chunk_size as u64) % file_size as u64,
             AccessPattern::Random => {
                 // splitmix64
                 let rand = iter + 0x9e3779b97f4a7c15;
                 let rand = (rand ^ (rand >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
                 let rand = (rand ^ (rand >> 27)).wrapping_mul(0x94d049bb133111eb);
                 let rand = rand ^ (rand >> 31);
-                (rand.wrapping_mul(chunk_size as u64)) % FILE_SIZE as u64
+                (rand.wrapping_mul(chunk_size as u64)) % file_size as u64
             }
         }
     }
@@ -245,37 +245,46 @@ pub fn backend_open_fns() -> impl Iterator<Item = BackendOpenFn> {
 }
 
 fn file_backend_benchmark_matrix(c: &mut Criterion) {
-    let dirty_bytes = fs::read_to_string("/proc/sys/vm/dirty_bytes")
+    let meminfo = fs::read_to_string("/proc/meminfo").unwrap();
+    let mem_total = meminfo
+        .lines()
+        .find(|l| l.starts_with("MemTotal:"))
+        .unwrap();
+    let memory_kb: u64 = mem_total
+        .strip_prefix("MemTotal:")
+        .unwrap()
+        .strip_suffix("kB")
         .unwrap()
         .trim()
-        .parse::<u64>()
+        .parse()
         .unwrap();
 
-    if dirty_bytes == 0 || dirty_bytes > ONE_GB as u64 {
-        eprintln!(
-            "WARNING: The OS page cache is too big, which may lead to inaccurate benchmark results. \
-            We recommend to limit it to 1GB or less. \
-            Set `vm.dirty_bytes = 1073741824` in /etc/sysctl.conf then run `sudo sysctl -p` to apply the changes."
-        );
+    let target_file_size = memory_kb * 1024 * 4;
+
+    let path = Path::new(FILE);
+
+    if !fs::exists(path).unwrap() {
+        eprintln!("Creating benchmark file at {path:?}");
     }
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(false).write(true);
+    let mut file = options.open(path).unwrap();
 
-    let plot_config = PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
+    if file.metadata().unwrap().len() < target_file_size {
+        eprintln!(
+            "Expanding benchmark file {path:?} to {:.1}GB",
+            target_file_size as f64 / ONE_GB as f64
+        );
 
-    // Note: At least on Ubuntu, reading and writing to a file which is located directly in `/tmp`
-    // is slower than with a file in a subdirectory of `/tmp`.
-    let tempdir = tempfile::tempdir().unwrap();
-    let path = tempdir.path().join("data.bin");
-    let path = path.as_path();
-
-    {
-        let mut file = File::create(path).unwrap();
         let data_1gb = vec![0; ONE_GB];
-        for _ in 0..(FILE_SIZE / ONE_GB) {
+        for _ in 0..(target_file_size.div_ceil(ONE_GB as u64)) {
             file.write_all(&data_1gb).unwrap();
         }
         // Note: Using File::set_len creates sparse files on some file systems which results in
         // unrealistic read performance.
     }
+
+    let plot_config = PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
 
     for operation in Operation::variants() {
         for access in AccessPattern::variants() {
@@ -287,7 +296,14 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
                     group.plot_config(plot_config.clone());
                     for backend_fn in backend_open_fns() {
                         file_backend_benchmark(
-                            &mut group, path, operation, access, chunk_size, threads, backend_fn,
+                            &mut group,
+                            path,
+                            target_file_size,
+                            operation,
+                            access,
+                            chunk_size,
+                            threads,
+                            backend_fn,
                         );
                     }
                 }
@@ -296,9 +312,11 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn file_backend_benchmark(
     g: &mut BenchmarkGroup<'_, WallTime>,
     path: &Path,
+    file_size: u64,
     operation: Operation,
     access: AccessPattern,
     chunk_size: usize,
@@ -326,7 +344,7 @@ fn file_backend_benchmark(
                     &mut completed_iterations,
                     || vec![0u8; chunk_size],
                     |iter, data| {
-                        let offset = access.offset(iter, chunk_size);
+                        let offset = access.offset(iter, chunk_size, file_size as usize);
                         operation.execute(backend.deref(), data, offset, iter);
                     },
                 )
