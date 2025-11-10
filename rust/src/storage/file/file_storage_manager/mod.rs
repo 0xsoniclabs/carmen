@@ -85,9 +85,9 @@ where
         }}
     )
     pub const DB_DIRTY_FILE: &str = "db_dirty.bin";
-    pub const METADATA_FILE: &str = "checkpoint.bin";
-    pub const COMMITTED_METADATA_FILE: &str = "committed_checkpoint.bin";
-    pub const PREPARED_METADATA_FILE: &str = "prepared_checkpoint.bin";
+    pub const METADATA_FILE: &str = "metadata.bin";
+    pub const COMMITTED_METADATA_FILE: &str = "committed_metadata.bin";
+    pub const PREPARED_METADATA_FILE: &str = "prepared_metadata.bin";
     pub const ROOT_IDS_FILE: &str = "root_ids.bin";
 }
 
@@ -689,11 +689,11 @@ mod tests {
 
         assert!(storage.checkpoint().is_ok());
 
-        // The prepared checkpoint file should not exist after a successful checkpoint.
+        // The prepared metadata file should not exist after a successful checkpoint.
         assert!(!fs::exists(dir.join(
             TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
         )).unwrap());
-        // The committed checkpoint file should exist and contain the new checkpoint.
+        // The committed metadata file should exist and contain the new checkpoint.
         assert_eq!(
             Metadata::read_or_init(dir.join(
                 TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
@@ -753,11 +753,11 @@ mod tests {
             Err(Error::Io(_))
         ));
 
-        // The prepared checkpoint file should not exist after a failed checkpoint.
+        // The prepared metadata file should not exist after a failed checkpoint.
         assert!(!fs::exists(dir.join(
             TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
         )).unwrap());
-        // The committed checkpoint file should exist and contain the old checkpoint.
+        // The committed metadata file should exist and contain the old checkpoint.
         assert_eq!(
             Metadata::read_or_init(dir.join(
                 TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,

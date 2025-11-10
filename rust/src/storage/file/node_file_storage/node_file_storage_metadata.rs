@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::storage::file::from_to_file::FromToFile;
 
-/// Metadata stored in the checkpoint metadata file.
+/// Metadata that was written to / read from disk during `checkpoint` and `restore` operations.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct NodeFileStorageCheckpointMetadata {
@@ -28,7 +28,7 @@ pub struct NodeFileStorageCheckpointMetadata {
 
 impl FromToFile for NodeFileStorageCheckpointMetadata {}
 
-/// Metadata stored in the metadata file.
+/// Metadata that was written to / read from disk during normal `close and `open` operations.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct NodeFileStorageMetadata {
@@ -36,12 +36,12 @@ pub struct NodeFileStorageMetadata {
     pub last_checkpoint: u64,
     /// The total number of nodes in the storage.
     pub nodes: u64,
-    /// The number of frozen nodes that can not be modified because they are part of this
+    /// The number of frozen nodes that can not be modified because they are part of the last
     /// checkpoint.
     pub frozen_nodes: u64,
     /// The total number of reuse indices in the storage.
     pub reuse_indices: u64,
-    /// The number of frozen reuse indices that can not be reused because they are part of this
+    /// The number of frozen reuse indices that can not be reused because they are part of the last
     /// checkpoint.
     pub frozen_reuse_indices: u64,
 }
