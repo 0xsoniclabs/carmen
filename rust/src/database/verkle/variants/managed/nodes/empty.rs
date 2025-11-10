@@ -12,8 +12,9 @@ use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
-            InnerNode, Node, NodeId, SparseLeafNode,
+            InnerNode, Node, NodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
+            nodes::make_smallest_leaf_node_for,
         },
     },
     error::{BTResult, Error},
@@ -59,16 +60,12 @@ impl ManagedTrieNode for EmptyNode {
             let inner = InnerNode::default();
             Ok(StoreAction::HandleTransform(Node::Inner(Box::new(inner))))
         } else {
+            // Safe to unwrap: Slice is always 31 bytes
+            let stem = key[..31].try_into().unwrap();
+            let new_leaf = make_smallest_leaf_node_for(1, stem, &[], self.get_commitment())?;
             // TODO: Deleting empty node from NodeManager after transforming will lead to cache
             // misses https://github.com/0xsoniclabs/sonic-admin/issues/385
-            let new_leaf = SparseLeafNode::<2> {
-                // Safe to unwrap: Slice is always 31 bytes
-                stem: key[..31].try_into().unwrap(),
-                ..Default::default()
-            };
-            Ok(StoreAction::HandleTransform(Node::Leaf2(Box::new(
-                new_leaf,
-            ))))
+            Ok(StoreAction::HandleTransform(new_leaf))
         }
     }
 

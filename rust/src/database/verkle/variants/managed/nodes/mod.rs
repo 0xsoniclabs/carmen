@@ -17,7 +17,10 @@ use crate::{
             NodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
             nodes::{
-                empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+                empty::EmptyNode,
+                inner::InnerNode,
+                leaf::FullLeafNode,
+                sparse_leaf::{SparseLeafNode, ValueWithIndex},
             },
         },
     },
@@ -43,12 +46,22 @@ pub enum Node {
     Inner(Box<InnerNode>),
     Leaf2(Box<Leaf2Node>),
     Leaf256(Box<Leaf256Node>),
+    // Make sure to adjust smallest_leaf_type_for when adding new leaf types.
 }
 
 type Leaf2Node = SparseLeafNode<2>;
 type Leaf256Node = FullLeafNode;
 
 impl Node {
+    /// Returns the leaf type for storing more values in this node, if any.
+    pub fn smallest_leaf_type_for(n: usize) -> NodeType {
+        match n {
+            0..=2 => NodeType::Leaf2,
+            3..=256 => NodeType::Leaf256,
+            _ => panic!("no leaf type for more than 256 values"),
+        }
+    }
+
     pub fn to_node_type(&self) -> NodeType {
         match self {
             Node::Empty(_) => NodeType::Empty,
@@ -58,6 +71,7 @@ impl Node {
         }
     }
 
+    /// Returns the commitment input for computing the commitment of this node.
     #[cfg_attr(not(test), expect(unused))]
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         match self {
@@ -183,6 +197,35 @@ impl NodeSize for NodeType {
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
         NodeType::Leaf2.node_byte_size()
+    }
+}
+
+// TODO: Docblock
+pub fn make_smallest_leaf_node_for(
+    n: usize,
+    stem: [u8; 31],
+    values: &[ValueWithIndex],
+    commitment: VerkleCommitment,
+) -> BTResult<Node, Error> {
+    match Node::smallest_leaf_type_for(n) {
+        NodeType::Leaf2 => Ok(Node::Leaf2(Box::new(SparseLeafNode::<2>::from_existing(
+            stem, values, commitment,
+        )?))),
+        NodeType::Leaf256 => {
+            let mut new_leaf = FullLeafNode {
+                stem,
+                commitment,
+                ..Default::default()
+            };
+            for v in values {
+                new_leaf.values[v.index as usize] = v.value;
+            }
+            Ok(Node::Leaf256(Box::new(new_leaf)))
+        }
+        NodeType::Empty | NodeType::Inner => Err(Error::CorruptedState(
+            "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
+        )
+        .into()),
     }
 }
 
