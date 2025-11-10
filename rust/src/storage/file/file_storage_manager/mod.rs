@@ -336,8 +336,14 @@ mod tests {
         for sub_dir in &sub_dirs {
             fs::create_dir_all(dir.join(sub_dir)).unwrap();
             // because we are not writing any nodes, the node type does not matter
-            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::create_files(&dir, &[], 0, &[], 0)
-                .unwrap();
+            NodeFileStorage::<NonEmpty1TestNode, SeekFile>::create_files(
+                dir.join(sub_dir),
+                &[],
+                0,
+                &[],
+                0,
+            )
+            .unwrap();
         }
 
         let storage = FileStorageManager::open(&dir);
