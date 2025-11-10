@@ -26,6 +26,15 @@ pub fn pow_2_threads() -> impl Iterator<Item = usize> {
     (1..=thread::available_parallelism().unwrap().get()).filter(|x| x.is_power_of_two())
 }
 
+#[allow(dead_code)]
+/// Check that a set of vectors of proportions sums to 1.0
+pub fn check_proportions<T>(values_with_proportions: &[Vec<(T, f32)>]) {
+    for values in values_with_proportions {
+        let total: f32 = values.iter().map(|(_, p)| *p).sum();
+        assert!((1.0 - total).abs() <= f32::EPSILON);
+    }
+}
+
 /// Executes the given operation in parallel using the specified number of threads.
 ///
 /// Each thread will perform up to iter / num_threads operations, and will receive a unique index

@@ -27,6 +27,10 @@ name = "file_backend"
 harness = false
 
 [[bench]]
+name = "node_manager"
+harness = false
+
+[[bench]]
 name = "caching"
 harness = false
 
