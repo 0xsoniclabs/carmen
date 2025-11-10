@@ -260,6 +260,11 @@ where
             GuardResult::Timeout => unreachable!(),
         }
     }
+
+    /// Returns the capacity of the cache.
+    pub fn capacity(&self) -> u64 {
+        self.cache.capacity()
+    }
 }
 
 /// Helper type responsible for pinning items and invoking the eviction callback.
@@ -551,6 +556,15 @@ mod tests {
             res.unwrap_err().into_inner(),
             Error::CorruptedState(_)
         ));
+    }
+
+    #[test]
+    fn capacity_returns_correct_value() {
+        let logger = Arc::new(EvictionLogger::default());
+        let capacity = 10;
+        let cache = LockCache::<u32, i32>::new(capacity, logger);
+
+        assert_eq!(cache.capacity(), capacity as u64);
     }
 
     #[test]

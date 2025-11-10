@@ -122,6 +122,12 @@ where
             storage,
         }
     }
+
+    /// Returns the capacity of the node manager's internal cache.
+    #[cfg_attr(not(test), expect(unused))]
+    pub fn capacity(&self) -> u64 {
+        self.nodes.capacity()
+    }
 }
 
 impl<S> NodeManager for CachedNodeManager<S>
@@ -411,6 +417,14 @@ mod tests {
             res.map_err(BTError::into_inner),
             Err(Error::Storage(storage::Error::NotFound))
         ));
+    }
+
+    #[test]
+    fn cached_node_manager_capacity_returns_cache_capacity() {
+        let storage = MockCachedNodeManagerStorage::new();
+        let capacity = 42;
+        let manager = CachedNodeManager::new(capacity, storage, pin_nothing);
+        assert_eq!(manager.capacity(), capacity as u64);
     }
 
     #[test]
