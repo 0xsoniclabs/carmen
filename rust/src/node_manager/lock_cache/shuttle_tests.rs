@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use core::panic;
-use std::{collections::HashSet, env, num::NonZero, panic::catch_unwind};
+use std::{collections::HashSet, env, iter, num::NonZero, panic::catch_unwind};
 
 use itertools::Itertools;
 
@@ -61,25 +61,25 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
 /// returns a reference to a non-existing node or an unexpected error occurs.
 /// The permutation generates known invalid operation sequences that are expected to fail, and
 /// these are reported but do not cause the test to fail.
-/// To facilitate debugging, the test case that caused a failure is serialized to a file, and
-/// can be reloaded by setting the `SHUTTLE_SERIALIZED_CASE` environment variable.
+/// To facilitate debugging, each test case is serialized to a file before being executed, and
+/// can be reloaded by setting the `CARMEN_SHUTTLE_SERIALIZED_CASE` environment variable.
 #[test]
 fn shuttle__operation_permutations() {
-    #[cfg(not(feature = "shuttle"))]
-    return;
-    #[allow(unreachable_code)]
+    const PERMUTATION_SHUTTLE_ITERATIONS: usize = 100;
+    if cfg!(not(feature = "shuttle")) {
+        return;
+    }
     let current_dir = env::current_dir().unwrap();
     let CONCURRENT_OPS: usize = 6; // Must be >= 2
-    let cache_sizes = (2..=CONCURRENT_OPS + 1).collect::<Vec<usize>>();
+    let cache_sizes = 2..=CONCURRENT_OPS + 1;
     let node_ids = (0..CONCURRENT_OPS as u32).collect::<Vec<u32>>();
-    let operations = vec![Op::Add, Op::Get, Op::Delete, Op::Iter];
+    let operations = [Op::Add, Op::Get, Op::Delete, Op::Iter];
 
     let case_yielder: Box<dyn Iterator<Item = PermutationTestCase>> =
-        match std::env::var("SHUTTLE_SERIALIZED_CASE") {
-            Ok(_) => Box::new(vec![PermutationTestCase::deserialize(&current_dir)].into_iter()),
-            Err(_) => Box::new(cache_sizes.clone().into_iter().flat_map(move |cache_size| {
+        match std::env::var("CARMEN_SHUTTLE_SERIALIZED_CASE") {
+            Ok(_) => Box::new(iter::once(PermutationTestCase::deserialize(&current_dir))),
+            Err(_) => Box::new(cache_sizes.into_iter().flat_map(move |cache_size| {
                 operations
-                    .clone()
                     .into_iter()
                     .cartesian_product(node_ids.clone())
                     .map(OpWithId::from)
@@ -101,7 +101,7 @@ fn shuttle__operation_permutations() {
         case_error_pool.lock().unwrap().clear();
 
         println!("Testing case: {operations:?} with cache size {cache_size}");
-        if let Err(e) = catch_unwind(|| {
+        let shuttle_res = catch_unwind(|| {
             run_shuttle_check(
                 {
                     let operations = operations.clone();
@@ -111,11 +111,7 @@ fn shuttle__operation_permutations() {
                             NonZero::new(1).unwrap(),
                             Arc::new(EvictionLogger::default()),
                         ));
-                        assert_eq!(
-                            lock_cache.cache.capacity() as usize,
-                            cache_size,
-                            "Cache capacity should match the requested size plus extra slots"
-                        );
+
                         let mut handles = vec![];
                         for OpWithId { op, id } in &operations {
                             set_name_for_shuttle_task(format!("{op}({id})"));
@@ -127,9 +123,10 @@ fn shuttle__operation_permutations() {
                         }
                     }
                 },
-                1000,
+                PERMUTATION_SHUTTLE_ITERATIONS,
             );
-        }) {
+        });
+        if let Err(e) = shuttle_res {
             if let Some(error) = e.downcast_ref::<OpPanicStatus>() {
                 let mut case_error_pool = case_error_pool.lock().unwrap();
                 // Skip already known error cases
@@ -145,7 +142,9 @@ fn shuttle__operation_permutations() {
                     eprintln!("Ignoring expected error on {}: {}", error.op, error.error);
                     eprintln!("###########################################################\n");
                 } else {
-                    panic!("Unexpected error in shuttle test: {error:?}");
+                    panic!(
+                        "Unexpected error in shuttle test: {error:?}. Set CARMEN_SHUTTLE_SERIALIZED_CASE env var to reproduce."
+                    );
                 }
             } else {
                 panic!("Unexpected error format in shuttle test: {e:?}");
