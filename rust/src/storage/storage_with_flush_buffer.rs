@@ -520,52 +520,14 @@ mod tests {
 
     #[test]
     fn restore_calls_restore_on_underlying_storage() {
-        static RESTORE_CALLED: AtomicBool = AtomicBool::new(false);
+        let ctx = MockStorage::restore_context();
+        ctx.expect()
+            .with(eq(Path::new("/path_of_restore_test")), eq(1))
+            .returning(|_, _| Ok(()))
+            .times(1);
 
-        struct CheckRestoreStorage;
-
-        impl Storage for CheckRestoreStorage {
-            type Id = u32;
-            type Item = i32;
-
-            fn open(_path: &Path) -> BTResult<Self, Error> {
-                unimplemented!()
-            }
-
-            fn get(&self, _id: Self::Id) -> BTResult<Self::Item, Error> {
-                unimplemented!()
-            }
-
-            fn reserve(&self, _item: &Self::Item) -> Self::Id {
-                unimplemented!()
-            }
-
-            fn set(&self, _id: Self::Id, _item: &Self::Item) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-
-            fn delete(&self, _id: Self::Id) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-
-            fn close(self) -> BTResult<(), Error> {
-                unimplemented!()
-            }
-        }
-
-        impl Checkpointable for CheckRestoreStorage {
-            fn checkpoint(&self) -> BTResult<u64, crate::storage::Error> {
-                unimplemented!()
-            }
-
-            fn restore(_path: &Path, _checkpoint: u64) -> BTResult<(), crate::storage::Error> {
-                RESTORE_CALLED.store(true, Ordering::Relaxed);
-                Ok(())
-            }
-        }
-
-        StorageWithFlushBuffer::<CheckRestoreStorage>::restore(Path::new("/some/path"), 1).unwrap();
-        assert!(RESTORE_CALLED.load(Ordering::Relaxed));
+        StorageWithFlushBuffer::<MockStorage>::restore(Path::new("/path_of_restore_test"), 1)
+            .unwrap();
     }
 
     #[test]
