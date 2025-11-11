@@ -259,7 +259,15 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
         .parse()
         .unwrap();
 
-    let target_file_size = memory_kb * 1024 * 4;
+    // Because we do not use the default test harness, cfg!(test) is true also when running with
+    // `cargo bench`, but cfg(bench) is not. To detect if we are running the benchmarks as tests, we
+    // use cfg!(debug_assertions) as a proxy because by default tests are run in debug mode and
+    // benchmarks are not.
+    let target_file_size = if cfg!(debug_assertions) {
+        100_000
+    } else {
+        memory_kb * 1024 * 4
+    };
 
     let path = Path::new(FILE);
 
