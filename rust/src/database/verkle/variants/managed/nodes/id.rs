@@ -36,14 +36,18 @@ use crate::{
 pub struct NodeId([u8; 6]);
 
 impl NodeId {
-    // The upper 2 bits are used to encode the node type.
+    // The upper 3 bits are used to encode the node type.
     const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
-    const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
-    const LEAF_NODE_2_PREFIX: u64 = 0x0000_8000_0000_0000;
-    const LEAF_NODE_256_PREFIX: u64 = 0x0000_C000_0000_0000;
+    const INNER_NODE_PREFIX: u64 = 0x0000_2000_0000_0000;
+    const LEAF_NODE_1_PREFIX: u64 = 0x0000_4000_0000_0000;
+    const LEAF_NODE_2_PREFIX: u64 = 0x0000_6000_0000_0000;
+    const LEAF_NODE_21_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_64_PREFIX: u64 = 0x0000_A000_0000_0000;
+    const LEAF_NODE_141_PREFIX: u64 = 0x0000_C000_0000_0000;
+    const LEAF_NODE_256_PREFIX: u64 = 0x0000_E000_0000_0000;
 
-    const PREFIX_MASK: u64 = 0x0000_C000_0000_0000;
-    const INDEX_MASK: u64 = 0x0000_3FFF_FFFF_FFFF;
+    const PREFIX_MASK: u64 = 0x0000_E000_0000_0000;
+    const INDEX_MASK: u64 = 0x0000_1FFF_FFFF_FFFF;
 
     fn from_u64(value: u64) -> Self {
         let mut bytes = [0; 6];
@@ -57,7 +61,6 @@ impl NodeId {
         u64::from_be_bytes(bytes)
     }
 }
-
 impl TreeId for NodeId {
     type NodeType = NodeType;
 
@@ -69,8 +72,12 @@ impl TreeId for NodeId {
         let prefix = match node_type {
             NodeType::Empty => Self::EMPTY_NODE_PREFIX,
             NodeType::Inner => Self::INNER_NODE_PREFIX,
+            NodeType::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             NodeType::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             NodeType::Leaf256 => Self::LEAF_NODE_256_PREFIX,
+            NodeType::Leaf21 => Self::LEAF_NODE_21_PREFIX,
+            NodeType::Leaf64 => Self::LEAF_NODE_64_PREFIX,
+            NodeType::Leaf141 => Self::LEAF_NODE_141_PREFIX,
         };
         NodeId::from_u64(idx | prefix)
     }
@@ -83,7 +90,11 @@ impl TreeId for NodeId {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(NodeType::Empty),
             Self::INNER_NODE_PREFIX => Some(NodeType::Inner),
+            Self::LEAF_NODE_1_PREFIX => Some(NodeType::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(NodeType::Leaf2),
+            Self::LEAF_NODE_21_PREFIX => Some(NodeType::Leaf21),
+            Self::LEAF_NODE_64_PREFIX => Some(NodeType::Leaf64),
+            Self::LEAF_NODE_141_PREFIX => Some(NodeType::Leaf141),
             Self::LEAF_NODE_256_PREFIX => Some(NodeType::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
@@ -116,9 +127,13 @@ mod tests {
         let idx = 0x0000_1234_5678_9abc;
         let cases = [
             (NodeType::Empty, 0x0000_0000_0000_0000),
-            (NodeType::Inner, 0x0000_4000_0000_0000),
-            (NodeType::Leaf2, 0x0000_8000_0000_0000),
-            (NodeType::Leaf256, 0x0000_C000_0000_0000),
+            (NodeType::Inner, 0x0000_2000_0000_0000),
+            (NodeType::Leaf1, 0x0000_4000_0000_0000),
+            (NodeType::Leaf2, 0x0000_6000_0000_0000),
+            (NodeType::Leaf21, 0x0000_8000_0000_0000),
+            (NodeType::Leaf64, 0x0000_A000_0000_0000),
+            (NodeType::Leaf141, 0x0000_C000_0000_0000),
+            (NodeType::Leaf256, 0x0000_E000_0000_0000),
         ];
 
         for (node_type, prefix) in cases {
@@ -138,7 +153,7 @@ mod tests {
     #[test]
     fn to_index_masks_out_node_type() {
         let id = NodeId([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
-        assert_eq!(id.to_index(), 0x3f_ff_ff_ff_ff_ff);
+        assert_eq!(id.to_index(), 0x1f_ff_ff_ff_ff_ff);
     }
 
     #[test]
@@ -149,15 +164,31 @@ mod tests {
                 Some(NodeType::Empty),
             ),
             (
-                NodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                NodeId([0x20, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(NodeType::Inner),
             ),
             (
-                NodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                NodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(NodeType::Leaf1),
+            ),
+            (
+                NodeId([0x60, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(NodeType::Leaf2),
             ),
             (
+                NodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(NodeType::Leaf21),
+            ),
+            (
+                NodeId([0xa0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(NodeType::Leaf64),
+            ),
+            (
                 NodeId([0xc0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(NodeType::Leaf141),
+            ),
+            (
+                NodeId([0xe0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(NodeType::Leaf256),
             ),
         ];
