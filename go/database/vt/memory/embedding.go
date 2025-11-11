@@ -19,12 +19,15 @@ import (
 	"github.com/holiman/uint256"
 )
 
+// newEmbedding creates a new embedding instance with a cached indexer.
 func newEmbedding() reference.Embedding {
 	return reference.NewEmbeddingWithIndexer(newCachedIndexer())
 }
 
+// cachedIndexer is an indexer implementation using a cache to avoid redundant
+// computations of trie keys for the same inputs.
 type cachedIndexer struct {
-	cache map[trieKeyCacheKey]trie.Key
+	cache map[trieKeyCacheKey]trie.Key // TODO: use an actual cache
 	lock  sync.Mutex
 }
 

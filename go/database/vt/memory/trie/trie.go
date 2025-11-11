@@ -37,14 +37,14 @@ type Trie struct {
 	root   node
 }
 
+// TrieConfig holds configuration options for the Trie.
 type TrieConfig struct {
 	ParallelCommit bool
 }
 
+// NewTrie creates a new empty Trie with the specified configuration.
 func NewTrie(config TrieConfig) *Trie {
-	return &Trie{
-		config: config,
-	}
+	return &Trie{config: config}
 }
 
 // Get retrieves the value associated with the given key from the trie. All keys

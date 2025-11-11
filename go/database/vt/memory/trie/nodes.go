@@ -158,8 +158,6 @@ func (i *inner) commit() commit.Commitment {
 	zone := tracy.ZoneBegin("inner::commit")
 	defer zone.End()
 
-	//fmt.Printf("Inner node %p has dirty children\n", i)
-
 	delta := [commit.VectorSize]commit.Value{}
 	for j := range i.children {
 		if i.dirtyChildValues.get(byte(j)) {
