@@ -20,7 +20,7 @@ import (
 )
 
 func newEmbedding() reference.Embedding {
-	return reference.NewEmbeddingWithIndexer(&cachedIndexer{})
+	return reference.NewEmbeddingWithIndexer(newCachedIndexer())
 }
 
 type cachedIndexer struct {
