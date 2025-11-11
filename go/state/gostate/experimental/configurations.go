@@ -28,14 +28,9 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Variant: "go-memory",
 		Schema:  6,
 		Archive: state.NoArchive,
-	}: vtref.NewState, // < to be replaced with a better performing implementation, but go-memory is required to exist for testing
-	{
-		Variant: "go-memory-seq",
-		Schema:  6,
-		Archive: state.NoArchive,
 	}: vtmemory.NewState,
 	{
-		Variant: "go-memory-par",
+		Variant: "go-memory-seq",
 		Schema:  6,
 		Archive: state.NoArchive,
 	}: vtmemory.NewState,

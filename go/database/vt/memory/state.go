@@ -36,7 +36,7 @@ type State struct {
 // NewState creates a new, empty in-memory state instance.
 func NewState(params state.Parameters) (state.State, error) {
 	config := trie.TrieConfig{
-		ParallelCommit: strings.HasSuffix(string(params.Variant), "-par"),
+		ParallelCommit: !strings.HasSuffix(string(params.Variant), "-seq"),
 	}
 	return &State{
 		trie: trie.NewTrie(config),
