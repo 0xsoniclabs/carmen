@@ -24,35 +24,11 @@ namespace {
 
 using ::testing::ElementsAre;
 
-std::string ToString(LiveImpl c) {
-  switch (c) {
-    case kLive_Memory:
-      return "Memory";
-    case kLive_File:
-      return "File";
-    case kLive_LevelDb:
-      return "LevelDb";
-  }
-  return "Unknown";
-}
-
-std::string ToString(ArchiveImpl c) {
-  switch (c) {
-    case kArchive_None:
-      return "None";
-    case kArchive_LevelDb:
-      return "LevelDb";
-    case kArchive_Sqlite:
-      return "SQLite";
-  }
-  return "Unknown";
-}
-
 // A configuration struct for the parameterized test below.
 struct Config {
   int schema;
-  LiveImpl state;
-  ArchiveImpl archive;
+  std::string state;
+  std::string archive;
 };
 
 // Wrapper functions for updating individual elements.
@@ -112,9 +88,10 @@ class CStateTest : public testing::TestWithParam<Config> {
     dir_ = std::make_unique<TempDir>();
     auto path = dir_->GetPath().string();
     const Config& config = GetParam();
-    auto result =
-        Carmen_Cpp_OpenDatabase(config.schema, config.state, config.archive,
-                                path.c_str(), path.size(), &db_);
+    auto result = Carmen_Cpp_OpenDatabase(
+        config.schema, config.state.c_str(), config.state.size(),
+        config.archive.c_str(), config.archive.size(), path.c_str(),
+        path.size(), &db_);
     ASSERT_EQ(result, kResult_Success);
     result = Carmen_Cpp_GetLiveState(db_, &state_);
     ASSERT_EQ(result, kResult_Success);
@@ -391,12 +368,12 @@ TEST_P(CStateTest, ArchiveCanBeAccessedIfEnabled) {
   void* archive = nullptr;
   auto result = Carmen_Cpp_GetArchiveState(database, 0, &archive);
   ASSERT_EQ(result, kResult_Success);
-  EXPECT_EQ(archive != nullptr, GetParam().archive != kArchive_None);
+  EXPECT_EQ(archive != nullptr, GetParam().archive != "none");
   Carmen_Cpp_ReleaseState(archive);
 }
 
 TEST_P(CStateTest, ArchiveCanBeQueried) {
-  if (GetParam().archive == kArchive_None) {
+  if (GetParam().archive == "none") {
     return;  // This test is only relevant when archives are enabled
   }
   auto database = GetDatabase();
@@ -539,7 +516,7 @@ TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
 
 TEST_P(CStateTest, CanBeStoredAndReloaded) {
   const Config& config = GetParam();
-  if (config.state == kLive_Memory) {
+  if (config.state == "memory") {
     return;  // In-memory state is by definition not persistent.
   }
   TempDir dir;
@@ -547,9 +524,10 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
   Hash hash;
   {
     void* db = nullptr;
-    auto result =
-        Carmen_Cpp_OpenDatabase(config.schema, config.state, config.archive,
-                                path.c_str(), path.size(), &db);
+    auto result = Carmen_Cpp_OpenDatabase(
+        config.schema, config.state.c_str(), config.state.size(),
+        config.archive.c_str(), config.archive.size(), path.c_str(),
+        path.size(), &db);
     ASSERT_EQ(result, kResult_Success);
     ASSERT_NE(db, nullptr);
     void* state = nullptr;
@@ -567,9 +545,10 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
   }
   {
     void* db = nullptr;
-    auto result =
-        Carmen_Cpp_OpenDatabase(config.schema, config.state, config.archive,
-                                path.c_str(), path.size(), &db);
+    auto result = Carmen_Cpp_OpenDatabase(
+        config.schema, config.state.c_str(), config.state.size(),
+        config.archive.c_str(), config.archive.size(), path.c_str(),
+        path.size(), &db);
     ASSERT_EQ(result, kResult_Success);
     ASSERT_NE(db, nullptr);
     void* state = nullptr;
@@ -593,21 +572,17 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
 INSTANTIATE_TEST_SUITE_P(
     All, CStateTest,
     // Tests each schema with each config, and all 3 archive modes.
-    testing::Values(Config{1, kLive_Memory, kArchive_None},
-                    Config{2, kLive_File, kArchive_None},
-                    Config{3, kLive_LevelDb, kArchive_None},
+    testing::Values(Config{1, "memory", "none"}, Config{2, "file", "none"},
+                    Config{3, "ldb", "none"},
 
-                    Config{2, kLive_Memory, kArchive_LevelDb},
-                    Config{3, kLive_File, kArchive_LevelDb},
-                    Config{1, kLive_LevelDb, kArchive_LevelDb},
+                    Config{2, "memory", "ldb"}, Config{3, "file", "ldb"},
+                    Config{1, "ldb", "ldb"},
 
-                    Config{3, kLive_Memory, kArchive_Sqlite},
-                    Config{1, kLive_File, kArchive_Sqlite},
-                    Config{2, kLive_LevelDb, kArchive_Sqlite}),
+                    Config{3, "memory", "sql"}, Config{1, "file", "sql"},
+                    Config{2, "ldb", "sql"}),
     [](const testing::TestParamInfo<CStateTest::ParamType>& info) {
       return "schema_" + std::to_string(info.param.schema) + "_impl_" +
-             ToString(info.param.state) + "_archive_" +
-             ToString(info.param.archive);
+             info.param.state + "_archive_" + info.param.archive;
     });
 
 }  // namespace
