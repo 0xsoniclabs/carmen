@@ -87,7 +87,7 @@ pub trait ManagedTrieNode {
         _key: &Key,
         _depth: u8,
         _self_id: Self::Id,
-    ) -> Result<StoreAction<Self::Id, Self::Union>, Error>;
+    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error>;
 
     /// Replaces the child node at the given key with a new node ID.
     fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::Id) -> BTResult<(), Error> {
@@ -149,7 +149,7 @@ mod tests {
             _key: &Key,
             _depth: u8,
             _self_id: Self::Id,
-        ) -> Result<StoreAction<Self::Id, Self::Union>, Error> {
+        ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
             unimplemented!()
         }
 
