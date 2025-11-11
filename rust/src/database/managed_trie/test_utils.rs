@@ -188,7 +188,7 @@ impl ManagedTrieNode for RcNode {
 
     type Commitment = TestNodeCommitment;
 
-    fn lookup(&self, key: &Key, depth: u8) -> Result<LookupResult<Self::Id>, Error> {
+    fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
         match self.channel.as_ref().unwrap().receive("lookup") {
             RcNodeExpectation::Lookup {
                 key: k,
@@ -240,7 +240,7 @@ impl ManagedTrieNode for RcNode {
         }
     }
 
-    fn replace_child(&mut self, key: &Key, depth: u8, new: Self::Id) -> Result<(), Error> {
+    fn replace_child(&mut self, key: &Key, depth: u8, new: Self::Id) -> BTResult<(), Error> {
         match self.channel.as_ref().unwrap().receive("replace_child") {
             RcNodeExpectation::ReplaceChild {
                 key: k,
@@ -260,7 +260,7 @@ impl ManagedTrieNode for RcNode {
         }
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> Result<Value, Error> {
+    fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
         match self.channel.as_ref().unwrap().receive("store") {
             RcNodeExpectation::Store {
                 key: k,
@@ -289,7 +289,7 @@ impl ManagedTrieNode for RcNode {
         }
     }
 
-    fn set_commitment(&mut self, commitment: Self::Commitment) -> Result<(), Error> {
+    fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
         match self.channel.as_ref().unwrap().receive("set_commitment") {
             RcNodeExpectation::SetCommitment { commitment: c } => {
                 if c != commitment {

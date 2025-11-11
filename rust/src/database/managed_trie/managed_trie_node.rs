@@ -10,7 +10,7 @@
 
 use crate::{
     database::managed_trie::TrieCommitment,
-    error::Error,
+    error::{BTResult, Error},
     types::{Key, Value},
 };
 
@@ -79,7 +79,7 @@ pub trait ManagedTrieNode {
     type Commitment: TrieCommitment;
 
     /// Looks up the value associated with the given key in this node.
-    fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error>;
+    fn lookup(&self, _key: &Key, _depth: u8) -> BTResult<LookupResult<Self::Id>, Error>;
 
     /// Returns information about the next action required to store a value at the given key.
     fn next_store_action(
@@ -90,11 +90,12 @@ pub trait ManagedTrieNode {
     ) -> Result<StoreAction<Self::Id, Self::Union>, Error>;
 
     /// Replaces the child node at the given key with a new node ID.
-    fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::Id) -> Result<(), Error> {
+    fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::Id) -> BTResult<(), Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::replace_child",
             std::any::type_name::<Self>()
-        )))
+        ))
+        .into())
     }
 
     /// Stores the given value at the specified key in this node.
@@ -105,28 +106,27 @@ pub trait ManagedTrieNode {
     /// [`StoreAction::Store`].
     // NOTE: We cannot directly do this inside of `next_store_action` because that method
     //       takes `&self` instead of `&mut self`.
-    fn store(&mut self, _key: &Key, _value: &Value) -> Result<Value, Error> {
-        Err(Error::UnsupportedOperation(format!(
-            "{}::store",
-            std::any::type_name::<Self>()
-        )))
+    fn store(&mut self, _key: &Key, _value: &Value) -> BTResult<Value, Error> {
+        Err(Error::UnsupportedOperation(format!("{}::store", std::any::type_name::<Self>())).into())
     }
 
     /// Returns the commitment associated with this node.
     fn get_commitment(&self) -> Self::Commitment;
 
     /// Sets the commitment associated with this node.
-    fn set_commitment(&mut self, _commitment: Self::Commitment) -> Result<(), Error> {
+    fn set_commitment(&mut self, _commitment: Self::Commitment) -> BTResult<(), Error> {
         Err(Error::UnsupportedOperation(format!(
             "{}::set_commitment",
             std::any::type_name::<Self>()
-        )))
+        ))
+        .into())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::BTError;
 
     struct TestCommitment {}
     impl TrieCommitment for TestCommitment {
@@ -140,7 +140,7 @@ mod tests {
         type Id = u32;
         type Commitment = TestCommitment;
 
-        fn lookup(&self, _key: &Key, _depth: u8) -> Result<LookupResult<Self::Id>, Error> {
+        fn lookup(&self, _key: &Key, _depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
             unimplemented!()
         }
 
@@ -163,15 +163,15 @@ mod tests {
         let mut node = TestNode;
 
         assert!(matches!(
-            node.replace_child(&Key::default(), 0, 0),
+            node.replace_child(&Key::default(), 0, 0).map_err(BTError::into_inner),
             Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::replace_child")
         ));
         assert!(matches!(
-            node.store(&Key::default(), &Value::default()),
+            node.store(&Key::default(), &Value::default()).map_err(BTError::into_inner),
             Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::store")
         ));
         assert!(matches!(
-            node.set_commitment(TestCommitment{}),
+            node.set_commitment(TestCommitment{}).map_err(BTError::into_inner),
             Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::set_commitment")
         ));
     }
