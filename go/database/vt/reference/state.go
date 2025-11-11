@@ -33,6 +33,8 @@ type State struct {
 	trie Trie
 }
 
+// Trie is the interface that wraps basic Verkle trie operations used by the
+// reference state implementation.
 type Trie interface {
 	Get(key trie.Key) trie.Value
 	Set(key trie.Key, value trie.Value)
@@ -78,13 +80,13 @@ func (s *State) GetStorage(address common.Address, key common.Key) (common.Value
 
 func (s *State) GetCode(address common.Address) ([]byte, error) {
 	size, _ := s.GetCodeSize(address)
-	chunks := make([]Chunk, 0, size)
+	chunks := make([]chunk, 0, size)
 	for i := 0; i < size/31+1; i++ {
 		key := getCodeChunkKey(address, i)
 		value := s.trie.Get(key)
-		chunks = append(chunks, Chunk(value))
+		chunks = append(chunks, chunk(value))
 	}
-	return Merge(chunks, size), nil
+	return merge(chunks, size), nil
 }
 
 func (s *State) GetCodeSize(address common.Address) (int, error) {
@@ -152,7 +154,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		s.trie.Set(key, trie.Value(hash))
 
 		// Store the actual code.
-		chunks := SplitCode(update.Code)
+		chunks := splitCode(update.Code)
 		for i, chunk := range chunks {
 			key := getCodeChunkKey(update.Account, i)
 			s.trie.Set(key, trie.Value(chunk))
