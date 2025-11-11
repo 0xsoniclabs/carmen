@@ -29,20 +29,34 @@ var (
 	mainStorageOffsetLshVerkleNodeWidth = new(uint256.Int).Lsh(uint256.NewInt(1), 248-uint(verkleNodeWidthLog2))
 )
 
-// getBasicDataKey returns the Verkle trie key of the basic data field for
+type Embedding struct {
+	indexer indexer
+}
+
+func NewEmbeddingWithIndexer(indexer indexer) Embedding {
+	return Embedding{
+		indexer: indexer,
+	}
+}
+
+type indexer interface {
+	GetTrieKey(address common.Address, index uint256.Int, subIndex byte) trie.Key
+}
+
+// GetBasicDataKey returns the Verkle trie key of the basic data field for
 // the specified account. The basic fields cover the code size, nonce, and
 // balance of the account.
-func getBasicDataKey(address common.Address) trie.Key {
-	return getTrieKey(address, *uint256.NewInt(0), 0)
+func (e Embedding) GetBasicDataKey(address common.Address) trie.Key {
+	return e.GetTrieKey(address, *uint256.NewInt(0), 0)
 }
 
-// getCodeHashKey returns the Verkle trie key of the code hash field for
+// GetCodeHashKey returns the Verkle trie key of the code hash field for
 // the specified account.
-func getCodeHashKey(address common.Address) trie.Key {
-	return getTrieKey(address, *uint256.NewInt(0), 1)
+func (e Embedding) GetCodeHashKey(address common.Address) trie.Key {
+	return e.GetTrieKey(address, *uint256.NewInt(0), 1)
 }
 
-func getCodeChunkKey(address common.Address, chunkNumber int) trie.Key {
+func (e Embedding) GetCodeChunkKey(address common.Address, chunkNumber int) trie.Key {
 	// Derived from
 	// https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
 	var (
@@ -51,12 +65,12 @@ func getCodeChunkKey(address common.Address, chunkNumber int) trie.Key {
 		treeIndex, subIndexMod = new(uint256.Int).DivMod(chunkOffset, verkleNodeWidth, new(uint256.Int))
 		subIndex               = byte(subIndexMod.Uint64())
 	)
-	return getTrieKey(address, *treeIndex, subIndex)
+	return e.GetTrieKey(address, *treeIndex, subIndex)
 }
 
-// getStorageKey returns the Verkle trie key of the storage slot addressed an
+// GetStorageKey returns the Verkle trie key of the storage slot addressed an
 // address/key pair.
-func getStorageKey(address common.Address, key common.Key) trie.Key {
+func (e Embedding) GetStorageKey(address common.Address, key common.Key) trie.Key {
 	// Derived from
 	// https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203
 
@@ -73,7 +87,18 @@ func getStorageKey(address common.Address, key common.Key) trie.Key {
 		treeIndex.Add(&treeIndex, mainStorageOffsetLshVerkleNodeWidth)
 	}
 
-	return getTrieKey(address, treeIndex, suffix)
+	return e.GetTrieKey(address, treeIndex, suffix)
+}
+
+func (e Embedding) GetTrieKey(
+	address common.Address,
+	index uint256.Int,
+	subIndex byte,
+) trie.Key {
+	if e.indexer != nil {
+		return e.indexer.GetTrieKey(address, index, subIndex)
+	}
+	return getTrieKey(address, index, subIndex)
 }
 
 // getTrieKey is a helper function for hashing information to obtain trie keys.

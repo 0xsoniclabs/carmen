@@ -30,74 +30,89 @@ import (
 // State is an in-memory implementation of a chain-state tracking account and
 // storage data using a Verkle Trie. It implements the state.State interface.
 type State struct {
-	trie Trie
+	store     store
+	embedding embedding
 }
 
-// Trie is the interface that wraps basic Verkle trie operations used by the
+// store is the interface that wraps basic Verkle trie operations used by the
 // reference state implementation.
-type Trie interface {
+type store interface {
 	Get(key trie.Key) trie.Value
 	Set(key trie.Key, value trie.Value)
 	Commit() commit.Commitment
 }
 
-// NewState creates a new, empty in-memory state instance.
-func NewState(params state.Parameters) (state.State, error) {
-	return NewStateWithTrie(params, &trie.Trie{})
+// embedding defines the mapping from high-level state concepts like accounts,
+// storage slots, and code chunks to Verkle trie keys.
+type embedding interface {
+	GetBasicDataKey(address common.Address) trie.Key
+	GetStorageKey(address common.Address, key common.Key) trie.Key
+	GetCodeChunkKey(address common.Address, index int) trie.Key
+	GetCodeHashKey(address common.Address) trie.Key
 }
 
-// NewStateWithTrie creates a new in-memory state instance using the provided
-// trie implementation.
-func NewStateWithTrie(_ state.Parameters, trie Trie) (state.State, error) {
+// NewState creates a new, empty in-memory state instance.
+func NewState(params state.Parameters) (state.State, error) {
+	return NewCustomState(params, &trie.Trie{}, Embedding{})
+}
+
+// NewCustomState creates a new Verkle state instance using the provided
+// trie and embedding implementations.
+func NewCustomState(
+	_ state.Parameters,
+	store store,
+	embedding embedding,
+) (state.State, error) {
 	return &State{
-		trie: trie,
+		store:     store,
+		embedding: embedding,
 	}, nil
 }
 
 func (s *State) Exists(address common.Address) (bool, error) {
-	key := getBasicDataKey(address)
-	value := s.trie.Get(key)
+	key := s.embedding.GetBasicDataKey(address)
+	value := s.store.Get(key)
 	var empty [24]byte // nonce and balance are layed out in bytes 8-32
 	return !bytes.Equal(value[8:32], empty[:]), nil
 
 }
 
 func (s *State) GetBalance(address common.Address) (amount.Amount, error) {
-	key := getBasicDataKey(address)
-	value := s.trie.Get(key)
+	key := s.embedding.GetBasicDataKey(address)
+	value := s.store.Get(key)
 	return amount.NewFromBytes(value[16:32]...), nil
 }
 
 func (s *State) GetNonce(address common.Address) (common.Nonce, error) {
-	key := getBasicDataKey(address)
-	value := s.trie.Get(key)
+	key := s.embedding.GetBasicDataKey(address)
+	value := s.store.Get(key)
 	return common.Nonce(value[8:16]), nil
 }
 
 func (s *State) GetStorage(address common.Address, key common.Key) (common.Value, error) {
-	return common.Value(s.trie.Get(getStorageKey(address, key))), nil
+	return common.Value(s.store.Get(s.embedding.GetStorageKey(address, key))), nil
 }
 
 func (s *State) GetCode(address common.Address) ([]byte, error) {
 	size, _ := s.GetCodeSize(address)
 	chunks := make([]chunk, 0, size)
 	for i := 0; i < size/31+1; i++ {
-		key := getCodeChunkKey(address, i)
-		value := s.trie.Get(key)
+		key := s.embedding.GetCodeChunkKey(address, i)
+		value := s.store.Get(key)
 		chunks = append(chunks, chunk(value))
 	}
 	return merge(chunks, size), nil
 }
 
 func (s *State) GetCodeSize(address common.Address) (int, error) {
-	key := getBasicDataKey(address)
-	value := s.trie.Get(key)
+	key := s.embedding.GetBasicDataKey(address)
+	value := s.store.Get(key)
 	return int(binary.BigEndian.Uint32(value[4:8])), nil
 }
 
 func (s *State) GetCodeHash(address common.Address) (common.Hash, error) {
-	key := getCodeHashKey(address)
-	value := s.trie.Get(key)
+	key := s.embedding.GetCodeHashKey(address)
+	value := s.store.Get(key)
 	return common.Hash(value[:]), nil
 }
 
@@ -109,55 +124,55 @@ func (s *State) Apply(block uint64, update common.Update) error {
 
 	// init potentially empty accounts with empty code hash,
 	for _, address := range update.CreatedAccounts {
-		accountKey := getBasicDataKey(address)
-		value := s.trie.Get(accountKey)
+		accountKey := s.embedding.GetBasicDataKey(address)
+		value := s.store.Get(accountKey)
 		var empty [28]byte
 		// empty accnout has empty code size, nonce, and balance
 		if bytes.Equal(value[4:32], empty[:]) {
-			codeHashKey := getCodeHashKey(address)
-			s.trie.Set(accountKey, value) // must be initialized to empty account
-			s.trie.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
+			codeHashKey := s.embedding.GetCodeHashKey(address)
+			s.store.Set(accountKey, value) // must be initialized to empty account
+			s.store.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
 		}
 	}
 
 	for _, update := range update.Nonces {
-		key := getBasicDataKey(update.Account)
-		value := s.trie.Get(key)
+		key := s.embedding.GetBasicDataKey(update.Account)
+		value := s.store.Get(key)
 		copy(value[8:16], update.Nonce[:])
-		s.trie.Set(key, value)
+		s.store.Set(key, value)
 	}
 
 	for _, update := range update.Balances {
-		key := getBasicDataKey(update.Account)
-		value := s.trie.Get(key)
+		key := s.embedding.GetBasicDataKey(update.Account)
+		value := s.store.Get(key)
 		amount := update.Balance.Bytes32()
 		copy(value[16:32], amount[16:])
-		s.trie.Set(key, value)
+		s.store.Set(key, value)
 	}
 
 	for _, update := range update.Slots {
-		key := getStorageKey(update.Account, update.Key)
-		s.trie.Set(key, trie.Value(update.Value))
+		key := s.embedding.GetStorageKey(update.Account, update.Key)
+		s.store.Set(key, trie.Value(update.Value))
 	}
 
 	for _, update := range update.Codes {
 		// Store the code length.
-		key := getBasicDataKey(update.Account)
-		value := s.trie.Get(key)
+		key := s.embedding.GetBasicDataKey(update.Account)
+		value := s.store.Get(key)
 		size := len(update.Code)
 		binary.BigEndian.PutUint32(value[4:8], uint32(size))
-		s.trie.Set(key, value)
+		s.store.Set(key, value)
 
 		// Store the code hash.
-		key = getCodeHashKey(update.Account)
+		key = s.embedding.GetCodeHashKey(update.Account)
 		hash := common.Keccak256(update.Code)
-		s.trie.Set(key, trie.Value(hash))
+		s.store.Set(key, trie.Value(hash))
 
 		// Store the actual code.
 		chunks := splitCode(update.Code)
 		for i, chunk := range chunks {
-			key := getCodeChunkKey(update.Account, i)
-			s.trie.Set(key, trie.Value(chunk))
+			key := s.embedding.GetCodeChunkKey(update.Account, i)
+			s.store.Set(key, trie.Value(chunk))
 		}
 	}
 
@@ -165,7 +180,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 }
 
 func (s *State) GetHash() (common.Hash, error) {
-	return s.trie.Commit().Compress(), nil
+	return s.store.Commit().Compress(), nil
 }
 
 // --- Operational Features ---

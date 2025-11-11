@@ -773,6 +773,7 @@ func (db *refTestDb) NodeReader(stateRoot geth_common.Hash) (database.NodeReader
 // newState creates a new, empty in-memory state instance.
 func newState() *State {
 	return &State{
-		trie: &trie.Trie{},
+		store:     &trie.Trie{},
+		embedding: Embedding{},
 	}
 }

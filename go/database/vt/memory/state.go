@@ -25,5 +25,7 @@ func NewState(params state.Parameters) (state.State, error) {
 	config := trie.TrieConfig{
 		ParallelCommit: !strings.HasSuffix(string(params.Variant), "-seq"),
 	}
-	return reference.NewStateWithTrie(params, trie.NewTrie(config))
+	return reference.NewCustomState(
+		params, trie.NewTrie(config), newEmbedding(),
+	)
 }
