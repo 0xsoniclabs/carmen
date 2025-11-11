@@ -47,25 +47,36 @@ pub mod sparse_leaf;
 #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
 #[derive_deftly(FileStorageManager)]
 pub enum VerkleNode {
-    Empty(EmptyVerkleNode),
-    Inner(Box<InnerVerkleNode>),
+    Empty(EmptyNode),
+    Inner(Box<InnerNode>),
+    Leaf1(Box<Leaf1VerkleNode>),
     Leaf2(Box<Leaf2VerkleNode>),
+    Leaf21(Box<Leaf21VerkleNode>),
+    Leaf64(Box<Leaf64VerkleNode>),
+    Leaf141(Box<Leaf141VerkleNode>),
     Leaf256(Box<Leaf256VerkleNode>),
     // Make sure to adjust smallest_leaf_type_for when adding new leaf types.
 }
 
 type EmptyVerkleNode = EmptyNode;
 type InnerVerkleNode = InnerNode;
+type Leaf1VerkleNode = SparseLeafNode<1>;
 type Leaf2VerkleNode = SparseLeafNode<2>;
+type Leaf21VerkleNode = SparseLeafNode<21>;
+type Leaf64VerkleNode = SparseLeafNode<64>;
+type Leaf141VerkleNode = SparseLeafNode<141>;
 type Leaf256VerkleNode = FullLeafNode;
 
 impl VerkleNode {
     /// Returns the smallest leaf node type capable of storing `n` values.
     pub fn smallest_leaf_type_for(n: usize) -> VerkleNodeKind {
         match n {
-            0 => VerkleNodeKind::Empty,
-            1..=2 => VerkleNodeKind::Leaf2,
-            3..=256 => VerkleNodeKind::Leaf256,
+            0..=1 => VerkleNodeKind::Leaf1,
+            2..=2 => VerkleNodeKind::Leaf2,
+            3..=21 => VerkleNodeKind::Leaf21,
+            22..=64 => VerkleNodeKind::Leaf64,
+            65..=141 => VerkleNodeKind::Leaf141,
+            142..=256 => VerkleNodeKind::Leaf256,
             _ => panic!("no leaf type for more than 256 values"),
         }
     }
@@ -75,7 +86,11 @@ impl VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.get_commitment_input(),
             VerkleNode::Inner(n) => n.get_commitment_input(),
+            VerkleNode::Leaf1(n) => n.get_commitment_input(),
             VerkleNode::Leaf2(n) => n.get_commitment_input(),
+            VerkleNode::Leaf21(n) => n.get_commitment_input(),
+            VerkleNode::Leaf64(n) => n.get_commitment_input(),
+            VerkleNode::Leaf141(n) => n.get_commitment_input(),
             VerkleNode::Leaf256(n) => n.get_commitment_input(),
         }
     }
@@ -120,7 +135,11 @@ impl ToNodeKind for VerkleNode {
         match self {
             VerkleNode::Empty(_) => Some(VerkleNodeKind::Empty),
             VerkleNode::Inner(_) => Some(VerkleNodeKind::Inner),
+            VerkleNode::Leaf1(_) => Some(VerkleNodeKind::Leaf1),
             VerkleNode::Leaf2(_) => Some(VerkleNodeKind::Leaf2),
+            VerkleNode::Leaf21(_) => Some(VerkleNodeKind::Leaf21),
+            VerkleNode::Leaf64(_) => Some(VerkleNodeKind::Leaf64),
+            VerkleNode::Leaf141(_) => Some(VerkleNodeKind::Leaf141),
             VerkleNode::Leaf256(_) => Some(VerkleNodeKind::Leaf256),
         }
     }
@@ -163,7 +182,11 @@ impl ManagedTrieNode for VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.lookup(key, depth),
             VerkleNode::Inner(n) => n.lookup(key, depth),
+            VerkleNode::Leaf1(n) => n.lookup(key, depth),
             VerkleNode::Leaf2(n) => n.lookup(key, depth),
+            VerkleNode::Leaf21(n) => n.lookup(key, depth),
+            VerkleNode::Leaf64(n) => n.lookup(key, depth),
+            VerkleNode::Leaf141(n) => n.lookup(key, depth),
             VerkleNode::Leaf256(n) => n.lookup(key, depth),
         }
     }
@@ -177,7 +200,11 @@ impl ManagedTrieNode for VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.next_store_action(key, depth, self_id),
             VerkleNode::Inner(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Leaf1(n) => n.next_store_action(key, depth, self_id),
             VerkleNode::Leaf2(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Leaf21(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Leaf64(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Leaf141(n) => n.next_store_action(key, depth, self_id),
             VerkleNode::Leaf256(n) => n.next_store_action(key, depth, self_id),
         }
     }
@@ -186,7 +213,11 @@ impl ManagedTrieNode for VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.replace_child(key, depth, new),
             VerkleNode::Inner(n) => n.replace_child(key, depth, new),
+            VerkleNode::Leaf1(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf2(n) => n.replace_child(key, depth, new),
+            VerkleNode::Leaf21(n) => n.replace_child(key, depth, new),
+            VerkleNode::Leaf64(n) => n.replace_child(key, depth, new),
+            VerkleNode::Leaf141(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf256(n) => n.replace_child(key, depth, new),
         }
     }
@@ -195,7 +226,11 @@ impl ManagedTrieNode for VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.store(key, value),
             VerkleNode::Inner(n) => n.store(key, value),
+            VerkleNode::Leaf1(n) => n.store(key, value),
             VerkleNode::Leaf2(n) => n.store(key, value),
+            VerkleNode::Leaf21(n) => n.store(key, value),
+            VerkleNode::Leaf64(n) => n.store(key, value),
+            VerkleNode::Leaf141(n) => n.store(key, value),
             VerkleNode::Leaf256(n) => n.store(key, value),
         }
     }
@@ -204,7 +239,11 @@ impl ManagedTrieNode for VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.get_commitment(),
             VerkleNode::Inner(n) => n.get_commitment(),
+            VerkleNode::Leaf1(n) => n.get_commitment(),
             VerkleNode::Leaf2(n) => n.get_commitment(),
+            VerkleNode::Leaf21(n) => n.get_commitment(),
+            VerkleNode::Leaf64(n) => n.get_commitment(),
+            VerkleNode::Leaf141(n) => n.get_commitment(),
             VerkleNode::Leaf256(n) => n.get_commitment(),
         }
     }
@@ -213,7 +252,11 @@ impl ManagedTrieNode for VerkleNode {
         match self {
             VerkleNode::Empty(n) => n.set_commitment(cache),
             VerkleNode::Inner(n) => n.set_commitment(cache),
+            VerkleNode::Leaf1(n) => n.set_commitment(cache),
             VerkleNode::Leaf2(n) => n.set_commitment(cache),
+            VerkleNode::Leaf21(n) => n.set_commitment(cache),
+            VerkleNode::Leaf64(n) => n.set_commitment(cache),
+            VerkleNode::Leaf141(n) => n.set_commitment(cache),
             VerkleNode::Leaf256(n) => n.set_commitment(cache),
         }
     }
@@ -226,7 +269,11 @@ impl ManagedTrieNode for VerkleNode {
 pub enum VerkleNodeKind {
     Empty,
     Inner,
+    Leaf1,
     Leaf2,
+    Leaf21,
+    Leaf64,
+    Leaf141,
     Leaf256,
 }
 
@@ -237,9 +284,25 @@ impl NodeSize for VerkleNodeKind {
             VerkleNodeKind::Inner => {
                 std::mem::size_of::<Box<InnerNode>>() + std::mem::size_of::<InnerNode>()
             }
+            VerkleNodeKind::Leaf1 => {
+                std::mem::size_of::<Box<SparseLeafNode<1>>>()
+                    + std::mem::size_of::<SparseLeafNode<1>>()
+            }
             VerkleNodeKind::Leaf2 => {
                 std::mem::size_of::<Box<SparseLeafNode<2>>>()
                     + std::mem::size_of::<SparseLeafNode<2>>()
+            }
+            VerkleNodeKind::Leaf21 => {
+                std::mem::size_of::<Box<SparseLeafNode<21>>>()
+                    + std::mem::size_of::<SparseLeafNode<21>>()
+            }
+            VerkleNodeKind::Leaf64 => {
+                std::mem::size_of::<Box<SparseLeafNode<64>>>()
+                    + std::mem::size_of::<SparseLeafNode<64>>()
+            }
+            VerkleNodeKind::Leaf141 => {
+                std::mem::size_of::<Box<SparseLeafNode<141>>>()
+                    + std::mem::size_of::<SparseLeafNode<141>>()
             }
             VerkleNodeKind::Leaf256 => {
                 std::mem::size_of::<Box<FullLeafNode>>() + std::mem::size_of::<FullLeafNode>()
@@ -265,8 +328,20 @@ pub fn make_smallest_leaf_node_for(
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_leaf_type_for(n) {
         VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
+        VerkleNodeKind::Leaf1 => Ok(VerkleNode::Leaf1(Box::new(
+            SparseLeafNode::<1>::from_existing(stem, values, commitment)?,
+        ))),
         VerkleNodeKind::Leaf2 => Ok(VerkleNode::Leaf2(Box::new(
             SparseLeafNode::<2>::from_existing(stem, values, commitment)?,
+        ))),
+        VerkleNodeKind::Leaf21 => Ok(VerkleNode::Leaf21(Box::new(
+            SparseLeafNode::<21>::from_existing(stem, values, commitment)?,
+        ))),
+        VerkleNodeKind::Leaf64 => Ok(VerkleNode::Leaf64(Box::new(
+            SparseLeafNode::<64>::from_existing(stem, values, commitment)?,
+        ))),
+        VerkleNodeKind::Leaf141 => Ok(VerkleNode::Leaf141(Box::new(
+            SparseLeafNode::<141>::from_existing(stem, values, commitment)?,
         ))),
         VerkleNodeKind::Leaf256 => {
             let mut new_leaf = FullLeafNode {

@@ -36,14 +36,18 @@ use crate::{
 pub struct VerkleNodeId([u8; 6]);
 
 impl VerkleNodeId {
-    // The upper 2 bits are used to encode the node type.
+    // The upper 3 bits are used to encode the node type.
     const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
-    const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
-    const LEAF_NODE_2_PREFIX: u64 = 0x0000_8000_0000_0000;
-    const LEAF_NODE_256_PREFIX: u64 = 0x0000_C000_0000_0000;
+    const INNER_NODE_PREFIX: u64 = 0x0000_2000_0000_0000;
+    const LEAF_NODE_1_PREFIX: u64 = 0x0000_4000_0000_0000;
+    const LEAF_NODE_2_PREFIX: u64 = 0x0000_6000_0000_0000;
+    const LEAF_NODE_21_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_64_PREFIX: u64 = 0x0000_A000_0000_0000;
+    const LEAF_NODE_141_PREFIX: u64 = 0x0000_C000_0000_0000;
+    const LEAF_NODE_256_PREFIX: u64 = 0x0000_E000_0000_0000;
 
-    const PREFIX_MASK: u64 = 0x0000_C000_0000_0000;
-    const INDEX_MASK: u64 = 0x0000_3FFF_FFFF_FFFF;
+    const PREFIX_MASK: u64 = 0x0000_E000_0000_0000;
+    const INDEX_MASK: u64 = 0x0000_1FFF_FFFF_FFFF;
 
     fn from_u64(value: u64) -> Self {
         let mut bytes = [0; 6];
@@ -65,7 +69,11 @@ impl ToNodeKind for VerkleNodeId {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(VerkleNodeKind::Empty),
             Self::INNER_NODE_PREFIX => Some(VerkleNodeKind::Inner),
+            Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
+            Self::LEAF_NODE_21_PREFIX => Some(VerkleNodeKind::Leaf21),
+            Self::LEAF_NODE_64_PREFIX => Some(VerkleNodeKind::Leaf64),
+            Self::LEAF_NODE_141_PREFIX => Some(VerkleNodeKind::Leaf141),
             Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
@@ -85,8 +93,12 @@ impl TreeId for VerkleNodeId {
         let prefix = match node_type {
             VerkleNodeKind::Empty => Self::EMPTY_NODE_PREFIX,
             VerkleNodeKind::Inner => Self::INNER_NODE_PREFIX,
+            VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
+            VerkleNodeKind::Leaf21 => Self::LEAF_NODE_21_PREFIX,
+            VerkleNodeKind::Leaf64 => Self::LEAF_NODE_64_PREFIX,
+            VerkleNodeKind::Leaf141 => Self::LEAF_NODE_141_PREFIX,
         };
         VerkleNodeId::from_u64(idx | prefix)
     }
@@ -128,9 +140,13 @@ mod tests {
         let idx = 0x0000_1234_5678_9abc;
         let cases = [
             (VerkleNodeKind::Empty, 0x0000_0000_0000_0000),
-            (VerkleNodeKind::Inner, 0x0000_4000_0000_0000),
-            (VerkleNodeKind::Leaf2, 0x0000_8000_0000_0000),
-            (VerkleNodeKind::Leaf256, 0x0000_C000_0000_0000),
+            (VerkleNodeKind::Inner, 0x0000_2000_0000_0000),
+            (VerkleNodeKind::Leaf1, 0x0000_4000_0000_0000),
+            (VerkleNodeKind::Leaf2, 0x0000_6000_0000_0000),
+            (VerkleNodeKind::Leaf21, 0x0000_8000_0000_0000),
+            (VerkleNodeKind::Leaf64, 0x0000_A000_0000_0000),
+            (VerkleNodeKind::Leaf141, 0x0000_C000_0000_0000),
+            (VerkleNodeKind::Leaf256, 0x0000_E000_0000_0000),
         ];
 
         for (node_type, prefix) in cases {
@@ -150,7 +166,7 @@ mod tests {
     #[test]
     fn to_index_masks_out_node_type() {
         let id = VerkleNodeId([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
-        assert_eq!(id.to_index(), 0x3f_ff_ff_ff_ff_ff);
+        assert_eq!(id.to_index(), 0x1f_ff_ff_ff_ff_ff);
     }
 
     #[test]
@@ -161,15 +177,31 @@ mod tests {
                 Some(VerkleNodeKind::Empty),
             ),
             (
-                VerkleNodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                VerkleNodeId([0x20, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Inner),
             ),
             (
-                VerkleNodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                VerkleNodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf1),
+            ),
+            (
+                VerkleNodeId([0x60, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Leaf2),
             ),
             (
+                VerkleNodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf21),
+            ),
+            (
+                VerkleNodeId([0xa0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf64),
+            ),
+            (
                 VerkleNodeId([0xc0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf141),
+            ),
+            (
+                VerkleNodeId([0xe0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Leaf256),
             ),
         ];
