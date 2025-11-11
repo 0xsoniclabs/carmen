@@ -22,23 +22,23 @@ func TestSplitAndMerge(t *testing.T) {
 
 	tests := map[string]struct {
 		code   []byte
-		chunks []chunk
+		chunks []Chunk
 	}{
 		"empty": {
 			code:   []byte{},
-			chunks: []chunk{},
+			chunks: []Chunk{},
 		},
 		"single chunk": {
 			code:   []byte{0x01, 0x02, 0x03},
-			chunks: []chunk{{0x00, 0x01, 0x02, 0x03}},
+			chunks: []Chunk{{0x00, 0x01, 0x02, 0x03}},
 		},
 		"multiple chunks": {
 			code:   []byte{0x01, 30: 0x02, 31: 0x03, 70: 0x01},
-			chunks: []chunk{{0, 0x01, 31: 0x02}, {0, 0x03}, {70%31 + 1: 0x01}},
+			chunks: []Chunk{{0, 0x01, 31: 0x02}, {0, 0x03}, {70%31 + 1: 0x01}},
 		},
 		"data at boundary": {
 			code: []byte{0x01, 0x02, PUSH32, 0x03, 31: 0x04, 80: PUSH2, 0x01},
-			chunks: []chunk{
+			chunks: []Chunk{
 				{0x00, 0x01, 0x02, PUSH32, 0x03},
 				{4, 0x04},
 				{80%31 + 1: PUSH2, 0x01},
@@ -46,7 +46,7 @@ func TestSplitAndMerge(t *testing.T) {
 		},
 		"code ending with PUSH32": {
 			code: []byte{0x03, 30: PUSH32, 62: 0x05},
-			chunks: []chunk{
+			chunks: []Chunk{
 				{0, 0x03, 31: PUSH32},
 				{31, 0x00},
 				{1, 0x05},
@@ -59,7 +59,7 @@ func TestSplitAndMerge(t *testing.T) {
 		// data.
 		"truncated push data at chunk boundary filling full chunk": {
 			code: []byte{0x03, 30: PUSH32, 31: 0x05},
-			chunks: []chunk{
+			chunks: []Chunk{
 				{0, 0x03, 31: PUSH32},
 				{31, 0x05},
 			},
@@ -68,7 +68,7 @@ func TestSplitAndMerge(t *testing.T) {
 		// This way only 30 bytes of the second chunk should be marked as data.
 		"truncated push data at chunk boundary filling partial chunk": {
 			code: []byte{0x03, 28: PUSH32, 31: 0x05},
-			chunks: []chunk{
+			chunks: []Chunk{
 				{0, 0x03, 29: PUSH32},
 				{30, 0x05},
 			},
@@ -79,10 +79,10 @@ func TestSplitAndMerge(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 
-			chunks := splitCode(test.code)
+			chunks := SplitCode(test.code)
 			require.Equal(test.chunks, chunks)
 
-			merged := merge(chunks, len(test.code))
+			merged := Merge(chunks, len(test.code))
 			require.Equal(test.code, merged)
 		})
 	}

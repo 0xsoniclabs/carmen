@@ -72,13 +72,13 @@ func (s *State) GetStorage(address common.Address, key common.Key) (common.Value
 
 func (s *State) GetCode(address common.Address) ([]byte, error) {
 	size, _ := s.GetCodeSize(address)
-	chunks := make([]chunk, 0, size)
+	chunks := make([]Chunk, 0, size)
 	for i := 0; i < size/31+1; i++ {
 		key := getCodeChunkKey(address, i)
 		value := s.trie.Get(key)
-		chunks = append(chunks, chunk(value))
+		chunks = append(chunks, Chunk(value))
 	}
-	return merge(chunks, size), nil
+	return Merge(chunks, size), nil
 }
 
 func (s *State) GetCodeSize(address common.Address) (int, error) {
@@ -146,7 +146,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		s.trie.Set(key, trie.Value(hash))
 
 		// Store the actual code.
-		chunks := splitCode(update.Code)
+		chunks := SplitCode(update.Code)
 		for i, chunk := range chunks {
 			key := getCodeChunkKey(update.Account, i)
 			s.trie.Set(key, trie.Value(chunk))

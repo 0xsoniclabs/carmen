@@ -10,15 +10,15 @@
 
 package reference
 
-// chunk is a 31-byte chunk of some EVM code prefixed by the number of bytes
-// in the prefix of the chunk that is part of the data section of a push
+// Chunk is a 31-byte Chunk of some EVM code prefixed by the number of bytes
+// in the prefix of the Chunk that is part of the data section of a push
 // instruction.
-type chunk [32]byte
+type Chunk [32]byte
 
-// splitCode splits the given EVM code into 31-byte chunks, where each chunk
+// SplitCode splits the given EVM code into 31-byte chunks, where each chunk
 // is prefixed by the number of bytes in the prefix of the chunk that is part
 // of the data section of a push instruction.
-func splitCode(code []byte) []chunk {
+func SplitCode(code []byte) []Chunk {
 	const PUSH1 = 0x60
 	const PUSH32 = 0x7f
 	// Add 30 additional entries to handle the case where the code is shorter than expected
@@ -37,9 +37,9 @@ func splitCode(code []byte) []chunk {
 		}
 	}
 
-	chunks := make([]chunk, 0, len(code)/32+1)
+	chunks := make([]Chunk, 0, len(code)/32+1)
 	for i := 0; len(code) > 0; i++ {
-		next := chunk{}
+		next := Chunk{}
 		for j := 31 * i; j < 31*(i+1) && j < len(isCode) && !isCode[j]; j++ {
 			next[0]++
 		}
@@ -49,12 +49,12 @@ func splitCode(code []byte) []chunk {
 	return chunks
 }
 
-// merge merges the given chunks into a single byte slice restoring the code of
+// Merge merges the given chunks into a single byte slice restoring the code of
 // the given length in bytes. The function does not check for the right number
 // of chunks to fit the length of the resulting code. If there are too few
 // chunks, the resulting code will be zero-padded. If there are too many, chunks
 // will be ignored.
-func merge(chunks []chunk, len int) []byte {
+func Merge(chunks []Chunk, len int) []byte {
 	res := make([]byte, len)
 	cur := res
 	for _, c := range chunks {

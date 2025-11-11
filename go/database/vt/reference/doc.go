@@ -8,8 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-// Package memory implements a simple reference Verkle trie (S6) for the Carmen
-// project providing
+// Package reference implements a simple reference Verkle trie (S6) for the
+// Carmen project providing
 //   - a proof-of-concept implementation of the Verkle trie in Carmen
 //   - an executable specification for developers
 //   - a light-weight reference implementation for testing of other components
