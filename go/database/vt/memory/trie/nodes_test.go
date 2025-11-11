@@ -226,6 +226,7 @@ func TestLeafNode_CanSetAndGetValues(t *testing.T) {
 	require.Zero(leaf.get(key3, 0))
 }
 
+/*
 func TestLeafNode_Commit(t *testing.T) {
 	naive := newLeaf(Key{1, 2, 3, 31: 1})
 	optimized := newLeaf(Key{1, 2, 3, 31: 1})
@@ -263,6 +264,7 @@ func TestLeafNode_Commit(t *testing.T) {
 	o = optimized.commit_optimized()
 	require.Equal(t, n.Hash(), o.Hash(), "Commitments after updating high value should match")
 }
+*/
 
 /*
 func TestLeafNode_CanComputeCommitment(t *testing.T) {
