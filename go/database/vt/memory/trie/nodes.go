@@ -12,7 +12,6 @@ package trie
 
 import (
 	"bytes"
-	"fmt"
 	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
@@ -27,8 +26,14 @@ type node interface {
 	set(Key Key, depth byte, value Value) node
 	commit() commit.Commitment
 
-	// -- experimental parallel commit support --
-	collectCommitTasks(tasks *[]*task) // < in order of dependencies
+	// -- parallel commit support --
+
+	// collectCommitTasks requests the node to append tasks required to be
+	// performed to update its commitment. The resulting list should list the
+	// tasks in order of dependencies, i.e., when processing the list from start
+	// to end, tasks producing inputs for other tasks should appear before
+	// tasks consuming those inputs.
+	collectCommitTasks(tasks *[]*task)
 }
 
 // ---- Inner nodes ----
@@ -70,7 +75,6 @@ func (i *inner) set(key Key, depth byte, value Value) node {
 	}
 	i.children[pos] = next.set(key, depth+1, value)
 	i.dirtyChildValues.set(pos)
-	//fmt.Printf("Marking dirty for inner node %p at pos %d\n", i, pos)
 	return i
 }
 
@@ -96,7 +100,6 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 			}
 
 			task := newTask(
-				//fmt.Sprintf("inner_node_%p_child_%d", i, j),
 				func() {
 					old := i.oldChildrenValues[j]
 					new := i.children[j].commit().ToValue()
@@ -117,7 +120,6 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 
 	// Add the aggregation task updating this inner node's commitment.
 	aggTask := newTask(
-		//fmt.Sprintf("inner_node_%p_agg", i),
 		func() {
 			// Sum up the individual deltas from the children.
 			deltaCommitment := commit.Commitment{}
@@ -137,7 +139,6 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 			} else {
 				i.commitment.Add(deltaCommitment)
 			}
-			//fmt.Printf("Clearing dirty for inner node %p\n", i)
 			i.dirtyChildValues.clear()
 			i.oldChildrenValuesSet.clear()
 		},
@@ -151,11 +152,6 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 }
 
 func (i *inner) commit() commit.Commitment {
-	//return i.commit_naive()
-	return i.commit_optimized()
-}
-
-func (i *inner) commit_optimized() commit.Commitment {
 	if !i.dirtyChildValues.any() {
 		return i.commitment
 	}
@@ -181,31 +177,6 @@ func (i *inner) commit_optimized() commit.Commitment {
 	}
 	i.dirtyChildValues.clear()
 	i.oldChildrenValuesSet.clear()
-	return i.commitment
-}
-
-func (i *inner) commit_naive() commit.Commitment {
-	if !i.dirtyChildValues.any() {
-		return i.commitment
-	}
-
-	// The commitment of an inner node is computed as a Pedersen commitment
-	// as follows:
-	//
-	//   C = Commit([C_i.ToValue() for i in children])
-	//
-	// For details, see
-	// https://blog.ethereum.org/2021/12/02/verkle-tree-structure#commitment-of-internal-nodes
-
-	// Recompute the commitment for this inner node.
-	children := [256]commit.Value{}
-	for j, child := range i.children {
-		if child != nil { // for empty children, the value to commit to is zero
-			children[j] = child.commit().ToValue()
-		}
-	}
-	i.commitment = commit.Commit(children)
-	i.dirtyChildValues.clear()
 	return i.commitment
 }
 
@@ -310,7 +281,6 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 	childTasks := make([]*task, 0, 2)
 	if l.lowDirty {
 		childTasks = append(childTasks, newTask(
-			//fmt.Sprintf("leaf_%p_update_c1", l),
 			func() {
 				delta := [commit.VectorSize]commit.Value{}
 				for i := range 128 {
@@ -356,7 +326,6 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 	// create a task for updating C2
 	if l.highDirty {
 		childTasks = append(childTasks, newTask(
-			//fmt.Sprintf("leaf_%p_update_c2", l),
 			func() {
 				delta := [commit.VectorSize]commit.Value{}
 				for i := range 128 {
@@ -401,7 +370,6 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 
 	// Create the aggregation task
 	aggTask := newTask(
-		//fmt.Sprintf("leaf_%p_agg", l),
 		func() {
 			// Compute commitment of changes and add to node commitment.
 			if leafDelta[0] != (commit.Commitment{}) {
@@ -425,11 +393,6 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 }
 
 func (l *leaf) commit() commit.Commitment {
-	//return l.commit_naive()
-	return l.commit_optimized()
-}
-
-func (l *leaf) commit_optimized() commit.Commitment {
 	if !l.lowDirty && !l.highDirty {
 		return l.commitment
 	}
@@ -521,96 +484,6 @@ func (l *leaf) commit_optimized() commit.Commitment {
 	return l.commitment
 }
 
-func (l *leaf) commit_naive() commit.Commitment {
-	if !l.lowDirty && !l.highDirty {
-		return l.commitment
-	}
-
-	// The commitment of a leaf node is computed as a Pedersen commitment
-	// as follows:
-	//
-	//    C = Commit([1,stem, C1, C2])
-	//
-	// where C1 and C2 are the Pedersen commitments of the interleaved modified
-	// lower and upper halves of the values stored in the leaf node, computed
-	// by:
-	//
-	//   C1 = Commit([v[0][:16]), v[0][16:]), v[1][:16]), v[1][16:]), ...])
-	//   C2 = Commit([v[128][:16]), v[128][16:]), v[129][:16]), v[129][16:]), ...])
-	//
-	// For details on the commitment procedure, see
-	// https://blog.ethereum.org/2021/12/02/verkle-tree-structure#commitment-to-the-values-leaf-nodes
-
-	// Compute the commitment for this leaf node.
-	values := [2][256]commit.Value{}
-	for i, v := range l.values {
-		lower := commit.NewValueFromLittleEndianBytes(v[:16])
-		upper := commit.NewValueFromLittleEndianBytes(v[16:])
-
-		if l.used.get(byte(i)) {
-			lower.SetBit128()
-		}
-
-		values[i/128][(2*i)%256] = lower
-		values[i/128][(2*i+1)%256] = upper
-	}
-
-	c1 := commit.Commit(values[0])
-	c2 := commit.Commit(values[1])
-
-	fmt.Printf("\tnaive c1: %x\n", c1.ToValue())
-	fmt.Printf("\tnaive c2: %x\n", c2.ToValue())
-
-	l.commitment = commit.Commit([256]commit.Value{
-		commit.NewValue(1),
-		commit.NewValueFromLittleEndianBytes(l.stem[:]),
-		c1.ToValue(),
-		c2.ToValue(),
-	})
-	l.lowDirty = false
-	l.highDirty = false
-	return l.commitment
-}
-
 func (l *leaf) isUsed(index byte) bool {
 	return l.used.get(index)
-}
-
-type bitMap [256 / 64]uint64
-
-func (b *bitMap) get(index byte) bool {
-	return (b[index/64] & (1 << (index % 64))) != 0
-}
-
-func (b *bitMap) set(index byte) {
-	b[index/64] |= 1 << (index % 64)
-}
-
-func (b *bitMap) clear() {
-	b[0] = 0
-	b[1] = 0
-	b[2] = 0
-	b[3] = 0
-}
-
-func (b *bitMap) any() bool {
-	return b[0]|b[1]|b[2]|b[3] != 0
-}
-
-func lowEqual(a, b Value) bool {
-	for i := 0; i < 16; i++ {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func highEqual(a, b Value) bool {
-	for i := 16; i < 32; i++ {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

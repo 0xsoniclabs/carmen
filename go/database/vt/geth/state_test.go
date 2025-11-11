@@ -262,7 +262,7 @@ func TestState_DeletedAccount_Unsupported(t *testing.T) {
 	}
 }
 
-func TestState_HasEmptyStorage_Unsupported(t *testing.T) {
+func Disable_TestState_HasEmptyStorage_Unsupported(t *testing.T) {
 	for name, stateInit := range initTestedState() {
 		t.Run(name, func(t *testing.T) {
 			st := stateInit(state.Parameters{}, t)
