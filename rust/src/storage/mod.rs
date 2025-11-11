@@ -63,7 +63,7 @@ pub trait Storage: Send + Sync {
 /// Users of this trait need to ensure that when a checkpoint is requested, there is no other
 /// operation (read, write or other checkpoint) in progress.
 pub trait Checkpointable: Send + Sync {
-    /// Creates a checkpoint which is guaranteed to be durable.
+    /// Creates a checkpoint which is guaranteed to be durable and returns the checkpoint number.
     fn checkpoint(&self) -> BTResult<u64, Error>;
 
     /// Restores the state on disk to the state at the given checkpoint.
