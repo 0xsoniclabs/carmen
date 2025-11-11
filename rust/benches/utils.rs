@@ -4,8 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use carmen_rust::error::BTResult;
-
 /// Executes the given operation in parallel using the specified number of threads.
 /// Thread-local data can be created using the `op_data` closure, and iteration id can be customized
 /// using the `get_id` closure.
@@ -17,7 +15,7 @@ pub fn execute_with_threads<T>(
     get_id: impl Fn(&u64) -> u64 + Send + Sync,
     completed_iterations: &mut u64,
     op_data: impl Fn() -> T + Send + Sync,
-    op: impl Fn(u64, &mut T) -> BTResult<(), carmen_rust::error::Error> + Send + Sync,
+    op: impl Fn(u64, &mut T) + Send + Sync,
 ) -> Duration {
     let start_toggle = AtomicBool::new(false);
     thread::scope(|s| {
@@ -36,7 +34,7 @@ pub fn execute_with_threads<T>(
                     .step_by(num_threads as usize)
                 {
                     let iter = get_id(&iter);
-                    let _ = op(iter, &mut data);
+                    op(iter, &mut data);
                 }
                 let end = Instant::now();
                 (start, end)

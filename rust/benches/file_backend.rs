@@ -313,13 +313,8 @@ fn file_backend_benchmark(
                     &mut completed_iterations,
                     || vec![0u8; chunk_size],
                     |iter, data| {
-                        operation.execute(
-                            backend.deref(),
-                            data,
-                            access.offset(iter, chunk_size),
-                            iter,
-                        );
-                        Ok(())
+                        let offset = access.offset(iter, chunk_size);
+                        operation.execute(backend.deref(), data, offset, iter);
                     },
                 )
             });
