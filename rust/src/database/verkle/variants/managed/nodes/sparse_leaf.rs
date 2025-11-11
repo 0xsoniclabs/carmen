@@ -531,7 +531,22 @@ mod tests {
                         index: index as usize
                     })
                 );
+
                 // It contains all previous values
+                let big_input = bigger_leaf.get_commitment_input().unwrap();
+                let old_input = node.get_commitment_input();
+                for idx in 0..256 {
+                    match old_input {
+                        VerkleCommitmentInput::Leaf(old_values, _) => match big_input {
+                            VerkleCommitmentInput::Leaf(big_values, _) => {
+                                assert_eq!(big_values[idx], old_values[idx], "for idx {idx}");
+                            }
+                            _ => panic!("expected Leaf commitment input"),
+                        },
+                        _ => panic!("expected Leaf commitment input"),
+                    }
+                }
+
                 assert_eq!(
                     bigger_leaf.get_commitment_input().unwrap(),
                     node.get_commitment_input()
