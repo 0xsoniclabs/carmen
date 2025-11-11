@@ -563,7 +563,6 @@ mod tests {
         let logger = Arc::new(EvictionLogger::default());
         let capacity = 10;
         let cache = LockCache::<u32, i32>::new(capacity, logger);
-
         assert_eq!(cache.capacity(), capacity as u64);
     }
 
