@@ -298,7 +298,7 @@ func newCppFileBasedState(params state.Parameters) (state.State, error) {
 }
 
 func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
-	return newState("leveldb", params, externalImplCpp)
+	return newState("ldb", params, externalImplCpp)
 }
 
 func (s *ExternalState) CreateAccount(address common.Address) error {

@@ -55,7 +55,7 @@ pub fn open_carmen_db(
             "file-based live state is not yet supported".to_owned(),
         )
         .into()),
-        b"leveldb" => Err(Error::UnsupportedImplementation(
+        b"ldb" => Err(Error::UnsupportedImplementation(
             "LevelDB-based live state is not supported".to_owned(),
         )
         .into()),

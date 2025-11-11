@@ -212,10 +212,10 @@ Database* Open(const std::filesystem::path& directory, const char* archive,
     // disable it.
     return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
         directory, false);
-  } else if (std::strcmp(archive, "leveldb") == 0) {
+  } else if (std::strcmp(archive, "ldb") == 0) {
     return OpenDatabase<State<Config<archive::leveldb::LevelDbArchive>>>(
         directory, true);
-  } else if (std::strcmp(archive, "sqlite") == 0) {
+  } else if (std::strcmp(archive, "sql") == 0) {
     return OpenDatabase<State<Config<archive::sqlite::SqliteArchive>>>(
         directory, true);
   }
@@ -255,7 +255,7 @@ Result Carmen_Cpp_OpenDatabase(C_Schema schema, const char* state, int,
     *out_database = carmen::Open<carmen::FileBasedConfig>(dir, schema, archive,
                                                           archive_length);
     return kResult_Success;
-  } else if (std::strcmp(state, "leveldb") == 0) {
+  } else if (std::strcmp(state, "ldb") == 0) {
     *out_database = carmen::Open<carmen::LevelDbBasedConfig>(
         dir, schema, archive, archive_length);
     return kResult_Success;
