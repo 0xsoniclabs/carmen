@@ -151,7 +151,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
     ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
-            let pos = key[depth as usize];
+            let pos = self.stem[depth as usize];
             let mut inner = InnerNode::default();
             inner.children[pos as usize] = self_id;
             return Ok(StoreAction::HandleReparent(Node::Inner(Box::new(inner))));
@@ -247,7 +247,7 @@ mod tests {
             }
         }
         SparseLeafNode {
-            stem: STEM[..31].try_into().unwrap(),
+            stem: STEM,
             values,
             ..Default::default()
         }
@@ -439,7 +439,7 @@ mod tests {
     fn lookup_with_matching_stem_returns_value_at_final_key_position(
         #[case] node: Box<dyn VerkleManagedTrieNode>,
     ) {
-        let key = [&STEM[..31], &[INDEX1]].concat().try_into().unwrap();
+        let key = [&STEM[..], &[INDEX1]].concat().try_into().unwrap();
         let result = node.lookup(&key, 0).unwrap();
         assert_eq!(result, LookupResult::Value(VALUE1));
 
@@ -462,15 +462,17 @@ mod tests {
     fn next_store_action_with_non_matching_stem_is_reparent(
         #[case] node: Box<dyn VerkleManagedTrieNode>,
     ) {
-        let depth = 10;
-        let position = 78;
-        let key = Key::from_index_values(1, &[(depth, position)]);
+        let divergence_at = 5;
+        let mut key: Key = [&STEM[..], &[0u8]].concat().try_into().unwrap();
+        key[divergence_at] = 56;
         let self_id = make_node_id();
 
-        let result = node.next_store_action(&key, depth as u8, self_id).unwrap();
+        let result = node
+            .next_store_action(&key, divergence_at as u8, self_id)
+            .unwrap();
         match result {
             StoreAction::HandleReparent(Node::Inner(inner)) => {
-                assert_eq!(inner.children[position as usize], self_id);
+                assert_eq!(inner.children[STEM[divergence_at] as usize], self_id);
             }
             _ => panic!("expected HandleReparent with inner node"),
         }
@@ -483,7 +485,7 @@ mod tests {
         let mut node = node;
         let index = 142;
         node.access_slot(4).index = index;
-        let key: Key = [&STEM[..31], &[index]].concat().try_into().unwrap();
+        let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
         let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
         assert_eq!(
             result,
@@ -500,7 +502,7 @@ mod tests {
         let mut node = node;
         let index = 200;
         node.access_slot(5).value = Value::default();
-        let key: Key = [&STEM[..31], &[index]].concat().try_into().unwrap();
+        let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
         let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
         assert_eq!(
             result,
@@ -520,7 +522,7 @@ mod tests {
         node.set_commitment(commitment).unwrap();
 
         let index = 250;
-        let key: Key = [&STEM[..31], &[index]].concat().try_into().unwrap();
+        let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
         let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
         match result {
             StoreAction::HandleTransform(bigger_leaf) => {
@@ -563,7 +565,7 @@ mod tests {
         let mut node = node;
         let position = 78;
         node.access_slot(3).index = position;
-        let key = [&STEM[..31], &[position]].concat().try_into().unwrap();
+        let key = [&STEM[..], &[position]].concat().try_into().unwrap();
         let value = Value::from_index_values(42, &[]);
 
         node.store(&key, &value).unwrap();
@@ -590,7 +592,7 @@ mod tests {
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn store_returns_error_if_no_free_slot(#[case] node: Box<dyn VerkleManagedTrieNode>) {
         let mut node = node;
-        let key = [&STEM[..31], &[INDEX1 - 1]].concat().try_into().unwrap();
+        let key = [&STEM[..], &[INDEX1 - 1]].concat().try_into().unwrap();
         let result = node.store(&key, &VALUE1);
         assert!(matches!(
             result.map_err(BTError::into_inner),

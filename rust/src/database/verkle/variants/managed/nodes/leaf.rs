@@ -71,7 +71,7 @@ impl ManagedTrieNode for FullLeafNode {
     ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
-            let pos = key[depth as usize];
+            let pos = self.stem[depth as usize];
             let mut inner = InnerNode::default();
             inner.children[pos as usize] = self_id;
             return Ok(StoreAction::HandleReparent(Node::Inner(Box::new(inner))));
@@ -174,16 +174,20 @@ mod tests {
 
     #[test]
     fn next_store_action_with_non_matching_stem_is_reparent() {
-        let node = FullLeafNode::default();
-        let depth = 10;
-        let position = 78;
-        let key = Key::from_index_values(1, &[(depth, position)]);
+        let divergence_at = 5;
+        let node = FullLeafNode {
+            stem: <[u8; 31]>::from_index_values(1, &[(divergence_at, 56)]),
+            ..Default::default()
+        };
+        let key = Key::from_index_values(1, &[(divergence_at, 97)]);
         let self_id = NodeId::from_idx_and_node_type(33, NodeType::Leaf256);
 
-        let result = node.next_store_action(&key, depth as u8, self_id).unwrap();
+        let result = node
+            .next_store_action(&key, divergence_at as u8, self_id)
+            .unwrap();
         match result {
             StoreAction::HandleReparent(Node::Inner(inner)) => {
-                assert_eq!(inner.children[position as usize], self_id);
+                assert_eq!(inner.children[56], self_id);
             }
             _ => panic!("expected HandleReparent with inner node"),
         }
