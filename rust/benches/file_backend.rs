@@ -309,7 +309,6 @@ fn file_backend_benchmark(
                 execute_with_threads(
                     threads as u64,
                     iterations,
-                    |i| *i,
                     &mut completed_iterations,
                     || vec![0u8; chunk_size],
                     |iter, data| {
