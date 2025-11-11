@@ -54,6 +54,9 @@ func (t *task) run() *task {
 }
 
 // runTasks executes the given tasks in parallel, respecting their dependencies.
+// Note that the provided list of tasks must include all tasks that are needed
+// to satisfy dependencies. The function does not validate this. If dependencies
+// are missing, the function may deadlock.
 func runTasks(tasks []*task) {
 	// Cut-off for a small number of tasks, in which case we run sequentially.
 	// It is not worth the overhead of parallelism.
@@ -96,7 +99,7 @@ func runTasks(tasks []*task) {
 		}
 	}
 
-	// TODO: pre-start and/or re-use workers;
+	// TODO: pre-start and/or re-use workers
 	for range NumWorkers {
 		go processTasks()
 	}

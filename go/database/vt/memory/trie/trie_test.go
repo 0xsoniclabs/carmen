@@ -13,7 +13,9 @@ package trie
 import (
 	"testing"
 
+	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
+	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/stretchr/testify/require"
 )
 
@@ -135,4 +137,32 @@ func TestTrie_CommitmentOfNonEmptyTrieIsRootNodeCommitment(t *testing.T) {
 
 	want := trie.root.commit()
 	require.True(have.Equal(want), "Commitment should match the root's commitment")
+}
+
+func TestTrie_Commit_ProducesSameCommitmentAsReference(t *testing.T) {
+	require := require.New(t)
+
+	seq := NewTrie(TrieConfig{ParallelCommit: false})
+	par := NewTrie(TrieConfig{ParallelCommit: true})
+	ref := &trie.Trie{}
+
+	for i := range 100 {
+
+		// Increasingly large updates to also reach deeper trie levels.
+		for j := range i + 1 {
+			key := Key(common.Keccak256([]byte{byte(i), byte(j)}))
+			value := Value(common.Keccak256([]byte{0, byte(i), byte(j)}))
+
+			seq.Set(key, value)
+			par.Set(key, value)
+			ref.Set(key, value)
+		}
+
+		haveSeq := seq.Commit().Hash()
+		havePar := par.Commit().Hash()
+		want := ref.Commit().Hash()
+
+		require.Equal(want, haveSeq, "Iteration %d", i)
+		require.Equal(want, havePar, "Iteration %d", i)
+	}
 }
