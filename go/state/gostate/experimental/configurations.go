@@ -12,7 +12,7 @@ package experimental
 
 import (
 	vtgeth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
-	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/reference" // < todo: switch to memory
+	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/memory"
 	vtref "github.com/0xsoniclabs/carmen/go/database/vt/reference"
 	"github.com/0xsoniclabs/carmen/go/state"
 )

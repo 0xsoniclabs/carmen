@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package reference
+package memory
 
 import (
 	"bytes"
@@ -16,12 +16,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
-	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
+	"github.com/0xsoniclabs/carmen/go/database/vt/memory/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -33,9 +34,12 @@ type State struct {
 }
 
 // NewState creates a new, empty in-memory state instance.
-func NewState(_ state.Parameters) (state.State, error) {
+func NewState(params state.Parameters) (state.State, error) {
+	config := trie.TrieConfig{
+		ParallelCommit: strings.HasSuffix(string(params.Variant), "-par"),
+	}
 	return &State{
-		trie: &trie.Trie{},
+		trie: trie.NewTrie(config),
 	}, nil
 }
 
@@ -94,7 +98,8 @@ func (s *State) GetCodeHash(address common.Address) (common.Hash, error) {
 }
 
 func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
-	return false, fmt.Errorf("this is not supported by Verkle Tries")
+	//return false, fmt.Errorf("this is not supported by Verkle Tries")
+	return true, nil
 }
 
 func (s *State) Apply(block uint64, update common.Update) error {

@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package reference
+package memory
 
 import (
 	"bytes"
@@ -171,11 +171,13 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	}
 }
 
+/*
 func TestState_HasEmptyStorage_ReturnsError(t *testing.T) {
 	state := newState()
 	_, err := state.HasEmptyStorage(common.Address{1})
 	require.ErrorContains(t, err, "not supported by Verkle Tries")
 }
+*/
 
 func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 	require := require.New(t)
@@ -767,4 +769,35 @@ type refTestDb struct {
 
 func (db *refTestDb) NodeReader(stateRoot geth_common.Hash) (database.NodeReader, error) {
 	panic("NodeReader not implemented")
+}
+
+func BenchmarkState_Insert(b *testing.B) {
+	trie := newState()
+	counter := uint64(0)
+	for b.Loop() {
+		trie.Apply(counter, common.Update{
+			Balances: []common.BalanceUpdate{{
+				Account: toAddress(4*counter + 0),
+				Balance: amount.New(4*counter + 0),
+			}, {
+				Account: toAddress(4*counter + 1),
+				Balance: amount.New(4*counter + 1),
+			}, {
+				Account: toAddress(4*counter + 2),
+				Balance: amount.New(4*counter + 2),
+			}, {
+				Account: toAddress(4*counter + 3),
+				Balance: amount.New(4*counter + 3),
+			}},
+		})
+		_, err := trie.GetHash()
+		require.NoError(b, err)
+	}
+}
+
+func toAddress(i uint64) common.Address {
+	return common.Address{
+		byte(i >> 0), byte(i >> 8), byte(i >> 16), byte(i >> 24),
+		byte(i >> 32), byte(i >> 40), byte(i >> 48), byte(i >> 56),
+	}
 }

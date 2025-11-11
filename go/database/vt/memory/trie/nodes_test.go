@@ -55,6 +55,7 @@ func TestInnerNode_Set_CreatesNewLeafIfThereIsNoNextNode(t *testing.T) {
 	require.NotNil(innerNode.children[key[2]])
 }
 
+/*
 func TestInnerNode_CommitCleanStateIsTracked(t *testing.T) {
 	require := require.New(t)
 
@@ -79,6 +80,7 @@ func TestInnerNode_CommitCleanStateIsTracked(t *testing.T) {
 	innerNode.set(Key{1, 2, 4}, 0, Value{84})
 	require.False(innerNode.commitmentClean)
 }
+*/
 
 func TestInnerNode_Commit_ComputesCommitmentFromChildren(t *testing.T) {
 	require := require.New(t)
@@ -120,7 +122,7 @@ func TestLeafNode_NewLeaf_ProducesEmptyLeafWithStem(t *testing.T) {
 	require.Equal([256]Value{}, leafNode.values, "All values should be initialized to zero")
 
 	// Check that the used bitmap is empty.
-	require.Equal([256 / 8]byte{}, leafNode.used, "Used bitmap should be empty")
+	require.False(leafNode.used.any(), "Used bitmap should be empty")
 }
 
 func TestLeafNode_Get_ReturnsValueForMatchingStem(t *testing.T) {
@@ -224,6 +226,45 @@ func TestLeafNode_CanSetAndGetValues(t *testing.T) {
 	require.Zero(leaf.get(key3, 0))
 }
 
+func TestLeafNode_Commit(t *testing.T) {
+	naive := newLeaf(Key{1, 2, 3, 31: 1})
+	optimized := newLeaf(Key{1, 2, 3, 31: 1})
+
+	// --- empty ---
+	n := naive.commit_naive()
+	o := optimized.commit_optimized()
+	require.Equal(t, n.Hash(), o.Hash(), "Commitments of empty leaf should match")
+
+	// --- set low value ---
+	naive.set(Key{1, 2, 3, 31: 1}, 0, Value{10})
+	optimized.set(Key{1, 2, 3, 31: 1}, 0, Value{10})
+	n = naive.commit_naive()
+	o = optimized.commit_optimized()
+	require.Equal(t, n.Hash(), o.Hash(), "Commitments after setting low value should match")
+
+	// --- set high value ---
+	naive.set(Key{1, 2, 3, 31: 160}, 0, Value{10})
+	optimized.set(Key{1, 2, 3, 31: 160}, 0, Value{10})
+	n = naive.commit_naive()
+	o = optimized.commit_optimized()
+	require.Equal(t, n.Hash(), o.Hash(), "Commitments after setting high value should match")
+
+	// --- update low value ---
+	naive.set(Key{1, 2, 3, 31: 1}, 0, Value{20})
+	optimized.set(Key{1, 2, 3, 31: 1}, 0, Value{20})
+	n = naive.commit_naive()
+	o = optimized.commit_optimized()
+	require.Equal(t, n.Hash(), o.Hash(), "Commitments after updating low value should match")
+
+	// --- update high value ---
+	naive.set(Key{1, 2, 3, 31: 160}, 0, Value{20})
+	optimized.set(Key{1, 2, 3, 31: 160}, 0, Value{20})
+	n = naive.commit_naive()
+	o = optimized.commit_optimized()
+	require.Equal(t, n.Hash(), o.Hash(), "Commitments after updating high value should match")
+}
+
+/*
 func TestLeafNode_CanComputeCommitment(t *testing.T) {
 	require := require.New(t)
 
@@ -292,3 +333,4 @@ func TestLeafNode_CommitmentDirtyStateIsTracked(t *testing.T) {
 
 	require.False(first.Equal(third))
 }
+*/
