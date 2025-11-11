@@ -8,14 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package reference
+package memory
 
 import (
 	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
-	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
+	"github.com/0xsoniclabs/carmen/go/database/vt/memory/trie"
 	"github.com/holiman/uint256"
 )
 
@@ -82,6 +82,15 @@ func getTrieKey(
 	treeIndex uint256.Int,
 	subIndex byte,
 ) trie.Key {
+	return _getTrieKey_cached(address, treeIndex, subIndex)
+	//return _getTrieKey_naive(address, treeIndex, subIndex)
+}
+
+func _getTrieKey_naive(
+	address common.Address,
+	treeIndex uint256.Int,
+	subIndex byte,
+) trie.Key {
 	// Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
 
 	// The key is computed by:
@@ -111,3 +120,28 @@ func getTrieKey(
 	res[31] = subIndex
 	return res
 }
+
+func _getTrieKey_cached(
+	address common.Address,
+	treeIndex uint256.Int,
+	subIndex byte,
+) trie.Key {
+	cacheKey := trieKeyCacheKey{
+		address: address,
+		index:   treeIndex,
+	}
+	if key, exists := trieKeyCache[cacheKey]; exists {
+		key[31] = subIndex
+		return key
+	}
+	key := _getTrieKey_naive(address, treeIndex, subIndex)
+	trieKeyCache[cacheKey] = key
+	return key
+}
+
+type trieKeyCacheKey struct {
+	address common.Address
+	index   uint256.Int
+}
+
+var trieKeyCache = make(map[trieKeyCacheKey]trie.Key)
