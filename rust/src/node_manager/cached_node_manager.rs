@@ -124,7 +124,6 @@ where
     }
 
     /// Returns the capacity of the node manager's internal cache.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn capacity(&self) -> u64 {
         self.nodes.capacity()
     }
