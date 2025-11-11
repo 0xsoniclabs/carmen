@@ -88,7 +88,6 @@ impl<S: Storage> Deref for StorageEvictionHandler<S> {
 ///
 /// Nodes are retrieved from the underlying storage if they are not present in the cache, and stored
 /// back when they get evicted and they have been modified.
-#[cfg_attr(not(test), expect(unused))]
 pub struct CachedNodeManager<S>
 where
     S: Storage,
