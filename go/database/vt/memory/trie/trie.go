@@ -15,14 +15,15 @@ import (
 	"sync/atomic"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
+	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/tracy"
 )
 
 // Key is a fixed-size byte array used to address values in the trie.
-type Key [32]byte
+type Key = trie.Key
 
 // Value is a fixed-size byte array used to represent data stored in the trie.
-type Value [32]byte
+type Value = trie.Value
 
 // Trie implements an all-in-memory version of a Verkle trie as specified by
 // Ethereum. It provides a basic key-value store with fixed-length keys and

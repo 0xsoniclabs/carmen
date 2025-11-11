@@ -614,21 +614,3 @@ func highEqual(a, b Value) bool {
 	}
 	return true
 }
-
-type halfValue [16]byte
-
-func (v Value) lower() halfValue {
-	var hv halfValue
-	copy(hv[:], v[:16])
-	return hv
-}
-
-func (v Value) upper() halfValue {
-	var hv halfValue
-	copy(hv[:], v[16:])
-	return hv
-}
-
-func (hv halfValue) equal(other halfValue) bool {
-	return bytes.Equal(hv[:], other[:])
-}
