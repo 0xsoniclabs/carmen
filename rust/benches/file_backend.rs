@@ -33,6 +33,7 @@ use crate::utils::execute_with_threads;
 mod utils;
 
 const ONE_GB: usize = 1024 * 1024 * 1024;
+const FILE_SIZE_MEMORY_MULTIPLIER: u64 = 4;
 const FILE: &str = "benchmark_file_backend.bin";
 
 /// Defines the access pattern for the benchmark.
@@ -266,7 +267,14 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
     let target_file_size = if cfg!(debug_assertions) {
         100_000
     } else {
-        memory_kb * 1024 * 4
+        let size = memory_kb * 1024 * FILE_SIZE_MEMORY_MULTIPLIER;
+        eprintln!(
+            "Using benchmark file of size {} * main memory size ({}) GiB) = {} GiB to limit effects of OS page cache",
+            FILE_SIZE_MEMORY_MULTIPLIER,
+            memory_kb / 1024 / 1024,
+            size / ONE_GB as u64
+        );
+        size
     };
 
     let path = Path::new(FILE);
