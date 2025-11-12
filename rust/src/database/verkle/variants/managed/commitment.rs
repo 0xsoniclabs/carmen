@@ -77,9 +77,16 @@ impl TrieCommitment for VerkleCommitment {
 // TODO: Avoid copying all 256 values / children: https://github.com/0xsoniclabs/sonic-admin/issues/384
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq)]
-pub enum VerkleCommitmentInput {
-    Leaf([Value; 256], [u8; 31]),
-    Inner([NodeId; 256]),
+pub enum VerkleCommitmentInput<'a> {
+    Leaf {
+        indices: &'a [u8],
+        values: &'a [Value],
+        stem: &'a [u8; 31],
+    },
+    Inner {
+        indices: &'a [u8],
+        children: &'a [NodeId],
+    },
 }
 
 #[cfg(test)]

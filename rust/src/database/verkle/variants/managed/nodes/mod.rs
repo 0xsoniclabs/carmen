@@ -58,7 +58,7 @@ impl Node {
         }
     }
 
-    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
+    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput<'_>, Error> {
         match self {
             Node::Empty(n) => n.get_commitment_input(),
             Node::Inner(n) => n.get_commitment_input(),
@@ -184,6 +184,16 @@ impl NodeSize for NodeType {
         NodeType::Leaf2.node_byte_size()
     }
 }
+
+static ALL_VALUES_INDICES: [u8; 256] = {
+    let mut indices = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        indices[i] = i as u8;
+        i += 1;
+    }
+    indices
+};
 
 #[cfg(test)]
 mod tests {

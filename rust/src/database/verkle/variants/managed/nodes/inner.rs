@@ -16,7 +16,7 @@ use crate::{
         verkle::variants::managed::{
             Node,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
-            nodes::{NodeType, id::NodeId},
+            nodes::{ALL_VALUES_INDICES, NodeType, id::NodeId},
         },
     },
     error::{BTResult, Error},
@@ -35,8 +35,11 @@ pub struct InnerNode {
 
 impl InnerNode {
     /// Returns the children of this inner node as commitment input.
-    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
-        Ok(VerkleCommitmentInput::Inner(self.children))
+    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput<'_>, Error> {
+        Ok(VerkleCommitmentInput::Inner {
+            indices: &ALL_VALUES_INDICES,
+            children: &self.children,
+        })
     }
 }
 

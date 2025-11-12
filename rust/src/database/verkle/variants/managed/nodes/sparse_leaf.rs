@@ -43,19 +43,20 @@ pub struct ValueWithIndex {
 #[repr(C)]
 pub struct SparseLeafNode<const N: usize> {
     pub stem: [u8; 31],
-    pub values: [ValueWithIndex; N],
+    pub values: [Value; N],
+    pub indices: [u8; N],
     pub commitment: VerkleCommitment,
 }
 
 impl<const N: usize> SparseLeafNode<N> {
     /// Returns the values and stem of this leaf node as commitment input.
     // TODO: This should not have to pass 256 values: https://github.com/0xsoniclabs/sonic-admin/issues/384
-    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
-        let mut values = [Value::default(); 256];
-        for ValueWithIndex { index, value } in &self.values {
-            values[*index as usize] = *value;
-        }
-        Ok(VerkleCommitmentInput::Leaf(values, self.stem))
+    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput<'_>, Error> {
+        Ok(VerkleCommitmentInput::Leaf {
+            indices: &self.indices,
+            values: &self.values,
+            stem: &self.stem,
+        })
     }
 
     /// Returns a slot for storing a value with the given index, or `None` if no such slot exists.
@@ -66,17 +67,18 @@ impl<const N: usize> SparseLeafNode<N> {
         // We always do a linear search over all values to ensure that we never hold the same index
         // twice in different slots. By starting the search at the given index we are very likely
         // to find the matching slot immediately in practice (if index < N).
-        for (i, vwi) in self
+        for (i, (val, idx)) in self
             .values
             .iter()
+            .zip(&self.indices)
             .enumerate()
             .cycle()
             .skip(index as usize)
             .take(N)
         {
-            if vwi.index == index {
+            if *idx == index {
                 return Some(i);
-            } else if empty_slot.is_none() && vwi.value == Value::default() {
+            } else if empty_slot.is_none() && *val == Value::default() {
                 empty_slot = Some(i);
             }
         }
@@ -86,14 +88,15 @@ impl<const N: usize> SparseLeafNode<N> {
 
 impl<const N: usize> Default for SparseLeafNode<N> {
     fn default() -> Self {
-        let mut values = [ValueWithIndex::default(); N];
-        values.iter_mut().enumerate().for_each(|(i, v)| {
-            v.index = i as u8;
+        let mut indices = [0; N];
+        indices.iter_mut().enumerate().for_each(|(i, idx)| {
+            *idx = i as u8;
         });
 
         SparseLeafNode {
             stem: [0; 31],
-            values,
+            values: [[0; 32]; N],
+            indices,
             commitment: VerkleCommitment::default(),
         }
     }
@@ -108,7 +111,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         if key[..31] != self.stem[..] {
             return Ok(LookupResult::Value(Value::default()));
         }
-        for ValueWithIndex { index, value } in &self.values {
+        for (index, value) in self.indices.iter().zip(&self.values) {
             if *index == key[31] {
                 return Ok(LookupResult::Value(*value));
             }
@@ -142,7 +145,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             stem: self.stem,
             values: {
                 let mut values = [Value::default(); 256];
-                for ValueWithIndex { index, value } in &self.values {
+                for (index, value) in self.indices.iter().zip(&self.values) {
                     values[*index as usize] = *value;
                 }
                 values
@@ -165,11 +168,9 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         let slot = self.get_slot_for(key[31]).ok_or(Error::CorruptedState(
             "no available slot for storing value in sparse leaf".to_owned(),
         ))?;
-        let prev_value = self.values[slot].value;
-        self.values[slot] = ValueWithIndex {
-            index: key[31],
-            value: *value,
-        };
+        let prev_value = self.values[slot];
+        self.values[slot] = *value;
+        self.indices[slot] = key[31];
 
         Ok(prev_value)
     }

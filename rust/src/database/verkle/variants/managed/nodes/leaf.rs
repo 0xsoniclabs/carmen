@@ -16,6 +16,7 @@ use crate::{
         verkle::variants::managed::{
             InnerNode, Node, NodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
+            nodes::ALL_VALUES_INDICES,
         },
     },
     error::{BTResult, Error},
@@ -35,8 +36,12 @@ pub struct FullLeafNode {
 
 impl FullLeafNode {
     /// Returns the values and stem of this leaf node as commitment input.
-    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
-        Ok(VerkleCommitmentInput::Leaf(self.values, self.stem))
+    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput<'_>, Error> {
+        Ok(VerkleCommitmentInput::Leaf {
+            indices: &ALL_VALUES_INDICES,
+            values: &self.values,
+            stem: &self.stem,
+        })
     }
 }
 

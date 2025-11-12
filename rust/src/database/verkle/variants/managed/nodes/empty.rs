@@ -30,7 +30,7 @@ impl EmptyNode {
     /// This method only exists for implementation symmetry in [`Node::get_commitment_input`].
     #[cfg_attr(not(test), allow(unused))]
     #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)]
-    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
+    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput<'_>, Error> {
         Err(Error::UnsupportedOperation(
             "EmptyNode does not support get_commitment_input".to_owned(),
         )
