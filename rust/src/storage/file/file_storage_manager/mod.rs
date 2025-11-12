@@ -140,7 +140,7 @@ where
 
     fn get(&self, id: Self::Id) -> $crate::error::BTResult<Self::Item, $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)? {
+        match $crate::types::ToNodeType::to_node_type(&id).ok_or($crate::storage::Error::InvalidId)? {
             ${paste $tname Type}::Empty => Ok(Self::Item::Empty(${paste Empty $tname})),
             $(
                 ${if not(approx_equal($vname, Empty)) {
@@ -169,7 +169,7 @@ where
 
     fn set(&self, id: Self::Id, node: &Self::Item) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match (node, $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)?) {
+        match (node, $crate::types::ToNodeType::to_node_type(&id).ok_or($crate::storage::Error::InvalidId)?) {
             (Self::Item::Empty(_), ${paste $tname Type}::Empty) => Ok(()),
             $(
                 ${if not(approx_equal($vname, Empty)) {
@@ -182,7 +182,7 @@ where
 
     fn delete(&self, id: Self::Id) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match $crate::types::TreeId::to_node_type(id).ok_or($crate::storage::Error::InvalidId)? {
+        match $crate::types::ToNodeType::to_node_type(&id).ok_or($crate::storage::Error::InvalidId)? {
             ${paste $ttype Type}::Empty => Ok(()),
             $(
                 ${if not(approx_equal($vname, Empty)) {
@@ -316,7 +316,7 @@ mod tests {
             },
         },
         sync::atomic::{AtomicU64, Ordering},
-        types::{NodeSize, TreeId},
+        types::{NodeSize, ToNodeType, TreeId},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -1007,9 +1007,20 @@ mod tests {
 
     pub type TestNodeId = [u8; 9];
 
-    impl TreeId for TestNodeId {
+    impl ToNodeType for TestNodeId {
         type NodeType = TestNodeType;
 
+        fn to_node_type(&self) -> Option<Self::NodeType> {
+            match self[0] {
+                0x00 => Some(TestNodeType::Empty),
+                0x01 => Some(TestNodeType::NonEmpty1),
+                0x02 => Some(TestNodeType::NonEmpty2),
+                _ => None,
+            }
+        }
+    }
+
+    impl TreeId for TestNodeId {
         fn from_idx_and_node_type(idx: u64, node_type: Self::NodeType) -> Self {
             let upper = match node_type {
                 TestNodeType::Empty => 0x00,
@@ -1026,15 +1037,6 @@ mod tests {
             let mut idx = [0; 8];
             idx.copy_from_slice(&self[1..]);
             u64::from_be_bytes(idx)
-        }
-
-        fn to_node_type(self) -> Option<Self::NodeType> {
-            match self[0] {
-                0x00 => Some(TestNodeType::Empty),
-                0x01 => Some(TestNodeType::NonEmpty1),
-                0x02 => Some(TestNodeType::NonEmpty2),
-                _ => None,
-            }
         }
     }
 

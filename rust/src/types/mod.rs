@@ -10,11 +10,13 @@
 
 pub use disk_representable::DiskRepresentable;
 pub use node_size::*;
+pub use to_node_type::ToNodeType;
 pub use tree_id::TreeId;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod disk_representable;
 mod node_size;
+mod to_node_type;
 mod tree_id;
 mod update;
 

@@ -16,7 +16,7 @@ use crate::{
         sparse_leaf::SparseLeafNode,
     },
     storage::file::derive_deftly_template_FileStorageManager,
-    types::NodeSize,
+    types::{NodeSize, ToNodeType},
 };
 
 pub mod empty;
@@ -41,20 +41,23 @@ pub enum Node {
 type Leaf2Node = SparseLeafNode<2>;
 type Leaf256Node = FullLeafNode;
 
-impl Node {
-    pub fn to_node_type(&self) -> NodeType {
+impl ToNodeType for Node {
+    type NodeType = NodeType;
+
+    /// Converts the ID to a [`Self::NodeType`]. This conversion will always succeed.
+    fn to_node_type(&self) -> Option<Self::NodeType> {
         match self {
-            Node::Empty(_) => NodeType::Empty,
-            Node::Inner(_) => NodeType::Inner,
-            Node::Leaf2(_) => NodeType::Leaf2,
-            Node::Leaf256(_) => NodeType::Leaf256,
+            Node::Empty(_) => Some(NodeType::Empty),
+            Node::Inner(_) => Some(NodeType::Inner),
+            Node::Leaf2(_) => Some(NodeType::Leaf2),
+            Node::Leaf256(_) => Some(NodeType::Leaf256),
         }
     }
 }
 
 impl NodeSize for Node {
     fn node_byte_size(&self) -> usize {
-        self.to_node_type().node_byte_size()
+        self.to_node_type().unwrap().node_byte_size()
     }
 
     fn min_non_empty_node_size() -> usize {
