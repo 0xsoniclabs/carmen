@@ -57,7 +57,6 @@ pub fn run_shuttle_check(_test: impl Fn() + Send + Sync + 'static, _num_iter: us
 }
 
 /// Helper function to set the name of the current shuttle task.
-#[expect(unused)]
 pub fn set_name_for_shuttle_task(_name: String) {
     #[cfg(feature = "shuttle")]
     shuttle::current::set_name_for_task(shuttle::current::me(), _name);

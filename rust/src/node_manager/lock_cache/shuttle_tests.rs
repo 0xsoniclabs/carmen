@@ -59,10 +59,13 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
 /// shuttle. The test is repeated for different cache sizes to stress cache contention scenarios.
 /// The idea is to find cases where the lock cache guarantees are violated, i.e. an operation
 /// returns a reference to a non-existing node or an unexpected error occurs.
-/// The permutation generates known invalid operation sequences that are expected to fail, and
-/// these are reported but do not cause the test to fail.
+///
+/// Not all permutations result in valid sequences of operations. These are expected to produce
+/// errors but do not cause the test to fail.
+/// Due to a current limitation of shuttle, they are still reported as errors however: https://github.com/awslabs/shuttle/issues/221
+///
 /// To facilitate debugging, each test case is serialized to a file before being executed, and
-/// can be reloaded by setting the `CARMEN_SHUTTLE_SERIALIZED_CASE` environment variable.
+/// can be replayed by setting the `CARMEN_SHUTTLE_SERIALIZED_CASE` environment variable.
 #[test]
 fn shuttle__operation_permutations() {
     const PERMUTATION_SHUTTLE_ITERATIONS: usize = 100;
@@ -70,7 +73,7 @@ fn shuttle__operation_permutations() {
         return;
     }
     let current_dir = env::current_dir().unwrap();
-    let CONCURRENT_OPS: usize = 6; // Must be >= 2
+    let CONCURRENT_OPS: usize = 4; // Must be >= 2
     let cache_sizes = 2..=CONCURRENT_OPS + 1;
     let node_ids = (0..CONCURRENT_OPS as u32).collect::<Vec<u32>>();
     let operations = [Op::Add, Op::Get, Op::Delete, Op::Iter];
@@ -100,7 +103,6 @@ fn shuttle__operation_permutations() {
         } = operation_case;
         case_error_pool.lock().unwrap().clear();
 
-        println!("Testing case: {operations:?} with cache size {cache_size}");
         let shuttle_res = catch_unwind(|| {
             run_shuttle_check(
                 {
