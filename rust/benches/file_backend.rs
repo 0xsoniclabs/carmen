@@ -269,7 +269,7 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
     } else {
         let size = memory_kb * 1024 * FILE_SIZE_MEMORY_MULTIPLIER;
         eprintln!(
-            "Using benchmark file of size {} * main memory size ({}) GiB) = {} GiB to limit effects of OS page cache",
+            "Using benchmark file of size {} * main memory size ({} GiB) = {} GiB to limit effects of OS page cache",
             FILE_SIZE_MEMORY_MULTIPLIER,
             memory_kb / 1024 / 1024,
             size / ONE_GB as u64
