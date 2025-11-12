@@ -102,18 +102,11 @@ impl std::fmt::Display for Op {
     }
 }
 
-/// The status of an operation error, indicating whether it was expected or unexpected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum OpErrorStatus {
-    Expected,
-    Unexpected,
-}
-
 /// A utility struct to hold information about an operation that panicked.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct OpPanicStatus {
     op: Op,
-    status: OpErrorStatus,
+    expected: bool,
     error: String,
 }
 
@@ -179,11 +172,7 @@ impl Op {
         }
         panic_any(OpPanicStatus {
             op: self,
-            status: if expected {
-                OpErrorStatus::Expected
-            } else {
-                OpErrorStatus::Unexpected
-            },
+            expected,
             error: error.to_string(),
         });
     }
@@ -304,7 +293,7 @@ mod tests {
         .unwrap_err();
         let message = res.downcast_ref::<OpPanicStatus>().unwrap();
         assert_eq!(message.op, op);
-        assert_eq!(message.status, OpErrorStatus::Unexpected);
+        assert!(!message.expected);
         assert_eq!(
             message.error,
             format!("{}", Error::CorruptedState("unexpected string".into()))
@@ -322,7 +311,7 @@ mod tests {
         .unwrap_err();
         let message = res.downcast_ref::<OpPanicStatus>().unwrap();
         assert_eq!(message.op, op);
-        assert_eq!(message.status, OpErrorStatus::Expected);
+        assert!(message.expected);
         assert_eq!(message.error, format!("{error}"));
     }
 
