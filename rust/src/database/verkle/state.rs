@@ -18,7 +18,7 @@ use crate::{
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
-        variants::SimpleInMemoryVerkleTrie,
+        variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie},
         verkle_trie::VerkleTrie,
     },
     error::{BTResult, Error},
@@ -39,6 +39,14 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let trie = SimpleInMemoryVerkleTrie::new();
+        Self { trie }
+    }
+}
+
+impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let trie = CrateCryptoInMemoryVerkleTrie::new();
         Self { trie }
     }
 }

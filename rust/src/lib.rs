@@ -11,6 +11,7 @@
 
 use std::{mem::MaybeUninit, ops::Deref};
 
+pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::VerkleTrieCarmenState,
     error::{BTResult, Error},
@@ -55,6 +56,9 @@ pub fn open_carmen_db(
             "file-based live state is not yet supported".to_owned(),
         )
         .into()),
+        b"crate-crypto-memory" => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+            database::CrateCryptoInMemoryVerkleTrie,
+        >::new()))),
         b"ldb" => Err(Error::UnsupportedImplementation(
             "LevelDB-based live state is not supported".to_owned(),
         )

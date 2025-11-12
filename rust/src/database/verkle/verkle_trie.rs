@@ -41,7 +41,7 @@ mod tests {
     use super::*;
     use crate::{
         database::verkle::{
-            SimpleInMemoryVerkleTrie,
+            CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
             test_utils::{make_key, make_leaf_key, make_value},
         },
         error::BTError,
@@ -50,6 +50,7 @@ mod tests {
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
+    #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
     fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>) {}
 
     #[rstest_reuse::apply(all_trie_impls)]

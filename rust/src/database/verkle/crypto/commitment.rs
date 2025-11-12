@@ -94,6 +94,14 @@ impl Commitment {
     }
 }
 
+impl From<Element> for Commitment {
+    fn from(element: Element) -> Self {
+        Commitment {
+            point_bytes: element.to_bytes(),
+        }
+    }
+}
+
 impl From<&Commitment> for Element {
     fn from(commitment: &Commitment) -> Self {
         commitment.as_element()
