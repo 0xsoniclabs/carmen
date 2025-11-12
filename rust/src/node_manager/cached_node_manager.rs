@@ -138,15 +138,24 @@ where
     type Id = S::Id;
     type NodeType = S::Item;
 
-    fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error> {
+    fn add(
+        &self,
+        node: Self::NodeType,
+    ) -> BTResult<
+        (
+            Self::Id,
+            RwLockWriteGuard<'_, impl Deref<Target = Self::NodeType>>,
+        ),
+        Error,
+    > {
         let id = self.storage.reserve(&node);
-        let _guard = self.nodes.get_read_access_or_insert(id, move || {
+        let guard = self.nodes.get_write_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: true,
             })
         })?;
-        Ok(id)
+        Ok((id, guard))
     }
 
     /// Returns a read guard for a node in the node manager. If the node is not present in the
@@ -249,21 +258,23 @@ mod tests {
     }
 
     #[test]
-    fn cached_node_manager_add_reserves_id_and_inserts_nodes() {
+    fn cached_node_manager_add_reserves_id_and_inserts_nodes_and_returns_guard() {
         let expected_id = 0;
         let node = 123;
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_reserve().returning(move |_| expected_id);
         storage.expect_get().never(); // Shouldn't query storage on add
         let manager = CachedNodeManager::new(10, storage, pin_nothing);
-        let id = manager.add(node).unwrap();
+        let (id, node_res) = manager.add(node).unwrap();
         assert_eq!(id, expected_id);
-        let node_res = manager
+        assert_eq!(**node_res, node);
+        // We can't access the dirty status from `add`, get it again through the cache
+        drop(node_res);
+        let guard = manager
             .nodes
             .get_read_access_or_insert(id, not_found)
             .unwrap();
-        assert!(node_res.is_dirty);
-        assert_eq!(node_res.node, node);
+        assert!(guard.is_dirty);
     }
 
     #[rstest_reuse::apply(get_method)]
