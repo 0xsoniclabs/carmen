@@ -35,7 +35,7 @@ import (
 // each task may depend on the result of zero or more child tasks before it can
 // be executed.
 //
-// Each tasks stores the action to be performed, the number of (yet) unfulfilled
+// Each task stores the action to be performed, the number of (yet) unfulfilled
 // dependencies, and an optional parent task to notify when the task has been
 // completed.
 type task struct {
