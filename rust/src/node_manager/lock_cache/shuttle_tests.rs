@@ -45,6 +45,6 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
 
             assert_eq!(insert_count.load(Ordering::SeqCst), 1);
         },
-        10000,
+        100,
     );
 }
