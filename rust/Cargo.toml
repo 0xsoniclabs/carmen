@@ -26,6 +26,10 @@ crate-type = ["rlib", "cdylib"]
 name = "file_backend"
 harness = false
 
+[[bench]]
+name = "caching"
+harness = false
+
 [features]
 tracy = ["tracy-client/default"]
 shuttle = ["quick_cache/shuttle", "dep:shuttle"]
@@ -78,8 +82,10 @@ mockall = "0.13.1"
 criterion = "0.7.0"
 
 # create temporary files and directories for tests
-
 tempfile = "3.20.0"
+
+# fast random number generator for benchmarks
+fastrand = "2.3.0"
 
 [patch.crates-io]
 tracy-client-sys = { git = "https://github.com/nagisa/rust_tracy_client", rev = "5f7fa75267c95aede6acdcd62e4d0ac3743fa6f7" }

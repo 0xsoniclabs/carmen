@@ -273,6 +273,7 @@ dependencies = [
  "crypto-bigint",
  "dashmap",
  "derive-deftly",
+ "fastrand",
  "ipa-multipoint",
  "itertools 0.14.0",
  "mockall",
