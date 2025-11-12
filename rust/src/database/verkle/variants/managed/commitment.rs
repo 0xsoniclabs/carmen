@@ -11,7 +11,10 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::{managed_trie::TrieCommitment, verkle::crypto::Commitment},
+    database::{
+        managed_trie::TrieCommitment,
+        verkle::{crypto::Commitment, variants::managed::VerkleNodeId},
+    },
     types::Value,
 };
 
@@ -69,6 +72,14 @@ impl TrieCommitment for VerkleCommitment {
         self.changed[index / 8] |= 1 << (index % 8);
         self.dirty = 1;
     }
+}
+
+// TODO: Avoid copying all 256 values / children: https://github.com/0xsoniclabs/sonic-admin/issues/384
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, PartialEq, Eq)]
+pub enum VerkleCommitmentInput {
+    Leaf([Value; 256], [u8; 31]),
+    Inner([VerkleNodeId; 256]),
 }
 
 #[cfg(test)]

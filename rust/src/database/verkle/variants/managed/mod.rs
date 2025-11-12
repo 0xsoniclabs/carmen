@@ -13,3 +13,6 @@ pub mod nodes;
 
 #[allow(unused)]
 pub use nodes::VerkleNodeFileStorageManager;
+pub use nodes::{
+    VerkleNode, id::VerkleNodeId, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+};

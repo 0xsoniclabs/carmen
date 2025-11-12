@@ -16,6 +16,6 @@ mod test_utils;
 mod trie_commitment;
 mod trie_update_log;
 
-pub use managed_trie_node::ManagedTrieNode;
+pub use managed_trie_node::{LookupResult, ManagedTrieNode, StoreAction, UnionManagedTrieNode};
 pub use trie_commitment::TrieCommitment;
 pub use trie_update_log::TrieUpdateLog;

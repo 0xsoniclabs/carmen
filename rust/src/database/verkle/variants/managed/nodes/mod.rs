@@ -11,12 +11,19 @@
 use derive_deftly::Deftly;
 
 use crate::{
-    database::verkle::variants::managed::nodes::{
-        empty::EmptyNode, id::VerkleNodeId, inner::InnerNode, leaf::FullLeafNode,
-        sparse_leaf::SparseLeafNode,
+    database::{
+        managed_trie::{LookupResult, ManagedTrieNode, StoreAction, UnionManagedTrieNode},
+        verkle::variants::managed::{
+            VerkleNodeId,
+            commitment::{VerkleCommitment, VerkleCommitmentInput},
+            nodes::{
+                empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+            },
+        },
     },
+    error::{BTResult, Error},
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{NodeSize, ToNodeKind},
+    types::{Key, NodeSize, ToNodeKind, Value},
 };
 
 pub mod empty;
@@ -42,6 +49,18 @@ type EmptyVerkleNode = EmptyNode;
 type InnerVerkleNode = InnerNode;
 type Leaf2VerkleNode = SparseLeafNode<2>;
 type Leaf256VerkleNode = FullLeafNode;
+
+impl VerkleNode {
+    /// Returns the commitment input for computing the commitment of this node.
+    pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
+        match self {
+            VerkleNode::Empty(n) => n.get_commitment_input(),
+            VerkleNode::Inner(n) => n.get_commitment_input(),
+            VerkleNode::Leaf2(n) => n.get_commitment_input(),
+            VerkleNode::Leaf256(n) => n.get_commitment_input(),
+        }
+    }
+}
 
 impl ToNodeKind for VerkleNode {
     type Target = VerkleNodeKind;
@@ -70,6 +89,73 @@ impl NodeSize for VerkleNode {
 impl Default for VerkleNode {
     fn default() -> Self {
         VerkleNode::Empty(EmptyNode)
+    }
+}
+
+impl UnionManagedTrieNode for VerkleNode {}
+
+impl ManagedTrieNode for VerkleNode {
+    type Union = VerkleNode;
+    type Id = VerkleNodeId;
+    type Commitment = VerkleCommitment;
+
+    fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
+        match self {
+            VerkleNode::Empty(n) => n.lookup(key, depth),
+            VerkleNode::Inner(n) => n.lookup(key, depth),
+            VerkleNode::Leaf2(n) => n.lookup(key, depth),
+            VerkleNode::Leaf256(n) => n.lookup(key, depth),
+        }
+    }
+
+    fn next_store_action(
+        &self,
+        key: &Key,
+        depth: u8,
+        self_id: Self::Id,
+    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
+        match self {
+            VerkleNode::Empty(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Inner(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Leaf2(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Leaf256(n) => n.next_store_action(key, depth, self_id),
+        }
+    }
+
+    fn replace_child(&mut self, key: &Key, depth: u8, new: VerkleNodeId) -> BTResult<(), Error> {
+        match self {
+            VerkleNode::Empty(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner(n) => n.replace_child(key, depth, new),
+            VerkleNode::Leaf2(n) => n.replace_child(key, depth, new),
+            VerkleNode::Leaf256(n) => n.replace_child(key, depth, new),
+        }
+    }
+
+    fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
+        match self {
+            VerkleNode::Empty(n) => n.store(key, value),
+            VerkleNode::Inner(n) => n.store(key, value),
+            VerkleNode::Leaf2(n) => n.store(key, value),
+            VerkleNode::Leaf256(n) => n.store(key, value),
+        }
+    }
+
+    fn get_commitment(&self) -> Self::Commitment {
+        match self {
+            VerkleNode::Empty(n) => n.get_commitment(),
+            VerkleNode::Inner(n) => n.get_commitment(),
+            VerkleNode::Leaf2(n) => n.get_commitment(),
+            VerkleNode::Leaf256(n) => n.get_commitment(),
+        }
+    }
+
+    fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
+        match self {
+            VerkleNode::Empty(n) => n.set_commitment(cache),
+            VerkleNode::Inner(n) => n.set_commitment(cache),
+            VerkleNode::Leaf2(n) => n.set_commitment(cache),
+            VerkleNode::Leaf256(n) => n.set_commitment(cache),
+        }
     }
 }
 

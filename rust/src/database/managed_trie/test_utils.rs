@@ -211,7 +211,7 @@ impl ManagedTrieNode for RcNode {
         key: &Key,
         depth: u8,
         self_id: Self::Id,
-    ) -> Result<
+    ) -> BTResult<
         crate::database::managed_trie::managed_trie_node::StoreAction<Self::Id, Self::Union>,
         Error,
     > {
