@@ -26,6 +26,10 @@ crate-type = ["rlib", "cdylib"]
 name = "file_backend"
 harness = false
 
+[[bench]]
+name = "caching"
+harness = false
+
 [features]
 tracy = ["tracy-client/default"]
 shuttle = ["quick_cache/shuttle", "dep:shuttle"]
@@ -80,6 +84,7 @@ criterion = "0.7.0"
 # create temporary files and directories for tests
 
 tempfile = "3.20.0"
+fastrand = "2.3.0"
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(coverage)'] }
