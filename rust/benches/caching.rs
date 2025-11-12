@@ -279,7 +279,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
 fn pinning_benchmark(c: &mut criterion::Criterion) {
     fastrand::seed(123);
 
-    for pinning_prob in [0, 1, 25, 50] {
+    for pinning_prob in [0, 10, 25, 50] {
         for cache_size in [100_000, 1_000_000] {
             let mut bench_group = c.benchmark_group(format!(
                 "caching/pinning/Size:{cache_size}/PinProb:{pinning_prob}"
