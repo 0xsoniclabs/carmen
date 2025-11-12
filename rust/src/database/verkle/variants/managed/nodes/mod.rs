@@ -27,7 +27,7 @@ use crate::{
     node_manager::NodeManager,
     statistics::{NodeStatisticVisitor, TrieVisitor},
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{Key, NodeSize, TreeId, Value},
+    types::{HasEmptyNode, Key, NodeSize, TreeId, Value},
 };
 
 pub mod empty;
@@ -194,6 +194,19 @@ impl NodeSize for Node {
 
     fn min_non_empty_node_size() -> usize {
         NodeType::min_non_empty_node_size()
+    }
+}
+
+impl HasEmptyNode for Node {
+    fn is_empty_node(&self) -> bool {
+        matches!(self, Node::Empty(_))
+    }
+
+    fn make_empty_node() -> Self
+    where
+        Self: Sized,
+    {
+        Node::Empty(EmptyNode)
     }
 }
 

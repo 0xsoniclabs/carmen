@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::verkle::variants::managed::nodes::NodeType,
-    types::{NodeSize, TreeId},
+    types::{HasEmptyId, NodeSize, TreeId},
 };
 
 /// An identifier for a node in a managed Verkle trie.
@@ -116,6 +116,16 @@ impl NodeSize for NodeId {
     /// Returns the minimum byte size of [`NodeType`].
     fn min_non_empty_node_size() -> usize {
         NodeType::min_non_empty_node_size()
+    }
+}
+
+impl HasEmptyId for NodeId {
+    fn is_empty_id(&self) -> bool {
+        self.to_node_type() == Some(NodeType::Empty)
+    }
+
+    fn make_empty_id() -> Self {
+        NodeId::from_idx_and_node_type(0, NodeType::Empty)
     }
 }
 
