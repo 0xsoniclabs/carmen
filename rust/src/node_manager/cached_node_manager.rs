@@ -124,10 +124,10 @@ where
             ),
             storage,
             cached_empty_node: RwLock::new(NodeWithMetadata {
-                node: S::Item::make_empty_node(),
+                node: S::Item::empty_node(),
                 is_dirty: false,
             }),
-            cached_empty_id: S::Id::make_empty_id(),
+            cached_empty_id: S::Id::empty_id(),
         }
     }
 
@@ -259,10 +259,7 @@ mod tests {
             *self == i32::MAX
         }
 
-        fn make_empty_node() -> Self
-        where
-            Self: Sized,
-        {
+        fn empty_node() -> Self {
             i32::MAX
         }
     }
@@ -272,10 +269,7 @@ mod tests {
             *self == u32::MAX
         }
 
-        fn make_empty_id() -> Self
-        where
-            Self: Sized,
-        {
+        fn empty_id() -> Self {
             u32::MAX
         }
     }
@@ -318,13 +312,12 @@ mod tests {
 
     #[test]
     fn cached_node_manager_add_returns_cached_empty_id_for_empty_node() {
-        let node = TestNode::make_empty_node();
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_reserve().never(); // Shouldn't reserve ID for empty node
         storage.expect_get().never(); // Shouldn't query storage on add
         let manager = CachedNodeManager::new(10, storage, pin_nothing);
-        let id = manager.add(node).unwrap();
-        assert_eq!(id, TestNodeId::make_empty_id());
+        let id = manager.add(TestNode::empty_node()).unwrap();
+        assert!(id.is_empty_id());
     }
 
     #[rstest_reuse::apply(get_method)]
@@ -365,8 +358,8 @@ mod tests {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_get().never(); // Shouldn't query storage for empty ID
         let manager = CachedNodeManager::new(10, storage, pin_nothing);
-        let entry = get_method(&manager, TestNodeId::make_empty_id()).unwrap();
-        assert!(entry == TestNode::make_empty_node());
+        let entry = get_method(&manager, TestNodeId::empty_id()).unwrap();
+        assert!(entry.is_empty_node());
     }
 
     #[rstest_reuse::apply(get_method)]
@@ -478,7 +471,7 @@ mod tests {
 
         let manager = CachedNodeManager::new(2, storage, pin_nothing);
         // Shouldn't error
-        manager.delete(TestNodeId::make_empty_id()).unwrap();
+        manager.delete(TestNodeId::empty_id()).unwrap();
     }
 
     #[test]

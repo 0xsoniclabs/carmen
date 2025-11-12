@@ -14,7 +14,7 @@ pub trait HasEmptyNode {
     fn is_empty_node(&self) -> bool;
 
     /// Creates and returns an empty node.
-    fn make_empty_node() -> Self
+    fn empty_node() -> Self
     where
         Self: Sized;
 }
@@ -25,7 +25,7 @@ pub trait HasEmptyId {
     fn is_empty_id(&self) -> bool;
 
     /// Creates and returns an empty ID.
-    fn make_empty_id() -> Self
+    fn empty_id() -> Self
     where
         Self: Sized;
 }
