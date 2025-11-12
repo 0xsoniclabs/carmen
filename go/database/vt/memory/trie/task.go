@@ -56,7 +56,7 @@ func newTask(
 	return t
 }
 
-// run executes the task's action and may returns a parent task that becomes
+// run executes the task's action and may return a parent task that becomes
 // ready to run as a result. If no parent task becomes ready, nil is returned.
 func (t *task) run() *task {
 	t.action()
