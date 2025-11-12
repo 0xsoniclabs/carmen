@@ -13,3 +13,6 @@ pub mod nodes;
 
 #[allow(unused)]
 pub use nodes::NodeFileStorageManager;
+pub use nodes::{
+    Node, id::NodeId, inner::InnerNode, leaf::FullLeafNode, sparse_leaf::SparseLeafNode,
+};
