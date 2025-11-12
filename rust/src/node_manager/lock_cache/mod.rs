@@ -22,6 +22,8 @@ use crate::{
 };
 
 #[cfg(test)]
+mod shuttle_test_utils;
+#[cfg(test)]
 mod shuttle_tests;
 #[cfg(test)]
 mod test_utils;
