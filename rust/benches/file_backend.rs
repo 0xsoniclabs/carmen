@@ -358,7 +358,7 @@ fn file_backend_benchmark(
                     threads as u64,
                     iterations,
                     &mut completed_iterations,
-                    || vec![0u8; chunk_size],
+                    |_| vec![0u8; chunk_size],
                     |iter, data| {
                         let offset = access.offset(iter, chunk_size, file_size as usize);
                         operation.execute(backend.deref(), data, offset, iter);

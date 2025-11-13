@@ -12,7 +12,7 @@
 use std::path::Path;
 
 pub use self::error::Error;
-use crate::error::BTResult;
+use crate::{error::BTResult, sync::Arc};
 
 mod error;
 pub mod file;
@@ -51,6 +51,38 @@ pub trait Storage: Send + Sync {
 
     /// Closes the storage, flushing any pending changes to disk.
     fn close(self) -> BTResult<(), Error>;
+}
+
+impl<S> Storage for Arc<S>
+where
+    S: Storage + ?Sized + 'static,
+{
+    type Id = S::Id;
+    type Item = S::Item;
+
+    fn open(_path: &Path) -> BTResult<Self, Error> {
+        unimplemented!("cannot open storage from an Arc trait object")
+    }
+
+    fn get(&self, id: Self::Id) -> BTResult<Self::Item, Error> {
+        self.as_ref().get(id)
+    }
+
+    fn reserve(&self, item: &Self::Item) -> Self::Id {
+        self.as_ref().reserve(item)
+    }
+
+    fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), Error> {
+        self.as_ref().set(id, item)
+    }
+
+    fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
+        self.as_ref().delete(id)
+    }
+
+    fn close(self) -> BTResult<(), Error> {
+        unimplemented!("cannot call close from an Arc trait object");
+    }
 }
 
 /// An entity which can create durable checkpoints of its state that can be restored later.

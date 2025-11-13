@@ -47,7 +47,7 @@ pub fn execute_with_threads<T>(
     num_threads: u64,
     iters: u64,
     offset: &mut u64,
-    op_data: impl Fn() -> T + Send + Sync,
+    op_data: impl Fn(u64) -> T + Send + Sync,
     op: impl Fn(u64, &mut T) + Send + Sync,
 ) -> Duration {
     let start_toggle = AtomicBool::new(false);
@@ -55,16 +55,14 @@ pub fn execute_with_threads<T>(
         let mut handles = Vec::with_capacity(num_threads as usize);
         for thread_id in 0..num_threads {
             let start_toggle = &start_toggle;
-            let completed_iterations = *offset;
+            let offset = *offset;
             let op_data = &op_data;
             let op = &op;
             handles.push(s.spawn(move || {
-                let mut data = op_data();
+                let mut data = op_data(thread_id);
                 while !start_toggle.load(Ordering::Acquire) {}
                 let start = Instant::now();
-                for iter in ((completed_iterations + thread_id)..(completed_iterations + iters))
-                    .step_by(num_threads as usize)
-                {
+                for iter in ((offset + thread_id)..(offset + iters)).step_by(num_threads as usize) {
                     op(iter, &mut data);
                 }
                 let end = Instant::now();

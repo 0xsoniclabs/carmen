@@ -1,8 +1,9 @@
 use std::{
+    collections::HashSet,
     ops::DerefMut,
-    path::Path,
+    path::{Iter, Path},
     sync::{
-        Arc, Mutex, Once,
+        Arc, LazyLock, Mutex,
         atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
@@ -16,13 +17,14 @@ use carmen_rust::{
     node_manager::{NodeManager, cached_node_manager::CachedNodeManager},
     storage::{
         Storage,
-        file::{MultiPageCachedFile, NoSeekFile, NodeFileStorage},
+        file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
-    types::TreeId,
+    types::{ToNodeType, TreeId},
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dashmap::DashMap;
+use itertools::Itertools;
 
 use crate::utils::{check_proportions, execute_with_threads, pow_2_threads, with_prob};
 
@@ -56,7 +58,7 @@ impl Storage for SimpleInMemoryStorage {
 
     fn reserve(&self, item: &Self::Item) -> Self::Id {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        NodeId::from_idx_and_node_type(id, item.to_node_type())
+        NodeId::from_idx_and_node_type(id, item.to_node_type().unwrap())
     }
 
     fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), carmen_rust::storage::Error> {
@@ -83,12 +85,13 @@ enum StorageType {
 }
 
 /// Construct a storage of the given type.
-fn make_storage(storage_type: StorageType) -> Box<dyn Storage<Id = NodeId, Item = Node>> {
+fn make_storage(storage_type: StorageType) -> Arc<dyn Storage<Id = NodeId, Item = Node>> {
     match storage_type {
-        StorageType::InMemory => Box::new(SimpleInMemoryStorage::open(Path::new("")).unwrap())
-            as Box<dyn Storage<Id = NodeId, Item = Node>>,
+        StorageType::InMemory => Arc::new(SimpleInMemoryStorage::open(Path::new("")).unwrap())
+            as Arc<dyn Storage<Id = NodeId, Item = Node>>,
         StorageType::FileBased | StorageType::FileBasedWithFlushBuffer => {
-            type FileStorageImpl = MultiPageCachedFile<16, NoSeekFile, false>;
+            // type FileStorageImpl = MultiPageCachedFile<5, NoSeekFile, false>;
+            type FileStorageImpl = NoSeekFile;
             type FileStorage = NodeFileStorageManager<
                 NodeFileStorage<InnerNode, FileStorageImpl>,
                 NodeFileStorage<SparseLeafNode<2>, FileStorageImpl>,
@@ -98,13 +101,13 @@ fn make_storage(storage_type: StorageType) -> Box<dyn Storage<Id = NodeId, Item 
             let bench_storage_dir = "bench_storage";
             let _ = std::fs::remove_dir_all(bench_storage_dir); // This may fail for non-existing dir, ignore errors
             if storage_type == StorageType::FileBasedWithFlushBuffer {
-                Box::new(
+                Arc::new(
                     StorageWithFlushBuffer::<FileStorage>::open(Path::new(bench_storage_dir))
                         .unwrap(),
-                ) as Box<dyn Storage<Id = NodeId, Item = Node>>
+                ) as Arc<dyn Storage<Id = NodeId, Item = Node>>
             } else {
-                Box::new(FileStorage::open(Path::new(bench_storage_dir)).unwrap())
-                    as Box<dyn Storage<Id = NodeId, Item = Node>>
+                Arc::new(FileStorage::open(Path::new(bench_storage_dir)).unwrap())
+                    as Arc<dyn Storage<Id = NodeId, Item = Node>>
             }
         }
     }
@@ -112,7 +115,7 @@ fn make_storage(storage_type: StorageType) -> Box<dyn Storage<Id = NodeId, Item 
 
 /// Initializes the storage with the given number of nodes and proportions.
 fn init_storage(
-    storage: &mut dyn Storage<Id = NodeId, Item = Node>,
+    storage: &dyn Storage<Id = NodeId, Item = Node>,
     num_nodes: u64,
     node_proportions: &[(NodeType, f32)],
 ) -> BTResult<Vec<NodeId>, Error> {
@@ -180,6 +183,56 @@ impl std::fmt::Display for Op {
     }
 }
 
+#[derive(Debug, Default)]
+struct DeletedNodeCount {
+    inner_count: AtomicU64,
+    leaf2_count: AtomicU64,
+    leaf256_count: AtomicU64,
+    empty_count: AtomicU64,
+}
+
+impl DeletedNodeCount {
+    fn count_up(&self, node_type: NodeType) {
+        match node_type {
+            NodeType::Inner => {
+                self.inner_count.fetch_add(1, Ordering::Relaxed);
+            }
+            NodeType::Leaf2 => {
+                self.leaf2_count.fetch_add(1, Ordering::Relaxed);
+            }
+            NodeType::Leaf256 => {
+                self.leaf256_count.fetch_add(1, Ordering::Relaxed);
+            }
+            NodeType::Empty => {
+                self.empty_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn decrement(&self) -> Option<NodeType> {
+        static NODE_TYPES: [NodeType; 4] = [
+            NodeType::Inner,
+            NodeType::Leaf2,
+            NodeType::Leaf256,
+            NodeType::Empty,
+        ];
+
+        for node_type in NODE_TYPES.iter() {
+            let count = match node_type {
+                NodeType::Inner => &self.inner_count,
+                NodeType::Leaf2 => &self.leaf2_count,
+                NodeType::Leaf256 => &self.leaf256_count,
+                NodeType::Empty => &self.empty_count,
+            };
+            if count.load(Ordering::Relaxed) > 0 {
+                count.fetch_sub(1, Ordering::Relaxed);
+                return Some(*node_type);
+            }
+        }
+        None
+    }
+}
+
 impl Op {
     /// Execute the operation on the  with the provided node IDs.
     /// The delete operation uses the provided delete_id mutex to get IDs to delete.
@@ -188,7 +241,8 @@ impl Op {
         self,
         manager: &Arc<impl NodeManager<Id = S::Id, NodeType = S::Item>>,
         ids: &[NodeId],
-        delete_id: &Arc<Mutex<Vec<NodeId>>>, // Maybe use a crossbeam queue
+        nodes_to_delete: &mut Vec<NodeId>,
+        deleted_nodes: &Arc<DeletedNodeCount>,
     ) where
         S: Storage<Id = NodeId, Item = Node> + 'static,
     {
@@ -209,8 +263,9 @@ impl Op {
                 let _unused = guard.deref_mut().deref_mut();
             }
             Op::Delete => {
-                if let Some(id) = delete_id.lock().unwrap().pop() {
+                if let Some(id) = nodes_to_delete.pop() {
                     manager.delete(id).unwrap();
+                    deleted_nodes.count_up(id.to_node_type().unwrap());
                 }
             }
         }
@@ -236,87 +291,139 @@ fn execute(
     dirty_nodes_proportions: u8,
     num_threads: usize,
 ) {
+    type ThreadFn = dyn Fn(u64, &mut Vec<NodeId>) + Send + Sync;
+    struct BenchmarkState {
+        thread_fn: Box<ThreadFn>,
+        storage: Arc<dyn Storage<Id = NodeId, Item = Node>>,
+        reserved_node_delete: HashSet<NodeId>,
+        deleted_nodes: Arc<DeletedNodeCount>,
+    }
+
     static PINNING_PROB: AtomicU8 = AtomicU8::new(0);
     PINNING_PROB.store(pinning_prob, Ordering::Relaxed);
 
-    let mut storage = make_storage(storage_type);
-    let mut node_ids = init_storage(&mut *storage, storage_size, node_proportions).unwrap();
-    let manager = Arc::new(CachedNodeManager::new(
-        manager_size as usize,
-        storage,
-        move |_| with_prob(PINNING_PROB.load(Ordering::Relaxed)),
-    ));
+    let mut state = LazyLock::new(|| {
+        let storage = make_storage(storage_type);
+        let mut node_ids = init_storage(&storage, storage_size, node_proportions).unwrap();
+        let manager = Arc::new(CachedNodeManager::new(
+            manager_size as usize,
+            storage.clone(),
+            move |_| with_prob(PINNING_PROB.load(Ordering::Relaxed)),
+        ));
 
-    // Take a portion of nodes to insert in the cache
-    fastrand::shuffle(&mut node_ids);
-    let node_in_manager = node_ids
-        .iter()
-        .take(manager_size as usize)
-        .inspect(|&id| {
-            // Insert in the cache
-            let mut guard = manager.get_write_access(*id).unwrap();
-            if with_prob(dirty_nodes_proportions) {
-                // Mark as dirty
-                let _ = guard.deref_mut().deref_mut();
-            }
-        })
-        .copied()
-        .collect::<Vec<_>>();
-    // Reserve some nodes for delete operations with probability
-    // operation_proportions[OP::delete]
-    let reserved_node_delete = node_in_manager
-        .iter()
-        .filter(|_| {
-            fastrand::f32()
-                < operations_proportions
-                    .iter()
-                    .find(|(op, _)| *op == Op::Delete)
-                    .map(|(_, p)| *p)
-                    .unwrap_or(0.0)
-        })
-        .copied()
-        .collect::<Vec<_>>();
-    // Filter nodes reserved for deletion, as other concurrent operations on
-    // them are invalid
-    let available_node_ids = node_ids
-        .iter()
-        .filter(|id| !reserved_node_delete.contains(id))
-        .copied()
-        .collect::<Vec<_>>();
-    let reserved_node_delete = Arc::new(Mutex::new(reserved_node_delete));
-
-    // Each thread executes an operation based on the given proportions
-    let thread_fn = {
-        let reserved_node_delete = reserved_node_delete.clone();
-        move |_, _: &mut ()| {
-            let mut cumulative_prob = 0.0;
-            let rand = fastrand::f32();
-            for (operation, prob) in operations_proportions {
-                cumulative_prob += *prob;
-                if rand <= cumulative_prob {
-                    operation.execute::<SimpleInMemoryStorage>(
-                        &manager,
-                        &available_node_ids,
-                        &reserved_node_delete,
-                    );
-                    return;
+        // Take a portion of nodes to insert in the cache
+        fastrand::shuffle(&mut node_ids);
+        let node_in_manager = node_ids
+            .iter()
+            .take(manager_size as usize)
+            .inspect(|&id| {
+                // Insert in the cache
+                let mut guard = manager.get_write_access(*id).unwrap();
+                if with_prob(dirty_nodes_proportions) {
+                    // Mark as dirty
+                    let _ = guard.deref_mut().deref_mut();
                 }
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        // Reserve some nodes for delete operations with probability
+        // operation_proportions[OP::delete]
+        let reserved_node_delete = node_in_manager
+            .iter()
+            .filter(|_| {
+                fastrand::f32()
+                    < operations_proportions
+                        .iter()
+                        .find(|(op, _)| *op == Op::Delete)
+                        .map(|(_, p)| *p)
+                        .unwrap_or(0.0)
+            })
+            .copied()
+            .collect::<HashSet<_>>();
+        // Filter nodes reserved for deletion, as other concurrent operations on
+        // them are invalid
+        let available_node_ids = node_ids
+            .iter()
+            .filter(|id| !reserved_node_delete.contains(id))
+            .copied()
+            .collect::<Vec<_>>();
+
+        // let reserved_node_delete = Arc::new(Mutex::new(reserved_node_delete));
+        // The nodes removed from the storage, which are gonna be inserted back
+        // let deleted_nodes = Arc::new(Mutex::new(Vec::new()));
+
+        // Each thread executes an operation based on the given proportions
+        let operations_proportions = Arc::new(operations_proportions.to_vec());
+        let deleted_nodes = Arc::new(DeletedNodeCount::default());
+        let thread_fn = {
+            let deleted_nodes = deleted_nodes.clone();
+            let manager = manager.clone();
+            let operations_proportions = operations_proportions.clone();
+            move |_, nodes_to_delete: &mut Vec<NodeId>| {
+                let mut cumulative_prob = 0.0;
+                let rand = fastrand::f32();
+                for (operation, prob) in operations_proportions.iter() {
+                    cumulative_prob += prob;
+                    if rand <= cumulative_prob {
+                        operation.execute::<SimpleInMemoryStorage>(
+                            &manager,
+                            &available_node_ids,
+                            nodes_to_delete,
+                            &deleted_nodes,
+                        );
+                        return;
+                    }
+                }
+                unreachable!("Probabilities should sum to 1.0");
             }
-            unreachable!("Probabilities should sum to 1.0");
+        };
+
+        BenchmarkState {
+            thread_fn: Box::new(thread_fn),
+            storage,
+            reserved_node_delete,
+            deleted_nodes,
         }
-    };
+    });
+
     let mut completed_iterations = 0u64;
     group.bench_with_input(
         BenchmarkId::from_parameter(format!("{num_threads}threads/{storage_type:?}")),
         &(),
         |b, _| {
+            // Re-insert deleted nodes to always have nodes to delete
+            // NOTE: This is required because the warmup function will remove nodes from the
+            // storage when executing this closure, and we may end up running the benchmark
+            // without enough nodes to delete.
+            while let Some(node_type) = state.deleted_nodes.decrement() {
+                // Cannot reuse the same ID as it is the reuse list.
+                let node = match node_type {
+                    NodeType::Inner => Node::Inner(Box::default()),
+                    NodeType::Leaf2 => Node::Leaf2(Box::default()),
+                    NodeType::Leaf256 => Node::Leaf256(Box::default()),
+                    NodeType::Empty => Node::Empty(EmptyNode),
+                };
+                let id = state.storage.reserve(&node);
+                state.storage.set(id, &node).unwrap();
+                state.reserved_node_delete.insert(id);
+            }
+
+            // Give each thread something to delete
+            let thread_nodes_to_delete = state
+                .reserved_node_delete
+                .iter()
+                .chunks(state.reserved_node_delete.len() / num_threads)
+                .into_iter()
+                .map(|chunk| chunk.copied().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+
             b.iter_custom(|iters| {
                 execute_with_threads(
                     num_threads as u64,
                     iters,
                     &mut completed_iterations,
-                    || (),
-                    &thread_fn,
+                    |thread_id| thread_nodes_to_delete[thread_id as usize].clone(),
+                    &state.thread_fn,
                 )
             });
         },

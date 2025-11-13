@@ -258,7 +258,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                                     num_threads as u64,
                                     iters,
                                     &mut completed_iterations,
-                                    || (),
+                                    |_| (),
                                     |iter, _| {
                                         let id = get_id(iter);
                                         cache.execute_read_op(id);
@@ -314,7 +314,7 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                                     num_threads as u64,
                                     iters,
                                     &mut completed_iterations,
-                                    || (),
+                                    |_| (),
                                     |iter, _| {
                                         // Force eviction on every read by only requesting ids that
                                         // are not in the cache
