@@ -11,6 +11,7 @@
 package experimental
 
 import (
+	"github.com/0xsoniclabs/carmen/go/database/flat"
 	vtgeth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
 	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/memory"
 	vtref "github.com/0xsoniclabs/carmen/go/database/vt/reference"
@@ -39,6 +40,16 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Schema:  6,
 		Archive: state.NoArchive,
 	}: vtref.NewState,
+	{
+		Variant: "go-geth-memory-flat",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: flat.WrapFactory(vtgeth.NewState),
+	{
+		Variant: "go-memory-flat",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: flat.WrapFactory(vtgeth.NewState),
 }
 
 func init() {
