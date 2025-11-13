@@ -8,7 +8,11 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{cmp::Ordering, ops::Range};
+use std::{
+    borrow::Cow,
+    cmp::Ordering,
+    ops::{Deref, Range},
+};
 
 use sha3::{Digest, Keccak256};
 use verkle_trie::Key;
@@ -53,15 +57,90 @@ impl Ord for KeyedUpdate {
 
 impl KeyedUpdate {
     /// Returns the key associated with the update.
-    fn key(&self) -> &Key {
+    pub fn key(&self) -> &Key {
         match self {
             Self::FullSlot { key, .. } | Self::PartialSlot { key, .. } => key,
         }
     }
+
+    /// Applies the update to the given value.
+    #[cfg_attr(not(test), expect(unused))]
+    pub fn apply_to_value(&self, orig_value: &mut [u8; 32]) {
+        match self {
+            KeyedUpdate::FullSlot { value, .. } => {
+                *orig_value = *value;
+            }
+            KeyedUpdate::PartialSlot { value, mask, .. } => {
+                for i in 0..32 {
+                    orig_value[i] = (orig_value[i] & !mask[i]) | (value[i] & mask[i]);
+                }
+            }
+        }
+    }
 }
 
-impl From<Update<'_>> for Vec<KeyedUpdate> {
-    fn from(update: Update<'_>) -> Self {
+/// A collection of keyed updates with the invariants that they are sorted by key and non-empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyedUpdates<'a>(Cow<'a, [KeyedUpdate]>);
+
+impl KeyedUpdates<'_> {
+    /// Creates `KeyedUpdates` from key-value pairs, treating each as a full slot update.
+    #[cfg(test)]
+    pub fn from_key_value_pairs(updates: &[(Key, Value)]) -> Self {
+        let mut keyed_updates = Vec::with_capacity(updates.len());
+        for (key, value) in updates {
+            keyed_updates.push(KeyedUpdate::FullSlot {
+                key: *key,
+                value: *value,
+            });
+        }
+        keyed_updates.sort();
+        KeyedUpdates(Cow::Owned(keyed_updates))
+    }
+
+    /// Returns the key of the first update.
+    #[cfg_attr(not(test), expect(unused))]
+    pub fn first_key(&self) -> &Key {
+        // self is never empty
+        self.0[0].key()
+    }
+
+    /// Returns an iterator that splits the updates into groups sharing the same byte at the given
+    /// depth and yields them as `KeyedUpdates`.
+    /// This is used to group updates for insertion into child nodes. It is therefore expected that
+    /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
+    #[cfg_attr(not(test), expect(unused))]
+    pub fn split(&self, depth: u8) -> impl Iterator<Item = KeyedUpdates<'_>> {
+        SplitIter {
+            updates: self,
+            depth,
+            start: 0,
+        }
+    }
+
+    /// Checks if all updates share the same stem (first 31 bytes of the key).
+    #[cfg_attr(not(test), expect(unused))]
+    pub fn all_stems_eq(&self, stem: &[u8; 31]) -> bool {
+        self.0.iter().all(|update| &update.key()[..31] == stem)
+    }
+}
+
+impl Deref for KeyedUpdates<'_> {
+    type Target = [KeyedUpdate];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// The error type returned when trying to convert an empty `Update` into `KeyedUpdates`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmptyUpdate;
+
+impl TryFrom<Update<'_>> for KeyedUpdates<'_> {
+    type Error = EmptyUpdate;
+
+    fn try_from(update: Update<'_>) -> Result<Self, Self::Error> {
         let mut updates = Vec::with_capacity(
             // in practice created_accounts also have other updates, so we don't count them here
             update.balances.len()
@@ -141,7 +220,40 @@ impl From<Update<'_>> for Vec<KeyedUpdate> {
                 value: *value,
             });
         }
-        updates
+        updates.sort();
+        if updates.is_empty() {
+            return Err(EmptyUpdate);
+        }
+        Ok(KeyedUpdates(Cow::Owned(updates)))
+    }
+}
+
+/// An iterator that splits `KeyedUpdates` into groups sharing the same key byte at a given depth.
+/// These groups are yielded in order as `KeyedUpdates`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SplitIter<'a> {
+    updates: &'a KeyedUpdates<'a>,
+    depth: u8,
+    start: usize,
+}
+
+impl<'a> Iterator for SplitIter<'a> {
+    type Item = KeyedUpdates<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start >= self.updates.len() {
+            return None;
+        }
+        let start_pos = self.start;
+        let current_key = self.updates[start_pos].key()[self.depth as usize];
+        let mut end = start_pos + 1;
+        while end < self.updates.len()
+            && self.updates[end].key()[self.depth as usize] == current_key
+        {
+            end += 1;
+        }
+        self.start = end;
+        Some(KeyedUpdates(Cow::Borrowed(&self.updates[start_pos..end])))
     }
 }
 
@@ -154,6 +266,8 @@ fn mask_for_range(range: Range<usize>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use zerocopy::transmute;
+
     use super::*;
 
     #[test]
@@ -243,7 +357,175 @@ mod tests {
     }
 
     #[test]
-    fn from_update_converts_balance_and_nonce_and_code_and_slot_updates() {
+    fn apply_value_modifies_value_by_overwriting_it_with_full_slot_or_applying_mask_with_partial_slot()
+     {
+        let mut original_value = [0; 32];
+
+        let full_slot_update = KeyedUpdate::FullSlot {
+            key: [0; 32],
+            value: [1; 32],
+        };
+        full_slot_update.apply_to_value(&mut original_value);
+        assert_eq!(original_value, [1; 32]);
+
+        let mut original_value = [2; 32];
+        let partial_slot_update = KeyedUpdate::PartialSlot {
+            key: [0u8; 32],
+            value: [3; 32],
+            mask: mask_for_range(8..16),
+        };
+        partial_slot_update.apply_to_value(&mut original_value);
+        let expected: [u8; 32] = transmute!([[2u8; 8], [3; 8], [2; 8], [2; 8]]);
+        assert_eq!(original_value, expected);
+    }
+
+    #[test]
+    fn from_key_value_pairs_maps_pairs_to_full_slots_and_sort_them() {
+        let updates = [([1; 32], [2; 32]), ([3; 32], [4; 32])];
+
+        let keyed_updates = KeyedUpdates::from_key_value_pairs(&updates);
+
+        assert_eq!(
+            keyed_updates,
+            KeyedUpdates(Cow::Borrowed(&[
+                KeyedUpdate::FullSlot {
+                    key: [1; 32],
+                    value: [2; 32],
+                },
+                KeyedUpdate::FullSlot {
+                    key: [3; 32],
+                    value: [4; 32],
+                }
+            ]))
+        );
+    }
+
+    #[test]
+    fn first_key_returns_key_of_first_update() {
+        let updates = KeyedUpdates(Cow::Borrowed(&[
+            KeyedUpdate::FullSlot {
+                key: [3; 32],
+                value: [4; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [1; 32],
+                value: [2; 32],
+            },
+        ]));
+
+        assert_eq!(updates.first_key(), &[3; 32]);
+    }
+
+    #[test]
+    fn split_returns_iterator_yielding_keyed_updates_for_each_distinct_byte_at_depth() {
+        let updates = KeyedUpdates(Cow::Borrowed(&[
+            KeyedUpdate::FullSlot {
+                key: [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 1, 11, 111,
+                ],
+                value: [1; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 1, 11, 112,
+                ],
+                value: [2; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 1, 12, 113,
+                ],
+                value: [3; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 1, 12, 114,
+                ],
+                value: [4; 32],
+            },
+        ]));
+
+        let iter: Vec<_> = updates.split(32 - 1 - 2).collect();
+        assert_eq!(iter.len(), 1);
+        assert_eq!(
+            iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [111, 112, 113, 114]
+        );
+
+        let iter: Vec<_> = updates.split(32 - 1 - 1).collect();
+        assert_eq!(iter.len(), 2);
+        assert_eq!(
+            iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [111, 112]
+        );
+        assert_eq!(
+            iter[1].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [113, 114]
+        );
+
+        let iter: Vec<_> = updates.split(32 - 1).collect();
+        assert_eq!(iter.len(), 4);
+        assert_eq!(
+            iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [111]
+        );
+        assert_eq!(
+            iter[1].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [112]
+        );
+        assert_eq!(
+            iter[2].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [113]
+        );
+        assert_eq!(
+            iter[3].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
+            [114]
+        );
+    }
+
+    #[test]
+    fn all_stems_eq_checks_if_all_updates_have_specified_stem() {
+        let updates = KeyedUpdates(Cow::Borrowed(&[
+            KeyedUpdate::FullSlot {
+                key: [1; 32],
+                value: [2; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [3; 32],
+                value: [4; 32],
+            },
+        ]));
+        assert!(!updates.all_stems_eq(&[1; 31]));
+        let updates = KeyedUpdates(Cow::Borrowed(&[
+            KeyedUpdate::FullSlot {
+                key: [3; 32],
+                value: [2; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [3; 32],
+                value: [4; 32],
+            },
+        ]));
+        assert!(!updates.all_stems_eq(&[1; 31]));
+        let updates = KeyedUpdates(Cow::Borrowed(&[
+            KeyedUpdate::FullSlot {
+                key: [1; 32],
+                value: [2; 32],
+            },
+            KeyedUpdate::FullSlot {
+                key: [1; 32],
+                value: [4; 32],
+            },
+        ]));
+        assert!(updates.all_stems_eq(&[1; 31]));
+    }
+
+    #[test]
+    fn try_from_update_converts_balance_and_nonce_and_code_and_slot_updates_and_sorts_updates() {
         let update = Update {
             created_accounts: &[[1; 20], [2; 20]],
             deleted_accounts: &[[3; 20], [4; 20]], // These will be ignored
@@ -291,7 +573,7 @@ mod tests {
             ],
         };
 
-        let keyed_updates: Vec<KeyedUpdate> = update.clone().into();
+        let keyed_updates: KeyedUpdates = update.clone().try_into().unwrap();
 
         // Verify total number of updates
         assert_eq!(
@@ -312,7 +594,7 @@ mod tests {
         // Verify created accounts
         for addr in update.created_accounts {
             let mut found = false;
-            for keyed_update in &keyed_updates {
+            for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update
                     && *key == get_basic_data_key(addr)
                     && *value == [0u8; 32]
@@ -328,7 +610,7 @@ mod tests {
         // Verify balances
         for balance_update in update.balances {
             let mut found = false;
-            for keyed_update in &keyed_updates {
+            for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update
                     && *key == get_basic_data_key(&balance_update.addr)
                     && *value == balance_update.balance
@@ -344,7 +626,7 @@ mod tests {
         // Verify nonces
         for nonce_update in update.nonces {
             let mut found = false;
-            for keyed_update in &keyed_updates {
+            for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update {
                     let mut expected_value = [0u8; 32];
                     expected_value[8..16].copy_from_slice(&nonce_update.nonce);
@@ -366,7 +648,7 @@ mod tests {
             let mut found_code_hash = false;
             let mut found_chunks = vec![false; code::split_code(code_update.code).len()];
 
-            for keyed_update in &keyed_updates {
+            for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update {
                     let code_len = code_update.code.len() as u32;
                     let mut expected_value = [0u8; 32];
@@ -415,7 +697,7 @@ mod tests {
         // Verify slots
         for slot_update in update.slots {
             let mut found = false;
-            for keyed_update in &keyed_updates {
+            for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::FullSlot { key, value } = keyed_update
                     && *key == get_storage_key(&slot_update.addr, &slot_update.key)
                     && *value == slot_update.value
