@@ -36,12 +36,7 @@ use crate::{
 
 /// The commitment of a managed verkle trie node, together with metadata required to recompute
 /// it after the node has been modified.
-///
-/// NOTE: While this type is meant to be part of trie nodes, a dirty commitment should never
-/// be persisted to disk. The dirty flag and changed bits are nevertheless part of the on-disk
-/// representation, so that the entire node can be transmuted to/from bytes using zerocopy.
-/// Related issue: <https://github.com/0xsoniclabs/sonic-admin/issues/373>
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct VerkleCommitment {
     /// The commitment of the node, or of the node previously at this position in the trie.
@@ -54,10 +49,9 @@ pub struct VerkleCommitment {
     /// Not being initialized does not imply the commitment being zero, as it may have been
     /// created from an existing commitment using [`VerkleCommitment::from_existing`].
     /// TODO: Consider merging this with `dirty` flag into an enum that is not stored on disk.
-    initialized: u8,
+    initialized: bool,
     /// Whether the commitment is dirty and needs to be recomputed.
-    // bool does not implement FromBytes, so we use u8 instead
-    dirty: u8,
+    dirty: bool,
 
     // FIXME Just hacking - these are only needed for Verkle leaf nodes
     // TODO: Also store scalars?
@@ -88,7 +82,7 @@ impl VerkleCommitment {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.dirty != 0
+        self.dirty
     }
 }
 
@@ -97,8 +91,8 @@ impl Default for VerkleCommitment {
         Self {
             commitment: Commitment::default(),
             committed_used_slots: [0u8; 256 / 8],
-            initialized: 0,
-            dirty: 0,
+            initialized: false,
+            dirty: false,
             c1: Commitment::default(),
             c2: Commitment::default(),
             committed_values: [Value::default(); 256],
@@ -109,7 +103,7 @@ impl Default for VerkleCommitment {
 
 impl TrieCommitment for VerkleCommitment {
     fn modify_child(&mut self, index: usize) {
-        self.dirty = 1;
+        self.dirty = true;
         self.changed[index / 8] |= 1 << (index % 8);
     }
 
@@ -117,7 +111,42 @@ impl TrieCommitment for VerkleCommitment {
         if self.changed[index / 8] & (1 << (index % 8)) == 0 {
             self.changed[index / 8] |= 1 << (index % 8);
             self.committed_values[index] = prev;
-            self.dirty = 1;
+            self.dirty = true;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
+#[repr(C)]
+pub struct OnDiskVerkleCommitment {
+    commitment: Commitment,
+    pub committed_used_slots: [u8; 256 / 8],
+    c1: Commitment,
+    c2: Commitment,
+}
+
+impl From<OnDiskVerkleCommitment> for VerkleCommitment {
+    fn from(odvc: OnDiskVerkleCommitment) -> Self {
+        VerkleCommitment {
+            commitment: odvc.commitment,
+            committed_used_slots: odvc.committed_used_slots,
+            c1: odvc.c1,
+            c2: odvc.c2,
+            initialized: true,
+            dirty: false,
+            committed_values: [Value::default(); 256],
+            changed: [0u8; 256 / 8],
+        }
+    }
+}
+
+impl From<&VerkleCommitment> for OnDiskVerkleCommitment {
+    fn from(value: &VerkleCommitment) -> Self {
+        OnDiskVerkleCommitment {
+            commitment: value.commitment,
+            committed_used_slots: value.committed_used_slots,
+            c1: value.c1,
+            c2: value.c2,
         }
     }
 }
@@ -157,7 +186,7 @@ pub fn process_update(
 ) {
     let mut lock = manager.get_write_access(id).unwrap();
     let mut vc = lock.get_commitment();
-    assert_eq!(vc.dirty, 1);
+    assert!(vc.dirty);
     previous_commitments.insert(id, vc.commitment);
     match lock.get_commitment_input().unwrap() {
         VerkleCommitmentInput::Leaf(values, stem) => {
@@ -236,7 +265,7 @@ pub fn process_update(
 
             let mut scalars = [Scalar::zero(); 256];
             for (i, child_id) in children.iter().enumerate() {
-                if vc.initialized == 0 {
+                if !vc.initialized {
                     scalars[i] = manager
                         .get_read_access(*child_id)
                         .unwrap()
@@ -251,6 +280,7 @@ pub fn process_update(
                 }
 
                 let child_commitment = manager.get_read_access(*child_id).unwrap().get_commitment();
+                assert!(!child_commitment.dirty);
                 let prev_commitment = previous_commitments
                     .get(child_id)
                     .expect("previous commitment should have been set in lower level");
@@ -267,17 +297,17 @@ pub fn process_update(
                 }
             }
 
-            if vc.initialized != 0 && use_batch_update {
+            if vc.initialized && use_batch_update {
                 vc.commitment = vc.commitment + Commitment::new(&scalars);
             }
 
-            if vc.initialized == 0 {
+            if !vc.initialized {
                 vc.commitment = Commitment::new(&scalars);
-                vc.initialized = 1;
+                vc.initialized = true;
             }
         }
     }
-    vc.dirty = 0;
+    vc.dirty = false;
     // TODO: Test this (currently not caught by any test!)
     vc.changed.fill(0);
     lock.set_commitment(vc).unwrap();
@@ -363,7 +393,7 @@ fn update_commitment_thread(
     // );
 
     let mut vc = node.get_commitment();
-    assert_eq!(vc.dirty, 1); // FIXME: Why is this assertion failing with bertha?
+    assert!(vc.dirty); // FIXME: Why is this assertion failing with bertha?
 
     match node.get_commitment_input().unwrap() {
         VerkleCommitmentInput::Leaf(values, stem) => {
@@ -441,7 +471,7 @@ fn update_commitment_thread(
                 .par_iter_mut()
                 .enumerate()
                 .for_each(|(i, delta_i)| {
-                    if vc.initialized == 0 && vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                    if !vc.initialized && vc.changed[i / 8] & (1 << (i % 8)) == 0 {
                         // FIXME HACK: New nodes that are reparented are not marked as dirty in
                         // parent - need to recurse here anyway. For other
                         // implementations this was not an issue since we
@@ -517,9 +547,9 @@ fn update_commitment_thread(
                     acc + delta_commitment
                 });
 
-            if vc.initialized == 0 {
+            if !vc.initialized {
                 vc.commitment = delta_commitment;
-                vc.initialized = 1;
+                vc.initialized = true;
             } else {
                 vc.commitment = vc.commitment + delta_commitment;
             }
@@ -537,7 +567,7 @@ fn update_commitment_thread(
     //     "  ".repeat(dbg_recursion_level),
     //     delta
     // );
-    vc.dirty = 0;
+    vc.dirty = false;
     // TODO: Test this (currently not caught by any test!)
     vc.changed.fill(0);
     node.set_commitment(vc).unwrap();
@@ -586,8 +616,8 @@ mod tests {
         let original = VerkleCommitment {
             commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
             committed_used_slots: [1u8; 256 / 8],
-            initialized: 1,
-            dirty: 1,
+            initialized: true,
+            dirty: true,
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [Value::from_index_values(3, &[]); 256],
@@ -596,8 +626,8 @@ mod tests {
         let new = VerkleCommitment::from_existing(&original);
         assert_eq!(new.commitment, original.commitment);
         assert_eq!(new.committed_used_slots, [0u8; 256 / 8]);
-        assert_eq!(new.initialized, 0);
-        assert_eq!(new.dirty, 0);
+        assert!(!new.initialized);
+        assert!(!new.dirty);
         assert_eq!(new.c1, Commitment::default());
         assert_eq!(new.c2, Commitment::default());
         assert_eq!(new.committed_values, [Value::default(); 256]);
@@ -617,13 +647,13 @@ mod tests {
     #[test]
     fn verkle_commitment_is_dirty_returns_correct_value() {
         let vc = VerkleCommitment {
-            dirty: 0,
+            dirty: false,
             ..Default::default()
         };
         assert!(!vc.is_dirty());
 
         let vc = VerkleCommitment {
-            dirty: 1,
+            dirty: true,
             ..Default::default()
         };
         assert!(vc.is_dirty());
@@ -634,7 +664,7 @@ mod tests {
         let vc: VerkleCommitment = VerkleCommitment::default();
         assert_eq!(vc.commitment, Commitment::default());
         assert_eq!(vc.committed_used_slots, [0u8; 256 / 8]);
-        assert_eq!(vc.dirty, 0);
+        assert!(!vc.dirty);
     }
 
     #[test]
