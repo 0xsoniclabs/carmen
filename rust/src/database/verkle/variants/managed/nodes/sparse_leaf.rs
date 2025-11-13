@@ -8,7 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use std::borrow::Cow;
+
+use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::{
@@ -17,7 +19,7 @@ use crate::{
             KeyedUpdate, KeyedUpdateBatch,
             variants::managed::{
                 VerkleNode, VerkleNodeId,
-                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
                     ValueWithIndex, VerkleIdWithIndex, make_smallest_inner_node_for,
                     make_smallest_leaf_node_for,
@@ -28,13 +30,13 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
-    types::{Key, Value},
+    types::{DiskRepresentable, Key, Value},
 };
 
 /// A sparsely populated leaf node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct SparseLeafNode<const N: usize> {
     pub stem: [u8; 31],
@@ -95,6 +97,50 @@ impl<const N: usize> Default for SparseLeafNode<N> {
             values,
             commitment: VerkleCommitment::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+pub struct OnDiskSparseLeafNode<const N: usize> {
+    pub stem: [u8; 31],
+    pub values: [ValueWithIndex; N],
+    pub commitment: OnDiskVerkleCommitment,
+}
+
+impl<const N: usize> From<OnDiskSparseLeafNode<N>> for SparseLeafNode<N> {
+    fn from(on_disk: OnDiskSparseLeafNode<N>) -> Self {
+        SparseLeafNode {
+            stem: on_disk.stem,
+            values: on_disk.values,
+            commitment: VerkleCommitment::from(on_disk.commitment),
+        }
+    }
+}
+
+impl<const N: usize> From<&SparseLeafNode<N>> for OnDiskSparseLeafNode<N> {
+    fn from(node: &SparseLeafNode<N>) -> Self {
+        OnDiskSparseLeafNode {
+            stem: node.stem,
+            values: node.values,
+            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+        }
+    }
+}
+
+impl<const N: usize> DiskRepresentable for SparseLeafNode<N> {
+    fn from_disk_repr<E>(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        OnDiskSparseLeafNode::<N>::from_disk_repr(read_into_buffer).map(Into::into)
+    }
+
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Owned(OnDiskSparseLeafNode::from(self).to_disk_repr().into_owned())
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<OnDiskSparseLeafNode<N>>()
     }
 }
 
