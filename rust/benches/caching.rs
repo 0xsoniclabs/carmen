@@ -12,7 +12,7 @@ use carmen_rust::{
     node_manager::{
         NodeManager,
         cached_node_manager::CachedNodeManager,
-        lock_cache::{self, EvictionHooks},
+        lock_cache::{EvictionHooks, LockCache},
     },
     storage::{self, Storage},
 };
@@ -22,17 +22,10 @@ use quick_cache::{Lifecycle, UnitWeighter};
 use crate::utils::{execute_with_threads, pow_2_threads, with_prob};
 pub mod utils;
 
-/// Lifecycle implementation that randomly pins items based on a given probability
+/// A component that randomly pins items based on a given probability.
 #[derive(Clone, Default)]
-pub struct RandomPinner {
+struct RandomPinner {
     prob: u8,
-}
-
-impl RandomPinner {
-    /// Creates a new RandomPinner with the given pinning probability
-    pub fn new(pinning_prob: u8) -> Self {
-        Self { prob: pinning_prob }
-    }
 }
 
 impl<K, V> Lifecycle<K, V> for RandomPinner {
@@ -55,9 +48,10 @@ impl EvictionHooks for RandomPinner {
         with_prob(self.prob)
     }
 }
+
 /// Storage implementation that produces constant data for any requested id, with atomically
 /// incrementing ids.
-pub struct ProducerStorage {
+struct ProducerStorage {
     id_counter: AtomicU64,
 }
 
@@ -73,10 +67,7 @@ impl Storage for ProducerStorage {
     type Id = u64;
     type Item = i64;
 
-    fn open(_path: &std::path::Path) -> BTResult<Self, storage::Error>
-    where
-        Self: Sized,
-    {
+    fn open(_path: &std::path::Path) -> BTResult<Self, storage::Error> {
         Ok(Self::new())
     }
 
@@ -103,10 +94,11 @@ impl Storage for ProducerStorage {
 
 /// Enum wrapping the different cache implementations used in the benchmarks
 #[allow(clippy::type_complexity)]
-pub enum Caches {
+#[allow(clippy::enum_variant_names)]
+enum Cache {
     QuickCache(quick_cache::sync::Cache<u64, i64, UnitWeighter, RandomState, RandomPinner>),
     CachedNodeManager(CachedNodeManager<ProducerStorage>),
-    LockCache(lock_cache::LockCache<u64, i64>),
+    LockCache(LockCache<u64, i64>),
 }
 
 /// Enum representing the different cache implementations used in the benchmarks
@@ -128,67 +120,67 @@ impl std::fmt::Display for CacheType {
 }
 
 impl CacheType {
-    /// Initializes a cache of the given type with the given size and pinning probability
-    pub fn make_cache(self, size: u64, pinning_prob: u8) -> Caches {
+    /// Initializes a cache of the given type with the given size and pinning probability.
+    fn make_cache(self, size: u64, pinning_prob: u8) -> Cache {
         static PINNING_PROB: AtomicU8 = AtomicU8::new(0);
         match self {
-            CacheType::QuickCache => Caches::QuickCache(quick_cache::sync::Cache::with(
+            CacheType::QuickCache => Cache::QuickCache(quick_cache::sync::Cache::with(
                 size as usize,
                 size,
                 UnitWeighter,
                 RandomState::default(),
-                RandomPinner::new(pinning_prob),
+                RandomPinner { prob: pinning_prob },
             )),
             CacheType::CachedNodeManager => {
                 PINNING_PROB.store(pinning_prob, Ordering::Relaxed);
                 let storage = ProducerStorage::new();
-                Caches::CachedNodeManager(CachedNodeManager::new(
+                Cache::CachedNodeManager(CachedNodeManager::new(
                     size as usize,
                     storage,
                     move |_| with_prob(PINNING_PROB.load(Ordering::Relaxed)),
                 ))
             }
-            CacheType::LockCache => Caches::LockCache(lock_cache::LockCache::new(
+            CacheType::LockCache => Cache::LockCache(LockCache::new(
                 size as usize,
-                Arc::new(RandomPinner::new(pinning_prob)),
+                Arc::new(RandomPinner { prob: pinning_prob }),
             )),
         }
     }
 }
 
-impl Caches {
-    /// Fills the cache to its capacity, using ids in range 0..capacity
-    pub fn fill(&mut self) {
+impl Cache {
+    /// Fills the cache to its capacity, using ids in range `0..capacity`
+    fn fill(&mut self) {
         for i in 0..self.capacity() {
             match self {
-                Caches::QuickCache(cache) => {
+                Cache::QuickCache(cache) => {
                     cache.insert(i, 42i64);
                 }
-                Caches::LockCache(lock_cache) => {
+                Cache::LockCache(lock_cache) => {
                     let _unused = lock_cache
                         .get_read_access_or_insert(i, || Ok(42i64))
                         .unwrap();
                 }
-                Caches::CachedNodeManager(node_manager) => {
+                Cache::CachedNodeManager(node_manager) => {
                     let _unused = node_manager.get_read_access(i).unwrap();
                 }
             }
         }
     }
 
-    /// Returns the capacity of the cache
-    pub fn capacity(&self) -> u64 {
+    /// Returns the capacity of the cache.
+    fn capacity(&self) -> u64 {
         match self {
-            Caches::QuickCache(cache) => cache.capacity(),
-            Caches::CachedNodeManager(node_manager) => node_manager.capacity(),
-            Caches::LockCache(lock_cache) => lock_cache.capacity(),
+            Cache::QuickCache(cache) => cache.capacity(),
+            Cache::CachedNodeManager(node_manager) => node_manager.capacity(),
+            Cache::LockCache(lock_cache) => lock_cache.capacity(),
         }
     }
 
-    /// Executes a read operation on the cache for the given id
-    pub fn execute_read_op(&self, iter: u64) {
+    /// Executes a read operation on the cache for the given id.
+    fn execute_read_op(&self, iter: u64) {
         match self {
-            Caches::QuickCache(cache) => match cache.get_value_or_guard(&iter, None) {
+            Cache::QuickCache(cache) => match cache.get_value_or_guard(&iter, None) {
                 quick_cache::sync::GuardResult::Guard(guard) => {
                     let _ = guard.insert(42i64);
                 }
@@ -197,10 +189,10 @@ impl Caches {
                     unreachable!()
                 }
             },
-            Caches::CachedNodeManager(node_manager) => {
+            Cache::CachedNodeManager(node_manager) => {
                 let _node = node_manager.get_read_access(iter).unwrap();
             }
-            Caches::LockCache(lock_cache) => {
+            Cache::LockCache(lock_cache) => {
                 let _node = lock_cache
                     .get_read_access_or_insert(iter, || Ok(42i64))
                     .unwrap();
@@ -218,7 +210,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
     fastrand::seed(123);
 
     let cache_sizes = [100_000, 1_000_000];
-    for cache_size in &cache_sizes {
+    for cache_size in cache_sizes {
         for in_cache in [true, false] {
             let get_id = |i: u64| {
                 if in_cache {
@@ -227,8 +219,9 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     i + cache_size
                 }
             };
-            let mut bench_group =
-                c.benchmark_group(format!("caching/read/Size:{cache_size}/InCache:{in_cache}"));
+            let mut bench_group = c.benchmark_group(format!(
+                "caching/read/{cache_size}capacity/{in_cache}_cached"
+            ));
             for num_threads in pow_2_threads() {
                 for cache_type in [
                     CacheType::QuickCache,
@@ -238,11 +231,11 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
-                            "{cache_type}/NumThreads:{num_threads:02}"
+                            "{num_threads:02}threads/{cache_type}"
                         )),
                         &(),
                         |b, _| {
-                            let mut cache = cache_type.make_cache(*cache_size, 0);
+                            let mut cache = cache_type.make_cache(cache_size, 0);
                             cache.fill();
                             b.iter_custom(|iters| {
                                 execute_with_threads(
@@ -275,7 +268,7 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
     for pinning_prob in [0, 10, 25, 50] {
         for cache_size in [100_000, 1_000_000] {
             let mut bench_group = c.benchmark_group(format!(
-                "caching/pinning/Size:{cache_size}/PinProb:{pinning_prob}"
+                "caching/pinning/{cache_size}capacity/{pinning_prob}pinning_prob"
             ));
             for num_threads in pow_2_threads() {
                 for cache_type in [
@@ -286,7 +279,7 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
-                            "{cache_type}/NumThreads:{num_threads:02}"
+                            "{num_threads:02}threads/{cache_type}"
                         )),
                         &(),
                         |b, _| {

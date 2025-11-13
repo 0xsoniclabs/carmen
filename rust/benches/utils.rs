@@ -14,19 +14,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Returns true with the given probability (in percentage)
+/// Returns true with the given probability (in percent).
 #[allow(dead_code)]
 pub fn with_prob(prob: u8) -> bool {
     fastrand::f32() < (prob as f32) / 100.0
 }
 
-/// Returns an iterator over powers of 2 up to the number of available threads
+/// Returns an iterator over powers of 2 up to the number of available threads.
 #[allow(dead_code)]
 pub fn pow_2_threads() -> impl Iterator<Item = usize> {
-    (1..=thread::available_parallelism().unwrap().get())
-        .filter(|x| (x - 1) & x == 0)
-        .collect::<Vec<_>>()
-        .into_iter()
+    (1..=thread::available_parallelism().unwrap().get()).filter(|x| x.is_power_of_two())
 }
 
 /// Executes the given operation in parallel using the specified number of threads.
