@@ -101,14 +101,16 @@ fn get_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
     }
 
     const EMBEDDING_CACHE_SIZE: usize = 1_000_000;
-    static EMBEDDING_CACHE: LazyLock<Cache<(Address, U256, u8), Key>> =
+    static EMBEDDING_CACHE: LazyLock<Cache<(Address, U256), Key>> =
         LazyLock::new(|| Cache::new(EMBEDDING_CACHE_SIZE));
 
-    EMBEDDING_CACHE
-        .get_or_insert_with(&(*address, *tree_index, sub_index), || {
-            Ok::<_, Infallible>(compute_trie_key(address, tree_index, sub_index))
+    let mut result = EMBEDDING_CACHE
+        .get_or_insert_with(&(*address, *tree_index), || {
+            Ok::<_, Infallible>(compute_trie_key(address, tree_index, 0))
         })
-        .unwrap() // this cannot fail
+        .unwrap(); // this cannot fail
+    result[31] = sub_index;
+    result
 }
 
 #[cfg(test)]
