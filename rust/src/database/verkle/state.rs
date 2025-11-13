@@ -16,7 +16,7 @@ use crate::{
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
-        keyed_update::KeyedUpdate,
+        keyed_update::{KeyedUpdate, KeyedUpdates},
         variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie},
         verkle_trie::VerkleTrie,
     },
@@ -114,23 +114,23 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> BTResult<(), Error> {
-        let updates: Vec<KeyedUpdate> = update.into();
-        for update in updates {
-            match update {
-                KeyedUpdate::FullSlot { key, value } => {
-                    self.trie.store(&key, &value)?;
-                }
-                KeyedUpdate::PartialSlot { key, value, mask } => {
-                    let existing_value = self.trie.lookup(&key)?;
-                    let mut new_value = [0u8; 32];
-                    for i in 0..32 {
-                        new_value[i] = (existing_value[i] & !mask[i]) | (value[i] & mask[i]);
+        if let Ok(updates) = KeyedUpdates::try_from(update) {
+            for update in &*updates {
+                match update {
+                    KeyedUpdate::FullSlot { key, value } => {
+                        self.trie.store(key, value)?;
                     }
-                    self.trie.store(&key, &new_value)?;
+                    KeyedUpdate::PartialSlot { key, value, mask } => {
+                        let existing_value = self.trie.lookup(key)?;
+                        let mut new_value = [0u8; 32];
+                        for i in 0..32 {
+                            new_value[i] = (existing_value[i] & !mask[i]) | (value[i] & mask[i]);
+                        }
+                        self.trie.store(key, &new_value)?;
+                    }
                 }
             }
         }
-
         Ok(())
     }
 }
