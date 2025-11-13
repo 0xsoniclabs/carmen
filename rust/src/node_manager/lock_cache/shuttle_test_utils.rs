@@ -61,9 +61,9 @@ impl std::fmt::Display for Op {
 /// A utility struct to hold information about an operation that panicked.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct OpPanicStatus {
-    op: Op,
-    expected: bool,
-    error: String,
+    pub op: Op,
+    pub expected: bool,
+    pub error: String,
 }
 
 impl Op {
@@ -142,8 +142,8 @@ impl Op {
 /// An operation with an associated node ID with serialization/deserialization support.
 #[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct OpWithId {
-    op: Op,
-    id: u32,
+    pub op: Op,
+    pub id: u32,
 }
 
 impl OpWithId {
@@ -186,9 +186,9 @@ impl std::fmt::Debug for OpWithId {
 
 /// A test case for shuttle operation permutations with serialization/deserialization support.
 #[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
-struct PermutationTestCase {
-    cache_size: usize,
-    operations: Vec<OpWithId>,
+pub struct PermutationTestCase {
+    pub cache_size: usize,
+    pub operations: Vec<OpWithId>,
 }
 
 impl PermutationTestCase {
