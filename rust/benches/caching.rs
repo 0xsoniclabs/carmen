@@ -3,7 +3,7 @@ use std::{
     hash::RandomState,
     sync::{
         Arc,
-        atomic::{AtomicU16, AtomicU64, Ordering},
+        atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
 
@@ -24,18 +24,18 @@ pub mod utils;
 
 /// Lifecycle implementation that randomly pins items based on a given probability
 #[derive(Clone, Default)]
-pub struct RandomLifecycle {
-    prob: u16,
+pub struct RandomPinner {
+    prob: u8,
 }
 
-impl RandomLifecycle {
-    /// Creates a new RandomLifecycle with the given pinning probability
-    pub fn new(pinning_prob: u16) -> Self {
+impl RandomPinner {
+    /// Creates a new RandomPinner with the given pinning probability
+    pub fn new(pinning_prob: u8) -> Self {
         Self { prob: pinning_prob }
     }
 }
 
-impl<K, V> Lifecycle<K, V> for RandomLifecycle {
+impl<K, V> Lifecycle<K, V> for RandomPinner {
     type RequestState = ();
 
     fn begin_request(&self) -> Self::RequestState {}
@@ -47,13 +47,7 @@ impl<K, V> Lifecycle<K, V> for RandomLifecycle {
     }
 }
 
-/// Eviction hook implementation that randomly pins items based on a given probability
-#[derive(Default, Clone, Debug)]
-pub struct ProbPinnedHook {
-    prob: u16,
-}
-
-impl EvictionHooks for ProbPinnedHook {
+impl EvictionHooks for RandomPinner {
     type Key = u64;
     type Value = i64;
 
@@ -110,7 +104,7 @@ impl Storage for ProducerStorage {
 /// Enum wrapping the different cache implementations used in the benchmarks
 #[allow(clippy::type_complexity)]
 pub enum Caches {
-    QuickCache(quick_cache::sync::Cache<u64, i64, UnitWeighter, RandomState, RandomLifecycle>),
+    QuickCache(quick_cache::sync::Cache<u64, i64, UnitWeighter, RandomState, RandomPinner>),
     CachedNodeManager(CachedNodeManager<ProducerStorage>),
     LockCache(lock_cache::LockCache<u64, i64>),
 }
@@ -135,15 +129,15 @@ impl std::fmt::Display for CacheType {
 
 impl CacheType {
     /// Initializes a cache of the given type with the given size and pinning probability
-    pub fn make_cache(self, size: u64, pinning_prob: u16) -> Caches {
-        static PINNING_PROB: AtomicU16 = AtomicU16::new(0);
+    pub fn make_cache(self, size: u64, pinning_prob: u8) -> Caches {
+        static PINNING_PROB: AtomicU8 = AtomicU8::new(0);
         match self {
             CacheType::QuickCache => Caches::QuickCache(quick_cache::sync::Cache::with(
                 size as usize,
                 size,
                 UnitWeighter,
                 RandomState::default(),
-                RandomLifecycle::new(pinning_prob),
+                RandomPinner::new(pinning_prob),
             )),
             CacheType::CachedNodeManager => {
                 PINNING_PROB.store(pinning_prob, Ordering::Relaxed);
@@ -156,7 +150,7 @@ impl CacheType {
             }
             CacheType::LockCache => Caches::LockCache(lock_cache::LockCache::new(
                 size as usize,
-                Arc::new(ProbPinnedHook { prob: pinning_prob }),
+                Arc::new(RandomPinner::new(pinning_prob)),
             )),
         }
     }
@@ -244,7 +238,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
-                            "{cache_type}/NumThreads:{num_threads}"
+                            "{cache_type}/NumThreads:{num_threads:02}"
                         )),
                         &(),
                         |b, _| {
@@ -272,7 +266,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
 
 /// Benchmark the effect of different pinning probabilities on cache performance
 /// It varies:
-/// - Pinning probability (forces linear scans on evictions)
+/// - Pinning probability (forces linear scans on evictable items)
 /// - Cache size (influence contention)
 /// - Number of threads (influence contention)
 fn pinning_benchmark(c: &mut criterion::Criterion) {
@@ -292,7 +286,7 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
-                            "{cache_type}/NumThreads:{num_threads}"
+                            "{cache_type}/NumThreads:{num_threads:02}"
                         )),
                         &(),
                         |b, _| {
@@ -305,6 +299,8 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                                     &mut completed_iterations,
                                     || (),
                                     |iter, _| {
+                                        // Force eviction on every read by only requesting ids that
+                                        // are not in the cache
                                         cache.execute_read_op(iter + cache_size);
                                     },
                                 )
