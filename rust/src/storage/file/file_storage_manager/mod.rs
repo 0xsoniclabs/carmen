@@ -27,12 +27,12 @@ define_derive_deftly! {
     ///       Bb(Box<BbXx>),
     ///     }
     ///     ```
-    ///   - The node type enum must be called `<NodeName>Type` and its variants must have the same
+    ///   - The node kind enum must be called `<NodeName>Kind` and its variants must have the same
     ///     names as the ones of the node enum itself.
     ///   - The ID type for this tree must be called `<NodeName>Id` and it must implement
-    ///     `TreeId<NodeType = NodeNameType> + Copy + FromBytes + IntoBytes + Immutable + Send +
+    ///     `TreeId<NodeKind = NodeNameKind> + Copy + FromBytes + IntoBytes + Immutable + Send +
     ///     Sync`.
-    ///   - The ID type, the node type enum and all variant type have to be in scope at the call/
+    ///   - The ID type, the node kind enum and all variant types have to be in scope at the call/
     ///     expansion site.
     ///
     /// The generated FileStorageManager is named `<NodeName>FileStorageManager` and implements
@@ -140,11 +140,11 @@ where
 
     fn get(&self, id: Self::Id) -> $crate::error::BTResult<Self::Item, $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match $crate::types::ToNodeType::to_node_type(&id).ok_or($crate::storage::Error::InvalidId)? {
-            ${paste $tname Type}::Empty => Ok(Self::Item::Empty(${paste Empty $tname})),
+        match $crate::types::ToNodeKind::to_node_kind(&id).ok_or($crate::storage::Error::InvalidId)? {
+            ${paste $tname Kind}::Empty => Ok(Self::Item::Empty(${paste Empty $tname}{})),
             $(
                 ${if not(approx_equal($vname, Empty)) {
-                    ${paste $tname Type}::$vname => {
+                    ${paste $tname Kind}::$vname => {
                         let node = self.${snake_case $vname}.get(idx)?;
                         Ok(Self::Item::$vname(Box::new(node)))
                     }
@@ -155,12 +155,12 @@ where
 
     fn reserve(&self, node: &Self::Item) -> Self::Id {
         match node {
-            Self::Item::Empty(_) => <Self::Id as $crate::types::TreeId>::from_idx_and_node_type(0, ${paste $tname Type}::Empty),
+            Self::Item::Empty(_) => <Self::Id as $crate::types::TreeId>::from_idx_and_node_kind(0, ${paste $tname Kind}::Empty),
             $(
                 ${if not(approx_equal($vname, Empty)) {
                     Self::Item::$vname(node) => {
                         let idx = self.${snake_case $vname}.reserve(node);
-                        <Self::Id as $crate::types::TreeId>::from_idx_and_node_type(idx, ${paste $tname Type}::$vname)
+                        <Self::Id as $crate::types::TreeId>::from_idx_and_node_kind(idx, ${paste $tname Kind}::$vname)
                     }
                 }}
             )
@@ -169,24 +169,24 @@ where
 
     fn set(&self, id: Self::Id, node: &Self::Item) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match (node, $crate::types::ToNodeType::to_node_type(&id).ok_or($crate::storage::Error::InvalidId)?) {
-            (Self::Item::Empty(_), ${paste $tname Type}::Empty) => Ok(()),
+        match (node, $crate::types::ToNodeKind::to_node_kind(&id).ok_or($crate::storage::Error::InvalidId)?) {
+            (Self::Item::Empty(_), ${paste $tname Kind}::Empty) => Ok(()),
             $(
                 ${if not(approx_equal($vname, Empty)) {
-                    ($tname::$vname(node), ${paste $tname Type}::$vname) => self.${snake_case $vname}.set(idx, node),
+                    ($tname::$vname(node), ${paste $tname Kind}::$vname) => self.${snake_case $vname}.set(idx, node),
                 }}
             )
-            _ => Err($crate::storage::Error::IdNodeTypeMismatch.into())
+            _ => Err($crate::storage::Error::IdNodeVariantMismatch.into())
         }
     }
 
     fn delete(&self, id: Self::Id) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match $crate::types::ToNodeType::to_node_type(&id).ok_or($crate::storage::Error::InvalidId)? {
-            ${paste $ttype Type}::Empty => Ok(()),
+        match $crate::types::ToNodeKind::to_node_kind(&id).ok_or($crate::storage::Error::InvalidId)? {
+            ${paste $ttype Kind}::Empty => Ok(()),
             $(
                 ${if not(approx_equal($vname, Empty)) {
-                    ${paste $tname Type}::$vname => self.${snake_case $vname}.delete(idx),
+                    ${paste $tname Kind}::$vname => self.${snake_case $vname}.delete(idx),
                 }}
             )
         }
@@ -293,7 +293,7 @@ where
 
 pub(crate) use derive_deftly_template_FileStorageManager;
 #[cfg(test)]
-pub use tests::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeType};
+pub use tests::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeKind};
 
 #[cfg(test)]
 mod tests {
@@ -316,7 +316,7 @@ mod tests {
             },
         },
         sync::atomic::{AtomicU64, Ordering},
-        types::{NodeSize, ToNodeType, TreeId},
+        types::{NodeSize, ToNodeKind, TreeId},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -425,14 +425,14 @@ mod tests {
 
         // TestNode::Empty
         {
-            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            let node_id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
             let node = EmptyTestNode;
             assert_eq!(storage.get(node_id).unwrap(), TestNode::Empty(node));
         }
 
         // TestNode::NonEmpty1
         {
-            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty1);
+            let node_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty1);
             let node = NonEmpty1TestNode::default();
             storage
                 .non_empty1
@@ -450,7 +450,7 @@ mod tests {
 
         // TestNode::NonEmpty2
         {
-            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty2);
+            let node_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty2);
             let node = NonEmpty2TestNode::default();
             storage
                 .non_empty2
@@ -485,7 +485,7 @@ mod tests {
             let node = EmptyTestNode;
             assert_eq!(
                 storage.reserve(&TestNode::Empty(node)),
-                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::Empty)
+                TestNodeId::from_idx_and_node_kind(node_idx, TestNodeKind::Empty)
             );
         }
 
@@ -500,7 +500,7 @@ mod tests {
                 .returning(move |_| node_idx);
             assert_eq!(
                 storage.reserve(&TestNode::NonEmpty1(Box::new(node))),
-                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::NonEmpty1)
+                TestNodeId::from_idx_and_node_kind(node_idx, TestNodeKind::NonEmpty1)
             );
         }
 
@@ -515,7 +515,7 @@ mod tests {
                 .returning(move |_| node_idx);
             assert_eq!(
                 storage.reserve(&TestNode::NonEmpty2(Box::new(node))),
-                TestNodeId::from_idx_and_node_type(node_idx, TestNodeType::NonEmpty2)
+                TestNodeId::from_idx_and_node_kind(node_idx, TestNodeKind::NonEmpty2)
             );
         }
     }
@@ -534,7 +534,7 @@ mod tests {
 
         // TestNode::Empty
         {
-            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            let node_id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
             let node = EmptyTestNode;
             let node = TestNode::Empty(node);
             assert!(storage.set(node_id, &node).is_ok());
@@ -542,7 +542,7 @@ mod tests {
 
         // TestNode::NonEmpty1
         {
-            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty1);
+            let node_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty1);
             let node = NonEmpty1TestNode::default();
             storage
                 .non_empty1
@@ -555,7 +555,7 @@ mod tests {
 
         // TestNode::NonEmpty2
         {
-            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty2);
+            let node_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty2);
             let node = NonEmpty2TestNode::default();
             storage
                 .non_empty2
@@ -579,12 +579,12 @@ mod tests {
             root_ids_file: RootIdsFile::open(dir.join("root_ids"), 0).unwrap(),
         };
 
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty2);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty2);
         let node = TestNode::NonEmpty1(Box::default());
 
         assert!(matches!(
             storage.set(id, &node).map_err(BTError::into_inner),
-            Err(Error::IdNodeTypeMismatch)
+            Err(Error::IdNodeVariantMismatch)
         ));
     }
 
@@ -602,13 +602,13 @@ mod tests {
 
         // TestNode::Empty
         {
-            let node_id = TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty);
+            let node_id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
             assert!(storage.delete(node_id).is_ok());
         }
 
         // TestNode::NonEmpty1
         {
-            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty1);
+            let node_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty1);
             storage
                 .non_empty1
                 .expect_delete()
@@ -619,7 +619,7 @@ mod tests {
 
         // TestNode::NonEmpty2
         {
-            let node_id = TestNodeId::from_idx_and_node_type(1, TestNodeType::NonEmpty2);
+            let node_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty2);
             storage
                 .non_empty2
                 .expect_delete()
@@ -662,7 +662,7 @@ mod tests {
             .root_ids_file
             .set(
                 0,
-                TestNodeId::from_idx_and_node_type(0, TestNodeType::Empty),
+                TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty),
             )
             .unwrap();
 
@@ -1007,25 +1007,25 @@ mod tests {
 
     pub type TestNodeId = [u8; 9];
 
-    impl ToNodeType for TestNodeId {
-        type NodeType = TestNodeType;
+    impl ToNodeKind for TestNodeId {
+        type Target = TestNodeKind;
 
-        fn to_node_type(&self) -> Option<Self::NodeType> {
+        fn to_node_kind(&self) -> Option<Self::Target> {
             match self[0] {
-                0x00 => Some(TestNodeType::Empty),
-                0x01 => Some(TestNodeType::NonEmpty1),
-                0x02 => Some(TestNodeType::NonEmpty2),
+                0x00 => Some(TestNodeKind::Empty),
+                0x01 => Some(TestNodeKind::NonEmpty1),
+                0x02 => Some(TestNodeKind::NonEmpty2),
                 _ => None,
             }
         }
     }
 
     impl TreeId for TestNodeId {
-        fn from_idx_and_node_type(idx: u64, node_type: Self::NodeType) -> Self {
+        fn from_idx_and_node_kind(idx: u64, node_type: Self::Target) -> Self {
             let upper = match node_type {
-                TestNodeType::Empty => 0x00,
-                TestNodeType::NonEmpty1 => 0x01,
-                TestNodeType::NonEmpty2 => 0x02,
+                TestNodeKind::Empty => 0x00,
+                TestNodeKind::NonEmpty1 => 0x01,
+                TestNodeKind::NonEmpty2 => 0x02,
             };
             let mut id = [0; 9];
             id[0] = upper;
@@ -1049,18 +1049,18 @@ mod tests {
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum TestNodeType {
+    pub enum TestNodeKind {
         Empty,
         NonEmpty1,
         NonEmpty2,
     }
 
-    impl NodeSize for TestNodeType {
+    impl NodeSize for TestNodeKind {
         fn node_byte_size(&self) -> usize {
             match self {
-                TestNodeType::Empty => size_of::<EmptyTestNode>(),
-                TestNodeType::NonEmpty1 => size_of::<NonEmpty1TestNode>(),
-                TestNodeType::NonEmpty2 => size_of::<NonEmpty2TestNode>(),
+                TestNodeKind::Empty => size_of::<EmptyTestNode>(),
+                TestNodeKind::NonEmpty1 => size_of::<NonEmpty1TestNode>(),
+                TestNodeKind::NonEmpty2 => size_of::<NonEmpty2TestNode>(),
             }
         }
 

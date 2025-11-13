@@ -13,7 +13,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 use crate::{
     database::verkle::variants::managed::{
         commitment::VerkleCommitment,
-        nodes::{NodeType, id::NodeId},
+        nodes::{VerkleNodeKind, id::VerkleNodeId},
     },
     types::TreeId,
 };
@@ -24,14 +24,14 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct InnerNode {
-    pub children: [NodeId; 256],
+    pub children: [VerkleNodeId; 256],
     pub commitment: VerkleCommitment,
 }
 
 impl Default for InnerNode {
     fn default() -> Self {
         InnerNode {
-            children: [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256],
+            children: [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256],
             commitment: VerkleCommitment::default(),
         }
     }
@@ -47,7 +47,7 @@ mod tests {
         assert_eq!(node.commitment, VerkleCommitment::default());
         assert_eq!(
             node.children,
-            [NodeId::from_idx_and_node_type(0, NodeType::Empty); 256]
+            [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256]
         );
     }
 }

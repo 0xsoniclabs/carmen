@@ -35,7 +35,7 @@ pub fn store<T>(
     root_id: RwLockWriteGuard<T::Id>,
     key: &Key,
     value: &Value,
-    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
+    manager: &impl NodeManager<Id = T::Id, Node = T>,
     update_log: &TrieUpdateLog<T::Id>,
 ) -> BTResult<(), Error>
 where

@@ -17,9 +17,9 @@ pub enum Error {
     NotFound,
     #[error("the node is frozen and cannot be modified")]
     Frozen,
-    #[error("id / node type mismatch")]
-    IdNodeTypeMismatch,
-    #[error("id encodes a non-existing node type")]
+    #[error("id / node variant mismatch")]
+    IdNodeVariantMismatch,
+    #[error("id encodes a non-existing node variant")]
     InvalidId,
     #[error("checkpoint creation failed")]
     Checkpoint,
@@ -38,7 +38,7 @@ impl PartialEq for Error {
         match (self, other) {
             (Error::NotFound, Error::NotFound)
             | (Error::Frozen, Error::Frozen)
-            | (Error::IdNodeTypeMismatch, Error::IdNodeTypeMismatch)
+            | (Error::IdNodeVariantMismatch, Error::IdNodeVariantMismatch)
             | (Error::InvalidId, Error::InvalidId)
             | (Error::Checkpoint, Error::Checkpoint)
             | (Error::DirtyOpen, Error::DirtyOpen)
@@ -52,7 +52,7 @@ impl PartialEq for Error {
             (
                 Error::NotFound
                 | Error::Frozen
-                | Error::IdNodeTypeMismatch
+                | Error::IdNodeVariantMismatch
                 | Error::InvalidId
                 | Error::Checkpoint
                 | Error::DatabaseCorruption
@@ -73,7 +73,7 @@ mod tests {
     fn implements_partial_eq() {
         let err1 = Error::NotFound;
         let err2 = Error::NotFound;
-        let err3 = Error::IdNodeTypeMismatch;
+        let err3 = Error::IdNodeVariantMismatch;
         let err4 = Error::InvalidId;
         let err5 = Error::DatabaseCorruption;
         assert_eq!(err1, err2);

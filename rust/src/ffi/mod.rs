@@ -27,7 +27,7 @@ mod bindings {
                 Error::Storage(
                     crate::storage::Error::NotFound
                     | crate::storage::Error::Frozen
-                    | crate::storage::Error::IdNodeTypeMismatch
+                    | crate::storage::Error::IdNodeVariantMismatch
                     | crate::storage::Error::InvalidId
                     | crate::storage::Error::Checkpoint
                     | crate::storage::Error::Internal(_),

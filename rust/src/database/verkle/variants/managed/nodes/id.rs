@@ -11,8 +11,8 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::verkle::variants::managed::nodes::NodeType,
-    types::{NodeSize, ToNodeType, TreeId},
+    database::verkle::variants::managed::nodes::VerkleNodeKind,
+    types::{NodeSize, ToNodeKind, TreeId},
 };
 
 /// An identifier for a node in a managed Verkle trie.
@@ -33,9 +33,9 @@ use crate::{
     Ord,
 )]
 #[repr(transparent)]
-pub struct NodeId([u8; 6]);
+pub struct VerkleNodeId([u8; 6]);
 
-impl NodeId {
+impl VerkleNodeId {
     // The upper 2 bits are used to encode the node type.
     const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
     const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
@@ -48,7 +48,7 @@ impl NodeId {
     fn from_u64(value: u64) -> Self {
         let mut bytes = [0; 6];
         bytes[0..6].copy_from_slice(&value.to_be_bytes()[2..8]);
-        NodeId(bytes)
+        VerkleNodeId(bytes)
     }
 
     fn to_u64(self) -> u64 {
@@ -58,15 +58,15 @@ impl NodeId {
     }
 }
 
-impl ToNodeType for NodeId {
-    type NodeType = NodeType;
+impl ToNodeKind for VerkleNodeId {
+    type Target = VerkleNodeKind;
 
-    fn to_node_type(&self) -> Option<NodeType> {
+    fn to_node_kind(&self) -> Option<VerkleNodeKind> {
         match self.to_u64() & Self::PREFIX_MASK {
-            Self::EMPTY_NODE_PREFIX => Some(NodeType::Empty),
-            Self::INNER_NODE_PREFIX => Some(NodeType::Inner),
-            Self::LEAF_NODE_2_PREFIX => Some(NodeType::Leaf2),
-            Self::LEAF_NODE_256_PREFIX => Some(NodeType::Leaf256),
+            Self::EMPTY_NODE_PREFIX => Some(VerkleNodeKind::Empty),
+            Self::INNER_NODE_PREFIX => Some(VerkleNodeKind::Inner),
+            Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
+            Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
             // - Deserializing from a file which may hold invalid prefixes in case the data was
@@ -76,19 +76,19 @@ impl ToNodeType for NodeId {
     }
 }
 
-impl TreeId for NodeId {
-    fn from_idx_and_node_type(idx: u64, node_type: NodeType) -> Self {
+impl TreeId for VerkleNodeId {
+    fn from_idx_and_node_kind(idx: u64, node_type: VerkleNodeKind) -> Self {
         assert!(
             (idx & !Self::INDEX_MASK) == 0,
             "indices cannot get this large, unless we have a bug somewhere"
         );
         let prefix = match node_type {
-            NodeType::Empty => Self::EMPTY_NODE_PREFIX,
-            NodeType::Inner => Self::INNER_NODE_PREFIX,
-            NodeType::Leaf2 => Self::LEAF_NODE_2_PREFIX,
-            NodeType::Leaf256 => Self::LEAF_NODE_256_PREFIX,
+            VerkleNodeKind::Empty => Self::EMPTY_NODE_PREFIX,
+            VerkleNodeKind::Inner => Self::INNER_NODE_PREFIX,
+            VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
+            VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
         };
-        NodeId::from_u64(idx | prefix)
+        VerkleNodeId::from_u64(idx | prefix)
     }
 
     fn to_index(self) -> u64 {
@@ -96,16 +96,16 @@ impl TreeId for NodeId {
     }
 }
 
-impl NodeSize for NodeId {
-    /// Returns the byte size of the [`NodeType`] it refers to.
+impl NodeSize for VerkleNodeId {
+    /// Returns the byte size of the node variant it refers to.
     /// Panics if the ID does not refer to a valid node type.
     fn node_byte_size(&self) -> usize {
-        self.to_node_type().unwrap().node_byte_size()
+        self.to_node_kind().unwrap().node_byte_size()
     }
 
-    /// Returns the minimum byte size of [`NodeType`].
+    /// Returns the size of the smallest non-empty node variant.
     fn min_non_empty_node_size() -> usize {
-        NodeType::min_non_empty_node_size()
+        VerkleNodeKind::min_non_empty_node_size()
     }
 }
 
@@ -117,14 +117,14 @@ mod tests {
     fn from_idx_and_node_type_creates_id_from_lower_6_bytes_logic_or_node_type_prefix() {
         let idx = 0x0000_1234_5678_9abc;
         let cases = [
-            (NodeType::Empty, 0x0000_0000_0000_0000),
-            (NodeType::Inner, 0x0000_4000_0000_0000),
-            (NodeType::Leaf2, 0x0000_8000_0000_0000),
-            (NodeType::Leaf256, 0x0000_C000_0000_0000),
+            (VerkleNodeKind::Empty, 0x0000_0000_0000_0000),
+            (VerkleNodeKind::Inner, 0x0000_4000_0000_0000),
+            (VerkleNodeKind::Leaf2, 0x0000_8000_0000_0000),
+            (VerkleNodeKind::Leaf256, 0x0000_C000_0000_0000),
         ];
 
         for (node_type, prefix) in cases {
-            let id = NodeId::from_idx_and_node_type(idx, node_type);
+            let id = VerkleNodeId::from_idx_and_node_kind(idx, node_type);
             assert_eq!(id.to_u64(), idx | prefix);
         }
     }
@@ -134,12 +134,12 @@ mod tests {
     fn from_idx_and_node_type_panics_if_index_too_large() {
         let idx = 0x0000_f000_0000_0000;
 
-        NodeId::from_idx_and_node_type(idx, NodeType::Empty);
+        VerkleNodeId::from_idx_and_node_kind(idx, VerkleNodeKind::Empty);
     }
 
     #[test]
     fn to_index_masks_out_node_type() {
-        let id = NodeId([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        let id = VerkleNodeId([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
         assert_eq!(id.to_index(), 0x3f_ff_ff_ff_ff_ff);
     }
 
@@ -147,24 +147,24 @@ mod tests {
     fn to_node_type_returns_node_type_for_valid_prefixes() {
         let cases = [
             (
-                NodeId([0x00, 0x00, 0x00, 0x00, 0x00, 0x2a]),
-                Some(NodeType::Empty),
+                VerkleNodeId([0x00, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Empty),
             ),
             (
-                NodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
-                Some(NodeType::Inner),
+                VerkleNodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Inner),
             ),
             (
-                NodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
-                Some(NodeType::Leaf2),
+                VerkleNodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf2),
             ),
             (
-                NodeId([0xc0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
-                Some(NodeType::Leaf256),
+                VerkleNodeId([0xc0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf256),
             ),
         ];
         for (node_id, node_type) in cases {
-            assert_eq!(node_id.to_node_type(), node_type);
+            assert_eq!(node_id.to_node_kind(), node_type);
         }
     }
 
@@ -175,13 +175,13 @@ mod tests {
 
     #[test]
     fn from_u64_constructs_integer_from_lower_6_bytes() {
-        let id = NodeId::from_u64(0x1234_5678_90ab_cdef);
+        let id = VerkleNodeId::from_u64(0x1234_5678_90ab_cdef);
         assert_eq!(id.0, [0x56, 0x78, 0x90, 0xab, 0xcd, 0xef]);
     }
 
     #[test]
     fn to_u64_converts_node_id_to_integer_with_lower_6_bytes() {
-        let id = NodeId([0x12, 0x34, 0x56, 0x78, 0x90, 0xab]);
+        let id = VerkleNodeId([0x12, 0x34, 0x56, 0x78, 0x90, 0xab]);
         assert_eq!(id.to_u64(), 0x1234_5678_90ab);
     }
 
@@ -189,20 +189,20 @@ mod tests {
     fn node_id_byte_size_returns_byte_size_of_encoded_node_type() {
         let cases = [
             (
-                NodeId::from_idx_and_node_type(0, NodeType::Empty),
-                NodeType::Empty,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
+                VerkleNodeKind::Empty,
             ),
             (
-                NodeId::from_idx_and_node_type(0, NodeType::Inner),
-                NodeType::Inner,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner),
+                VerkleNodeKind::Inner,
             ),
             (
-                NodeId::from_idx_and_node_type(0, NodeType::Leaf2),
-                NodeType::Leaf2,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf2),
+                VerkleNodeKind::Leaf2,
             ),
             (
-                NodeId::from_idx_and_node_type(0, NodeType::Leaf256),
-                NodeType::Leaf256,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf256),
+                VerkleNodeKind::Leaf256,
             ),
         ];
         for (node_id, node_type) in cases {
@@ -213,8 +213,8 @@ mod tests {
     #[test]
     fn node_id_min_non_empty_node_size_returns_min_byte_size_of_node_type() {
         assert_eq!(
-            NodeId::min_non_empty_node_size(),
-            NodeType::min_non_empty_node_size()
+            VerkleNodeId::min_non_empty_node_size(),
+            VerkleNodeKind::min_non_empty_node_size()
         );
     }
 }

@@ -262,7 +262,7 @@ mod tests {
         error::BTError,
         storage::file::{
             NodeFileStorage, SeekFile, TestNode, TestNodeFileStorageManager, TestNodeId,
-            TestNodeType,
+            TestNodeKind,
         },
         types::TreeId,
         utils::test_dir::{Permissions, TestDir},
@@ -329,7 +329,7 @@ mod tests {
             },
         };
 
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
         storage.flush_buffer.insert(id, Op::Set(node.clone()));
@@ -351,7 +351,7 @@ mod tests {
             },
         };
 
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         storage.flush_buffer.insert(id, Op::Delete);
 
         let result = storage.get(id);
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn get_returns_node_from_storage_if_not_in_buffer() {
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
         let mut mock_storage = MockStorage::new();
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn reserve_retrieves_id_from_underlying_storage_layer_and_removes_from_buffer() {
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
         let mut mock_storage = MockStorage::new();
@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn set_inserts_set_op_into_buffer() {
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn delete_inserts_delete_op_into_buffer() {
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
             flush_buffer: Arc::new(DashMap::new()),
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn checkpoint_waits_until_buffer_is_empty_then_calls_checkpoint_on_underlying_storage_layer() {
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
         let mut mock_storage = MockStorage::new();
@@ -559,7 +559,7 @@ mod tests {
             std::thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
         }];
 
-        let id = TestNodeId::from_idx_and_node_type(0, TestNodeType::NonEmpty1);
+        let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
         flush_buffer.insert(id, Op::Set(node.clone()));

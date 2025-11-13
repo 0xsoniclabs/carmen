@@ -12,4 +12,4 @@ pub mod commitment;
 pub mod nodes;
 
 #[allow(unused)]
-pub use nodes::NodeFileStorageManager;
+pub use nodes::VerkleNodeFileStorageManager;

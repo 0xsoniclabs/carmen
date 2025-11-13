@@ -136,9 +136,9 @@ where
     S::Item: Default,
 {
     type Id = S::Id;
-    type NodeType = S::Item;
+    type Node = S::Item;
 
-    fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error> {
+    fn add(&self, node: Self::Node) -> BTResult<Self::Id, Error> {
         let id = self.storage.reserve(&node);
         let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
@@ -155,7 +155,7 @@ where
     fn get_read_access(
         &self,
         id: Self::Id,
-    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
+    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::Node>>, Error> {
         let lock = self.nodes.get_read_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
@@ -172,7 +172,7 @@ where
     fn get_write_access(
         &self,
         id: Self::Id,
-    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
+    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::Node>>, Error> {
         let lock = self.nodes.get_write_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {

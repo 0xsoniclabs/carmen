@@ -18,7 +18,7 @@ use crate::{
 pub mod cached_node_manager;
 pub mod lock_cache;
 
-/// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeType`].
+/// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeKind`].
 ///
 /// Nodes are uniquely identified by a [`NodeManager::Id`] and are owned by the node manager.
 /// They can be accessed through read or write locks with the [`NodeManager::get_read_access`] and
@@ -26,32 +26,32 @@ pub mod lock_cache;
 /// IDs are managed by the node manager itself, which hands out new IDs upon insertion of a node.
 /// IDs are not globally unique and may be reused after deletion.
 ///
-/// The concrete type returned by the [`NodeManager`] may not be [`NodeManager::NodeType`] but
-/// instead a wrapper type which dereferences to [`NodeManager::NodeType`]. This abstraction allows
+/// The concrete type returned by the [`NodeManager`] may not be [`NodeManager::NodeKind`] but
+/// instead a wrapper type which dereferences to [`NodeManager::NodeKind`]. This abstraction allows
 /// for the node manager to associate metadata with each node, for example to implement smart cache
 /// eviction.
 pub trait NodeManager {
     /// The ID type used to identify nodes in the node manager.
     type Id;
     /// The node type indexed by the node manager.
-    type NodeType;
+    type Node;
 
     /// Adds the given node to the node manager and returns an ID for it.
-    fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error>;
+    fn add(&self, node: Self::Node) -> BTResult<Self::Id, Error>;
 
     /// Returns a read guard for a node in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
     fn get_read_access(
         &self,
         id: Self::Id,
-    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error>;
+    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::Node>>, Error>;
 
     /// Returns a write guard for a node in the node manager, if it exists. Returns
     /// [`crate::storage::Error::NotFound`] otherwise.
     fn get_write_access(
         &self,
         id: Self::Id,
-    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error>;
+    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::Node>>, Error>;
 
     /// Deletes a node with the given ID from the node manager.
     /// The ID may be reused in the future, when adding new nodes using

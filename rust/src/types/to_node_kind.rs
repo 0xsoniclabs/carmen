@@ -8,9 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-pub trait ToNodeType {
-    type NodeType;
+pub trait ToNodeKind {
+    type Target;
 
-    /// Converts the ID to a [`Self::NodeType`], if the prefix is valid.
-    fn to_node_type(&self) -> Option<Self::NodeType>;
+    /// Converts the ID to a [`Self::NodeKind`], if the prefix is valid.
+    fn to_node_kind(&self) -> Option<Self::Target>;
 }

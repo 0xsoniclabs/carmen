@@ -23,7 +23,7 @@ use crate::{
 pub fn lookup<T: ManagedTrieNode>(
     root_id: T::Id,
     key: &Key,
-    manager: &impl NodeManager<Id = T::Id, NodeType = T>,
+    manager: &impl NodeManager<Id = T::Id, Node = T>,
 ) -> BTResult<Value, Error> {
     let mut current_lock = manager.get_read_access(root_id)?;
     let mut depth = 0;

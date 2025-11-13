@@ -16,6 +16,6 @@ mod node_file_storage;
 pub use file_backend::*;
 pub(crate) use file_storage_manager::derive_deftly_template_FileStorageManager;
 #[cfg(test)]
-pub use file_storage_manager::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeType};
+pub use file_storage_manager::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeKind};
 pub use from_to_file::FromToFile;
 pub use node_file_storage::NodeFileStorage;

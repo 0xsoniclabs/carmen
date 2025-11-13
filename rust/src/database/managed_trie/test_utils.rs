@@ -476,9 +476,9 @@ impl RcNodeManager {
 
 impl NodeManager for RcNodeManager {
     type Id = Id;
-    type NodeType = RcNode;
+    type Node = RcNode;
 
-    fn add(&self, node: Self::NodeType) -> BTResult<Self::Id, Error> {
+    fn add(&self, node: Self::Node) -> BTResult<Self::Id, Error> {
         match self.expectation.receive("add") {
             RcNodeManagerExpectation::Add {
                 node: expected_node,
@@ -497,7 +497,7 @@ impl NodeManager for RcNodeManager {
     fn get_read_access(
         &self,
         id: Self::Id,
-    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::NodeType>>, Error> {
+    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::Node>>, Error> {
         match self.expectation.peek(&format!("get_read_access({id})")) {
             RcNodeManagerExpectation::ReadAccess {
                 id: expected_id,
@@ -518,7 +518,7 @@ impl NodeManager for RcNodeManager {
     fn get_write_access(
         &self,
         id: Self::Id,
-    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::NodeType>>, Error> {
+    ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::Node>>, Error> {
         match self.expectation.peek(&format!("get_write_access({id})")) {
             RcNodeManagerExpectation::WriteAccess {
                 id: expected_id,

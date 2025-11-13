@@ -12,11 +12,11 @@ use derive_deftly::Deftly;
 
 use crate::{
     database::verkle::variants::managed::nodes::{
-        empty::EmptyNode, id::NodeId, inner::InnerNode, leaf::FullLeafNode,
+        empty::EmptyNode, id::VerkleNodeId, inner::InnerNode, leaf::FullLeafNode,
         sparse_leaf::SparseLeafNode,
     },
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{NodeSize, ToNodeType},
+    types::{NodeSize, ToNodeKind},
 };
 
 pub mod empty;
@@ -31,77 +31,79 @@ pub mod sparse_leaf;
 /// dictated by the largest variant).
 #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
 #[derive_deftly(FileStorageManager)]
-pub enum Node {
-    Empty(EmptyNode),
-    Inner(Box<InnerNode>),
-    Leaf2(Box<Leaf2Node>),
-    Leaf256(Box<Leaf256Node>),
+pub enum VerkleNode {
+    Empty(EmptyVerkleNode),
+    Inner(Box<InnerVerkleNode>),
+    Leaf2(Box<Leaf2VerkleNode>),
+    Leaf256(Box<Leaf256VerkleNode>),
 }
 
-type Leaf2Node = SparseLeafNode<2>;
-type Leaf256Node = FullLeafNode;
+type EmptyVerkleNode = EmptyNode;
+type InnerVerkleNode = InnerNode;
+type Leaf2VerkleNode = SparseLeafNode<2>;
+type Leaf256VerkleNode = FullLeafNode;
 
-impl ToNodeType for Node {
-    type NodeType = NodeType;
+impl ToNodeKind for VerkleNode {
+    type Target = VerkleNodeKind;
 
-    /// Converts the ID to a [`Self::NodeType`]. This conversion will always succeed.
-    fn to_node_type(&self) -> Option<Self::NodeType> {
+    /// Converts the ID to a [`VerkleNodeKind`]. This conversion will always succeed.
+    fn to_node_kind(&self) -> Option<Self::Target> {
         match self {
-            Node::Empty(_) => Some(NodeType::Empty),
-            Node::Inner(_) => Some(NodeType::Inner),
-            Node::Leaf2(_) => Some(NodeType::Leaf2),
-            Node::Leaf256(_) => Some(NodeType::Leaf256),
+            VerkleNode::Empty(_) => Some(VerkleNodeKind::Empty),
+            VerkleNode::Inner(_) => Some(VerkleNodeKind::Inner),
+            VerkleNode::Leaf2(_) => Some(VerkleNodeKind::Leaf2),
+            VerkleNode::Leaf256(_) => Some(VerkleNodeKind::Leaf256),
         }
     }
 }
 
-impl NodeSize for Node {
+impl NodeSize for VerkleNode {
     fn node_byte_size(&self) -> usize {
-        self.to_node_type().unwrap().node_byte_size()
+        self.to_node_kind().unwrap().node_byte_size()
     }
 
     fn min_non_empty_node_size() -> usize {
-        NodeType::min_non_empty_node_size()
+        VerkleNodeKind::min_non_empty_node_size()
     }
 }
 
-impl Default for Node {
+impl Default for VerkleNode {
     fn default() -> Self {
-        Node::Empty(EmptyNode)
+        VerkleNode::Empty(EmptyNode)
     }
 }
 
 /// A node type of a node in a managed Verkle trie.
 /// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum NodeType {
+pub enum VerkleNodeKind {
     Empty,
     Inner,
     Leaf2,
     Leaf256,
 }
 
-impl NodeSize for NodeType {
+impl NodeSize for VerkleNodeKind {
     fn node_byte_size(&self) -> usize {
         let inner_size = match self {
-            NodeType::Empty => 0,
-            NodeType::Inner => {
+            VerkleNodeKind::Empty => 0,
+            VerkleNodeKind::Inner => {
                 std::mem::size_of::<Box<InnerNode>>() + std::mem::size_of::<InnerNode>()
             }
-            NodeType::Leaf2 => {
+            VerkleNodeKind::Leaf2 => {
                 std::mem::size_of::<Box<SparseLeafNode<2>>>()
                     + std::mem::size_of::<SparseLeafNode<2>>()
             }
-            NodeType::Leaf256 => {
+            VerkleNodeKind::Leaf256 => {
                 std::mem::size_of::<Box<FullLeafNode>>() + std::mem::size_of::<FullLeafNode>()
             }
         };
-        std::mem::size_of::<Node>() + inner_size
+        std::mem::size_of::<VerkleNode>() + inner_size
     }
 
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        NodeType::Leaf2.node_byte_size()
+        VerkleNodeKind::Leaf2.node_byte_size()
     }
 }
 
@@ -111,27 +113,30 @@ mod tests {
 
     #[test]
     fn node_type_byte_size_returns_correct_size() {
-        let empty_node = NodeType::Empty;
-        let inner_node = NodeType::Inner;
-        let leaf2_node = NodeType::Leaf2;
-        let leaf256_node = NodeType::Leaf256;
+        let empty_node = VerkleNodeKind::Empty;
+        let inner_node = VerkleNodeKind::Inner;
+        let leaf2_node = VerkleNodeKind::Leaf2;
+        let leaf256_node = VerkleNodeKind::Leaf256;
 
-        assert_eq!(empty_node.node_byte_size(), std::mem::size_of::<Node>());
+        assert_eq!(
+            empty_node.node_byte_size(),
+            std::mem::size_of::<VerkleNode>()
+        );
         assert_eq!(
             inner_node.node_byte_size(),
-            std::mem::size_of::<Node>()
+            std::mem::size_of::<VerkleNode>()
                 + std::mem::size_of::<Box<InnerNode>>()
                 + std::mem::size_of::<InnerNode>()
         );
         assert_eq!(
             leaf2_node.node_byte_size(),
-            std::mem::size_of::<Node>()
+            std::mem::size_of::<VerkleNode>()
                 + std::mem::size_of::<Box<SparseLeafNode<2>>>()
                 + std::mem::size_of::<SparseLeafNode<2>>()
         );
         assert_eq!(
             leaf256_node.node_byte_size(),
-            std::mem::size_of::<Node>()
+            std::mem::size_of::<VerkleNode>()
                 + std::mem::size_of::<Box<FullLeafNode>>()
                 + std::mem::size_of::<FullLeafNode>()
         );
@@ -140,32 +145,32 @@ mod tests {
     #[test]
     fn node_type_min_non_empty_node_size_returns_size_of_smallest_non_empty_node() {
         assert_eq!(
-            NodeType::min_non_empty_node_size(),
-            Node::Leaf2(Box::default()).node_byte_size()
+            VerkleNodeKind::min_non_empty_node_size(),
+            VerkleNode::Leaf2(Box::default()).node_byte_size()
         );
     }
 
     #[test]
     fn node_byte_size_returns_node_type_byte_size() {
-        let empty_node = Node::Empty(EmptyNode);
-        let inner_node = Node::Inner(Box::default());
-        let leaf2_node = Node::Leaf2(Box::default());
-        let leaf256_node = Node::Leaf256(Box::default());
+        let empty_node = VerkleNode::Empty(EmptyNode);
+        let inner_node = VerkleNode::Inner(Box::default());
+        let leaf2_node = VerkleNode::Leaf2(Box::default());
+        let leaf256_node = VerkleNode::Leaf256(Box::default());
 
         assert_eq!(
-            NodeType::Empty.node_byte_size(),
+            VerkleNodeKind::Empty.node_byte_size(),
             empty_node.node_byte_size()
         );
         assert_eq!(
-            NodeType::Inner.node_byte_size(),
+            VerkleNodeKind::Inner.node_byte_size(),
             inner_node.node_byte_size()
         );
         assert_eq!(
-            NodeType::Leaf2.node_byte_size(),
+            VerkleNodeKind::Leaf2.node_byte_size(),
             leaf2_node.node_byte_size()
         );
         assert_eq!(
-            NodeType::Leaf256.node_byte_size(),
+            VerkleNodeKind::Leaf256.node_byte_size(),
             leaf256_node.node_byte_size()
         );
     }
@@ -173,8 +178,8 @@ mod tests {
     #[test]
     fn node_min_non_empty_node_size_returns_node_type_min_size() {
         assert_eq!(
-            NodeType::min_non_empty_node_size(),
-            Node::min_non_empty_node_size()
+            VerkleNodeKind::min_non_empty_node_size(),
+            VerkleNode::min_non_empty_node_size()
         );
     }
 }
