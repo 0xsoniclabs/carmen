@@ -18,7 +18,7 @@ use crate::{
 pub mod cached_node_manager;
 pub mod lock_cache;
 
-/// A collection of thread-safe *nodes* that dereference to [`NodeManager::NodeKind`].
+/// A collection of thread-safe *nodes* that dereference to [`NodeManager::Node`].
 ///
 /// Nodes are uniquely identified by a [`NodeManager::Id`] and are owned by the node manager.
 /// They can be accessed through read or write locks with the [`NodeManager::get_read_access`] and
@@ -26,8 +26,8 @@ pub mod lock_cache;
 /// IDs are managed by the node manager itself, which hands out new IDs upon insertion of a node.
 /// IDs are not globally unique and may be reused after deletion.
 ///
-/// The concrete type returned by the [`NodeManager`] may not be [`NodeManager::NodeKind`] but
-/// instead a wrapper type which dereferences to [`NodeManager::NodeKind`]. This abstraction allows
+/// The concrete type returned by the [`NodeManager`] may not be [`NodeManager::Node`] but
+/// instead a wrapper type which dereferences to [`NodeManager::Node`]. This abstraction allows
 /// for the node manager to associate metadata with each node, for example to implement smart cache
 /// eviction.
 pub trait NodeManager {

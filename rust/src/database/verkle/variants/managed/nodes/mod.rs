@@ -27,7 +27,7 @@ pub mod sparse_leaf;
 
 /// A node in a managed Verkle trie.
 //
-/// Non-empty nodes are stored as boxed to save memory (otherwise the size of [Node] would be
+/// Non-empty nodes are stored as boxed to save memory (otherwise the size of the enum would be
 /// dictated by the largest variant).
 #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
 #[derive_deftly(FileStorageManager)]
@@ -74,7 +74,8 @@ impl Default for VerkleNode {
 }
 
 /// A node type of a node in a managed Verkle trie.
-/// This type is primarily used for conversion between [`Node`] and indexes in the file storage.
+/// This type is primarily used for conversion between [`VerkleNode`] and indexes in the file
+/// storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VerkleNodeKind {
     Empty,

@@ -11,6 +11,6 @@
 pub trait ToNodeKind {
     type Target;
 
-    /// Converts the ID to a [`Self::NodeKind`], if the prefix is valid.
+    /// Converts the ID to a [`Self::Target`], if the prefix is valid.
     fn to_node_kind(&self) -> Option<Self::Target>;
 }
