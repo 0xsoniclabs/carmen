@@ -16,6 +16,7 @@ use crate::error::BTResult;
 
 mod error;
 pub mod file;
+pub mod in_memory_storage;
 pub mod storage_with_flush_buffer;
 
 /// A trait for storage backends that can store and retrieve items by their IDs.
