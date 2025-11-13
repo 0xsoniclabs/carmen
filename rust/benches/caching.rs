@@ -184,10 +184,8 @@ impl Cache {
                 quick_cache::sync::GuardResult::Guard(guard) => {
                     let _ = guard.insert(42i64);
                 }
-                quick_cache::sync::GuardResult::Value(_) => {}
-                quick_cache::sync::GuardResult::Timeout => {
-                    unreachable!()
-                }
+                quick_cache::sync::GuardResult::Value(_)
+                | quick_cache::sync::GuardResult::Timeout => {}
             },
             Cache::CachedNodeManager(node_manager) => {
                 let _node = node_manager.get_read_access(iter).unwrap();
