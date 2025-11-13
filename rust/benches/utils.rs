@@ -16,7 +16,7 @@ use std::{
 
 /// Returns true with the given probability (in percentage)
 #[allow(dead_code)]
-pub fn with_prob(prob: u16) -> bool {
+pub fn with_prob(prob: u8) -> bool {
     fastrand::f32() < (prob as f32) / 100.0
 }
 
