@@ -96,6 +96,7 @@ impl VerkleNode {
                     child.accept(visitor, manager, level + 1)?;
                 }
             }
+            _ => unimplemented!(),
         }
         Ok(())
     }
@@ -108,6 +109,7 @@ impl NodeVisitor<VerkleNode> for NodeCountVisitor {
             VerkleNode::Inner(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf2(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf256(n) => self.visit(n.deref(), level),
+            _ => unimplemented!(),
         }
     }
 }

@@ -28,12 +28,7 @@ use crate::{
 
 /// The commitment of a managed verkle trie node, together with metadata required to recompute
 /// it after the node has been modified.
-///
-/// NOTE: While this type is meant to be part of trie nodes, a dirty commitment should never
-/// be persisted to disk. The dirty flag, changed indices etc. are nevertheless part of the on-disk
-/// representation, so that the entire node can be transmuted to/from bytes using zerocopy.
-/// Related issue: <https://github.com/0xsoniclabs/sonic-admin/issues/373>
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct VerkleCommitment {
     /// The commitment of the node, or of the node previously at this position in the trie.
@@ -46,10 +41,9 @@ pub struct VerkleCommitment {
     /// Not being initialized does not imply the commitment being zero, as it may have been
     /// created from an existing commitment using [`VerkleCommitment::from_existing`].
     /// TODO: Consider merging this with `dirty` flag into an enum that is not stored on disk.
-    initialized: u8,
+    initialized: bool,
     /// Whether the commitment is dirty and needs to be recomputed.
-    // bool does not implement FromBytes, so we use u8 instead
-    dirty: u8,
+    dirty: bool,
     /// A bitfield indicating which children or values have been changed since
     /// the last commitment computation.
     changed_indices: [u8; 256 / 8],
@@ -73,8 +67,8 @@ impl VerkleCommitment {
         VerkleCommitment {
             commitment: existing.commitment,
             committed_used_indices: [0u8; 256 / 8],
-            initialized: 0,
-            dirty: 0,
+            initialized: false,
+            dirty: false,
             changed_indices: [0u8; 256 / 8],
             c1: Commitment::default(),
             c2: Commitment::default(),
@@ -87,7 +81,7 @@ impl VerkleCommitment {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.dirty != 0
+        self.dirty
     }
 }
 
@@ -96,8 +90,8 @@ impl Default for VerkleCommitment {
         Self {
             commitment: Commitment::default(),
             committed_used_indices: [0u8; 256 / 8],
-            initialized: 0,
-            dirty: 0,
+            initialized: false,
+            dirty: false,
             c1: Commitment::default(),
             c2: Commitment::default(),
             committed_values: [Value::default(); 256],
@@ -108,7 +102,7 @@ impl Default for VerkleCommitment {
 
 impl TrieCommitment for VerkleCommitment {
     fn modify_child(&mut self, index: usize) {
-        self.dirty = 1;
+        self.dirty = true;
         self.changed_indices[index / 8] |= 1 << (index % 8);
     }
 
@@ -116,7 +110,45 @@ impl TrieCommitment for VerkleCommitment {
         if self.changed_indices[index / 8] & (1 << (index % 8)) == 0 {
             self.changed_indices[index / 8] |= 1 << (index % 8);
             self.committed_values[index] = prev;
-            self.dirty = 1;
+            self.dirty = true;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
+#[repr(C)]
+pub struct OnDiskVerkleCommitment {
+    commitment: Commitment,
+    pub committed_used_indices: [u8; 256 / 8],
+    c1: Commitment,
+    c2: Commitment,
+}
+
+impl From<OnDiskVerkleCommitment> for VerkleCommitment {
+    fn from(odvc: OnDiskVerkleCommitment) -> Self {
+        VerkleCommitment {
+            commitment: odvc.commitment,
+            committed_used_indices: odvc.committed_used_indices,
+            c1: odvc.c1,
+            c2: odvc.c2,
+            initialized: true,
+            dirty: false,
+            committed_values: [Value::default(); 256],
+            changed_indices: [0u8; 256 / 8],
+        }
+    }
+}
+
+impl From<&VerkleCommitment> for OnDiskVerkleCommitment {
+    fn from(value: &VerkleCommitment) -> Self {
+        assert!(value.initialized);
+        assert!(!value.dirty);
+
+        OnDiskVerkleCommitment {
+            commitment: value.commitment,
+            committed_used_indices: value.committed_used_indices,
+            c1: value.c1,
+            c2: value.c2,
         }
     }
 }
@@ -154,7 +186,7 @@ pub fn update_commitments(
         for id in dirty_nodes_ids {
             let mut lock = manager.get_write_access(id)?;
             let mut vc = lock.get_commitment();
-            assert_eq!(vc.dirty, 1);
+            assert!(vc.dirty);
 
             previous_commitments.insert(id, vc.commitment);
 
@@ -178,7 +210,7 @@ pub fn update_commitments(
 
                     let mut scalars = [Scalar::zero(); 256];
                     for (i, child_id) in children.iter().enumerate() {
-                        if vc.initialized == 0 {
+                        if !vc.initialized {
                             scalars[i] = manager
                                 .get_read_access(*child_id)?
                                 .get_commitment()
@@ -192,7 +224,7 @@ pub fn update_commitments(
                         }
 
                         let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
-                        assert_eq!(child_commitment.dirty, 0);
+                        assert!(!child_commitment.dirty);
                         vc.commitment.update(
                             i as u8,
                             previous_commitments[child_id].to_scalar(),
@@ -200,14 +232,14 @@ pub fn update_commitments(
                         );
                     }
 
-                    if vc.initialized == 0 {
+                    if !vc.initialized {
                         vc.commitment = Commitment::new(&scalars);
-                        vc.initialized = 1;
+                        vc.initialized = true;
                     }
                 }
             }
 
-            vc.dirty = 0;
+            vc.dirty = false;
             vc.changed_indices.fill(0);
             lock.set_commitment(vc)?;
         }
@@ -235,8 +267,8 @@ mod tests {
         let original = VerkleCommitment {
             commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
             committed_used_indices: [1u8; 256 / 8],
-            initialized: 1,
-            dirty: 1,
+            initialized: true,
+            dirty: true,
             changed_indices: [7u8; 256 / 8],
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
@@ -245,8 +277,8 @@ mod tests {
         let new = VerkleCommitment::from_existing(&original);
         assert_eq!(new.commitment, original.commitment);
         assert_eq!(new.committed_used_indices, [0u8; 256 / 8]);
-        assert_eq!(new.initialized, 0);
-        assert_eq!(new.dirty, 0);
+        assert!(!new.initialized);
+        assert!(!new.dirty);
         assert_eq!(new.changed_indices, [0u8; 256 / 8]);
         assert_eq!(new.c1, Commitment::default());
         assert_eq!(new.c2, Commitment::default());
@@ -266,13 +298,13 @@ mod tests {
     #[test]
     fn verkle_commitment_is_dirty_returns_correct_value() {
         let vc = VerkleCommitment {
-            dirty: 0,
+            dirty: false,
             ..Default::default()
         };
         assert!(!vc.is_dirty());
 
         let vc = VerkleCommitment {
-            dirty: 1,
+            dirty: true,
             ..Default::default()
         };
         assert!(vc.is_dirty());
@@ -283,7 +315,7 @@ mod tests {
         let vc: VerkleCommitment = VerkleCommitment::default();
         assert_eq!(vc.commitment, Commitment::default());
         assert_eq!(vc.committed_used_indices, [0u8; 256 / 8]);
-        assert_eq!(vc.dirty, 0);
+        assert!(!vc.dirty);
     }
 
     #[test]
