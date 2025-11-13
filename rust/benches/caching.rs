@@ -241,19 +241,18 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     CacheType::LockCache,
                     CacheType::CachedNodeManager,
                 ] {
-                    let mut cache = cache_type.make_cache(*cache_size, 0);
-                    cache.fill();
-
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
                             "{cache_type}/NumThreads:{num_threads}"
                         )),
-                        &(num_threads, get_id),
-                        |b, (num_threads, get_id)| {
+                        &(),
+                        |b, _| {
+                            let mut cache = cache_type.make_cache(*cache_size, 0);
+                            cache.fill();
                             b.iter_custom(|iters| {
                                 execute_with_threads(
-                                    *num_threads as u64,
+                                    num_threads as u64,
                                     iters,
                                     &mut completed_iterations,
                                     || (),
@@ -290,23 +289,23 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                     CacheType::LockCache,
                     CacheType::CachedNodeManager,
                 ] {
-                    let mut cache = cache_type.make_cache(cache_size, pinning_prob);
-                    cache.fill();
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
                             "{cache_type}/NumThreads:{num_threads}"
                         )),
-                        &(num_threads, cache_size),
-                        |b, (num_threads, cache_size)| {
+                        &(),
+                        |b, _| {
+                            let mut cache = cache_type.make_cache(cache_size, pinning_prob);
+                            cache.fill();
                             b.iter_custom(|iters| {
                                 execute_with_threads(
-                                    *num_threads as u64,
+                                    num_threads as u64,
                                     iters,
                                     &mut completed_iterations,
                                     || (),
                                     |iter, _| {
-                                        cache.execute_read_op(iter + *cache_size);
+                                        cache.execute_read_op(iter + cache_size);
                                     },
                                 )
                             });
