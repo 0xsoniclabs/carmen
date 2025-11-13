@@ -8,26 +8,28 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use std::borrow::Cow;
+
+use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
             InnerNode, VerkleNode, VerkleNodeId,
-            commitment::{VerkleCommitment, VerkleCommitmentInput},
+            commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
         },
         visitor::NodeVisitor,
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
-    types::{Key, Value},
+    types::{DiskRepresentable, Key, Value},
 };
 
 /// A leaf node with 256 children in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct FullLeafNode {
     pub stem: [u8; 31],
@@ -49,6 +51,52 @@ impl Default for FullLeafNode {
             values: [Value::default(); 256],
             commitment: VerkleCommitment::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Immutable, FromBytes, IntoBytes, Unaligned)]
+#[repr(C)]
+pub struct OnDiskFullLeafNode {
+    pub stem: [u8; 31],
+    pub values: [Value; 256],
+    pub commitment: OnDiskVerkleCommitment,
+}
+
+impl From<&FullLeafNode> for OnDiskFullLeafNode {
+    fn from(node: &FullLeafNode) -> Self {
+        OnDiskFullLeafNode {
+            stem: node.stem,
+            values: node.values,
+            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+        }
+    }
+}
+
+impl From<OnDiskFullLeafNode> for FullLeafNode {
+    fn from(node: OnDiskFullLeafNode) -> Self {
+        FullLeafNode {
+            stem: node.stem,
+
+            values: node.values,
+
+            commitment: VerkleCommitment::from(node.commitment),
+        }
+    }
+}
+
+impl DiskRepresentable for FullLeafNode {
+    fn from_disk_repr<E>(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        OnDiskFullLeafNode::from_disk_repr(read_into_buffer).map(Into::into)
+    }
+
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Owned(OnDiskFullLeafNode::from(self).to_disk_repr().into_owned())
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<OnDiskFullLeafNode>()
     }
 }
 

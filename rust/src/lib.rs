@@ -343,6 +343,9 @@ mod tests {
             )
             .unwrap();
 
+        // Need to compute commitment so we are allowed to flush to disk
+        let _ = db.get_live_state().unwrap().get_hash();
+
         db.close().unwrap();
 
         let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
