@@ -110,6 +110,8 @@ impl ManagedTrieNode for FullLeafNode {
 
 #[cfg(test)]
 mod tests {
+    use std::array;
+
     use super::*;
     use crate::{
         database::{
@@ -132,11 +134,7 @@ mod tests {
     fn get_commitment_input_returns_values_and_stem() {
         let node = FullLeafNode {
             stem: <[u8; 31]>::from_index_values(3, &[]),
-            values: (0..=255)
-                .map(|i| Value::from_index_values(i, &[]))
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+            values: array::from_fn(|i| Value::from_index_values(i as u8, &[])),
             ..Default::default()
         };
         let result = node.get_commitment_input().unwrap();

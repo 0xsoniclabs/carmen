@@ -198,35 +198,40 @@ mod tests {
         types::{TreeId, Value},
     };
 
+    /// A random stem used by nodes created through [`make_leaf`].
     const STEM: [u8; 31] = [
-        4u8, 32, 15, 6, 7, 8, 9, 10, 11, 12, 18, 14, 19, 29, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-        26, 27, 32, 29, 30, 31, 80, 72,
+        199, 138, 41, 113, 63, 133, 10, 244, 221, 149, 172, 110, 253, 27, 18, 76, 151, 202, 22, 80,
+        37, 162, 130, 217, 143, 28, 241, 137, 212, 77, 126,
     ];
 
-    const DEFAULT_VALUE: Value = [
+    /// The default value used by nodes created through [`make_leaf`].
+    const LEAF_DEFAULT_VALUE: Value = [
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
 
-    const INDEX1: u8 = 99;
-    const VALUE1: Value = [
-        0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-        25, 26, 27, 28, 29, 30, 31,
+    /// The index at which [`VALUE_1`] is stored in nodes created through [`make_leaf`].
+    const INDEX_1: u8 = 99;
+
+    /// A random value stored at [`INDEX_1`] in nodes created through [`make_leaf`].
+    const VALUE_1: Value = [
+        166, 44, 74, 233, 251, 79, 182, 249, 35, 197, 45, 50, 195, 162, 212, 116, 96, 23, 91, 167,
+        136, 247, 205, 100, 142, 115, 103, 29, 77, 105, 53, 21,
     ];
 
-    /// Creates a leaf of size N with stem [`STEM`], the first slot set to [`INDEX1`] and
-    /// [`VALUE1`], and all other slots set to [`DEFAULT_VALUE`] and a unique index in
-    /// ([`INDEX1`]..[`INDEX1`] + N).
+    /// Creates a leaf of size N with stem [`STEM`], the first slot set to [`INDEX_1`] and
+    /// [`VALUE_1`], and all other slots set to [`LEAF_DEFAULT_VALUE`] and a unique index in
+    /// ([`INDEX_1`]..[`INDEX_1`] + N).
     fn make_leaf<const N: usize>() -> SparseLeafNode<N> {
         let mut values = [ValueWithIndex::default(); N];
         values[0] = ValueWithIndex {
-            index: INDEX1,
-            value: VALUE1,
+            index: INDEX_1,
+            value: VALUE_1,
         };
         for (i, value) in values.iter_mut().enumerate().skip(1) {
             *value = ValueWithIndex {
-                index: INDEX1 + i as u8,
-                value: DEFAULT_VALUE,
+                index: INDEX_1 + i as u8,
+                value: LEAF_DEFAULT_VALUE,
             }
         }
         SparseLeafNode {
@@ -305,12 +310,12 @@ mod tests {
         let mut node = make_leaf::<7>();
 
         // Matching index
-        let slot = node.get_slot_for(INDEX1);
+        let slot = node.get_slot_for(INDEX_1);
         assert_eq!(slot, Some(0));
 
         // Matching index has precedence over empty slot
         node.values[1].value = Value::default();
-        let slot = node.get_slot_for(INDEX1 + 3);
+        let slot = node.get_slot_for(INDEX_1 + 3);
         assert_eq!(slot, Some(3));
 
         // No matching index, so we return first empty slot
@@ -318,7 +323,7 @@ mod tests {
         assert_eq!(slot, Some(1));
 
         // No matching index and no empty slot
-        node.values[1].value = VALUE1;
+        node.values[1].value = VALUE_1;
         let slot = node.get_slot_for(250);
         assert_eq!(slot, None);
     }
@@ -327,13 +332,13 @@ mod tests {
     fn lookup_with_matching_stem_returns_value_at_final_key_index(
         #[case] node: Box<dyn VerkleManagedTrieNode>,
     ) {
-        let key = [&STEM[..31], &[INDEX1]].concat().try_into().unwrap();
+        let key = [&STEM[..31], &[INDEX_1]].concat().try_into().unwrap();
         let result = node.lookup(&key, 0).unwrap();
-        assert_eq!(result, LookupResult::Value(VALUE1));
+        assert_eq!(result, LookupResult::Value(VALUE_1));
 
         // Depth is irrelevant
         let result = node.lookup(&key, 42).unwrap();
-        assert_eq!(result, LookupResult::Value(VALUE1));
+        assert_eq!(result, LookupResult::Value(VALUE_1));
 
         // Mismatching stem returns default value
         let other_key = Key::from_index_values(7, &[]);
@@ -341,7 +346,7 @@ mod tests {
         assert_eq!(other_result, LookupResult::Value(Value::default()));
 
         // Other index has default value
-        let other_key = Key::from_index_values(1, &[(31, INDEX1 + 1)]);
+        let other_key = Key::from_index_values(1, &[(31, INDEX_1 + 1)]);
         let other_result = node.lookup(&other_key, 0).unwrap();
         assert_eq!(other_result, LookupResult::Value(Value::default()));
     }
@@ -404,7 +409,7 @@ mod tests {
     ) {
         let mut node = node;
         let mut commitment = VerkleCommitment::default();
-        commitment.store(7, VALUE1);
+        commitment.store(7, VALUE_1);
         node.set_commitment(commitment).unwrap();
 
         let index = 250;
@@ -453,7 +458,7 @@ mod tests {
     fn store_with_non_matching_stem_returns_error(#[case] node: Box<dyn VerkleManagedTrieNode>) {
         let mut node = node;
         let key = Key::from_index_values(1, &[(31, 78)]);
-        let result = node.store(&key, &VALUE1);
+        let result = node.store(&key, &VALUE_1);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("called store on a leaf with non-matching stem")
@@ -463,8 +468,8 @@ mod tests {
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn store_returns_error_if_no_free_slot(#[case] node: Box<dyn VerkleManagedTrieNode>) {
         let mut node = node;
-        let key = [&STEM[..31], &[INDEX1 - 1]].concat().try_into().unwrap();
-        let result = node.store(&key, &VALUE1);
+        let key = [&STEM[..31], &[INDEX_1 - 1]].concat().try_into().unwrap();
+        let result = node.store(&key, &VALUE_1);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("no available slot for storing value in sparse leaf")

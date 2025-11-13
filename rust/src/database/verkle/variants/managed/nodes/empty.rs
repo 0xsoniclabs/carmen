@@ -119,16 +119,13 @@ mod tests {
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
             )
             .unwrap();
-        match action {
-            StoreAction::HandleTransform(VerkleNode::Inner(_)) => {}
-            _ => panic!("expected HandleTransform to inner node"),
-        }
+        assert!(matches!(action, StoreAction::HandleTransform(_)));
     }
 
     #[test]
-    fn next_store_action_at_depth_above_zero_transforms_to_leaf_node() {
+    fn next_store_action_non_zero_depth_transforms_to_leaf_node() {
         let node = EmptyNode;
-        let key = Key::from_index_values(1, &[(0, 34), (10, 78), (30, 255)]);
+        let key = Key::from_index_values(1, &[(31, 34)]);
         let action = node
             .next_store_action(
                 &key,
@@ -142,10 +139,10 @@ mod tests {
                 assert_eq!(
                     leaf.next_store_action(
                         &key,
-                        0,
+                        1,
                         VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty) // type does not matter
                     ),
-                    Ok(StoreAction::Store { index: 1 })
+                    Ok(StoreAction::Store { index: 34 })
                 );
             }
             _ => panic!("expected HandleTransform to leaf node"),

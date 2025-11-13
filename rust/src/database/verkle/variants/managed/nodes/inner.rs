@@ -82,14 +82,16 @@ impl ManagedTrieNode for InnerNode {
         self.commitment
     }
 
-    fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = cache;
+    fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
+        self.commitment = commitment;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::array;
+
     use super::*;
     use crate::{
         database::{
@@ -112,11 +114,9 @@ mod tests {
     #[test]
     fn get_commitment_input_returns_children() {
         let node = InnerNode {
-            children: (0..=255)
-                .map(|i| VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner))
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
+            children: array::from_fn(|i| {
+                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner)
+            }),
             ..Default::default()
         };
         let result = node.get_commitment_input().unwrap();
