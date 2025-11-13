@@ -10,14 +10,13 @@
 
 use std::mem::MaybeUninit;
 
-use sha3::{Digest, Keccak256};
-
 use crate::{
     CarmenState,
     database::verkle::{
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
+        keyed_update::KeyedUpdate,
         variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie},
         verkle_trie::VerkleTrie,
     },
@@ -25,7 +24,7 @@ use crate::{
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
-const EMPTY_CODE_HASH: Hash = [
+pub const EMPTY_CODE_HASH: Hash = [
     197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202,
     130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
 ];
@@ -116,58 +115,21 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     // TODO: Batch updates for the same account (https://github.com/0xsoniclabs/sonic-admin/issues/374)
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> BTResult<(), Error> {
-        for addr in update.created_accounts {
-            if !self.account_exists(addr)? {
-                // Set basic account data once to set used bit in Verkle leaf.
-                // Even though the data should be zero (since the code hash is), we nevertheless
-                // first fetch it in case the account was not explicitly created first for some
-                // reason.
-                let key = get_basic_data_key(addr);
-                let basic_data = self.trie.lookup(&key)?;
-                self.trie.store(&key, &basic_data)?;
-                let code_hash_key = get_code_hash_key(addr);
-                self.trie.store(&code_hash_key, &EMPTY_CODE_HASH)?;
+        let updates: Vec<KeyedUpdate> = update.into();
+        for update in updates {
+            match update {
+                KeyedUpdate::FullSlot { key, value } => {
+                    self.trie.store(&key, &value)?;
+                }
+                KeyedUpdate::PartialSlot { key, value, mask } => {
+                    let existing_value = self.trie.lookup(&key)?;
+                    let mut new_value = [0u8; 32];
+                    for i in 0..32 {
+                        new_value[i] = (existing_value[i] & !mask[i]) | (value[i] & mask[i]);
+                    }
+                    self.trie.store(&key, &new_value)?;
+                }
             }
-        }
-
-        for u in update.nonces {
-            let key = get_basic_data_key(&u.addr);
-            let mut value = self.trie.lookup(&key)?;
-            value[8..16].copy_from_slice(&u.nonce);
-            self.trie.store(&key, &value)?;
-        }
-
-        for u in update.balances {
-            let key = get_basic_data_key(&u.addr);
-            let mut value = self.trie.lookup(&key)?;
-            value[16..32].copy_from_slice(&u.balance[16..]);
-            self.trie.store(&key, &value)?;
-        }
-
-        for u in update.codes {
-            // Store code length
-            let len = u.code.len() as u32;
-            let key = get_basic_data_key(&u.addr);
-            let mut value = self.trie.lookup(&key)?;
-            value[4..8].copy_from_slice(&len.to_be_bytes());
-            self.trie.store(&key, &value)?;
-
-            // Store code hash
-            let hash_key = get_code_hash_key(&u.addr);
-            let mut hasher = Keccak256::new();
-            hasher.update(u.code);
-            self.trie.store(&hash_key, &Hash::from(hasher.finalize()))?;
-
-            // Store actual code
-            for (i, chunk) in code::split_code(u.code).into_iter().enumerate() {
-                let key = get_code_chunk_key(&u.addr, i as u32);
-                self.trie.store(&key, &chunk)?;
-            }
-        }
-
-        for u in update.slots {
-            let key = get_storage_key(&u.addr, &u.key);
-            self.trie.store(&key, &u.value)?;
         }
 
         Ok(())
@@ -176,6 +138,8 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
 #[cfg(test)]
 mod tests {
+    use sha3::{Digest, Keccak256};
+
     use super::*;
     use crate::{
         database::verkle::test_utils::FromIndexValues,
