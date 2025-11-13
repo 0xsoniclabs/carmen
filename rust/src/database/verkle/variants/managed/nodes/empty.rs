@@ -27,7 +27,7 @@ pub struct EmptyNode;
 
 impl EmptyNode {
     /// Returns an error as EmptyNode does not support commitment inputs.
-    /// This method only exists for implementation symmetry in [`Node::get_commitment_input`].
+    /// This method only exists for implementation symmetry in [`VerkleNode::get_commitment_input`].
     #[cfg_attr(not(test), allow(unused))]
     #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)]
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
