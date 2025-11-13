@@ -226,6 +226,8 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     CacheType::LockCache,
                     CacheType::CachedNodeManager,
                 ] {
+                    let mut cache = cache_type.make_cache(cache_size, 0);
+                    cache.fill();
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
@@ -233,8 +235,6 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                         )),
                         &(),
                         |b, _| {
-                            let mut cache = cache_type.make_cache(cache_size, 0);
-                            cache.fill();
                             b.iter_custom(|iters| {
                                 execute_with_threads(
                                     num_threads as u64,
@@ -274,6 +274,8 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                     CacheType::LockCache,
                     CacheType::CachedNodeManager,
                 ] {
+                    let mut cache = cache_type.make_cache(cache_size, pinning_prob);
+                    cache.fill();
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
@@ -281,8 +283,6 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                         )),
                         &(),
                         |b, _| {
-                            let mut cache = cache_type.make_cache(cache_size, pinning_prob);
-                            cache.fill();
                             b.iter_custom(|iters| {
                                 execute_with_threads(
                                     num_threads as u64,
