@@ -53,6 +53,38 @@ pub trait Storage: Send + Sync {
     fn close(self) -> BTResult<(), Error>;
 }
 
+impl<S> Storage for Box<S>
+where
+    S: Storage + ?Sized + 'static,
+{
+    type Id = S::Id;
+    type Item = S::Item;
+
+    fn open(_path: &Path) -> BTResult<Self, Error> {
+        unimplemented!("cannot open storage from a boxed trait object")
+    }
+
+    fn get(&self, id: Self::Id) -> BTResult<Self::Item, Error> {
+        self.as_ref().get(id)
+    }
+
+    fn reserve(&self, item: &Self::Item) -> Self::Id {
+        self.as_ref().reserve(item)
+    }
+
+    fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), Error> {
+        self.as_ref().set(id, item)
+    }
+
+    fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
+        self.as_ref().delete(id)
+    }
+
+    fn close(self) -> BTResult<(), Error> {
+        unimplemented!("cannot call close from a boxed trait object");
+    }
+}
+
 /// An entity which can create durable checkpoints of its state that can be restored later.
 /// This trait is used for entities which may hold volatile state in memory, but which are not
 /// directly responsible for storing that state durably. Therefore, they only need to flush their
@@ -112,36 +144,4 @@ pub trait RootIdProvider {
     /// Sets the root ID for the given block number. The block number must greater than all block
     /// numbers previously passed to `set_root_id`.
     fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), Error>;
-}
-
-impl<S> Storage for Box<S>
-where
-    S: Storage + ?Sized + 'static,
-{
-    type Id = S::Id;
-    type Item = S::Item;
-
-    fn open(_path: &Path) -> BTResult<Self, Error> {
-        unimplemented!("cannot open storage from a boxed trait object")
-    }
-
-    fn get(&self, id: Self::Id) -> BTResult<Self::Item, Error> {
-        self.as_ref().get(id)
-    }
-
-    fn reserve(&self, item: &Self::Item) -> Self::Id {
-        self.as_ref().reserve(item)
-    }
-
-    fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), Error> {
-        self.as_ref().set(id, item)
-    }
-
-    fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
-        self.as_ref().delete(id)
-    }
-
-    fn close(self) -> BTResult<(), Error> {
-        unimplemented!("cannot call close from a boxed trait object");
-    }
 }
