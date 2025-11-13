@@ -58,7 +58,8 @@ impl VerkleNode {
     /// Returns the smallest leaf node type capable of storing `n` values.
     pub fn smallest_leaf_type_for(n: usize) -> VerkleNodeKind {
         match n {
-            0..=2 => VerkleNodeKind::Leaf2,
+            0 => VerkleNodeKind::Empty,
+            1..=2 => VerkleNodeKind::Leaf2,
             3..=256 => VerkleNodeKind::Leaf256,
             _ => panic!("no leaf type for more than 256 values"),
         }
@@ -216,6 +217,7 @@ pub fn make_smallest_leaf_node_for(
     commitment: VerkleCommitment,
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_leaf_type_for(n) {
+        VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
         VerkleNodeKind::Leaf2 => Ok(VerkleNode::Leaf2(Box::new(
             SparseLeafNode::<2>::from_existing(stem, values, commitment)?,
         ))),
@@ -230,7 +232,7 @@ pub fn make_smallest_leaf_node_for(
             }
             Ok(VerkleNode::Leaf256(Box::new(new_leaf)))
         }
-        VerkleNodeKind::Empty | VerkleNodeKind::Inner => Err(Error::CorruptedState(
+        VerkleNodeKind::Inner => Err(Error::CorruptedState(
             "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
         )
         .into()),

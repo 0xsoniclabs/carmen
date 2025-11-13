@@ -63,7 +63,7 @@ impl<const N: usize> SparseLeafNode<N> {
         };
 
         // Insert values from previous leaf using get_slot_for to ensure no duplicate indices.
-        for vwi in values.iter() {
+        for vwi in values {
             if vwi.value == Value::default() {
                 continue;
             }
@@ -313,13 +313,13 @@ mod tests {
     #[test]
     fn from_existing_copies_stem_and_values_and_commitment_correctly() {
         let mut commitment = VerkleCommitment::default();
-        commitment.store(2, VALUE1);
+        commitment.store(2, VALUE_1);
 
         // Case 1: Contains an index that fits at the corresponding slot in a SparseLeaf<3>.
         {
             let values = [ValueWithIndex {
                 index: 2,
-                value: VALUE1,
+                value: VALUE_1,
             }];
             let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
             assert_eq!(node.stem, STEM);
@@ -336,7 +336,7 @@ mod tests {
         {
             let values = [ValueWithIndex {
                 index: 18,
-                value: VALUE1,
+                value: VALUE_1,
             }];
             let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
             // The value is put into the first available slot.
@@ -349,15 +349,15 @@ mod tests {
             let values = [
                 ValueWithIndex {
                     index: 18,
-                    value: VALUE1,
+                    value: VALUE_1,
                 },
                 ValueWithIndex {
                     index: 0,
-                    value: VALUE1,
+                    value: VALUE_1,
                 },
                 ValueWithIndex {
                     index: 1,
-                    value: VALUE1,
+                    value: VALUE_1,
                 },
             ];
             let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
@@ -373,7 +373,7 @@ mod tests {
             let values = [
                 ValueWithIndex {
                     index: 20,
-                    value: VALUE1,
+                    value: VALUE_1,
                 },
                 ValueWithIndex {
                     index: 0,
@@ -381,7 +381,7 @@ mod tests {
                 },
                 ValueWithIndex {
                     index: 1,
-                    value: VALUE1,
+                    value: VALUE_1,
                 },
             ];
             let node = SparseLeafNode::<2>::from_existing(STEM, &values, commitment).unwrap();
@@ -395,15 +395,15 @@ mod tests {
         let values = [
             ValueWithIndex {
                 index: 0,
-                value: VALUE1,
+                value: VALUE_1,
             },
             ValueWithIndex {
                 index: 1,
-                value: VALUE1,
+                value: VALUE_1,
             },
             ValueWithIndex {
                 index: 2,
-                value: VALUE1,
+                value: VALUE_1,
             },
         ];
         let commitment = VerkleCommitment::default();
