@@ -26,7 +26,7 @@ use crate::{
     },
     error::{BTResult, Error},
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{Key, NodeSize, ToNodeKind, Value},
+    types::{HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
 };
 
 pub mod empty;
@@ -97,6 +97,16 @@ impl NodeSize for VerkleNode {
 
     fn min_non_empty_node_size() -> usize {
         VerkleNodeKind::min_non_empty_node_size()
+    }
+}
+
+impl HasEmptyNode for VerkleNode {
+    fn is_empty_node(&self) -> bool {
+        matches!(self, VerkleNode::Empty(_))
+    }
+
+    fn empty_node() -> Self {
+        VerkleNode::Empty(EmptyNode)
     }
 }
 
