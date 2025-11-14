@@ -13,4 +13,5 @@ pub mod managed;
 mod simple;
 
 pub use crate_crypto::CrateCryptoInMemoryVerkleTrie;
+pub use managed::ManagedVerkleTrie;
 pub use simple::SimpleInMemoryVerkleTrie;

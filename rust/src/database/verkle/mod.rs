@@ -19,4 +19,4 @@ pub mod variants;
 mod verkle_trie;
 
 pub use state::VerkleTrieCarmenState;
-pub use variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie};
+pub use variants::{CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie};

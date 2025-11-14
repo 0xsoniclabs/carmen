@@ -30,7 +30,6 @@ use crate::{
 ///
 /// The `update_log` is updated to reflect which nodes need to have their commitments recomputed
 /// after the store operation.
-#[cfg_attr(not(test), expect(unused))]
 pub fn store<T>(
     root_id: RwLockWriteGuard<T::Id>,
     key: &Key,

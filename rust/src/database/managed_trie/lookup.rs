@@ -19,7 +19,6 @@ use crate::{
 ///
 /// At most two nodes are read-locked at any given time during tree traversal, allowing for
 /// concurrent lookup/store operations on different parts of the tree.
-#[cfg_attr(not(test), expect(unused))]
 pub fn lookup<T: ManagedTrieNode>(
     root_id: T::Id,
     key: &Key,

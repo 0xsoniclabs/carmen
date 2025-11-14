@@ -38,19 +38,24 @@ pub trait VerkleTrie: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::{
         database::verkle::{
-            CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
+            CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie,
             test_utils::{make_key, make_leaf_key, make_value},
+            variants::managed::{VerkleNode, VerkleNodeId},
         },
         error::BTError,
+        node_manager::in_memory_node_manager::InMemoryNodeManager,
     };
 
     #[rstest_reuse::template]
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
     #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
+    #[case::managed(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100))).unwrap()) as Box<dyn VerkleTrie>)]
     fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>) {}
 
     #[rstest_reuse::apply(all_trie_impls)]

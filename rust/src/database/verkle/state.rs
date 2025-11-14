@@ -8,19 +8,24 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::mem::MaybeUninit;
+use std::{mem::MaybeUninit, sync::Arc};
 
 use crate::{
     CarmenState,
     database::verkle::{
+        ManagedVerkleTrie,
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
         keyed_update::{KeyedUpdate, KeyedUpdateBatch},
-        variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie},
+        variants::{
+            CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
+            managed::{VerkleNode, VerkleNodeId},
+        },
         verkle_trie::VerkleTrie,
     },
     error::{BTResult, Error},
+    node_manager::in_memory_node_manager::InMemoryNodeManager,
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -47,6 +52,15 @@ impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
     pub fn new() -> Self {
         let trie = CrateCryptoInMemoryVerkleTrie::new();
         Self { trie }
+    }
+}
+
+impl VerkleTrieCarmenState<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>> {
+    /// Creates a new [`VerkleTrieCarmenState`] with an [`InMemoryNodeManager`] of the given
+    /// capacity.
+    pub fn try_new(capacity: usize) -> BTResult<Self, Error> {
+        let trie = ManagedVerkleTrie::try_new(Arc::new(InMemoryNodeManager::new(capacity)))?;
+        Ok(Self { trie })
     }
 }
 
@@ -149,6 +163,7 @@ mod tests {
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
     #[case::crate_crypto(Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
+    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(100).unwrap()) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]
