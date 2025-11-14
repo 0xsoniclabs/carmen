@@ -161,9 +161,13 @@ func (i *inner) commit() commit.Commitment {
 	delta := [commit.VectorSize]commit.Value{}
 	for j := range i.children {
 		if i.dirtyChildValues.get(byte(j)) {
-			old := i.oldChildrenValues[j]
 			new := i.children[j].commit().ToValue()
-			delta[j] = *new.Sub(old)
+			if i.oldChildrenValuesSet.get(byte(j)) {
+				old := i.oldChildrenValues[j]
+				delta[j] = *new.Sub(old)
+			} else {
+				delta[j] = new
+			}
 		}
 	}
 
@@ -264,6 +268,8 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 	// This leaf needs to be split
 	res := &inner{}
 	res.children[l.stem[depth]] = l
+	res.dirtyChildValues.set(l.stem[depth])
+	res.oldChildrenValuesSet.set(l.stem[depth])
 	return res.set(key, depth, value)
 }
 
