@@ -24,10 +24,10 @@ type State struct {
 	codes    map[common.Hash][]byte
 
 	// Backend storage for computing commits.
-	backend state.State
-	updates chan<- *update  // < send nil for syncs, close for shutdown
-	syncs   <-chan error    // < signalled when syncing with background worker
-	done    <-chan struct{} // < when background work is done
+	backend  state.State
+	commands chan<- command  // < commands to background worker
+	syncs    <-chan error    // < signalled when syncing with background worker
+	done     <-chan struct{} // < when background work is done
 }
 
 type account struct {
@@ -42,13 +42,18 @@ type slotKey struct {
 	key     common.Key
 }
 
+type command struct {
+	update *update
+	commit future.Promise[common.Hash]
+}
+
 type update struct {
 	block uint64
 	data  common.Update
 }
 
 func NewState(backend state.State) *State {
-	updates := make(chan *update, 1024)
+	commands := make(chan command, 1024)
 	syncs := make(chan error)
 	done := make(chan struct{})
 
@@ -56,23 +61,26 @@ func NewState(backend state.State) *State {
 		defer close(done)
 		var issues []error
 		extraIssues := 0
-		for update := range updates {
-			if update == nil {
+		for command := range commands {
+			if command.update != nil {
+				err := backend.Apply(command.update.block, command.update.data)
+				if err != nil {
+					if len(issues) < 10 {
+						issues = append(issues, fmt.Errorf("block %d: %w", command.update.block, err))
+					} else {
+						extraIssues++
+					}
+				}
+			} else if command.commit != nil {
+				result := backend.GetCommitment().Get()
+				command.commit.Fulfill(result)
+			} else { // sync command
 				if extraIssues > 0 {
 					issues = append(issues, fmt.Errorf("%d additional errors truncated", extraIssues))
 					extraIssues = 0
 				}
 				syncs <- errors.Join(issues...)
 				issues = issues[:0]
-				continue
-			}
-			err := backend.Apply(update.block, update.data)
-			if err != nil {
-				if len(issues) < 10 {
-					issues = append(issues, fmt.Errorf("block %d: %w", update.block, err))
-				} else {
-					extraIssues++
-				}
 			}
 		}
 	}()
@@ -82,7 +90,7 @@ func NewState(backend state.State) *State {
 		storage:  make(map[slotKey]common.Value),
 		codes:    make(map[common.Hash][]byte),
 		backend:  backend,
-		updates:  updates,
+		commands: commands,
 		syncs:    syncs,
 		done:     done,
 	}
@@ -169,9 +177,11 @@ func (s *State) Apply(block uint64, data common.Update) error {
 	}
 
 	// Update the backend in the background.
-	s.updates <- &update{
-		block: block,
-		data:  data,
+	s.commands <- command{
+		update: &update{
+			block: block,
+			data:  data,
+		},
 	}
 	return nil
 }
@@ -181,14 +191,15 @@ func (s *State) GetHash() (common.Hash, error) {
 }
 
 func (s *State) GetCommitment() future.Future[common.Hash] {
-	if err := s.sync(); err != nil {
-		return future.ImmediateErr[common.Hash](err)
+	promise, future := future.Create[common.Hash]()
+	s.commands <- command{
+		commit: promise,
 	}
-	return s.backend.GetCommitment()
+	return future
 }
 
 func (s *State) sync() error {
-	s.updates <- nil
+	s.commands <- command{}
 	return <-s.syncs
 }
 
@@ -212,7 +223,7 @@ func (s *State) Close() error {
 	if err := s.sync(); err != nil {
 		return err
 	}
-	close(s.updates)
+	close(s.commands)
 	<-s.done
 	return s.backend.Close()
 }
