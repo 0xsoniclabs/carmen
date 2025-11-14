@@ -23,6 +23,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
@@ -243,7 +244,9 @@ func TestRunBenchmarkState_ApplyError(t *testing.T) {
 		state := state.NewMockState(ctrl)
 		state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), getError(i, 1)).AnyTimes()
 		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(getError(i, 2)).AnyTimes()
-		state.EXPECT().GetHash().Return(common.Hash{}, getError(i, 3)).AnyTimes()
+		state.EXPECT().GetCommitment().DoAndReturn(func() future.Future[common.Hash] {
+			return future.ImmediateErr[common.Hash](getError(i, 3))
+		}).AnyTimes()
 
 		_, err := runBenchmarkState(state, "/tmp", benchmarkParams{
 			numBlocks:          1,
