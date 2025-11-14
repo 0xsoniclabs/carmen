@@ -8,13 +8,13 @@ on:
   push:
     branches: [ main ]
     paths:
-    - '.github/workflows/rust.yaml'
+    - ".github/workflows/rust.yaml"
     - "rust/**"
     - "cpp/state/c_state.h"
   pull_request:
-    branches: [ main ]
+    branches: [ "**" ]
     paths:
-    - '.github/workflows/rust.yaml'
+    - ".github/workflows/rust.yaml"
     - "rust/**"
     - "cpp/state/c_state.h"
 
@@ -29,6 +29,7 @@ jobs:
   format:
     name: format
     runs-on: ubuntu-latest
+    timeout-minutes: 2
 
     steps:
     - name: checkout
@@ -47,6 +48,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: checkout
@@ -65,6 +67,7 @@ jobs:
   doc:
     name: doc
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: checkout
@@ -86,6 +89,7 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: checkout
@@ -102,6 +106,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - name: checkout
@@ -117,6 +122,8 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
     - name: checkout
       uses: actions/checkout@v4
@@ -139,6 +146,7 @@ jobs:
   miri:
     name: miri
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - name: checkout
@@ -159,6 +167,7 @@ jobs:
   unused-deps:
     name: unused deps
     runs-on: ubuntu-latest
+    timeout-minutes: 2
 
     steps:
     - name: checkout
@@ -175,6 +184,7 @@ jobs:
   denied-deps:
     name: denied deps
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: checkout
