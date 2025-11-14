@@ -182,6 +182,7 @@ impl std::fmt::Display for Op {
     }
 }
 
+/// A structure to keep track of deleted node counts by type.
 #[derive(Debug, Default)]
 struct DeletedNodeCount {
     inner_count: AtomicU64,
@@ -368,7 +369,7 @@ fn execute(
                 for (operation, prob) in operations_proportions.iter() {
                     cumulative_prob += prob;
                     if rand <= cumulative_prob {
-                        operation.execute::<SimpleInMemoryStorage>(
+                        operation.execute::<Arc<dyn Storage<Id = NodeId, Item = Node>>>(
                             &manager,
                             &available_node_ids,
                             nodes_to_delete,
