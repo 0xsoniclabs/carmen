@@ -219,72 +219,59 @@ fn read_benchmark(c: &mut criterion::Criterion) {
 
     let cache_sizes = [100_000, 1_000_000];
     for cache_size in cache_sizes {
-        for in_cache in [true, false] {
-            let get_id = |i: u64| {
-                if in_cache {
-                    i % cache_size
-                } else {
-                    i + cache_size
-                }
-            };
-            let mut bench_group = c.benchmark_group(format!(
-                "caching/read/{cache_size}capacity/{in_cache}_cached"
-            ));
-            for num_threads in pow_2_threads() {
-                for cache_type in [
-                    CacheType::QuickCache,
-                    CacheType::LockCache,
-                    CacheType::CachedNodeManager,
-                ] {
-                    let cache = LazyLock::new(|| {
-                        let cache_size = if cfg!(debug_assertions) {
-                            10
-                        } else {
-                            cache_size
-                        };
-                        let cache = cache_type.make_cache(cache_size, 0);
-                        cache.fill();
-                        cache
-                    });
-                    let mut completed_iterations = 0u64;
-                    bench_group.bench_with_input(
-                        BenchmarkId::from_parameter(format!(
-                            "{num_threads:02}threads/{cache_type}"
-                        )),
-                        &(),
-                        |b, _| {
-                            b.iter_custom(|iters| {
-                                execute_with_threads(
-                                    num_threads as u64,
-                                    iters,
-                                    &mut completed_iterations,
-                                    || (),
-                                    |iter, _| {
-                                        let id = get_id(iter);
-                                        cache.execute_read_op(id);
-                                    },
-                                )
-                            });
-                        },
-                    );
-                }
+        let mut bench_group = c.benchmark_group(format!("caching/read/{cache_size}capacity"));
+        for num_threads in pow_2_threads() {
+            for cache_type in [
+                CacheType::QuickCache,
+                CacheType::LockCache,
+                CacheType::CachedNodeManager,
+            ] {
+                let cache = LazyLock::new(|| {
+                    let cache_size = if cfg!(debug_assertions) {
+                        10
+                    } else {
+                        cache_size
+                    };
+                    let cache = cache_type.make_cache(cache_size, 0);
+                    cache.fill();
+                    cache
+                });
+                let mut completed_iterations = 0u64;
+                bench_group.bench_with_input(
+                    BenchmarkId::from_parameter(format!("{num_threads:02}threads/{cache_type}")),
+                    &(),
+                    |b, _| {
+                        b.iter_custom(|iters| {
+                            execute_with_threads(
+                                num_threads as u64,
+                                iters,
+                                &mut completed_iterations,
+                                || (),
+                                |iter, _| {
+                                    // Make sure the accessed id is always in cache
+                                    cache.execute_read_op(iter % cache_size);
+                                },
+                            )
+                        });
+                    },
+                );
             }
         }
     }
 }
 
-/// Benchmark the effect of different pinning probabilities on cache performance
+/// Benchmark caches add performance.
 /// It varies:
 /// - Pinning probability (forces linear search for evictable items)
 /// - Cache size (influence contention)
 /// - Number of threads (influence contention)
-fn pinning_benchmark(c: &mut criterion::Criterion) {
+fn add_benchmark(c: &mut criterion::Criterion) {
     fastrand::seed(123);
 
     for pinning_prob in [0, 10, 25, 50] {
         for cache_size in [100_000, 1_000_000] {
             let mut bench_group = c.benchmark_group(format!(
-                "caching/pinning/{cache_size}capacity/{pinning_prob}pinning_prob"
+                "caching/add/{cache_size}capacity/{pinning_prob}pinning_prob"
             ));
             for num_threads in pow_2_threads() {
                 for cache_type in [
@@ -316,7 +303,8 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                                     &mut completed_iterations,
                                     || (),
                                     |iter, _| {
-                                        // Force eviction on every read by only requesting ids that
+                                        // Force eviction on every read by only requesting ids
+                                        // that
                                         // are not in the cache
                                         cache.execute_read_op(iter + cache_size);
                                     },
@@ -330,5 +318,5 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
     }
 }
 
-criterion_group!(name = caching; config = criterion::Criterion::default(); targets = pinning_benchmark, read_benchmark);
+criterion_group!(name = caching; config = criterion::Criterion::default(); targets = add_benchmark, read_benchmark);
 criterion_main!(caching);
