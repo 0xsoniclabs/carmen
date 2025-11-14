@@ -11,6 +11,8 @@
 package trie
 
 import (
+	"fmt"
+
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/tracy"
@@ -96,4 +98,12 @@ func (t *Trie) commit_parallel() commit.Commitment {
 	zone2 := tracy.ZoneBegin("trie::commit_parallel::fetch_root_commitment")
 	defer zone2.End()
 	return t.root.commit()
+}
+
+func (t *Trie) Dump() {
+	if t.root == nil {
+		fmt.Printf("Empty trie\n")
+		return
+	}
+	t.root.dump("")
 }
