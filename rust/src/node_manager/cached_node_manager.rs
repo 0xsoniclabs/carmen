@@ -251,30 +251,11 @@ mod tests {
     };
 
     use super::*;
-    use crate::{error::BTError, storage};
-
-    type TestNodeId = u32;
-    type TestNode = i32;
-
-    impl HasEmptyNode for TestNode {
-        fn is_empty_node(&self) -> bool {
-            *self == i32::MAX
-        }
-
-        fn empty_node() -> Self {
-            i32::MAX
-        }
-    }
-
-    impl HasEmptyId for TestNodeId {
-        fn is_empty_id(&self) -> bool {
-            *self == u32::MAX
-        }
-
-        fn empty_id() -> Self {
-            u32::MAX
-        }
-    }
+    use crate::{
+        error::BTError,
+        node_manager::test_utils::{TestNode, TestNodeId},
+        storage,
+    };
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
     fn not_found() -> BTResult<NodeWithMetadata<TestNode>, Error> {

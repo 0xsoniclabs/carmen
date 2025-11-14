@@ -1,0 +1,238 @@
+// Copyright (c) 2025 Sonic Operations Ltd
+//
+// Use of this software is governed by the Business Source License included
+// in the LICENSE file and at soniclabs.com/bsl11.
+//
+// Change Date: 2028-4-16
+//
+// On the date above, in accordance with the Business Source License, use of
+// this software will be governed by the GNU Lesser General Public License v3.
+
+use std::{
+    hint,
+    ops::{Deref, DerefMut},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
+
+use dashmap::DashSet;
+
+use crate::{
+    error::{BTResult, Error},
+    node_manager::NodeManager,
+    types::{HasEmptyId, HasEmptyNode, ToNodeKind, TreeId},
+};
+
+/// Dummy wrapper around a node `N`, implementing `Deref` and `DerefMut`.
+/// This is required by the [`NodeManager`] trait.
+struct NodeWrapper<N> {
+    node: N,
+}
+
+impl<N> Deref for NodeWrapper<N> {
+    type Target = N;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
+}
+
+impl<N> DerefMut for NodeWrapper<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.node
+    }
+}
+
+/// A in-memory implementation of a [`NodeManager`] with fixed capacity.
+///
+/// After reaching capacity, attempts to add new nodes will fail.
+pub struct InMemoryNodeManager<I, N>
+where
+    I: TreeId,
+{
+    nodes: Vec<RwLock<NodeWrapper<N>>>,
+    empty_node: RwLock<NodeWrapper<N>>,
+    free_slots: DashSet<u64>,
+
+    _phantom: std::marker::PhantomData<I>,
+}
+
+impl<I, N> InMemoryNodeManager<I, N>
+where
+    I: TreeId,
+    N: HasEmptyNode + Default,
+{
+    pub fn new(capacity: usize) -> Self {
+        let mut nodes = Vec::with_capacity(capacity);
+        let free_slots = DashSet::new();
+        for i in 0..capacity {
+            nodes.push(RwLock::new(NodeWrapper { node: N::default() }));
+            free_slots.insert(i as u64);
+        }
+        InMemoryNodeManager {
+            nodes,
+            empty_node: RwLock::new(NodeWrapper {
+                node: N::empty_node(),
+            }),
+            free_slots,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<I, N> NodeManager for InMemoryNodeManager<I, N>
+where
+    I: TreeId + HasEmptyId + Copy,
+    N: Default + HasEmptyNode + ToNodeKind<Target = I::Target>,
+{
+    type Id = I;
+    type Node = N;
+
+    fn add(&self, value: Self::Node) -> BTResult<Self::Id, Error> {
+        if value.is_empty_node() {
+            return Ok(I::empty_id());
+        }
+        let id = loop {
+            let slot = self
+                .free_slots
+                .iter()
+                .next()
+                .map(|s| *s)
+                .ok_or(Error::CorruptedState("no remaining free slots".to_owned()))?;
+            if let Some(slot) = self.free_slots.remove(&slot) {
+                break slot;
+            }
+            hint::spin_loop();
+        };
+        let key = I::from_idx_and_node_kind(id, value.to_node_kind().unwrap());
+        self.nodes[id as usize].write().unwrap().node = value;
+        Ok(key)
+    }
+
+    fn get_read_access(
+        &self,
+        id: I,
+    ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::Node>>, Error> {
+        if id.is_empty_id() {
+            return Ok(self.empty_node.read().unwrap());
+        }
+        Ok(self.nodes[id.to_index() as usize].read().unwrap())
+    }
+
+    fn get_write_access(
+        &self,
+        id: Self::Id,
+    ) -> BTResult<RwLockWriteGuard<'_, impl std::ops::DerefMut<Target = Self::Node>>, Error> {
+        if id.is_empty_id() {
+            return Ok(self.empty_node.write().unwrap());
+        }
+        Ok(self.nodes[id.to_index() as usize].write().unwrap())
+    }
+
+    fn delete(&self, id: I) -> BTResult<(), Error> {
+        if id.is_empty_id() {
+            return Ok(());
+        }
+        let mut guard = self.nodes[id.to_index() as usize].write().unwrap();
+        guard.node = N::default();
+        self.free_slots.insert(id.to_index());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        error::BTError,
+        node_manager::test_utils::{TestNode, TestNodeId},
+    };
+
+    type TestInMemoryNodeManager = InMemoryNodeManager<TestNodeId, TestNode>;
+
+    #[test]
+    fn new_creates_manager_with_specified_capacity() {
+        let capacity = 10;
+        let manager = TestInMemoryNodeManager::new(capacity);
+        assert_eq!(manager.nodes.len(), capacity);
+        assert_eq!(manager.free_slots.len(), capacity);
+        for i in 0..capacity {
+            assert!(manager.free_slots.contains(&(i as u64)));
+        }
+    }
+
+    #[test]
+    fn add_stores_value_and_assigns_free_id() {
+        let manager = TestInMemoryNodeManager::new(10);
+        let node_value: TestNode = 42;
+        let id = manager.add(node_value).unwrap();
+        assert!(!manager.free_slots.contains(&id.to_index()));
+        let guard = manager.get_read_access(id).unwrap();
+        assert_eq!(**guard, node_value);
+    }
+
+    #[test]
+    fn add_ignores_empty_nodes() {
+        let capacity = 10;
+        let manager = TestInMemoryNodeManager::new(capacity);
+        let id = manager.add(TestNode::empty_node()).unwrap();
+        assert_eq!(id, TestNodeId::empty_id());
+        assert_eq!(manager.free_slots.len(), capacity);
+    }
+
+    #[test]
+    fn add_returns_error_when_capacity_exceeded() {
+        let manager = TestInMemoryNodeManager::new(1);
+        let _ = manager.add(42).unwrap();
+        let result = manager.add(100);
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::CorruptedState(e)) if e.contains("no remaining free slots"),
+        ));
+    }
+
+    #[test]
+    fn get_access_returns_lock_for_corresponding_slot() {
+        let manager = TestInMemoryNodeManager::new(10);
+        let id = TestNodeId::from_idx_and_node_kind(4, ());
+        let index = id.to_index() as usize;
+        {
+            let _guard = manager.get_read_access(id).unwrap();
+            assert!(manager.nodes[index].try_write().is_err());
+        }
+        {
+            let _guard = manager.get_write_access(id).unwrap();
+            assert!(manager.nodes[index].try_write().is_err());
+        }
+    }
+
+    #[test]
+    fn get_access_on_empty_id_returns_empty_node_lock() {
+        let manager = TestInMemoryNodeManager::new(10);
+        {
+            let _guard = manager.get_read_access(TestNodeId::empty_id()).unwrap();
+            assert!(manager.empty_node.try_write().is_err());
+        }
+        {
+            let _guard = manager.get_write_access(TestNodeId::empty_id()).unwrap();
+            assert!(manager.empty_node.try_write().is_err());
+        }
+    }
+
+    #[test]
+    fn delete_frees_slot_and_resets_node() {
+        let manager = TestInMemoryNodeManager::new(10);
+        let node_value: TestNode = 42;
+        let id = manager.add(node_value).unwrap();
+        manager.delete(id).unwrap();
+        assert!(manager.free_slots.contains(&id.to_index()));
+        let guard = manager.nodes[id.to_index() as usize].read().unwrap();
+        assert_eq!(**guard, TestNode::default());
+    }
+
+    #[test]
+    fn delete_on_empty_id_is_noop() {
+        let manager = TestInMemoryNodeManager::new(10);
+        let result = manager.delete(TestNodeId::empty_id());
+        assert_eq!(result, Ok(()));
+    }
+}
