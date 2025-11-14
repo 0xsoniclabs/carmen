@@ -49,7 +49,12 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Variant: "go-memory-flat",
 		Schema:  6,
 		Archive: state.NoArchive,
-	}: flat.WrapFactory(vtgeth.NewState),
+	}: flat.WrapFactory(vtmemory.NewState),
+	{
+		Variant: "go-memory-flat-seq",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: flat.WrapFactory(vtmemory.NewState),
 }
 
 func init() {

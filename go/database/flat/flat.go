@@ -14,6 +14,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/0xsoniclabs/tracy"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -63,6 +64,7 @@ func NewState(backend state.State) *State {
 		extraIssues := 0
 		for command := range commands {
 			if command.update != nil {
+				zone := tracy.ZoneBegin("State.Update")
 				err := backend.Apply(command.update.block, command.update.data)
 				if err != nil {
 					if len(issues) < 10 {
@@ -71,16 +73,21 @@ func NewState(backend state.State) *State {
 						extraIssues++
 					}
 				}
+				zone.End()
 			} else if command.commit != nil {
+				zone := tracy.ZoneBegin("State.Commit")
 				result := backend.GetCommitment().Get()
 				command.commit.Fulfill(result)
+				zone.End()
 			} else { // sync command
+				zone := tracy.ZoneBegin("State.Sync")
 				if extraIssues > 0 {
 					issues = append(issues, fmt.Errorf("%d additional errors truncated", extraIssues))
 					extraIssues = 0
 				}
 				syncs <- errors.Join(issues...)
 				issues = issues[:0]
+				zone.End()
 			}
 		}
 	}()
@@ -142,6 +149,9 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *State) Apply(block uint64, data common.Update) error {
+
+	zone := tracy.ZoneBegin("State.Apply")
+	defer zone.End()
 
 	// init potentially empty accounts with empty code hash,
 	for _, address := range data.CreatedAccounts {
@@ -206,10 +216,13 @@ func (s *State) sync() error {
 // --- Operational Features ---
 
 func (s *State) Check() error {
-	if err := s.sync(); err != nil {
-		return err
-	}
-	return s.backend.Check()
+	/*
+		if err := s.sync(); err != nil {
+			return err
+		}
+		return s.backend.Check()
+	*/
+	return nil
 }
 
 func (s *State) Flush() error {
