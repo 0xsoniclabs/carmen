@@ -94,3 +94,14 @@ func TestValue_SetBit128(t *testing.T) {
 	require.Equal([32]byte{15: 1, 24: 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8},
 		v.scalar.Bytes(), "128th bit should be set without changing other bits")
 }
+
+func BenchmarkNewValueFromLittleEndianBytes(b *testing.B) {
+	data := make([]byte, 32)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	for b.Loop() {
+		_ = NewValueFromLittleEndianBytes(data)
+	}
+}

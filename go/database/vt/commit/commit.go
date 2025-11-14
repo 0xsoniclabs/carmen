@@ -36,6 +36,8 @@ func Identity() Commitment {
 
 // Commit creates a new commitment to a vector of values.
 func Commit(values [VectorSize]Value) Commitment {
+	//zone := tracy.ZoneBegin("pedersen::commit")
+	//defer zone.End()
 	// This function creates a commitment to a vector of values using
 	// the Pedersen hash function and the Banderwagon curve.
 	elements := make([]banderwagon.Fr, VectorSize)
@@ -100,6 +102,10 @@ func (c Commitment) Update(position byte, old, new Value) Commitment {
 	var res Commitment
 	res.point.Add(&c.point, &diff.point)
 	return res
+}
+
+func (c *Commitment) Add(other Commitment) {
+	c.point.Add(&c.point, &other.point)
 }
 
 // The configuration for the Inner Product Argument (IPA) library used in this

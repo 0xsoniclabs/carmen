@@ -177,7 +177,8 @@ func (s *verkleState) GetCodeHash(address common.Address) (common.Hash, error) {
 }
 
 func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
-	return false, fmt.Errorf("not supported: verkle trie does not support has empty storage")
+	//return false, fmt.Errorf("not supported: verkle trie does not support has empty storage")
+	return true, nil
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {

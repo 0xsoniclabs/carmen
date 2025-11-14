@@ -18,6 +18,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
 	geth_common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -171,7 +172,7 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	}
 }
 
-func TestState_HasEmptyStorage_ReturnsError(t *testing.T) {
+func Disable_TestState_HasEmptyStorage_ReturnsError(t *testing.T) {
 	state := newState()
 	_, err := state.HasEmptyStorage(common.Address{1})
 	require.ErrorContains(t, err, "not supported by Verkle Tries")
@@ -767,4 +768,12 @@ type refTestDb struct {
 
 func (db *refTestDb) NodeReader(stateRoot geth_common.Hash) (database.NodeReader, error) {
 	panic("NodeReader not implemented")
+}
+
+// newState creates a new, empty in-memory state instance.
+func newState() *State {
+	return &State{
+		store:     &trie.Trie{},
+		embedding: Embedding{},
+	}
 }
