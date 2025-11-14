@@ -96,8 +96,10 @@ where
     nodes: LockCache<S::Id, NodeWithMetadata<S::Item>>,
     // Storage for managing IDs, fetching missing nodes, and storing evicted nodes.
     storage: Arc<StorageEvictionHandler<S>>,
-    cached_empty_node: RwLock<NodeWithMetadata<S::Item>>,
-    cached_empty_id: S::Id,
+    // We store a single empty node to avoid frequent additions/deletions in the cache.
+    // Every read/write access to an empty node ID returns this instance.
+    empty_node: RwLock<NodeWithMetadata<S::Item>>,
+    empty_id: S::Id,
 }
 
 impl<S> CachedNodeManager<S>
@@ -123,11 +125,11 @@ where
                     as Arc<dyn EvictionHooks<Key = S::Id, Value = NodeWithMetadata<S::Item>>>,
             ),
             storage,
-            cached_empty_node: RwLock::new(NodeWithMetadata {
+            empty_node: RwLock::new(NodeWithMetadata {
                 node: S::Item::empty_node(),
                 is_dirty: false,
             }),
-            cached_empty_id: S::Id::empty_id(),
+            empty_id: S::Id::empty_id(),
         }
     }
 
@@ -148,9 +150,9 @@ where
 
     fn add(&self, node: Self::Node) -> BTResult<Self::Id, Error> {
         if node.is_empty_node() {
-            // No need to cache empty nodes
-            return Ok(self.cached_empty_id);
+            return Ok(self.empty_id);
         }
+
         let id = self.storage.reserve(&node);
         let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
@@ -169,7 +171,7 @@ where
         id: Self::Id,
     ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::Node>>, Error> {
         if id.is_empty_id() {
-            return Ok(self.cached_empty_node.read().unwrap());
+            return Ok(self.empty_node.read().unwrap());
         }
 
         let lock = self.nodes.get_read_access_or_insert(id, || {
@@ -190,7 +192,7 @@ where
         id: Self::Id,
     ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::Node>>, Error> {
         if id.is_empty_id() {
-            return Ok(self.cached_empty_node.write().unwrap());
+            return Ok(self.empty_node.write().unwrap());
         }
 
         let lock = self.nodes.get_write_access_or_insert(id, || {
@@ -311,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_node_manager_add_returns_cached_empty_id_for_empty_node() {
+    fn cached_node_manager_add_returns_shared_empty_id_for_empty_node() {
         let mut storage = MockCachedNodeManagerStorage::new();
         storage.expect_reserve().never(); // Shouldn't reserve ID for empty node
         storage.expect_get().never(); // Shouldn't query storage on add
@@ -352,7 +354,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(get_method)]
-    fn cached_node_manager_get_methods_return_cached_empty_node_for_empty_id(
+    fn cached_node_manager_get_methods_return_shared_empty_node_for_empty_id(
         #[case] get_method: GetMethod,
     ) {
         let mut storage = MockCachedNodeManagerStorage::new();
