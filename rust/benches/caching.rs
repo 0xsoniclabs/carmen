@@ -188,22 +188,43 @@ impl Cache {
     }
 
     /// Executes a read operation on the cache for the given id.
-    fn execute_read_op(&self, iter: u64) {
+    fn read(&self, id: u64) {
         match self {
-            Cache::QuickCache(cache) => match cache.get_value_or_guard(&iter, None) {
-                quick_cache::sync::GuardResult::Guard(guard) => {
-                    let _ = guard.insert(42i64);
+            Cache::QuickCache(cache) => match cache.get_value_or_guard(&id, None) {
+                quick_cache::sync::GuardResult::Value(_) => {}
+                quick_cache::sync::GuardResult::Guard(_)
+                | quick_cache::sync::GuardResult::Timeout => {
+                    panic!("Cache miss on QuickCache for id {id}");
                 }
-                quick_cache::sync::GuardResult::Value(_)
-                | quick_cache::sync::GuardResult::Timeout => {}
             },
             Cache::CachedNodeManager(node_manager) => {
-                let _node = node_manager.get_read_access(iter).unwrap();
+                let _node = node_manager.get_read_access(id).unwrap();
             }
             Cache::LockCache(lock_cache) => {
                 let _node = lock_cache
-                    .get_read_access_or_insert(iter, || Ok(42i64))
+                    .get_read_access_or_insert(id, || Ok(42i64))
                     .unwrap();
+            }
+        }
+    }
+
+    fn add(&self, id: u64) {
+        match self {
+            Cache::QuickCache(cache) => match cache.get_value_or_guard(&id, None) {
+                quick_cache::sync::GuardResult::Guard(guard) => {
+                    guard.insert(42).unwrap();
+                }
+                quick_cache::sync::GuardResult::Timeout
+                | quick_cache::sync::GuardResult::Value(_) => {
+                    panic!("Cache hit on QuickCache for id {id}");
+                }
+            },
+            Cache::CachedNodeManager(node_manager) => {
+                let _node = node_manager.add(42).unwrap();
+            }
+            Cache::LockCache(lock_cache) => {
+                // No real way to enforce an insert
+                let _unused = lock_cache.get_read_access_or_insert(id, || Ok(42)).unwrap();
             }
         }
     }
@@ -249,7 +270,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                                 || (),
                                 |iter, _| {
                                     // Make sure the accessed id is always in cache
-                                    cache.execute_read_op(iter % cache_size);
+                                    cache.read(iter % cache_size);
                                 },
                             )
                         });
@@ -268,8 +289,8 @@ fn read_benchmark(c: &mut criterion::Criterion) {
 fn add_benchmark(c: &mut criterion::Criterion) {
     fastrand::seed(123);
 
-    for pinning_prob in [0, 10, 25, 50] {
-        for cache_size in [100_000, 1_000_000] {
+    for cache_size in [1_000_000] {
+        for pinning_prob in [0, 10, 25, 50] {
             let mut bench_group = c.benchmark_group(format!(
                 "caching/add/{cache_size}capacity/{pinning_prob}pinning_prob"
             ));
@@ -285,9 +306,7 @@ fn add_benchmark(c: &mut criterion::Criterion) {
                         } else {
                             cache_size
                         };
-                        let cache = cache_type.make_cache(cache_size, pinning_prob);
-                        cache.fill();
-                        cache
+                        cache_type.make_cache(cache_size, pinning_prob)
                     });
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
@@ -296,6 +315,7 @@ fn add_benchmark(c: &mut criterion::Criterion) {
                         )),
                         &(),
                         |b, _| {
+                            cache.fill();
                             b.iter_custom(|iters| {
                                 execute_with_threads(
                                     num_threads as u64,
@@ -303,10 +323,9 @@ fn add_benchmark(c: &mut criterion::Criterion) {
                                     &mut completed_iterations,
                                     || (),
                                     |iter, _| {
-                                        // Force eviction on every read by only requesting ids
-                                        // that
+                                        // Force eviction on every read by only requesting ids that
                                         // are not in the cache
-                                        cache.execute_read_op(iter + cache_size);
+                                        cache.add(iter + cache_size);
                                     },
                                 )
                             });
@@ -318,5 +337,5 @@ fn add_benchmark(c: &mut criterion::Criterion) {
     }
 }
 
-criterion_group!(name = caching; config = criterion::Criterion::default(); targets = add_benchmark, read_benchmark);
+criterion_group!(name = caching; config = criterion::Criterion::default(); targets = read_benchmark, add_benchmark);
 criterion_main!(caching);
