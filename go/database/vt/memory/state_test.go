@@ -98,13 +98,13 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 	require.NoError(err)
 	require.NoError(state.Apply(0, update))
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := reference.NewState(params)
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)

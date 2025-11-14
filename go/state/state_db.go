@@ -96,6 +96,7 @@ type VmStateDB interface {
 
 	// GetHash obtains a cryptographically unique hash of the committed state.
 	GetHash() common.Hash
+	GetCommitment() <-chan common.Hash
 
 	// Check checks the state of the DB and reports an error if issues have been
 	// encountered. Check should be called periodically to validate all interactions
@@ -1296,12 +1297,20 @@ func (s *stateDB) EndEpoch(uint64) {
 }
 
 func (s *stateDB) GetHash() common.Hash {
-	hash, err := s.state.GetHash()
-	if err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to compute hash: %w", err))
-		return common.Hash{}
-	}
-	return hash
+	return <-s.GetCommitment()
+}
+
+func (s *stateDB) GetCommitment() <-chan common.Hash {
+	res := make(chan common.Hash, 1)
+	go func() {
+		hash, err := s.state.GetCommitment().Await()
+		if err != nil {
+			s.errors = append(s.errors, fmt.Errorf("failed to compute hash: %w", err))
+			hash = common.Hash{}
+		}
+		res <- hash
+	}()
+	return res
 }
 
 func (s *stateDB) Check() error {
@@ -1490,7 +1499,8 @@ func (l *bulkLoad) Close() error {
 		return err
 	}
 	// Compute hash to bring cached hashes up-to-date.
-	_, err := l.db.state.GetHash()
+	_, err := l.db.state.GetCommitment().Await()
+
 	// Reset state to allow starting bulk-load with existing database.
 	l.db.resetState(l.db.state)
 	return err

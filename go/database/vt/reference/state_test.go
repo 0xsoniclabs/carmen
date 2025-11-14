@@ -18,6 +18,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
 	geth_common "github.com/ethereum/go-ethereum/common"
@@ -260,7 +261,7 @@ func TestState_EmptyStateHasZeroCommitment(t *testing.T) {
 	require := require.New(t)
 
 	state := newState()
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 	require.Equal(common.Hash(types.EmptyVerkleHash), hash)
 }
@@ -363,13 +364,13 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 	state := newState()
 	state.Apply(0, update)
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
 	reference.Apply(0, update)
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -456,11 +457,11 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 
 	for _, update := range updates {
 		state.Apply(0, update)
-		hash, err := state.GetHash()
+		hash, err := state.GetCommitment().Await()
 		require.NoError(err)
 
 		reference.Apply(0, update)
-		want, err := reference.GetHash()
+		want, err := reference.GetCommitment().Await()
 		require.NoError(err)
 
 		require.Equal(want, hash)
@@ -482,13 +483,13 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	state := newState()
 	require.NoError(state.Apply(0, update))
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -513,13 +514,13 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 	require.NoError(err)
 	require.Equal(common.Hash(types.EmptyCodeHash), codeHash)
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -544,13 +545,13 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 	require.NoError(err)
 	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -566,11 +567,11 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 	require.NoError(err)
 	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
 
-	hash, err = state.GetHash()
+	hash, err = state.GetCommitment().Await()
 	require.NoError(err)
 
 	require.NoError(reference.Apply(0, update2))
-	want, err = reference.GetHash()
+	want, err = reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -595,13 +596,13 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 	require.NoError(err)
 	require.Equal(amount.New(1), balance)
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -618,11 +619,11 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 	require.NoError(err)
 	require.Equal(amount.New(1), balance)
 
-	hash, err = state.GetHash()
+	hash, err = state.GetCommitment().Await()
 	require.NoError(err)
 
 	require.NoError(reference.Apply(0, update2))
-	want, err = reference.GetHash()
+	want, err = reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -647,13 +648,13 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 	require.NoError(err)
 	require.Equal(common.ToNonce(1), nonce)
 
-	hash, err := state.GetHash()
+	hash, err := state.GetCommitment().Await()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
 	require.NoError(reference.Apply(0, update))
-	want, err := reference.GetHash()
+	want, err := reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -670,11 +671,11 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 	require.NoError(err)
 	require.Equal(common.ToNonce(1), nonce)
 
-	hash, err = state.GetHash()
+	hash, err = state.GetCommitment().Await()
 	require.NoError(err)
 
 	require.NoError(reference.Apply(0, update2))
-	want, err = reference.GetHash()
+	want, err = reference.GetCommitment().Await()
 	require.NoError(err)
 
 	require.Equal(want, hash)
@@ -758,9 +759,9 @@ func (s *refState) Apply(block uint64, update common.Update) error {
 	return nil
 }
 
-func (s *refState) GetHash() (common.Hash, error) {
+func (s *refState) GetCommitment() future.Future[common.Hash] {
 	hash, _ := s.trie.Commit(false)
-	return common.Hash(hash), nil
+	return future.ImmediateOk(common.Hash(hash))
 }
 
 type refTestDb struct {

@@ -20,6 +20,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
@@ -181,7 +182,12 @@ func (s *State) Apply(block uint64, update common.Update) error {
 }
 
 func (s *State) GetHash() (common.Hash, error) {
-	return s.store.Commit().Compress(), nil
+	return s.GetCommitment().Await()
+}
+
+func (s *State) GetCommitment() future.Future[common.Hash] {
+	hash := common.Hash(s.store.Commit().Compress())
+	return future.ImmediateOk(hash)
 }
 
 // --- Operational Features ---
