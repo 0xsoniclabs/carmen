@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::verkle::variants::managed::nodes::VerkleNodeKind,
-    types::{NodeSize, ToNodeKind, TreeId},
+    types::{HasEmptyId, NodeSize, ToNodeKind, TreeId},
 };
 
 /// An identifier for a node in a managed Verkle trie.
@@ -106,6 +106,19 @@ impl NodeSize for VerkleNodeId {
     /// Returns the size of the smallest non-empty node variant.
     fn min_non_empty_node_size() -> usize {
         VerkleNodeKind::min_non_empty_node_size()
+    }
+}
+
+impl HasEmptyId for VerkleNodeId {
+    fn is_empty_id(&self) -> bool {
+        matches!(self.to_node_kind(), Some(VerkleNodeKind::Empty))
+    }
+
+    fn empty_id() -> Self
+    where
+        Self: Sized,
+    {
+        VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty)
     }
 }
 

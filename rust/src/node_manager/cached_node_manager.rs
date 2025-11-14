@@ -22,7 +22,8 @@ use crate::{
         lock_cache::{EvictionHooks, LockCache},
     },
     storage::{Checkpointable, Storage},
-    sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    types::{HasEmptyId, HasEmptyNode},
 };
 
 /// A wrapper which dereferences to `N` and additionally stores its dirty status,
@@ -95,13 +96,17 @@ where
     nodes: LockCache<S::Id, NodeWithMetadata<S::Item>>,
     // Storage for managing IDs, fetching missing nodes, and storing evicted nodes.
     storage: Arc<StorageEvictionHandler<S>>,
+    // We store a single empty node to avoid frequent additions/deletions in the cache.
+    // Every read/write access to an empty node ID returns this instance.
+    empty_node: RwLock<NodeWithMetadata<S::Item>>,
+    empty_id: S::Id,
 }
 
 impl<S> CachedNodeManager<S>
 where
     S: Storage + 'static,
-    S::Id: Eq + Hash + Copy,
-    S::Item: Default,
+    S::Id: Eq + Hash + Copy + HasEmptyId,
+    S::Item: Default + HasEmptyNode,
 {
     /// Creates a new [`CachedNodeManager`] with the given capacity, storage backend, and pin
     /// predicate.
@@ -120,6 +125,11 @@ where
                     as Arc<dyn EvictionHooks<Key = S::Id, Value = NodeWithMetadata<S::Item>>>,
             ),
             storage,
+            empty_node: RwLock::new(NodeWithMetadata {
+                node: S::Item::empty_node(),
+                is_dirty: false,
+            }),
+            empty_id: S::Id::empty_id(),
         }
     }
 
@@ -132,13 +142,17 @@ where
 impl<S> NodeManager for CachedNodeManager<S>
 where
     S: Storage + 'static,
-    S::Id: Eq + Hash + Copy,
-    S::Item: Default,
+    S::Id: Eq + Hash + Copy + HasEmptyId,
+    S::Item: Default + HasEmptyNode,
 {
     type Id = S::Id;
     type Node = S::Item;
 
     fn add(&self, node: Self::Node) -> BTResult<Self::Id, Error> {
+        if node.is_empty_node() {
+            return Ok(self.empty_id);
+        }
+
         let id = self.storage.reserve(&node);
         let _guard = self.nodes.get_read_access_or_insert(id, move || {
             Ok(NodeWithMetadata {
@@ -156,6 +170,10 @@ where
         &self,
         id: Self::Id,
     ) -> BTResult<RwLockReadGuard<'_, impl Deref<Target = Self::Node>>, Error> {
+        if id.is_empty_id() {
+            return Ok(self.empty_node.read().unwrap());
+        }
+
         let lock = self.nodes.get_read_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
@@ -173,6 +191,10 @@ where
         &self,
         id: Self::Id,
     ) -> BTResult<RwLockWriteGuard<'_, impl DerefMut<Target = Self::Node>>, Error> {
+        if id.is_empty_id() {
+            return Ok(self.empty_node.write().unwrap());
+        }
+
         let lock = self.nodes.get_write_access_or_insert(id, || {
             let node = self.storage.storage.get(id)?;
             Ok(NodeWithMetadata {
@@ -188,6 +210,10 @@ where
     /// [`get_write_access`](Self::get_write_access) must be made for the same ID.
     /// It is not safe to call this function multiple times for the same ID, unless allowed by `S`.
     fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
+        if id.is_empty_id() {
+            return Ok(());
+        }
+
         self.nodes.remove(id)?;
         self.storage.delete(id)?;
         Ok(())
@@ -197,8 +223,8 @@ where
 impl<S> Checkpointable for CachedNodeManager<S>
 where
     S: Storage + 'static + Checkpointable,
-    S::Id: Eq + Hash + Copy + Send + Sync,
-    S::Item: Default + Clone + Send + Sync,
+    S::Id: Eq + Hash + Copy + Send + Sync + HasEmptyId,
+    S::Item: Default + Clone + Send + Sync + HasEmptyNode,
 {
     fn checkpoint(&self) -> BTResult<u64, crate::storage::Error> {
         for (id, mut guard) in self.nodes.iter_write() {
@@ -229,6 +255,26 @@ mod tests {
 
     type TestNodeId = u32;
     type TestNode = i32;
+
+    impl HasEmptyNode for TestNode {
+        fn is_empty_node(&self) -> bool {
+            *self == i32::MAX
+        }
+
+        fn empty_node() -> Self {
+            i32::MAX
+        }
+    }
+
+    impl HasEmptyId for TestNodeId {
+        fn is_empty_id(&self) -> bool {
+            *self == u32::MAX
+        }
+
+        fn empty_id() -> Self {
+            u32::MAX
+        }
+    }
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
     fn not_found() -> BTResult<NodeWithMetadata<TestNode>, Error> {
@@ -266,6 +312,16 @@ mod tests {
         assert_eq!(node_res.node, node);
     }
 
+    #[test]
+    fn cached_node_manager_add_returns_shared_empty_id_for_empty_node() {
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage.expect_reserve().never(); // Shouldn't reserve ID for empty node
+        storage.expect_get().never(); // Shouldn't query storage on add
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
+        let id = manager.add(TestNode::empty_node()).unwrap();
+        assert!(id.is_empty_id());
+    }
+
     #[rstest_reuse::apply(get_method)]
     fn cached_node_manager_get_methods_return_cached_entry(#[case] get_method: GetMethod) {
         let id = 0;
@@ -295,6 +351,17 @@ mod tests {
         let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let entry = get_method(&manager, id).unwrap();
         assert!(entry == expected_entry);
+    }
+
+    #[rstest_reuse::apply(get_method)]
+    fn cached_node_manager_get_methods_return_shared_empty_node_for_empty_id(
+        #[case] get_method: GetMethod,
+    ) {
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage.expect_get().never(); // Shouldn't query storage for empty ID
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
+        let entry = get_method(&manager, TestNodeId::empty_id()).unwrap();
+        assert!(entry.is_empty_node());
     }
 
     #[rstest_reuse::apply(get_method)]
@@ -397,6 +464,16 @@ mod tests {
         assert_eq!(manager.nodes.iter_write().count(), 1);
         manager.delete(id).unwrap();
         assert_eq!(manager.nodes.iter_write().count(), 0);
+    }
+
+    #[test]
+    fn cached_node_manager_delete_on_empty_id_is_noop() {
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage.expect_delete().never();
+
+        let manager = CachedNodeManager::new(2, storage, pin_nothing);
+        // Shouldn't error
+        manager.delete(TestNodeId::empty_id()).unwrap();
     }
 
     #[test]
