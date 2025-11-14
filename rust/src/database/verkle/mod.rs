@@ -11,6 +11,7 @@
 mod compute_commitment;
 mod crypto;
 mod embedding;
+mod keyed_update;
 mod state;
 #[cfg(test)]
 mod test_utils;
