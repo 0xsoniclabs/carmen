@@ -128,7 +128,7 @@ func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state
 			t.Fatalf("failed to create reference state: %v", err)
 		}
 		mod(nil, s, ref)
-		hash, err := ref.GetHash()
+		hash, err := ref.GetCommitment().Await()
 		if err != nil {
 			t.Fatalf("failed to get hash of reference state: %v", err)
 		}
@@ -138,7 +138,7 @@ func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state
 
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		mod(t, config.config.Schema, s)
-		got, err := s.GetHash()
+		got, err := s.GetCommitment().Await()
 		if err != nil {
 			t.Fatalf("failed to compute hash: %v", err)
 		}
@@ -632,11 +632,11 @@ func TestArchive(t *testing.T) {
 
 			archiveType := config.config.Archive
 			if archiveType != state.S4Archive && archiveType != state.S5Archive {
-				hash1, err := state1.GetHash()
+				hash1, err := state1.GetCommitment().Await()
 				if err != nil || fmt.Sprintf("%x", hash1) != "9f4836302c2a2e89ca09e38e77f6a57b3f09ce94dbbeecd865b841307186e8e5" {
 					t.Errorf("unexpected archive state hash at block 1: %x, %v", hash1, err)
 				}
-				hash2, err := state2.GetHash()
+				hash2, err := state2.GetCommitment().Await()
 				if err != nil || fmt.Sprintf("%x", hash2) != "f69f1e69a6512f15b702094c762c5ef5d7d712d9f35d7948d690df9abd192dd3" {
 					t.Errorf("unexpected archive state hash at block 2: %x, %v", hash2, err)
 				}
@@ -854,12 +854,12 @@ func TestSnapshotCanBeCreatedAndRestored(t *testing.T) {
 				}
 			}
 
-			want, err := original.GetHash()
+			want, err := original.GetCommitment().Await()
 			if err != nil {
 				t.Errorf("failed to fetch hash for state: %v", err)
 			}
 
-			got, err := recovered.GetHash()
+			got, err := recovered.GetCommitment().Await()
 			if err != nil {
 				t.Errorf("failed to fetch hash for state: %v", err)
 			}

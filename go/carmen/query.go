@@ -98,7 +98,7 @@ func (c *queryContext) GetStateHash() Hash {
 	if c.err != nil {
 		return Hash{}
 	}
-	res, err := c.state.GetHash()
+	res, err := c.state.GetCommitment().Await()
 	if err != nil {
 		c.err = err
 		return Hash{}
