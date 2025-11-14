@@ -23,11 +23,20 @@ use crate::{
     types::{BalanceUpdate, CodeUpdate, Hash, NonceUpdate, SlotUpdate, Update, Value},
 };
 
+type ValueMask = [u8; 32];
+
 /// An update to a Verkle trie slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyedUpdate {
-    FullSlot { key: Key, value: Value },
-    PartialSlot { key: Key, value: Value, mask: Value },
+    FullSlot {
+        key: Key,
+        value: Value,
+    },
+    PartialSlot {
+        key: Key,
+        value: Value,
+        mask: ValueMask,
+    },
 }
 
 impl PartialOrd for KeyedUpdate {
@@ -237,7 +246,7 @@ mod tests {
     fn from_update_converts_balance_and_nonce_and_code_and_slot_updates() {
         let update = Update {
             created_accounts: &[[1; 20], [2; 20]],
-            deleted_accounts: &[[3; 20], [4; 20]],
+            deleted_accounts: &[[3; 20], [4; 20]], // These will be ignored
             balances: &[
                 BalanceUpdate {
                     addr: [5; 20],
@@ -309,8 +318,8 @@ mod tests {
                     && *value == [0u8; 32]
                     && *mask == mask_for_range(0..0)
                 {
+                    assert!(!found);
                     found = true;
-                    break;
                 }
             }
             assert!(found, "No matching PartialSlot for created account");
@@ -325,8 +334,8 @@ mod tests {
                     && *value == balance_update.balance
                     && *mask == mask_for_range(16..32)
                 {
+                    assert!(!found);
                     found = true;
-                    break;
                 }
             }
             assert!(found, "No matching PartialSlot found for balance update");
@@ -343,8 +352,8 @@ mod tests {
                         && *value == expected_value
                         && *mask == mask_for_range(8..16)
                     {
+                        assert!(!found);
                         found = true;
-                        break;
                     }
                 }
             }
@@ -366,6 +375,7 @@ mod tests {
                         && *value == expected_value
                         && *mask == mask_for_range(4..8)
                     {
+                        assert!(!found_code_len);
                         found_code_len = true;
                     }
                 } else if let KeyedUpdate::FullSlot { key, value } = keyed_update {
@@ -374,6 +384,7 @@ mod tests {
                         hasher.update(code_update.code);
                         let expected_hash = Hash::from(hasher.finalize());
                         if *value == expected_hash {
+                            assert!(!found_code_hash);
                             found_code_hash = true;
                         }
                     } else {
@@ -382,6 +393,7 @@ mod tests {
                             if *key == get_code_chunk_key(&code_update.addr, i as u32)
                                 && *value == chunk
                             {
+                                assert!(!found_chunks[i]);
                                 found_chunks[i] = true;
                             }
                         }
@@ -408,8 +420,8 @@ mod tests {
                     && *key == get_storage_key(&slot_update.addr, &slot_update.key)
                     && *value == slot_update.value
                 {
+                    assert!(!found);
                     found = true;
-                    break;
                 }
             }
             assert!(found, "No matching FullSlot found for slot update");
@@ -429,10 +441,10 @@ mod tests {
         );
     }
 
-    fn set_key(update: &mut KeyedUpdate, key1: Key) {
+    fn set_key(update: &mut KeyedUpdate, new_key: Key) {
         match update {
             KeyedUpdate::FullSlot { key, .. } | KeyedUpdate::PartialSlot { key, .. } => {
-                *key = key1;
+                *key = new_key;
             }
         }
     }

@@ -112,7 +112,6 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         Ok(Hash::from(commitment.compress()))
     }
 
-    // TODO: Batch updates for the same account (https://github.com/0xsoniclabs/sonic-admin/issues/374)
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let updates: Vec<KeyedUpdate> = update.into();
