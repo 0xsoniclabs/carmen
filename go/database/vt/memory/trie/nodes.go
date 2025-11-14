@@ -50,9 +50,9 @@ type inner struct {
 	commitment commit.Commitment
 
 	// --- Commitment caching ---
-	dirtyChildValues     bitMap
-	oldChildrenValues    [256]commit.Value
-	oldChildrenValuesSet bitMap
+	dirtyChildValues       bitMap
+	oldChildrenCommitments [256]commit.Commitment
+	oldChildrenValuesSet   bitMap
 }
 
 func (i *inner) get(key Key, depth byte) Value {
@@ -69,7 +69,7 @@ func (i *inner) set(key Key, depth byte, value Value) node {
 	if !i.oldChildrenValuesSet.get(pos) {
 		i.oldChildrenValuesSet.set(pos)
 		if next != nil {
-			i.oldChildrenValues[pos] = next.commit().ToValue()
+			i.oldChildrenCommitments[pos] = next.commit()
 		}
 	}
 	if next == nil {
@@ -103,7 +103,7 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 
 			task := newTask(
 				func() {
-					old := i.oldChildrenValues[j]
+					old := i.oldChildrenCommitments[j].ToValue()
 					new := i.children[j].commit().ToValue()
 					poly := [commit.VectorSize]commit.Value{}
 					poly[j] = *new.Sub(old)
@@ -165,7 +165,7 @@ func (i *inner) commit() commit.Commitment {
 		if i.dirtyChildValues.get(byte(j)) {
 			new := i.children[j].commit().ToValue()
 			if i.oldChildrenValuesSet.get(byte(j)) {
-				old := i.oldChildrenValues[j]
+				old := i.oldChildrenCommitments[j].ToValue()
 				delta[j] = *new.Sub(old)
 			} else {
 				delta[j] = new
