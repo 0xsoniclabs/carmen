@@ -12,7 +12,7 @@ use std::{
     self,
     hash::RandomState,
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
@@ -160,7 +160,7 @@ impl CacheType {
 
 impl Cache {
     /// Fills the cache to its capacity, using ids in range `0..capacity`
-    fn fill(&mut self) {
+    fn fill(&self) {
         for i in 0..self.capacity() {
             match self {
                 Cache::QuickCache(cache) => {
@@ -236,8 +236,11 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     CacheType::LockCache,
                     CacheType::CachedNodeManager,
                 ] {
-                    let mut cache = cache_type.make_cache(cache_size, 0);
-                    cache.fill();
+                    let cache = LazyLock::new(|| {
+                        let cache = cache_type.make_cache(cache_size, 0);
+                        cache.fill();
+                        cache
+                    });
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
@@ -267,7 +270,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
 
 /// Benchmark the effect of different pinning probabilities on cache performance
 /// It varies:
-/// - Pinning probability (forces linear scans on evictable items)
+/// - Pinning probability (forces linear search for evictable items)
 /// - Cache size (influence contention)
 /// - Number of threads (influence contention)
 fn pinning_benchmark(c: &mut criterion::Criterion) {
@@ -284,8 +287,11 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                     CacheType::LockCache,
                     CacheType::CachedNodeManager,
                 ] {
-                    let mut cache = cache_type.make_cache(cache_size, pinning_prob);
-                    cache.fill();
+                    let cache = LazyLock::new(|| {
+                        let cache = cache_type.make_cache(cache_size, pinning_prob);
+                        cache.fill();
+                        cache
+                    });
                     let mut completed_iterations = 0u64;
                     bench_group.bench_with_input(
                         BenchmarkId::from_parameter(format!(
