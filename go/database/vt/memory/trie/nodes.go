@@ -188,8 +188,8 @@ type leaf struct {
 	values [256]Value // The values stored in this leaf, indexed by the last byte of the key.
 	used   bitMap     // A bitmap indicating which suffixes (last byte of the key) are used.
 
-	// The cached commitment of this inner node. It is only valid if the
-	// commitmentClean flag is true.
+	// The cached commitment of this inner node.
+	// TODO: document when this value is valid.
 	commitment commit.Commitment
 
 	// --- Commitment caching ---
@@ -205,8 +205,7 @@ type leaf struct {
 // newLeaf creates a new leaf node with the given key.
 func newLeaf(key Key) *leaf {
 	return &leaf{
-		stem:       [31]byte(key[:31]),
-		commitment: commitmentForStem(key[:31]),
+		stem: [31]byte(key[:31]),
 	}
 }
 
@@ -275,8 +274,20 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 
 	leafDelta := [2]commit.Commitment{}
 
+	childTasks := make([]*task, 0, 3)
+
+	// create task for initializing commitment with stem commitment if missing
+	missingStemCommit := l.commitment == (commit.Commitment{})
+	if missingStemCommit {
+		childTasks = append(childTasks, newTask(
+			func() {
+				l.commitment = commitmentForStem(l.stem[:])
+			},
+			0,
+		))
+	}
+
 	// create a task for updating C1
-	childTasks := make([]*task, 0, 2)
 	if l.lowDirty {
 		childTasks = append(childTasks, newTask(
 			func() {
@@ -476,6 +487,9 @@ func (l *leaf) commit() commit.Commitment {
 	}
 
 	// Compute commitment of changes and add to node commitment.
+	if l.commitment == (commit.Commitment{}) {
+		l.commitment = commitmentForStem(l.stem[:])
+	}
 	l.commitment.Add(commit.Commit(leafDelta))
 	l.oldValuesSet.clear()
 	l.oldUsed = l.used
