@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use crate::{
-    database::verkle::crypto::Commitment,
+    database::verkle::{crypto::Commitment, keyed_update::KeyedUpdates},
     error::{BTResult, Error},
     types::{Key, Value},
 };
@@ -27,8 +27,8 @@ pub trait VerkleTrie: Send + Sync {
     /// Returns the default [`Value`] if the key does not exist.
     fn lookup(&self, key: &Key) -> BTResult<Value, Error>;
 
-    /// Stores the value for the given key.
-    fn store(&self, key: &Key, value: &Value) -> BTResult<(), Error>;
+    /// Stores the values for the keys of the updates.
+    fn store(&self, updates: &KeyedUpdates) -> BTResult<(), Error>;
 
     /// Computes and returns the current root commitment of the trie.
     /// The commitment can be used as cryptographic proof of the trie's state,
@@ -81,7 +81,11 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&make_key(&[1]), &make_value(1)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(
+            make_key(&[1]),
+            make_value(1),
+        )]))
+        .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
         assert_eq!(trie.lookup(&make_key(&[2])).unwrap(), Value::default());
@@ -94,7 +98,11 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&make_key(&[2]), &make_value(2)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(
+            make_key(&[2]),
+            make_value(2),
+        )]))
+        .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
         assert_eq!(trie.lookup(&make_key(&[2])).unwrap(), make_value(2));
@@ -107,7 +115,11 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&make_leaf_key(&[0], 1), &make_value(3)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(
+            make_leaf_key(&[0], 1),
+            make_value(3),
+        )]))
+        .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
         assert_eq!(trie.lookup(&make_key(&[2])).unwrap(), make_value(2));
@@ -117,7 +129,11 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&make_leaf_key(&[0], 2), &make_value(4)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(
+            make_leaf_key(&[0], 2),
+            make_value(4),
+        )]))
+        .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
         assert_eq!(trie.lookup(&make_key(&[2])).unwrap(), make_value(2));
@@ -129,11 +145,14 @@ mod tests {
     fn values_can_be_updated(#[case] trie: Box<dyn VerkleTrie>) {
         let key = make_key(&[1]);
         assert_eq!(trie.lookup(&key).unwrap(), Value::default());
-        trie.store(&key, &make_value(1)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(key, make_value(1))]))
+            .unwrap();
         assert_eq!(trie.lookup(&key).unwrap(), make_value(1));
-        trie.store(&key, &make_value(2)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(key, make_value(2))]))
+            .unwrap();
         assert_eq!(trie.lookup(&key).unwrap(), make_value(2));
-        trie.store(&key, &make_value(3)).unwrap();
+        trie.store(&KeyedUpdates::from_key_value_pairs(&[(key, make_value(3))]))
+            .unwrap();
         assert_eq!(trie.lookup(&key).unwrap(), make_value(3));
     }
 
@@ -158,7 +177,11 @@ mod tests {
                 let got = trie.lookup(&to_key(j)).unwrap();
                 assert_eq!(got, want, "mismatch for key: {:?}", to_key(j));
             }
-            trie.store(&to_key(i), &make_value(i as u64)).unwrap();
+            trie.store(&KeyedUpdates::from_key_value_pairs(&[(
+                to_key(i),
+                make_value(i as u64),
+            )]))
+            .unwrap();
         }
     }
 }

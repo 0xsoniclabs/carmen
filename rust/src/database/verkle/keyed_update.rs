@@ -64,7 +64,6 @@ impl KeyedUpdate {
     }
 
     /// Applies the update to the given value.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn apply_to_value(&self, orig_value: &mut [u8; 32]) {
         match self {
             KeyedUpdate::FullSlot { value, .. } => {
@@ -99,7 +98,6 @@ impl KeyedUpdates<'_> {
     }
 
     /// Returns the key of the first update.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn first_key(&self) -> &Key {
         // self is never empty
         self.0[0].key()
@@ -109,7 +107,6 @@ impl KeyedUpdates<'_> {
     /// depth and yields them as `KeyedUpdates`.
     /// This is used to group updates for insertion into child nodes. It is therefore expected that
     /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn split(&self, depth: u8) -> impl Iterator<Item = KeyedUpdates<'_>> {
         SplitIter {
             updates: self,
@@ -119,7 +116,6 @@ impl KeyedUpdates<'_> {
     }
 
     /// Checks if all updates share the same stem (first 31 bytes of the key).
-    #[cfg_attr(not(test), expect(unused))]
     pub fn all_stems_eq(&self, stem: &[u8; 31]) -> bool {
         self.0.iter().all(|update| &update.key()[..31] == stem)
     }
