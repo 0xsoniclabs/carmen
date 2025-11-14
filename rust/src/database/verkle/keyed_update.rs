@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn from_key_value_pairs_maps_pairs_to_full_slots_and_sort_them() {
-        let updates = [([1; 32], [2; 32]), ([3; 32], [4; 32])];
+        let updates = [([3; 32], [4; 32]), ([1; 32], [2; 32])];
 
         let keyed_updates = KeyedUpdates::from_key_value_pairs(&updates);
 
