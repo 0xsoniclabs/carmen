@@ -11,6 +11,8 @@
 package trie
 
 import (
+	"fmt"
+
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 )
 
@@ -33,6 +35,13 @@ type Value [32]byte
 // https://blog.ethereum.org/2021/12/02/verkle-tree-structure
 type Trie struct {
 	root node
+}
+
+func (t *Trie) Dump() {
+	if t.root == nil {
+		fmt.Printf("Empty trie\n")
+	}
+	t.root.dump("")
 }
 
 // Get retrieves the value associated with the given key from the trie. All keys

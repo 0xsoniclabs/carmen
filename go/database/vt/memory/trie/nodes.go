@@ -12,6 +12,7 @@ package trie
 
 import (
 	"bytes"
+	"fmt"
 	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
@@ -25,6 +26,7 @@ type node interface {
 	get(key Key, depth byte) Value
 	set(Key Key, depth byte, value Value) node
 	commit() commit.Commitment
+	dump(indent string)
 
 	// -- parallel commit support --
 
@@ -504,4 +506,17 @@ func (l *leaf) commit() commit.Commitment {
 
 func (l *leaf) isUsed(index byte) bool {
 	return l.used.get(index)
+}
+
+func (i *inner) dump(indent string) {
+	fmt.Printf("%sInner Node: 0x%x\n", indent, i.commit().Compress())
+	for j, child := range i.children {
+		if child != nil {
+			child.dump(indent + fmt.Sprintf("  [%03d] ", j))
+		}
+	}
+}
+
+func (l *leaf) dump(indent string) {
+	fmt.Printf("%sLeaf Node: 0x%x\n", indent, l.commit().Compress())
 }
