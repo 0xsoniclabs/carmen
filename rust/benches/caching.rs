@@ -237,6 +237,11 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                     CacheType::CachedNodeManager,
                 ] {
                     let cache = LazyLock::new(|| {
+                        let cache_size = if cfg!(debug_assertions) {
+                            10
+                        } else {
+                            cache_size
+                        };
                         let cache = cache_type.make_cache(cache_size, 0);
                         cache.fill();
                         cache
@@ -288,6 +293,11 @@ fn pinning_benchmark(c: &mut criterion::Criterion) {
                     CacheType::CachedNodeManager,
                 ] {
                     let cache = LazyLock::new(|| {
+                        let cache_size = if cfg!(debug_assertions) {
+                            10
+                        } else {
+                            cache_size
+                        };
                         let cache = cache_type.make_cache(cache_size, pinning_prob);
                         cache.fill();
                         cache
