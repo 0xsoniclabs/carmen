@@ -1,9 +1,9 @@
 use std::{
     collections::HashSet,
     ops::DerefMut,
-    path::{Iter, Path},
+    path::Path,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
@@ -90,7 +90,6 @@ fn make_storage(storage_type: StorageType) -> Arc<dyn Storage<Id = NodeId, Item 
         StorageType::InMemory => Arc::new(SimpleInMemoryStorage::open(Path::new("")).unwrap())
             as Arc<dyn Storage<Id = NodeId, Item = Node>>,
         StorageType::FileBased | StorageType::FileBasedWithFlushBuffer => {
-            // type FileStorageImpl = MultiPageCachedFile<5, NoSeekFile, false>;
             type FileStorageImpl = NoSeekFile;
             type FileStorage = NodeFileStorageManager<
                 NodeFileStorage<InnerNode, FileStorageImpl>,
@@ -192,7 +191,8 @@ struct DeletedNodeCount {
 }
 
 impl DeletedNodeCount {
-    fn count_up(&self, node_type: NodeType) {
+    /// Increment the count of the given node type.
+    fn increment(&self, node_type: NodeType) {
         match node_type {
             NodeType::Inner => {
                 self.inner_count.fetch_add(1, Ordering::Relaxed);
@@ -209,6 +209,9 @@ impl DeletedNodeCount {
         }
     }
 
+    /// Decrement the count of the first non-zero node type found, in the order:
+    /// Inner, Leaf2, Leaf256, Empty.
+    /// Returns the node type decremented, or None if all counts are zero.
     fn decrement(&self) -> Option<NodeType> {
         static NODE_TYPES: [NodeType; 4] = [
             NodeType::Inner,
@@ -265,7 +268,7 @@ impl Op {
             Op::Delete => {
                 if let Some(id) = nodes_to_delete.pop() {
                     manager.delete(id).unwrap();
-                    deleted_nodes.count_up(id.to_node_type().unwrap());
+                    deleted_nodes.increment(id.to_node_type().unwrap());
                 }
             }
         }
@@ -443,7 +446,7 @@ fn execute(
 fn random_op_benchmark(c: &mut criterion::Criterion) {
     fastrand::seed(123);
     let storage_types = [
-        // StorageType::InMemory,
+        StorageType::InMemory,
         StorageType::FileBased,
         StorageType::FileBasedWithFlushBuffer,
     ];
@@ -463,7 +466,11 @@ fn random_op_benchmark(c: &mut criterion::Criterion) {
     check_proportions(&operations_proportions_vec);
 
     for manager_size in [100_000] {
-        let storage_size = manager_size * 5; // Storage is bigger than the manager capacity
+        let (manager_size, storage_size) = if cfg!(debug_assertions) {
+            (10, 50)
+        } else {
+            (manager_size, manager_size * 5)
+        };
         for node_proportions in &node_proportions_vec {
             for operations_proportions in &operations_proportions_vec {
                 for pinning_prob in [0, 10, 25] {
