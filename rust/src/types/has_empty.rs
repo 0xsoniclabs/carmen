@@ -8,23 +8,23 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-/// Traits for types that have an empty variant.
+/// Trait for node types that have an empty variant.
 pub trait HasEmptyNode {
     /// Returns true if the node is the empty node variant.
     fn is_empty_node(&self) -> bool;
 
-    /// Creates and returns an empty node.
+    /// Creates an empty node.
     fn empty_node() -> Self
     where
         Self: Sized;
 }
 
-/// Traits for ID types that identify values that have an empty variant.
+/// Trait for ID types that identify nodes with an empty variant.
 pub trait HasEmptyId {
     /// Returns true if the ID is the empty ID variant.
     fn is_empty_id(&self) -> bool;
 
-    /// Creates and returns an empty ID.
+    /// Creates an ID for an empty node.
     fn empty_id() -> Self
     where
         Self: Sized;

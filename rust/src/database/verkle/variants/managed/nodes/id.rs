@@ -111,13 +111,10 @@ impl NodeSize for VerkleNodeId {
 
 impl HasEmptyId for VerkleNodeId {
     fn is_empty_id(&self) -> bool {
-        matches!(self.to_node_kind(), Some(VerkleNodeKind::Empty))
+        self.to_node_kind() == Some(VerkleNodeKind::Empty)
     }
 
-    fn empty_id() -> Self
-    where
-        Self: Sized,
-    {
+    fn empty_id() -> Self {
         VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty)
     }
 }
