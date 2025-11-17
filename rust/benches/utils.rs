@@ -14,6 +14,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use criterion::{BenchmarkGroup, BenchmarkId, measurement::WallTime};
+
 /// Returns true with the given probability (in percent).
 #[allow(dead_code)]
 pub fn with_prob(prob: u8) -> bool {
@@ -24,6 +26,32 @@ pub fn with_prob(prob: u8) -> bool {
 #[allow(dead_code)]
 pub fn pow_2_threads() -> impl Iterator<Item = usize> {
     (1..=thread::available_parallelism().unwrap().get()).filter(|x| x.is_power_of_two())
+}
+
+/// Utility function to benchmark a single call to a function `func`
+/// with an initialized state created by `init_state`.
+/// This is useful for benchmarking a function without relying on Criterion's iteration mechanism.
+#[allow(dead_code)]
+pub fn bench_single_call<T>(
+    c: &mut BenchmarkGroup<'_, WallTime>,
+    bench_name: &str,
+    init_state: impl Fn() -> T + 'static,
+    func: impl Fn(&T),
+) {
+    c.bench_with_input(BenchmarkId::from_parameter(bench_name), &(), |b, _| {
+        b.iter_custom(|num_samples| {
+            let mut total = Duration::ZERO;
+
+            let state = init_state();
+            for _ in 0..num_samples {
+                let start = Instant::now();
+                func(&state);
+                total += start.elapsed();
+            }
+
+            total
+        });
+    });
 }
 
 /// Executes the given operation in parallel using the specified number of threads.
