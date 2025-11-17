@@ -81,6 +81,9 @@ criterion = "0.7.0"
 
 tempfile = "3.20.0"
 
+[patch.crates-io]
+tracy-client-sys = { git = "https://github.com/nagisa/rust_tracy_client", rev = "5f7fa75267c95aede6acdcd62e4d0ac3743fa6f7" }
+
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(coverage)'] }
 macro_use_extern_crate = "warn"
