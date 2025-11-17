@@ -11,7 +11,6 @@
 use std::{
     hint,
     ops::{Deref, DerefMut},
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use dashmap::DashSet;
@@ -19,6 +18,7 @@ use dashmap::DashSet;
 use crate::{
     error::{BTResult, Error},
     node_manager::NodeManager,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
     types::{HasEmptyId, HasEmptyNode, ToNodeKind, TreeId},
 };
 
@@ -42,7 +42,7 @@ impl<N> DerefMut for NodeWrapper<N> {
     }
 }
 
-/// A in-memory implementation of a [`NodeManager`] with fixed capacity.
+/// An in-memory implementation of a [`NodeManager`] with fixed capacity.
 ///
 /// After reaching capacity, attempts to add new nodes will fail.
 pub struct InMemoryNodeManager<I, N>
@@ -91,7 +91,7 @@ where
         if value.is_empty_node() {
             return Ok(I::empty_id());
         }
-        let id = loop {
+        let idx = loop {
             let slot = self
                 .free_slots
                 .iter()
@@ -103,8 +103,8 @@ where
             }
             hint::spin_loop();
         };
-        let key = I::from_idx_and_node_kind(id, value.to_node_kind().unwrap());
-        self.nodes[id as usize].write().unwrap().node = value;
+        let key = I::from_idx_and_node_kind(idx, value.to_node_kind().unwrap());
+        self.nodes[idx as usize].write().unwrap().node = value;
         Ok(key)
     }
 
