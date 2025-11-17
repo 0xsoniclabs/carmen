@@ -35,7 +35,7 @@ impl Node {
         }
     }
 
-    /// Stores the value for the given key.
+    /// Stores the given updates.
     /// Consumes the node and returns an updated version.
     pub fn store(self, updates: &KeyedUpdateBatch, depth: u8) -> Node {
         match self {
