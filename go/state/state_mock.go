@@ -18,6 +18,7 @@ import (
 	common "github.com/0xsoniclabs/carmen/go/common"
 	amount "github.com/0xsoniclabs/carmen/go/common/amount"
 	future "github.com/0xsoniclabs/carmen/go/common/future"
+	result "github.com/0xsoniclabs/carmen/go/common/result"
 	witness "github.com/0xsoniclabs/carmen/go/common/witness"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -259,10 +260,10 @@ func (mr *MockStateMockRecorder) GetCodeSize(address any) *gomock.Call {
 }
 
 // GetCommitment mocks base method.
-func (m *MockState) GetCommitment() future.Future[common.Hash] {
+func (m *MockState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCommitment")
-	ret0, _ := ret[0].(future.Future[common.Hash])
+	ret0, _ := ret[0].(future.Future[result.Result[common.Hash]])
 	return ret0
 }
 

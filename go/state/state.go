@@ -20,6 +20,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 )
 
@@ -64,7 +65,7 @@ type State interface {
 	// performed asynchronously, allowing concurrent operations in the
 	// meanwhile. The commitment, however, will be provided for the state as it
 	// was when GetCommitment was called.
-	GetCommitment() future.Future[common.Hash]
+	GetCommitment() future.Future[result.Result[common.Hash]]
 
 	// Flush writes all committed content to disk.
 	Flush() error

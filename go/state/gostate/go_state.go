@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"golang.org/x/crypto/sha3"
@@ -199,20 +200,20 @@ func (s *GoState) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *GoState) GetHash() (common.Hash, error) {
-	return s.GetCommitment().Await()
+	return s.GetCommitment().Await().Get()
 }
 
-func (s *GoState) GetCommitment() future.Future[common.Hash] {
+func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	if err := s.stateError; err != nil {
-		return future.ImmediateErr[common.Hash](err)
+		return future.Immediate(result.Err[common.Hash](err))
 	}
 
 	h, err := s.live.GetHash()
 	if err != nil {
 		s.stateError = errors.Join(s.stateError, err)
-		return future.ImmediateErr[common.Hash](err)
+		return future.Immediate(result.Err[common.Hash](err))
 	}
-	return future.ImmediateOk(h)
+	return future.Immediate(result.Ok(h))
 }
 
 func (s *GoState) Apply(block uint64, update common.Update) error {

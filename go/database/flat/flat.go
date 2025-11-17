@@ -12,6 +12,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/0xsoniclabs/tracy"
@@ -45,7 +46,7 @@ type slotKey struct {
 
 type command struct {
 	update *update
-	commit future.Promise[common.Hash]
+	commit *future.Promise[result.Result[common.Hash]]
 }
 
 type update struct {
@@ -76,7 +77,7 @@ func NewState(backend state.State) *State {
 				zone.End()
 			} else if command.commit != nil {
 				zone := tracy.ZoneBegin("State.Commit")
-				result := backend.GetCommitment().Get()
+				result := backend.GetCommitment().Await()
 				command.commit.Fulfill(result)
 				zone.End()
 			} else { // sync command
@@ -197,13 +198,13 @@ func (s *State) Apply(block uint64, data common.Update) error {
 }
 
 func (s *State) GetHash() (common.Hash, error) {
-	return s.GetCommitment().Await()
+	return s.GetCommitment().Await().Get()
 }
 
-func (s *State) GetCommitment() future.Future[common.Hash] {
-	promise, future := future.Create[common.Hash]()
+func (s *State) GetCommitment() future.Future[result.Result[common.Hash]] {
+	promise, future := future.Create[result.Result[common.Hash]]()
 	s.commands <- command{
-		commit: promise,
+		commit: &promise,
 	}
 	return future
 }

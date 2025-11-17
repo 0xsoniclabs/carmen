@@ -21,6 +21,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 )
 
@@ -97,7 +98,7 @@ type VmStateDB interface {
 
 	// GetHash obtains a cryptographically unique hash of the committed state.
 	GetHash() common.Hash
-	GetCommitment() future.Future[common.Hash]
+	GetCommitment() future.Future[result.Result[common.Hash]]
 
 	// Check checks the state of the DB and reports an error if issues have been
 	// encountered. Check should be called periodically to validate all interactions
@@ -1298,7 +1299,7 @@ func (s *stateDB) EndEpoch(uint64) {
 }
 
 func (s *stateDB) GetHash() common.Hash {
-	hash, err := s.GetCommitment().Await()
+	hash, err := s.GetCommitment().Await().Get()
 	if err != nil {
 		s.errors = append(s.errors, fmt.Errorf("failed to compute hash: %w", err))
 		hash = common.Hash{}
@@ -1306,7 +1307,7 @@ func (s *stateDB) GetHash() common.Hash {
 	return hash
 }
 
-func (s *stateDB) GetCommitment() future.Future[common.Hash] {
+func (s *stateDB) GetCommitment() future.Future[result.Result[common.Hash]] {
 	// TODO: track errors here;
 	return s.state.GetCommitment()
 }
@@ -1497,7 +1498,7 @@ func (l *bulkLoad) Close() error {
 		return err
 	}
 	// Compute hash to bring cached hashes up-to-date.
-	_, err := l.db.state.GetCommitment().Await()
+	_, err := l.db.state.GetCommitment().Await().Get()
 
 	// Reset state to allow starting bulk-load with existing database.
 	l.db.resetState(l.db.state)

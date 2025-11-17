@@ -14,6 +14,8 @@ import (
 
 	common "github.com/0xsoniclabs/carmen/go/common"
 	amount "github.com/0xsoniclabs/carmen/go/common/amount"
+	future "github.com/0xsoniclabs/carmen/go/common/future"
+	result "github.com/0xsoniclabs/carmen/go/common/result"
 	witness "github.com/0xsoniclabs/carmen/go/common/witness"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -273,10 +275,10 @@ func (mr *MockVmStateDBMockRecorder) GetCodeSize(arg0 any) *gomock.Call {
 }
 
 // GetCommitment mocks base method.
-func (m *MockVmStateDB) GetCommitment() <-chan common.Hash {
+func (m *MockVmStateDB) GetCommitment() future.Future[result.Result[common.Hash]] {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCommitment")
-	ret0, _ := ret[0].(<-chan common.Hash)
+	ret0, _ := ret[0].(future.Future[result.Result[common.Hash]])
 	return ret0
 }
 
@@ -943,10 +945,10 @@ func (mr *MockStateDBMockRecorder) GetCodeSize(arg0 any) *gomock.Call {
 }
 
 // GetCommitment mocks base method.
-func (m *MockStateDB) GetCommitment() <-chan common.Hash {
+func (m *MockStateDB) GetCommitment() future.Future[result.Result[common.Hash]] {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCommitment")
-	ret0, _ := ret[0].(<-chan common.Hash)
+	ret0, _ := ret[0].(future.Future[result.Result[common.Hash]])
 	return ret0
 }
 
@@ -1580,10 +1582,10 @@ func (mr *MockNonCommittableStateDBMockRecorder) GetCodeSize(arg0 any) *gomock.C
 }
 
 // GetCommitment mocks base method.
-func (m *MockNonCommittableStateDB) GetCommitment() <-chan common.Hash {
+func (m *MockNonCommittableStateDB) GetCommitment() future.Future[result.Result[common.Hash]] {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCommitment")
-	ret0, _ := ret[0].(<-chan common.Hash)
+	ret0, _ := ret[0].(future.Future[result.Result[common.Hash]])
 	return ret0
 }
 

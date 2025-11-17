@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -183,11 +184,11 @@ func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
-	return s.GetCommitment().Await()
+	return s.GetCommitment().Await().Get()
 }
 
-func (s *verkleState) GetCommitment() future.Future[common.Hash] {
-	return future.ImmediateOk(common.Hash(s.verkle.Hash()))
+func (s *verkleState) GetCommitment() future.Future[result.Result[common.Hash]] {
+	return future.Immediate(result.Ok(common.Hash(s.verkle.Hash())))
 }
 
 func (s *verkleState) GetMemoryFootprint() *common.MemoryFootprint {
