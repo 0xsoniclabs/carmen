@@ -16,7 +16,7 @@ use crate::{
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
-        keyed_update::{KeyedUpdate, KeyedUpdates},
+        keyed_update::{KeyedUpdate, KeyedUpdateBatch},
         variants::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie},
         verkle_trie::VerkleTrie,
     },
@@ -114,7 +114,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> BTResult<(), Error> {
-        if let Ok(updates) = KeyedUpdates::try_from(update) {
+        if let Ok(updates) = KeyedUpdateBatch::try_from(update) {
             for update in &*updates {
                 match update {
                     KeyedUpdate::FullSlot { key, value } => {

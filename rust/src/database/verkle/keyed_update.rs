@@ -81,10 +81,11 @@ impl KeyedUpdate {
 
 /// A collection of keyed updates with the invariants that they are sorted by key and non-empty.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KeyedUpdates<'a>(Cow<'a, [KeyedUpdate]>);
+pub struct KeyedUpdateBatch<'a>(Cow<'a, [KeyedUpdate]>);
 
-impl KeyedUpdates<'_> {
-    /// Creates `KeyedUpdates` from key-value pairs, treating each as a full slot update.
+impl KeyedUpdateBatch<'_> {
+    /// Creates [`KeyedUpdateBatch`] from key-value pairs, treating each as a full slot update.
+    /// Used for testing.
     #[cfg(test)]
     pub fn from_key_value_pairs(updates: &[(Key, Value)]) -> Self {
         let mut keyed_updates = Vec::with_capacity(updates.len());
@@ -95,7 +96,7 @@ impl KeyedUpdates<'_> {
             });
         }
         keyed_updates.sort();
-        KeyedUpdates(Cow::Owned(keyed_updates))
+        KeyedUpdateBatch(Cow::Owned(keyed_updates))
     }
 
     /// Returns the key of the first update.
@@ -106,11 +107,11 @@ impl KeyedUpdates<'_> {
     }
 
     /// Returns an iterator that splits the updates into groups sharing the same byte at the given
-    /// depth and yields them as `KeyedUpdates`.
+    /// depth and yields them as [`KeyedUpdateBatch`].
     /// This is used to group updates for insertion into child nodes. It is therefore expected that
     /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
     #[cfg_attr(not(test), expect(unused))]
-    pub fn split(&self, depth: u8) -> impl Iterator<Item = KeyedUpdates<'_>> {
+    pub fn split(&self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'_>> {
         SplitIter {
             updates: self,
             depth,
@@ -118,14 +119,14 @@ impl KeyedUpdates<'_> {
         }
     }
 
-    /// Checks if all updates share the same stem (first 31 bytes of the key).
+    /// Checks if all updates share the given stem (first 31 bytes of the key).
     #[cfg_attr(not(test), expect(unused))]
-    pub fn all_stems_eq(&self, stem: &[u8; 31]) -> bool {
+    pub fn all_stems_match(&self, stem: &[u8; 31]) -> bool {
         self.0.iter().all(|update| &update.key()[..31] == stem)
     }
 }
 
-impl Deref for KeyedUpdates<'_> {
+impl Deref for KeyedUpdateBatch<'_> {
     type Target = [KeyedUpdate];
 
     fn deref(&self) -> &Self::Target {
@@ -137,7 +138,7 @@ impl Deref for KeyedUpdates<'_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyUpdate;
 
-impl TryFrom<Update<'_>> for KeyedUpdates<'_> {
+impl TryFrom<Update<'_>> for KeyedUpdateBatch<'_> {
     type Error = EmptyUpdate;
 
     fn try_from(update: Update<'_>) -> Result<Self, Self::Error> {
@@ -224,7 +225,7 @@ impl TryFrom<Update<'_>> for KeyedUpdates<'_> {
         if updates.is_empty() {
             return Err(EmptyUpdate);
         }
-        Ok(KeyedUpdates(Cow::Owned(updates)))
+        Ok(KeyedUpdateBatch(Cow::Owned(updates)))
     }
 }
 
@@ -232,13 +233,13 @@ impl TryFrom<Update<'_>> for KeyedUpdates<'_> {
 /// These groups are yielded in order as `KeyedUpdates`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SplitIter<'a> {
-    updates: &'a KeyedUpdates<'a>,
+    updates: &'a KeyedUpdateBatch<'a>,
     depth: u8,
     start: usize,
 }
 
 impl<'a> Iterator for SplitIter<'a> {
-    type Item = KeyedUpdates<'a>;
+    type Item = KeyedUpdateBatch<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.start >= self.updates.len() {
@@ -253,7 +254,9 @@ impl<'a> Iterator for SplitIter<'a> {
             end += 1;
         }
         self.start = end;
-        Some(KeyedUpdates(Cow::Borrowed(&self.updates[start_pos..end])))
+        Some(KeyedUpdateBatch(Cow::Borrowed(
+            &self.updates[start_pos..end],
+        )))
     }
 }
 
@@ -380,14 +383,14 @@ mod tests {
     }
 
     #[test]
-    fn from_key_value_pairs_maps_pairs_to_full_slots_and_sort_them() {
+    fn from_key_value_pairs_maps_pairs_to_full_slots_and_sorts_them() {
         let updates = [([3; 32], [4; 32]), ([1; 32], [2; 32])];
 
-        let keyed_updates = KeyedUpdates::from_key_value_pairs(&updates);
+        let keyed_updates = KeyedUpdateBatch::from_key_value_pairs(&updates);
 
         assert_eq!(
             keyed_updates,
-            KeyedUpdates(Cow::Borrowed(&[
+            KeyedUpdateBatch(Cow::Borrowed(&[
                 KeyedUpdate::FullSlot {
                     key: [1; 32],
                     value: [2; 32],
@@ -402,7 +405,7 @@ mod tests {
 
     #[test]
     fn first_key_returns_key_of_first_update() {
-        let updates = KeyedUpdates(Cow::Borrowed(&[
+        let updates = KeyedUpdateBatch(Cow::Borrowed(&[
             KeyedUpdate::FullSlot {
                 key: [3; 32],
                 value: [4; 32],
@@ -418,7 +421,7 @@ mod tests {
 
     #[test]
     fn split_returns_iterator_yielding_keyed_updates_for_each_distinct_byte_at_depth() {
-        let updates = KeyedUpdates(Cow::Borrowed(&[
+        let updates = KeyedUpdateBatch(Cow::Borrowed(&[
             KeyedUpdate::FullSlot {
                 key: [
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -489,7 +492,7 @@ mod tests {
 
     #[test]
     fn all_stems_eq_checks_if_all_updates_have_specified_stem() {
-        let updates = KeyedUpdates(Cow::Borrowed(&[
+        let updates = KeyedUpdateBatch(Cow::Borrowed(&[
             KeyedUpdate::FullSlot {
                 key: [1; 32],
                 value: [2; 32],
@@ -499,8 +502,8 @@ mod tests {
                 value: [4; 32],
             },
         ]));
-        assert!(!updates.all_stems_eq(&[1; 31]));
-        let updates = KeyedUpdates(Cow::Borrowed(&[
+        assert!(!updates.all_stems_match(&[1; 31]));
+        let updates = KeyedUpdateBatch(Cow::Borrowed(&[
             KeyedUpdate::FullSlot {
                 key: [3; 32],
                 value: [2; 32],
@@ -510,18 +513,8 @@ mod tests {
                 value: [4; 32],
             },
         ]));
-        assert!(!updates.all_stems_eq(&[1; 31]));
-        let updates = KeyedUpdates(Cow::Borrowed(&[
-            KeyedUpdate::FullSlot {
-                key: [1; 32],
-                value: [2; 32],
-            },
-            KeyedUpdate::FullSlot {
-                key: [1; 32],
-                value: [4; 32],
-            },
-        ]));
-        assert!(updates.all_stems_eq(&[1; 31]));
+        assert!(!updates.all_stems_match(&[1; 31]));
+        assert!(updates.all_stems_match(&[3; 31]));
     }
 
     #[test]
@@ -573,7 +566,7 @@ mod tests {
             ],
         };
 
-        let keyed_updates: KeyedUpdates = update.clone().try_into().unwrap();
+        let keyed_updates: KeyedUpdateBatch = update.clone().try_into().unwrap();
 
         // Verify total number of updates
         assert_eq!(
