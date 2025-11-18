@@ -8,9 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-pub mod managed_trie;
+mod managed_trie;
 pub mod verkle;
 
+pub use managed_trie::ManagedTrieNode;
 pub use verkle::{
     CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie,
     VerkleTrieCarmenState,
