@@ -109,13 +109,13 @@ pub fn update_commitments(
 
     let mut previous_commitments = HashMap::new();
     for level in (0..log.levels()).rev() {
-        let dirty_nodes = log.dirty_nodes(level);
-        for id in dirty_nodes.iter() {
-            let mut lock = manager.get_write_access(*id)?;
+        let dirty_nodes_ids = log.dirty_nodes(level);
+        for id in dirty_nodes_ids {
+            let mut lock = manager.get_write_access(id)?;
             let mut vc = lock.get_commitment();
             assert_eq!(vc.dirty, 1);
 
-            previous_commitments.insert(*id, vc.commitment);
+            previous_commitments.insert(id, vc.commitment);
 
             match lock.get_commitment_input()? {
                 VerkleCommitmentInput::Leaf(values, stem) => {

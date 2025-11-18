@@ -29,7 +29,10 @@ use crate::{
 mod commitment;
 mod nodes;
 
-pub struct ManagedVerkleTrie<M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync> {
+pub struct ManagedVerkleTrie<M>
+where
+    M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync,
+{
     root: RwLock<VerkleNodeId>,
     manager: Arc<M>,
     update_log: TrieUpdateLog<VerkleNodeId>,

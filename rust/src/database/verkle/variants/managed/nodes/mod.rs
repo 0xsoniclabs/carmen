@@ -79,7 +79,7 @@ impl VerkleNode {
 impl ToNodeKind for VerkleNode {
     type Target = VerkleNodeKind;
 
-    /// Converts the ID to a [`VerkleNodeKind`]. This conversion will always succeed.
+    /// Converts the ID to its corresponding node kind. This conversion will always succeed.
     fn to_node_kind(&self) -> Option<Self::Target> {
         match self {
             VerkleNode::Empty(_) => Some(VerkleNodeKind::Empty),
