@@ -274,17 +274,14 @@ Result Carmen_Cpp_Flush(C_Database db) {
 }
 
 Result Carmen_Cpp_Close(C_Database db) {
-  auto res = reinterpret_cast<carmen::Database*>(db)->Close();
+  auto database = reinterpret_cast<carmen::Database*>(db);
+  auto res = database->Close();
   if (!res.ok()) {
     std::cout << "WARNING: Failed to close state: " << res << "\n"
               << std::flush;
     return kResult_InternalError;
   }
-  return kResult_Success;
-}
-
-Result Carmen_Cpp_ReleaseDatabase(C_Database db) {
-  delete reinterpret_cast<carmen::Database*>(db);
+  delete database;
   return kResult_Success;
 }
 

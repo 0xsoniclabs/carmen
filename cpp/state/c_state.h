@@ -68,7 +68,7 @@ enum Result {
 // The function writes an opaque pointer to a database object into the output
 // parameter `out_database`, that can be used with the remaining functions in
 // this file. Ownership is transferred to the caller, which is required for
-// releasing it eventually using ReleaseDatabase(). If for some reason the
+// releasing it eventually using Close(). If for some reason the
 // creation of the state instance failed, an error is returned and the output
 // pointer is not written to.
 DUPLICATE_FOR_LANGS(enum Result,
@@ -83,12 +83,8 @@ DUPLICATE_FOR_LANGS(enum Result,
 DUPLICATE_FOR_LANGS(enum Result, Flush(C_Database database));
 
 // Closes this database, releasing all IO handles and locks on external
-// resources.
+// resources and causing its destruction.
 DUPLICATE_FOR_LANGS(enum Result, Close(C_Database database));
-
-// Releases a database object, thereby causing its destruction. After releasing
-// it, no more operations may be applied on it.
-DUPLICATE_FOR_LANGS(enum Result, ReleaseDatabase(C_Database database));
 
 // ------------------------- Live and Archive State ---------------------------
 

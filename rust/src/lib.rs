@@ -31,7 +31,7 @@ use crate::{
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
-    sync::{Arc, Mutex},
+    sync::Arc,
     types::*,
 };
 
@@ -116,10 +116,9 @@ pub trait CarmenDb: Send + Sync {
     /// storage.
     fn checkpoint(&self) -> BTResult<(), Error>;
 
-    /// Creates a new checkpoint and then closes this state, releasing all IO handles and locks on
-    /// external resources.
-    // TODO: Do not create a checkpoint if in an error state (https://github.com/0xsoniclabs/sonic-admin/issues/378)
-    fn close(&self) -> BTResult<(), Error>;
+    /// Closes this database, releasing all IO handles and locks on external resources and causing
+    /// its destruction.
+    fn close(self: Box<Self>) -> BTResult<(), Error>;
 
     /// Returns a handle to the live state. The resulting state must be released and must not
     /// outlive the life time of the database.
@@ -234,7 +233,7 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
         Ok(())
     }
 
-    fn close(&self) -> BTResult<(), Error> {
+    fn close(self: Box<Self>) -> BTResult<(), Error> {
         // No-op for in-memory state
         Ok(())
     }
@@ -257,18 +256,16 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
 
 /// A file-based `S6` implementation of [`CarmenDb`].
 pub struct CarmenS6FileBasedDb<S: Storage, LS: CarmenState> {
-    // We currently have to bend over backwards to satisfy the CarmenDb interface
-    // TODO: Clean this up on FFI level https://github.com/0xsoniclabs/sonic-admin/issues/474
-    manager: Mutex<Option<Arc<CachedNodeManager<S>>>>,
-    live_state: Mutex<Option<Arc<LS>>>,
+    manager: Arc<CachedNodeManager<S>>,
+    live_state: Arc<LS>,
 }
 
 impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
     /// Creates a new [`CarmenS6FileBasedDb`] with the provided node manager and live state.
     pub fn new(manager: Arc<CachedNodeManager<S>>, live_state: LS) -> Self {
         Self {
-            manager: Mutex::new(Some(manager)),
-            live_state: Mutex::new(Some(Arc::new(live_state))),
+            manager,
+            live_state: Arc::new(live_state),
         }
     }
 }
@@ -288,14 +285,10 @@ where
         )
     }
 
-    fn close(&self) -> BTResult<(), Error> {
-        let mut manager = self.manager.lock().unwrap();
-        let manager = manager.take().ok_or(Error::CorruptedState(
-            "database is already closed".to_owned(),
-        ))?;
+    fn close(self: Box<Self>) -> BTResult<(), Error> {
         // Release live state first, since it holds a reference to the manager
-        self.live_state.lock().unwrap().take();
-        let manager = Arc::into_inner(manager).ok_or_else(|| {
+        drop(self.live_state);
+        let manager = Arc::into_inner(self.manager).ok_or_else(|| {
             Error::CorruptedState("node manager reference count is not 1 on close".to_owned())
         })?;
         manager.close()?;
@@ -303,11 +296,7 @@ where
     }
 
     fn get_live_state(&self) -> BTResult<Box<dyn CarmenState>, Error> {
-        if let Some(live_state) = &*self.live_state.lock().unwrap() {
-            Ok(Box::new(live_state.clone()))
-        } else {
-            Err(Error::CorruptedState("live state has been closed".to_owned()).into())
-        }
+        Ok(Box::new(self.live_state.clone()))
     }
 
     fn get_archive_state(&self, _block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
@@ -327,10 +316,7 @@ mod tests {
     use crypto_bigint::U256;
 
     use super::*;
-    use crate::{
-        error::BTError,
-        utils::test_dir::{Permissions, TestDir},
-    };
+    use crate::utils::test_dir::{Permissions, TestDir};
 
     #[test]
     fn file_based_verkle_trie_implementation_supports_closing_and_reopening() {
@@ -402,19 +388,6 @@ mod tests {
     }
 
     #[test]
-    fn carmen_s6_file_based_db_close_fails_if_already_closed() {
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
-
-        db.close().unwrap();
-        let result = db.close();
-        assert_eq!(
-            result,
-            Err(Error::CorruptedState("database is already closed".to_owned()).into())
-        );
-    }
-
-    #[test]
     fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
@@ -428,18 +401,5 @@ mod tests {
                     .into()
             )
         );
-    }
-
-    #[test]
-    fn carmen_s6_file_based_db_get_live_state_fails_if_closed() {
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
-
-        db.close().unwrap();
-        let result = db.get_live_state().map_err(BTError::into_inner);
-        assert!(matches!(
-            result,
-            Err(Error::CorruptedState(e)) if e == "live state has been closed"
-        ));
     }
 }

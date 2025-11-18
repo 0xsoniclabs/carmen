@@ -55,7 +55,6 @@ type externalBindings interface {
 	OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
 	Flush(database unsafe.Pointer) C.enum_Result
 	Close(database unsafe.Pointer) C.enum_Result
-	ReleaseDatabase(database unsafe.Pointer) C.enum_Result
 	ReleaseState(state unsafe.Pointer) C.enum_Result
 	GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result
 	GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result
@@ -85,10 +84,6 @@ func (r rustBindings) Flush(database unsafe.Pointer) C.enum_Result {
 
 func (r rustBindings) Close(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_Close(database)
-}
-
-func (r rustBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_ReleaseDatabase(database)
 }
 
 func (r rustBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
@@ -160,10 +155,6 @@ func (c cppBindings) Flush(database unsafe.Pointer) C.enum_Result {
 
 func (c cppBindings) Close(database unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_Close(database)
-}
-
-func (c cppBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_ReleaseDatabase(database)
 }
 
 func (c cppBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
@@ -271,11 +262,11 @@ func newState(impl string, params state.Parameters, extImpl externalImpl) (state
 	live := unsafe.Pointer(nil)
 	result = bindings.GetLiveState(db, &live)
 	if result != C.kResult_Success {
-		bindings.ReleaseDatabase(db)
+		bindings.Close(db)
 		return nil, fmt.Errorf("failed to create external live state instance for parameters %v (error code %v)", params, result)
 	}
 	if live == unsafe.Pointer(nil) {
-		bindings.ReleaseDatabase(db)
+		bindings.Close(db)
 		return nil, fmt.Errorf("%w: failed to create external live state instance for parameters %v", state.UnsupportedConfiguration, params)
 	}
 
@@ -476,10 +467,6 @@ func (s *ExternalState) Close() error {
 		result := s.bindings.Close(s.database)
 		if result != C.kResult_Success {
 			return fmt.Errorf("failed to close external database (error code %v)", result)
-		}
-		result = s.bindings.ReleaseDatabase(s.database)
-		if result != C.kResult_Success {
-			return fmt.Errorf("failed to release external database (error code %v)", result)
 		}
 		s.database = nil
 	}

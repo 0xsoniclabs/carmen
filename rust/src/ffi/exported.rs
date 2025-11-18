@@ -35,7 +35,7 @@ const MAX_CODE_SIZE: usize = if cfg!(miri) { 25 } else { 25000 };
 /// The function writes an opaque pointer to a database object into the output parameter
 /// `out_database`, that can be used with the remaining functions in this file. Ownership is
 /// transferred to the caller, which is required for releasing it eventually using
-/// Carmen_Rust_ReleaseDatabase(). If for some reason the creation of the state instance failed, an
+/// Carmen_Rust_Close(). If for some reason the creation of the state instance failed, an
 /// error is returned and the output pointer is not written to.
 ///
 /// # Safety
@@ -159,40 +159,8 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     bindings::Result_kResult_Success
 }
 
-/// Closes this database, releasing all IO handles and locks on external resources.
-///
-/// # Safety
-/// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
-///   CarmenDb` object
-/// - `db` must be valid for reads for the duration of the call
-/// - `db` must not be mutated for the duration of the call
-/// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
-/// - `db.inner` must not be mutated for the duration of the lifetime of `token`
-#[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) -> bindings::Result {
-    let token = LifetimeToken;
-    if db.is_null() {
-        return bindings::Result_kResult_InvalidArguments;
-    }
-    // SAFETY:
-    // - `db` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `db` is valid for reads for the duration of the call (precondition)
-    // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
-    // SAFETY:
-    // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
-    // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_scoped(&token) };
-    match db.close() {
-        Ok(_) => bindings::Result_kResult_Success,
-        Err(err) => err.into(),
-    }
-}
-
-/// Releases a database object, thereby causing its destruction. After releasing it, no more
-/// operations may be applied on it.
+/// Closes this database, releasing all IO handles and locks on external resources and causing its
+/// destruction.
 ///
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
@@ -202,13 +170,12 @@ unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) -> bindings::Result {
 /// - `db` must have been allocated using the global allocator
 /// - `db` must not be used after this call
 /// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
-/// - `db.inner` must be valid for reads and writes for the duration of the lifetime of `token`
-/// - `db.inner` must not be mutated for the duration of the lifetime of `token`
+/// - `db.inner` must be valid for reads and writes for the duration of the call
+/// - `db.inner` must not be mutated for the duration of the call
 /// - `db.inner` must have been allocated using the global allocator
 /// - `db.inner` must not be used after this call
 #[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) -> bindings::Result {
-    let token = LifetimeToken;
+unsafe extern "C" fn Carmen_Rust_Close(db: *mut c_void) -> bindings::Result {
     if db.is_null() {
         return bindings::Result_kResult_InvalidArguments;
     }
@@ -216,22 +183,20 @@ unsafe extern "C" fn Carmen_Rust_ReleaseDatabase(db: *mut c_void) -> bindings::R
     // - `db` is a valid pointer to a `StateWrapper` object (precondition)
     // - `db` is valid for reads and writes for the duration of the call (precondition)
     // - `db` is not mutated for the duration of the call (precondition)
-    let db = unsafe { ref_mut_from_ptr_scoped(db as *mut DbWrapper, &token) };
-    // SAFETY:
     // - `db` was allocated using the global allocator (precondition)
     // - `db` is not used after this call (precondition)
-    let db = unsafe { Box::from_raw(db) };
+    let db = unsafe { Box::from_raw(db as *mut DbWrapper) };
     // SAFETY:
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-    // - `db.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
-    // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db_inner = unsafe { db.inner_to_ref_mut_scoped(&token) };
-    // SAFETY:
+    // - `db.inner` is valid for reads and writes for the duration of the call (precondition)
+    // - `db.inner` is not mutated for the duration of the call (precondition)
     // - `db.inner` was allocated using the global allocator (precondition)
     // - `db.inner` is not used after this call (precondition)
-    let _ = unsafe { Box::from_raw(db_inner) };
-    bindings::Result_kResult_Success
+    let db_inner = unsafe { Box::from_raw(db.inner) };
+    match db_inner.close() {
+        Ok(_) => bindings::Result_kResult_Success,
+        Err(err) => err.into(),
+    }
 }
 
 /// Writes a handle to the live state of the database into the output parameter `out_state`. The
@@ -346,13 +311,12 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveState(
 /// - `state` must have been allocated using the global allocator
 /// - `state` must not be used after this call
 /// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads and writes for the duration of the lifetime of `token`
-/// - `state.inner` must not be mutated for the duration of the lifetime of `token`
+/// - `state.inner` must be valid for reads and writes for the duration of the call
+/// - `state.inner` must not be mutated for the duration of the call
 /// - `state.inner` must have been allocated using the global allocator
 /// - `state.inner` must not be used after this call
 #[unsafe(no_mangle)]
 unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) -> bindings::Result {
-    let token = LifetimeToken;
     if state.is_null() {
         return bindings::Result_kResult_InvalidArguments;
     }
@@ -360,21 +324,16 @@ unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) -> bindings::R
     // - `state` is a valid pointer to a `StateWrapper` object (precondition)
     // - `state` is valid for reads and writes for the duration of the call (precondition)
     // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_mut_from_ptr_scoped(state as *mut StateWrapper, &token) };
-    // SAFETY:
     // - `state` was allocated using the global allocator (precondition)
     // - `state` is not used after this call (precondition)
-    let state = unsafe { Box::from_raw(state) };
+    let state = unsafe { Box::from_raw(state as *mut StateWrapper) };
     // SAFETY:
     // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads and writes for the duration of the lifetime of `token`
-    //   (precondition)
-    // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state_inner = unsafe { state.inner_to_ref_mut_scoped(&token) };
-    // SAFETY:
+    // - `state.inner` is valid for reads and writes for the duration of the call (precondition)
+    // - `state.inner` is not mutated for the duration of the call (precondition)
     // - `state.inner` was allocated using the global allocator (precondition)
     // - `state.inner` is not used after this call (precondition)
-    let _ = unsafe { Box::from_raw(state_inner) };
+    let _ = unsafe { Box::from_raw(state.inner) };
     bindings::Result_kResult_Success
 }
 
@@ -958,23 +917,6 @@ impl DbWrapper {
         unsafe { &*self.inner }
     }
 
-    /// # Safety
-    /// - `self.inner` must be a valid pointer to a `dyn CarmenDb`
-    /// - `self.inner` must be valid for reads for the duration of the lifetime of `_token`
-    /// - `self.inner` must not be mutated for the duration of the lifetime of `_token`
-    #[allow(clippy::mut_from_ref)] // false positive
-    unsafe fn inner_to_ref_mut_scoped<'db>(
-        &self,
-        _token: &'db LifetimeToken,
-    ) -> &'db mut dyn CarmenDb {
-        // SAFETY:
-        // - `self.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
-        // - `self.inner` is valid for reads and writes for the duration of the lifetime of `_token`
-        // (precondition)
-        // - `self.inner` is not mutated for the duration of the lifetime of `_token` (precondition)
-        unsafe { &mut *self.inner }
-    }
-
     fn from_db(state: Box<dyn CarmenDb>) -> Self {
         Self {
             inner: Box::into_raw(state),
@@ -1003,23 +945,6 @@ impl StateWrapper {
         unsafe { &*self.inner }
     }
 
-    /// # Safety
-    /// - `self.inner` must be a valid pointer to a `dyn CarmenState`
-    /// - `self.inner` must be valid for reads for the duration of the lifetime of `_token`
-    /// - `self.inner` must not be mutated for the duration of the lifetime of `_token`
-    #[allow(clippy::mut_from_ref)] // false positive
-    unsafe fn inner_to_ref_mut_scoped<'db>(
-        &self,
-        _token: &'db LifetimeToken,
-    ) -> &'db mut dyn CarmenState {
-        // SAFETY:
-        // - `self.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-        // - `self.inner` is valid for reads and writes for the duration of the lifetime of `_token`
-        // (precondition)
-        // - `self.inner` is not mutated for the duration of the lifetime of `_token` (precondition)
-        unsafe { &mut *self.inner }
-    }
-
     fn from_state(state: Box<dyn CarmenState>) -> Self {
         Self {
             inner: Box::into_raw(state),
@@ -1046,24 +971,6 @@ unsafe fn ref_from_ptr_scoped<'s, T: ?Sized>(ptr: *const T, _token: &'s Lifetime
     // - `ptr` is valid for reads for the lifetime of the borrow of `_token`(precondition)
     // - `ptr` is not mutated for the lifetime of the borrow of `_token` (precondition)
     unsafe { &*ptr }
-}
-
-/// # Safety
-/// - `ptr` must be non-null
-/// - `ptr` must be valid for reads and writes for the lifetime of the borrow of `_token`
-/// - `ptr` must not be mutated for the lifetime of the borrow of `_token`
-#[allow(clippy::needless_lifetimes)] // use explicit lifetimes for easier understanding
-#[allow(clippy::mut_from_ref)] // false positive
-unsafe fn ref_mut_from_ptr_scoped<'s, T: ?Sized>(
-    ptr: *mut T,
-    _token: &'s LifetimeToken,
-) -> &'s mut T {
-    // SAFETY:
-    // - `ptr` is non-null (precondition)
-    // - `ptr` is valid for reads and writes for the lifetime of the borrow of
-    //   `_token`(precondition)
-    // - `ptr` is not mutated for the lifetime of the borrow of `_token` (precondition)
-    unsafe { &mut *ptr }
 }
 
 /// # Safety
@@ -1120,10 +1027,6 @@ const COMPILE_TIME_CHECK_THAT_SIGNATURES_MATCH_SIGNATURES_GENERATED_FROM_C_HEADE
     assert_same_signature(
         Carmen_Rust_Close as unsafe extern "C" fn(_) -> _,
         bindings::Carmen_Rust_Close,
-    );
-    assert_same_signature(
-        Carmen_Rust_ReleaseDatabase as unsafe extern "C" fn(_) -> _,
-        bindings::Carmen_Rust_ReleaseDatabase,
     );
     assert_same_signature(
         Carmen_Rust_GetLiveState as unsafe extern "C" fn(_, _) -> _,
@@ -1224,7 +1127,7 @@ mod tests {
                 assert!(!out_database.is_null());
                 let db_ref = &mut *(out_database as *mut DbWrapper);
                 assert!(!db_ref.inner.is_null());
-                Carmen_Rust_ReleaseDatabase(out_database);
+                Carmen_Rust_Close(out_database);
             } else {
                 assert_eq!(result, bindings::Result_kResult_UnsupportedImplementation);
             }
@@ -1333,14 +1236,8 @@ mod tests {
     }
 
     #[test]
-    fn carmen_rust_release_database_checks_that_arguments_are_valid() {
-        let result = unsafe { Carmen_Rust_ReleaseDatabase(std::ptr::null_mut()) };
-        assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-    }
-
-    #[test]
     fn carmen_rust_flush_calls_checkpoint_on_carmen_db() {
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             |mock_db| {
                 mock_db.expect_checkpoint().returning(|| Ok(()));
             },
@@ -1374,14 +1271,13 @@ mod tests {
 
     #[test]
     fn carmen_rust_close_calls_close_on_carmen_db() {
-        create_db_then_call_fn_then_release_db(
-            |mock_db| {
-                mock_db.expect_close().returning(|| Ok(()));
-            },
-            |db| unsafe {
-                Carmen_Rust_Close(db);
-            },
-        );
+        let mut mock_db = MockCarmenDb::new();
+        mock_db.expect_close().returning(|| Ok(()));
+
+        let db_wrapper = DbWrapper::from_db(Box::new(mock_db));
+        let db = Box::into_raw(Box::new(db_wrapper)) as *mut c_void;
+
+        unsafe { Carmen_Rust_Close(db) };
     }
 
     #[test]
@@ -1392,22 +1288,21 @@ mod tests {
 
     #[test]
     fn carmen_rust_close_returns_error_as_int() {
-        create_db_then_call_fn_then_release_db(
-            |mock_db| {
-                mock_db.expect_close().returning(|| {
-                    Err(crate::Error::UnsupportedOperation("some error".into()).into())
-                });
-            },
-            |db| unsafe {
-                let result = Carmen_Rust_Close(db);
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
-            },
-        );
+        let mut mock_db = MockCarmenDb::new();
+        mock_db
+            .expect_close()
+            .returning(|| Err(crate::Error::UnsupportedOperation("some error".into()).into()));
+
+        let db_wrapper = DbWrapper::from_db(Box::new(mock_db));
+        let db = Box::into_raw(Box::new(db_wrapper)) as *mut c_void;
+
+        let result = unsafe { Carmen_Rust_Close(db) };
+        assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
     }
 
     #[test]
     fn carmen_rust_get_live_state_returns_live_state_from_carmen_db() {
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             move |mock_db| {
                 mock_db
                     .expect_get_live_state()
@@ -1443,7 +1338,7 @@ mod tests {
 
     #[test]
     fn carmen_rust_get_live_state_returns_error_as_int() {
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             |mock_db| {
                 mock_db.expect_get_live_state().returning(|| {
                     Err(crate::Error::UnsupportedOperation("some error".into()).into())
@@ -1460,7 +1355,7 @@ mod tests {
     #[test]
     fn carmen_rust_get_archive_state_returns_archive_state_from_carmen_db() {
         let block = 1;
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             move |mock_db| {
                 mock_db
                     .expect_get_archive_state()
@@ -1500,7 +1395,7 @@ mod tests {
     #[test]
     fn carmen_rust_get_archive_state_returns_error_as_int() {
         let block = 1;
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             move |mock_db| {
                 mock_db
                     .expect_get_archive_state()
@@ -2319,7 +2214,7 @@ mod tests {
     #[test]
     fn carmen_rust_get_memory_footprint_returns_buffer_and_length() {
         let expected_str = "footprint";
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             move |mock_db| {
                 mock_db
                     .expect_get_memory_footprint()
@@ -2375,7 +2270,7 @@ mod tests {
 
     #[test]
     fn carmen_rust_get_memory_footprint_returns_error_as_int() {
-        create_db_then_call_fn_then_release_db(
+        create_db_then_call_fn_then_close(
             move |mock_db| {
                 mock_db.expect_get_memory_footprint().returning(|| {
                     Err(crate::Error::UnsupportedOperation("some error".into()).into())
@@ -2424,13 +2319,14 @@ mod tests {
     unsafe impl Sync for ThreadSafePtr {}
 
     #[track_caller]
-    fn create_db_then_call_fn_then_release_db(
+    fn create_db_then_call_fn_then_close(
         set_expectation: impl Fn(&mut MockCarmenDb) + 'static,
         call_ffi_fn: impl Fn(*mut c_void) + Sync + 'static,
     ) {
         unsafe {
             let mut mock_db = MockCarmenDb::new();
 
+            mock_db.expect_close().returning(|| Ok(()));
             set_expectation(&mut mock_db);
 
             let db_wrapper = DbWrapper::from_db(Box::new(mock_db));
@@ -2454,7 +2350,7 @@ mod tests {
                 });
             });
 
-            Carmen_Rust_ReleaseDatabase(db);
+            Carmen_Rust_Close(db);
         }
     }
 
