@@ -248,11 +248,11 @@ where
     type Id = <S as RootIdProvider>::Id;
 
     fn get_root_id(&self, block_number: u64) -> BTResult<Self::Id, crate::storage::Error> {
-        self.storage.storage.get_root_id(block_number)
+        self.storage.get_root_id(block_number)
     }
 
     fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), crate::storage::Error> {
-        self.storage.storage.set_root_id(block_number, id)
+        self.storage.set_root_id(block_number, id)
     }
 }
 
