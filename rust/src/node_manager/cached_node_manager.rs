@@ -139,6 +139,34 @@ where
     }
 }
 
+impl<S> CachedNodeManager<S>
+where
+    S: Storage,
+    S::Id: Eq + Hash,
+    S::Item: Default,
+{
+    /// Consumes the node manager, flushes all dirty nodes and calls [`Storage::close`] on the
+    /// underlying storage.
+    pub fn close(self) -> BTResult<(), Error> {
+        for (id, mut guard) in self.nodes.iter_write() {
+            // TODO: Make sure we don't flush nodes with dirty commitments
+            // https://github.com/0xsoniclabs/sonic-admin/issues/483
+            if guard.is_dirty {
+                self.storage.storage.set(id, &guard.node)?;
+                guard.is_dirty = false;
+            }
+        }
+
+        // Drop cache since it holds a reference to the storage through the eviction hooks.
+        drop(self.nodes);
+
+        let storage = Arc::into_inner(self.storage).ok_or_else(|| {
+            Error::CorruptedState("storage reference count is not 1 on close".into())
+        })?;
+        storage.storage.close().map_err(Into::into)
+    }
+}
+
 impl<S> NodeManager for CachedNodeManager<S>
 where
     S: Storage + 'static,
@@ -520,6 +548,29 @@ mod tests {
         assert_eq!(received_id, expected_id);
 
         manager.set_root_id(block_number, expected_id).unwrap();
+    }
+
+    #[test]
+    fn cached_node_manager_close_flushes_dirty_nodes_and_calls_close_on_underlying_storage() {
+        let mut storage = MockCachedNodeManagerStorage::new();
+        let mut seq = mockall::Sequence::new();
+        storage
+            .expect_set()
+            .times(1)
+            .in_sequence(&mut seq)
+            .with(eq(3), eq(777))
+            .returning(move |_, _| Ok(()));
+        storage
+            .expect_close()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|| Ok(()));
+
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
+        cache_insert(&manager, 3, 777, true);
+        cache_insert(&manager, 4, 321, false);
+
+        manager.close().unwrap();
     }
 
     #[test]
