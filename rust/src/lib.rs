@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
 
-use std::{mem::MaybeUninit, ops::Deref, path::PathBuf, sync::Mutex};
+use std::{mem::MaybeUninit, ops::Deref, path::PathBuf};
 
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
@@ -239,18 +239,16 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
 
 /// A file-based `S6` implementation of [`CarmenDb`].
 pub struct CarmenS6FileBasedDb<S: Storage, LS: CarmenState> {
-    // We currently have to bend over backwards to satisfy the CarmenDb interface
-    // TODO: Clean this up on FFI level https://github.com/0xsoniclabs/sonic-admin/issues/474
-    manager: Mutex<Option<Arc<CachedNodeManager<S>>>>,
-    live_state: Mutex<Option<Arc<LS>>>,
+    manager: Arc<CachedNodeManager<S>>,
+    live_state: Arc<LS>,
 }
 
 impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
     /// Creates a new [`CarmenS6FileBasedDb`] with the provided node manager and live state.
     pub fn new(manager: Arc<CachedNodeManager<S>>, live_state: LS) -> Self {
         Self {
-            manager: Mutex::new(Some(manager)),
-            live_state: Mutex::new(Some(Arc::new(live_state))),
+            manager,
+            live_state: Arc::new(live_state),
         }
     }
 }
@@ -270,15 +268,10 @@ where
         )
     }
 
-    fn close(&self) -> BTResult<(), Error> {
-        let mut manager = self.manager.lock().unwrap();
-        if manager.is_none() {
-            return Err(Error::IllegalArgument("database is already closed".to_owned()).into());
-        }
-        let manager = manager.take().unwrap(); // Safe to unwrap due to is_none() above
+    fn close(self: Box<Self>) -> BTResult<(), Error> {
         // Release live state first, since it holds a reference to the manager
-        self.live_state.lock().unwrap().take();
-        let manager = Arc::into_inner(manager).ok_or_else(|| {
+        drop(self.live_state);
+        let manager = Arc::into_inner(self.manager).ok_or_else(|| {
             Error::CorruptedState("node manager reference count is not 1 on close".to_owned())
         })?;
         manager.close()?;
@@ -286,11 +279,7 @@ where
     }
 
     fn get_live_state(&self) -> BTResult<Box<dyn CarmenState>, Error> {
-        if let Some(live_state) = &*self.live_state.lock().unwrap() {
-            Ok(Box::new(live_state.clone()))
-        } else {
-            Err(Error::CorruptedState("live state has been closed".to_owned()).into())
-        }
+        Ok(Box::new(self.live_state.clone()))
     }
 
     fn get_archive_state(&self, _block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
@@ -342,20 +331,6 @@ mod tests {
         let db = open_carmen_db(6, b"file", b"none", path).unwrap();
         let received = db.get_live_state().unwrap().get_balance(&addr).unwrap();
         assert_eq!(received, balance);
-    }
-
-    #[test]
-    fn carmen_s6_file_based_db_close_fails_if_already_closed() {
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let path = dir.path().as_os_str().as_encoded_bytes();
-        let db = open_carmen_db(6, b"file", b"none", path).unwrap();
-
-        db.close().unwrap();
-        let result = db.close();
-        assert_eq!(
-            result,
-            Err(Error::IllegalArgument("database is already closed".to_owned()).into())
-        );
     }
 
     #[test]
