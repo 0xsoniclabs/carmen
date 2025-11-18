@@ -25,7 +25,8 @@ use crate::{
         verkle_trie::VerkleTrie,
     },
     error::{BTResult, Error},
-    node_manager::in_memory_node_manager::InMemoryNodeManager,
+    node_manager::NodeManager,
+    storage::RootIdProvider,
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -55,11 +56,17 @@ impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
     }
 }
 
-impl VerkleTrieCarmenState<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>> {
-    /// Creates a new [`VerkleTrieCarmenState`] with an [`InMemoryNodeManager`] of the given
-    /// capacity.
-    pub fn try_new(capacity: usize) -> BTResult<Self, Error> {
-        let trie = ManagedVerkleTrie::try_new(Arc::new(InMemoryNodeManager::new(capacity)))?;
+impl<M> VerkleTrieCarmenState<ManagedVerkleTrie<M>>
+where
+    M: NodeManager<Id = VerkleNodeId, Node = VerkleNode>
+        + RootIdProvider<Id = VerkleNodeId>
+        + Send
+        + Sync,
+{
+    /// Creates a new [`VerkleTrieCarmenState`] using a managed Verkle trie with the given node
+    /// manager. Forwards any errors from [`ManagedVerkleTrie::try_new`].
+    pub fn try_new(manager: Arc<M>) -> BTResult<Self, Error> {
+        let trie = ManagedVerkleTrie::try_new(manager)?;
         Ok(Self { trie })
     }
 }
@@ -167,7 +174,7 @@ mod tests {
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
     #[case::crate_crypto(Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(100).unwrap()) as Box<dyn CarmenState>)]
+    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(Arc::new(InMemoryNodeManager::new(100))).unwrap()) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]

@@ -101,7 +101,7 @@ pub trait ManagedTrieNode {
     ///
     /// It is only valid to call this method if
     /// [`next_store_action`](ManagedTrieNode::next_store_action) returned
-    /// [`StoreAction::Store`].
+    /// `StoreAction::Store`.
     // NOTE: We cannot directly do this inside of `next_store_action` because that method
     //       takes `&self` instead of `&mut self`.
     fn store(&mut self, _key: &Key, _value: &Value) -> BTResult<Value, Error> {
