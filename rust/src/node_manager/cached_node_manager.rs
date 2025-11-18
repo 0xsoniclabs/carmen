@@ -21,7 +21,7 @@ use crate::{
         NodeManager,
         lock_cache::{EvictionHooks, LockCache},
     },
-    storage::{Checkpointable, Storage},
+    storage::{Checkpointable, RootIdProvider, Storage},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     types::{HasEmptyId, HasEmptyNode},
 };
@@ -238,6 +238,21 @@ where
 
     fn restore(path: &Path, checkpoint: u64) -> BTResult<(), crate::storage::Error> {
         S::restore(path, checkpoint)
+    }
+}
+
+impl<S> RootIdProvider for CachedNodeManager<S>
+where
+    S: Storage + RootIdProvider,
+{
+    type Id = <S as RootIdProvider>::Id;
+
+    fn get_root_id(&self, block_number: u64) -> BTResult<Self::Id, crate::storage::Error> {
+        self.storage.storage.get_root_id(block_number)
+    }
+
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), crate::storage::Error> {
+        self.storage.storage.set_root_id(block_number, id)
     }
 }
 
@@ -485,6 +500,29 @@ mod tests {
     }
 
     #[test]
+    fn cached_node_manager_forwards_root_id_provider_calls() {
+        let expected_id = 42;
+        let block_number = 7;
+        let mut storage = MockCachedNodeManagerStorage::new();
+        storage
+            .expect_get_root_id()
+            .times(1)
+            .with(eq(block_number))
+            .returning(move |_| Ok(expected_id));
+        storage
+            .expect_set_root_id()
+            .times(1)
+            .with(eq(block_number), eq(expected_id))
+            .returning(|_, _| Ok(()));
+
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
+        let received_id = manager.get_root_id(block_number).unwrap();
+        assert_eq!(received_id, expected_id);
+
+        manager.set_root_id(block_number, expected_id).unwrap();
+    }
+
+    #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
         let mut node = NodeWithMetadata {
             node: 0,
@@ -581,6 +619,14 @@ mod tests {
             fn checkpoint(&self) -> BTResult<u64, storage::Error>;
 
             fn restore(path: &Path, checkpoint: u64) -> BTResult<(), storage::Error>;
+        }
+
+        impl RootIdProvider for CachedNodeManagerStorage {
+            type Id = TestNodeId;
+
+            fn get_root_id(&self, block_number: u64) -> BTResult<<Self as RootIdProvider>::Id, storage::Error>;
+
+            fn set_root_id(&self, block_number: u64, id: <Self as RootIdProvider>::Id) -> BTResult<(), storage::Error>;
         }
 
         impl Storage for CachedNodeManagerStorage {

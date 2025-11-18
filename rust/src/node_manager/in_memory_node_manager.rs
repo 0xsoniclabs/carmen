@@ -13,11 +13,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use dashmap::DashSet;
+use dashmap::{DashMap, DashSet};
 
 use crate::{
     error::{BTResult, Error},
     node_manager::NodeManager,
+    storage::{self, RootIdProvider},
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
     types::{HasEmptyId, HasEmptyNode, ToNodeKind, TreeId},
 };
@@ -52,6 +53,7 @@ where
     nodes: Vec<RwLock<NodeWrapper<N>>>,
     empty_node: RwLock<NodeWrapper<N>>,
     free_slots: DashSet<u64>,
+    root_ids: DashMap<u64, I>,
 
     _phantom: std::marker::PhantomData<I>,
 }
@@ -74,6 +76,7 @@ where
                 node: N::empty_node(),
             }),
             free_slots,
+            root_ids: DashMap::new(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -135,6 +138,25 @@ where
         let mut guard = self.nodes[id.to_index() as usize].write().unwrap();
         guard.node = N::default();
         self.free_slots.insert(id.to_index());
+        Ok(())
+    }
+}
+
+impl<I, N> RootIdProvider for InMemoryNodeManager<I, N>
+where
+    I: TreeId + Copy,
+{
+    type Id = I;
+
+    fn get_root_id(&self, block_number: u64) -> BTResult<Self::Id, crate::storage::Error> {
+        match self.root_ids.get(&block_number) {
+            Some(id) => Ok(*id),
+            None => Err(storage::Error::NotFound.into()),
+        }
+    }
+
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), crate::storage::Error> {
+        self.root_ids.insert(block_number, id);
         Ok(())
     }
 }
@@ -234,5 +256,26 @@ mod tests {
         let manager = TestInMemoryNodeManager::new(10);
         let result = manager.delete(TestNodeId::empty_id());
         assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn root_ids_can_be_set_and_retrieved() {
+        let manager = TestInMemoryNodeManager::new(10);
+
+        let result = manager.get_root_id(42);
+        assert_eq!(result, Err(storage::Error::NotFound.into()));
+
+        let id = TestNodeId::from_idx_and_node_kind(3, ());
+        manager.set_root_id(42, id).unwrap();
+        let received = manager.get_root_id(42).unwrap();
+        assert_eq!(received, id);
+
+        let other_id = TestNodeId::from_idx_and_node_kind(27, ());
+        manager.set_root_id(33, other_id).unwrap();
+        let received = manager.get_root_id(33).unwrap();
+        assert_eq!(received, other_id);
+
+        let received = manager.get_root_id(42).unwrap();
+        assert_eq!(received, id);
     }
 }
