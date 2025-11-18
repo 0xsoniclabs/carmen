@@ -14,8 +14,7 @@ use std::{mem::MaybeUninit, ops::Deref, path::PathBuf, sync::Mutex};
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
-        VerkleTrieCarmenState,
-        managed_trie::ManagedTrieNode,
+        ManagedTrieNode, VerkleTrieCarmenState,
         verkle::variants::managed::{
             FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
         },
