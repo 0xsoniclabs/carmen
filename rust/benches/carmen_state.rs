@@ -20,6 +20,7 @@ enum CarmenStateKind {
 }
 
 impl CarmenStateKind {
+    /// Constructs the corresponding CarmenState instance.
     fn make_carmen_state(self) -> Box<dyn CarmenState> {
         match self {
             CarmenStateKind::SimpleInMemoryVerkleTrie => {
@@ -41,6 +42,7 @@ impl CarmenStateKind {
     }
 }
 
+/// An enum representing the initial size of the carmen state.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum InitialState {
     Empty,
@@ -65,8 +67,8 @@ impl InitialState {
         }
     }
 
-    /// Initializes the Carmen state with the specified initial state.
-    /// For each account, a number of storage keys with incremental values are set.
+    /// Initializes the Carmen state with the current initial state.
+    /// Accounts and keys are incrementally generated.
     fn init(self, carmen_state: &dyn CarmenState) {
         let num_accounts = self.num_accounts();
         let num_storage_keys = self.num_storage_keys();
@@ -181,7 +183,7 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
 /// It varies:
 /// - Initial state size (Empty, Small, Large)
 /// - Whether to update existing storage keys or new ones
-/// - Number of batches of updates (varies batching)
+/// - Number of batches (how many updates share the same address)
 fn state_update_benchmark(c: &mut criterion::Criterion) {
     const NUM_KEY_TO_UPDATE: u64 = if cfg!(debug_assertions) {
         10
@@ -203,6 +205,8 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
                     continue;
                 }
                 for state_type in CarmenStateKind::variants() {
+                    // TODO: we could keep a copy of the initial state and clone it here instead of
+                    // re-initializing, but it would basically double the memory usage.
                     let init = move || {
                         let carmen_state = state_type.make_carmen_state();
                         initial_state.init(&*carmen_state);
