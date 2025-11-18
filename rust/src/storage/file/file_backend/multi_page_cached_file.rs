@@ -202,7 +202,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::storage::file::MockFileBackend;
+    use crate::{storage::file::MockFileBackend, sync::is_finished};
 
     #[test]
     fn accessing_cache_data_does_not_trigger_io_operations() {
@@ -271,20 +271,20 @@ mod tests {
 
         // Try to access the same page from another thread. This should block until the first lock
         // is dropped.
-        let handle = std::thread::spawn({
+        let handle = thread::spawn({
             let file = Arc::clone(&file);
             move || {
                 let _locked_page = file.get_pages(&[], 0).unwrap();
             }
         });
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(!handle.is_finished());
+        thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!is_finished(&handle));
 
         drop(_locked_page);
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(handle.is_finished());
+        thread::sleep(std::time::Duration::from_millis(100));
+        assert!(is_finished(&handle));
     }
 
     #[test]
@@ -305,22 +305,22 @@ mod tests {
 
         // Locking the third page should block until the guard to page one is dropped,
         // since it occupies the same cache slot.
-        let handle = std::thread::spawn({
+        let handle = thread::spawn({
             let file = Arc::clone(&file);
             move || assert!(file.get_pages(&[], 2 * Page::SIZE as u64).is_ok())
         });
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        thread::sleep(std::time::Duration::from_millis(100));
         // The guard to page one is not yet dropped, so trying to lock page three in the thread
         // should still block.
-        assert!(!handle.is_finished());
+        assert!(!is_finished(&handle));
 
         drop(locked_page1);
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        thread::sleep(std::time::Duration::from_millis(100));
         // The guard to page one is dropped, so the thread should have been able to lock page three
         // and finish.
-        assert!(handle.is_finished());
+        assert!(is_finished(&handle));
     }
 
     #[test]

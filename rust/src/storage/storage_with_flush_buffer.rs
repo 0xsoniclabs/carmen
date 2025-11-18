@@ -18,6 +18,7 @@ use crate::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        hint, thread,
     },
 };
 
@@ -105,7 +106,7 @@ where
         // was removed by a flush worker while iterating over the shards). This is however not a
         // problem because we will wait a little bit longer.
         while !self.flush_buffer.is_empty() {
-            std::hint::spin_loop();
+            hint::spin_loop();
         }
         self.flush_workers.shutdown()?;
         let storage = Arc::into_inner(self.storage).ok_or_else(|| {
@@ -156,7 +157,7 @@ where
 
 /// A wrapper around a set of flush worker threads that allows to shut them down gracefully.
 struct FlushWorkers {
-    workers: Vec<std::thread::JoinHandle<BTResult<(), Error>>>,
+    workers: Vec<thread::JoinHandle<BTResult<(), Error>>>,
     shutdown: Arc<AtomicBool>, // Arc for shared ownership with flush worker threads
 }
 
@@ -177,7 +178,7 @@ impl FlushWorkers {
                 let flush_buffer = flush_buffer.clone();
                 let storage = storage.clone();
                 let shutdown = shutdown.clone();
-                std::thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
+                thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
             })
             .collect();
 
@@ -228,7 +229,7 @@ impl FlushWorkers {
                 }
                 // avoid busy looping
                 // TODO: use a condvar or similar
-                std::thread::yield_now();
+                thread::yield_now();
             }
         }
     }
@@ -253,7 +254,7 @@ enum Op<N> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, sync::atomic::AtomicUsize, time::Duration};
+    use std::{fs::File, time::Duration};
 
     use mockall::predicate::eq;
 
@@ -263,6 +264,11 @@ mod tests {
         storage::file::{
             NodeFileStorage, SeekFile, TestNode, TestNodeFileStorageManager, TestNodeId,
             TestNodeKind,
+        },
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+            is_finished, thread,
         },
         types::TreeId,
         utils::test_dir::{Permissions, TestDir},
@@ -314,7 +320,7 @@ mod tests {
             FlushWorkers::WORKER_COUNT
         );
         for worker in &storage.flush_workers.workers {
-            assert!(!worker.is_finished()); // Ensure the worker is running
+            assert!(!is_finished(worker)); // Ensure the worker is running
         }
     }
 
@@ -498,23 +504,23 @@ mod tests {
 
         let storage_with_flush_buffer = Arc::new(storage_with_flush_buffer);
 
-        let thread = std::thread::spawn({
+        let thread = thread::spawn({
             let storage_with_flush_buffer = storage_with_flush_buffer.clone();
             move || storage_with_flush_buffer.checkpoint()
         });
 
         // flush is waiting
-        assert!(!thread.is_finished());
-        std::thread::sleep(Duration::from_millis(100));
+        assert!(!is_finished(&thread));
+        thread::sleep(Duration::from_millis(100));
         // flush is still waiting
-        assert!(!thread.is_finished());
+        assert!(!is_finished(&thread));
 
         // remove the item from the buffer to allow flush to complete
         storage_with_flush_buffer.flush_buffer.remove(&id);
 
-        std::thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
         // flush should call flush on the underlying storage layer and return
-        assert!(thread.is_finished());
+        assert!(is_finished(&thread));
         assert!(thread.join().is_ok());
     }
 
@@ -538,7 +544,7 @@ mod tests {
         let workers = FlushWorkers::new(&flush_buffer, &storage);
         assert_eq!(workers.workers.len(), FlushWorkers::WORKER_COUNT);
         for worker in &workers.workers {
-            assert!(!worker.is_finished()); // Ensure the worker is running
+            assert!(!is_finished(worker)); // Ensure the worker is running
         }
     }
 
@@ -556,7 +562,7 @@ mod tests {
             let flush_buffer = flush_buffer.clone();
             let shutdown = shutdown.clone();
 
-            std::thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
+            thread::spawn(move || FlushWorkers::task(&flush_buffer, &*storage, &shutdown))
         }];
 
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
@@ -565,13 +571,13 @@ mod tests {
         flush_buffer.insert(id, Op::Set(node.clone()));
 
         // Allow the worker to process the set operation
-        std::thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
         assert!(flush_buffer.is_empty());
 
         flush_buffer.insert(id, Op::Delete);
 
         // Allow the worker to process the delete operation
-        std::thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
         assert!(flush_buffer.is_empty());
 
         shutdown.store(true, Ordering::SeqCst);
@@ -588,9 +594,9 @@ mod tests {
             .map(|_| {
                 let shutdown = shutdown.clone();
                 let shutdown_received = shutdown_received.clone();
-                std::thread::spawn(move || {
+                thread::spawn(move || {
                     while !shutdown.load(Ordering::SeqCst) {
-                        std::thread::yield_now(); // Simulate worker doing work
+                        thread::yield_now(); // Simulate worker doing work
                     }
                     shutdown_received.fetch_add(1, Ordering::SeqCst);
                     Ok(())
@@ -607,30 +613,37 @@ mod tests {
         );
     }
 
-    mockall::mock! {
-        pub Storage {}
+    #[allow(clippy::disallowed_types)]
+    mod mock {
+        use super::*;
 
-        impl Checkpointable for Storage {
-            fn checkpoint(&self) -> BTResult<u64, Error>;
+        mockall::mock! {
+            pub Storage {}
 
-            fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
-        }
+            impl Checkpointable for Storage {
+                fn checkpoint(&self) -> BTResult<u64, Error>;
 
-        impl Storage for Storage {
-            type Id = TestNodeId;
-            type Item = TestNode;
+                fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
+            }
 
-            fn open(_path: &Path) -> BTResult<Self, Error>;
+            impl Storage for Storage {
+                type Id = TestNodeId;
+                type Item = TestNode;
 
-            fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
+                fn open(_path: &Path) -> BTResult<Self, Error>;
 
-            fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+                fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 
-            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
+                fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
-            fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+                fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
 
-            fn close(self) -> BTResult<(), Error>;
+                fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+
+                fn close(self) -> BTResult<(), Error>;
+            }
         }
     }
+
+    use mock::MockStorage;
 }

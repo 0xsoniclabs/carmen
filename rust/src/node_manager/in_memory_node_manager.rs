@@ -8,10 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{
-    hint,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 use dashmap::{DashMap, DashSet};
 
@@ -19,7 +16,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::NodeManager,
     storage::{self, RootIdProvider},
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard, hint},
     types::{HasEmptyId, HasEmptyNode, ToNodeKind, TreeId},
 };
 

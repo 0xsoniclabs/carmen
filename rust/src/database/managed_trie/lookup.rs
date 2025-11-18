@@ -41,10 +41,12 @@ pub fn lookup<T: ManagedTrieNode>(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, thread};
 
     use super::*;
-    use crate::database::managed_trie::test_utils::{RcNodeExpectation, RcNodeManager};
+    use crate::{
+        database::managed_trie::test_utils::{RcNodeExpectation, RcNodeManager},
+        sync::{Arc, thread},
+    };
 
     #[test]
     fn lookup_returns_value_from_node() {

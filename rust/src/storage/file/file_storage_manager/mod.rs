@@ -970,40 +970,47 @@ mod tests {
         );
     }
 
-    mockall::mock! {
-        pub Storage<T: Send + Sync + 'static> {}
+    #[allow(clippy::disallowed_types)]
+    mod mock {
+        use super::*;
 
-        impl<T: Send + Sync + 'static> CheckpointParticipant for Storage<T> {
-            fn ensure(&self, checkpoint: u64) -> BTResult<(), Error>;
+        mockall::mock! {
 
-            fn prepare(&self, checkpoint: u64) -> BTResult<(), Error>;
+            pub Storage<T: Send + Sync + 'static> {}
 
-            fn commit(&self, checkpoint: u64) -> BTResult<(), Error>;
+            impl<T: Send + Sync + 'static> CheckpointParticipant for Storage<T> {
+                fn ensure(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-            fn abort(&self, checkpoint: u64) -> BTResult<(), Error>;
+                fn prepare(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-            fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
-        }
+                fn commit(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-        impl<T: Send + Sync + 'static> Storage for Storage<T> {
-            type Id = u64;
-            type Item = T;
+                fn abort(&self, checkpoint: u64) -> BTResult<(), Error>;
 
-            fn open(path: &std::path::Path) -> BTResult<Self, Error>
-            where
-                Self: Sized;
+                fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
+            }
 
-            fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
+            impl<T: Send + Sync + 'static> Storage for Storage<T> {
+                type Id = u64;
+                type Item = T;
 
-            fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+                fn open(path: &std::path::Path) -> BTResult<Self, Error>
+                where
+                    Self: Sized;
 
-            fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
+                fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 
-            fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+                fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
 
-            fn close(self) -> BTResult<(), Error>;
+                fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
+
+                fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+
+                fn close(self) -> BTResult<(), Error>;
+            }
         }
     }
+    use mock::MockStorage;
 
     pub type TestNodeId = [u8; 9];
 

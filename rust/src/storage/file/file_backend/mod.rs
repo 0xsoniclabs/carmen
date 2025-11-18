@@ -36,7 +36,7 @@ use crate::error::BTResult;
 /// that there are no data races) as long as they operate on non-overlapping regions of the file.
 /// When called with overlapping regions, the behavior is undefined and may lead to data corruption.
 #[allow(clippy::len_without_is_empty)]
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait FileBackend: Send + Sync {
     /// Opens a file at the given path with the specified options and tries to acquire a file lock.
     fn open(path: &Path, options: OpenOptions) -> BTResult<Self, std::io::Error>
@@ -72,6 +72,7 @@ mod tests {
         sync::{
             Arc, Barrier,
             atomic::{AtomicU64, Ordering},
+            thread,
         },
         utils::test_dir::{Permissions, TestDir},
     };
@@ -410,7 +411,7 @@ mod tests {
 
         let barrier = Barrier::new(THREADS);
 
-        std::thread::scope(|s| {
+        thread::scope(|s| {
             for t in 0..THREADS {
                 let barrier = &barrier;
                 let backend = Arc::clone(&backend);
@@ -474,7 +475,7 @@ mod tests {
 
         let max_iterations = 1_000;
 
-        std::thread::scope(|s| {
+        thread::scope(|s| {
             s.spawn(|| {
                 let mut buf = [0; 32];
                 loop {

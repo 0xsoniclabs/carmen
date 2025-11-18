@@ -8,14 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::RwLock;
-
 use ipa_multipoint::committer::DefaultCommitter;
 use verkle_trie::{DefaultConfig, Trie, TrieTrait, database::memory_db::MemoryDb};
 
 use crate::{
     database::verkle::{crypto::Commitment, verkle_trie::VerkleTrie},
     error::{BTResult, Error},
+    sync::RwLock,
     types::{Key, Value},
 };
 

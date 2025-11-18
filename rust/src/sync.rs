@@ -9,7 +9,34 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 #[cfg(not(feature = "shuttle"))]
-pub(crate) use std::{hint, sync::*, thread};
+#[cfg(test)]
+pub(crate) use std::sync::Barrier;
+#[cfg(not(feature = "shuttle"))]
+pub(crate) use std::{
+    hint,
+    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic},
+    thread,
+};
 
 #[cfg(feature = "shuttle")]
-pub(crate) use shuttle::{hint, sync::*, thread};
+#[cfg(test)]
+pub(crate) use shuttle::sync::Barrier;
+#[cfg(feature = "shuttle")]
+pub(crate) use shuttle::{
+    hint,
+    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic},
+    thread,
+};
+
+/// Wraps the `is_finished` method of `std::thread::JoinHandle`, which is not available in shuttle
+/// and calls `unimplemented!` instead.
+pub fn is_finished(_handle: &thread::JoinHandle<impl Send>) -> bool {
+    #[cfg(not(feature = "shuttle"))]
+    {
+        _handle.is_finished()
+    }
+    #[cfg(feature = "shuttle")]
+    {
+        unimplemented!("shuttle threads do not support is_finished")
+    }
+}

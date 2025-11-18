@@ -112,14 +112,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
-
     use super::*;
     use crate::{
         database::managed_trie::test_utils::{
             Id, RcNodeExpectation, RcNodeManager, TestNodeCommitment,
         },
-        sync::{Arc, RwLock},
+        sync::{Arc, RwLock, thread},
     };
 
     const KEY: Key = [7u8; 32];

@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
+#![cfg_attr(feature = "shuttle", deny(clippy::disallowed_types))]
+#![cfg_attr(feature = "shuttle", deny(clippy::disallowed_methods))]
 
 use std::{mem::MaybeUninit, ops::Deref};
 
@@ -69,7 +71,7 @@ pub fn open_carmen_db(
 
 /// The safe Carmen database interface.
 /// This is the safe interface which gets called from the exported FFI functions.
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait CarmenDb: Send + Sync {
     /// Creates a new checkpoint by persisting all state information to disk to guarantee permanent
     /// storage.
@@ -95,7 +97,7 @@ pub trait CarmenDb: Send + Sync {
 
 /// The safe Carmen state interface.
 /// This is the safe interface which gets called from the exported FFI functions.
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait CarmenState: Send + Sync {
     /// Checks if the given account exists.
     fn account_exists(&self, addr: &Address) -> BTResult<bool, Error>;
