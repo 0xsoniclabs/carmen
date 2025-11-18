@@ -293,6 +293,10 @@ func newRustCrateCryptoInMemoryState(params state.Parameters) (state.State, erro
 	return newState("crate-crypto-memory", params, externalImplRust)
 }
 
+func newRustFileBasedState(params state.Parameters) (state.State, error) {
+	return newState("file", params, externalImplRust)
+}
+
 func newCppInMemoryState(params state.Parameters) (state.State, error) {
 	return newState("memory", params, externalImplCpp)
 }

@@ -34,6 +34,7 @@ mod bindings {
                 )
                 | Error::IllegalConcurrentOperation(_)
                 | Error::CorruptedState(_) => Result_kResult_InternalError,
+                Error::IllegalArgument(_) => Result_kResult_InvalidArguments,
                 Error::Storage(
                     crate::storage::Error::DatabaseCorruption | crate::storage::Error::DirtyOpen,
                 ) => Result_kResult_CorruptedDatabase,
