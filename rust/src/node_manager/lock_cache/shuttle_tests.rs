@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use core::panic;
-use std::{collections::HashSet, env, iter, num::NonZero, panic::catch_unwind};
+use std::{env, iter, num::NonZero, panic::catch_unwind};
 
 use itertools::Itertools;
 
@@ -68,7 +68,7 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
 /// can be replayed by setting the `CARMEN_SHUTTLE_SERIALIZED_CASE` environment variable.
 #[test]
 fn shuttle__operation_permutations() {
-    const PERMUTATION_SHUTTLE_ITERATIONS: usize = 100;
+    const SHUTTLE_PERMUTATION_ITERATIONS: usize = 100;
     if cfg!(not(feature = "shuttle")) {
         return;
     }
@@ -95,13 +95,11 @@ fn shuttle__operation_permutations() {
         };
 
     for operation_case in case_yielder {
-        let case_error_pool: Arc<std::sync::Mutex<HashSet<OpPanicStatus>>> = Arc::default();
         operation_case.serialize(&current_dir);
         let PermutationTestCase {
             cache_size,
             operations,
         } = operation_case;
-        case_error_pool.lock().unwrap().clear();
 
         let shuttle_res = catch_unwind(|| {
             run_shuttle_check(
@@ -125,18 +123,11 @@ fn shuttle__operation_permutations() {
                         }
                     }
                 },
-                PERMUTATION_SHUTTLE_ITERATIONS,
+                SHUTTLE_PERMUTATION_ITERATIONS,
             );
         });
         if let Err(e) = shuttle_res {
             if let Some(error) = e.downcast_ref::<OpPanicStatus>() {
-                let mut case_error_pool = case_error_pool.lock().unwrap();
-                // Skip already known error cases
-                if case_error_pool.contains(error) {
-                    break;
-                }
-                case_error_pool.insert(error.clone());
-
                 eprintln!("\n#############################################################");
                 eprintln!("Test case failed: {operations:?} with cache size {cache_size}");
                 eprintln!("--------------------------------------------------------------");
