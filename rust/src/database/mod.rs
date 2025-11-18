@@ -11,4 +11,8 @@
 mod managed_trie;
 pub mod verkle;
 
-pub use verkle::{CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie, VerkleTrieCarmenState};
+pub use managed_trie::ManagedTrieNode;
+pub use verkle::{
+    CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie,
+    VerkleTrieCarmenState,
+};
