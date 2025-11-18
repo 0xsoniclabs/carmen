@@ -56,6 +56,11 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
         let _span = tracy_client::span!("SimpleInMemoryVerkleTrie::commit");
         Ok(self.root.lock().unwrap().commit())
     }
+
+    fn after_update(&self, _block_height: u64) -> BTResult<(), Error> {
+        // No-op for this implementation
+        Ok(())
+    }
 }
 
 #[cfg(test)]

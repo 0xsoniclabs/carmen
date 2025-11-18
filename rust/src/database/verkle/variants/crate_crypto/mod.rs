@@ -56,6 +56,11 @@ impl VerkleTrie for CrateCryptoInMemoryVerkleTrie {
             self.trie.read().unwrap().root_commitment(),
         ))
     }
+
+    fn after_update(&self, _block_height: u64) -> BTResult<(), Error> {
+        // No-op for this implementation
+        Ok(())
+    }
 }
 
 // NOTE: Tests are in verkle_trie.rs

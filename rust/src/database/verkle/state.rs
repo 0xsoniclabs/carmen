@@ -127,7 +127,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    fn apply_block_update<'u>(&self, _block: u64, update: Update<'u>) -> BTResult<(), Error> {
+    fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         if let Ok(updates) = KeyedUpdateBatch::try_from(update) {
             for update in &*updates {
                 match update {
@@ -145,17 +145,21 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
                 }
             }
         }
+
+        self.trie.after_update(block)?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use mockall::predicate::eq;
     use sha3::{Digest, Keccak256};
 
     use super::*;
     use crate::{
-        database::verkle::test_utils::FromIndexValues,
+        database::verkle::{test_utils::FromIndexValues, verkle_trie::MockVerkleTrie},
+        node_manager::in_memory_node_manager::InMemoryNodeManager,
         types::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate},
     };
 
@@ -513,6 +517,20 @@ mod tests {
         let expected = "0x6b188de48e78866c34d38382b1965ec4908a0525d41cd66d18385390010b707d";
 
         assert_eq!(const_hex::encode_prefixed(hash), expected);
+    }
+
+    #[test]
+    fn state_calls_after_update_with_correct_block_height_after_applying_update() {
+        let block_height = 42;
+        let mut trie = MockVerkleTrie::new();
+        trie.expect_after_update()
+            .with(eq(block_height))
+            .times(1)
+            .returning(|_| Ok(()));
+        let state = VerkleTrieCarmenState { trie };
+        state
+            .apply_block_update(block_height, Update::default())
+            .unwrap();
     }
 
     fn create_account(state: &dyn CarmenState, addr: Address) {

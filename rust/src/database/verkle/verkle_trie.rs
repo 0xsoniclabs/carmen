@@ -22,6 +22,7 @@ use crate::{
 ///
 /// The trait prescribes interior mutability through shared references,
 /// allowing for safe concurrent access.
+#[cfg_attr(test, mockall::automock)]
 pub trait VerkleTrie: Send + Sync {
     /// Retrieves the value associated with the given key.
     /// Returns the default [`Value`] if the key does not exist.
@@ -34,6 +35,9 @@ pub trait VerkleTrie: Send + Sync {
     /// The commitment can be used as cryptographic proof of the trie's state,
     /// i.e., all contained key-value pairs.
     fn commit(&self) -> BTResult<Commitment, Error>;
+
+    /// Notifies the trie that all updates for the given block height have been applied.
+    fn after_update(&self, block_height: u64) -> BTResult<(), Error>;
 }
 
 #[cfg(test)]
