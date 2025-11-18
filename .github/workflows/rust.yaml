@@ -120,6 +120,23 @@ jobs:
     - name: cargo test
       run: cargo test --all-targets --no-fail-fast
 
+  shuttle-test:
+    name: shuttle-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+    - name: install rust
+      uses: dtolnay/rust-toolchain@1.89
+    - name: load cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
+    - name: cargo shuttle test
+      run: cargo test --features shuttle shuttletest --all-targets --no-fail-fast
+
   coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 20

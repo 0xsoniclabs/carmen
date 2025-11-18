@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[rstest_reuse::apply(get_method)]
-fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_once(
+fn shuttletest_cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_once(
     #[case] get_fn: GetOrInsertMethod<dyn Fn() -> BTResult<i32, Error>>,
 ) {
     run_shuttle_check(
@@ -67,7 +67,7 @@ fn shuttle__cached_node_manager_multiple_get_on_same_id_insert_in_cache_only_onc
 /// To facilitate debugging, each test case is serialized to a file before being executed, and
 /// can be replayed by setting the `CARMEN_SHUTTLE_SERIALIZED_CASE` environment variable.
 #[test]
-fn shuttle__operation_permutations() {
+fn shuttletest_operation_permutations() {
     const SHUTTLE_PERMUTATION_ITERATIONS: usize = 100;
     if cfg!(not(feature = "shuttle")) {
         return;
