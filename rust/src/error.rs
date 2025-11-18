@@ -27,6 +27,9 @@ pub enum Error {
     /// An unsupported operation was attempted.
     #[error("unsupported operation: {0}")]
     UnsupportedOperation(String),
+    /// An illegal argument was provided.
+    #[error("illegal argument: {0}")]
+    IllegalArgument(String),
     #[error("storage error: {0}")]
     Storage(#[from] storage::Error),
     /// An illegal concurrent operation was attempted.
