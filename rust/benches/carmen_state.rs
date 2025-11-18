@@ -48,6 +48,7 @@ enum InitialState {
     Empty,
     Small,
     Large,
+    Test,
 }
 
 impl InitialState {
@@ -56,6 +57,7 @@ impl InitialState {
             InitialState::Empty => 0,
             InitialState::Small => 1000,
             InitialState::Large => 10000,
+            InitialState::Test => 1,
         }
     }
 
@@ -64,15 +66,19 @@ impl InitialState {
             InitialState::Empty => 0,
             InitialState::Small => 5,
             InitialState::Large => 10,
+            InitialState::Test => 1,
         }
     }
 
     /// Initializes the Carmen state with the current initial state.
     /// Accounts and keys are incrementally generated.
     fn init(self, carmen_state: &dyn CarmenState) {
+        if matches!(self, InitialState::Empty) {
+            return;
+        }
         let num_accounts = self.num_accounts();
         let num_storage_keys = self.num_storage_keys();
-        let buffer_size = usize::min(num_accounts / 10, 10000);
+        let buffer_size = usize::max(1, usize::min(num_accounts / 10, 10000));
         for i in (0..num_accounts).step_by(buffer_size) {
             let mut slots_update = vec![];
             for account_index in i..usize::min(i + buffer_size, num_accounts) {
@@ -123,7 +129,7 @@ impl InitialState {
 /// - Number of threads
 fn state_read_benchmark(c: &mut criterion::Criterion) {
     let initial_states = if cfg!(debug_assertions) {
-        vec![InitialState::Empty]
+        vec![InitialState::Test]
     } else {
         vec![InitialState::Small, InitialState::Large]
     };
@@ -188,23 +194,22 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
 /// - Whether to update existing storage keys or new ones
 /// - Number of batches (how many updates share the same address)
 fn state_update_benchmark(c: &mut criterion::Criterion) {
-    const NUM_KEY_TO_UPDATE: u64 = if cfg!(debug_assertions) {
-        10
+    let (num_key_to_update, num_batches, initial_states) = if cfg!(debug_assertions) {
+        (10, vec![1, 10], vec![InitialState::Test])
     } else {
-        1_000_000
-    };
-    let num_batches = if cfg!(debug_assertions) {
-        vec![1, 10]
-    } else {
-        vec![1, 10, 100, 1_000, 10_000, 100_000]
+        (
+            1_000_000,                                // Total number of storage keys to update
+            vec![1, 10, 100, 1_000, 10_000, 100_000], // Number of batches
+            InitialState::variants().to_vec(),        // Initial states to test
+        )
     };
 
-    for initial_state in InitialState::variants() {
+    for initial_state in initial_states {
         let mut group = c.benchmark_group(format!("carmen_state_update/{initial_state:?}"));
         group.sample_size(10); // This is the minimum criterion allows
         for num_batch in &num_batches {
             for existing in [true, false] {
-                if *initial_state == InitialState::Empty && existing {
+                if initial_state == InitialState::Empty && existing {
                     continue;
                 }
                 for state_type in CarmenStateKind::variants() {
@@ -222,9 +227,9 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
                         |carmen_state| {
                             let num_accounts = initial_state.num_accounts();
                             let num_storage_keys = initial_state.num_storage_keys() as u64;
-                            let mut slots_update = Vec::with_capacity(NUM_KEY_TO_UPDATE as usize);
-                            let keys_per_batch = NUM_KEY_TO_UPDATE / num_batch;
-                            for (account, _) in (0..NUM_KEY_TO_UPDATE)
+                            let mut slots_update = Vec::with_capacity(num_key_to_update as usize);
+                            let keys_per_batch = num_key_to_update / num_batch;
+                            for (account, _) in (0..num_key_to_update)
                                 .step_by(keys_per_batch as usize)
                                 .enumerate()
                             {
