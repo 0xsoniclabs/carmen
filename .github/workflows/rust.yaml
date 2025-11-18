@@ -135,7 +135,7 @@ jobs:
       with:
         workspaces: rust
     - name: cargo shuttle test
-      run: cargo test --features shuttle shuttletest --all-targets --no-fail-fast
+      run: cargo test --features shuttle shuttletest --no-fail-fast
 
   coverage:
     runs-on: ubuntu-latest
