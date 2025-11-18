@@ -25,12 +25,41 @@ use carmen_rust::{
         lock_cache::{EvictionHooks, LockCache},
     },
     storage::{self, Storage},
+    types::{HasEmptyId, HasEmptyNode},
 };
 use criterion::{BenchmarkId, criterion_group, criterion_main};
 use quick_cache::{Lifecycle, UnitWeighter};
 
 use crate::utils::{execute_with_threads, pow_2_threads, with_prob};
 pub mod utils;
+
+/// A simple identifier for benchmarking purposes.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct BenchId(u64);
+
+impl HasEmptyId for BenchId {
+    fn empty_id() -> Self {
+        BenchId(u64::MAX)
+    }
+
+    fn is_empty_id(&self) -> bool {
+        self.0 == u64::MAX
+    }
+}
+
+/// A simple value for benchmarking purposes.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct BenchValue(i64);
+
+impl HasEmptyNode for BenchValue {
+    fn empty_node() -> Self {
+        BenchValue(i64::MAX)
+    }
+
+    fn is_empty_node(&self) -> bool {
+        self.0 == i64::MAX
+    }
+}
 
 /// A component that randomly pins items based on a given probability.
 #[derive(Clone, Default)]
@@ -51,8 +80,8 @@ impl<K, V> Lifecycle<K, V> for RandomPinner {
 }
 
 impl EvictionHooks for RandomPinner {
-    type Key = u64;
-    type Value = i64;
+    type Key = BenchId;
+    type Value = BenchValue;
 
     fn is_pinned(&self, _key: &Self::Key, _value: &Self::Value) -> bool {
         with_prob(self.prob)
@@ -74,19 +103,19 @@ impl ProducerStorage {
 }
 
 impl Storage for ProducerStorage {
-    type Id = u64;
-    type Item = i64;
+    type Id = BenchId;
+    type Item = BenchValue;
 
     fn open(_path: &std::path::Path) -> BTResult<Self, storage::Error> {
         Ok(Self::new())
     }
 
     fn get(&self, _id: Self::Id) -> BTResult<Self::Item, storage::Error> {
-        Ok(42i64)
+        Ok(BenchValue(42))
     }
 
     fn reserve(&self, _item: &Self::Item) -> Self::Id {
-        self.id_counter.fetch_add(1, Ordering::Relaxed)
+        BenchId(self.id_counter.fetch_add(1, Ordering::Relaxed))
     }
 
     fn set(&self, _id: Self::Id, _item: &Self::Item) -> BTResult<(), carmen_rust::storage::Error> {
@@ -106,9 +135,11 @@ impl Storage for ProducerStorage {
 #[allow(clippy::type_complexity)]
 #[allow(clippy::enum_variant_names)]
 enum Cache {
-    QuickCache(quick_cache::sync::Cache<u64, i64, UnitWeighter, RandomState, RandomPinner>),
+    QuickCache(
+        quick_cache::sync::Cache<BenchId, BenchValue, UnitWeighter, RandomState, RandomPinner>,
+    ),
     CachedNodeManager(CachedNodeManager<ProducerStorage>),
-    LockCache(LockCache<u64, i64>),
+    LockCache(LockCache<BenchId, BenchValue>),
 }
 
 /// Enum representing the different cache implementations used in the benchmarks
@@ -163,15 +194,15 @@ impl Cache {
         for i in 0..self.capacity() {
             match self {
                 Cache::QuickCache(cache) => {
-                    cache.insert(i, 42i64);
+                    cache.insert(BenchId(i), BenchValue(42));
                 }
                 Cache::LockCache(lock_cache) => {
                     let _unused = lock_cache
-                        .get_read_access_or_insert(i, || Ok(42i64))
+                        .get_read_access_or_insert(BenchId(i), || Ok(BenchValue(42)))
                         .unwrap();
                 }
                 Cache::CachedNodeManager(node_manager) => {
-                    let _unused = node_manager.get_read_access(i).unwrap();
+                    let _unused = node_manager.get_read_access(BenchId(i)).unwrap();
                 }
             }
         }
@@ -187,13 +218,13 @@ impl Cache {
     }
 
     /// Executes a read operation on the cache for the given id.
-    fn read(&self, id: u64) {
+    fn read(&self, id: BenchId) {
         match self {
             Cache::QuickCache(cache) => match cache.get_value_or_guard(&id, None) {
                 quick_cache::sync::GuardResult::Value(_) => {}
                 quick_cache::sync::GuardResult::Guard(_)
                 | quick_cache::sync::GuardResult::Timeout => {
-                    panic!("Cache miss on QuickCache for id {id}");
+                    panic!("Cache miss on QuickCache for id {id:?}");
                 }
             },
             Cache::CachedNodeManager(node_manager) => {
@@ -201,31 +232,33 @@ impl Cache {
             }
             Cache::LockCache(lock_cache) => {
                 let _node = lock_cache
-                    .get_read_access_or_insert(id, || Ok(42i64))
+                    .get_read_access_or_insert(id, || Ok(BenchValue(42)))
                     .unwrap();
             }
         }
     }
 
-    fn add(&self, id: u64) {
+    fn add(&self, id: BenchId) {
         match self {
             Cache::QuickCache(cache) => match cache.get_value_or_guard(&id, None) {
                 quick_cache::sync::GuardResult::Guard(guard) => {
-                    guard.insert(42).unwrap();
+                    guard.insert(BenchValue(42)).unwrap();
                 }
                 quick_cache::sync::GuardResult::Value(_) => {
-                    panic!("Cache hit on QuickCache for id {id}");
+                    panic!("Cache hit on QuickCache for id {id:?}");
                 }
                 quick_cache::sync::GuardResult::Timeout => {
                     unreachable!();
                 }
             },
             Cache::CachedNodeManager(node_manager) => {
-                let _node = node_manager.add(42).unwrap();
+                let _node = node_manager.add(BenchValue(42)).unwrap();
             }
             Cache::LockCache(lock_cache) => {
                 // No real way to enforce an insert
-                let _unused = lock_cache.get_read_access_or_insert(id, || Ok(42)).unwrap();
+                let _unused = lock_cache
+                    .get_read_access_or_insert(id, || Ok(BenchValue(42)))
+                    .unwrap();
             }
         }
     }
@@ -266,7 +299,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
                                 || (),
                                 |iter, _| {
                                     // Make sure the accessed id is always in cache
-                                    cache.read(iter % cache_size);
+                                    cache.read(BenchId(iter % cache_size));
                                 },
                             )
                         });
@@ -315,7 +348,7 @@ fn add_benchmark(c: &mut criterion::Criterion) {
                                     |iter, _| {
                                         // Force eviction on every read by only requesting ids that
                                         // are not in the cache
-                                        cache.add(iter + cache_size);
+                                        cache.add(BenchId(iter + cache_size));
                                     },
                                 )
                             });
