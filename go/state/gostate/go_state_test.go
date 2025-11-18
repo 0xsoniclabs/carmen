@@ -357,19 +357,19 @@ func TestHashing(t *testing.T) {
 			}
 			defer state.Close()
 
-			initialHash, err := state.GetHash()
+			initialHash, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
 			state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
-			hash1, err := state.GetHash()
+			hash1, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
 			state.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
-			hash2, err := state.GetHash()
+			hash2, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
@@ -378,7 +378,7 @@ func TestHashing(t *testing.T) {
 			}
 
 			state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
-			hash3, err := state.GetHash()
+			hash3, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
@@ -391,7 +391,7 @@ func TestHashing(t *testing.T) {
 			}
 
 			state.Apply(4, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
-			hash4, err := state.GetHash()
+			hash4, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
@@ -806,7 +806,7 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 					t.Errorf("operation should fail")
 				}
 				shouldFail = shouldFail || errors.Is(results[7], injectedErr)
-				if _, err := db.GetHash(); shouldFail && !errors.Is(err, injectedErr) {
+				if _, err := db.GetCommitment().Await().Get(); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
 				shouldFail = shouldFail || errors.Is(results[8], injectedErr)

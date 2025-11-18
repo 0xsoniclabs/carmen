@@ -19,6 +19,8 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 )
 
@@ -55,8 +57,15 @@ type State interface {
 	// Apply applies the provided updates to the state content.
 	Apply(block uint64, update common.Update) error
 
-	// GetHash hashes the values.
+	// GetHash hashes the state.
+	// Deprecated: use GetCommitment instead.
 	GetHash() (common.Hash, error)
+
+	// GetCommitment computes a full-state commitment. The operation may be
+	// performed asynchronously, allowing concurrent operations in the
+	// meanwhile. The commitment, however, will be provided for the state as it
+	// was when GetCommitment was called.
+	GetCommitment() future.Future[result.Result[common.Hash]]
 
 	// Flush writes all committed content to disk.
 	Flush() error

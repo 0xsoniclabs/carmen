@@ -18,6 +18,8 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"go.uber.org/mock/gomock"
 )
@@ -90,9 +92,9 @@ func TestQueryContext_QueriesAreForwarded(t *testing.T) {
 				}
 			},
 		},
-		"state-hash": {
+		"state-commitment": {
 			func(mock *state.MockState) {
-				mock.EXPECT().GetHash().Return(common.Hash{1, 2, 3}, nil)
+				mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{1, 2, 3})))
 			},
 			func(query *queryContext, t *testing.T) {
 				if want, got := (Hash{1, 2, 3}), query.GetStateHash(); want != got {
@@ -191,9 +193,9 @@ func TestQueryContext_ErrorsArePropagated(t *testing.T) {
 				}
 			},
 		},
-		"state-hash": {
+		"state-commitment": {
 			func(mock *state.MockState) {
-				mock.EXPECT().GetHash().Return(common.Hash{1, 2, 3}, injectedError)
+				mock.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
 			},
 			func(query *queryContext, t *testing.T) {
 				if want, got := (Hash{}), query.GetStateHash(); want != got {

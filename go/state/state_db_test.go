@@ -14,11 +14,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"go.uber.org/mock/gomock"
 	"reflect"
 	"testing"
+
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
+	"go.uber.org/mock/gomock"
 )
 
 var (
@@ -3518,9 +3521,26 @@ func TestStateDB_GetHashObtainsHashFromUnderlyingState(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	hash := common.Hash{1, 2, 3}
-	mock.EXPECT().GetHash().Return(hash, nil)
+	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash)))
 
 	if want, got := hash, db.GetHash(); want != got {
+		t.Errorf("unexpected hash, wanted %d, got %d", want, got)
+	}
+}
+
+func TestStateDB_GetCommitmentObtainsCommitmentFromUnderlyingState(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	hash := common.Hash{1, 2, 3}
+	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash)))
+
+	got, err := db.GetCommitment().Await().Get()
+	if err != nil {
+		t.Fatalf("unexpected error getting commitment: %v", err)
+	}
+	if want, got := hash, got; want != got {
 		t.Errorf("unexpected hash, wanted %d, got %d", want, got)
 	}
 }
@@ -3600,10 +3620,18 @@ func TestStateDB_CollectsErrorsAndReportsThemDuringACheck(t *testing.T) {
 		},
 		"get-hash": {
 			setExpectations: func(state *MockState) {
-				state.EXPECT().GetHash().Return(common.Hash{}, injectedError)
+				state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
 			},
 			applyOperation: func(db StateDB) {
 				db.GetHash()
+			},
+		},
+		"get-commitment": {
+			setExpectations: func(state *MockState) {
+				state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
+			},
+			applyOperation: func(db StateDB) {
+				db.GetCommitment().Await()
 			},
 		},
 		"has-empty-storage": {
@@ -3914,7 +3942,7 @@ func TestStateDB_BulkLoadReachesState(t *testing.T) {
 		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 	})
 	mock.EXPECT().Flush().Return(nil)
-	mock.EXPECT().GetHash().Return(common.Hash{}, nil)
+	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
 	load := db.StartBulkLoad(0)
 	load.CreateAccount(address1)
@@ -4023,7 +4051,7 @@ func TestStateDB_BulkLoadCloseReportsHashingIssues(t *testing.T) {
 	injectedError := fmt.Errorf("injected error")
 	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil)
 	state.EXPECT().Flush().Return(nil)
-	state.EXPECT().GetHash().Return(common.Hash{}, injectedError)
+	state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
 
 	bulk := bulkLoad{
 		block: 12,
@@ -4047,7 +4075,9 @@ func TestStateDB_ThereCanBeMultipleBulkLoadPhases(t *testing.T) {
 
 	mock.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
 	mock.EXPECT().Flush().Times(N).Return(nil)
-	mock.EXPECT().GetHash().Times(N).Return(common.Hash{}, nil)
+	mock.EXPECT().GetCommitment().Times(N).DoAndReturn(func() future.Future[result.Result[common.Hash]] {
+		return future.Immediate(result.Ok(common.Hash{}))
+	})
 
 	for i := 0; i < N; i++ {
 		load := db.StartBulkLoad(uint64(i))
@@ -4134,7 +4164,7 @@ func TestBulkLoad_CloseResetsLocalCache(t *testing.T) {
 		mock.EXPECT().Exists(address3),
 		mock.EXPECT().Apply(uint64(1), gomock.Any()),
 		mock.EXPECT().Flush(),
-		mock.EXPECT().GetHash().Return(common.Hash{}, nil),
+		mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 	)
 
 	// fill the db with some accounts
@@ -4195,7 +4225,7 @@ func TestStateDB_EffectsOfBulkLoadAreSeenByStateDB(t *testing.T) {
 		state.EXPECT().Exists(addr).Return(false, nil),
 		state.EXPECT().Apply(gomock.Any(), gomock.Any()),
 		state.EXPECT().Flush(),
-		state.EXPECT().GetHash(),
+		state.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 		state.EXPECT().Exists(addr).Return(true, nil),
 	)
 

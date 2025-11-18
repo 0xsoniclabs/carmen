@@ -15,6 +15,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
@@ -108,9 +110,13 @@ func (s *syncedState) Apply(block uint64, update common.Update) error {
 }
 
 func (s *syncedState) GetHash() (common.Hash, error) {
+	return s.GetCommitment().Await().Get()
+}
+
+func (s *syncedState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.GetHash()
+	return s.state.GetCommitment()
 }
 
 func (s *syncedState) Flush() error {

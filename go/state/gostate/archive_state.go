@@ -17,6 +17,8 @@ import (
 	"io"
 	"unsafe"
 
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	mptio "github.com/0xsoniclabs/carmen/go/database/mpt/io"
@@ -141,15 +143,20 @@ func (s *ArchiveState) Apply(block uint64, update common.Update) error {
 }
 
 func (s *ArchiveState) GetHash() (common.Hash, error) {
+	return s.GetCommitment().Await().Get()
+}
+
+func (s *ArchiveState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	if err := s.archiveError; err != nil {
-		return common.Hash{}, err
+		return future.Immediate(result.Err[common.Hash](err))
 	}
 
 	hash, err := s.archive.GetHash(s.block)
 	if err != nil {
 		s.archiveError = errors.Join(s.archiveError, err)
+		return future.Immediate(result.Err[common.Hash](err))
 	}
-	return hash, s.archiveError
+	return future.Immediate(result.Ok(hash))
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory

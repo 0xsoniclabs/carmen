@@ -270,7 +270,7 @@ func runBenchmarkState(
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
 		}
 		// make sure hash/commit is computed
-		if _, err := state.GetHash(); err != nil {
+		if _, err := state.GetCommitment().Await().Get(); err != nil {
 			return res, fmt.Errorf("error getting hash after applying block %d: %v", i, err)
 		}
 

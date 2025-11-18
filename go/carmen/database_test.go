@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/0xsoniclabs/carmen/go/state/gostate"
@@ -138,7 +140,7 @@ func TestDatabase_QueryHeadState_UnderlyingDBQuery_Fails(t *testing.T) {
 	state := state.NewMockState(ctrl)
 
 	injectedErr := fmt.Errorf("injectedErr")
-	state.EXPECT().GetHash().Return(common.Hash{}, injectedErr)
+	state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedErr)))
 	state.EXPECT().Check()
 
 	db := &database{
@@ -160,7 +162,7 @@ func TestDatabase_QueryHeadState_UnderlyingDB_Fails(t *testing.T) {
 	state := state.NewMockState(ctrl)
 
 	injectedErr := fmt.Errorf("injectedErr")
-	state.EXPECT().GetHash().Return(common.Hash{}, nil)
+	state.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 	state.EXPECT().Check().Return(injectedErr)
 
 	db := &database{
@@ -241,7 +243,7 @@ func TestDatabase_GetHistoricStateHash_UnderlyingDB_FailsGettingHash(t *testing.
 
 	injectedErr := fmt.Errorf("injectedErr")
 	subSt := state.NewMockState(ctrl)
-	subSt.EXPECT().GetHash().Return(common.Hash{}, injectedErr)
+	subSt.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedErr)))
 	subSt.EXPECT().Check().Times(2).Return(nil)
 
 	st.EXPECT().GetArchiveState(gomock.Any()).Return(subSt, nil)

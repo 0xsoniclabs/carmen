@@ -15,11 +15,14 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"slices"
 	"sync"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/future"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 )
 
@@ -95,7 +98,11 @@ type VmStateDB interface {
 	AbortTransaction()
 
 	// GetHash obtains a cryptographically unique hash of the committed state.
+	// Deprecated: use GetCommitment instead.
 	GetHash() common.Hash
+
+	// GetCommitment obtains a cryptographic commitment of the committed state.
+	GetCommitment() future.Future[result.Result[common.Hash]]
 
 	// Check checks the state of the DB and reports an error if issues have been
 	// encountered. Check should be called periodically to validate all interactions
@@ -115,7 +122,7 @@ type StateDB interface {
 	EndEpoch(number uint64)
 
 	// Flushes committed state to disk.
-	// Deprecated: these methods shuold not be called, one statedb inst should not close/flush global databsae
+	// Deprecated: these methods should not be called, one statedb inst should not close/flush global database
 	Flush() error
 	Close() error
 
@@ -245,6 +252,9 @@ type stateDB struct {
 
 	// A list of errors encountered during DB interactions.
 	errors []error
+
+	// Mutex to protect access to the errors slice.
+	errorsMutex sync.Mutex
 }
 
 type accountLifeCycleState int
@@ -475,7 +485,7 @@ func (s *stateDB) Exist(addr common.Address) bool {
 	}
 	exists, err := s.state.Exists(addr)
 	if err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to get account state for %v: %w", addr, err))
+		s.trackErrors(fmt.Errorf("failed to get account state for %v: %w", addr, err))
 		return false
 	}
 	state := accountNonExisting
@@ -628,7 +638,7 @@ func (s *stateDB) GetBalance(addr common.Address) amount.Amount {
 	// Since the value is not present, we need to fetch it from the store.
 	balance, err := s.state.GetBalance(addr)
 	if err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to load balance for address %v: %w", addr, err))
+		s.trackErrors(fmt.Errorf("failed to load balance for address %v: %w", addr, err))
 		return amount.New() // We need to return something that allows the VM to continue.
 	}
 	s.balances[addr] = &balanceValue{
@@ -650,7 +660,7 @@ func (s *stateDB) AddBalance(addr common.Address, diff amount.Amount) {
 	newValue, overflow := amount.AddOverflow(oldValue, diff)
 
 	if overflow {
-		s.errors = append(s.errors, fmt.Errorf("failed to add balance for address %v: overflow", addr))
+		s.trackErrors(fmt.Errorf("failed to add balance for address %v: overflow", addr))
 		return
 	}
 
@@ -672,7 +682,7 @@ func (s *stateDB) SubBalance(addr common.Address, diff amount.Amount) {
 	newValue, underflow := amount.SubUnderflow(oldValue, diff)
 
 	if underflow {
-		s.errors = append(s.errors, fmt.Errorf("failed to subtract balance for address %v: underflow", addr))
+		s.trackErrors(fmt.Errorf("failed to subtract balance for address %v: underflow", addr))
 		return
 	}
 
@@ -715,7 +725,7 @@ func (s *stateDB) GetNonce(addr common.Address) uint64 {
 	// Since the value is not present, we need to fetch it from the store.
 	nonce, err := s.state.GetNonce(addr)
 	if err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to load nonce for address %v: %w", addr, err))
+		s.trackErrors(fmt.Errorf("failed to load nonce for address %v: %w", addr, err))
 		return 0
 	}
 	res := nonce.ToUint64()
@@ -778,7 +788,7 @@ func (s *stateDB) loadStoredState(sid slotId, val *slotValue) common.Value {
 		var err error
 		stored.value, err = s.state.GetStorage(sid.addr, sid.key)
 		if err != nil {
-			s.errors = append(s.errors, fmt.Errorf("failed to load storage location %v/%v: %w", sid.addr, sid.key, err))
+			s.trackErrors(fmt.Errorf("failed to load storage location %v/%v: %w", sid.addr, sid.key, err))
 			return common.Value{}
 		}
 		stored.reincarnation = reincarnation
@@ -893,7 +903,7 @@ func (s *stateDB) HasEmptyStorage(addr common.Address) bool {
 
 	empty, err := s.state.HasEmptyStorage(addr)
 	if err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to check empty storage for address %v: %w", addr, err))
+		s.trackErrors(fmt.Errorf("failed to check empty storage for address %v: %w", addr, err))
 	}
 
 	return empty
@@ -908,7 +918,7 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 	if !val.codeValid {
 		code, err := s.state.GetCode(addr)
 		if err != nil {
-			s.errors = append(s.errors, fmt.Errorf("unable to obtain code for %v: %w", addr, err))
+			s.trackErrors(fmt.Errorf("unable to obtain code for %v: %w", addr, err))
 			return nil
 		}
 		val.code, val.codeValid = code, true
@@ -966,7 +976,7 @@ func (s *stateDB) GetCodeHash(addr common.Address) common.Hash {
 		// hash not loaded, code not dirty - needs to load the hash from the state
 		hash, err := s.state.GetCodeHash(addr)
 		if err != nil {
-			s.errors = append(s.errors, fmt.Errorf("unable to obtain code hash for %v: %w", addr, err))
+			s.trackErrors(fmt.Errorf("unable to obtain code hash for %v: %w", addr, err))
 			return common.Hash{}
 		}
 		val.hash = &hash
@@ -983,7 +993,7 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 	if !val.sizeValid {
 		size, err := s.state.GetCodeSize(addr)
 		if err != nil {
-			s.errors = append(s.errors, fmt.Errorf("unable to obtain code size for %v: %w", addr, err))
+			s.trackErrors(fmt.Errorf("unable to obtain code size for %v: %w", addr, err))
 			return 0
 		}
 		val.size, val.sizeValid = size, true
@@ -1000,7 +1010,7 @@ func (s *stateDB) AddRefund(amount uint64) {
 }
 func (s *stateDB) SubRefund(amount uint64) {
 	if amount > s.refund {
-		s.errors = append(s.errors, fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
+		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
 		return
 	}
 	old := s.refund
@@ -1079,7 +1089,7 @@ func (s *stateDB) Snapshot() int {
 
 func (s *stateDB) RevertToSnapshot(id int) {
 	if id < 0 || len(s.undo) < id {
-		s.errors = append(s.errors, fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(s.undo)))
+		s.trackErrors(fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(s.undo)))
 		return
 	}
 	for len(s.undo) > id {
@@ -1190,7 +1200,7 @@ func (s *stateDB) BeginBlock() {
 func (s *stateDB) EndBlock(block uint64) {
 	if !s.canApplyChanges {
 		err := fmt.Errorf("unable to process EndBlock event in StateDB without permission to apply changes")
-		s.errors = append(s.errors, err)
+		s.trackErrors(err)
 		return
 	}
 
@@ -1279,7 +1289,7 @@ func (s *stateDB) EndBlock(block uint64) {
 
 	// Send the update to the state.
 	if err := s.state.Apply(block, update); err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to apply update for block %d: %w", block, err))
+		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
 		return
 	}
 
@@ -1296,17 +1306,25 @@ func (s *stateDB) EndEpoch(uint64) {
 }
 
 func (s *stateDB) GetHash() common.Hash {
-	hash, err := s.state.GetHash()
-	if err != nil {
-		s.errors = append(s.errors, fmt.Errorf("failed to compute hash: %w", err))
-		return common.Hash{}
-	}
+	hash, _ := s.GetCommitment().Await().Get() // < error is handled in GetCommitment
 	return hash
+}
+
+func (s *stateDB) GetCommitment() future.Future[result.Result[common.Hash]] {
+	return future.Then(
+		s.state.GetCommitment(),
+		func(res result.Result[common.Hash]) result.Result[common.Hash] {
+			if _, err := res.Get(); err != nil {
+				s.trackErrors(fmt.Errorf("failed to compute commitment: %w", err))
+			}
+			return res
+		},
+	)
 }
 
 func (s *stateDB) Check() error {
 	return errors.Join(
-		errors.Join(s.errors...),
+		errors.Join(s.getErrors()...),
 		s.state.Check())
 }
 
@@ -1375,7 +1393,7 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	mf.AddChild("logs", common.NewMemoryFootprint(logSize))
 
 	var errsSize uintptr
-	for _, err := range s.errors {
+	for _, err := range s.getErrors() {
 		errsSize += unsafe.Sizeof(err) + uintptr(len(err.Error())) // Approximate size of the error message
 	}
 	mf.AddChild("errors", common.NewMemoryFootprint(errsSize))
@@ -1434,8 +1452,25 @@ func (s *stateDB) resetState(state State) {
 	s.ResetBlockContext()
 	s.storedDataCache.Clear()
 	s.reincarnation = map[common.Address]uint64{}
+	s.errorsMutex.Lock()
 	s.errors = s.errors[0:0]
+	s.errorsMutex.Unlock()
 	s.state = state
+}
+
+func (s *stateDB) trackErrors(err error) {
+	if err == nil {
+		return
+	}
+	s.errorsMutex.Lock()
+	defer s.errorsMutex.Unlock()
+	s.errors = append(s.errors, err)
+}
+
+func (s *stateDB) getErrors() []error {
+	s.errorsMutex.Lock()
+	defer s.errorsMutex.Unlock()
+	return slices.Clone(s.errors)
 }
 
 type bulkLoad struct {
@@ -1490,7 +1525,8 @@ func (l *bulkLoad) Close() error {
 		return err
 	}
 	// Compute hash to bring cached hashes up-to-date.
-	_, err := l.db.state.GetHash()
+	_, err := l.db.state.GetCommitment().Await().Get()
+
 	// Reset state to allow starting bulk-load with existing database.
 	l.db.resetState(l.db.state)
 	return err
