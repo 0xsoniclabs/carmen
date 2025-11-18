@@ -99,10 +99,9 @@ pub trait CarmenDb: Send + Sync {
     /// storage.
     fn checkpoint(&self) -> BTResult<(), Error>;
 
-    /// Creates a new checkpoint and then closes this state, releasing all IO handles and locks on
-    /// external resources.
-    // TODO: Do not create a checkpoint if in an error state (https://github.com/0xsoniclabs/sonic-admin/issues/378)
-    fn close(&self) -> BTResult<(), Error>;
+    /// Closes this database, releasing all IO handles and locks on external resources and causing
+    /// its destruction.
+    fn close(self: Box<Self>) -> BTResult<(), Error>;
 
     /// Returns a handle to the live state. The resulting state must be released and must not
     /// outlive the life time of the database.
@@ -217,7 +216,7 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
         Ok(())
     }
 
-    fn close(&self) -> BTResult<(), Error> {
+    fn close(self: Box<Self>) -> BTResult<(), Error> {
         // No-op for in-memory state
         Ok(())
     }

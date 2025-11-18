@@ -101,7 +101,7 @@ class CStateTest : public testing::TestWithParam<Config> {
   void TearDown() override {
     Carmen_Cpp_ReleaseState(state_);
     state_ = nullptr;
-    Carmen_Cpp_ReleaseDatabase(db_);
+    Carmen_Cpp_Close(db_);
     db_ = nullptr;
   }
 
@@ -497,12 +497,6 @@ TEST_P(CStateTest, DatabaseCanBeFlushedMoreThanOnce) {
   Carmen_Cpp_ReleaseState(live);
 }
 
-TEST_P(CStateTest, DatabaseCanBeClosed) {
-  auto database = GetDatabase();
-  ASSERT_NE(database, nullptr);
-  Carmen_Cpp_Close(database);
-}
-
 TEST_P(CStateTest, MemoryFootprintCanBeObtained) {
   auto database = GetDatabase();
   ASSERT_NE(database, nullptr);
@@ -541,7 +535,7 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
     Carmen_Cpp_SetStorageValue(state, &addr, &key, &value);
     Carmen_Cpp_GetHash(state, &hash);
     Carmen_Cpp_ReleaseState(state);
-    Carmen_Cpp_ReleaseDatabase(db);
+    Carmen_Cpp_Close(db);
   }
   {
     void* db = nullptr;
@@ -565,7 +559,7 @@ TEST_P(CStateTest, CanBeStoredAndReloaded) {
     Carmen_Cpp_GetHash(state, &recovered);
     EXPECT_EQ(hash, recovered);
     Carmen_Cpp_ReleaseState(state);
-    Carmen_Cpp_ReleaseDatabase(db);
+    Carmen_Cpp_Close(db);
   }
 }
 
