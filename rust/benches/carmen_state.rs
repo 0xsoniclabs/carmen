@@ -122,7 +122,11 @@ impl InitialState {
 /// - Whether to read existing storage keys or non-existing ones
 /// - Number of threads
 fn state_read_benchmark(c: &mut criterion::Criterion) {
-    let initial_states = [InitialState::Small, InitialState::Large]; // Explicitly skip Empty state
+    let initial_states = if cfg!(debug_assertions) {
+        vec![InitialState::Empty]
+    } else {
+        vec![InitialState::Small, InitialState::Large]
+    };
 
     for initial_state in initial_states {
         for existing in [true, false] {
@@ -161,7 +165,6 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
                                         };
                                         let storage_key = {
                                             let mut key = [0u8; 32];
-
                                             key[0..8].copy_from_slice(&storage_index.to_be_bytes());
                                             key
                                         };
