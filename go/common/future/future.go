@@ -8,9 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package future
-
-// Futures provided a simple abstraction for asynchronous computation results.
+// Futures provide a simple abstraction for asynchronous computation results.
 // A future is a placeholder for a value that may not yet be available, allowing
 // code to proceed without blocking until the value is needed. Futures are
 // typically used in concurrent programming to represent the result of an
@@ -22,30 +20,32 @@ package future
 // code and facilitates the transparent integration of future improvements.
 //
 // The producer side of a Future typically looks as follows:
-//  promise, future := future.Create[T]()
-//  go func() {
-//     // perform some asynchronous operation
-//     promise.Fulfill(someOperation())
-//  }()
-//  return future
+//
+//	promise, future := future.Create[T]()
+//	go func() {
+//	   // perform some asynchronous operation
+//	   promise.Fulfill(someOperation())
+//	}()
+//	return future
 //
 // Alternatively, if the result is already available, an immediate Future can be
 // created using Immediate.
+package future
 
-// Promise represents the handle used to fulfill a Future with a Result.
+// Promise represents the handle used to fulfill a Future.
 type Promise[T any] struct {
 	C chan<- T
 }
 
 // Future represents a placeholder for a value that will be available in the
-// future. It can be awaited to retrieve the Result once it is fulfilled.
+// future. It can be awaited to retrieve the result once it is fulfilled.
 type Future[T any] struct {
 	C <-chan T
 }
 
 // Create initializes a new Promise and Future pair. The Promise can be used to
-// fulfill the Future with a Result, while the Future can be awaited to retrieve
-// the Result once it is available.
+// fulfill the Future, while the Future can be awaited to retrieve the result
+// once it is available.
 func Create[T any]() (Promise[T], Future[T]) {
 	ch := make(chan T, 1)
 	return Promise[T]{C: ch}, Future[T]{C: ch}
@@ -61,7 +61,7 @@ func Immediate[T any](value T) Future[T] {
 	return Future[T]{C: ch}
 }
 
-// Fulfill fulfills the Promise with the given Result, making it available to
+// Fulfill fulfills the Promise with the given value, making it available to
 // any awaiting Future.
 func (p Promise[T]) Fulfill(value T) {
 	p.C <- value
@@ -69,7 +69,7 @@ func (p Promise[T]) Fulfill(value T) {
 }
 
 // Forward connects the Promise to the given Future, such that when the Future
-// is fulfilled, the Promise is also fulfilled with the same Result.
+// is fulfilled, the Promise is also fulfilled with the same value.
 func (p Promise[T]) Forward(f Future[T]) {
 	go func() {
 		p.C <- <-f.C
