@@ -23,8 +23,8 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Variant: "go-memory",
 		Schema:  0,
 		Archive: state.NoArchive,
-	}: func(state.Parameters) (state.State, error) {
-		return flat.NewState(nil), nil
+	}: func(params state.Parameters) (state.State, error) {
+		return flat.NewState(params.Directory, nil)
 	},
 	{
 		Variant: "go-geth-memory",
