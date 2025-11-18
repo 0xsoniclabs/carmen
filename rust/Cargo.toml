@@ -18,6 +18,9 @@ rust-version = "1.89" # when updating, also update in CI/Dockerfile.jenkins
 [profile.dev.package.banderwagon]
 opt-level = 3
 
+[profile.dev.package.verkle-trie]
+opt-level = 3
+
 [lib]
 name = "carmen_rust"
 crate-type = ["rlib", "cdylib"]
