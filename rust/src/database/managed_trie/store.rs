@@ -8,8 +8,6 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::RwLockWriteGuard;
-
 use crate::{
     database::managed_trie::{
         TrieCommitment, TrieUpdateLog,
@@ -17,6 +15,7 @@ use crate::{
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
+    sync::RwLockWriteGuard,
     types::{Key, Value},
 };
 
@@ -113,14 +112,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, RwLock},
-        thread,
-    };
+    use std::thread;
 
     use super::*;
-    use crate::database::managed_trie::test_utils::{
-        Id, RcNodeExpectation, RcNodeManager, TestNodeCommitment,
+    use crate::{
+        database::managed_trie::test_utils::{
+            Id, RcNodeExpectation, RcNodeManager, TestNodeCommitment,
+        },
+        sync::{Arc, RwLock},
     };
 
     const KEY: Key = [7u8; 32];
