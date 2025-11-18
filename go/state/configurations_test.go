@@ -38,7 +38,7 @@ func TestStateConfigs_AllSetupsCreateDataInCorrectDirectories(t *testing.T) {
 		config := config
 		factory := factory
 		t.Run(config.String(), func(t *testing.T) {
-			if config.Schema == 6 {
+			if config.Schema == 0 || config.Schema == 6 {
 				switch strings.TrimSuffix(string(config.Variant), "-flat") {
 				case "go-memory", "go-geth-memory", "go-reference":
 					t.Skipf("%d/%s not supported", config.Schema, config.Variant)

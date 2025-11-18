@@ -449,7 +449,7 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 
 func TestCreatingAccountClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
-		if config.config.Schema == 6 {
+		if config.config.Schema == 0 || config.config.Schema == 6 {
 			t.Skipf("scheme %d not supported", config.config.Schema)
 		}
 		if strings.Contains(config.name(), "flat") {
@@ -497,7 +497,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
 
 func TestDeletingAccountsClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
-		if config.config.Schema == 6 {
+		if config.config.Schema == 0 || config.config.Schema == 6 {
 			t.Skipf("scheme %d not supported", config.config.Schema)
 		}
 		if strings.Contains(config.name(), "flat") {

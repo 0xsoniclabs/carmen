@@ -99,6 +99,7 @@ func TestBenchmark_KeepStateRetainsState(t *testing.T) {
 		tmpDir:             dir,
 		reportInterval:     100,
 		keepState:          true,
+		schema:             5,
 	}, func(string, ...any) {})
 
 	if err != nil {
@@ -131,6 +132,7 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 				tmpDir:             dir,
 				reportInterval:     100,
 				keepState:          true,
+				schema:             5,
 			}, func(string, ...any) {})
 
 			if err != nil {

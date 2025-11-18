@@ -50,7 +50,8 @@ type State struct {
 	storage  map[slotKey]common.Value
 	codes    map[common.Hash][]byte
 
-	// Backend storage for computing commits.
+	// Backend storage for computing commits. May be nil, in which case no
+	// commitments are produced.
 	backend state.State
 
 	// Controls for interacting with the background worker keeping the backend
@@ -96,10 +97,6 @@ type update struct {
 // NewState creates a new flat State instance that wraps the provided backend state.
 // The resulting state is wrapped into a synced state for thread-safe access.
 func NewState(backend state.State) state.State {
-	commands := make(chan command, 1024)
-	syncs := make(chan struct{})
-	done := make(chan struct{})
-
 	// Unwrap the backend from any synced state to avoid double synchronization.
 	// The flat state will handle synchronization itself.
 	if backend != nil {
@@ -111,16 +108,24 @@ func NewState(backend state.State) state.State {
 		storage:  make(map[slotKey]common.Value),
 		codes:    make(map[common.Hash][]byte),
 		backend:  backend,
-		commands: commands,
-		syncs:    syncs,
-		done:     done,
 	}
 
+	if backend == nil {
+		return state.WrapIntoSyncedState(res)
+	}
+
+	// Start background work to keep the backend up to date.
+	commands := make(chan command, 1024)
+	syncs := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		processCommands(backend, commands, syncs, &res.issues)
 	}()
 
+	res.commands = commands
+	res.syncs = syncs
+	res.done = done
 	return state.WrapIntoSyncedState(res)
 }
 
@@ -214,12 +219,14 @@ func (s *State) Apply(block uint64, data common.Update) error {
 		s.codes[hash] = update.Code
 	}
 
-	// Update the backend in the background.
-	s.commands <- command{
-		update: &update{
-			block: block,
-			data:  data,
-		},
+	// Update the backend in the background (if present).
+	if s.commands != nil {
+		s.commands <- command{
+			update: &update{
+				block: block,
+				data:  data,
+			},
+		}
 	}
 	return nil
 }
@@ -229,6 +236,9 @@ func (s *State) GetHash() (common.Hash, error) {
 }
 
 func (s *State) GetCommitment() future.Future[result.Result[common.Hash]] {
+	if s.commands == nil {
+		return future.Immediate(result.Ok(common.Hash{}))
+	}
 	promise, future := future.Create[result.Result[common.Hash]]()
 	s.commands <- command{
 		commit: &promise,
@@ -261,6 +271,9 @@ func processCommands(
 }
 
 func (s *State) sync() error {
+	if s.commands == nil {
+		return nil
+	}
 	s.commands <- command{}
 	<-s.syncs
 	return s.issues.Collect()
@@ -272,6 +285,9 @@ func (s *State) Check() error {
 	if err := s.issues.Collect(); err != nil {
 		return err
 	}
+	if s.backend == nil {
+		return nil
+	}
 	return s.backend.Check()
 }
 
@@ -279,12 +295,18 @@ func (s *State) Flush() error {
 	if err := s.sync(); err != nil {
 		return err
 	}
+	if s.backend == nil {
+		return nil
+	}
 	return s.backend.Flush()
 }
 
 func (s *State) Close() error {
 	if err := s.sync(); err != nil {
 		return err
+	}
+	if s.commands == nil {
+		return nil
 	}
 	close(s.commands)
 	<-s.done
@@ -296,19 +318,30 @@ func (s *State) GetMemoryFootprint() *common.MemoryFootprint {
 	res.AddChild("accounts", memoryFootprintOfMap(s.accounts))
 	res.AddChild("storage", memoryFootprintOfMap(s.storage))
 	res.AddChild("codes", memoryFootprintOfMap(s.codes))
-	res.AddChild("backend", s.backend.GetMemoryFootprint())
+	if s.backend != nil {
+		res.AddChild("backend", s.backend.GetMemoryFootprint())
+	}
 	return res
 }
 
 func (s *State) GetArchiveState(block uint64) (state.State, error) {
+	if s.backend == nil {
+		return nil, state.NoArchiveError
+	}
 	return s.backend.GetArchiveState(block)
 }
 
 func (s *State) GetArchiveBlockHeight() (height uint64, empty bool, err error) {
+	if s.backend == nil {
+		return 0, true, state.NoArchiveError
+	}
 	return s.backend.GetArchiveBlockHeight()
 }
 
 func (s *State) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
+	if s.backend == nil {
+		return nil, state.NoArchiveError
+	}
 	return s.backend.CreateWitnessProof(address, keys...)
 }
 
@@ -316,21 +349,36 @@ func (s *State) Export(ctx context.Context, out io.Writer) (common.Hash, error) 
 	if err := s.sync(); err != nil {
 		return common.Hash{}, err
 	}
+	if s.backend == nil {
+		return common.Hash{}, state.ExportNotSupported
+	}
 	return s.backend.Export(ctx, out)
 }
 
 // Snapshot & Recovery
 func (s *State) GetProof() (backend.Proof, error) {
+	if s.backend == nil {
+		return nil, backend.ErrSnapshotNotSupported
+	}
 	return s.backend.GetProof()
 }
 
 func (s *State) CreateSnapshot() (backend.Snapshot, error) {
+	if s.backend == nil {
+		return nil, backend.ErrSnapshotNotSupported
+	}
 	return s.backend.CreateSnapshot()
 }
 func (s *State) Restore(data backend.SnapshotData) error {
+	if s.backend == nil {
+		return backend.ErrSnapshotNotSupported
+	}
 	return s.backend.Restore(data)
 }
 func (s *State) GetSnapshotVerifier(data []byte) (backend.SnapshotVerifier, error) {
+	if s.backend == nil {
+		return nil, backend.ErrSnapshotNotSupported
+	}
 	return s.backend.GetSnapshotVerifier(data)
 }
 

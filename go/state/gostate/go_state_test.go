@@ -162,7 +162,7 @@ func TestBasicOperations(t *testing.T) {
 				t.Errorf("Invalid code size or error returned: Val: %d, Err: %v", val, err)
 			}
 
-			if config.config.Schema == 6 {
+			if config.config.Schema == 0 || config.config.Schema == 6 {
 				t.Skipf("scheme %d not supported", config.config.Schema)
 			}
 
@@ -278,7 +278,7 @@ func TestMoreInserts(t *testing.T) {
 func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
-			if config.config.Schema == 6 {
+			if config.config.Schema == 0 || config.config.Schema == 6 {
 				t.Skipf("scheme %d not supported", config.config.Schema)
 			}
 
@@ -352,6 +352,10 @@ func TestHashing(t *testing.T) {
 	var hashes = make([][]common.Hash, len(states))
 	for _, config := range states {
 		t.Run(config.name(), func(t *testing.T) {
+			if config.config.Schema == 0 {
+				t.Skipf("scheme %d does not support hashing", config.config.Schema)
+			}
+
 			state, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %v", config.name(), err)
@@ -506,7 +510,7 @@ func TestGetMemoryFootprint(t *testing.T) {
 
 			memoryFootprint := state.GetMemoryFootprint()
 			str := memoryFootprint.ToString("state")
-			if config.config.Schema <= 3 && !strings.Contains(str, "hashTree") {
+			if config.config.Schema >= 1 && config.config.Schema <= 3 && !strings.Contains(str, "hashTree") {
 				t.Errorf("memory footprint string does not contain any hashTree")
 			}
 		})

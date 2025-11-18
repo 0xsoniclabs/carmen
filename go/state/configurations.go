@@ -59,9 +59,6 @@ func NewState(params Parameters) (State, error) {
 	if config.Variant == "" {
 		config.Variant = "go-file"
 	}
-	if config.Schema == 0 {
-		config.Schema = 5
-	}
 	if config.Archive == "" {
 		config.Archive = NoArchive
 	}

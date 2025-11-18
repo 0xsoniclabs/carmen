@@ -14,6 +14,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
@@ -70,6 +71,11 @@ func TestState_CanBeOpenedAndClosed(t *testing.T) {
 	backend.EXPECT().Close().Return(nil)
 
 	flatState := NewState(backend)
+	require.NoError(t, flatState.Close())
+}
+
+func TestState_CanBeOpenedAndClosedWithoutBackend(t *testing.T) {
+	flatState := NewState(nil)
 	require.NoError(t, flatState.Close())
 }
 
@@ -332,6 +338,20 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	require.NoError(t, flatState.Close())
 }
 
+func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
+	block := uint64(21)
+	update := common.Update{
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
+		},
+	}
+
+	flatState := NewState(nil)
+	err := flatState.Apply(block, update)
+	require.NoError(t, err)
+	require.NoError(t, flatState.Close())
+}
+
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
@@ -345,7 +365,10 @@ func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
 	)
 
 	flatState := NewState(backend)
-	got, err := flatState.GetHash()
+
+	// The sync-wrapper is redirecting all GetHash calls to GetCommitment. So
+	// we unwrap it here, to target the GetHash function.
+	got, err := state.UnsafeUnwrapSyncedState(flatState).GetHash()
 	require.NoError(t, err)
 	require.Equal(t, hash, got)
 
@@ -369,6 +392,14 @@ func TestState_GetCommitment_IsForwardedToBackend(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, hash, got)
 
+	require.NoError(t, flatState.Close())
+}
+
+func TestState_GetCommitment_MissingBackend_ReturnsZeroHash(t *testing.T) {
+	flatState := NewState(nil)
+	got, err := flatState.GetCommitment().Await().Get()
+	require.NoError(t, err)
+	require.Equal(t, common.Hash{}, got)
 	require.NoError(t, flatState.Close())
 }
 
@@ -414,6 +445,11 @@ func TestState_Check_IssueReportedByBackendIsForwarded(t *testing.T) {
 	require.ErrorIs(t, state.Check(), issue)
 }
 
+func TestState_Check_CanHandleMissingBackend(t *testing.T) {
+	state := NewState(nil)
+	require.NoError(t, state.Check())
+}
+
 func TestState_Flush_SyncsAndConsultsBackend(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
@@ -454,6 +490,11 @@ func TestState_Flush_IssueReportedBySyncIsForwarded(t *testing.T) {
 	state.issues.HandleIssue(issue)
 
 	require.ErrorIs(t, state.Flush(), issue)
+}
+
+func TestState_Flush_CanHandleMissingBackend(t *testing.T) {
+	state := NewState(nil)
+	require.NoError(t, state.Flush())
 }
 
 func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
@@ -611,6 +652,19 @@ func TestState_CreateWitnessProof_ForwardsToBackend(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestState_ArchiveFeatures_NotSupportedWithoutBackend(t *testing.T) {
+	flatState := &State{}
+
+	_, err := flatState.GetArchiveState(0)
+	require.ErrorIs(t, err, state.NoArchiveError)
+
+	_, _, err = flatState.GetArchiveBlockHeight()
+	require.ErrorIs(t, err, state.NoArchiveError)
+
+	_, err = flatState.CreateWitnessProof(common.Address{}, common.Key{})
+	require.ErrorIs(t, err, state.NoArchiveError)
+}
+
 func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
@@ -653,6 +707,13 @@ func TestState_Export_IssueReportedBySyncIsForwarded(t *testing.T) {
 
 	_, err := state.Export(t.Context(), nil)
 	require.ErrorIs(t, err, issue)
+}
+
+func TestState_Export_NotSupportedWithoutBackend(t *testing.T) {
+	flatState := &State{}
+
+	_, err := flatState.Export(t.Context(), nil)
+	require.ErrorIs(t, err, state.ExportNotSupported)
 }
 
 func TestState_GetProof_ForwardsToBackend(t *testing.T) {
@@ -704,6 +765,22 @@ func TestState_GetSnapshotVerifier_ForwardsToBackend(t *testing.T) {
 	}
 	_, err := flatState.GetSnapshotVerifier([]byte{0x01, 0x02})
 	require.NoError(t, err)
+}
+
+func TestState_SnapshotFeatures_NotSupportedWithoutBackend(t *testing.T) {
+	flatState := &State{}
+
+	_, err := flatState.GetProof()
+	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
+
+	_, err = flatState.CreateSnapshot()
+	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
+
+	err = flatState.Restore(nil)
+	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
+
+	_, err = flatState.GetSnapshotVerifier(nil)
+	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 // --- issue collector tests ---

@@ -20,6 +20,13 @@ import (
 // configurations contains the experimental state configurations.
 var configurations = map[state.Configuration]state.StateFactory{
 	{
+		Variant: "go-memory",
+		Schema:  0,
+		Archive: state.NoArchive,
+	}: func(state.Parameters) (state.State, error) {
+		return flat.NewState(nil), nil
+	},
+	{
 		Variant: "go-geth-memory",
 		Schema:  6,
 		Archive: state.NoArchive,
