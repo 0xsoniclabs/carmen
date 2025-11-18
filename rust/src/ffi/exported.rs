@@ -1185,8 +1185,7 @@ mod tests {
     use mockall::predicate::{always, eq};
 
     use super::*;
-    use crate::sync::thread;
-    use crate::{MockCarmenDb, MockCarmenState};
+    use crate::{MockCarmenDb, MockCarmenState, sync::thread};
 
     #[test]
     fn carmen_rust_open_database_returns_non_null_pointers() {

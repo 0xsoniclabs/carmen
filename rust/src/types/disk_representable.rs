@@ -68,6 +68,7 @@ mod tests {
             Ok::<_, ()>(())
         })
         .unwrap();
+
         assert_eq!(value, ZerocopyableType([1u8; 32]));
     }
 

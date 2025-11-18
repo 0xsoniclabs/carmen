@@ -8,8 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 #![cfg_attr(test, allow(non_snake_case))]
-#![cfg_attr(feature = "shuttle", deny(clippy::disallowed_types))]
-#![cfg_attr(feature = "shuttle", deny(clippy::disallowed_methods))]
+#![cfg_attr(
+    feature = "shuttle",
+    deny(clippy::disallowed_types, clippy::disallowed_methods)
+)]
 
 use std::{mem::MaybeUninit, ops::Deref};
 
