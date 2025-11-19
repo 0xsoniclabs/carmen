@@ -33,6 +33,8 @@ use quick_cache::{Lifecycle, UnitWeighter};
 use crate::utils::{execute_with_threads, pow_2_threads, with_prob};
 pub mod utils;
 
+const CACHE_SIZE_OVERPROVISION_FACTOR: f64 = 0.2;
+
 /// A simple identifier for benchmarking purposes.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 struct BenchId(u64);
@@ -155,6 +157,7 @@ impl CacheKind {
     /// Initializes a cache of the given type with the given size and pinning probability.
     fn make_cache(self, size: u64, pinning_prob: u8) -> Cache {
         static PINNING_PROB: AtomicU8 = AtomicU8::new(0);
+        let size = (size as f64 * (1.0 + CACHE_SIZE_OVERPROVISION_FACTOR)) as u64;
         match self {
             CacheKind::QuickCache => Cache::QuickCache(quick_cache::sync::Cache::with(
                 size as usize,
@@ -190,9 +193,9 @@ impl CacheKind {
 }
 
 impl Cache {
-    /// Fills the cache to its capacity, using ids in range `0..capacity`
-    fn fill(&self) {
-        for i in 0..self.capacity() {
+    /// Fills the cache with `num_entries` values, using consecutive ids starting from 0.
+    fn fill(&self, num_entries: u64) {
+        for i in 0..num_entries {
             match self {
                 Cache::QuickCache(cache) => {
                     cache.insert(BenchId(i), BenchValue(42));
@@ -206,15 +209,6 @@ impl Cache {
                     let _unused = node_manager.get_read_access(BenchId(i)).unwrap();
                 }
             }
-        }
-    }
-
-    /// Returns the capacity of the cache.
-    fn capacity(&self) -> u64 {
-        match self {
-            Cache::QuickCache(cache) => cache.capacity(),
-            Cache::CachedNodeManager(node_manager) => node_manager.capacity(),
-            Cache::LockCache(lock_cache) => lock_cache.capacity(),
         }
     }
 
@@ -233,7 +227,9 @@ impl Cache {
             }
             Cache::LockCache(lock_cache) => {
                 let _node = lock_cache
-                    .get_read_access_or_insert(id, || Ok(BenchValue(42)))
+                    .get_read_access_or_insert(id, || {
+                        panic!("Cache miss on LockCache for id {id:?}")
+                    })
                     .unwrap();
             }
         }
@@ -284,7 +280,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
             for cache_type in CacheKind::variants() {
                 let cache = LazyLock::new(|| {
                     let cache = cache_type.make_cache(cache_size, 0);
-                    cache.fill();
+                    cache.fill(cache_size);
                     cache
                 });
                 let mut completed_iterations = 0u64;
@@ -339,7 +335,7 @@ fn add_benchmark(c: &mut criterion::Criterion) {
                         )),
                         &(),
                         |b, _| {
-                            cache.fill();
+                            cache.fill(cache_size);
                             b.iter_custom(|iters| {
                                 execute_with_threads(
                                     num_threads as u64,
