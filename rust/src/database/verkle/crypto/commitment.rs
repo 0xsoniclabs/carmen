@@ -16,7 +16,7 @@ use ipa_multipoint::committer::Committer;
 use verkle_trie::constants::CRS;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
-use crate::database::verkle::crypto::{Scalar, msm_unsigned_carry::MSMPrecomp};
+use crate::database::verkle::crypto::Scalar;
 
 /// A vector commitment to a sequence of 256 scalar values, using the Pedersen commitment scheme
 /// on the Banderwagon curve.
@@ -38,9 +38,8 @@ pub struct Commitment {
 }
 
 struct AggressiveCommitter {
-    // precomp_first_five: MSMPrecompWindowSigned,
-    // precomp: MSMPrecompWindowSigned,
-    precomp: MSMPrecomp,
+    precomp_first_five: MSMPrecompWindowSigned,
+    precomp: MSMPrecompWindowSigned,
 }
 
 #[allow(dead_code)]
@@ -49,14 +48,12 @@ impl AggressiveCommitter {
         // Take the first five elements and use a more aggressive optimization strategy
         // since they are used for computing storage keys.
 
-        // let (points_five, _) = points.split_at(5);
-        // let precomp_first_five = MSMPrecompWindowSigned::new(points_five, 16);
-        // let precomp = MSMPrecompWindowSigned::new(points, 8);
-
-        let precomp = MSMPrecomp::new(points);
+        let (points_five, _) = points.split_at(5);
+        let precomp_first_five = MSMPrecompWindowSigned::new(points_five, 16);
+        let precomp = MSMPrecompWindowSigned::new(points, 8);
 
         Self {
-            // precomp_first_five,
+            precomp_first_five,
             precomp,
         }
     }
@@ -64,33 +61,32 @@ impl AggressiveCommitter {
 
 impl Committer for AggressiveCommitter {
     fn commit_lagrange(&self, scalars: &[Fr]) -> Element {
-        // if scalars.len() <= 5 {
-        //     return self.precomp_first_five.mul(scalars);
-        // }
+        if scalars.len() <= 5 {
+            return self.precomp_first_five.mul(scalars);
+        }
         self.precomp.mul(&scalars[..scalars.len().min(256)])
     }
 
     fn scalar_mul(&self, scalar: Fr, index: usize) -> Element {
-        // if index < 5 {
-        //     let mut arr = [Fr::from(0u64); 5];
-        //     arr[index] = scalar;
-        //     self.precomp_first_five.mul(&arr)
-        //     // thread_local! {
-        //     //     static SCALARS: RefCell<[Fr; 5]> = RefCell::new([Fr::from(0u64); 5]);
-        //     // }
-        //     // SCALARS.with(|scalars| {
-        //     //     let mut scalars_borrow = scalars.borrow_mut();
-        //     //     scalars_borrow[index] = scalar;
-        //     //     let result = self.precomp_first_five.mul(&scalars_borrow[..]);
-        //     //     scalars_borrow[index] = Fr::from(0u64);
-        //     //     result
-        //     // })
-        // } else {
-        // let mut arr = [Fr::from(0u64); 256];
-        // arr[index] = scalar;
-        // self.precomp.mul(&arr)
-        self.precomp.mul_index(scalar, index)
-        // }
+        if index < 5 {
+            let mut arr = [Fr::from(0u64); 5];
+            arr[index] = scalar;
+            self.precomp_first_five.mul(&arr)
+            // thread_local! {
+            //     static SCALARS: RefCell<[Fr; 5]> = RefCell::new([Fr::from(0u64); 5]);
+            // }
+            // SCALARS.with(|scalars| {
+            //     let mut scalars_borrow = scalars.borrow_mut();
+            //     scalars_borrow[index] = scalar;
+            //     let result = self.precomp_first_five.mul(&scalars_borrow[..]);
+            //     scalars_borrow[index] = Fr::from(0u64);
+            //     result
+            // })
+        } else {
+            let mut arr = [Fr::from(0u64); 256];
+            arr[index] = scalar;
+            self.precomp.mul(&arr)
+        }
     }
 }
 
