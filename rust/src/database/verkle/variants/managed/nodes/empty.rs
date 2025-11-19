@@ -11,10 +11,13 @@
 use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
-        verkle::variants::managed::{
-            InnerNode, VerkleNode, VerkleNodeId,
-            commitment::{VerkleCommitment, VerkleCommitmentInput},
-            nodes::make_smallest_leaf_node_for,
+        verkle::{
+            KeyedUpdateBatch,
+            variants::managed::{
+                InnerNode, VerkleNode, VerkleNodeId,
+                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                nodes::make_smallest_leaf_node_for,
+            },
         },
         visitor::NodeVisitor,
     },
@@ -50,12 +53,12 @@ impl ManagedTrieNode for EmptyNode {
         Ok(LookupResult::Value(Value::default()))
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: &Key,
+        updates: KeyedUpdateBatch<'a>,
         depth: u8,
         _self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         if depth == 0 {
             // While conceptually it would suffice to create a leaf node here,
             // Geth always creates an inner node (and we want to stay compatible).
@@ -63,9 +66,16 @@ impl ManagedTrieNode for EmptyNode {
             Ok(StoreAction::HandleTransform(VerkleNode::Inner(Box::new(
                 inner,
             ))))
-        } else {
+        } else if depth == 31 {
             // Safe to unwrap: Slice is always 31 bytes
-            let stem = key[..31].try_into().unwrap();
+            let stem = updates.first_key()[..31].try_into().unwrap();
+            let new_leaf =
+                make_smallest_leaf_node_for(updates.len(), stem, &[], self.get_commitment())?;
+            // TODO: Deleting empty node from NodeManager after transforming will lead to cache
+            // misses https://github.com/0xsoniclabs/sonic-admin/issues/385
+            Ok(StoreAction::HandleTransform(new_leaf))
+        } else {
+            let stem = updates.first_key()[..31].try_into().unwrap();
             let new_leaf = make_smallest_leaf_node_for(1, stem, &[], self.get_commitment())?;
             // TODO: Deleting empty node from NodeManager after transforming will lead to cache
             // misses https://github.com/0xsoniclabs/sonic-admin/issues/385
@@ -89,7 +99,9 @@ impl NodeVisitor<EmptyNode> for NodeCountVisitor {
 mod tests {
     use super::*;
     use crate::{
-        database::verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
+        database::verkle::{
+            KeyedUpdateBatch, test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind,
+        },
         error::BTError,
         types::TreeId,
     };
@@ -117,10 +129,10 @@ mod tests {
     #[test]
     fn next_store_action_at_depth_zero_transforms_to_inner_node() {
         let node = EmptyNode;
-        let key = Key::default();
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(Key::default(), Value::default())]);
         let action = node
             .next_store_action(
-                &key,
+                update,
                 0,
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
             )
@@ -132,9 +144,10 @@ mod tests {
     fn next_store_action_non_zero_depth_transforms_to_leaf_node() {
         let node = EmptyNode;
         let key = Key::from_index_values(1, &[(31, 34)]);
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
         let action = node
             .next_store_action(
-                &key,
+                updates.clone(),
                 1,
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
             )
@@ -144,11 +157,11 @@ mod tests {
                 // This new leaf is able to store the value
                 assert_eq!(
                     leaf.next_store_action(
-                        &key,
+                        updates.clone(),
                         1,
                         VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty) // type does not matter
                     ),
-                    Ok(StoreAction::Store { index: 34 })
+                    Ok(StoreAction::Store (updates))
                 );
             }
             _ => panic!("expected HandleTransform to leaf node"),

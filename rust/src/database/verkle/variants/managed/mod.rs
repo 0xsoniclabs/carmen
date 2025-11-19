@@ -20,6 +20,7 @@ use crate::{
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
             crypto::Commitment,
+            keyed_update::KeyedUpdateBatch,
             variants::managed::commitment::{
                 update_commitments_concurrent, update_commitments_concurrent_recursive,
                 update_commitments_sequential,
@@ -101,9 +102,9 @@ where
         lookup(*self.root.read().unwrap(), key, &*self.manager)
     }
 
-    fn store(&self, key: &Key, value: &Value) -> BTResult<(), Error> {
+    fn store(&self, updates: KeyedUpdateBatch) -> BTResult<(), Error> {
         let root_id_lock = self.root.write().unwrap();
-        store(root_id_lock, key, value, &*self.manager, &self.update_log)
+        store(root_id_lock, updates, &*self.manager, &self.update_log)
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
@@ -186,9 +187,12 @@ mod tests {
     fn trie_commitment_of_non_empty_trie_is_root_node_commitment() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
-        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
-        trie.store(&make_leaf_key(&[2], 2), &make_value(2)).unwrap();
-        trie.store(&make_leaf_key(&[3], 3), &make_value(3)).unwrap();
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[
+            (make_leaf_key(&[1], 1), make_value(1)),
+            (make_leaf_key(&[2], 2), make_value(2)),
+            (make_leaf_key(&[3], 3), make_value(3)),
+        ]);
+        trie.store(updates.borrowed()).unwrap();
 
         let received = trie.commit().unwrap();
         let expected = manager
@@ -204,7 +208,9 @@ mod tests {
     fn after_update_updates_root_id_in_node_manager() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
-        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
+        let updates =
+            KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[1], 1), make_value(1))]);
+        trie.store(updates).unwrap();
         let root_id = *trie.root.read().unwrap();
 
         trie.after_update(42).unwrap();
