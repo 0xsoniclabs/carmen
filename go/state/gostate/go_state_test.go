@@ -25,6 +25,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
@@ -528,6 +529,19 @@ func TestGoState_HasEmptyStorage(t *testing.T) {
 	if !empty {
 		t.Errorf("unexpected non-empty storage")
 	}
+}
+
+func TestGoState_GetHash_CallsLiveDbGetHash(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	live := state.NewMockLiveDB(ctrl)
+
+	hash := common.Hash{0x1, 0x2, 0x3}
+	live.EXPECT().GetHash().Return(hash, nil)
+
+	state := &GoState{live: live}
+	got, err := state.GetHash()
+	require.NoError(t, err)
+	require.Equal(t, hash, got)
 }
 
 func TestGoState_FlushFlushesLiveDbAndArchive(t *testing.T) {

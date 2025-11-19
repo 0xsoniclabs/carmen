@@ -221,7 +221,7 @@ func TestState_GetHash_Is_Updated_Each_Block(t *testing.T) {
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 				}
 				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
-				hash, err := state.GetCommitment().Await().Get()
+				hash, err := state.GetHash()
 				require.NoError(t, err, "failed to get hash for block %d", i)
 				require.NotEqual(t, prevHash, hash, "hash did not change")
 				prevHash = hash

@@ -13,10 +13,13 @@ package externalstate
 import (
 	"bytes"
 	"testing"
+	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 var (
@@ -149,6 +152,45 @@ func TestWriteAndReadSlot(t *testing.T) {
 			t.Errorf("Invalid value read, got %v, wanted %v", value, val1)
 		}
 	})
+}
+
+func TestExternalState_GetHash_FetchesAndReturnsHashFromExternalState(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	bindings := NewMockexternalBindings(ctrl)
+
+	hash := common.Hash{0xAB, 0xCD}
+
+	bindings.EXPECT().
+		GetHash(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(statePtr unsafe.Pointer, hashPtr unsafe.Pointer) uint32 {
+			hashSlice := (*[32]byte)(unsafe.Pointer(hashPtr))
+			copy(hashSlice[:], hash[:])
+			return 0
+		})
+
+	state := &ExternalState{
+		bindings: bindings,
+	}
+	got, err := state.GetHash()
+	require.NoError(t, err)
+	require.Equal(t, hash, got)
+}
+
+func TestExternalState_GetHash_ReportsAnErrorIfFailed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	bindings := NewMockexternalBindings(ctrl)
+
+	bindings.EXPECT().
+		GetHash(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(unsafe.Pointer, unsafe.Pointer) uint32 {
+			return 12 // some error code
+		})
+
+	state := &ExternalState{
+		bindings: bindings,
+	}
+	_, err := state.GetHash()
+	require.ErrorContains(t, err, "failed to get commitment (error code 12)")
 }
 
 func getTestCodeOfLength(size int) []byte {

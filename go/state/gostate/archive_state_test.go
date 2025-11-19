@@ -87,7 +87,7 @@ func TestState_ArchiveState_FailingOperation_InvalidatesArchive(t *testing.T) {
 				archive.EXPECT().GetHash(gomock.Any()).Return(common.Hash{}, injectedErr)
 			},
 			func(stateArchive state.State) error {
-				_, err := stateArchive.GetCommitment().Await().Get()
+				_, err := stateArchive.GetHash()
 				return err
 			},
 		},

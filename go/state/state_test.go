@@ -128,7 +128,7 @@ func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state
 			t.Fatalf("failed to create reference state: %v", err)
 		}
 		mod(nil, s, ref)
-		hash, err := ref.GetCommitment().Await().Get()
+		hash, err := ref.GetHash()
 		if err != nil {
 			t.Fatalf("failed to get hash of reference state: %v", err)
 		}
@@ -138,7 +138,7 @@ func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state
 
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		mod(t, config.config.Schema, s)
-		got, err := s.GetCommitment().Await().Get()
+		got, err := s.GetHash()
 		if err != nil {
 			t.Fatalf("failed to compute hash: %v", err)
 		}

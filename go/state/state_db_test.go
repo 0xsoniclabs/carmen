@@ -21,6 +21,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/result"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -4617,6 +4618,41 @@ func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStateDB_trackErrors_AddsErrorsToList(t *testing.T) {
+	require := require.New(t)
+	db := &stateDB{}
+	require.Empty(db.errors)
+
+	issue1 := errors.New("issue 1")
+	db.trackErrors(issue1)
+	require.Equal([]error{issue1}, db.errors)
+
+	issue2 := errors.New("issue 2")
+	db.trackErrors(issue2)
+	require.Equal([]error{issue1, issue2}, db.errors)
+
+	// nil is ignored
+	db.trackErrors(nil)
+	require.Equal([]error{issue1, issue2}, db.errors)
+}
+
+func TestStateDB_getErrors_ReturnsAClonedList(t *testing.T) {
+	require := require.New(t)
+	db := &stateDB{}
+	require.Empty(db.getErrors())
+
+	issue1 := errors.New("issue 1")
+	db.errors = append(db.errors, issue1)
+
+	issues := db.getErrors()
+	require.Equal([]error{issue1}, issues)
+
+	// modifying the returned list does not affect the original
+	issue2 := errors.New("issue 2")
+	issues[0] = issue2
+	require.Equal([]error{issue1}, db.errors)
 }
 
 type sameEffectAs struct {
