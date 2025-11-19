@@ -667,41 +667,16 @@ mod tests {
     mod mock {
         use super::*;
         mock! {
-                pub CachedNodeManagerStorage {}
+            pub CachedNodeManagerStorage {}
 
-                impl Checkpointable for CachedNodeManagerStorage {
-                    fn checkpoint(&self) -> BTResult<u64, storage::Error>;
+            impl Checkpointable for CachedNodeManagerStorage {
+                fn checkpoint(&self) -> BTResult<u64, storage::Error>;
 
-                    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), storage::Error>;
-                }
+                fn restore(path: &Path, checkpoint: u64) -> BTResult<(), storage::Error>;
+            }
 
-                impl Storage for CachedNodeManagerStorage {
-                    type Id = TestNodeId;
-                    type Item = TestNode;
-
-                    fn open(_path: &Path) -> BTResult<Self, storage::Error>;
-
-                    fn get(
-                        &self,
-                        id: <Self as Storage>::Id,
-                    ) -> BTResult<<Self as Storage>::Item, storage::Error>;
-
-                    fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
-
-                    fn set(
-                        &self,
-                        id: <Self as Storage>::Id,
-                        item: &<Self as Storage>::Item,
-                    ) -> BTResult<(), storage::Error>;
-
-                    fn delete(&self, _id: <Self as Storage>::Id) -> BTResult<(), storage::Error>;
-
-                    fn close(self) -> BTResult<(), storage::Error>;
-                }
-
-                impl RootIdProvider for CachedNodeManagerStorage {
-
-                    type Id = TestNodeId;
+            impl RootIdProvider for CachedNodeManagerStorage {
+                type Id = TestNodeId;
 
                 fn get_root_id(
                     &self,
@@ -713,6 +688,30 @@ mod tests {
                     block_number: u64,
                     id: <Self as RootIdProvider>::Id,
                 ) -> BTResult<(), storage::Error>;
+            }
+
+            impl Storage for CachedNodeManagerStorage {
+                type Id = TestNodeId;
+                type Item = TestNode;
+
+                fn open(_path: &Path) -> BTResult<Self, storage::Error>;
+
+                fn get(
+                    &self,
+                    id: <Self as Storage>::Id,
+                ) -> BTResult<<Self as Storage>::Item, storage::Error>;
+
+                fn reserve(&self, _item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+
+                fn set(
+                    &self,
+                    id: <Self as Storage>::Id,
+                    item: &<Self as Storage>::Item,
+                ) -> BTResult<(), storage::Error>;
+
+                fn delete(&self, _id: <Self as Storage>::Id) -> BTResult<(), storage::Error>;
+
+                fn close(self) -> BTResult<(), storage::Error>;
             }
         }
     }
