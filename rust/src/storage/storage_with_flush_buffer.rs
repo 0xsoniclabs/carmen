@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{cmp, path::Path};
+use std::{cmp, path::Path, time::Duration};
 
 use crossbeam_skiplist::SkipMap;
 
@@ -197,6 +197,10 @@ impl FlushWorkers {
         S::Id: std::hash::Hash + Send + Sync + cmp::Ord + 'static,
         S::Item: Clone + Send + Sync + 'static,
     {
+        let min_sleep_time = Duration::from_millis(10);
+        let max_sleep_time = Duration::from_secs(1);
+        let mut sleep_time = min_sleep_time;
+
         loop {
             if let Some((id, op)) = flush_buffer
                 .pop_back()
@@ -219,14 +223,14 @@ impl FlushWorkers {
                         storage.delete(id)?;
                     }
                 }
+                sleep_time = min_sleep_time;
             } else {
                 // the buffer is currently empty
                 if shutdown.load(Ordering::SeqCst) {
                     return Ok(());
                 }
-                // avoid busy looping
-                // TODO: use a condvar or similar
-                thread::yield_now();
+                thread::sleep(sleep_time);
+                sleep_time = cmp::min(sleep_time * 2, max_sleep_time);
             }
         }
     }
