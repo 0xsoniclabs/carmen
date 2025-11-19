@@ -9,19 +9,23 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
+    collections::HashMap,
     ops::{Deref, DerefMut},
     time::Duration,
 };
 
 use crate::{
-    database::managed_trie::{
-        ManagedTrieNode, TrieCommitment,
-        managed_trie_node::{LookupResult, StoreAction, UnionManagedTrieNode},
+    database::{
+        managed_trie::{
+            ManagedTrieNode, TrieCommitment,
+            managed_trie_node::{LookupResult, StoreAction, UnionManagedTrieNode},
+        },
+        verkle::{KeyedUpdate, KeyedUpdateBatch},
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
     sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicU32, thread},
-    types::{Key, Value},
+    types::{HasEmptyNode, Key, Value},
 };
 
 pub type Id = u32;
@@ -90,30 +94,27 @@ impl<I: Clone + Send> RcChannel<I> {
 }
 
 /// A simple implementation of `TrieCommitment` for testing purposes.
-/// Keeps track of a single changed index and the previous value at that index.
+/// Keeps track of all changed indices and the previous values at those indices.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct TestNodeCommitment {
-    changed_index: usize,
-    previous_value: Value,
-}
+pub struct TestNodeCommitment(HashMap<usize, Value>);
 
 impl TestNodeCommitment {
-    pub fn expected(changed_index: usize, previous_value: Value) -> Self {
-        Self {
-            changed_index,
-            previous_value,
-        }
+    pub fn expected_single(key: usize, value: Value) -> Self {
+        Self(HashMap::from([(key, value)]))
+    }
+
+    pub fn expected(x: impl Iterator<Item = (usize, Value)>) -> Self {
+        Self(x.collect())
     }
 }
 
 impl TrieCommitment for TestNodeCommitment {
     fn modify_child(&mut self, index: usize) {
-        self.changed_index = index;
+        self.0.insert(index, Value::default());
     }
 
     fn store(&mut self, index: usize, prev: Value) {
-        self.changed_index = index;
-        self.previous_value = prev;
+        self.0.insert(index, prev);
     }
 }
 
@@ -128,10 +129,10 @@ pub enum RcNodeExpectation {
         result: LookupResult<Id>,
     },
     NextStoreAction {
-        key: Key,
+        updates: KeyedUpdateBatch<'static>,
         depth: u8,
         self_id: Id,
-        result: StoreAction<Id, RcNode>,
+        result: StoreAction<'static, Id, RcNode>,
     },
     ReplaceChild {
         key: Key,
@@ -139,8 +140,7 @@ pub enum RcNodeExpectation {
         new: Id,
     },
     Store {
-        key: Key,
-        value: Value,
+        update: KeyedUpdate,
         result: Value,
     },
     GetCommitment {
@@ -160,6 +160,16 @@ pub struct RcNode {
     id: Id,
     // To make this type default constructible, we wrap the Arc in an Option
     channel: Option<Arc<RcChannel<RcNodeExpectation>>>,
+}
+
+impl HasEmptyNode for RcNode {
+    fn is_empty_node(&self) -> bool {
+        false
+    }
+
+    fn empty_node() -> Self {
+        Self::default()
+    }
 }
 
 impl RcNode {
@@ -205,15 +215,12 @@ impl ManagedTrieNode for RcNode {
         }
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: &Key,
+        key: KeyedUpdateBatch<'a>,
         depth: u8,
         self_id: Self::Id,
-    ) -> BTResult<
-        crate::database::managed_trie::managed_trie_node::StoreAction<Self::Id, Self::Union>,
-        Error,
-    > {
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         match self
             .channel
             .as_ref()
@@ -221,12 +228,12 @@ impl ManagedTrieNode for RcNode {
             .receive(&format!("next_store_action for {self_id}"))
         {
             RcNodeExpectation::NextStoreAction {
-                key: k,
+                updates: k,
                 depth: d,
                 self_id: sid,
                 result,
             } => {
-                if (&k, d, sid) != (key, depth, self_id) {
+                if (&k, d, sid) != (&key, depth, self_id) {
                     panic!(
                         "unexpected next_store_action parameters ({k:?}, {d}, {sid}), expected ({key:?}, {depth}, {self_id})"
                     );
@@ -259,22 +266,19 @@ impl ManagedTrieNode for RcNode {
         }
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
+    fn store(&mut self, update: &KeyedUpdate) -> BTResult<Value, Error> {
         match self.channel.as_ref().unwrap().receive("store") {
             RcNodeExpectation::Store {
-                key: k,
-                value: v,
+                update: u,
                 result: pv,
             } => {
-                if (&k, &v) != (key, value) {
-                    panic!(
-                        "unexpected store parameters ({k:?}, {v:?}), expected ({key:?}, {value:?})"
-                    );
+                if u != *update {
+                    panic!("unexpected store parameters ({u:?}), expected ({update:?})");
                 }
                 Ok(pv)
             }
             e => panic!(
-                "expected call to {e:?} on {self:?}, but store({key:?}, {value:?}) was called instead"
+                "expected call to {e:?} on {self:?}, but store({update:?}) was called instead"
             ),
         }
     }
@@ -458,7 +462,7 @@ impl RcNodeManager {
         for i in 0..self.nodes.len() {
             if self.is_locked(i as Id) {
                 if !currently_locked.contains(&(i as Id)) {
-                    panic!("expected {i} to not be locked");
+                    panic!("expected id {i} to not be locked");
                 }
             } else if currently_locked.contains(&(i as Id)) {
                 panic!("expected id {i} to be locked");

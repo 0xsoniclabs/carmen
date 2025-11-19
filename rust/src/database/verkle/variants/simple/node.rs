@@ -13,6 +13,7 @@ use crate::{
         verkle::{
             compute_commitment::compute_leaf_node_commitment,
             crypto::{Commitment, Scalar},
+            keyed_update::KeyedUpdateBatch,
         },
         visitor::NodeVisitor,
     },
@@ -41,23 +42,23 @@ impl Node {
         }
     }
 
-    /// Stores the value for the given key.
+    /// Stores the given updates.
     /// Consumes the node and returns an updated version.
-    pub fn store(self, key: &Key, depth: u8, value: &Value) -> Node {
+    pub fn store(self, updates: KeyedUpdateBatch, depth: u8) -> Node {
         match self {
             Node::Empty => {
                 if depth == 0 {
                     // While conceptually it would suffice to create a leaf node here,
                     // Geth always creates an inner node (and we want to stay compatible).
                     let inner = InnerNode::new();
-                    inner.store(key, depth, value)
+                    inner.store(updates, depth)
                 } else {
-                    let leaf = LeafNode::new(key);
-                    leaf.store(key, depth, value)
+                    let leaf = LeafNode::new(updates.first_key());
+                    leaf.store(updates, depth)
                 }
             }
-            Node::Inner(inner) => inner.store(key, depth, value),
-            Node::Leaf(leaf) => leaf.store(key, depth, value),
+            Node::Inner(inner) => inner.store(updates, depth),
+            Node::Leaf(leaf) => leaf.store(updates, depth),
         }
     }
 
@@ -150,12 +151,14 @@ impl InnerNode {
     /// If no child exists at that position, a new leaf node is created.
     ///
     /// Consumes the node and returns an updated version.
-    pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
+    pub fn store(mut self, updates: KeyedUpdateBatch, depth: u8) -> Node {
         self.commitment_dirty = true;
 
-        let pos = key[depth as usize];
-        let next = std::mem::replace(&mut self.children[pos as usize], Node::Empty);
-        self.children[pos as usize] = next.store(key, depth + 1, value);
+        for sub_updates in updates.split(depth) {
+            let pos = sub_updates.first_key()[depth as usize];
+            let next = std::mem::replace(&mut self.children[pos as usize], Node::Empty);
+            self.children[pos as usize] = next.store(sub_updates, depth + 1);
+        }
         Node::Inner(self)
     }
 
@@ -262,14 +265,16 @@ impl LeafNode {
     ///
     /// If the stem of the key does not match the stem of this leaf, the leaf is split
     /// into an inner node with two children (the existing leaf and a new leaf for the key).
-    pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
-        if key[..31] == self.stem {
-            let suffix = key[31];
-            if self.changed_indices[suffix as usize / 8] & (1 << (suffix % 8)) == 0 {
-                self.committed_values[suffix as usize] = self.values[suffix as usize];
-                self.changed_indices[suffix as usize / 8] |= 1 << (suffix as usize % 8);
+    pub fn store(mut self, updates: KeyedUpdateBatch, depth: u8) -> Node {
+        if updates.all_stems_match(&self.stem) {
+            for update in updates.iter() {
+                let suffix = update.key()[31];
+                if self.changed_indices[suffix as usize / 8] & (1 << (suffix % 8)) == 0 {
+                    self.committed_values[suffix as usize] = self.values[suffix as usize];
+                    self.changed_indices[suffix as usize / 8] |= 1 << (suffix as usize % 8);
+                }
+                update.apply_to_value(&mut self.values[suffix as usize]);
             }
-            self.values[suffix as usize] = *value;
             self.commitment_dirty = true;
             return Node::Leaf(self);
         }
@@ -277,7 +282,7 @@ impl LeafNode {
         // This leaf needs to be split
         let pos = self.stem[depth as usize];
         let inner = InnerNode::new_with_leaf(self, pos);
-        inner.store(key, depth, value)
+        inner.store(updates, depth)
     }
 
     /// Computes and returns the commitment of this leaf node.
@@ -349,7 +354,7 @@ mod tests {
     fn empty_node_store_creates_inner_node() {
         let key = make_key(&[1, 2, 3]);
         let value = make_value(42);
-        let node = Node::Empty.store(&key, 0, &value);
+        let node = Node::Empty.store(KeyedUpdateBatch::from_key_value_pairs(&[(key, value)]), 0);
         assert!(matches!(node, Node::Inner(_)));
     }
 
@@ -397,8 +402,14 @@ mod tests {
         let key2 = make_key(&[1, 2, 4]);
 
         let root = Node::Leaf(LeafNode::new(&key1));
-        let root = root.store(&key1, 2, &make_value(42));
-        let root = root.store(&key2, 2, &make_value(84));
+        let root = root.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(42))]),
+            2,
+        );
+        let root = root.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key2, make_value(84))]),
+            2,
+        );
 
         assert!(
             matches!(root, Node::Inner(_)),
@@ -415,7 +426,10 @@ mod tests {
         let inner = InnerNode::new();
         assert!(matches!(inner.children[key[2] as usize], Node::Empty));
 
-        let inner = inner.store(&key, 2, &make_value(42));
+        let inner = inner.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key, make_value(42))]),
+            2,
+        );
         let Node::Inner(inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -429,7 +443,10 @@ mod tests {
 
         // Setting a value should mark the commitment as dirty.
         let key = make_key(&[1, 2, 3]);
-        let inner = inner.store(&key, 2, &make_value(42));
+        let inner = inner.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key, make_value(42))]),
+            2,
+        );
         let Node::Inner(mut inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -445,7 +462,10 @@ mod tests {
         assert_eq!(fist_commitment, second_commitment);
 
         // Setting another value should mark the commitment as dirty again.
-        let inner = inner.store(&make_key(&[1, 2, 4]), 2, &make_value(84));
+        let inner = inner.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(make_key(&[1, 2, 4]), make_value(84))]),
+            2,
+        );
         let Node::Inner(inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -457,7 +477,10 @@ mod tests {
         let inner = InnerNode::new();
         let key1 = make_key(&[1, 2, 3]);
 
-        let inner = inner.store(&key1, 2, &make_value(42));
+        let inner = inner.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(42))]),
+            2,
+        );
         let Node::Inner(mut inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -472,7 +495,10 @@ mod tests {
         assert_eq!(commitment, expected_commitment);
 
         let key2 = make_key(&[1, 2, 4]);
-        let inner = inner.store(&key2, 2, &make_value(84));
+        let inner = inner.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key2, make_value(84))]),
+            2,
+        );
         let Node::Inner(mut inner) = inner else {
             panic!("expected InnerNode after set");
         };
@@ -514,7 +540,10 @@ mod tests {
         // Initially, the value for the key should be zero.
         assert_eq!(leaf.lookup(&key), Value::default());
 
-        let leaf = leaf.store(&key, 0, &make_value(42));
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key, make_value(42))]),
+            2,
+        );
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -526,7 +555,10 @@ mod tests {
         let key1 = make_key(&[1, 2, 3]);
         let key2 = make_key(&[4, 5, 6]);
         let leaf = LeafNode::new(&key1);
-        let leaf = leaf.store(&key1, 0, &make_value(42));
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(42))]),
+            2,
+        );
 
         assert_eq!(
             leaf.lookup(&key2, 0),
@@ -541,10 +573,16 @@ mod tests {
         let key2 = make_key(&[1, 2, 4]);
 
         let leaf = LeafNode::new(&key1);
-        let mut leaf = leaf.store(&key1, 0, &make_value(42));
+        let mut leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(42))]),
+            0,
+        );
         let leaf_commitment = leaf.commit();
 
-        let new_node = leaf.store(&key2, 2, &make_value(84));
+        let new_node = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key2, make_value(84))]),
+            2,
+        );
         let Node::Inner(inner) = new_node else {
             panic!("expected InnerNode after set");
         };
@@ -577,7 +615,10 @@ mod tests {
         assert_eq!(leaf.lookup(&key3), Value::default());
 
         // Setting a value for key 1 makes the value retrievable and marks the suffix as used.
-        let leaf = leaf.store(&key1, 0, &make_value(10));
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(10))]),
+            0,
+        );
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -592,7 +633,10 @@ mod tests {
 
         // Setting the value for key 2 to zero does not change the value but marks the suffix as
         // used.
-        let leaf = leaf.store(&key2, 0, &Value::default());
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key2, Value::default())]),
+            0,
+        );
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -606,7 +650,10 @@ mod tests {
         assert_eq!(leaf.lookup(&key3), Value::default());
 
         // Resetting the value for key 1 to zero does not change the used bitmap.
-        let leaf = leaf.store(&key1, 0, &Value::default());
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, Value::default())]),
+            0,
+        );
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -631,8 +678,8 @@ mod tests {
         val2[8..16].copy_from_slice(&84u64.to_be_bytes());
 
         let leaf = LeafNode::new(&key1);
-        let leaf = leaf.store(&key1, 0, &val1);
-        let leaf = leaf.store(&key2, 0, &val2);
+        let leaf = leaf.store(KeyedUpdateBatch::from_key_value_pairs(&[(key1, val1)]), 0);
+        let leaf = leaf.store(KeyedUpdateBatch::from_key_value_pairs(&[(key2, val2)]), 0);
         let Node::Leaf(mut leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -673,13 +720,19 @@ mod tests {
         let leaf = LeafNode::new(&key1);
         assert!(leaf.commitment_dirty);
 
-        let leaf = leaf.store(&key1, 0, &make_value(10));
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(42))]),
+            0,
+        );
         let Node::Leaf(leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
         assert!(leaf.commitment_dirty);
 
-        let leaf = leaf.store(&key2, 0, &make_value(20));
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key2, make_value(84))]),
+            0,
+        );
         let Node::Leaf(mut leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
@@ -692,7 +745,10 @@ mod tests {
         assert!(!leaf.commitment_dirty);
         assert_eq!(first, second);
 
-        let leaf = leaf.store(&key1, 0, &make_value(30));
+        let leaf = leaf.store(
+            KeyedUpdateBatch::from_key_value_pairs(&[(key1, make_value(30))]),
+            0,
+        );
         let Node::Leaf(mut leaf) = leaf else {
             panic!("expected LeafNode after set");
         };
