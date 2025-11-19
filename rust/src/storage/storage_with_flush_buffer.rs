@@ -173,6 +173,8 @@ impl FlushWorkers {
         S::Item: Clone + Send + Sync,
     {
         let shutdown = Arc::new(AtomicBool::new(false));
+        // TODO: Run this in a worker pool instead
+        // https://github.com/0xsoniclabs/sonic-admin/issues/486
         let workers = (0..Self::WORKER_COUNT)
             .map(|_| {
                 let flush_buffer = flush_buffer.clone();
