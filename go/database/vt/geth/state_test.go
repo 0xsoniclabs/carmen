@@ -266,8 +266,9 @@ func TestState_HasEmptyStorage_Unsupported(t *testing.T) {
 	for name, stateInit := range initTestedState() {
 		t.Run(name, func(t *testing.T) {
 			st := stateInit(state.Parameters{}, t)
-			_, err := st.HasEmptyStorage(common.Address{})
-			require.ErrorContains(t, err, "not supported", "expected error containing 'not supported'")
+			empty, err := st.HasEmptyStorage(common.Address{1})
+			require.NoError(t, err)
+			require.True(t, empty)
 		})
 	}
 }

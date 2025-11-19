@@ -171,10 +171,12 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	}
 }
 
-func TestState_HasEmptyStorage_ReturnsError(t *testing.T) {
+func TestState_HasEmptyStorage_ReturnsTrue(t *testing.T) {
+	require := require.New(t)
 	state := newState()
-	_, err := state.HasEmptyStorage(common.Address{1})
-	require.ErrorContains(t, err, "not supported by Verkle Tries")
+	empty, err := state.HasEmptyStorage(common.Address{1})
+	require.NoError(err)
+	require.True(empty)
 }
 
 func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
