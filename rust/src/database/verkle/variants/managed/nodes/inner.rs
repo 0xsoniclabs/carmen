@@ -14,11 +14,14 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::{
-        managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
-        verkle::variants::managed::{
-            VerkleNode,
-            commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
-            nodes::{VerkleNodeKind, id::VerkleNodeId},
+        managed_trie::{DescendAction, LookupResult, ManagedTrieNode, StoreAction},
+        verkle::{
+            KeyedUpdateBatch,
+            variants::managed::{
+                VerkleNode,
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                nodes::{VerkleNodeKind, id::VerkleNodeId},
+            },
         },
     },
     error::{BTResult, Error},
@@ -119,17 +122,22 @@ impl ManagedTrieNode for InnerNode {
         ))
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: &Key,
+        updates: KeyedUpdateBatch<'a>,
         depth: u8,
         _self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
-        let index = key[depth as usize] as usize;
-        Ok(StoreAction::Descend {
-            index,
-            id: self.children[index],
-        })
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
+        let mut descent_actions = Vec::new();
+        for sub_updates in updates.split(depth) {
+            let index = sub_updates.first_key()[depth as usize] as usize;
+            descent_actions.push(DescendAction {
+                index,
+                id: self.children[index],
+                updates: sub_updates,
+            });
+        }
+        Ok(StoreAction::Descend(descent_actions))
     }
 
     fn replace_child(&mut self, key: &Key, depth: u8, new: VerkleNodeId) -> BTResult<(), Error> {
@@ -155,9 +163,12 @@ mod tests {
     use crate::{
         database::{
             managed_trie::TrieCommitment,
-            verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
+            verkle::{
+                KeyedUpdateBatch, test_utils::FromIndexValues,
+                variants::managed::nodes::VerkleNodeKind,
+            },
         },
-        types::TreeId,
+        types::{TreeId, Value},
     };
 
     #[test]
@@ -203,20 +214,22 @@ mod tests {
         let key = Key::from_index_values(1, &[(depth, index)]);
         let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner);
         node.children[index as usize] = child_id;
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
 
         let result = node
             .next_store_action(
-                &key,
+                updates.clone(),
                 depth as u8,
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner),
             )
             .unwrap();
         assert_eq!(
             result,
-            StoreAction::Descend {
+            StoreAction::Descend(vec![DescendAction {
                 index: index as usize,
-                id: child_id
-            }
+                id: child_id,
+                updates
+            }])
         );
     }
 

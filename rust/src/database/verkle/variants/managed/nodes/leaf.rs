@@ -15,9 +15,12 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
-        verkle::variants::managed::{
-            InnerNode, VerkleNode, VerkleNodeId,
-            commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+        verkle::{
+            KeyedUpdate,
+            variants::managed::{
+                InnerNode, KeyedUpdateBatch, VerkleNode, VerkleNodeId,
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+            },
         },
     },
     error::{BTResult, Error},
@@ -111,14 +114,14 @@ impl ManagedTrieNode for FullLeafNode {
         }
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: &Key,
+        updates: KeyedUpdateBatch<'a>,
         depth: u8,
         self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         // If key does not match the stem, we have to introduce a new inner node.
-        if key[..31] != self.stem[..] {
+        if !updates.all_stems_match(&self.stem) {
             let index = self.stem[depth as usize];
             let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
             return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
@@ -126,12 +129,12 @@ impl ManagedTrieNode for FullLeafNode {
             ))));
         }
 
-        Ok(StoreAction::Store {
-            index: key[31] as usize,
-        })
+        // All updates fit into this sparse leaf.
+        Ok(StoreAction::Store(updates))
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
+    fn store(&mut self, update: &KeyedUpdate) -> BTResult<Value, Error> {
+        let key = update.key();
         if self.stem[..] != key[..31] {
             return Err(Error::CorruptedState(
                 "called store on a leaf with non-matching stem".to_owned(),
@@ -141,7 +144,7 @@ impl ManagedTrieNode for FullLeafNode {
 
         let suffix = key[31];
         let prev_value = self.values[suffix as usize];
-        self.values[suffix as usize] = *value;
+        update.apply_to_value(&mut self.values[suffix as usize]);
         Ok(prev_value)
     }
 
@@ -163,7 +166,10 @@ mod tests {
     use crate::{
         database::{
             managed_trie::TrieCommitment,
-            verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
+            verkle::{
+                KeyedUpdateBatch, test_utils::FromIndexValues,
+                variants::managed::nodes::VerkleNodeKind,
+            },
         },
         error::BTError,
         types::{TreeId, Value},
@@ -228,9 +234,10 @@ mod tests {
         };
         let key = Key::from_index_values(1, &[(divergence_at, 97)]);
         let self_id = VerkleNodeId::from_idx_and_node_kind(33, VerkleNodeKind::Leaf256);
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
 
         let result = node
-            .next_store_action(&key, divergence_at as u8, self_id)
+            .next_store_action(updates, divergence_at as u8, self_id)
             .unwrap();
         match result {
             StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
@@ -250,20 +257,16 @@ mod tests {
             stem: key[..31].try_into().unwrap(),
             ..Default::default()
         };
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
 
         let result = node
             .next_store_action(
-                &key,
+                updates.clone(),
                 0,
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf256),
             )
             .unwrap();
-        assert_eq!(
-            result,
-            StoreAction::Store {
-                index: index as usize
-            }
-        );
+        assert_eq!(result, StoreAction::Store(updates));
     }
 
     #[test]
@@ -275,8 +278,9 @@ mod tests {
             ..Default::default()
         };
         let value = Value::from_index_values(42, &[]);
+        let update = KeyedUpdate::FullSlot { key, value };
 
-        node.store(&key, &value).unwrap();
+        node.store(&update).unwrap();
         assert_eq!(node.values[index as usize], value);
     }
 
@@ -285,8 +289,9 @@ mod tests {
         let key = Key::from_index_values(1, &[(31, 78)]);
         let mut node = FullLeafNode::default();
         let value = Value::from_index_values(42, &[]);
+        let update = KeyedUpdate::FullSlot { key, value };
 
-        let result = node.store(&key, &value);
+        let result = node.store(&update);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(_))

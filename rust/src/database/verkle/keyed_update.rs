@@ -64,7 +64,6 @@ impl KeyedUpdate {
     }
 
     /// Applies the update to the given value.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn apply_to_value(&self, orig_value: &mut [u8; 32]) {
         match self {
             KeyedUpdate::FullSlot { value, .. } => {
@@ -83,7 +82,7 @@ impl KeyedUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyedUpdateBatch<'a>(Cow<'a, [KeyedUpdate]>);
 
-impl KeyedUpdateBatch<'_> {
+impl<'a> KeyedUpdateBatch<'a> {
     /// Creates [`KeyedUpdateBatch`] from key-value pairs, treating each as a full slot update.
     /// Used for testing.
     #[cfg(test)]
@@ -100,9 +99,8 @@ impl KeyedUpdateBatch<'_> {
     }
 
     /// Returns the key of the first update.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn first_key(&self) -> &Key {
-        // self is never empty
+        // self is never empty (invariant)
         self.0[0].key()
     }
 
@@ -110,8 +108,10 @@ impl KeyedUpdateBatch<'_> {
     /// depth and yields them as [`KeyedUpdateBatch`].
     /// This is used to group updates for insertion into child nodes. It is therefore expected that
     /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
-    #[cfg_attr(not(test), expect(unused))]
-    pub fn split(&self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'_>> {
+    ///
+    /// This method should for performance reasons only be called on borrowed data. This can be
+    /// ensured by calling `.borrowed()` first.
+    pub fn split(self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'a>> {
         SplitIter {
             updates: self,
             depth,
@@ -120,9 +120,16 @@ impl KeyedUpdateBatch<'_> {
     }
 
     /// Checks if all updates share the given stem (first 31 bytes of the key).
-    #[cfg_attr(not(test), expect(unused))]
     pub fn all_stems_match(&self, stem: &[u8; 31]) -> bool {
         self.0.iter().all(|update| &update.key()[..31] == stem)
+    }
+
+    /// Returns a reference to the inner `KeyedUpdateBatch`.
+    pub fn borrowed(&self) -> KeyedUpdateBatch<'_> {
+        match &self.0 {
+            Cow::Borrowed(slice) => KeyedUpdateBatch(Cow::Borrowed(slice)),
+            Cow::Owned(vec) => KeyedUpdateBatch(Cow::Borrowed(vec)),
+        }
     }
 }
 
@@ -134,11 +141,11 @@ impl Deref for KeyedUpdateBatch<'_> {
     }
 }
 
-/// The error type returned when trying to convert an empty `Update` into `KeyedUpdates`.
+/// The error type returned when trying to convert an empty `Update` into `KeyedUpdateBatch`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyUpdate;
 
-impl TryFrom<Update<'_>> for KeyedUpdateBatch<'_> {
+impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
     type Error = EmptyUpdate;
 
     fn try_from(update: Update<'_>) -> Result<Self, Self::Error> {
@@ -229,11 +236,11 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'_> {
     }
 }
 
-/// An iterator that splits `KeyedUpdates` into groups sharing the same key byte at a given depth.
-/// These groups are yielded in order as `KeyedUpdates`.
+/// An iterator that splits `KeyedUpdateBatch` into groups sharing the same key byte at a given
+/// depth. These groups are yielded in order as `KeyedUpdateBatch`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SplitIter<'a> {
-    updates: &'a KeyedUpdateBatch<'a>,
+    updates: KeyedUpdateBatch<'a>,
     depth: u8,
     start: usize,
 }
@@ -254,9 +261,13 @@ impl<'a> Iterator for SplitIter<'a> {
             end += 1;
         }
         self.start = end;
-        Some(KeyedUpdateBatch(Cow::Borrowed(
-            &self.updates[start_pos..end],
-        )))
+        // This avoids going though deref which would tie the lifetime of data to the lifetime of
+        // the borrow of self.
+        let data = match &self.updates.0 {
+            Cow::Borrowed(slice) => Cow::Borrowed(&slice[start_pos..end]),
+            Cow::Owned(vec) => Cow::Owned(vec[start_pos..end].to_vec()),
+        };
+        Some(KeyedUpdateBatch(data))
     }
 }
 
@@ -452,14 +463,14 @@ mod tests {
             },
         ]));
 
-        let iter: Vec<_> = updates.split(32 - 1 - 2).collect();
+        let iter: Vec<_> = updates.clone().split(32 - 1 - 2).collect();
         assert_eq!(iter.len(), 1);
         assert_eq!(
             iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
             [111, 112, 113, 114]
         );
 
-        let iter: Vec<_> = updates.split(32 - 1 - 1).collect();
+        let iter: Vec<_> = updates.clone().split(32 - 1 - 1).collect();
         assert_eq!(iter.len(), 2);
         assert_eq!(
             iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),

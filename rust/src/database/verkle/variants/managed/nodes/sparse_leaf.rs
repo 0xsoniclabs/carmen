@@ -15,10 +15,13 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
-        verkle::variants::managed::{
-            InnerNode, VerkleNode, VerkleNodeId,
-            commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
-            nodes::make_smallest_leaf_node_for,
+        verkle::{
+            KeyedUpdate, KeyedUpdateBatch,
+            variants::managed::{
+                InnerNode, VerkleNode, VerkleNodeId,
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                nodes::make_smallest_leaf_node_for,
+            },
         },
     },
     error::{BTResult, Error},
@@ -111,6 +114,33 @@ impl<const N: usize> SparseLeafNode<N> {
         }
         empty_slot
     }
+
+    /// Returns the number of slots that would be required to store the given values or None if they
+    /// already fit.
+    fn get_slots_for(
+        values: &[ValueWithIndex],
+        indices: impl Iterator<Item = u8>,
+    ) -> Option<usize> {
+        let empty_slots = values
+            .iter()
+            .filter(|vwi| vwi.value == Value::default())
+            .count();
+        let mut new_slots = 0;
+        for index in indices {
+            if values
+                .iter()
+                .any(|vwi| vwi.index == index && vwi.value != Value::default())
+            {
+                continue;
+            }
+            new_slots += 1;
+        }
+        if new_slots <= empty_slots {
+            None
+        } else {
+            Some(values.len() - empty_slots + new_slots)
+        }
+    }
 }
 
 impl<const N: usize> Default for SparseLeafNode<N> {
@@ -189,14 +219,14 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         Ok(LookupResult::Value(Value::default()))
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: &Key,
+        updates: KeyedUpdateBatch<'a>,
         depth: u8,
         self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         // If key does not match the stem, we have to introduce a new inner node.
-        if key[..31] != self.stem[..] {
+        if !updates.all_stems_match(&self.stem) {
             let index = self.stem[depth as usize];
             let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
             return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
@@ -204,23 +234,23 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             ))));
         }
 
-        // If we have a free/matching slot, we can store the value directly.
-        if Self::get_slot_for(&self.values, key[31]).is_some() {
-            return Ok(StoreAction::Store {
-                index: key[31] as usize,
-            });
+        if let Some(slots) = Self::get_slots_for(&self.values, updates.iter().map(|u| u.key()[31]))
+        {
+            // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
+            return Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
+                slots,
+                self.stem,
+                &self.values,
+                self.commitment,
+            )?));
         }
 
-        // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
-        Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
-            N + 1,
-            self.stem,
-            &self.values,
-            self.commitment,
-        )?))
+        // All updates fit into this sparse leaf.
+        Ok(StoreAction::Store(updates))
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
+    fn store(&mut self, update: &KeyedUpdate) -> BTResult<Value, Error> {
+        let key = update.key();
         if self.stem[..] != key[..31] {
             return Err(Error::CorruptedState(
                 "called store on a leaf with non-matching stem".to_owned(),
@@ -232,10 +262,8 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             "no available slot for storing value in sparse leaf".to_owned(),
         ))?;
         let prev_value = self.values[slot].value;
-        self.values[slot] = ValueWithIndex {
-            index: key[31],
-            value: *value,
-        };
+        self.values[slot].index = key[31];
+        update.apply_to_value(&mut self.values[slot].value);
 
         Ok(prev_value)
     }
@@ -256,7 +284,10 @@ mod tests {
     use crate::{
         database::{
             managed_trie::TrieCommitment,
-            verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
+            verkle::{
+                KeyedUpdateBatch, test_utils::FromIndexValues,
+                variants::managed::nodes::VerkleNodeKind,
+            },
         },
         error::BTError,
         types::{TreeId, Value},
@@ -531,9 +562,9 @@ mod tests {
         let mut key: Key = [&STEM[..], &[0u8]].concat().try_into().unwrap();
         key[divergence_at] = 56;
         let self_id = make_node_id();
-
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
         let result = node
-            .next_store_action(&key, divergence_at as u8, self_id)
+            .next_store_action(update, divergence_at as u8, self_id)
             .unwrap();
         match result {
             StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
@@ -553,13 +584,11 @@ mod tests {
         let index = 142;
         node.access_slot(4).index = index;
         let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
-        let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
-        assert_eq!(
-            result,
-            StoreAction::Store {
-                index: index as usize
-            }
-        );
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
+        let result = node
+            .next_store_action(update.clone(), 0, make_node_id())
+            .unwrap();
+        assert_eq!(result, StoreAction::Store(update));
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
@@ -570,13 +599,11 @@ mod tests {
         let index = 200;
         node.access_slot(5).value = Value::default();
         let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
-        let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
-        assert_eq!(
-            result,
-            StoreAction::Store {
-                index: index as usize
-            }
-        );
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
+        let result = node
+            .next_store_action(update.clone(), 0, make_node_id())
+            .unwrap();
+        assert_eq!(result, StoreAction::Store(update));
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
@@ -590,15 +617,16 @@ mod tests {
 
         let index = 250;
         let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
-        let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
+        let result = node
+            .next_store_action(update.clone(), 0, make_node_id())
+            .unwrap();
         match result {
             StoreAction::HandleTransform(bigger_leaf) => {
                 // This new leaf is big enough to store the value
                 assert_eq!(
-                    bigger_leaf.next_store_action(&key, 0, make_node_id()),
-                    Ok(StoreAction::Store {
-                        index: index as usize
-                    })
+                    bigger_leaf.next_store_action(update.clone(), 0, make_node_id()),
+                    Ok(StoreAction::Store(update))
                 );
                 // It contains all previous values
                 assert_eq!(
@@ -619,8 +647,8 @@ mod tests {
         node.access_slot(3).index = index;
         let key = [&STEM[..], &[index]].concat().try_into().unwrap();
         let value = Value::from_index_values(42, &[]);
-
-        node.store(&key, &value).unwrap();
+        let update = KeyedUpdate::FullSlot { key, value };
+        node.store(&update).unwrap();
         let commitment_input = node.get_commitment_input();
         match commitment_input {
             VerkleCommitmentInput::Leaf(values, _) => {
@@ -634,7 +662,11 @@ mod tests {
     fn store_with_non_matching_stem_returns_error(#[case] node: Box<dyn VerkleManagedTrieNode>) {
         let mut node = node;
         let key = Key::from_index_values(1, &[(31, 78)]);
-        let result = node.store(&key, &VALUE_1);
+        let update = KeyedUpdate::FullSlot {
+            key,
+            value: VALUE_1,
+        };
+        let result = node.store(&update);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("called store on a leaf with non-matching stem")
@@ -645,7 +677,11 @@ mod tests {
     fn store_returns_error_if_no_free_slot(#[case] node: Box<dyn VerkleManagedTrieNode>) {
         let mut node = node;
         let key = [&STEM[..], &[INDEX_1 - 1]].concat().try_into().unwrap();
-        let result = node.store(&key, &VALUE_1);
+        let update = KeyedUpdate::FullSlot {
+            key,
+            value: VALUE_1,
+        };
+        let result = node.store(&update);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("no available slot for storing value in sparse leaf")
