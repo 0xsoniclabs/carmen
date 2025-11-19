@@ -103,7 +103,9 @@ where
 
     /// Adds root ID `id` for `block_number` to the cache and writes it out to disk.
     pub fn set(&self, block_number: u64, mut id: ID) -> BTResult<(), Error> {
-        if block_number < self.id_count.load(Ordering::Relaxed) {
+        // block number 0 is currently used for the root ID of the live DB which needs to be mutable
+        // TODO: https://github.com/0xsoniclabs/sonic-admin/issues/487
+        if block_number != 0 && block_number < self.id_count.load(Ordering::Relaxed) {
             return Err(Error::Frozen.into());
         }
 
@@ -281,6 +283,31 @@ mod tests {
             .read_exact(read_id.as_mut_bytes())
             .unwrap();
         assert_eq!(read_id, id);
+    }
+
+    #[test]
+    fn set_fails_if_same_id_it_set_twice() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.join("root_ids");
+        let path = path.as_path();
+
+        let root_ids_file = RootIdsFile {
+            file: Mutex::new(File::create(path).unwrap()),
+            id_count: AtomicU64::new(0),
+            cache: Cache::new(RootIdsFile::CACHE_SIZE),
+        };
+
+        let id = [1; 6];
+
+        assert!(root_ids_file.set(0, id).is_ok());
+        assert!(root_ids_file.set(1, id).is_ok());
+        assert_eq!(
+            root_ids_file.set(1, id).map_err(BTError::into_inner),
+            Err(Error::Frozen)
+        );
+        // Currently block number 0 is exempted from the frozen check because it is used for the
+        // live DB root ID.
+        assert!(root_ids_file.set(0, id).is_ok());
     }
 
     #[test]
