@@ -10,7 +10,7 @@
 
 use crate::{
     database::verkle::{
-        compute_commitment::compute_leaf_node_commitment,
+        compute_commitment::{compute_leaf_node_commitment, compute_leaf_node_commitment_v2},
         crypto::{Commitment, Scalar},
     },
     types::{Key, Value},
@@ -189,9 +189,17 @@ impl InnerNode {
 #[derive(Debug)]
 pub struct LeafNode {
     stem: [u8; 31],
+
     values: Box<[Value; 256]>,
-    used_bits: [u8; 256 / 8],
+
+    committed_values: Box<[Value; 256]>,
+    committed_used_slots: [u8; 256 / 8],
+    changed_slots: [u8; 256 / 8],
+
+    c1: Commitment,
+    c2: Commitment,
     commitment: Commitment,
+    // TODO: Redundant with `changed_slots`?
     commitment_dirty: bool,
 }
 
@@ -202,7 +210,11 @@ impl LeafNode {
         LeafNode {
             stem: key[..31].try_into().unwrap(), // safe to unwrap because `Key` is 32 bytes long
             values,
-            used_bits: [0; 256 / 8],
+            committed_values: Box::new([Value::default(); 256]),
+            committed_used_slots: [0; 256 / 8],
+            changed_slots: [0; 256 / 8],
+            c1: Commitment::default(),
+            c2: Commitment::default(),
             commitment: Commitment::default(),
             commitment_dirty: true,
         }
@@ -225,8 +237,11 @@ impl LeafNode {
     pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
         if key[..31] == self.stem {
             let suffix = key[31];
+            if self.changed_slots[suffix as usize / 8] & (1 << (suffix % 8)) == 0 {
+                self.committed_values[suffix as usize] = self.values[suffix as usize];
+                self.changed_slots[suffix as usize / 8] |= 1 << (suffix as usize % 8);
+            }
             self.values[suffix as usize] = *value;
-            self.used_bits[(suffix / 8) as usize] |= 1 << (suffix % 8);
             self.commitment_dirty = true;
             return Node::Leaf(self);
         }
@@ -245,7 +260,17 @@ impl LeafNode {
             return self.commitment;
         }
         let _span = tracy_client::span!("LeafNode::commit");
-        self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
+        compute_leaf_node_commitment_v2(
+            &self.committed_values,
+            &self.values,
+            self.changed_slots,
+            &self.stem,
+            &mut self.committed_used_slots,
+            &mut self.c1,
+            &mut self.c2,
+            &mut self.commitment,
+        );
+        self.changed_slots = [0; 256 / 8];
         self.commitment_dirty = false;
         self.commitment
     }
@@ -413,7 +438,11 @@ mod tests {
             Box::new([Value::default(); 256]),
             "all values should be initialized to zero"
         );
-        assert_eq!(leaf.used_bits, [0; 256 / 8], "used bitmap should be empty");
+        assert_eq!(
+            leaf.committed_used_slots,
+            [0; 256 / 8],
+            "used bitmap should be empty"
+        );
     }
 
     #[test]
@@ -469,7 +498,7 @@ mod tests {
     #[test]
     fn leaf_node_can_store_and_lookup_values() {
         fn is_used(leaf: &LeafNode, suffix: u8) -> bool {
-            leaf.used_bits[(suffix / 8) as usize] & (1 << (suffix % 8)) != 0
+            leaf.changed_slots[(suffix / 8) as usize] & (1 << (suffix % 8)) != 0
         }
 
         let key1 = make_leaf_key(&[1, 2, 3], 1);
