@@ -81,6 +81,8 @@ pub fn open_carmen_db(
                     .map_err(|_| Error::IllegalArgument("invalid directory path".to_owned()))?,
             ))?;
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
+            // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
+            // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
             Ok(Box::new(CarmenS6FileBasedDb::new(
                 manager.clone(),
@@ -277,10 +279,9 @@ where
 
     fn close(&self) -> BTResult<(), Error> {
         let mut manager = self.manager.lock().unwrap();
-        if manager.is_none() {
-            return Err(Error::IllegalArgument("database is already closed".to_owned()).into());
-        }
-        let manager = manager.take().unwrap(); // Safe to unwrap due to is_none() above
+        let manager = manager.take().ok_or(Error::IllegalArgument(
+            "database is already closed".to_owned(),
+        ))?;
         // Release live state first, since it holds a reference to the manager
         self.live_state.lock().unwrap().take();
         let manager = Arc::into_inner(manager).ok_or_else(|| {
@@ -315,7 +316,10 @@ mod tests {
     use crypto_bigint::U256;
 
     use super::*;
-    use crate::utils::test_dir::{Permissions, TestDir};
+    use crate::{
+        error::BTError,
+        utils::test_dir::{Permissions, TestDir},
+    };
 
     #[test]
     fn open_carmen_db_fails_for_file_based_live_state_with_invalid_directory() {
@@ -350,6 +354,22 @@ mod tests {
     }
 
     #[test]
+    fn carmen_s6_file_based_db_checkpoint_returns_error() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.path().as_os_str().as_encoded_bytes();
+        let db = open_carmen_db(6, b"file", b"none", path).unwrap();
+
+        let result = db.checkpoint();
+        assert_eq!(
+            result,
+            Err(
+                Error::UnsupportedOperation("cannot create checkpoint for live state".to_owned())
+                    .into()
+            )
+        );
+    }
+
+    #[test]
     fn carmen_s6_file_based_db_close_fails_if_already_closed() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.path().as_os_str().as_encoded_bytes();
@@ -378,5 +398,19 @@ mod tests {
                     .into()
             )
         );
+    }
+
+    #[test]
+    fn carmen_s6_file_based_db_get_live_state_fails_if_closed() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.path().as_os_str().as_encoded_bytes();
+        let db = open_carmen_db(6, b"file", b"none", path).unwrap();
+
+        db.close().unwrap();
+        let result = db.get_live_state().map_err(BTError::into_inner);
+        assert!(matches!(
+            result,
+            Err(Error::CorruptedState(e)) if e == "live state has been closed"
+        ));
     }
 }

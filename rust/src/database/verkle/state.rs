@@ -63,6 +63,8 @@ where
         + Send
         + Sync,
 {
+    /// Creates a new [`VerkleTrieCarmenState`] using a managed Verkle trie with the given node
+    /// manager. Forwards any errors from [`ManagedVerkleTrie::try_new`].
     pub fn try_new(manager: Arc<M>) -> BTResult<Self, Error> {
         let trie = ManagedVerkleTrie::try_new(manager)?;
         Ok(Self { trie })
