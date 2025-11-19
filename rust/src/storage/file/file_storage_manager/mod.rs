@@ -293,7 +293,10 @@ where
 
 pub(crate) use derive_deftly_template_FileStorageManager;
 #[cfg(test)]
-pub use tests::{TestNode, TestNodeFileStorageManager, TestNodeId, TestNodeKind};
+pub use tests::{
+    EmptyTestNode, NonEmpty1TestNode, NonEmpty2TestNode, TestNode, TestNodeFileStorageManager,
+    TestNodeId, TestNodeKind,
+};
 
 #[cfg(test)]
 mod tests {

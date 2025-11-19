@@ -260,7 +260,7 @@ mod tests {
         error::BTError,
         storage::file::{
             NodeFileStorage, SeekFile, TestNode, TestNodeFileStorageManager, TestNodeId,
-            TestNodeKind,
+            TestNodeKind, file_storage_manager::NonEmpty1TestNode,
         },
         sync::{
             Arc,
@@ -268,7 +268,10 @@ mod tests {
             is_finished, thread,
         },
         types::TreeId,
-        utils::test_dir::{Permissions, TestDir},
+        utils::{
+            shuttle::run_shuttle_check,
+            test_dir::{Permissions, TestDir},
+        },
     };
 
     #[test]
@@ -607,6 +610,31 @@ mod tests {
         assert_eq!(
             shutdown_received.load(Ordering::SeqCst),
             FlushWorkers::WORKER_COUNT
+        );
+    }
+
+    #[test]
+    fn shuttletest_flush_workers_executes_a_task_only_once() {
+        run_shuttle_check(
+            || {
+                let testdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+                // Use an actual storage as mockall does not use shuttle sync primitives, which we
+                // need to ensure context switches between shuttle threads.
+                let storage = Arc::new(
+                    NodeFileStorage::<NonEmpty1TestNode, SeekFile>::open(&testdir).unwrap(),
+                );
+                let node = NonEmpty1TestNode::default();
+                let id = storage.reserve(&node);
+                storage.set(id, &node).unwrap();
+
+                let flush_buffer = Arc::new(SkipMap::new());
+                let workers = FlushWorkers::new(&flush_buffer, &storage.clone());
+                // This should call delete only once, and panic if two workers delete the same ID
+                flush_buffer.insert(id, Op::Delete);
+
+                workers.shutdown().unwrap();
+            },
+            100,
         );
     }
 
