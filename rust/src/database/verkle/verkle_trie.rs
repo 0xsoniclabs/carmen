@@ -22,7 +22,7 @@ use crate::{
 ///
 /// The trait prescribes interior mutability through shared references,
 /// allowing for safe concurrent access.
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait VerkleTrie: Send + Sync {
     /// Retrieves the value associated with the given key.
     /// Returns the default [`Value`] if the key does not exist.

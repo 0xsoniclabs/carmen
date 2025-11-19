@@ -206,36 +206,41 @@ mod tests {
         }
     }
 
-    mock! {
-        pub TestNodeManager {}
+    #[allow(clippy::disallowed_types)]
+    mod mock {
+        use super::*;
+        mock! {
+            pub TestNodeManager {}
 
-        impl RootIdProvider for TestNodeManager {
-            type Id = VerkleNodeId;
+            impl RootIdProvider for TestNodeManager {
+                type Id = VerkleNodeId;
 
-            fn get_root_id(&self, block_height: u64) -> BTResult<<Self as RootIdProvider>::Id, storage::Error>;
+                fn get_root_id(&self, block_height: u64) -> BTResult<<Self as RootIdProvider>::Id, storage::Error>;
 
-            fn set_root_id(&self, block_height: u64, root_id: <Self as RootIdProvider>::Id) -> BTResult<(), storage::Error>;
-        }
+                fn set_root_id(&self, block_height: u64, root_id: <Self as RootIdProvider>::Id) -> BTResult<(), storage::Error>;
+            }
 
-        impl NodeManager for TestNodeManager {
-            type Id = VerkleNodeId;
-            type Node = VerkleNode;
+            impl NodeManager for TestNodeManager {
+                type Id = VerkleNodeId;
+                type Node = VerkleNode;
 
-            fn add(&self, node: <Self as NodeManager>::Node) -> BTResult<<Self as NodeManager>::Id, Error>;
+                fn add(&self, node: <Self as NodeManager>::Node) -> BTResult<<Self as NodeManager>::Id, Error>;
 
-            #[allow(refining_impl_trait)]
-            fn get_read_access<'a>(
-                &'a self,
-                id: <Self as NodeManager>::Id,
-            ) -> BTResult<RwLockReadGuard<'a, TestNodeWrapper>, Error>;
+                #[allow(refining_impl_trait)]
+                fn get_read_access<'a>(
+                    &'a self,
+                    id: <Self as NodeManager>::Id,
+                ) -> BTResult<RwLockReadGuard<'a, TestNodeWrapper>, Error>;
 
-            #[allow(refining_impl_trait)]
-            fn get_write_access<'a>(
-                &'a self,
-                id: <Self as NodeManager>::Id,
-            ) -> BTResult<RwLockWriteGuard<'a, TestNodeWrapper>, Error>;
+                #[allow(refining_impl_trait)]
+                fn get_write_access<'a>(
+                    &'a self,
+                    id: <Self as NodeManager>::Id,
+                ) -> BTResult<RwLockWriteGuard<'a, TestNodeWrapper>, Error>;
 
-            fn delete(&self, id: <Self as NodeManager>::Id) -> BTResult<(), Error>;
+                fn delete(&self, id: <Self as NodeManager>::Id) -> BTResult<(), Error>;
+            }
         }
     }
+    use mock::MockTestNodeManager;
 }

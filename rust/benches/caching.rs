@@ -134,6 +134,7 @@ impl Storage for ProducerStorage {
 /// Enum wrapping the different cache implementations used in the benchmarks
 #[allow(clippy::type_complexity)]
 #[allow(clippy::enum_variant_names)]
+#[allow(clippy::large_enum_variant)]
 enum Cache {
     QuickCache(
         quick_cache::sync::Cache<BenchId, BenchValue, UnitWeighter, RandomState, RandomPinner>,
