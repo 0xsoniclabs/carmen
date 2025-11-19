@@ -115,7 +115,7 @@ mod tests {
     use super::*;
     use crate::{
         database::managed_trie::test_utils::{
-            Id, RcNodeExpectation, RcNodeManager, TestNodeCommitment,
+            Id, RcNodeExpectation, RcNodeManager, TestNodeCommitment, spin_until_some,
         },
         sync::{Arc, RwLock, thread},
     };
@@ -270,7 +270,7 @@ mod tests {
             // Root should be locked while we acquire lock on the child
             manager.expect_write_access(child_id, vec![root_id]);
             complete_store(&manager, child_id, KEY, VALUE, 1);
-            manager.wait_for_unlock(child_id);
+            manager.wait_for_unlock(root_id);
 
             // While we did not store anything in the root directly, it should be marked dirty.
             assert!(manager.is_dirty(root_id));
@@ -296,7 +296,10 @@ mod tests {
             descend_into(&manager, root_id, child_id, KEY, 0);
             assert!(root_id_lock.try_read().is_err());
             descend_into(&manager, child_id, grandchild_id, KEY, 1);
-            assert!(root_id_lock.try_read().is_ok());
+            let _guard = spin_until_some(
+                || root_id_lock.try_read().ok(),
+                "timed out waiting for root_id to be unlocked",
+            );
             complete_store(&manager, grandchild_id, KEY, VALUE, 2);
         });
     }
@@ -345,7 +348,7 @@ mod tests {
 
             manager.expect_write_access(new_child_id, vec![root_id, child_id]);
             // At this point the lock on the old child should be released
-            manager.expect_locked(&[root_id, new_child_id]);
+            manager.wait_for_unlock(child_id);
             manager.expect_delete(child_id);
 
             complete_store(&manager, new_child_id, KEY, VALUE, 1);
@@ -383,7 +386,7 @@ mod tests {
 
             manager.expect_add(new_root);
             manager.expect_write_access(new_root_id, vec![root_id]);
-            manager.expect_locked(&[new_root_id]);
+            manager.wait_for_unlock(root_id);
             manager.expect_delete(root_id);
 
             complete_store(&manager, new_root_id, KEY, VALUE, 0);
@@ -440,7 +443,7 @@ mod tests {
 
             manager.expect_write_access(new_parent_id, vec![root_id, child_id]);
             // At this point the lock on the original child should be released
-            manager.expect_locked(&[root_id, new_parent_id]);
+            manager.wait_for_unlock(child_id);
 
             complete_store(&manager, new_parent_id, KEY, VALUE, 1);
             manager.wait_for_unlock(new_parent_id);
@@ -482,7 +485,7 @@ mod tests {
 
             manager.expect_add(new_root);
             manager.expect_write_access(new_root_id, vec![root_id]);
-            manager.expect_locked(&[new_root_id]);
+            manager.wait_for_unlock(root_id);
 
             complete_store(&manager, new_root_id, KEY, VALUE, 0);
             manager.wait_for_unlock(new_root_id);

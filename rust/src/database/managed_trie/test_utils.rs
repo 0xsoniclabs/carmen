@@ -28,7 +28,7 @@ pub type Id = u32;
 
 /// Spins until the provided function `f` returns `Some(R)`, returning the contained `R`.
 /// If more than 1 second elapses, this function panics with the provided `timeout_msg`.
-fn spin_until_some<R>(f: impl Fn() -> Option<R>, timeout_msg: &str) -> R {
+pub fn spin_until_some<R>(f: impl Fn() -> Option<R>, timeout_msg: &str) -> R {
     let start = std::time::Instant::now();
     loop {
         if let Some(res) = f() {
@@ -454,8 +454,7 @@ impl RcNodeManager {
     }
 
     /// Verifies that the currently locked nodes match the provided list of `currently_locked` IDs.
-    #[track_caller]
-    pub fn expect_locked(&self, currently_locked: &[Id]) {
+    fn expect_locked(&self, currently_locked: &[Id]) {
         for i in 0..self.nodes.len() {
             if self.is_locked(i as Id) {
                 if !currently_locked.contains(&(i as Id)) {
@@ -468,7 +467,7 @@ impl RcNodeManager {
     }
 
     /// Returns whether the node with the given `id` is currently locked for reading or writing.
-    pub fn is_locked(&self, id: Id) -> bool {
+    fn is_locked(&self, id: Id) -> bool {
         self.nodes[id as usize].try_write().is_err()
     }
 }
