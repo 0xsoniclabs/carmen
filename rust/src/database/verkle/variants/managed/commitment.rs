@@ -25,6 +25,7 @@ use crate::{
     database::{
         managed_trie::{ManagedTrieNode, TrieCommitment, TrieUpdateLog},
         verkle::{
+            compute_commitment::compute_leaf_node_commitment_v2,
             crypto::{Commitment, Scalar},
             variants::managed::{VerkleNode, VerkleNodeId},
         },
@@ -171,66 +172,17 @@ pub fn process_update(
         VerkleCommitmentInput::Leaf(values, stem) => {
             let _span = tracy_client::span!("update leaf");
 
-            let changed_count = vc
-                .changed
-                .iter()
-                .map(|b| b.count_ones() as usize)
-                .sum::<usize>();
-            let use_batch_update = changed_count > 32;
-
-            let mut deltas_c1 = [Scalar::zero(); 256];
-            let mut deltas_c2 = [Scalar::zero(); 256];
-            for (i, value) in vc.committed_values.iter().enumerate() {
-                if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
-                    continue;
-                }
-                let mut prev_lower = Scalar::from_le_bytes(&value[..16]);
-                let prev_upper = Scalar::from_le_bytes(&value[16..]);
-                if vc.committed_used_slots[i / 8] & (1 << (i % 8)) != 0 {
-                    prev_lower.set_bit128();
-                }
-                let mut lower = Scalar::from_le_bytes(&values[i][..16]);
-                let upper = Scalar::from_le_bytes(&values[i][16..]);
-                lower.set_bit128();
-                if use_batch_update {
-                    if i < 128 {
-                        deltas_c1[(i * 2) % 256] = lower - prev_lower;
-                        deltas_c1[(i * 2 + 1) % 256] = upper - prev_upper;
-                    } else {
-                        deltas_c2[(i * 2) % 256] = lower - prev_lower;
-                        deltas_c2[(i * 2 + 1) % 256] = upper - prev_upper;
-                    }
-                } else {
-                    let c = if i < 128 { &mut vc.c1 } else { &mut vc.c2 };
-                    c.update(((i * 2) % 256) as u8, prev_lower, lower);
-                    c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
-                }
-                vc.committed_used_slots[i / 8] |= 1 << (i % 8);
-            }
-            let prev_c1 = vc.c1;
-            let prev_c2 = vc.c2;
-            if use_batch_update {
-                vc.c1 = vc.c1 + Commitment::new(&deltas_c1);
-                vc.c2 = vc.c2 + Commitment::new(&deltas_c2);
-            }
-            vc.committed_values.fill(Value::default());
-            if vc.commitment == Commitment::default() {
-                let combined = [
-                    Scalar::from(1),
-                    Scalar::from_le_bytes(&stem),
-                    vc.c1.to_scalar(),
-                    vc.c2.to_scalar(),
-                ];
-                vc.commitment = Commitment::new(&combined);
-            } else {
-                let deltas = [
-                    Scalar::zero(),
-                    Scalar::zero(),
-                    vc.c1.to_scalar() - prev_c1.to_scalar(),
-                    vc.c2.to_scalar() - prev_c2.to_scalar(),
-                ];
-                vc.commitment = vc.commitment + Commitment::new(&deltas);
-            }
+            compute_leaf_node_commitment_v2(
+                &vc.committed_values,
+                &values,
+                vc.changed,
+                &stem,
+                &mut vc.committed_used_slots,
+                &mut vc.c1,
+                &mut vc.c2,
+                &mut vc.commitment,
+            );
+            vc.committed_values.fill(Value::default()); // TODO: Is this needed? Also naming of field...
         }
         VerkleCommitmentInput::Inner(children) => {
             let _span = tracy_client::span!("update inner");
@@ -371,6 +323,8 @@ fn update_commitment_thread(
 
             let mut deltas_c1 = [Scalar::zero(); 256];
             let mut deltas_c2 = [Scalar::zero(); 256];
+            let prev_c1 = vc.c1;
+            let prev_c2 = vc.c2;
             for (i, value) in vc.committed_values.iter().enumerate() {
                 if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
                     continue;
@@ -398,8 +352,6 @@ fn update_commitment_thread(
                 }
                 vc.committed_used_slots[i / 8] |= 1 << (i % 8);
             }
-            let prev_c1 = vc.c1;
-            let prev_c2 = vc.c2;
             if use_batch_update {
                 vc.c1 = vc.c1 + Commitment::new(&deltas_c1);
                 vc.c2 = vc.c2 + Commitment::new(&deltas_c2);
