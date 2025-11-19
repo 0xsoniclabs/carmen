@@ -15,14 +15,17 @@ use derive_deftly::Deftly;
 use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction, UnionManagedTrieNode},
-        verkle::variants::managed::{
-            VerkleNodeId,
-            commitment::{VerkleCommitment, VerkleCommitmentInput},
-            nodes::{
-                empty::EmptyNode,
-                inner::InnerNode,
-                leaf::FullLeafNode,
-                sparse_leaf::{SparseLeafNode, ValueWithIndex},
+        verkle::{
+            KeyedUpdate, KeyedUpdateBatch,
+            variants::managed::{
+                VerkleNodeId,
+                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                nodes::{
+                    empty::EmptyNode,
+                    inner::InnerNode,
+                    leaf::FullLeafNode,
+                    sparse_leaf::{SparseLeafNode, ValueWithIndex},
+                },
             },
         },
         visitor::NodeVisitor,
@@ -168,17 +171,17 @@ impl ManagedTrieNode for VerkleNode {
         }
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: &Key,
+        updates: KeyedUpdateBatch<'a>,
         depth: u8,
         self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         match self {
-            VerkleNode::Empty(n) => n.next_store_action(key, depth, self_id),
-            VerkleNode::Inner(n) => n.next_store_action(key, depth, self_id),
-            VerkleNode::Leaf2(n) => n.next_store_action(key, depth, self_id),
-            VerkleNode::Leaf256(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Empty(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::Inner(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::Leaf2(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::Leaf256(n) => n.next_store_action(updates, depth, self_id),
         }
     }
 
@@ -191,12 +194,12 @@ impl ManagedTrieNode for VerkleNode {
         }
     }
 
-    fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
+    fn store(&mut self, update: &KeyedUpdate) -> BTResult<Value, Error> {
         match self {
-            VerkleNode::Empty(n) => n.store(key, value),
-            VerkleNode::Inner(n) => n.store(key, value),
-            VerkleNode::Leaf2(n) => n.store(key, value),
-            VerkleNode::Leaf256(n) => n.store(key, value),
+            VerkleNode::Empty(n) => n.store(update),
+            VerkleNode::Inner(n) => n.store(update),
+            VerkleNode::Leaf2(n) => n.store(update),
+            VerkleNode::Leaf256(n) => n.store(update),
         }
     }
 
