@@ -9,7 +9,10 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use crate::{
-    database::managed_trie::TrieCommitment,
+    database::{
+        managed_trie::TrieCommitment,
+        verkle::{KeyedUpdate, KeyedUpdateBatch},
+    },
     error::{BTResult, Error},
     types::{Key, Value},
 };
@@ -25,25 +28,25 @@ pub enum LookupResult<ID> {
 
 /// The result of a call to [`ManagedTrieNode::next_store_action`].
 #[derive(Debug, PartialEq, Eq)]
-pub enum StoreAction<ID, U> {
+pub enum StoreAction<'a, ID, U> {
     /// Indicates that the value can be stored directly in this node.
-    Store {
-        /// The index of the slot in which the value will be stored.
-        index: usize,
-    },
+    Store(KeyedUpdateBatch<'a>),
     /// Indicates that the value cannot be stored in this node.
-    Descend {
-        /// The index of the child to descend into.
-        index: usize,
-        /// The ID of the child to descend into.
-        id: ID,
-    },
+    Descend(Vec<DescendAction<'a, ID>>),
     /// Indicates that a new node had to be created at this node's depth, which is the
     /// new parent of this node. The contained `U` is the new node.
     HandleReparent(U),
     /// Indicates that this node had to be transformed before the value could be stored
     /// in it or one of its children. The contained `U` is the transformed node.
     HandleTransform(U),
+}
+
+// TODO: replace with iterator if possible
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescendAction<'a, ID> {
+    pub index: usize,
+    pub id: ID,
+    pub updates: KeyedUpdateBatch<'a>,
 }
 
 /// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
@@ -80,12 +83,12 @@ pub trait ManagedTrieNode {
     fn lookup(&self, _key: &Key, _depth: u8) -> BTResult<LookupResult<Self::Id>, Error>;
 
     /// Returns information about the next action required to store a value at the given key.
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        _key: &Key,
-        _depth: u8,
-        _self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error>;
+        update: KeyedUpdateBatch<'a>,
+        depth: u8,
+        self_id: Self::Id,
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error>;
 
     /// Replaces the child node at the given key with a new node ID.
     fn replace_child(&mut self, _key: &Key, _depth: u8, _new: Self::Id) -> BTResult<(), Error> {
@@ -104,7 +107,7 @@ pub trait ManagedTrieNode {
     /// `StoreAction::Store`.
     // NOTE: We cannot directly do this inside of `next_store_action` because that method
     //       takes `&self` instead of `&mut self`.
-    fn store(&mut self, _key: &Key, _value: &Value) -> BTResult<Value, Error> {
+    fn store(&mut self, _update: &KeyedUpdate) -> BTResult<Value, Error> {
         Err(Error::UnsupportedOperation(format!("{}::store", std::any::type_name::<Self>())).into())
     }
 
@@ -142,12 +145,12 @@ mod tests {
             unimplemented!()
         }
 
-        fn next_store_action(
+        fn next_store_action<'a>(
             &self,
-            _key: &Key,
+            _update: KeyedUpdateBatch<'a>,
             _depth: u8,
             _self_id: Self::Id,
-        ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
+        ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
             unimplemented!()
         }
 
@@ -165,7 +168,7 @@ mod tests {
             Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::replace_child")
         ));
         assert!(matches!(
-            node.store(&Key::default(), &Value::default()).map_err(BTError::into_inner),
+            node.store(&KeyedUpdate::FullSlot { key: Key::default(), value: Value::default() }).map_err(BTError::into_inner),
             Err(Error::UnsupportedOperation(e)) if e.contains("TestNode::store")
         ));
         assert!(matches!(

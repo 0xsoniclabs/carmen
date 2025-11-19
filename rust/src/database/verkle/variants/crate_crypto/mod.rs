@@ -12,7 +12,11 @@ use ipa_multipoint::committer::DefaultCommitter;
 use verkle_trie::{DefaultConfig, Trie, TrieTrait, database::memory_db::MemoryDb};
 
 use crate::{
-    database::verkle::{crypto::Commitment, verkle_trie::VerkleTrie},
+    database::verkle::{
+        crypto::Commitment,
+        keyed_update::{KeyedUpdate, KeyedUpdateBatch},
+        verkle_trie::VerkleTrie,
+    },
     error::{BTResult, Error},
     sync::RwLock,
     types::{Key, Value},
@@ -41,12 +45,24 @@ impl VerkleTrie for CrateCryptoInMemoryVerkleTrie {
         Ok(self.trie.read().unwrap().get(*key).unwrap_or_default())
     }
 
-    fn store(
-        &self,
-        key: &crate::types::Key,
-        value: &crate::types::Value,
-    ) -> BTResult<(), crate::error::Error> {
-        self.trie.write().unwrap().insert_single(*key, *value);
+    fn store(&self, updates: KeyedUpdateBatch) -> BTResult<(), crate::error::Error> {
+        for update in updates.iter() {
+            match update {
+                KeyedUpdate::FullSlot { key, value } => {
+                    self.trie.write().unwrap().insert_single(*key, *value);
+                }
+                KeyedUpdate::PartialSlot { key, value, mask } => {
+                    let mut trie = self.trie.write().unwrap();
+                    let existing_value = trie.get(*key).unwrap_or_default();
+                    let mut new_value = [0u8; 32];
+                    for i in 0..32 {
+                        new_value[i] = (existing_value[i] & !mask[i]) | (value[i] & mask[i]);
+                    }
+                    trie.insert_single(*key, new_value);
+                }
+            }
+        }
+
         Ok(())
     }
 

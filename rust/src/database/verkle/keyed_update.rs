@@ -64,7 +64,6 @@ impl KeyedUpdate {
     }
 
     /// Applies the update to the given value.
-    #[cfg_attr(not(test), expect(unused))]
     pub fn apply_to_value(&self, orig_value: &mut [u8; 32]) {
         match self {
             KeyedUpdate::FullSlot { value, .. } => {
@@ -80,10 +79,47 @@ impl KeyedUpdate {
 }
 
 /// A collection of keyed updates with the invariants that they are sorted by key and non-empty.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct KeyedUpdateBatch<'a>(Cow<'a, [KeyedUpdate]>);
 
-impl KeyedUpdateBatch<'_> {
+impl<'a> KeyedUpdateBatch<'a> {
+    /// Returns the key of the first update.
+    pub fn first_key(&self) -> &Key {
+        self.0[0].key()
+        // self is never empty
+        // match self.0 {
+        //     Cow::Borrowed(slice) => slice[0].key(),
+        //     Cow::Owned(vec) => vec[0].key(),
+        // }
+    }
+
+    /// Returns an iterator that splits the updates into groups sharing the same byte at the given
+    /// depth and yields them as [`KeyedUpdateBatch`].
+    /// This is used to group updates for insertion into child nodes. It is therefore expected that
+    /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
+    pub fn split(self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'a>> {
+        SplitIter {
+            updates: self,
+            depth,
+            start: 0,
+        }
+    }
+
+    /// Checks if all updates share the given stem (first 31 bytes of the key).
+    pub fn all_stems_match(&self, stem: &[u8; 31]) -> bool {
+        self.0.iter().all(|update| &update.key()[..31] == stem)
+    }
+
+    /// Returns a reference to the inner `KeyedUpdateBatch`.
+    pub fn borrowed(&self) -> KeyedUpdateBatch<'_> {
+        match &self.0 {
+            Cow::Borrowed(slice) => KeyedUpdateBatch(Cow::Borrowed(slice)),
+            Cow::Owned(vec) => KeyedUpdateBatch(Cow::Borrowed(vec)),
+        }
+    }
+}
+
+impl KeyedUpdateBatch<'static> {
     /// Creates [`KeyedUpdateBatch`] from key-value pairs, treating each as a full slot update.
     /// Used for testing.
     #[cfg(test)]
@@ -98,32 +134,6 @@ impl KeyedUpdateBatch<'_> {
         keyed_updates.sort();
         KeyedUpdateBatch(Cow::Owned(keyed_updates))
     }
-
-    /// Returns the key of the first update.
-    #[cfg_attr(not(test), expect(unused))]
-    pub fn first_key(&self) -> &Key {
-        // self is never empty
-        self.0[0].key()
-    }
-
-    /// Returns an iterator that splits the updates into groups sharing the same byte at the given
-    /// depth and yields them as [`KeyedUpdateBatch`].
-    /// This is used to group updates for insertion into child nodes. It is therefore expected that
-    /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
-    #[cfg_attr(not(test), expect(unused))]
-    pub fn split(&self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'_>> {
-        SplitIter {
-            updates: self,
-            depth,
-            start: 0,
-        }
-    }
-
-    /// Checks if all updates share the given stem (first 31 bytes of the key).
-    #[cfg_attr(not(test), expect(unused))]
-    pub fn all_stems_match(&self, stem: &[u8; 31]) -> bool {
-        self.0.iter().all(|update| &update.key()[..31] == stem)
-    }
 }
 
 impl Deref for KeyedUpdateBatch<'_> {
@@ -134,11 +144,11 @@ impl Deref for KeyedUpdateBatch<'_> {
     }
 }
 
-/// The error type returned when trying to convert an empty `Update` into `KeyedUpdates`.
+/// The error type returned when trying to convert an empty `Update` into `KeyedUpdateBatch`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyUpdate;
 
-impl TryFrom<Update<'_>> for KeyedUpdateBatch<'_> {
+impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
     type Error = EmptyUpdate;
 
     fn try_from(update: Update<'_>) -> Result<Self, Self::Error> {
@@ -229,11 +239,11 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'_> {
     }
 }
 
-/// An iterator that splits `KeyedUpdates` into groups sharing the same key byte at a given depth.
-/// These groups are yielded in order as `KeyedUpdates`.
+/// An iterator that splits `KeyedUpdateBatch` into groups sharing the same key byte at a given
+/// depth. These groups are yielded in order as `KeyedUpdateBatch`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SplitIter<'a> {
-    updates: &'a KeyedUpdateBatch<'a>,
+    updates: KeyedUpdateBatch<'a>,
     depth: u8,
     start: usize,
 }
@@ -254,9 +264,11 @@ impl<'a> Iterator for SplitIter<'a> {
             end += 1;
         }
         self.start = end;
-        Some(KeyedUpdateBatch(Cow::Borrowed(
-            &self.updates[start_pos..end],
-        )))
+        let data = match &self.updates.0 {
+            Cow::Borrowed(slice) => Cow::Borrowed(&slice[start_pos..end]),
+            Cow::Owned(vec) => Cow::Owned(vec[start_pos..end].to_vec()),
+        };
+        Some(KeyedUpdateBatch(data))
     }
 }
 
@@ -452,14 +464,14 @@ mod tests {
             },
         ]));
 
-        let iter: Vec<_> = updates.split(32 - 1 - 2).collect();
+        let iter: Vec<_> = updates.clone().split(32 - 1 - 2).collect();
         assert_eq!(iter.len(), 1);
         assert_eq!(
             iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
             [111, 112, 113, 114]
         );
 
-        let iter: Vec<_> = updates.split(32 - 1 - 1).collect();
+        let iter: Vec<_> = updates.clone().split(32 - 1 - 1).collect();
         assert_eq!(iter.len(), 2);
         assert_eq!(
             iter[0].iter().map(|u| u.key()[31]).collect::<Vec<_>>(),
@@ -567,6 +579,7 @@ mod tests {
         };
 
         let keyed_updates: KeyedUpdateBatch = update.clone().try_into().unwrap();
+        let keyed_updates = keyed_updates.borrowed();
 
         // Verify total number of updates
         assert_eq!(

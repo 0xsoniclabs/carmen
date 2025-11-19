@@ -493,6 +493,7 @@ mod tests {
     use super::*;
     use crate::{
         database::verkle::{
+            KeyedUpdate,
             compute_commitment::compute_leaf_node_commitment,
             crypto::Scalar,
             test_utils::FromIndexValues,
@@ -570,7 +571,11 @@ mod tests {
             stem: key[..31].try_into().unwrap(),
             ..Default::default()
         };
-        leaf.store(&key, &[42u8; 32]).unwrap();
+        let update = KeyedUpdate::FullSlot {
+            key,
+            value: [42u8; 32],
+        };
+        leaf.store(&update).unwrap();
         leaf.commitment.store(key[31] as usize, [0u8; 32]);
         let mut used_slots = leaf.commitment.committed_used_slots;
         for (i, changed) in leaf.commitment.changed.iter().enumerate() {
