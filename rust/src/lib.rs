@@ -13,7 +13,7 @@
     deny(clippy::disallowed_types, clippy::disallowed_methods)
 )]
 
-use std::{mem::MaybeUninit, ops::Deref, path::PathBuf, sync::Mutex};
+use std::{mem::MaybeUninit, ops::Deref, path::PathBuf};
 
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
@@ -30,7 +30,7 @@ use crate::{
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
-    sync::Arc,
+    sync::{Arc, Mutex},
     types::*,
 };
 
