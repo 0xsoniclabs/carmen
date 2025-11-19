@@ -136,11 +136,13 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
     // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let db = unsafe { db.inner_to_ref_scoped(&token) };
-    match db.checkpoint() {
-        Ok(_) => bindings::Result_kResult_Success,
-        Err(err) => err.into(),
-    }
+    let _db = unsafe { db.inner_to_ref_scoped(&token) };
+    // TODO: call checkpoint once the semantics on the Go side have been changed
+    // match db.checkpoint() {
+    //     Ok(_) => bindings::Result_kResult_Success,
+    //     Err(err) => err.into(),
+    // }
+    bindings::Result_kResult_Success
 }
 
 /// Closes this database, releasing all IO handles and locks on external resources.
@@ -1340,20 +1342,21 @@ mod tests {
         assert_eq!(result, bindings::Result_kResult_InvalidArguments);
     }
 
-    #[test]
-    fn carmen_rust_flush_returns_error_as_int() {
-        create_db_then_call_fn_then_release_db(
-            |mock_db| {
-                mock_db.expect_checkpoint().returning(|| {
-                    Err(crate::Error::UnsupportedOperation("some error".into()).into())
-                });
-            },
-            |db| unsafe {
-                let result = Carmen_Rust_Flush(db);
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
-            },
-        );
-    }
+    // TODO: enable when checkpoint calls CarmenDB's checkpoint method
+    // #[test]
+    // fn carmen_rust_flush_returns_error_as_int() {
+    //     create_db_then_call_fn_then_release_db(
+    //         |mock_db| {
+    //             mock_db.expect_checkpoint().returning(|| {
+    //                 Err(crate::Error::UnsupportedOperation("some error".into()).into())
+    //             });
+    //         },
+    //         |db| unsafe {
+    //             let result = Carmen_Rust_Flush(db);
+    //             assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
+    //         },
+    //     );
+    // }
 
     #[test]
     fn carmen_rust_close_calls_close_on_carmen_db() {
