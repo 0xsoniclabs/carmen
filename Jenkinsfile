@@ -87,7 +87,7 @@ pipeline {
                     }
                     steps {
                         sh 'cd go && go test ./... -coverprofile=coverage.txt -parallel 1 -timeout 60m'
-                        sh ('codecov upload-process -r 0xsoniclabs/carmen -f ./go/coverage.txt -t ${CODECOV_TOKEN}')
+                        sh 'codecov upload-process -r 0xsoniclabs/carmen -f ./go/coverage.txt -t ${CODECOV_TOKEN}'
                     }
                 }
 
@@ -98,6 +98,9 @@ pipeline {
                 }
 
                 stage('Run C++ tests') {
+                    when {
+                        changeset "cpp/**"
+                    }
                     steps {
                         sh 'cd cpp && bazel test --test_output=errors //...'
                     }
