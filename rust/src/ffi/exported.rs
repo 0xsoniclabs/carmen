@@ -98,7 +98,7 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
         schema,
         live_impl,
         archive_impl,
-        Path::new(OsStr::from_bytes(directory)).join("live").as_path(),
+        Path::new(OsStr::from_bytes(directory)),
     );
     match db {
         Ok(db) => {
