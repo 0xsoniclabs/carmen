@@ -30,6 +30,9 @@ func TestStateConfigs_ContainsConfigurations(t *testing.T) {
 }
 
 func TestStateConfigs_AllSetupsCreateDataInCorrectDirectories(t *testing.T) {
+	// This test ensures that all state implementations create their data
+	// in the correct sub-directories (live/ and archive/) and do not store
+	// any data in the root directory.
 	for config, factory := range state.GetAllRegisteredStateFactories() {
 		config := config
 		factory := factory
