@@ -3534,15 +3534,15 @@ func TestStateDB_GetCommitmentObtainsCommitmentFromUnderlyingState(t *testing.T)
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	hash := common.Hash{1, 2, 3}
-	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash)))
+	want := common.Hash{1, 2, 3}
+	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(want)))
 
 	got, err := db.GetCommitment().Await().Get()
 	if err != nil {
 		t.Fatalf("unexpected error getting commitment: %v", err)
 	}
-	if want, got := hash, got; want != got {
-		t.Errorf("unexpected hash, wanted %d, got %d", want, got)
+	if want != got {
+		t.Errorf("unexpected commitment, wanted %d, got %d", want, got)
 	}
 }
 
