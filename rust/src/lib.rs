@@ -13,7 +13,7 @@
     deny(clippy::disallowed_types, clippy::disallowed_methods)
 )]
 
-use std::{mem::MaybeUninit, ops::Deref};
+use std::{mem::MaybeUninit, ops::Deref, path::Path};
 
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
@@ -40,7 +40,7 @@ pub fn open_carmen_db(
     schema: u8,
     live_impl: &[u8],
     archive_impl: &[u8],
-    _directory: &[u8],
+    _directory: &Path,
 ) -> BTResult<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
         return Err(Error::UnsupportedSchema(schema).into());

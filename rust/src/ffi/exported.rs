@@ -9,8 +9,10 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    ffi::{c_char, c_int, c_void},
+    ffi::{OsStr, c_char, c_int, c_void},
     mem::MaybeUninit,
+    os::unix::ffi::OsStrExt,
+    path::Path,
 };
 
 use crate::{
@@ -92,7 +94,12 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     let directory = unsafe {
         slice_from_raw_parts_scoped(directory as *const u8, directory_len as usize, &token)
     };
-    let db = open_carmen_db(schema, live_impl, archive_impl, directory);
+    let db = open_carmen_db(
+        schema,
+        live_impl,
+        archive_impl,
+        Path::new(OsStr::from_bytes(directory)),
+    );
     match db {
         Ok(db) => {
             // SAFETY:
