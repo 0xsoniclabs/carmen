@@ -26,7 +26,7 @@ namespace carmen::backend {
 // that are intended to be used together, for instance in a combined State
 // involving multiple indexes, stores, and depots. It is mainly intended to
 // provide access to shared components like a page pools or other resources.
-// It is also intended to contain runtime configuration parameters
+// It is also intended to contain runtime configuration parameters.
 class Context {
  public:
   // Tests whether a component of the given type has been registered before.
