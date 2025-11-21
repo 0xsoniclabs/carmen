@@ -12,7 +12,7 @@
 pub use nodes::VerkleNodeFileStorageManager;
 pub use nodes::{
     VerkleNode, empty::EmptyNode, id::VerkleNodeId, inner::InnerNode, leaf::FullLeafNode,
-    sparse_leaf::SparseLeafNode,
+    sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
 };
 
 use crate::{
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn try_new_gets_root_id_for_block_zero_from_node_manager() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
-        let expected_root_id = manager.add(VerkleNode::Inner(Box::default())).unwrap();
+        let expected_root_id = manager.add(VerkleNode::Inner256(Box::default())).unwrap();
         manager.set_root_id(0, expected_root_id).unwrap();
 
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
@@ -223,7 +223,7 @@ mod tests {
         let mut inner_node_child = InnerNode::default();
         inner_node_child.children[0] = leaf_node_1_id;
         let inner_node_child_id = node_manager
-            .add(VerkleNode::Inner(Box::new(inner_node_child)))
+            .add(VerkleNode::Inner256(Box::new(inner_node_child)))
             .unwrap();
         let leaf_node_2_id = node_manager
             .add(VerkleNode::Leaf256(Box::default()))
@@ -232,7 +232,7 @@ mod tests {
         inner_node.children[0] = inner_node_child_id;
         inner_node.children[1] = leaf_node_2_id;
         let inner_node_id = node_manager
-            .add(VerkleNode::Inner(Box::new(inner_node)))
+            .add(VerkleNode::Inner256(Box::new(inner_node)))
             .unwrap();
 
         // Register the root node
@@ -242,12 +242,12 @@ mod tests {
         let mut mock_visitor = MockNodeVisitor::<VerkleNode>::new();
         mock_visitor
             .expect_visit()
-            .withf(|node, level| matches!(node, VerkleNode::Inner(_)) && *level == 0)
+            .withf(|node, level| matches!(node, VerkleNode::Inner256(_)) && *level == 0)
             .times(1)
             .returning(|_, _| Ok(()));
         mock_visitor
             .expect_visit()
-            .withf(|node, level| matches!(node, VerkleNode::Inner(_)) && *level == 1)
+            .withf(|node, level| matches!(node, VerkleNode::Inner256(_)) && *level == 1)
             .times(1)
             .returning(|_, _| Ok(()));
         mock_visitor
