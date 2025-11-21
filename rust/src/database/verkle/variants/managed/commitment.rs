@@ -679,7 +679,7 @@ mod tests {
             scalars[key[1] as usize] = expected_leaf_commitment.to_scalar();
             Commitment::new(&scalars)
         };
-        let inner_id = manager.add(VerkleNode::Inner(Box::new(inner))).unwrap();
+        let inner_id = manager.add(VerkleNode::Inner256(Box::new(inner))).unwrap();
         log.mark_dirty(1, inner_id);
 
         let mut root = InnerNode {
@@ -696,7 +696,7 @@ mod tests {
             scalars[key[0] as usize] = expected_inner_commitment.to_scalar();
             Commitment::new(&scalars)
         };
-        let root_id = manager.add(VerkleNode::Inner(Box::new(root))).unwrap();
+        let root_id = manager.add(VerkleNode::Inner256(Box::new(root))).unwrap();
         log.mark_dirty(0, root_id);
 
         // Run commitment update

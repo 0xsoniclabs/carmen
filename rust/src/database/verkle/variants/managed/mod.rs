@@ -12,7 +12,7 @@
 pub use nodes::VerkleNodeFileStorageManager;
 pub use nodes::{
     VerkleNode, empty::EmptyNode, id::VerkleNodeId, inner::InnerNode, leaf::FullLeafNode,
-    sparse_leaf::SparseLeafNode,
+    sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
 };
 
 use crate::{
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn try_new_gets_root_id_for_block_zero_from_node_manager() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
-        let expected_root_id = manager.add(VerkleNode::Inner(Box::default())).unwrap();
+        let expected_root_id = manager.add(VerkleNode::Inner256(Box::default())).unwrap();
         manager.set_root_id(0, expected_root_id).unwrap();
 
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();

@@ -14,7 +14,7 @@ use crate::{
         verkle::variants::managed::{
             InnerNode, VerkleNode, VerkleNodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
-            nodes::make_smallest_leaf_node_for,
+            nodes::{make_smallest_inner_node_for, make_smallest_leaf_node_for},
         },
     },
     error::{BTResult, Error},
@@ -57,10 +57,11 @@ impl ManagedTrieNode for EmptyNode {
         if depth == 0 {
             // While conceptually it would suffice to create a leaf node here,
             // Geth always creates an inner node (and we want to stay compatible).
-            let inner = InnerNode::default();
-            Ok(StoreAction::HandleTransform(VerkleNode::Inner(Box::new(
-                inner,
-            ))))
+            Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
+                1,
+                &[],
+                self.get_commitment(),
+            )?))
         } else {
             // Safe to unwrap: Slice is always 31 bytes
             let stem = key[..31].try_into().unwrap();

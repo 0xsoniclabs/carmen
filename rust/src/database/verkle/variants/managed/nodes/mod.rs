@@ -20,6 +20,7 @@ use crate::{
                 empty::EmptyNode,
                 inner::InnerNode,
                 leaf::FullLeafNode,
+                sparse_inner::{IdWithIndex, SparseInnerNode},
                 sparse_leaf::{SparseLeafNode, ValueWithIndex},
             },
         },
@@ -33,6 +34,7 @@ pub mod empty;
 pub mod id;
 pub mod inner;
 pub mod leaf;
+pub mod sparse_inner;
 pub mod sparse_leaf;
 
 /// A node in a managed Verkle trie.
@@ -43,7 +45,10 @@ pub mod sparse_leaf;
 #[derive_deftly(FileStorageManager)]
 pub enum VerkleNode {
     Empty(EmptyNode),
-    Inner(Box<InnerNode>),
+    Inner3(Box<Inner3VerkleNode>),
+    Inner47(Box<Inner47VerkleNode>),
+    Inner256(Box<Inner256VerkleNode>),
+    // Make sure to adjust smallest_inner_type_for when adding new inner types.
     Leaf1(Box<Leaf1VerkleNode>),
     Leaf2(Box<Leaf2VerkleNode>),
     Leaf21(Box<Leaf21VerkleNode>),
@@ -54,7 +59,9 @@ pub enum VerkleNode {
 }
 
 type EmptyVerkleNode = EmptyNode;
-type InnerVerkleNode = InnerNode;
+type Inner3VerkleNode = SparseInnerNode<3>;
+type Inner47VerkleNode = SparseInnerNode<47>; // TODO Rename to FullInnerNode
+type Inner256VerkleNode = InnerNode; // TODO Rename to FullInnerNode
 type Leaf1VerkleNode = SparseLeafNode<1>;
 type Leaf2VerkleNode = SparseLeafNode<2>;
 type Leaf21VerkleNode = SparseLeafNode<21>;
@@ -63,6 +70,15 @@ type Leaf141VerkleNode = SparseLeafNode<141>;
 type Leaf256VerkleNode = FullLeafNode;
 
 impl VerkleNode {
+    pub fn smallest_inner_type_for(n: usize) -> VerkleNodeKind {
+        match n {
+            0..=3 => VerkleNodeKind::Inner3,
+            4..=47 => VerkleNodeKind::Inner47,
+            48..=256 => VerkleNodeKind::Inner256,
+            _ => panic!("no inner type for more than 256 children"),
+        }
+    }
+
     /// Returns the smallest leaf node type capable of storing `n` values.
     pub fn smallest_leaf_type_for(n: usize) -> VerkleNodeKind {
         match n {
@@ -80,7 +96,9 @@ impl VerkleNode {
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         match self {
             VerkleNode::Empty(n) => n.get_commitment_input(),
-            VerkleNode::Inner(n) => n.get_commitment_input(),
+            VerkleNode::Inner3(n) => n.get_commitment_input(),
+            VerkleNode::Inner47(n) => n.get_commitment_input(),
+            VerkleNode::Inner256(n) => n.get_commitment_input(),
             VerkleNode::Leaf1(n) => n.get_commitment_input(),
             VerkleNode::Leaf2(n) => n.get_commitment_input(),
             VerkleNode::Leaf21(n) => n.get_commitment_input(),
@@ -98,7 +116,9 @@ impl ToNodeKind for VerkleNode {
     fn to_node_kind(&self) -> Option<Self::Target> {
         match self {
             VerkleNode::Empty(_) => Some(VerkleNodeKind::Empty),
-            VerkleNode::Inner(_) => Some(VerkleNodeKind::Inner),
+            VerkleNode::Inner3(_) => Some(VerkleNodeKind::Inner3),
+            VerkleNode::Inner47(_) => Some(VerkleNodeKind::Inner47),
+            VerkleNode::Inner256(_) => Some(VerkleNodeKind::Inner256),
             VerkleNode::Leaf1(_) => Some(VerkleNodeKind::Leaf1),
             VerkleNode::Leaf2(_) => Some(VerkleNodeKind::Leaf2),
             VerkleNode::Leaf21(_) => Some(VerkleNodeKind::Leaf21),
@@ -145,7 +165,9 @@ impl ManagedTrieNode for VerkleNode {
     fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
         match self {
             VerkleNode::Empty(n) => n.lookup(key, depth),
-            VerkleNode::Inner(n) => n.lookup(key, depth),
+            VerkleNode::Inner3(n) => n.lookup(key, depth),
+            VerkleNode::Inner47(n) => n.lookup(key, depth),
+            VerkleNode::Inner256(n) => n.lookup(key, depth),
             VerkleNode::Leaf1(n) => n.lookup(key, depth),
             VerkleNode::Leaf2(n) => n.lookup(key, depth),
             VerkleNode::Leaf21(n) => n.lookup(key, depth),
@@ -163,7 +185,9 @@ impl ManagedTrieNode for VerkleNode {
     ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
         match self {
             VerkleNode::Empty(n) => n.next_store_action(key, depth, self_id),
-            VerkleNode::Inner(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Inner3(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Inner47(n) => n.next_store_action(key, depth, self_id),
+            VerkleNode::Inner256(n) => n.next_store_action(key, depth, self_id),
             VerkleNode::Leaf1(n) => n.next_store_action(key, depth, self_id),
             VerkleNode::Leaf2(n) => n.next_store_action(key, depth, self_id),
             VerkleNode::Leaf21(n) => n.next_store_action(key, depth, self_id),
@@ -176,7 +200,9 @@ impl ManagedTrieNode for VerkleNode {
     fn replace_child(&mut self, key: &Key, depth: u8, new: VerkleNodeId) -> BTResult<(), Error> {
         match self {
             VerkleNode::Empty(n) => n.replace_child(key, depth, new),
-            VerkleNode::Inner(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner3(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner47(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner256(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf1(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf2(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf21(n) => n.replace_child(key, depth, new),
@@ -189,7 +215,9 @@ impl ManagedTrieNode for VerkleNode {
     fn store(&mut self, key: &Key, value: &Value) -> BTResult<Value, Error> {
         match self {
             VerkleNode::Empty(n) => n.store(key, value),
-            VerkleNode::Inner(n) => n.store(key, value),
+            VerkleNode::Inner3(n) => n.store(key, value),
+            VerkleNode::Inner47(n) => n.store(key, value),
+            VerkleNode::Inner256(n) => n.store(key, value),
             VerkleNode::Leaf1(n) => n.store(key, value),
             VerkleNode::Leaf2(n) => n.store(key, value),
             VerkleNode::Leaf21(n) => n.store(key, value),
@@ -202,7 +230,9 @@ impl ManagedTrieNode for VerkleNode {
     fn get_commitment(&self) -> Self::Commitment {
         match self {
             VerkleNode::Empty(n) => n.get_commitment(),
-            VerkleNode::Inner(n) => n.get_commitment(),
+            VerkleNode::Inner3(n) => n.get_commitment(),
+            VerkleNode::Inner47(n) => n.get_commitment(),
+            VerkleNode::Inner256(n) => n.get_commitment(),
             VerkleNode::Leaf1(n) => n.get_commitment(),
             VerkleNode::Leaf2(n) => n.get_commitment(),
             VerkleNode::Leaf21(n) => n.get_commitment(),
@@ -215,7 +245,9 @@ impl ManagedTrieNode for VerkleNode {
     fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
         match self {
             VerkleNode::Empty(n) => n.set_commitment(cache),
-            VerkleNode::Inner(n) => n.set_commitment(cache),
+            VerkleNode::Inner3(n) => n.set_commitment(cache),
+            VerkleNode::Inner47(n) => n.set_commitment(cache),
+            VerkleNode::Inner256(n) => n.set_commitment(cache),
             VerkleNode::Leaf1(n) => n.set_commitment(cache),
             VerkleNode::Leaf2(n) => n.set_commitment(cache),
             VerkleNode::Leaf21(n) => n.set_commitment(cache),
@@ -232,7 +264,9 @@ impl ManagedTrieNode for VerkleNode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VerkleNodeKind {
     Empty,
-    Inner,
+    Inner3,
+    Inner47,
+    Inner256,
     Leaf1,
     Leaf2,
     Leaf21,
@@ -245,7 +279,15 @@ impl NodeSize for VerkleNodeKind {
     fn node_byte_size(&self) -> usize {
         let inner_size = match self {
             VerkleNodeKind::Empty => 0,
-            VerkleNodeKind::Inner => {
+            VerkleNodeKind::Inner3 => {
+                std::mem::size_of::<Box<Inner3VerkleNode>>()
+                    + std::mem::size_of::<Inner3VerkleNode>()
+            }
+            VerkleNodeKind::Inner47 => {
+                std::mem::size_of::<Box<Inner47VerkleNode>>()
+                    + std::mem::size_of::<Inner47VerkleNode>()
+            }
+            VerkleNodeKind::Inner256 => {
                 std::mem::size_of::<Box<InnerNode>>() + std::mem::size_of::<InnerNode>()
             }
             VerkleNodeKind::Leaf1 => {
@@ -278,6 +320,32 @@ impl NodeSize for VerkleNodeKind {
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
         VerkleNodeKind::Leaf2.node_byte_size()
+    }
+}
+
+pub fn make_smallest_inner_node_for(
+    n: usize,
+    children: &[IdWithIndex],
+    commitment: VerkleCommitment,
+) -> BTResult<VerkleNode, Error> {
+    match VerkleNode::smallest_inner_type_for(n) {
+        VerkleNodeKind::Inner3 => Ok(VerkleNode::Inner3(Box::new(
+            SparseInnerNode::<3>::from_existing(children, commitment)?,
+        ))),
+        VerkleNodeKind::Inner47 => Ok(VerkleNode::Inner47(Box::new(
+            SparseInnerNode::<47>::from_existing(children, commitment)?,
+        ))),
+        VerkleNodeKind::Inner256 => Ok(VerkleNode::Inner256(Box::new(InnerNode {
+            children: {
+                let mut arr = [VerkleNodeId::default(); 256];
+                for IdWithIndex { index, id } in children {
+                    arr[*index as usize] = *id;
+                }
+                arr
+            },
+            commitment,
+        }))),
+        _ => panic!("received non-inner type in make_smallest_inner_node_for"),
     }
 }
 
@@ -317,10 +385,12 @@ pub fn make_smallest_leaf_node_for(
             }
             Ok(VerkleNode::Leaf256(Box::new(new_leaf)))
         }
-        VerkleNodeKind::Inner => Err(Error::CorruptedState(
-            "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
-        )
-        .into()),
+        VerkleNodeKind::Inner3 | VerkleNodeKind::Inner47 | VerkleNodeKind::Inner256 => {
+            Err(Error::CorruptedState(
+                "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
+            )
+            .into())
+        }
     }
 }
 
@@ -331,7 +401,7 @@ mod tests {
     #[test]
     fn node_type_byte_size_returns_correct_size() {
         let empty_node = VerkleNodeKind::Empty;
-        let inner_node = VerkleNodeKind::Inner;
+        let inner_node = VerkleNodeKind::Inner256;
         let leaf2_node = VerkleNodeKind::Leaf2;
         let leaf256_node = VerkleNodeKind::Leaf256;
 
@@ -370,7 +440,7 @@ mod tests {
     #[test]
     fn node_byte_size_returns_node_type_byte_size() {
         let empty_node = VerkleNode::Empty(EmptyNode);
-        let inner_node = VerkleNode::Inner(Box::default());
+        let inner_node = VerkleNode::Inner256(Box::default());
         let leaf2_node = VerkleNode::Leaf2(Box::default());
         let leaf256_node = VerkleNode::Leaf256(Box::default());
 
@@ -379,7 +449,7 @@ mod tests {
             empty_node.node_byte_size()
         );
         assert_eq!(
-            VerkleNodeKind::Inner.node_byte_size(),
+            VerkleNodeKind::Inner256.node_byte_size(),
             inner_node.node_byte_size()
         );
         assert_eq!(

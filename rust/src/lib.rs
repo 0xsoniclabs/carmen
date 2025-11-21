@@ -20,7 +20,8 @@ use crate::{
     database::{
         ManagedTrieNode, VerkleTrieCarmenState,
         verkle::variants::managed::{
-            FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+            FullLeafNode, InnerNode, SparseInnerNode, SparseLeafNode, VerkleNode,
+            VerkleNodeFileStorageManager,
         },
     },
     error::{BTResult, Error},
@@ -74,6 +75,8 @@ pub fn open_carmen_db(
         >::new()))),
         b"file" => {
             type FileStorage = VerkleNodeFileStorageManager<
+                NodeFileStorage<SparseInnerNode<3>, NoSeekFile>,
+                NodeFileStorage<SparseInnerNode<47>, NoSeekFile>,
                 NodeFileStorage<InnerNode, NoSeekFile>,
                 NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
                 NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
