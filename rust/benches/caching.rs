@@ -33,6 +33,8 @@ use quick_cache::{Lifecycle, UnitWeighter};
 use crate::utils::{execute_with_threads, pow_2_threads, with_prob};
 pub mod utils;
 
+// Quick-cache will start evicting items before it is completely full.
+// To avoid this, we have to overprovision the cache size by a certain amount.
 const CACHE_SIZE_OVERPROVISION_FACTOR: f64 = 0.2;
 
 /// A simple identifier for benchmarking purposes.
