@@ -216,8 +216,8 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
 
     for initial_state in initial_states {
         let mut group = c.benchmark_group(format!("carmen_state_update/{initial_state:?}"));
-        group.sample_size(10); // This is the minimum criterion allows
-        for num_batch in &num_batches {
+        group.sample_size(10); // This is the minimum allowed by criterion
+        for num_batch in num_batches.clone() {
             for existing in [true, false] {
                 if initial_state == InitialState::Empty && existing {
                     continue;
@@ -228,49 +228,48 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
                     let init = move || {
                         let carmen_state = state_type.make_carmen_state();
                         initial_state.init(&*carmen_state);
-                        carmen_state
+                        let num_accounts = initial_state.num_accounts();
+                        let num_storage_keys = initial_state.num_storage_keys() as u64;
+                        let mut slots_update = Vec::with_capacity(num_key_to_update as usize);
+                        let keys_per_batch = num_key_to_update / num_batch;
+                        for (account, _) in (0..num_key_to_update)
+                            .step_by(keys_per_batch as usize)
+                            .enumerate()
+                        {
+                            let account_idx = if existing {
+                                account % num_accounts
+                            } else {
+                                account + num_accounts
+                            };
+                            let mut address = [0u8; 20];
+                            address[0..8].copy_from_slice(&account_idx.to_be_bytes());
+                            for key_idx in 0..keys_per_batch {
+                                let key_idx = if existing {
+                                    key_idx % num_storage_keys
+                                } else {
+                                    key_idx + num_storage_keys
+                                };
+                                let mut key = [0u8; 32];
+                                key[0..8].copy_from_slice(&key_idx.to_be_bytes());
+                                slots_update.push(SlotUpdate {
+                                    addr: address,
+                                    key,
+                                    value: [1u8; 32],
+                                });
+                            }
+                        }
+                        (carmen_state, slots_update)
                     };
                     bench_single_call(
                         &mut group,
                         format!("{state_type:?}/{num_batch}batches/{existing}_existing").as_str(),
                         init,
-                        |carmen_state| {
-                            let num_accounts = initial_state.num_accounts();
-                            let num_storage_keys = initial_state.num_storage_keys() as u64;
-                            let mut slots_update = Vec::with_capacity(num_key_to_update as usize);
-                            let keys_per_batch = num_key_to_update / num_batch;
-                            for (account, _) in (0..num_key_to_update)
-                                .step_by(keys_per_batch as usize)
-                                .enumerate()
-                            {
-                                let account_idx = if existing {
-                                    account % num_accounts
-                                } else {
-                                    account + num_accounts
-                                };
-                                let mut address = [0u8; 20];
-                                address[0..8].copy_from_slice(&account_idx.to_be_bytes());
-                                for key_idx in 0..keys_per_batch {
-                                    let key_idx = if existing {
-                                        key_idx % num_storage_keys
-                                    } else {
-                                        key_idx + num_storage_keys
-                                    };
-                                    let mut key = [0u8; 32];
-                                    key[0..8].copy_from_slice(&key_idx.to_be_bytes());
-                                    slots_update.push(SlotUpdate {
-                                        addr: address,
-                                        key,
-                                        value: [1u8; 32],
-                                    });
-                                }
-                            }
-
+                        |(carmen_state, slots_update)| {
                             carmen_state
                                 .apply_block_update(
                                     0,
                                     Update {
-                                        slots: &slots_update,
+                                        slots: slots_update,
                                         ..Default::default()
                                     },
                                 )
