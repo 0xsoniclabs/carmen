@@ -28,14 +28,14 @@ pub fn pow_2_threads() -> impl Iterator<Item = usize> {
     (1..=thread::available_parallelism().unwrap().get()).filter(|x| x.is_power_of_two())
 }
 
-/// Utility function to benchmark a single call to a function `func`
-/// with an initialized state created by `init_state`.
-/// This is useful for benchmarking a function without relying on Criterion's iteration mechanism.
+/// Utility function to benchmark a call to a function `func` with an initialized state created by
+/// `init_state`. This is useful for benchmarking a function without relying on Criterion's
+/// iteration mechanism.
 #[allow(dead_code)]
 pub fn bench_single_call<T>(
     c: &mut BenchmarkGroup<'_, WallTime>,
     bench_name: &str,
-    init_state: impl Fn() -> T + 'static,
+    init_state: impl Fn() -> T,
     func: impl Fn(&T),
 ) {
     c.bench_with_input(BenchmarkId::from_parameter(bench_name), &(), |b, _| {
