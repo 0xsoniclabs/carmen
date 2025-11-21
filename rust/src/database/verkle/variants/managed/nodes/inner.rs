@@ -194,7 +194,7 @@ mod tests {
     fn get_commitment_input_returns_children() {
         let node = InnerNode {
             children: array::from_fn(|i| {
-                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner)
+                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256)
             }),
             ..Default::default()
         };
@@ -208,7 +208,7 @@ mod tests {
         let depth = 10;
         let index = 78;
         let key = Key::from_index_values(1, &[(depth, index)]);
-        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner);
+        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256);
         node.children[index as usize] = child_id;
 
         let result = node.lookup(&key, depth as u8).unwrap();
@@ -221,14 +221,14 @@ mod tests {
         let depth = 10;
         let index = 78;
         let key = Key::from_index_values(1, &[(depth, index)]);
-        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner);
+        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256);
         node.children[index as usize] = child_id;
 
         let result = node
             .next_store_action(
                 &key,
                 depth as u8,
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner),
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256),
             )
             .unwrap();
         assert_eq!(
