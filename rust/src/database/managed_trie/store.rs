@@ -65,17 +65,18 @@ where
     // let mut parent_locks = Vec::new();
     let mut parent_node_updates: Vec<_> = current_node_updates.drain(0..0).collect();
 
+    let mut empty_node = T::empty_node();
+
     while !current_node_updates.is_empty() {
         let span = tracy_client::span!("process level");
         span.emit_value(depth as u64);
         let mut i = 0;
         while let Some(current_node_update) = current_node_updates.get_mut(i) {
-            let mut empty_node = T::empty_node();
-            let current_node: &mut T = current_node_update
+            let current_node: &T = current_node_update
                 .node
                 .as_mut()
-                .map(|guard| &mut ***guard)
-                .unwrap_or(&mut empty_node);
+                .map(|guard| &***guard)
+                .unwrap_or(&empty_node);
             match current_node.next_store_action(
                 // the updates should be a Cow::Borrowed in which case the clone is cheap
                 current_node_update.updates.clone(),
@@ -83,6 +84,11 @@ where
                 current_node_update.node_id,
             )? {
                 StoreAction::Store(stores) => {
+                    let current_node: &mut T = current_node_update
+                        .node
+                        .as_mut()
+                        .map(|guard| &mut ***guard)
+                        .unwrap_or(&mut empty_node);
                     let mut trie_commitment = current_node.get_commitment();
 
                     for update in stores.iter() {
@@ -97,6 +103,11 @@ where
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
+                    let current_node: &mut T = current_node_update
+                        .node
+                        .as_mut()
+                        .map(|guard| &mut ***guard)
+                        .unwrap_or(&mut empty_node);
                     let mut trie_commitment = current_node.get_commitment();
                     for DescendAction { index, id, updates } in descent_actions {
                         trie_commitment.modify_child(index);
@@ -136,12 +147,12 @@ where
                     current_node_update.node = if new_id.is_empty_id() {
                         None
                     } else {
+                        // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                         Some(manager.get_write_access(new_id)?)
                     };
                     let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
 
-                    // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                     manager.delete(old_id)?;
                     update_log.delete(depth as usize, old_id);
 
@@ -169,12 +180,13 @@ where
                     current_node_update.node = if new_id.is_empty_id() {
                         None
                     } else {
+                        // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                         Some(manager.get_write_access(new_id)?)
                     };
+                    let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
 
-                    // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
-                    update_log.move_down(depth as usize, current_node_update.node_id);
+                    update_log.move_down(depth as usize, old_id);
 
                     // No need to log the update here, we are visiting the node again next
                     // iteration.
@@ -223,8 +235,8 @@ mod tests {
         (manager, log, root_id, root_id_lock)
     }
 
-    /// Helper function for setting up expectations for a commitment update.
-    fn expect_commitment_update(
+    /// lper function for setting up expectations for a commitment update.
+    fn xpect_commitment_update(
         manager: &RcNodeManager,
         node_id: Id,
         slot_idx: usize,
@@ -262,7 +274,19 @@ mod tests {
                 result: StoreAction::Descend(descent_actions.clone()),
             },
         );
-        expect_commitment_update(manager, parent_id, child_idx, Value::default());
+        // expect_commitment_update(manager, parent_id, child_idx, Value::default());
+        manager.expect(
+            parent_id,
+            RcNodeExpectation::GetCommitment {
+                result: TestNodeCommitment::default(),
+            },
+        );
+        manager.expect(
+            parent_id,
+            RcNodeExpectation::SetCommitment {
+                commitment: TestNodeCommitment::expected(child_idx, Value::default()),
+            },
+        );
         for DescendAction { id, .. } in descent_actions {
             manager.expect_write_access(id, vec![parent_id]);
         }
@@ -275,7 +299,6 @@ mod tests {
         updates: KeyedUpdateBatch<'static>,
         depth: u8,
     ) {
-        let slot_idx = 77;
         manager.expect(
             node_id,
             RcNodeExpectation::NextStoreAction {
@@ -283,6 +306,12 @@ mod tests {
                 depth,
                 self_id: node_id,
                 result: StoreAction::Store(updates.clone()),
+            },
+        );
+        manager.expect(
+            node_id,
+            RcNodeExpectation::GetCommitment {
+                result: TestNodeCommitment::default(),
             },
         );
         let prev_value = Value::from([77u8; 32]);
@@ -295,35 +324,44 @@ mod tests {
                 },
             );
         }
-        expect_commitment_update(manager, node_id, slot_idx, prev_value);
+        // expect_commitment_update(manager, node_id, slot_idx, prev_value);
+        manager.expect(
+            node_id,
+            RcNodeExpectation::SetCommitment {
+                // TODO handle updates to all slots
+                commitment: TestNodeCommitment::expected(
+                    updates.first_key()[31] as usize,
+                    prev_value,
+                ),
+            },
+        );
     }
 
     #[test]
     fn store_sets_value_and_marks_node_and_commitment_and_log_as_dirty() {
         let (manager, log, root_id, root_id_lock) = boilerplate();
 
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(
-                    root_id_guard,
-                    KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]),
-                    &*manager,
-                    &log,
-                )
-                .unwrap();
+                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
             });
 
-            let slot_idx = 99;
             manager.expect_write_access(root_id, vec![]);
-            let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
             manager.expect(
                 root_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 0,
                     self_id: root_id,
-                    result: StoreAction::Store(updates),
+                    result: StoreAction::Store(updates.clone()),
+                },
+            );
+            manager.expect(
+                root_id,
+                RcNodeExpectation::GetCommitment {
+                    result: TestNodeCommitment::default(),
                 },
             );
             let prev_value = Value::from([77u8; 32]);
@@ -337,7 +375,12 @@ mod tests {
                     result: prev_value,
                 },
             );
-            expect_commitment_update(&manager, root_id, slot_idx, prev_value);
+            manager.expect(
+                root_id,
+                RcNodeExpectation::SetCommitment {
+                    commitment: TestNodeCommitment::expected(KEY[31] as usize, prev_value),
+                },
+            );
             manager.wait_for_unlock(root_id);
             assert!(manager.is_dirty(root_id));
             assert_eq!(log.count(), 1);
@@ -367,15 +410,27 @@ mod tests {
                     self_id: root_id,
                     result: StoreAction::Descend(vec![DescendAction {
                         updates: updates.clone(),
-                        index: child_idx,
+                        index: KEY[31] as usize,
                         id: child_id,
                     }]),
                 },
             );
-            expect_commitment_update(&manager, root_id, child_idx, Value::default());
-
+            // expect_commitment_update(&manager, root_id, KEY[31] as usize, Value::default());
+            manager.expect(
+                root_id,
+                RcNodeExpectation::GetCommitment {
+                    result: TestNodeCommitment::default(),
+                },
+            );
             // Root should be locked while we acquire lock on the child
             manager.expect_write_access(child_id, vec![root_id]);
+            manager.expect(
+                root_id,
+                RcNodeExpectation::SetCommitment {
+                    commitment: TestNodeCommitment::expected(KEY[31] as usize, Value::default()),
+                },
+            );
+
             complete_store(&manager, child_id, updates.clone(), 1);
             manager.wait_for_unlock(root_id);
 
@@ -452,7 +507,7 @@ mod tests {
                 &manager,
                 root_id,
                 vec![DescendAction {
-                    index: 0,
+                    index: KEY[31] as usize,
                     id: child_id,
                     updates: updates.clone(),
                 }],
@@ -559,7 +614,7 @@ mod tests {
                 &manager,
                 root_id,
                 vec![DescendAction {
-                    index: 0,
+                    index: KEY[31] as usize,
                     id: child_id,
                     updates: updates.clone(),
                 }],

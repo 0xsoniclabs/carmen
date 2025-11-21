@@ -31,6 +31,7 @@ pub type Id = u32;
 
 /// Spins until the provided function `f` returns `Some(R)`, returning the contained `R`.
 /// If more than 1 second elapses, this function panics with the provided `timeout_msg`.
+#[track_caller]
 pub fn spin_until_some<R>(f: impl Fn() -> Option<R>, timeout_msg: &str) -> R {
     let start = std::time::Instant::now();
     loop {
@@ -60,6 +61,7 @@ impl<I: Send> RcChannel<I> {
     }
 
     /// Sends an item to the channel, blocking until it has been received.
+    #[track_caller]
     pub fn send(&self, item: I, debug_ctx: &str) {
         *self.item.lock().unwrap() = Some(item);
         spin_until_some(
@@ -69,6 +71,7 @@ impl<I: Send> RcChannel<I> {
     }
 
     /// Receives an item from the channel, blocking until one is available.
+    #[track_caller]
     pub fn receive(&self, debug_ctx: &str) -> I {
         spin_until_some(
             || self.item.lock().unwrap().take(),
@@ -294,11 +297,14 @@ impl ManagedTrieNode for RcNode {
         }
     }
 
+    #[track_caller]
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
         match self.channel.as_ref().unwrap().receive("set_commitment") {
             RcNodeExpectation::SetCommitment { commitment: c } => {
                 if c != commitment {
-                    panic!("unexpected set_commitment parameter {c:?}, expected {commitment:?}");
+                    panic!(
+                        "unexpected set_commitment parameter\ngot:\t\t{c:?}\nexpected:\t{commitment:?}"
+                    );
                 }
                 Ok(())
             }
@@ -409,6 +415,7 @@ impl RcNodeManager {
 
     /// Sets up an expectation for the next operation called on the node with the given `id`.
     /// The function will block until the expectation has been received in another thread.
+    #[track_caller]
     pub fn expect(&self, id: Id, expectation: RcNodeExpectation) {
         let dbg_str = &format!("expect({id}, {expectation:?})");
         self.node_channels.lock().unwrap()[id as usize].send(expectation, dbg_str);

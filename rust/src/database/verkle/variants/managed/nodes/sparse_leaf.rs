@@ -596,11 +596,8 @@ mod tests {
         node.access_slot(3).index = index;
         let key = [&STEM[..], &[index]].concat().try_into().unwrap();
         let value = Value::from_index_values(42, &[]);
-        let update = KeyedUpdate::FullSlot {
-            key,
-            value: VALUE_1,
-        };
-        node.store(&update);
+        let update = KeyedUpdate::FullSlot { key, value };
+        node.store(&update).unwrap();
         let commitment_input = node.get_commitment_input();
         match commitment_input {
             VerkleCommitmentInput::Leaf(values, _) => {
