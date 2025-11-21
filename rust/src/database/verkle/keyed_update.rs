@@ -79,7 +79,7 @@ impl KeyedUpdate {
 }
 
 /// A collection of keyed updates with the invariants that they are sorted by key and non-empty.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyedUpdateBatch<'a>(Cow<'a, [KeyedUpdate]>);
 
 impl<'a> KeyedUpdateBatch<'a> {

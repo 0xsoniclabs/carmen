@@ -77,7 +77,8 @@ where
                 .map(|guard| &mut ***guard)
                 .unwrap_or(&mut empty_node);
             match current_node.next_store_action(
-                std::mem::take(&mut current_node_update.updates),
+                // the updates should be a Cow::Borrowed in which case the clone is cheap
+                current_node_update.updates.clone(),
                 depth,
                 current_node_update.node_id,
             )? {
