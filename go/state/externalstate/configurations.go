@@ -19,6 +19,7 @@ const (
 
 	VariantRustMemory            state.Variant = "rust-memory"
 	VariantRustCrateCryptoMemory state.Variant = "rust-crate-crypto-memory"
+	VariantRustFile              state.Variant = "rust-file"
 )
 
 func init() {
@@ -60,4 +61,10 @@ func init() {
 		Schema:  6,
 		Archive: state.NoArchive,
 	}, newRustCrateCryptoInMemoryState)
+
+	state.RegisterStateFactory(state.Configuration{
+		Variant: VariantRustFile,
+		Schema:  6,
+		Archive: state.NoArchive,
+	}, newRustFileBasedState)
 }

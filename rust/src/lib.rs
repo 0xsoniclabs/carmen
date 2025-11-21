@@ -17,9 +17,20 @@ use std::{mem::MaybeUninit, ops::Deref, path::Path};
 
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
-    database::VerkleTrieCarmenState,
+    database::{
+        ManagedTrieNode, VerkleTrieCarmenState,
+        verkle::variants::managed::{
+            FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+        },
+    },
     error::{BTResult, Error},
-    sync::Arc,
+    node_manager::cached_node_manager::CachedNodeManager,
+    storage::{
+        Storage,
+        file::{NoSeekFile, NodeFileStorage},
+        storage_with_flush_buffer::StorageWithFlushBuffer,
+    },
+    sync::{Arc, Mutex},
     types::*,
 };
 
@@ -40,7 +51,7 @@ pub fn open_carmen_db(
     schema: u8,
     live_impl: &[u8],
     archive_impl: &[u8],
-    _directory: &Path,
+    directory: &Path,
 ) -> BTResult<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
         return Err(Error::UnsupportedSchema(schema).into());
@@ -53,16 +64,28 @@ pub fn open_carmen_db(
     }
 
     match live_impl {
-        b"memory" => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+        b"memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
         >::new()))),
-        b"file" => Err(Error::UnsupportedImplementation(
-            "file-based live state is not yet supported".to_owned(),
-        )
-        .into()),
-        b"crate-crypto-memory" => Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
+        b"crate-crypto-memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::CrateCryptoInMemoryVerkleTrie,
         >::new()))),
+        b"file" => {
+            type FileStorage = VerkleNodeFileStorageManager<
+                NodeFileStorage<InnerNode, NoSeekFile>,
+                NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+                NodeFileStorage<FullLeafNode, NoSeekFile>,
+            >;
+            let storage = StorageWithFlushBuffer::<FileStorage>::open(directory)?;
+            let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
+            // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
+            // https://github.com/0xsoniclabs/sonic-admin/issues/382
+            let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
+            Ok(Box::new(CarmenS6FileBasedDb::new(
+                manager.clone(),
+                VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(manager)?,
+            )))
+        }
         b"ldb" => Err(Error::UnsupportedImplementation(
             "LevelDB-based live state is not supported".to_owned(),
         )
@@ -131,7 +154,9 @@ pub trait CarmenState: Send + Sync {
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error>;
 }
 
-// TODO: Get rid of this once we no longer store an Arc<CarmenState> in CarmenS6Db
+/// An implementation of [`CarmenState`] for `Arc<T>` where `T: CarmenState`,
+/// required so we can hand out multiple references to a single state instance
+/// on [`CarmenDb::get_live_state`].
 impl<T: CarmenState> CarmenState for Arc<T> {
     fn account_exists(&self, addr: &Address) -> BTResult<bool, Error> {
         self.deref().account_exists(addr)
@@ -171,13 +196,17 @@ impl<T: CarmenState> CarmenState for Arc<T> {
     }
 }
 
-/// The `S6` implementation of [`CarmenDb`].
-pub struct CarmenS6Db<LS: CarmenState> {
+/// An in-memory `S6` implementation of [`CarmenDb`].
+///
+/// Does not support closing or checkpointing.
+pub struct CarmenS6InMemoryDb<LS: CarmenState> {
     live_state: Arc<LS>,
 }
 
-impl<LS: CarmenState> CarmenS6Db<LS> {
-    /// Creates a new [CarmenS6Db] with the provided live state.
+impl<LS: CarmenState> CarmenS6InMemoryDb<LS> {
+    /// Creates a new [CarmenS6InMemoryDb] with the provided live state.
+    /// The live state is expected to be an in-memory implementation.
+    /// No lifecycle methods for closing or checkpointing will be invoked.
     pub fn new(live_state: LS) -> Self {
         Self {
             live_state: Arc::new(live_state),
@@ -185,17 +214,14 @@ impl<LS: CarmenState> CarmenS6Db<LS> {
     }
 }
 
-#[allow(unused_variables)]
-impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
+impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
     fn checkpoint(&self) -> BTResult<(), Error> {
         // No-op for in-memory state
-        // TODO: Handle for storage-based implementation
         Ok(())
     }
 
     fn close(&self) -> BTResult<(), Error> {
         // No-op for in-memory state
-        // TODO: Handle for storage-based implementation
         Ok(())
     }
 
@@ -203,7 +229,7 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
         Ok(Box::new(self.live_state.clone()))
     }
 
-    fn get_archive_state(&self, block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
+    fn get_archive_state(&self, _block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
         unimplemented!()
     }
 
@@ -212,5 +238,165 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6Db<LS> {
             Error::UnsupportedOperation("get_memory_footprint is not yet implemented".to_string())
                 .into(),
         )
+    }
+}
+
+/// A file-based `S6` implementation of [`CarmenDb`].
+pub struct CarmenS6FileBasedDb<S: Storage, LS: CarmenState> {
+    // We currently have to bend over backwards to satisfy the CarmenDb interface
+    // TODO: Clean this up on FFI level https://github.com/0xsoniclabs/sonic-admin/issues/474
+    manager: Mutex<Option<Arc<CachedNodeManager<S>>>>,
+    live_state: Mutex<Option<Arc<LS>>>,
+}
+
+impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
+    /// Creates a new [`CarmenS6FileBasedDb`] with the provided node manager and live state.
+    pub fn new(manager: Arc<CachedNodeManager<S>>, live_state: LS) -> Self {
+        Self {
+            manager: Mutex::new(Some(manager)),
+            live_state: Mutex::new(Some(Arc::new(live_state))),
+        }
+    }
+}
+
+impl<S, LS> CarmenDb for CarmenS6FileBasedDb<S, LS>
+where
+    S: Storage,
+    S::Item: Default + Send + Sync,
+    S::Id: Eq + std::hash::Hash + Send + Sync,
+    LS: CarmenState + 'static,
+{
+    fn checkpoint(&self) -> BTResult<(), Error> {
+        // TODO: Support checkpoints for archive
+        Err(
+            Error::UnsupportedOperation("cannot create checkpoint for live state".to_owned())
+                .into(),
+        )
+    }
+
+    fn close(&self) -> BTResult<(), Error> {
+        let mut manager = self.manager.lock().unwrap();
+        let manager = manager.take().ok_or(Error::CorruptedState(
+            "database is already closed".to_owned(),
+        ))?;
+        // Release live state first, since it holds a reference to the manager
+        self.live_state.lock().unwrap().take();
+        let manager = Arc::into_inner(manager).ok_or_else(|| {
+            Error::CorruptedState("node manager reference count is not 1 on close".to_owned())
+        })?;
+        manager.close()?;
+        Ok(())
+    }
+
+    fn get_live_state(&self) -> BTResult<Box<dyn CarmenState>, Error> {
+        if let Some(live_state) = &*self.live_state.lock().unwrap() {
+            Ok(Box::new(live_state.clone()))
+        } else {
+            Err(Error::CorruptedState("live state has been closed".to_owned()).into())
+        }
+    }
+
+    fn get_archive_state(&self, _block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
+        unimplemented!()
+    }
+
+    fn get_memory_footprint(&self) -> BTResult<Box<str>, Error> {
+        Err(
+            Error::UnsupportedOperation("get_memory_footprint is not yet implemented".to_string())
+                .into(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crypto_bigint::U256;
+
+    use super::*;
+    use crate::{
+        error::BTError,
+        utils::test_dir::{Permissions, TestDir},
+    };
+
+    #[test]
+    fn file_based_verkle_trie_implementation_supports_closing_and_reopening() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+
+        let addr = [4; 20];
+        let balance = U256::from(42u64).to_be_bytes();
+        db.get_live_state()
+            .unwrap()
+            .apply_block_update(
+                0,
+                Update {
+                    balances: &[BalanceUpdate { addr, balance }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        db.close().unwrap();
+
+        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+        let received = db.get_live_state().unwrap().get_balance(&addr).unwrap();
+        assert_eq!(received, balance);
+    }
+
+    #[test]
+    fn carmen_s6_file_based_db_checkpoint_returns_error() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+
+        let result = db.checkpoint();
+        assert_eq!(
+            result,
+            Err(
+                Error::UnsupportedOperation("cannot create checkpoint for live state".to_owned())
+                    .into()
+            )
+        );
+    }
+
+    #[test]
+    fn carmen_s6_file_based_db_close_fails_if_already_closed() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+
+        db.close().unwrap();
+        let result = db.close();
+        assert_eq!(
+            result,
+            Err(Error::CorruptedState("database is already closed".to_owned()).into())
+        );
+    }
+
+    #[test]
+    fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+        let _live_state = db.get_live_state().unwrap();
+
+        let result = db.close();
+        assert_eq!(
+            result,
+            Err(
+                Error::CorruptedState("node manager reference count is not 1 on close".to_owned())
+                    .into()
+            )
+        );
+    }
+
+    #[test]
+    fn carmen_s6_file_based_db_get_live_state_fails_if_closed() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+
+        db.close().unwrap();
+        let result = db.get_live_state().map_err(BTError::into_inner);
+        assert!(matches!(
+            result,
+            Err(Error::CorruptedState(e)) if e == "live state has been closed"
+        ));
     }
 }
