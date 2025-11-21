@@ -98,6 +98,11 @@ impl<'a> KeyedUpdateBatch<'a> {
     /// This is used to group updates for insertion into child nodes. It is therefore expected that
     /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
     pub fn split(self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'a>> {
+        if !cfg!(debug_assertions) && matches!(self.0, Cow::Owned(_)) {
+            panic!(
+                "KeyedUpdateBatch::split called on owned data: This will negatively impact performance. Please call .borrowed() first."
+            );
+        }
         SplitIter {
             updates: self,
             depth,
