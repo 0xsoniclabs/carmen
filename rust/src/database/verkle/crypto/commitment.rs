@@ -66,6 +66,9 @@ impl Commitment {
     /// allowing it to be used as input to other commitments.
     pub fn to_scalar(self) -> Scalar {
         let _span = tracy_client::span!("Commitment::to_scalar");
+        if self == Commitment::default() {
+            return Scalar::zero();
+        }
         Scalar::from(self.as_element().map_to_scalar_field())
     }
 
