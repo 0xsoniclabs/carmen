@@ -43,7 +43,6 @@ pub enum StoreAction<'a, ID, U> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescendAction<'a, ID> {
-    pub index: usize,
     pub id: ID,
     pub updates: KeyedUpdateBatch<'a>,
 }

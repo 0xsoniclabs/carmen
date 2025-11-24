@@ -108,7 +108,8 @@ where
                         .map(|guard| &mut ***guard)
                         .unwrap_or(&mut empty_node);
                     let mut trie_commitment = current_node.get_commitment();
-                    for DescendAction { index, id, updates } in descent_actions {
+                    for DescendAction { id, updates } in descent_actions {
+                        let index = updates.first_key()[depth as usize] as usize;
                         trie_commitment.modify_child(index);
 
                         next_node_updates.push(DescentUpdates {
@@ -397,7 +398,6 @@ mod tests {
                     self_id: root_id,
                     result: StoreAction::Descend(vec![DescendAction {
                         updates: updates.clone(),
-                        index: KEY[31] as usize,
                         id: child_id,
                     }]),
                 },
@@ -450,7 +450,6 @@ mod tests {
                 root_id,
                 None,
                 vec![DescendAction {
-                    index: updates.first_key()[0] as usize,
                     id: child_id,
                     updates: updates.clone(),
                 }],
@@ -463,7 +462,6 @@ mod tests {
                 child_id,
                 Some(root_id),
                 vec![DescendAction {
-                    index: updates.first_key()[1] as usize,
                     id: grandchild_id,
                     updates: updates.clone(),
                 }],
@@ -502,7 +500,6 @@ mod tests {
                 root_id,
                 None,
                 vec![DescendAction {
-                    index: KEY[31] as usize,
                     id: child_id,
                     updates: updates.clone(),
                 }],
@@ -610,7 +607,6 @@ mod tests {
                 root_id,
                 None,
                 vec![DescendAction {
-                    index: KEY[31] as usize,
                     id: child_id,
                     updates: updates.clone(),
                 }],
