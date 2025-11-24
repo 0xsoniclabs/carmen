@@ -52,3 +52,10 @@ func (v *Value) SetBit128() {
 	bytes[15] = bytes[15] | 0x01
 	v.scalar.SetBytes(bytes[:])
 }
+
+// Subtracts another value from this value and returns the result as a new value.
+func (v *Value) Sub(other Value) *Value {
+	var result Value
+	result.scalar.Sub(&v.scalar, &other.scalar)
+	return &result
+}

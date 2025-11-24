@@ -102,6 +102,17 @@ func (c Commitment) Update(position byte, old, new Value) Commitment {
 	return res
 }
 
+// Add adds another commitment to this commitment, modifying this commitment
+// in place. If this commitment is is the zero value, it is set to the given
+// commitment.
+func (c *Commitment) Add(other Commitment) {
+	if *c == (Commitment{}) {
+		*c = other
+		return
+	}
+	c.point.Add(&c.point, &other.point)
+}
+
 // The configuration for the Inner Product Argument (IPA) library used in this
 // package to create commitments and openings and to verify them. This config
 // also contains the generator points and the curve parameters used for the
