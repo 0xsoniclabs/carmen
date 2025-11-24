@@ -548,6 +548,38 @@ mod tests {
         assert_eq!(slot, None);
     }
 
+    #[test]
+    fn get_slots_for_returns_number_of_required_slots_or_none_if_values_fit() {
+        let mut node = SparseLeafNode::<5>::default();
+        node.values[1] = ValueWithIndex {
+            index: 1,
+            value: VALUE_1,
+        };
+        node.values[2] = ValueWithIndex {
+            index: 10,
+            value: VALUE_1,
+        };
+        node.values[3] = ValueWithIndex {
+            index: 11,
+            value: Value::default(),
+        };
+        // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
+
+        // Enough empty slots for all new indices
+        let slots = SparseLeafNode::<5>::get_slots_for(&node.values, [100, 101, 102].into_iter());
+        assert_eq!(slots, None);
+
+        // Enough empty slots and slots which get overwritten
+        let slots =
+            SparseLeafNode::<5>::get_slots_for(&node.values, [100, 101, 102, 10, 1].into_iter());
+        assert_eq!(slots, None);
+
+        // Not enough empty slots
+        let slots =
+            SparseLeafNode::<5>::get_slots_for(&node.values, [100, 101, 102, 103].into_iter());
+        assert_eq!(slots, Some(6)); // 2 existing + 4 new
+    }
+
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn lookup_with_matching_stem_returns_value_at_final_key_index(
         #[case] node: Box<dyn VerkleManagedTrieNode>,
@@ -572,7 +604,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
-    fn next_store_action_with_non_matching_stem_is_reparent(
+    fn next_store_action_with_non_matching_stems_is_reparent(
         #[case] mut node: Box<dyn VerkleManagedTrieNode>,
     ) {
         let mut commitment = VerkleCommitment::default();
@@ -580,10 +612,11 @@ mod tests {
         node.set_commitment(commitment).unwrap();
 
         let divergence_at = 5;
-        let mut key: Key = [&STEM[..], &[0u8]].concat().try_into().unwrap();
-        key[divergence_at] = 56;
+        let key1: Key = [&STEM[..], &[0u8]].concat().try_into().unwrap();
+        let mut key2: Key = [&STEM[..], &[0u8]].concat().try_into().unwrap();
+        key2[divergence_at] = 57;
         let self_id = make_node_id();
-        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE_1), (key2, VALUE_1)]);
         let result = node
             .next_store_action(update, divergence_at as u8, self_id)
             .unwrap();
@@ -598,14 +631,16 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
-    fn next_store_action_with_matching_stem_is_store_if_matching_slot_exists(
+    fn next_store_action_with_matching_stems_is_store_if_enough_usable_slots_exists(
         #[case] node: Box<dyn VerkleManagedTrieNode>,
     ) {
         let mut node = node;
         let index = 142;
-        node.access_slot(4).index = index;
-        let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
-        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
+        node.access_slot(4).index = index; // one slot can be overwritten
+        node.access_slot(5).value = Value::default(); // one free slot
+        let key1: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
+        let key2: Key = [&STEM[..], &[index + 1]].concat().try_into().unwrap();
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE_1), (key2, VALUE_1)]);
         let result = node
             .next_store_action(update.clone(), 0, make_node_id())
             .unwrap();
@@ -613,32 +648,19 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
-    fn next_store_action_with_matching_stem_is_store_if_slot_with_default_value_exists(
+    fn next_store_action_with_matching_stems_is_transform_to_bigger_leaf_if_not_enough_usable_slots(
         #[case] node: Box<dyn VerkleManagedTrieNode>,
     ) {
         let mut node = node;
-        let index = 200;
-        node.access_slot(5).value = Value::default();
-        let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
-        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
-        let result = node
-            .next_store_action(update.clone(), 0, make_node_id())
-            .unwrap();
-        assert_eq!(result, StoreAction::Store(update));
-    }
-
-    #[rstest_reuse::apply(different_leaf_sizes)]
-    fn next_store_action_with_matching_stem_is_transform_to_bigger_leaf_if_no_free_slots(
-        #[case] node: Box<dyn VerkleManagedTrieNode>,
-    ) {
-        let mut node = node;
+        node.access_slot(5).value = Value::default(); // one free slot
         let mut commitment = VerkleCommitment::default();
         commitment.store(7, VALUE_1);
         node.set_commitment(commitment).unwrap();
 
         let index = 250;
-        let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
-        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key, VALUE_1)]);
+        let key1: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
+        let key2: Key = [&STEM[..], &[index + 1]].concat().try_into().unwrap();
+        let update = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE_1), (key2, VALUE_1)]);
         let result = node
             .next_store_action(update.clone(), 0, make_node_id())
             .unwrap();
