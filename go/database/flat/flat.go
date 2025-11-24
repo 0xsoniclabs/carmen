@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sync"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
@@ -55,8 +56,10 @@ type State struct {
 	// Controls for interacting with the background worker keeping the backend
 	// up to date, and computing commitments.
 	commands chan<- command  // < commands to background worker
-	syncs    <-chan error    // < signalled when syncing with background worker
+	syncs    <-chan struct{} // < signalled when syncing with background worker
 	done     <-chan struct{} // < when background work is done
+
+	issues issueCollector // < issues identified by background worker
 }
 
 // account holds the flat representation of an account's data.
@@ -94,15 +97,10 @@ type update struct {
 // The resulting state is wrapped into a synced state for thread-safe access.
 func NewState(backend state.State) state.State {
 	commands := make(chan command, 1024)
-	syncs := make(chan error)
+	syncs := make(chan struct{})
 	done := make(chan struct{})
 
-	go func() {
-		defer close(done)
-		processCommands(backend, commands, syncs)
-	}()
-
-	return state.WrapIntoSyncedState(&State{
+	res := &State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
 		codes:    make(map[common.Hash][]byte),
@@ -110,7 +108,14 @@ func NewState(backend state.State) state.State {
 		commands: commands,
 		syncs:    syncs,
 		done:     done,
-	})
+	}
+
+	go func() {
+		defer close(done)
+		processCommands(backend, commands, syncs, &res.issues)
+	}()
+
+	return state.WrapIntoSyncedState(res)
 }
 
 // WrapFactory wraps an existing state factory to produce flat State instances.
@@ -228,9 +233,9 @@ func (s *State) GetCommitment() future.Future[result.Result[common.Hash]] {
 func processCommands(
 	backend state.State,
 	commands <-chan command,
-	syncs chan<- error,
+	syncs chan<- struct{},
+	issues *issueCollector,
 ) {
-	issues := issueCollector{}
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
@@ -243,7 +248,7 @@ func processCommands(
 			zone.End()
 		} else { // sync command
 			zone := tracy.ZoneBegin("State.Sync")
-			syncs <- issues.Collect()
+			syncs <- struct{}{}
 			zone.End()
 		}
 	}
@@ -251,13 +256,14 @@ func processCommands(
 
 func (s *State) sync() error {
 	s.commands <- command{}
-	return <-s.syncs
+	<-s.syncs
+	return s.issues.Collect()
 }
 
 // --- Operational Features ---
 
 func (s *State) Check() error {
-	if err := s.sync(); err != nil {
+	if err := s.issues.Collect(); err != nil {
 		return err
 	}
 	return s.backend.Check()
@@ -331,12 +337,15 @@ func (s *State) GetSnapshotVerifier(data []byte) (backend.SnapshotVerifier, erro
 type issueCollector struct {
 	issues      []error // < collected issues
 	extraIssues int     // < count of additional issues beyond stored ones
+	mutex       sync.Mutex
 }
 
 func (c *issueCollector) HandleIssue(err error) {
 	if err == nil {
 		return
 	}
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	if len(c.issues) < 10 {
 		c.issues = append(c.issues, err)
 	} else {
@@ -345,6 +354,8 @@ func (c *issueCollector) HandleIssue(err error) {
 }
 
 func (c *issueCollector) Collect() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	if c.extraIssues > 0 {
 		c.issues = append(c.issues, fmt.Errorf("%d additional errors truncated", c.extraIssues))
 	}

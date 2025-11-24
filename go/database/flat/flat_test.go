@@ -372,15 +372,15 @@ func TestState_GetCommitment_IsForwardedToBackend(t *testing.T) {
 	require.NoError(t, flatState.Close())
 }
 
-func TestState_Check_SyncsAndConsultsBackend(t *testing.T) {
+func TestState_Check_DoesNotSync(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
 
 	issue := errors.New("test issue")
 
 	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan error, 1)
-	syncs <- nil
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	// Expect the backend check to be called, returning an issue.
 	backend.EXPECT().Check().Return(issue)
@@ -394,21 +394,22 @@ func TestState_Check_SyncsAndConsultsBackend(t *testing.T) {
 	require.ErrorIs(t, state.Check(), issue)
 	select {
 	case <-syncs:
-		t.Fatal("syncs should have been consumed")
 	default:
+		t.Fatal("syncs should have not been consumed")
 	}
 }
 
-func TestState_Check_IssueReportedBySyncIsForwarded(t *testing.T) {
+func TestState_Check_IssueReportedByBackendIsForwarded(t *testing.T) {
 	issue := errors.New("test issue")
 
-	syncs := make(chan error, 1)
-	syncs <- issue
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	state := &State{
 		commands: make(chan command, 1),
 		syncs:    syncs,
 	}
+	state.issues.HandleIssue(issue)
 
 	require.ErrorIs(t, state.Check(), issue)
 }
@@ -420,8 +421,8 @@ func TestState_Flush_SyncsAndConsultsBackend(t *testing.T) {
 	issue := errors.New("test issue")
 
 	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan error, 1)
-	syncs <- nil
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	// Expect the backend flush to be called, returning an issue.
 	backend.EXPECT().Flush().Return(issue)
@@ -443,13 +444,14 @@ func TestState_Flush_SyncsAndConsultsBackend(t *testing.T) {
 func TestState_Flush_IssueReportedBySyncIsForwarded(t *testing.T) {
 	issue := errors.New("test issue")
 
-	syncs := make(chan error, 1)
-	syncs <- issue
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	state := &State{
 		commands: make(chan command, 1),
 		syncs:    syncs,
 	}
+	state.issues.HandleIssue(issue)
 
 	require.ErrorIs(t, state.Flush(), issue)
 }
@@ -461,8 +463,8 @@ func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
 	issue := errors.New("test issue")
 
 	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan error, 1)
-	syncs <- nil
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	// Signal the background worker to be done.
 	done := make(chan struct{})
@@ -489,13 +491,14 @@ func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
 func TestState_Close_IssueReportedBySyncIsForwarded(t *testing.T) {
 	issue := errors.New("test issue")
 
-	syncs := make(chan error, 1)
-	syncs <- issue
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	state := &State{
 		commands: make(chan command, 1),
 		syncs:    syncs,
 	}
+	state.issues.HandleIssue(issue)
 
 	require.ErrorIs(t, state.Close(), issue)
 }
@@ -537,7 +540,7 @@ func TestState_GetMemoryFootprint_ListsInternalMaps(t *testing.T) {
 
 func TestState_Sync_SyncsWithBackgroundWorker(t *testing.T) {
 	commands := make(chan command, 1)
-	syncs := make(chan error, 1)
+	syncs := make(chan struct{}, 1)
 
 	state := &State{
 		commands: commands,
@@ -550,8 +553,10 @@ func TestState_Sync_SyncsWithBackgroundWorker(t *testing.T) {
 		// Wait for the sync command (empty command).
 		command := <-commands
 		require.Empty(t, command)
+		// Signal an error in the worker.
+		state.issues.HandleIssue(issue)
 		// Send the sync result.
-		syncs <- issue
+		syncs <- struct{}{}
 	}()
 
 	require.ErrorIs(t, state.sync(), issue)
@@ -611,8 +616,8 @@ func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
 	backend := state.NewMockState(ctrl)
 
 	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan error, 1)
-	syncs <- nil
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	// Expect the backend export to be called.
 	backend.EXPECT().Export(gomock.Any(), gomock.Any()).Return(common.Hash{0xAA}, nil)
@@ -637,13 +642,14 @@ func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
 func TestState_Export_IssueReportedBySyncIsForwarded(t *testing.T) {
 	issue := errors.New("test issue")
 
-	syncs := make(chan error, 1)
-	syncs <- issue
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
 
 	state := &State{
 		commands: make(chan command, 1),
 		syncs:    syncs,
 	}
+	state.issues.HandleIssue(issue)
 
 	_, err := state.Export(t.Context(), nil)
 	require.ErrorIs(t, err, issue)
