@@ -66,20 +66,20 @@ impl ManagedTrieNode for EmptyNode {
             Ok(StoreAction::HandleTransform(VerkleNode::Inner(Box::new(
                 inner,
             ))))
-        } else if depth == 31 {
+        } else {
             // Safe to unwrap: Slice is always 31 bytes
             let stem = updates.first_key()[..31].try_into().unwrap();
-            let new_leaf =
-                make_smallest_leaf_node_for(updates.len(), stem, &[], self.get_commitment())?;
-            // TODO: Deleting empty node from NodeManager after transforming will lead to cache
-            // misses https://github.com/0xsoniclabs/sonic-admin/issues/385
-            Ok(StoreAction::HandleTransform(new_leaf))
-        } else {
-            let stem = updates.first_key()[..31].try_into().unwrap();
-            let new_leaf = make_smallest_leaf_node_for(1, stem, &[], self.get_commitment())?;
-            // TODO: Deleting empty node from NodeManager after transforming will lead to cache
-            // misses https://github.com/0xsoniclabs/sonic-admin/issues/385
-            Ok(StoreAction::HandleTransform(new_leaf))
+            if updates.all_stems_match(&stem) {
+                let new_leaf =
+                    make_smallest_leaf_node_for(updates.len(), stem, &[], self.get_commitment())?;
+                Ok(StoreAction::HandleTransform(new_leaf))
+            } else {
+                // Because we have non-matching stems, we need an inner node
+                let inner = InnerNode::default();
+                Ok(StoreAction::HandleTransform(VerkleNode::Inner(Box::new(
+                    inner,
+                ))))
+            }
         }
     }
 
@@ -99,9 +99,7 @@ impl NodeVisitor<EmptyNode> for NodeCountVisitor {
 mod tests {
     use super::*;
     use crate::{
-        database::verkle::{
-            KeyedUpdateBatch, test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind,
-        },
+        database::verkle::{KeyedUpdateBatch, variants::managed::nodes::VerkleNodeKind},
         error::BTError,
         types::TreeId,
     };
@@ -141,10 +139,35 @@ mod tests {
     }
 
     #[test]
-    fn next_store_action_non_zero_depth_transforms_to_leaf_node() {
+    fn next_store_action_at_non_zero_depth_with_non_matching_stems_transforms_to_inner_node() {
         let node = EmptyNode;
-        let key = Key::from_index_values(1, &[(31, 34)]);
-        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[
+            ([1; 32], Value::default()),
+            ([2; 32], Value::default()),
+        ]);
+        let action = node
+            .next_store_action(
+                updates.clone(),
+                1,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
+            )
+            .unwrap();
+        match action {
+            StoreAction::HandleTransform(leaf) => {
+                assert!(matches!(leaf, VerkleNode::Inner(_)));
+            }
+            _ => panic!("expected HandleTransform to inner node"),
+        }
+    }
+
+    #[test]
+    fn next_store_action_at_non_zero_depth_with_matching_stems_transforms_to_leaf_with_capacity_for_len_update_slots()
+     {
+        let node = EmptyNode;
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[
+            ([1; 32], Value::default()),
+            ([1; 32], Value::default()),
+        ]);
         let action = node
             .next_store_action(
                 updates.clone(),
