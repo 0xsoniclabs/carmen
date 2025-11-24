@@ -319,9 +319,13 @@ func (s *State) GetSnapshotVerifier(data []byte) (backend.SnapshotVerifier, erro
 
 // --- Helpers ---
 
+// issueCollector collects issues encountered during background processing.
+// It limits the number of stored issues to avoid excessive memory usage.
+// Only the first 10 issues are stored; any additional issues are counted
+// but not stored in detail.
 type issueCollector struct {
-	issues      []error
-	extraIssues int
+	issues      []error // < collected issues
+	extraIssues int     // < count of additional issues beyond stored ones
 }
 
 func (c *issueCollector) HandleIssue(err error) {
