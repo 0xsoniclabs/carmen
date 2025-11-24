@@ -17,7 +17,7 @@ use crate::{
         managed_trie::{ManagedTrieNode, TrieCommitment, TrieUpdateLog},
         verkle::{
             compute_commitment::compute_leaf_node_commitment,
-            crypto::Commitment,
+            crypto::{Commitment, Scalar},
             variants::managed::{VerkleNode, VerkleNodeId},
         },
     },
@@ -40,6 +40,10 @@ pub struct VerkleCommitment {
     /// A bitfield indicating which slots in a leaf node have been used before.
     /// This allows to distinguish between empty slots and slots that have been set to zero.
     used_slots: [u8; 256 / 8],
+    /// Whether this commitment has been computed at least once. This dictates whether
+    /// point-wise updates over dirty children can be used, or a full computation is required.
+    /// TODO: Consider merging this with `dirty` flag into an enum that is not stored on disk.
+    initialized: u8,
     /// Whether the commitment is dirty and needs to be recomputed.
     // bool does not implement FromBytes, so we use u8 instead
     dirty: u8,
@@ -49,6 +53,21 @@ pub struct VerkleCommitment {
 }
 
 impl VerkleCommitment {
+    /// Creates a new commitment that is meant to replace an existing commitment at a certain
+    /// position within the trie. The new commitment is considered to be clean and uninitialized,
+    /// however copies the existing commitment value. This allows to compute the delta between
+    /// the commitment that used to be stored at this position, and the new commitment after
+    /// it has been initialized.
+    pub fn from_existing(existing: &VerkleCommitment) -> Self {
+        VerkleCommitment {
+            commitment: existing.commitment,
+            used_slots: [0u8; 256 / 8],
+            initialized: 0,
+            dirty: 0,
+            changed: [0u8; 256 / 8],
+        }
+    }
+
     pub fn commitment(&self) -> Commitment {
         self.commitment
     }
@@ -63,6 +82,7 @@ impl Default for VerkleCommitment {
         Self {
             commitment: Commitment::default(),
             used_slots: [0u8; 256 / 8],
+            initialized: 0,
             dirty: 0,
             changed: [0u8; 256 / 8],
         }
@@ -123,7 +143,17 @@ pub fn update_commitments(
                     vc.commitment = compute_leaf_node_commitment(&values, &vc.used_slots, &stem);
                 }
                 VerkleCommitmentInput::Inner(children) => {
+                    let mut scalars = [Scalar::zero(); 256];
                     for (i, child_id) in children.iter().enumerate() {
+                        if vc.initialized == 0 {
+                            scalars[i] = manager
+                                .get_read_access(*child_id)?
+                                .get_commitment()
+                                .commitment
+                                .to_scalar();
+                            continue;
+                        }
+
                         if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
                             continue;
                         }
@@ -135,6 +165,11 @@ pub fn update_commitments(
                             previous_commitments[child_id].to_scalar(),
                             child_commitment.commitment.to_scalar(),
                         );
+                    }
+
+                    if vc.initialized == 0 {
+                        vc.commitment = Commitment::new(&scalars);
+                        vc.initialized = 1;
                     }
                 }
             }
@@ -161,6 +196,23 @@ mod tests {
         node_manager::in_memory_node_manager::InMemoryNodeManager,
         types::{HasEmptyId, Key},
     };
+
+    #[test]
+    fn verkle_commitment_from_existing_copies_commitment() {
+        let original = VerkleCommitment {
+            commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
+            used_slots: [1u8; 256 / 8],
+            initialized: 1,
+            dirty: 1,
+            changed: [1u8; 256 / 8],
+        };
+        let new = VerkleCommitment::from_existing(&original);
+        assert_eq!(new.commitment, original.commitment);
+        assert_eq!(new.used_slots, [0u8; 256 / 8]);
+        assert_eq!(new.initialized, 0);
+        assert_eq!(new.dirty, 0);
+        assert_eq!(new.changed, [0u8; 256 / 8]);
+    }
 
     #[test]
     fn verkle_commitment__commitment_returns_stored_commitment() {

@@ -34,6 +34,19 @@ pub struct InnerNode {
 }
 
 impl InnerNode {
+    /// Creates a new inner node with the given leaf node as child at the given index.
+    /// The commitment of the inner node is initialized from the given leaf commitment.
+    pub fn new_with_leaf(
+        index: u8,
+        leaf_id: VerkleNodeId,
+        leaf_commitment: &VerkleCommitment,
+    ) -> Self {
+        let mut inner = InnerNode::default();
+        inner.children[index as usize] = leaf_id;
+        inner.commitment = VerkleCommitment::from_existing(leaf_commitment);
+        inner
+    }
+
     /// Returns the children of this inner node as commitment input.
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         Ok(VerkleCommitmentInput::Inner(self.children))

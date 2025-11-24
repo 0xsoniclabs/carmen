@@ -72,8 +72,7 @@ impl ManagedTrieNode for FullLeafNode {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
             let index = self.stem[depth as usize];
-            let mut inner = InnerNode::default();
-            inner.children[index as usize] = self_id;
+            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
             return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
                 inner,
             ))));
@@ -173,6 +172,8 @@ mod tests {
     #[test]
     fn next_store_action_with_non_matching_stem_is_reparent() {
         let divergence_at = 5;
+        let mut commitment = VerkleCommitment::default();
+        commitment.store(123, Value::from_index_values(99, &[]));
         let node = FullLeafNode {
             stem: <[u8; 31]>::from_index_values(1, &[(divergence_at, 56)]),
             ..Default::default()
@@ -186,6 +187,8 @@ mod tests {
         match result {
             StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
                 assert_eq!(inner.children[56], self_id);
+                // Newly created inner node has commitment of the leaf.
+                assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }
             _ => panic!("expected HandleReparent with inner node"),
         }

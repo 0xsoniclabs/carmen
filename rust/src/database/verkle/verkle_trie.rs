@@ -170,4 +170,57 @@ mod tests {
             trie.store(&to_key(i), &make_value(i as u64)).unwrap();
         }
     }
+
+    // Regression test for managed trie implementation:
+    // Reparenting a newly created leaf node did not properly mark the leaf as dirty in the new
+    // parent, thereby excluding it from the initial commitment computation. This was not an
+    // issue for the simple in-memory trie, where nodes are queried for their commitment
+    // dirty status directly.
+    #[rstest_reuse::apply(all_trie_impls)]
+    fn reparented_leaf_is_correctly_included_in_inner_node_commitment(
+        #[case] trie: Box<dyn VerkleTrie>,
+    ) {
+        // Insert a single value. This will create an inner -> leaf.
+        trie.store(&make_leaf_key(&[2], 0), &make_value(1)).unwrap();
+        // Trigger insertion of another inner node by inserting a key that shares prefix
+        // with existing leaf.
+        trie.store(&make_leaf_key(&[2, 3], 0), &make_value(1))
+            .unwrap();
+        let received = trie.commit().unwrap();
+
+        // Generated with Go reference implementation
+        let expected = "0x551138e437ee637cbe37a28e35c747e0fed4683129f516ec1937a079d3bbba98";
+        assert_eq!(const_hex::encode_prefixed(received.compress()), expected);
+    }
+
+    // Regression test for both the simple in-memory and managed trie implementation:
+    // Very similar to the previous test, except that between the creation of the leaf
+    // and the reparenting, the commitment is computed once. This triggered two issues:
+    // - The leaf's commitment was not dirty and thus was not included in the new parent's initial
+    //   commitment computation.
+    // - The grandparent's (root node) point-wise commitment update did not properly compute the
+    //   delta between the old and new child commitment, because according to the new inner node,
+    //   which replaced the leaf in the root's respective slot, the previous commitment was zero.
+    #[rstest_reuse::apply(all_trie_impls)]
+    fn incrementally_computed_commitment_over_reparented_leaf_is_correct(
+        #[case] trie: Box<dyn VerkleTrie>,
+    ) {
+        // Insert a single value. This will create an inner -> leaf.
+        trie.store(&make_leaf_key(&[2], 0), &make_value(1)).unwrap();
+        let received = trie.commit().unwrap();
+
+        // Generated with Go reference implementation
+        let expected = "0x3f9f58afff402c493d568a2b6f373bc462930646028c62acca99a2ee409d13d5";
+        assert_eq!(const_hex::encode_prefixed(received.compress()), expected);
+
+        // Trigger insertion of another inner node by inserting a key that shares prefix
+        // with existing leaf.
+        trie.store(&make_leaf_key(&[2, 3], 0), &make_value(1))
+            .unwrap();
+        let received = trie.commit().unwrap();
+
+        // Generated with Go reference implementation
+        let expected = "0x551138e437ee637cbe37a28e35c747e0fed4683129f516ec1937a079d3bbba98";
+        assert_eq!(const_hex::encode_prefixed(received.compress()), expected);
+    }
 }

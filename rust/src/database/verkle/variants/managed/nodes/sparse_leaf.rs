@@ -152,8 +152,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
             let index = self.stem[depth as usize];
-            let mut inner = InnerNode::default();
-            inner.children[index as usize] = self_id;
+            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
             return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
                 inner,
             ))));
@@ -476,8 +475,12 @@ mod tests {
 
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_non_matching_stem_is_reparent(
-        #[case] node: Box<dyn VerkleManagedTrieNode>,
+        #[case] mut node: Box<dyn VerkleManagedTrieNode>,
     ) {
+        let mut commitment = VerkleCommitment::default();
+        commitment.store(123, VALUE_1);
+        node.set_commitment(commitment).unwrap();
+
         let divergence_at = 5;
         let mut key: Key = [&STEM[..], &[0u8]].concat().try_into().unwrap();
         key[divergence_at] = 56;
@@ -489,6 +492,8 @@ mod tests {
         match result {
             StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
                 assert_eq!(inner.children[STEM[divergence_at] as usize], self_id);
+                // Newly created inner node has commitment of the leaf.
+                assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }
             _ => panic!("expected HandleReparent with inner node"),
         }

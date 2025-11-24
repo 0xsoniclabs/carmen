@@ -422,9 +422,16 @@ mod tests {
     fn state_with_content_has_same_commitment_as_geth(#[case] state: Box<dyn CarmenState>) {
         const PUSH32: u8 = 0x7f;
 
-        let addr1 = Address::from_index_values(0, &[(0, 1)]);
-        let addr2 = Address::from_index_values(0, &[(0, 2)]);
-        let addr3 = Address::from_index_values(0, &[(0, 3)]);
+        let addr1 = Address::from_index_values(0, &[(0, 0)]);
+        let addr2 = Address::from_index_values(0, &[(0, 174)]);
+        let addr3 = Address::from_index_values(0, &[(0, 51), (1, 1)]);
+
+        // We choose addresses that have a collision in the first byte of their basic data key.
+        // This way we can trigger an inner node to be inserted after the first update, which
+        // then covers some edge cases in point-wise commitment updates (depending on trie
+        // implementation).
+        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr2)[0]);
+        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr3)[0]);
 
         let code1 = Vec::from_index_values(0, &[(0, 0x01), (1, 0x02)]);
         // Truncated push data
@@ -494,9 +501,173 @@ mod tests {
         state.apply_block_update(0, update.clone()).unwrap();
 
         let hash = state.get_hash().unwrap();
-        let expected = "0x200c4ce1a7807afcff0226ac29f0d1d611e5bee2a500df573fe36c10034660fa";
+        let expected = "0x71db64871d05d74a5e5fe5a0b3843147cc0c45d00beb15102cef224f78bae4e2";
 
         assert_eq!(const_hex::encode_prefixed(hash), expected);
+    }
+
+    #[rstest_reuse::apply(all_state_impls)]
+    fn incremental_updates_result_in_same_commitments_as_geth(#[case] state: Box<dyn CarmenState>) {
+        const PUSH32: u8 = 0x7f;
+
+        let addr1 = Address::from_index_values(0, &[(0, 0)]);
+        let addr2 = Address::from_index_values(0, &[(0, 174)]);
+        let addr3 = Address::from_index_values(0, &[(0, 51), (1, 1)]);
+
+        // We choose addresses that have a collision in the first byte of their basic data key.
+        // This way we can trigger an inner node to be inserted after the first update, which
+        // then covers some edge cases in point-wise commitment updates (depending on trie
+        // implementation).
+        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr2)[0]);
+        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr3)[0]);
+
+        let code1 = Vec::from_index_values(0, &[(0, 0x01), (1, 0x02)]);
+        let code2 = Vec::from_index_values(0, &[(0, 0x11), (1, 0x12)]);
+        let code3 = Vec::from_index_values(0, &[(0, 0x13), (1, 0x14), (2, PUSH32), (32, 0x15)]);
+        let code4 = Vec::from_index_values(0, &[(0, 0x16), (1, 0x17)]);
+        let code5 = Vec::from_index_values(0, &[(10_000, 1)]);
+        let code6 = Vec::from_index_values(0, &[(0, 0x01), (1, 0x02), (2, 0x03)]);
+
+        let updates = [
+            // Initialize data only for addr1 such that the basic fields (balance, nonce, code
+            // size) all end up in a single leaf node attached to the root.
+            Update {
+                balances: &[BalanceUpdate {
+                    addr: addr1,
+                    balance: crypto_bigint::U256::from_u32(100).to_be_bytes(),
+                }],
+                nonces: &[NonceUpdate {
+                    addr: addr1,
+                    nonce: 1u64.to_be_bytes(),
+                }],
+                codes: vec![CodeUpdate {
+                    addr: addr1,
+                    code: &code1,
+                }],
+                ..Default::default()
+            },
+            // Update fields for addr1 and add some additional data for addr2 and addr3.
+            // This will cause an inner node to be created between the root and the leaf
+            // for addr1.
+            Update {
+                balances: &[
+                    BalanceUpdate {
+                        addr: addr1,
+                        balance: crypto_bigint::U256::from_u32(150).to_be_bytes(),
+                    },
+                    BalanceUpdate {
+                        addr: addr2,
+                        balance: crypto_bigint::U256::from_u32(250).to_be_bytes(),
+                    },
+                    BalanceUpdate {
+                        addr: addr3,
+                        balance: crypto_bigint::U256::from_u32(350).to_be_bytes(),
+                    },
+                ],
+                nonces: &[
+                    NonceUpdate {
+                        addr: addr1,
+                        nonce: 3u64.to_be_bytes(),
+                    },
+                    NonceUpdate {
+                        addr: addr2,
+                        nonce: 4u64.to_be_bytes(),
+                    },
+                    NonceUpdate {
+                        addr: addr3,
+                        nonce: 5u64.to_be_bytes(),
+                    },
+                ],
+                codes: vec![
+                    CodeUpdate {
+                        addr: addr1,
+                        code: &code2,
+                    },
+                    CodeUpdate {
+                        addr: addr2,
+                        code: &code3,
+                    },
+                    CodeUpdate {
+                        addr: addr3,
+                        code: &code4,
+                    },
+                ],
+                slots: &[
+                    SlotUpdate {
+                        addr: addr1,
+                        key: Key::from_index_values(0, &[(0, 1)]),
+                        value: Value::from_index_values(0, &[(0, 0x05)]),
+                    },
+                    SlotUpdate {
+                        addr: addr2,
+                        key: Key::from_index_values(0, &[(0, 2)]),
+                        value: Value::from_index_values(0, &[(0, 0x06)]),
+                    },
+                    SlotUpdate {
+                        addr: addr3,
+                        key: Key::from_index_values(0, &[(0, 3)]),
+                        value: Value::from_index_values(0, &[(0, 0x07)]),
+                    },
+                ],
+                ..Default::default()
+            },
+            // Set data to zero.
+            Update {
+                balances: &[BalanceUpdate {
+                    addr: addr1,
+                    balance: crypto_bigint::U256::from_u32(0).to_be_bytes(),
+                }],
+                nonces: &[NonceUpdate {
+                    addr: addr1,
+                    nonce: 0u64.to_be_bytes(),
+                }],
+                codes: vec![CodeUpdate {
+                    addr: addr1,
+                    code: &[],
+                }],
+                slots: &[SlotUpdate {
+                    addr: addr1,
+                    key: Key::from_index_values(0, &[(0, 1)]),
+                    value: Value::from_index_values(0, &[]),
+                }],
+                ..Default::default()
+            },
+            // Grow code size.
+            Update {
+                codes: vec![CodeUpdate {
+                    addr: addr1,
+                    code: &code5,
+                }],
+                ..Default::default()
+            },
+            // Shrink code size.
+            Update {
+                codes: vec![CodeUpdate {
+                    addr: addr1,
+                    code: &code6,
+                }],
+                ..Default::default()
+            },
+        ];
+
+        let expected_hashes = [
+            "0x2d819e0ef65c45cbe82d2417b957be71fcfe38e40167ed7b77e6cb1010b947fa",
+            "0x60b4accd38f50d4ec02fe454511d4a742a50b7b6bda5b9ca198584b5df5b0783",
+            "0x251c33d75b1e6f00d9308098ef43212cb1923fd1412291b689e467fe58f7cb1f",
+            "0x6b163d9b36a6aa8dd30e5a941d6c9660cddb4fe46862202206875c0c4021b9fe",
+            "0x5882a33bda9102b7cdaf74009b3eb385ece7bf0f3e09f27a250954025c3f9fc1",
+        ];
+
+        for (i, update) in updates.into_iter().enumerate() {
+            state.apply_block_update(0, update.clone()).unwrap();
+            let hash = state.get_hash().unwrap();
+            let expected = expected_hashes[i];
+            assert_eq!(
+                const_hex::encode_prefixed(hash),
+                *expected,
+                "mismatch at after update {i}",
+            );
+        }
     }
 
     #[rstest_reuse::apply(all_state_impls)]

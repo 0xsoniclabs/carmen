@@ -9,7 +9,10 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use crate::{
-    database::verkle::{compute_commitment::compute_leaf_node_commitment, crypto::Commitment},
+    database::verkle::{
+        compute_commitment::compute_leaf_node_commitment,
+        crypto::{Commitment, Scalar},
+    },
     types::{Key, Value},
 };
 
@@ -87,6 +90,7 @@ impl Node {
 pub struct InnerNode {
     children: Box<[Node; 256]>,
     commitment: Commitment,
+    commitment_initialized: bool,
     commitment_dirty: bool,
 }
 
@@ -97,13 +101,19 @@ impl InnerNode {
         InnerNode {
             children,
             commitment: Commitment::default(),
+            commitment_initialized: false,
             commitment_dirty: true,
         }
     }
 
     /// Creates a new inner node with the given leaf node as child at the given position.
+    /// The commitment of the inner node is initialized from the leaf's commitment.
     pub fn new_with_leaf(leaf: LeafNode, position: u8) -> Self {
         let mut inner = Self::new();
+        // Take leaf's commitment as initial commitment of the inner node.
+        // This is required to ensure that this node's parent can correctly update its commitment
+        // by computing the delta between the old and new child's commitments.
+        inner.commitment = leaf.commitment;
         inner.children[position as usize] = Node::Leaf(leaf);
         inner
     }
@@ -140,18 +150,29 @@ impl InnerNode {
         }
 
         let _span = tracy_client::span!("InnerNode::commit");
+        let mut values = [Scalar::zero(); 256];
+
         for (i, child) in self.children.iter_mut().enumerate() {
-            if child.commitment_is_dirty() {
-                let old_child_commitment = child.get_commitment();
-                let new_child_commitment = child.commit();
-                self.commitment.update(
-                    i as u8,
-                    old_child_commitment.to_scalar(),
-                    new_child_commitment.to_scalar(),
-                );
+            if self.commitment_initialized {
+                if child.commitment_is_dirty() {
+                    let old_child_commitment = child.get_commitment();
+                    let new_child_commitment = child.commit();
+                    self.commitment.update(
+                        i as u8,
+                        old_child_commitment.to_scalar(),
+                        new_child_commitment.to_scalar(),
+                    );
+                }
+            } else {
+                values[i] = child.commit().to_scalar();
             }
         }
 
+        if !self.commitment_initialized {
+            self.commitment = Commitment::new(&values);
+        }
+
+        self.commitment_initialized = true;
         self.commitment_dirty = false;
         self.commitment
     }
@@ -258,7 +279,9 @@ mod tests {
     #[test]
     fn inner_node_new_with_leaf_creates_node_with_child() {
         let key = make_key(&[9, 2, 3]);
-        let leaf = LeafNode::new(&key);
+        let leaf_commitment = Commitment::new(&[Scalar::from(42)]);
+        let mut leaf = LeafNode::new(&key);
+        leaf.commitment = leaf_commitment;
         let position = key[0];
         let inner = InnerNode::new_with_leaf(leaf, position);
         for (i, child) in inner.children.iter().enumerate() {
@@ -268,7 +291,8 @@ mod tests {
                 assert!(matches!(child, Node::Empty));
             }
         }
-        assert_eq!(inner.commitment, Commitment::default());
+        // Newly created inner node has commitment of the leaf.
+        assert_eq!(inner.commitment, leaf_commitment);
         assert!(inner.commitment_dirty);
     }
 
@@ -345,9 +369,22 @@ mod tests {
     fn inner_node_commit_computes_commitment_from_children() {
         let inner = InnerNode::new();
         let key1 = make_key(&[1, 2, 3]);
-        let key2 = make_key(&[1, 2, 4]);
 
         let inner = inner.store(&key1, 2, &make_value(42));
+        let Node::Inner(mut inner) = inner else {
+            panic!("expected InnerNode after set");
+        };
+
+        assert!(!inner.commitment_initialized);
+        let commitment = inner.commit();
+        assert!(inner.commitment_initialized);
+
+        let mut child_commitments = vec![Scalar::zero(); 256];
+        child_commitments[key1[2] as usize] = inner.children[key1[2] as usize].commit().to_scalar();
+        let expected_commitment = Commitment::new(&child_commitments);
+        assert_eq!(commitment, expected_commitment);
+
+        let key2 = make_key(&[1, 2, 4]);
         let inner = inner.store(&key2, 2, &make_value(84));
         let Node::Inner(mut inner) = inner else {
             panic!("expected InnerNode after set");
@@ -355,8 +392,6 @@ mod tests {
 
         let commitment = inner.commit();
 
-        let mut child_commitments = vec![Scalar::zero(); 256];
-        child_commitments[key1[2] as usize] = inner.children[key1[2] as usize].commit().to_scalar();
         child_commitments[key2[2] as usize] = inner.children[key2[2] as usize].commit().to_scalar();
         let expected_commitment = Commitment::new(&child_commitments);
         assert_eq!(commitment, expected_commitment);
@@ -415,7 +450,8 @@ mod tests {
         let key2 = make_key(&[1, 2, 4]);
 
         let leaf = LeafNode::new(&key1);
-        let leaf = leaf.store(&key1, 0, &make_value(42));
+        let mut leaf = leaf.store(&key1, 0, &make_value(42));
+        let leaf_commitment = leaf.commit();
 
         let new_node = leaf.store(&key2, 2, &make_value(84));
         let Node::Inner(inner) = new_node else {
@@ -425,6 +461,8 @@ mod tests {
         // Original leaf is now a child of the inner node.
         let value = inner.children[key1[2] as usize].lookup(&key1, 2);
         assert_eq!(value, make_value(42));
+        // Inner node has commitment of original leaf.
+        assert_eq!(inner.commitment, leaf_commitment);
     }
 
     #[test]
