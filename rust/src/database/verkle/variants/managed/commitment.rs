@@ -125,24 +125,22 @@ impl TrieCommitment for VerkleCommitment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
 #[repr(C)]
 pub struct OnDiskVerkleCommitment {
-    commitment: Commitment,
+    commitment: [u8; 32],
     pub committed_used_indices: [u8; 256 / 8],
-    c1: Commitment,
-    c2: Commitment,
 }
 
 impl From<OnDiskVerkleCommitment> for VerkleCommitment {
     fn from(odvc: OnDiskVerkleCommitment) -> Self {
         VerkleCommitment {
-            commitment: odvc.commitment,
+            commitment: Commitment::default(),
             committed_used_indices: odvc.committed_used_indices,
-            c1: odvc.c1,
-            c2: odvc.c2,
+            c1: Commitment::default(),
+            c2: Commitment::default(),
             initialized: true,
             dirty: false,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
-            commitment_scalar: odvc.commitment.to_scalar(),
+            commitment_scalar: Scalar::zero(),
         }
     }
 }
@@ -153,10 +151,8 @@ impl From<&VerkleCommitment> for OnDiskVerkleCommitment {
         assert!(!value.dirty);
 
         OnDiskVerkleCommitment {
-            commitment: value.commitment,
+            commitment: [0u8; 32],
             committed_used_indices: value.committed_used_indices,
-            c1: value.c1,
-            c2: value.c2,
         }
     }
 }
