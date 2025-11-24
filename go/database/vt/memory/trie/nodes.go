@@ -129,18 +129,9 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 				if d == (commit.Commitment{}) {
 					continue
 				}
-				if deltaCommitment == (commit.Commitment{}) {
-					deltaCommitment = d
-				} else {
-					deltaCommitment.Add(d)
-				}
+				deltaCommitment.Add(d)
 			}
-
-			if i.commitment == (commit.Commitment{}) {
-				i.commitment = deltaCommitment
-			} else {
-				i.commitment.Add(deltaCommitment)
-			}
+			i.commitment.Add(deltaCommitment)
 			i.dirtyChildValues.clear()
 			i.oldChildrenValuesSet.clear()
 		},
@@ -174,11 +165,7 @@ func (i *inner) commit() commit.Commitment {
 	}
 
 	// Update the commitment of this inner node.
-	if i.commitment == (commit.Commitment{}) {
-		i.commitment = commit.Commit(delta)
-	} else {
-		i.commitment.Add(commit.Commit(delta))
-	}
+	i.commitment.Add(commit.Commit(delta))
 	i.dirtyChildValues.clear()
 	i.oldChildrenValuesSet.clear()
 	return i.commitment
@@ -320,11 +307,7 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 				}
 
 				newC1 := l.c1
-				if l.c1 == (commit.Commitment{}) {
-					newC1 = commit.Commit(delta)
-				} else {
-					newC1.Add(commit.Commit(delta))
-				}
+				newC1.Add(commit.Commit(delta))
 
 				deltaC1 := newC1.ToValue()
 				deltaC1 = *deltaC1.Sub(l.c1.ToValue())
@@ -365,11 +348,7 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 				}
 
 				newC2 := l.c2
-				if newC2 == (commit.Commitment{}) {
-					newC2 = commit.Commit(delta)
-				} else {
-					newC2.Add(commit.Commit(delta))
-				}
+				newC2.Add(commit.Commit(delta))
 
 				deltaC2 := newC2.ToValue()
 				deltaC2 = *deltaC2.Sub(l.c2.ToValue())
@@ -441,11 +420,7 @@ func (l *leaf) commit() commit.Commitment {
 		}
 
 		newC1 := l.c1
-		if l.c1 == (commit.Commitment{}) {
-			newC1 = commit.Commit(delta)
-		} else {
-			newC1.Add(commit.Commit(delta))
-		}
+		newC1.Add(commit.Commit(delta))
 
 		deltaC1 := newC1.ToValue()
 		deltaC1 = *deltaC1.Sub(l.c1.ToValue())
@@ -479,11 +454,7 @@ func (l *leaf) commit() commit.Commitment {
 		}
 
 		newC2 := l.c2
-		if newC2 == (commit.Commitment{}) {
-			newC2 = commit.Commit(delta)
-		} else {
-			newC2.Add(commit.Commit(delta))
-		}
+		newC2.Add(commit.Commit(delta))
 
 		deltaC2 := newC2.ToValue()
 		deltaC2 = *deltaC2.Sub(l.c2.ToValue())
