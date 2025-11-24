@@ -117,17 +117,19 @@ impl TrieCommitment for VerkleCommitment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
 #[repr(C)]
 pub struct OnDiskVerkleCommitment {
-    commitment: [u8; 32],
+    commitment: Commitment,
     pub committed_used_slots: [u8; 256 / 8],
+    c1: Commitment,
+    c2: Commitment,
 }
 
 impl From<OnDiskVerkleCommitment> for VerkleCommitment {
     fn from(odvc: OnDiskVerkleCommitment) -> Self {
         VerkleCommitment {
-            commitment: Commitment::default(), // FIXME: Uncompressed commitment
+            commitment: odvc.commitment,
             committed_used_slots: odvc.committed_used_slots,
-            c1: Commitment::default(),
-            c2: Commitment::default(),
+            c1: odvc.c1,
+            c2: odvc.c2,
             initialized: true,
             dirty: false,
             committed_values: [Value::default(); 256],
@@ -139,8 +141,10 @@ impl From<OnDiskVerkleCommitment> for VerkleCommitment {
 impl From<&VerkleCommitment> for OnDiskVerkleCommitment {
     fn from(value: &VerkleCommitment) -> Self {
         OnDiskVerkleCommitment {
-            commitment: value.commitment.compress(),
+            commitment: value.commitment,
             committed_used_slots: value.committed_used_slots,
+            c1: value.c1,
+            c2: value.c2,
         }
     }
 }
