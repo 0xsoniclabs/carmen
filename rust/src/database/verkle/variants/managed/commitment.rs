@@ -203,15 +203,15 @@ pub fn process_update(
                 .sum::<usize>();
             let use_batch_update = changed_count > 32;
 
-            let mut child_commitments = [Commitment::default(); 256];
-            let mut prev_child_commitments = [Commitment::default(); 256];
+            let mut scalars = [Scalar::zero(); 256];
             for (i, child_id) in children.iter().enumerate() {
                 if vc.initialized == 0 {
-                    child_commitments[i] = manager
+                    scalars[i] = manager
                         .get_read_access(*child_id)
                         .unwrap()
                         .get_commitment()
-                        .commitment;
+                        .commitment
+                        .to_scalar();
                     continue;
                 }
 
@@ -223,13 +223,11 @@ pub fn process_update(
                 let prev_commitment = previous_commitments
                     .get(child_id)
                     .expect("previous commitment should have been set in lower level");
+                let prev_commitment = prev_commitment.to_scalar();
 
                 if use_batch_update {
-                    // scalars[i] = child_commitment.commitment().to_scalar() - prev_commitment;
-                    child_commitments[i] = child_commitment.commitment();
-                    prev_child_commitments[i] = *prev_commitment;
+                    scalars[i] = child_commitment.commitment().to_scalar() - prev_commitment;
                 } else {
-                    let prev_commitment = prev_commitment.to_scalar();
                     vc.commitment.update(
                         i as u8,
                         prev_commitment,
@@ -239,17 +237,10 @@ pub fn process_update(
             }
 
             if vc.initialized != 0 && use_batch_update {
-                let scalars = Commitment::batch_to_scalar(&child_commitments);
-                let prev_scalars = Commitment::batch_to_scalar(&prev_child_commitments);
-                let mut deltas = [Scalar::zero(); 256];
-                for i in 0..256 {
-                    deltas[i] = scalars[i] - prev_scalars[i];
-                }
-                vc.commitment = vc.commitment + Commitment::new(&deltas);
+                vc.commitment = vc.commitment + Commitment::new(&scalars);
             }
 
             if vc.initialized == 0 {
-                let scalars = Commitment::batch_to_scalar(&child_commitments);
                 vc.commitment = Commitment::new(&scalars);
                 vc.initialized = 1;
             }
