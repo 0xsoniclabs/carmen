@@ -132,7 +132,6 @@ impl ManagedTrieNode for InnerNode {
         for sub_updates in updates.split(depth) {
             let index = sub_updates.first_key()[depth as usize] as usize;
             descent_actions.push(DescendAction {
-                index,
                 id: self.children[index],
                 updates: sub_updates,
             });
@@ -226,7 +225,6 @@ mod tests {
         assert_eq!(
             result,
             StoreAction::Descend(vec![DescendAction {
-                index: index as usize,
                 id: child_id,
                 updates
             }])
