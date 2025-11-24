@@ -29,9 +29,10 @@ use crate::database::verkle::crypto::Scalar;
 #[repr(C)]
 pub struct Commitment {
     // We store a byte representation to allow for easy serialization using zerocopy.
-    // Note that conversion from/to banderwagon::Element is NOT trivial (due to compression).
-    // TODO: Benchmark performance impact (https://github.com/0xsoniclabs/sonic-admin/issues/373).
-    point_bytes: [u8; 32],
+    // TODO: Store `Element` directly once we have separate on-disk representations.
+    // TODO: Consider using compressed 32-byte on-disk representation to save space.
+    // https://github.com/0xsoniclabs/sonic-admin/issues/373
+    point_bytes: [u8; 64],
 }
 
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
@@ -49,7 +50,7 @@ impl Commitment {
         let point =
             COMMITTER.commit_lagrange(&values.iter().map(|v| Fr::from(*v)).collect::<Vec<Fr>>());
         Commitment {
-            point_bytes: point.to_bytes(),
+            point_bytes: point.to_bytes_uncompressed(),
         }
     }
 
@@ -57,7 +58,7 @@ impl Commitment {
     pub fn update(&mut self, index: u8, old_value: Scalar, new_value: Scalar) {
         let delta = Fr::from(new_value) - Fr::from(old_value);
         let delta_commitment = COMMITTER.scalar_mul(delta, index as usize);
-        self.point_bytes = (self.as_element() + delta_commitment).to_bytes();
+        self.point_bytes = (self.as_element() + delta_commitment).to_bytes_uncompressed();
     }
 
     /// Maps the commitment point to the Banderwagon scalar field,
@@ -80,24 +81,18 @@ impl Commitment {
     /// Returns a compressed 32-byte representation of the commitment.
     /// Used as the state root commitment in Verkle tries.
     pub fn compress(&self) -> [u8; 32] {
-        self.point_bytes
+        self.as_element().to_bytes()
     }
 
     fn as_element(&self) -> Element {
-        // In case the byte sequence does not correspond to a point in the prime subgroup,
-        // we cannot construct a banderwagon::Element from it and instead return the identity
-        // element (garbage in, garbage out).
-        match Element::from_bytes(&self.point_bytes) {
-            Some(e) => e,
-            None => Element::zero(),
-        }
+        Element::from_bytes_unchecked_uncompressed(self.point_bytes)
     }
 }
 
 impl From<Element> for Commitment {
     fn from(element: Element) -> Self {
         Commitment {
-            point_bytes: element.to_bytes(),
+            point_bytes: element.to_bytes_uncompressed(),
         }
     }
 }
@@ -111,7 +106,7 @@ impl From<&Commitment> for Element {
 impl Default for Commitment {
     fn default() -> Self {
         Commitment {
-            point_bytes: Element::zero().to_bytes(),
+            point_bytes: Element::zero().to_bytes_uncompressed(),
         }
     }
 }
@@ -217,9 +212,7 @@ mod slow_tests {
         let values = vec![Scalar::from(12)];
         let commitment = Commitment::new(&values);
         let compressed = commitment.compress();
-        // The compressed form is simply the internal byte representation
-        let uncompressed = Commitment::read_from_bytes(&compressed).unwrap();
-        assert_eq!(uncompressed, commitment);
+        assert_eq!(compressed, commitment.as_element().to_bytes());
     }
 
     #[test]
@@ -237,9 +230,11 @@ mod slow_tests {
 
     #[test]
     fn invalid_commitment_can_still_be_used() {
-        let random_bytes = [0x01; 32];
+        let random_bytes = [0x01; 64];
+
         // First check that this byte sequence is in fact invalid
-        assert!(Element::from_bytes(&random_bytes).is_none());
+        let compressed = Element::from_bytes_unchecked_uncompressed(random_bytes).to_bytes();
+        assert!(Element::from_bytes(&compressed).is_none());
 
         let mut c = Commitment::read_from_bytes(&random_bytes).unwrap();
 
