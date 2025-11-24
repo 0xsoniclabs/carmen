@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::cell::LazyCell;
+
 use carmen_rust::{
     CarmenState, Update,
     database::{
@@ -16,14 +18,14 @@ use carmen_rust::{
     types::SlotUpdate,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use utils::{bench_single_call, execute_with_threads};
+use utils::{bench_expensive_call_with_state_mutation, execute_with_threads};
 
 use crate::utils::pow_2_threads;
 
 mod utils;
 
 /// An enum representing the different CarmenState implementations to benchmark.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum CarmenStateKind {
     CrateCryptoInMemoryVerkleTrie,
     SimpleInMemoryVerkleTrie,
@@ -55,7 +57,6 @@ impl CarmenStateKind {
 /// An enum representing the initial size of the carmen state.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum InitialState {
-    Empty,
     Small,
     Large,
     Test,
@@ -64,7 +65,6 @@ enum InitialState {
 impl InitialState {
     fn num_accounts(self) -> usize {
         match self {
-            InitialState::Empty => 0,
             InitialState::Small => 1000,
             InitialState::Large => 10000,
             InitialState::Test => 1,
@@ -73,7 +73,6 @@ impl InitialState {
 
     fn num_storage_keys(self) -> usize {
         match self {
-            InitialState::Empty => 0,
             InitialState::Small => 5,
             InitialState::Large => 10,
             InitialState::Test => 1,
@@ -83,9 +82,6 @@ impl InitialState {
     /// Initializes the Carmen state with the current initial state.
     /// Accounts and keys are incrementally generated.
     fn init(self, carmen_state: &dyn CarmenState) {
-        if matches!(self, InitialState::Empty) {
-            return;
-        }
         let num_accounts = self.num_accounts();
         let num_storage_keys = self.num_storage_keys();
         let buffer_size = usize::max(1, usize::min(num_accounts / 10, 10000));
@@ -119,16 +115,8 @@ impl InitialState {
                         ..Default::default()
                     },
                 )
-                .expect("Failed to initialize Carmen state");
+                .expect("failed to initialize Carmen state");
         }
-    }
-
-    fn variants() -> &'static [InitialState] {
-        &[
-            InitialState::Empty,
-            InitialState::Small,
-            InitialState::Large,
-        ]
     }
 }
 
@@ -150,8 +138,11 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
                 "carmen_state_read/{initial_state:?}/in_storage={existing}"
             ));
             for state_type in CarmenStateKind::variants() {
-                let carmen_state = state_type.make_carmen_state();
-                initial_state.init(&*carmen_state);
+                let carmen_state = LazyCell::new(|| {
+                    let state = state_type.make_carmen_state();
+                    initial_state.init(&*state);
+                    state
+                });
                 for num_threads in pow_2_threads() {
                     let mut completed_iterations = 0u64;
                     group.bench_with_input(
@@ -160,6 +151,7 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
                         |b, &num_threads| {
                             let num_accounts = initial_state.num_accounts() as u64;
                             let num_storage_keys = initial_state.num_storage_keys() as u64;
+                            let carmen_state = &*carmen_state;
                             b.iter_custom(|iters| {
                                 execute_with_threads(
                                     num_threads as u64,
@@ -184,9 +176,11 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
                                             key[0..8].copy_from_slice(&storage_index.to_be_bytes());
                                             key
                                         };
-                                        let _value = carmen_state
-                                            .get_storage_value(&account_address, &storage_key)
-                                            .unwrap();
+                                        std::hint::black_box(
+                                            carmen_state
+                                                .get_storage_value(&account_address, &storage_key)
+                                                .unwrap(),
+                                        );
                                     },
                                 )
                             });
@@ -198,85 +192,95 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
     }
 }
 
-/// Benchmark updating storage values in the Carmen state.
+/// Benchmark that creates a Carmen state from scratch, applying a number of slot updates.
 /// It varies:
-/// - Initial state size (Empty, Small, Large)
-/// - Whether to update existing storage keys or new ones
-/// - Number of batches (how many updates share the same address)
+/// - Batch size of slot updates (whether all updates are applied in one batch or multiple)
+/// - Whether to compute the commitment hash after all updates
 fn state_update_benchmark(c: &mut criterion::Criterion) {
-    let (num_key_to_update, num_batches, initial_states) = if cfg!(debug_assertions) {
-        (10, vec![1, 10], vec![InitialState::Test])
+    const NUM_KEYS: usize = 10_000;
+    const NUM_ACCOUNTS: usize = 100;
+
+    let batch_sizes = if cfg!(debug_assertions) {
+        vec![1, 10]
     } else {
-        (
-            1_000_000,                                // Total number of storage keys to update
-            vec![1, 10, 100, 1_000, 10_000, 100_000], // Number of batches
-            InitialState::variants().to_vec(),        // Initial states to test
-        )
+        vec![10_000, 100]
     };
 
-    for initial_state in initial_states {
-        let mut group = c.benchmark_group(format!("carmen_state_update/{initial_state:?}"));
+    let all_slot_updates = {
+        let mut updates = Vec::with_capacity(NUM_KEYS);
+        for account_idx in 0..NUM_ACCOUNTS {
+            let mut address = [0u8; 20];
+            address[0..8].copy_from_slice(&account_idx.to_be_bytes());
+
+            for key_idx in 0..(NUM_KEYS / NUM_ACCOUNTS) {
+                let mut key = [0u8; 32];
+                key[0..8].copy_from_slice(&(key_idx as u64).to_be_bytes());
+                updates.push(SlotUpdate {
+                    addr: address,
+                    key,
+                    value: [1u8; 32],
+                });
+            }
+        }
+        updates
+    };
+
+    for compute_commitment in [true, false] {
+        let mut group = c.benchmark_group(format!(
+            "carmen_state_insert_{NUM_KEYS}_keys/commit={compute_commitment:?}"
+        ));
         group.sample_size(10); // This is the minimum allowed by criterion
-        for num_batch in num_batches.clone() {
-            for existing in [true, false] {
-                if initial_state == InitialState::Empty && existing {
+        for batch_size in batch_sizes.clone() {
+            for state_type in CarmenStateKind::variants() {
+                if !compute_commitment
+                    && *state_type == CarmenStateKind::CrateCryptoInMemoryVerkleTrie
+                {
+                    // Crate crypto always computes commitments during update, so we skip this case.
                     continue;
                 }
-                for state_type in CarmenStateKind::variants() {
-                    // TODO: we could keep a copy of the initial state and clone it here instead of
-                    // re-initializing, but it would basically double the memory usage.
-                    let init = move || {
-                        let carmen_state = state_type.make_carmen_state();
-                        initial_state.init(&*carmen_state);
-                        let num_accounts = initial_state.num_accounts();
-                        let num_storage_keys = initial_state.num_storage_keys() as u64;
-                        let mut slots_update = Vec::with_capacity(num_key_to_update as usize);
-                        let keys_per_batch = num_key_to_update / num_batch;
-                        for (account, _) in (0..num_key_to_update)
-                            .step_by(keys_per_batch as usize)
-                            .enumerate()
+
+                // TODO: we could keep a copy of the initial state and clone it here instead of
+                // re-initializing, but it would basically double the memory usage.
+                let all_slot_updates = &all_slot_updates;
+                let init = move || {
+                    let carmen_state = state_type.make_carmen_state();
+                    let mut batches = Vec::with_capacity(NUM_KEYS / batch_size);
+                    for b in 0..(NUM_KEYS / batch_size) {
+                        let mut batch = Vec::with_capacity(batch_size);
+                        // We select slot updates using a stride to ensure that smaller batches
+                        // contain updates spread across all accounts.
+                        for u in all_slot_updates
+                            .iter()
+                            .skip(b)
+                            .step_by(NUM_KEYS / batch_size)
                         {
-                            let account_idx = if existing {
-                                account % num_accounts
-                            } else {
-                                account + num_accounts
-                            };
-                            let mut address = [0u8; 20];
-                            address[0..8].copy_from_slice(&account_idx.to_be_bytes());
-                            for key_idx in 0..keys_per_batch {
-                                let key_idx = if existing {
-                                    key_idx % num_storage_keys
-                                } else {
-                                    key_idx + num_storage_keys
-                                };
-                                let mut key = [0u8; 32];
-                                key[0..8].copy_from_slice(&key_idx.to_be_bytes());
-                                slots_update.push(SlotUpdate {
-                                    addr: address,
-                                    key,
-                                    value: [1u8; 32],
-                                });
-                            }
+                            batch.push(u.clone());
                         }
-                        (carmen_state, slots_update)
-                    };
-                    bench_single_call(
-                        &mut group,
-                        format!("{state_type:?}/{num_batch}batches/{existing}_existing").as_str(),
-                        init,
-                        |(carmen_state, slots_update)| {
+                        batches.push(batch);
+                    }
+                    (carmen_state, batches)
+                };
+                bench_expensive_call_with_state_mutation(
+                    &mut group,
+                    format!("{state_type:?}/batch_size={batch_size}").as_str(),
+                    init,
+                    |(carmen_state, batches)| {
+                        for b in batches {
                             carmen_state
                                 .apply_block_update(
                                     0,
                                     Update {
-                                        slots: slots_update,
+                                        slots: b,
                                         ..Default::default()
                                     },
                                 )
                                 .unwrap();
-                        },
-                    );
-                }
+                        }
+                        if compute_commitment {
+                            std::hint::black_box(carmen_state.get_hash().unwrap());
+                        }
+                    },
+                );
             }
         }
     }

@@ -28,11 +28,11 @@ pub fn pow_2_threads() -> impl Iterator<Item = usize> {
     (1..=thread::available_parallelism().unwrap().get()).filter(|x| x.is_power_of_two())
 }
 
-/// Utility function to benchmark a call to a function `func` with an initialized state created by
-/// `init_state`. This is useful for benchmarking a function without relying on Criterion's
-/// iteration mechanism.
+/// Utility function to benchmark a call to an expensive function `func` that mutates some state.
+/// The state is initialized before each call using the `init_state` closure and not included
+/// in the timing.
 #[allow(dead_code)]
-pub fn bench_single_call<T>(
+pub fn bench_expensive_call_with_state_mutation<T>(
     c: &mut BenchmarkGroup<'_, WallTime>,
     bench_name: &str,
     init_state: impl Fn() -> T,
@@ -42,8 +42,8 @@ pub fn bench_single_call<T>(
         b.iter_custom(|num_samples| {
             let mut total = Duration::ZERO;
 
-            let state = init_state();
             for _ in 0..num_samples {
+                let state = init_state();
                 let start = Instant::now();
                 func(&state);
                 total += start.elapsed();
