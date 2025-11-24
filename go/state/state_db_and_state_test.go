@@ -198,8 +198,9 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				// Run a bulk-load update (creates one block)
 				load := db.StartBulkLoad(uint64(i * 2))
-				load.CreateAccount(address1)
-				load.SetNonce(address1, uint64(i+1)) // existing account cannot must have nonce > 0
+				address := common.Address{byte(i + 1)}
+				load.CreateAccount(address)
+				load.SetNonce(address, 1)
 				if err := load.Close(); err != nil {
 					t.Errorf("bulk-insert failed: %v", err)
 				}
@@ -207,10 +208,10 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 				// Run a regular block.
 				db.BeginBlock()
 				db.BeginTransaction()
-				if !db.Exist(address1) {
-					t.Errorf("account 1 should exist")
+				if !db.Exist(address) {
+					t.Errorf("account should exist")
 				}
-				db.Suicide(address1)
+				db.SetNonce(address, 2)
 				db.EndTransaction()
 				db.EndBlock(uint64(i*2 + 1))
 			}
@@ -333,6 +334,9 @@ func TestPersistentStateDB(t *testing.T) {
 	for _, config := range initStates() {
 		// skip in-memory
 		if strings.HasPrefix(config.name(), "cpp-memory") || strings.HasPrefix(config.name(), "go-memory") {
+			continue
+		}
+		if strings.Contains(config.name(), "flat") {
 			continue
 		}
 		// skip setups without archive

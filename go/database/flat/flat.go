@@ -91,7 +91,8 @@ type update struct {
 }
 
 // NewState creates a new flat State instance that wraps the provided backend state.
-func NewState(backend state.State) *State {
+// The resulting state is wrapped into a synced state for thread-safe access.
+func NewState(backend state.State) state.State {
 	commands := make(chan command, 1024)
 	syncs := make(chan error)
 	done := make(chan struct{})
@@ -101,7 +102,7 @@ func NewState(backend state.State) *State {
 		processCommands(backend, commands, syncs)
 	}()
 
-	return &State{
+	return state.WrapIntoSyncedState(&State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
 		codes:    make(map[common.Hash][]byte),
@@ -109,7 +110,7 @@ func NewState(backend state.State) *State {
 		commands: commands,
 		syncs:    syncs,
 		done:     done,
-	}
+	})
 }
 
 // WrapFactory wraps an existing state factory to produce flat State instances.
@@ -164,6 +165,10 @@ func (s *State) Apply(block uint64, data common.Update) error {
 
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
+
+	for _, address := range data.DeletedAccounts {
+		delete(s.accounts, address)
+	}
 
 	// init potentially empty accounts with empty code hash,
 	for _, address := range data.CreatedAccounts {

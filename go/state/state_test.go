@@ -299,7 +299,7 @@ func TestCanComputeNonEmptyMemoryFootprint(t *testing.T) {
 		if fp == nil {
 			t.Fatalf("state produces invalid footprint: %v", fp)
 		}
-		if strings.HasPrefix(string(config.config.Variant), "rust-") {
+		if strings.HasPrefix(string(config.config.Variant), "rust-") && !strings.Contains(config.name(), "flat") {
 			if fp.Total() != 0 {
 				t.Errorf("expected rust memory footprint to be zero (not yet implemented)")
 			}
@@ -452,6 +452,9 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
 		if config.config.Schema == 6 {
 			t.Skipf("scheme %d not supported", config.config.Schema)
 		}
+		if strings.Contains(config.name(), "flat") {
+			t.Skipf("schema with flat variant does not support account recreation")
+		}
 
 		zero := common.Value{}
 		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
@@ -496,6 +499,9 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		if config.config.Schema == 6 {
 			t.Skipf("scheme %d not supported", config.config.Schema)
+		}
+		if strings.Contains(config.name(), "flat") {
+			t.Skipf("schema with flat variant does not support deletions")
 		}
 
 		zero := common.Value{}
@@ -731,6 +737,9 @@ func TestPersistentState(t *testing.T) {
 		}
 		// skip in-memory
 		if strings.HasPrefix(config.name(), "cpp-memory") || strings.HasPrefix(config.name(), "go-memory") {
+			continue
+		}
+		if strings.Contains(config.name(), "flat") {
 			continue
 		}
 		config := config

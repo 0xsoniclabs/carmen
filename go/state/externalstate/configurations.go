@@ -10,7 +10,10 @@
 
 package externalstate
 
-import "github.com/0xsoniclabs/carmen/go/state"
+import (
+	"github.com/0xsoniclabs/carmen/go/database/flat"
+	"github.com/0xsoniclabs/carmen/go/state"
+)
 
 const (
 	VariantCppMemory  state.Variant = "cpp-memory"
@@ -29,42 +32,54 @@ func init() {
 		state.SqliteArchive,
 	}
 
+	factories := map[state.Configuration]state.StateFactory{}
+
 	// Register all configuration options supported by the C++ implementation.
 	for schema := state.Schema(1); schema <= state.Schema(3); schema++ {
 		for _, archive := range supportedArchives {
-			state.RegisterStateFactory(state.Configuration{
+			factories[state.Configuration{
 				Variant: VariantCppMemory,
 				Schema:  schema,
 				Archive: archive,
-			}, newCppInMemoryState)
-			state.RegisterStateFactory(state.Configuration{
+			}] = newCppInMemoryState
+			factories[state.Configuration{
 				Variant: VariantCppFile,
 				Schema:  schema,
 				Archive: archive,
-			}, newCppFileBasedState)
-			state.RegisterStateFactory(state.Configuration{
+			}] = newCppFileBasedState
+			factories[state.Configuration{
 				Variant: VariantCppLevelDb,
 				Schema:  schema,
 				Archive: archive,
-			}, newCppLevelDbBasedState)
+			}] = newCppLevelDbBasedState
 		}
 	}
 
-	state.RegisterStateFactory(state.Configuration{
+	factories[state.Configuration{
 		Variant: VariantRustMemory,
 		Schema:  6,
 		Archive: state.NoArchive,
-	}, newRustInMemoryState)
+	}] = newRustInMemoryState
 
-	state.RegisterStateFactory(state.Configuration{
+	factories[state.Configuration{
 		Variant: VariantRustCrateCryptoMemory,
 		Schema:  6,
 		Archive: state.NoArchive,
-	}, newRustCrateCryptoInMemoryState)
+	}] = newRustCrateCryptoInMemoryState
 
-	state.RegisterStateFactory(state.Configuration{
+	factories[state.Configuration{
 		Variant: VariantRustFile,
 		Schema:  6,
 		Archive: state.NoArchive,
-	}, newRustFileBasedState)
+	}] = newRustFileBasedState
+
+	// Register all experimental configurations.
+	for config, factory := range factories {
+		state.RegisterStateFactory(config, factory)
+
+		// Also register flat database variants.
+		config := config
+		config.Variant += "-flat"
+		state.RegisterStateFactory(config, flat.WrapFactory(factory))
+	}
 }

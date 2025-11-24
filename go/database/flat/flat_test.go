@@ -43,12 +43,12 @@ func TestWrapFactory_ProducesAStateFactoryWrappingGivenFactory(t *testing.T) {
 	}
 
 	factory := WrapFactory(inner)
-	state, err := factory(params)
+	s, err := factory(params)
 	require.NoError(t, err)
 	require.Equal(t, 1, counter)
-	require.IsType(t, &State{}, state)
+	require.IsType(t, &State{}, state.UnsafeUnwrapSyncedState(s))
 
-	require.NoError(t, state.Close())
+	require.NoError(t, s.Close())
 }
 
 func TestWrapFactory_FailingNestedFactory_ForwardsError(t *testing.T) {
@@ -283,6 +283,30 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		require.True(exists)
 		require.Equal(codeUpdate.Code, code)
 	}
+}
+
+func TestState_Apply_DeletesAccounts(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	backend.EXPECT().Close().Return(nil)
+
+	address := common.Address{0x01}
+	state := NewState(backend)
+	require.False(state.Exists(address))
+
+	require.NoError(state.Apply(1, common.Update{
+		CreatedAccounts: []common.Address{address},
+	}))
+	require.True(state.Exists(address))
+
+	require.NoError(state.Apply(2, common.Update{
+		DeletedAccounts: []common.Address{address},
+	}))
+
+	require.False(state.Exists(address))
+	require.NoError(state.Close())
 }
 
 func TestState_Apply_IsForwardedToBackend(t *testing.T) {
