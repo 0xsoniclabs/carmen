@@ -38,6 +38,7 @@ name = "carmen_state"
 harness = false
 
 [features]
+default = ["commit64b"]
 tracy = ["tracy-client/default"]
 shuttle = ["quick_cache/shuttle", "dep:shuttle"]
 commit64b = []                                   # TODO: REMOVE

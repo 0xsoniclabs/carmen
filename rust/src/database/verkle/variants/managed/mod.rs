@@ -96,12 +96,12 @@ where
 
     fn commit(&self) -> BTResult<Commitment, Error> {
         // update_commitments_sequential(&self.update_log, &*self.manager)?;
-        // update_commitments(&self.update_log, &*self.manager)?;
-        update_commitments_concurrent_recursive(
-            *self.root.read().unwrap(),
-            &self.update_log,
-            &*self.manager,
-        )?;
+        update_commitments(&self.update_log, &*self.manager)?;
+        // update_commitments_concurrent_recursive(
+        //     *self.root.read().unwrap(),
+        //     &self.update_log,
+        //     &*self.manager,
+        // )?;
         Ok(self
             .manager
             .get_read_access(*self.root.read().unwrap())?
