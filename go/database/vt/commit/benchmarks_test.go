@@ -20,15 +20,19 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-func Benchmark_Commit256Elements(b *testing.B) {
-	var random banderwagon.Fr
-	random.SetBytes(hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4"))
-	config := getConfig() // < the polynomial commit "engine"
+var _random = func() banderwagon.Fr {
+	var fr banderwagon.Fr
+	fr.SetBytes(hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4"))
+	return fr
+}()
 
-	// All 0, but one point is set to `value`
+func Benchmark_Commit256Elements(b *testing.B) {
+	config := getConfig()
+
+	// All elements are set to `random`
 	poly := make([]banderwagon.Fr, VectorSize)
-	for i := range VectorSize {
-		poly[i] = random
+	for i := range poly {
+		poly[i] = _random
 	}
 	for b.Loop() {
 		config.Commit(poly)
@@ -36,11 +40,9 @@ func Benchmark_Commit256Elements(b *testing.B) {
 }
 
 func Benchmark_PolySingleUpdate(b *testing.B) {
-	var random banderwagon.Fr
-	random.SetBytes(hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4"))
 	for _, i := range []int{0, 1, 2, 3, 4, 5, 32, 64, 128, 255} {
 		b.Run(fmt.Sprintf("index=%d", i), func(b *testing.B) {
-			benchmark_SinglePoint(b, i, random)
+			benchmark_SinglePoint(b, i, _random)
 		})
 	}
 
@@ -51,7 +53,7 @@ func benchmark_SinglePoint(
 	index int,
 	value banderwagon.Fr,
 ) {
-	config := getConfig() // < the polynomial commit "engine"
+	config := getConfig()
 
 	// All 0, but one point is set to `value`
 	poly := make([]banderwagon.Fr, VectorSize)
@@ -62,8 +64,7 @@ func benchmark_SinglePoint(
 }
 
 func BenchmarkPolySingleUpdateWrapped(b *testing.B) {
-	bytes := hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4")
-	random := NewValueFromLittleEndianBytes(bytes)
+	random := Value{scalar: _random}
 	for _, i := range []int{0, 1, 2, 3, 4, 5, 32, 64, 128, 255} {
 		b.Run(fmt.Sprintf("index=%d", i), func(b *testing.B) {
 			benchmarkSinglePointWrapped(b, i, random)
