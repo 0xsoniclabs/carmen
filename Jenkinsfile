@@ -86,7 +86,7 @@ pipeline {
                         CODECOV_TOKEN = credentials('codecov-uploader-0xsoniclabs-global')
                     }
                     steps {
-                        sh 'cd go && go test ./... -coverprofile=coverage.txt -parallel 1 -timeout 60m'
+                        sh 'cd go && go test ./... -coverprofile=coverage.txt -parallel 4 -timeout 60m'
                         sh 'codecov upload-process -r 0xsoniclabs/carmen -f ./go/coverage.txt -t ${CODECOV_TOKEN}'
                     }
                 }
