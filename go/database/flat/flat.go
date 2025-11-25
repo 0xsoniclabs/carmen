@@ -100,6 +100,12 @@ func NewState(backend state.State) state.State {
 	syncs := make(chan struct{})
 	done := make(chan struct{})
 
+	// Unwrap the backend from any synced state to avoid double synchronization.
+	// The flat state will handle synchronization itself.
+	if backend != nil {
+		backend = state.UnsafeUnwrapSyncedState(backend)
+	}
+
 	res := &State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
