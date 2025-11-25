@@ -102,7 +102,7 @@ where
         lookup(*self.root.read().unwrap(), key, &*self.manager)
     }
 
-    fn store(&self, updates: KeyedUpdateBatch) -> BTResult<(), Error> {
+    fn store(&self, updates: &KeyedUpdateBatch) -> BTResult<(), Error> {
         let root_id_lock = self.root.write().unwrap();
         store(root_id_lock, updates, &*self.manager, &self.update_log)
     }
@@ -192,7 +192,7 @@ mod tests {
             (make_leaf_key(&[2], 2), make_value(2)),
             (make_leaf_key(&[3], 3), make_value(3)),
         ]);
-        trie.store(updates.borrowed()).unwrap();
+        trie.store(&updates).unwrap();
 
         let received = trie.commit().unwrap();
         let expected = manager
@@ -210,7 +210,7 @@ mod tests {
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
         let updates =
             KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[1], 1), make_value(1))]);
-        trie.store(updates).unwrap();
+        trie.store(&updates).unwrap();
         let root_id = *trie.root.read().unwrap();
 
         trie.after_update(42).unwrap();

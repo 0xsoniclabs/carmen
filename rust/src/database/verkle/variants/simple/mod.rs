@@ -51,10 +51,10 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
         Ok(self.root.lock().unwrap().lookup(key, 0))
     }
 
-    fn store(&self, updates: KeyedUpdateBatch) -> BTResult<(), Error> {
+    fn store(&self, updates: &KeyedUpdateBatch) -> BTResult<(), Error> {
         let mut root_lock = self.root.lock().unwrap();
         let root = std::mem::replace(&mut *root_lock, Node::Empty);
-        *root_lock = root.store(updates, 0);
+        *root_lock = root.store(updates.borrowed(), 0);
         Ok(())
     }
 
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn commitment_of_non_empty_trie_is_root_node_commitment() {
         let trie = SimpleInMemoryVerkleTrie::new();
-        trie.store(KeyedUpdateBatch::from_key_value_pairs(&[
+        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[
             (make_leaf_key(&[1], 1), make_value(1)),
             (make_leaf_key(&[2], 2), make_value(2)),
             (make_leaf_key(&[3], 3), make_value(3)),
@@ -130,7 +130,7 @@ mod tests {
             }
         }
         let trie = SimpleInMemoryVerkleTrie::new();
-        trie.store(KeyedUpdateBatch::from_key_value_pairs(&[
+        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[
             (make_leaf_key(&[1], 1), make_value(1)),
             (make_leaf_key(&[2], 2), make_value(2)),
             (make_leaf_key(&[3], 3), make_value(3)),

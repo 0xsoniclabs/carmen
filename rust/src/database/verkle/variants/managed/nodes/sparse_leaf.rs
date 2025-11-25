@@ -560,7 +560,7 @@ mod tests {
             value: VALUE_1,
         };
         node.values[3] = ValueWithIndex {
-            index: 11,
+            index: 100,
             value: Value::default(),
         };
         // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
