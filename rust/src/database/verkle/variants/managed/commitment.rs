@@ -130,6 +130,8 @@ pub fn update_commitments(
         return Ok(());
     }
 
+    let _span = tracy_client::span!("update_commitments");
+
     let mut previous_commitments = HashMap::new();
     for level in (0..log.levels()).rev() {
         let dirty_nodes_ids = log.dirty_nodes(level);
@@ -146,6 +148,8 @@ pub fn update_commitments(
                     vc.commitment = compute_leaf_node_commitment(&values, &vc.used_slots, &stem);
                 }
                 VerkleCommitmentInput::Inner(children) => {
+                    let _span = tracy_client::span!("inner node");
+
                     let mut scalars = [Scalar::zero(); 256];
                     for (i, child_id) in children.iter().enumerate() {
                         if vc.initialized == 0 {

@@ -135,6 +135,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
+        let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
         if let Ok(updates) = KeyedUpdateBatch::try_from(update) {
             for update in &*updates {
                 match update {
