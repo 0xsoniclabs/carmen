@@ -14,7 +14,7 @@ use std::{
     io::Write,
     ops::Deref,
     path::Path,
-    sync::Arc,
+    sync::{Arc, Once},
 };
 
 #[cfg(unix)]
@@ -267,38 +267,41 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
     let target_file_size = if cfg!(debug_assertions) {
         100_000
     } else {
-        let size = memory_kb * 1024 * FILE_SIZE_MEMORY_MULTIPLIER;
-        eprintln!(
-            "Using benchmark file of size {} * main memory size ({} GiB) = {} GiB to limit effects of OS page cache",
-            FILE_SIZE_MEMORY_MULTIPLIER,
-            memory_kb / 1024 / 1024,
-            size / ONE_GB as u64
-        );
-        size
+        memory_kb * 1024 * FILE_SIZE_MEMORY_MULTIPLIER
     };
 
     let path = Path::new(FILE);
+    let init_file_fn = || {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            eprintln!(
+                "\nUsing benchmark file of size {} * main memory size ({} GiB) = {} GiB to limit effects of OS page cache",
+                FILE_SIZE_MEMORY_MULTIPLIER,
+                memory_kb / 1024 / 1024,
+                target_file_size / ONE_GB as u64
+            );
+            if !fs::exists(path).unwrap() {
+                eprintln!("Creating benchmark file at {path:?}");
+            }
+            let mut options = OpenOptions::new();
+            options.create(true).truncate(false).write(true);
+            let mut file = options.open(path).unwrap();
 
-    if !fs::exists(path).unwrap() {
-        eprintln!("Creating benchmark file at {path:?}");
-    }
-    let mut options = OpenOptions::new();
-    options.create(true).truncate(false).write(true);
-    let mut file = options.open(path).unwrap();
+            if file.metadata().unwrap().len() < target_file_size {
+                eprintln!(
+                    "Expanding benchmark file {path:?} to {:.1}GB",
+                    target_file_size as f64 / ONE_GB as f64
+                );
 
-    if file.metadata().unwrap().len() < target_file_size {
-        eprintln!(
-            "Expanding benchmark file {path:?} to {:.1}GB",
-            target_file_size as f64 / ONE_GB as f64
-        );
-
-        let data_1gb = vec![0; ONE_GB];
-        for _ in 0..(target_file_size.div_ceil(ONE_GB as u64)) {
-            file.write_all(&data_1gb).unwrap();
-        }
-        // Note: Using File::set_len creates sparse files on some file systems which results in
-        // unrealistic read performance.
-    }
+                let data_1gb = vec![0; ONE_GB];
+                for _ in 0..(target_file_size.div_ceil(ONE_GB as u64)) {
+                    file.write_all(&data_1gb).unwrap();
+                }
+                // Note: Using File::set_len creates sparse files on some file systems which results
+                // in unrealistic read performance.
+            }
+        });
+    };
 
     let plot_config = PlotConfiguration::default().summary_scale(criterion::AxisScale::Logarithmic);
 
@@ -320,6 +323,7 @@ fn file_backend_benchmark_matrix(c: &mut Criterion) {
                             chunk_size,
                             threads,
                             backend_fn,
+                            init_file_fn,
                         );
                     }
                 }
@@ -338,6 +342,7 @@ fn file_backend_benchmark(
     chunk_size: usize,
     threads: usize,
     backend_fn: BackendOpenFn,
+    init_file_fn: impl Fn(),
 ) {
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
@@ -354,6 +359,7 @@ fn file_backend_benchmark(
             let chunk_size = *chunk_size;
             let threads = *threads;
             b.iter_custom(|iterations| {
+                init_file_fn();
                 execute_with_threads(
                     threads as u64,
                     iterations,
