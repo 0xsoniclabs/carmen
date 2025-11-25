@@ -13,8 +13,13 @@ use std::cell::LazyCell;
 use carmen_rust::{
     CarmenState, Update,
     database::{
-        CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie, verkle::VerkleTrieCarmenState,
+        CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
+        verkle::{
+            VerkleTrieCarmenState,
+            variants::managed::{VerkleNode, VerkleNodeId},
+        },
     },
+    node_manager::in_memory_node_manager,
     types::SlotUpdate,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -26,9 +31,11 @@ mod utils;
 
 /// An enum representing the different CarmenState implementations to benchmark.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 enum CarmenStateKind {
     CrateCryptoInMemoryVerkleTrie,
     SimpleInMemoryVerkleTrie,
+    ManagedInMemoryVerkleTrie,
 }
 
 impl CarmenStateKind {
@@ -43,11 +50,20 @@ impl CarmenStateKind {
                 Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new())
                     as Box<dyn CarmenState>
             }
+            CarmenStateKind::ManagedInMemoryVerkleTrie => Box::new(
+                VerkleTrieCarmenState::<
+                    carmen_rust::database::ManagedVerkleTrie<
+                        in_memory_node_manager::InMemoryNodeManager<VerkleNodeId, VerkleNode>,
+                    >,
+                >::try_new(100_000)
+                .unwrap(),
+            ) as Box<dyn CarmenState>,
         }
     }
 
     fn variants() -> &'static [CarmenStateKind] {
         &[
+            CarmenStateKind::ManagedInMemoryVerkleTrie,
             CarmenStateKind::SimpleInMemoryVerkleTrie,
             CarmenStateKind::CrateCryptoInMemoryVerkleTrie,
         ]
@@ -84,39 +100,35 @@ impl InitialState {
     fn init(self, carmen_state: &dyn CarmenState) {
         let num_accounts = self.num_accounts();
         let num_storage_keys = self.num_storage_keys();
-        let buffer_size = usize::max(1, usize::min(num_accounts / 10, 10000));
-        for i in (0..num_accounts).step_by(buffer_size) {
-            let mut slots_update = vec![];
-            for account_index in i..usize::min(i + buffer_size, num_accounts) {
-                let account_address = {
-                    let mut addr = [0u8; 20];
-                    addr[0..8].copy_from_slice(&account_index.to_be_bytes());
-                    addr
+        let mut slots_update = vec![];
+        for i in 0..num_accounts {
+            let account_address = {
+                let mut addr = [0u8; 20];
+                addr[0..8].copy_from_slice(&i.to_be_bytes());
+                addr
+            };
+            for storage_index in 0..num_storage_keys {
+                let storage_key = {
+                    let mut key = [0u8; 32];
+                    key[0..8].copy_from_slice(&storage_index.to_be_bytes());
+                    key
                 };
-                for storage_index in 0..num_storage_keys {
-                    let storage_key = {
-                        let mut key = [0u8; 32];
-                        key[0..8].copy_from_slice(&storage_index.to_be_bytes());
-                        key
-                    };
-                    slots_update.push(SlotUpdate {
-                        addr: account_address,
-                        key: storage_key,
-                        value: [1u8; 32],
-                    });
-                }
+                slots_update.push(SlotUpdate {
+                    addr: account_address,
+                    key: storage_key,
+                    value: [1u8; 32],
+                });
             }
-
-            carmen_state
-                .apply_block_update(
-                    0,
-                    Update {
-                        slots: &slots_update,
-                        ..Default::default()
-                    },
-                )
-                .expect("failed to initialize Carmen state");
         }
+        carmen_state
+            .apply_block_update(
+                0,
+                Update {
+                    slots: &slots_update,
+                    ..Default::default()
+                },
+            )
+            .expect("failed to initialize Carmen state");
     }
 }
 
@@ -135,7 +147,7 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
     for initial_state in initial_states {
         for existing in [true, false] {
             let mut group = c.benchmark_group(format!(
-                "carmen_state_read/{initial_state:?}/in_storage={existing}"
+                "carmen_state_read/{initial_state:?}/existing={existing}"
             ));
             for state_type in CarmenStateKind::variants() {
                 let carmen_state = LazyCell::new(|| {
@@ -146,7 +158,9 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
                 for num_threads in pow_2_threads() {
                     let mut completed_iterations = 0u64;
                     group.bench_with_input(
-                        BenchmarkId::from_parameter(format!("{state_type:?}/{num_threads}threads")),
+                        BenchmarkId::from_parameter(format!(
+                            "{state_type:?}/{num_threads:02}threads"
+                        )),
                         &num_threads,
                         |b, &num_threads| {
                             let num_accounts = initial_state.num_accounts() as u64;
@@ -227,7 +241,7 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
 
     for compute_commitment in [true, false] {
         let mut group = c.benchmark_group(format!(
-            "carmen_state_insert_{NUM_KEYS}_keys/commit={compute_commitment:?}"
+            "carmen_state_insert/{NUM_KEYS}keys/commit={compute_commitment:?}"
         ));
         group.sample_size(10); // This is the minimum allowed by criterion
         for batch_size in batch_sizes.clone() {
@@ -239,8 +253,6 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
                     continue;
                 }
 
-                // TODO: we could keep a copy of the initial state and clone it here instead of
-                // re-initializing, but it would basically double the memory usage.
                 let all_slot_updates = &all_slot_updates;
                 let init = move || {
                     let carmen_state = state_type.make_carmen_state();
