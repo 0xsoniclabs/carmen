@@ -10,13 +10,14 @@
 
 use std::ops::{Deref, DerefMut};
 
-use dashmap::{DashMap, DashSet};
+use crossbeam_queue::ArrayQueue;
+use dashmap::DashMap;
 
 use crate::{
     error::{BTResult, Error},
     node_manager::NodeManager,
     storage::{self, RootIdProvider},
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard, hint},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
     types::{HasEmptyId, HasEmptyNode, ToNodeKind, TreeId},
 };
 
@@ -49,7 +50,7 @@ where
 {
     nodes: Vec<RwLock<NodeWrapper<N>>>,
     empty_node: RwLock<NodeWrapper<N>>,
-    free_slots: DashSet<u64>,
+    free_slots: ArrayQueue<u64>,
     root_ids: DashMap<u64, I>,
 
     _phantom: std::marker::PhantomData<I>,
@@ -62,10 +63,10 @@ where
 {
     pub fn new(capacity: usize) -> Self {
         let mut nodes = Vec::with_capacity(capacity);
-        let free_slots = DashSet::new();
+        let free_slots = ArrayQueue::new(capacity);
         for i in 0..capacity {
             nodes.push(RwLock::new(NodeWrapper { node: N::default() }));
-            free_slots.insert(i as u64);
+            free_slots.push(i as u64).unwrap(); // Safe to unwrap because we insert only up to capacity
         }
         InMemoryNodeManager {
             nodes,
@@ -91,18 +92,10 @@ where
         if value.is_empty_node() {
             return Ok(I::empty_id());
         }
-        let idx = loop {
-            let slot = self
-                .free_slots
-                .iter()
-                .next()
-                .map(|s| *s)
-                .ok_or(Error::CorruptedState("no remaining free slots".to_owned()))?;
-            if let Some(slot) = self.free_slots.remove(&slot) {
-                break slot;
-            }
-            hint::spin_loop();
-        };
+        let idx = self
+            .free_slots
+            .pop()
+            .ok_or(Error::CorruptedState("no remaining free slots".to_owned()))?;
         let key = I::from_idx_and_node_kind(idx, value.to_node_kind().unwrap());
         self.nodes[idx as usize].write().unwrap().node = value;
         Ok(key)
@@ -134,7 +127,9 @@ where
         }
         let mut guard = self.nodes[id.to_index() as usize].write().unwrap();
         guard.node = N::default();
-        self.free_slots.insert(id.to_index());
+        self.free_slots.push(id.to_index()).map_err(|_| {
+            Error::CorruptedState("failed to push freed slot back to free slots queue".to_owned())
+        })?;
         Ok(())
     }
 }
@@ -174,8 +169,8 @@ mod tests {
         let manager = TestInMemoryNodeManager::new(capacity);
         assert_eq!(manager.nodes.len(), capacity);
         assert_eq!(manager.free_slots.len(), capacity);
-        for i in 0..capacity {
-            assert!(manager.free_slots.contains(&(i as u64)));
+        for i in 0..capacity as u64 {
+            assert!(manager.free_slots.pop().unwrap() == i);
         }
     }
 
@@ -184,9 +179,16 @@ mod tests {
         let manager = TestInMemoryNodeManager::new(10);
         let node_value: TestNode = 42;
         let id = manager.add(node_value).unwrap();
-        assert!(!manager.free_slots.contains(&id.to_index()));
-        let guard = manager.get_read_access(id).unwrap();
-        assert_eq!(**guard, node_value);
+        {
+            let guard = manager.get_read_access(id).unwrap();
+            assert_eq!(**guard, node_value);
+        }
+        assert!(
+            !manager
+                .free_slots
+                .into_iter()
+                .any(|idx| idx == id.to_index())
+        );
     }
 
     #[test]
@@ -243,9 +245,16 @@ mod tests {
         let node_value: TestNode = 42;
         let id = manager.add(node_value).unwrap();
         manager.delete(id).unwrap();
-        assert!(manager.free_slots.contains(&id.to_index()));
-        let guard = manager.nodes[id.to_index() as usize].read().unwrap();
-        assert_eq!(**guard, TestNode::default());
+        {
+            let guard = manager.nodes[id.to_index() as usize].read().unwrap();
+            assert_eq!(**guard, TestNode::default());
+        }
+        assert!(
+            manager
+                .free_slots
+                .into_iter()
+                .any(|idx| idx == id.to_index())
+        );
     }
 
     #[test]
