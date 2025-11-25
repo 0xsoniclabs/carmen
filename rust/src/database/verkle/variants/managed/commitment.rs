@@ -36,12 +36,15 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct VerkleCommitment {
+    /// The commitment of the node, or of the node previously at this position in the trie.
     commitment: Commitment,
     /// A bitfield indicating which slots in a leaf node have been used before.
     /// This allows to distinguish between empty slots and slots that have been set to zero.
     used_slots: [u8; 256 / 8],
     /// Whether this commitment has been computed at least once. This dictates whether
     /// point-wise updates over dirty children can be used, or a full computation is required.
+    /// Not being initialized does not imply the commitment being zero, as it may have been
+    /// created from an existing commitment using [`VerkleCommitment::from_existing`].
     /// TODO: Consider merging this with `dirty` flag into an enum that is not stored on disk.
     initialized: u8,
     /// Whether the commitment is dirty and needs to be recomputed.

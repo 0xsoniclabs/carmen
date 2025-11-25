@@ -665,7 +665,7 @@ mod tests {
             assert_eq!(
                 const_hex::encode_prefixed(hash),
                 *expected,
-                "mismatch at after update {i}",
+                "mismatch after update {i}",
             );
         }
     }
