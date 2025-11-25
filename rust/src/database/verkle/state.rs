@@ -136,7 +136,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
         if let Ok(update) = KeyedUpdateBatch::try_from(update) {
-            self.trie.store(update.borrowed())?;
+            self.trie.store(&update)?;
         }
 
         self.trie.after_update(block)?;

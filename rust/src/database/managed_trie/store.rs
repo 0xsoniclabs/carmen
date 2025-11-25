@@ -22,7 +22,7 @@ use crate::{
     types::{HasEmptyId, HasEmptyNode},
 };
 
-struct DescentUpdates<'a, T, ID> {
+struct DescendUpdates<'a, T, ID> {
     parent_index: Option<usize>,
     node: Option<RwLockWriteGuard<'a, T>>,
     node_id: ID,
@@ -41,7 +41,7 @@ struct DescentUpdates<'a, T, ID> {
 /// after the store operation.
 pub fn store<T>(
     root_id: RwLockWriteGuard<T::Id>,
-    updates: KeyedUpdateBatch,
+    updates: &KeyedUpdateBatch,
     manager: &impl NodeManager<Id = T::Id, Node = T>,
     update_log: &TrieUpdateLog<T::Id>,
 ) -> BTResult<(), Error>
@@ -50,9 +50,10 @@ where
     T::Id: Copy + Eq + std::hash::Hash + std::fmt::Debug + HasEmptyId,
 {
     let _span = tracy_client::span!("push updates through all levels");
+    let updates = updates.borrowed();
     // Wrap the root ID lock into an Option so we can release it once we are deep enough in the tree
     let mut root_id = Some(root_id);
-    let mut current_node_updates = vec![DescentUpdates {
+    let mut current_node_updates = vec![DescendUpdates {
         parent_index: None,
         node: Some(manager.get_write_access(**root_id.as_ref().unwrap())?),
         node_id: **root_id.as_ref().unwrap(),
@@ -77,7 +78,7 @@ where
                 .map(|guard| &***guard)
                 .unwrap_or(&empty_node);
             match current_node.next_store_action(
-                // the updates should be a Cow::Borrowed in which case the clone is cheap
+                // updates is a Cow::Borrowed so the clone is cheap
                 current_node_update.updates.clone(),
                 depth,
                 current_node_update.node_id,
@@ -112,7 +113,7 @@ where
                         let index = updates.first_key()[depth as usize] as usize;
                         trie_commitment.modify_child(index);
 
-                        next_node_updates.push(DescentUpdates {
+                        next_node_updates.push(DescendUpdates {
                             parent_index: Some(i),
                             node: if id.is_empty_id() {
                                 None
@@ -259,15 +260,14 @@ mod tests {
                 result: TestNodeCommitment::default(),
             },
         );
+        let mut locked = if let Some(grandparent_id) = grandparent_id {
+            vec![parent_id, grandparent_id]
+        } else {
+            vec![parent_id]
+        };
         for DescendAction { id, .. } in descent_actions {
-            manager.expect_write_access(
-                id,
-                if let Some(grandparent_id) = grandparent_id {
-                    vec![parent_id, grandparent_id]
-                } else {
-                    vec![parent_id]
-                },
-            );
+            manager.expect_write_access(id, locked.clone());
+            locked.push(id);
         }
         manager.expect(
             parent_id,
@@ -334,7 +334,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -386,38 +386,20 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
-            manager.expect(
+            descend_into(
+                &manager,
                 root_id,
-                RcNodeExpectation::NextStoreAction {
+                None,
+                vec![DescendAction {
                     updates: updates.clone(),
-                    depth: 0,
-                    self_id: root_id,
-                    result: StoreAction::Descend(vec![DescendAction {
-                        updates: updates.clone(),
-                        id: child_id,
-                    }]),
-                },
-            );
-            manager.expect(
-                root_id,
-                RcNodeExpectation::GetCommitment {
-                    result: TestNodeCommitment::default(),
-                },
-            );
-            // Root should be locked while we acquire lock on the child
-            manager.expect_write_access(child_id, vec![root_id]);
-            manager.expect(
-                root_id,
-                RcNodeExpectation::SetCommitment {
-                    commitment: TestNodeCommitment::expected_single(
-                        KEY[31] as usize,
-                        Value::default(),
-                    ),
-                },
+                    id: child_id,
+                }],
+                &updates,
+                0,
             );
 
             complete_store(&manager, child_id, &updates, 1);
@@ -440,7 +422,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -456,7 +438,10 @@ mod tests {
                 &updates,
                 0,
             );
-            assert!(root_id_lock.try_read().is_err());
+            let _guard = spin_until_some(
+                || root_id_lock.try_read().ok(),
+                "timed out waiting for root_id to be unlocked",
+            );
             descend_into(
                 &manager,
                 child_id,
@@ -467,10 +452,6 @@ mod tests {
                 }],
                 &updates,
                 1,
-            );
-            let _guard = spin_until_some(
-                || root_id_lock.try_read().ok(),
-                "timed out waiting for root_id to be unlocked",
             );
             complete_store(&manager, grandchild_id, &updates, 2);
         });
@@ -491,7 +472,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -552,7 +533,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -597,7 +578,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -663,7 +644,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, updates.clone(), &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -689,6 +670,180 @@ mod tests {
             // The root id should be updated to the new id
             let updated_root_id = *root_id_lock.read().unwrap();
             assert_eq!(updated_root_id, new_root_id);
+        });
+    }
+
+    #[test]
+    fn store_applies_storeaction_store_immediately() {
+        let (manager, log, root_id, root_id_lock) = boilerplate();
+
+        let key1 = [1; 32];
+        let key2 = [2; 32];
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE), (key2, VALUE)]);
+        thread::scope(|s| {
+            s.spawn(|| {
+                let root_id_guard = root_id_lock.write().unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
+            });
+
+            manager.expect_write_access(root_id, vec![]);
+            manager.expect(
+                root_id,
+                RcNodeExpectation::NextStoreAction {
+                    updates: updates.clone(),
+                    depth: 0,
+                    self_id: root_id,
+                    result: StoreAction::Store(updates.clone()),
+                },
+            );
+            manager.expect(
+                root_id,
+                RcNodeExpectation::GetCommitment {
+                    result: TestNodeCommitment::default(),
+                },
+            );
+            let prev_value = Value::from([77u8; 32]);
+            manager.expect(
+                root_id,
+                RcNodeExpectation::Store {
+                    update: KeyedUpdate::FullSlot {
+                        key: key1,
+                        value: VALUE,
+                    },
+                    result: prev_value,
+                },
+            );
+            manager.expect(
+                root_id,
+                RcNodeExpectation::Store {
+                    update: KeyedUpdate::FullSlot {
+                        key: key2,
+                        value: VALUE,
+                    },
+                    result: prev_value,
+                },
+            );
+            manager.expect(
+                root_id,
+                RcNodeExpectation::SetCommitment {
+                    commitment: TestNodeCommitment::expected(
+                        [
+                            (key1[31] as usize, prev_value),
+                            (key2[31] as usize, prev_value),
+                        ]
+                        .into_iter(),
+                    ),
+                },
+            );
+            manager.wait_for_unlock(root_id);
+        });
+    }
+
+    #[test]
+    fn store_handles_storeaction_descend_by_processing_it_in_the_next_level() {
+        let (manager, log, root_id, root_id_lock) = boilerplate();
+        let child1_id = manager.insert(manager.make());
+        let child2_id = manager.insert(manager.make());
+
+        let key1 = [1; 32];
+        let key2 = [2; 32];
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE), (key2, VALUE)]);
+        let sub_update1 = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE)]);
+        let sub_update2 = KeyedUpdateBatch::from_key_value_pairs(&[(key2, VALUE)]);
+        thread::scope(|s| {
+            s.spawn(|| {
+                let root_id_guard = root_id_lock.write().unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
+            });
+
+            manager.expect_write_access(root_id, vec![]);
+            descend_into(
+                &manager,
+                root_id,
+                None,
+                vec![
+                    DescendAction {
+                        id: child1_id,
+                        updates: sub_update1.clone(),
+                    },
+                    DescendAction {
+                        id: child2_id,
+                        updates: sub_update2.clone(),
+                    },
+                ],
+                &updates,
+                0,
+            );
+
+            complete_store(&manager, child1_id, &sub_update1, 1);
+            complete_store(&manager, child2_id, &sub_update2, 1);
+            manager.wait_for_unlock(root_id);
+        });
+    }
+
+    #[test]
+    fn store_applies_storeaction_transform_immediately_and_then_processes_transformed_node() {
+        let (manager, log, root_id, root_id_lock) = boilerplate();
+
+        let key1 = [1; 32];
+        let key2 = [2; 32];
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE), (key2, VALUE)]);
+        thread::scope(|s| {
+            s.spawn(|| {
+                let root_id_guard = root_id_lock.write().unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
+            });
+
+            manager.expect_write_access(root_id, vec![]);
+            let transformed_node = manager.make();
+            let transformed_node_id = transformed_node.id();
+            manager.expect(
+                root_id,
+                RcNodeExpectation::NextStoreAction {
+                    updates: updates.clone(),
+                    depth: 0,
+                    self_id: root_id,
+                    result: StoreAction::HandleTransform(transformed_node.clone()),
+                },
+            );
+            manager.expect_add(transformed_node);
+            manager.expect_write_access(transformed_node_id, vec![root_id]);
+            manager.wait_for_unlock(root_id);
+            manager.expect_delete(root_id);
+            complete_store(&manager, transformed_node_id, &updates, 0);
+            manager.wait_for_unlock(transformed_node_id);
+        });
+    }
+
+    #[test]
+    fn store_applies_storeaction_reparent_immediately_and_then_processes_reparented_node() {
+        let (manager, log, root_id, root_id_lock) = boilerplate();
+        let key1 = [1; 32];
+        let key2 = [2; 32];
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key1, VALUE), (key2, VALUE)]);
+        thread::scope(|s| {
+            s.spawn(|| {
+                let root_id_guard = root_id_lock.write().unwrap();
+                store(root_id_guard, &updates, &*manager, &log).unwrap();
+            });
+
+            manager.expect_write_access(root_id, vec![]);
+            let reparented_node = manager.make();
+            let reparented_node_id = reparented_node.id();
+            manager.expect(
+                root_id,
+                RcNodeExpectation::NextStoreAction {
+                    updates: updates.clone(),
+                    depth: 0,
+                    self_id: root_id,
+                    result: StoreAction::HandleReparent(reparented_node.clone()),
+                },
+            );
+            manager.expect_add(reparented_node);
+            manager.expect_write_access(reparented_node_id, vec![root_id]);
+            manager.wait_for_unlock(root_id);
+            complete_store(&manager, reparented_node_id, &updates, 0);
+            manager.wait_for_unlock(reparented_node_id);
         });
     }
 }
