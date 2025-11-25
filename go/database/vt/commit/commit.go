@@ -103,7 +103,7 @@ func (c Commitment) Update(position byte, old, new Value) Commitment {
 }
 
 // Add adds another commitment to this commitment, modifying this commitment
-// in place. If this commitment is is the zero value, it is set to the given
+// in place. If this commitment is the zero value, it is set to the given
 // commitment.
 func (c *Commitment) Add(other Commitment) {
 	if *c == (Commitment{}) {
