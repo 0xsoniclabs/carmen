@@ -278,7 +278,7 @@ fn read_benchmark(c: &mut criterion::Criterion) {
     };
     for cache_size in cache_sizes {
         let mut bench_group = c.benchmark_group(format!("caching/read/{cache_size}capacity"));
-        for num_threads in pow_2_threads() {
+        for num_threads in pow_2_threads(None) {
             for cache_type in CacheKind::variants() {
                 let cache = LazyLock::new(|| {
                     let cache = cache_type.make_cache(cache_size, 0);
@@ -327,7 +327,7 @@ fn add_benchmark(c: &mut criterion::Criterion) {
             let mut bench_group = c.benchmark_group(format!(
                 "caching/add/{cache_size}capacity/{pinning_prob}pinning_prob"
             ));
-            for num_threads in pow_2_threads() {
+            for num_threads in pow_2_threads(None) {
                 for cache_type in CacheKind::variants() {
                     let cache = LazyLock::new(|| cache_type.make_cache(cache_size, pinning_prob));
                     let mut completed_iterations = 0u64;

@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::cell::LazyCell;
+use std::{cell::LazyCell, sync::Arc};
 
 use carmen_rust::{
     CarmenState, Update,
@@ -19,7 +19,7 @@ use carmen_rust::{
             variants::managed::{VerkleNode, VerkleNodeId},
         },
     },
-    node_manager::in_memory_node_manager,
+    node_manager::in_memory_node_manager::InMemoryNodeManager,
     types::SlotUpdate,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -50,14 +50,19 @@ impl CarmenStateKind {
                 Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new())
                     as Box<dyn CarmenState>
             }
-            CarmenStateKind::ManagedInMemoryVerkleTrie => Box::new(
-                VerkleTrieCarmenState::<
-                    carmen_rust::database::ManagedVerkleTrie<
-                        in_memory_node_manager::InMemoryNodeManager<VerkleNodeId, VerkleNode>,
-                    >,
-                >::try_new(100_000)
-                .unwrap(),
-            ) as Box<dyn CarmenState>,
+            CarmenStateKind::ManagedInMemoryVerkleTrie => {
+                let mem_node_manager = Arc::new(
+                    InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(200_000),
+                );
+                Box::new(
+                    VerkleTrieCarmenState::<
+                        carmen_rust::database::ManagedVerkleTrie<
+                            InMemoryNodeManager<VerkleNodeId, VerkleNode>,
+                        >,
+                    >::try_new(mem_node_manager)
+                    .unwrap(),
+                ) as Box<dyn CarmenState>
+            }
         }
     }
 
@@ -145,62 +150,51 @@ fn state_read_benchmark(c: &mut criterion::Criterion) {
     };
 
     for initial_state in initial_states {
-        for existing in [true, false] {
-            let mut group = c.benchmark_group(format!(
-                "carmen_state_read/{initial_state:?}/existing={existing}"
-            ));
-            for state_type in CarmenStateKind::variants() {
-                let carmen_state = LazyCell::new(|| {
-                    let state = state_type.make_carmen_state();
-                    initial_state.init(&*state);
-                    state
-                });
-                for num_threads in pow_2_threads() {
-                    let mut completed_iterations = 0u64;
-                    group.bench_with_input(
-                        BenchmarkId::from_parameter(format!(
-                            "{state_type:?}/{num_threads:02}threads"
-                        )),
-                        &num_threads,
-                        |b, &num_threads| {
-                            let num_accounts = initial_state.num_accounts() as u64;
-                            let num_storage_keys = initial_state.num_storage_keys() as u64;
-                            let carmen_state = &*carmen_state;
-                            b.iter_custom(|iters| {
-                                execute_with_threads(
-                                    num_threads as u64,
-                                    iters,
-                                    &mut completed_iterations,
-                                    || (),
-                                    |iter, _| {
-                                        let account_index = iter % num_accounts;
-                                        let storage_index = if existing {
-                                            iter % num_storage_keys
-                                        } else {
-                                            iter + num_storage_keys
-                                        };
-                                        let account_address = {
-                                            let mut addr = [0u8; 20];
-                                            addr[0..8]
-                                                .copy_from_slice(&account_index.to_be_bytes());
-                                            addr
-                                        };
-                                        let storage_key = {
-                                            let mut key = [0u8; 32];
-                                            key[0..8].copy_from_slice(&storage_index.to_be_bytes());
-                                            key
-                                        };
-                                        std::hint::black_box(
-                                            carmen_state
-                                                .get_storage_value(&account_address, &storage_key)
-                                                .unwrap(),
-                                        );
-                                    },
-                                )
-                            });
-                        },
-                    );
-                }
+        let mut group = c.benchmark_group(format!("carmen_state_read/{initial_state:?}"));
+        for state_type in CarmenStateKind::variants() {
+            let carmen_state = LazyCell::new(|| {
+                let state = state_type.make_carmen_state();
+                initial_state.init(&*state);
+                state
+            });
+            for num_threads in pow_2_threads(Some(4)) {
+                let mut completed_iterations = 0u64;
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(format!("{state_type:?}/{num_threads:02}threads")),
+                    &num_threads,
+                    |b, &num_threads| {
+                        let num_accounts = initial_state.num_accounts() as u64;
+                        let num_storage_keys = initial_state.num_storage_keys() as u64;
+                        let carmen_state = &*carmen_state;
+                        b.iter_custom(|iters| {
+                            execute_with_threads(
+                                num_threads as u64,
+                                iters,
+                                &mut completed_iterations,
+                                || (),
+                                |iter, _| {
+                                    let account_index = iter % num_accounts;
+                                    let storage_index = iter % num_storage_keys;
+                                    let account_address = {
+                                        let mut addr = [0u8; 20];
+                                        addr[0..8].copy_from_slice(&account_index.to_be_bytes());
+                                        addr
+                                    };
+                                    let storage_key = {
+                                        let mut key = [0u8; 32];
+                                        key[0..8].copy_from_slice(&storage_index.to_be_bytes());
+                                        key
+                                    };
+                                    std::hint::black_box(
+                                        carmen_state
+                                            .get_storage_value(&account_address, &storage_key)
+                                            .unwrap(),
+                                    );
+                                },
+                            )
+                        });
+                    },
+                );
             }
         }
     }
