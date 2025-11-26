@@ -184,10 +184,7 @@ where
                         // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                         Some(manager.get_write_access(new_id)?)
                     };
-                    let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
-
-                    update_log.move_down(depth as usize, old_id);
 
                     // No need to log the update here, we are visiting the node again next
                     // iteration.
