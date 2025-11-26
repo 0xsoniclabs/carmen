@@ -12,6 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::{
     database::{
+        NodeVisitor,
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
             InnerNode, VerkleNode, VerkleNodeId,
@@ -19,6 +20,7 @@ use crate::{
         },
     },
     error::{BTResult, Error},
+    statistics::trie_count::TrieCountVisitor,
     types::{Key, Value},
 };
 
@@ -103,6 +105,23 @@ impl ManagedTrieNode for FullLeafNode {
 
     fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
         self.commitment = cache;
+        Ok(())
+    }
+}
+
+impl NodeVisitor<FullLeafNode> for TrieCountVisitor {
+    fn visit(&mut self, node: &FullLeafNode, level: u64) -> BTResult<(), Error> {
+        self.record_node_statistics(
+            node,
+            level,
+            "Leaf",
+            Some(|node: &FullLeafNode| {
+                node.values
+                    .iter()
+                    .filter(|value| **value != Value::default())
+                    .count() as u64
+            }),
+        );
         Ok(())
     }
 }
