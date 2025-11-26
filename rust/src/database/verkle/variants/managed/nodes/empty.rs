@@ -10,6 +10,7 @@
 
 use crate::{
     database::{
+        NodeVisitor,
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
             InnerNode, VerkleNode, VerkleNodeId,
@@ -18,6 +19,7 @@ use crate::{
         },
     },
     error::{BTResult, Error},
+    statistics::trie_count::TrieCountVisitor,
     types::{Key, Value},
 };
 
@@ -73,6 +75,13 @@ impl ManagedTrieNode for EmptyNode {
 
     fn get_commitment(&self) -> Self::Commitment {
         VerkleCommitment::default()
+    }
+}
+
+impl NodeVisitor<EmptyNode> for TrieCountVisitor {
+    fn visit(&mut self, node: &EmptyNode, level: u64) -> BTResult<(), Error> {
+        self.record_node_statistics(node, level, "Empty", None::<fn(&EmptyNode) -> u64>);
+        Ok(())
     }
 }
 

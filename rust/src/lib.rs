@@ -38,6 +38,7 @@ pub mod database;
 pub mod error;
 mod ffi;
 pub mod node_manager;
+pub mod statistics;
 pub mod storage;
 pub mod sync;
 pub mod types;
