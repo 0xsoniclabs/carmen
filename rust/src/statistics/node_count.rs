@@ -10,6 +10,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::statistics::{PrintStatistic, Statistic, formatters::StatisticsFormatter};
+
 /// Counts of different node kinds, organized by level.
 /// This can be used to answer questions such as "how many leaf nodes
 /// with 7 values are on level 3?".
@@ -51,7 +53,6 @@ pub struct NodeCountsByKindStatistic {
 }
 
 impl NodeCountsByKindStatistic {
-    #[cfg_attr(not(test), expect(unused))]
     fn new(counts: &NodeCountsByLevelAndKind) -> Self {
         let node_count = counts.levels_count.iter().fold(
             BTreeMap::<&'static str, NodeCountBySize>::default(),
@@ -83,7 +84,6 @@ pub struct NodeCountsByLevelStatistic {
 }
 
 impl NodeCountsByLevelStatistic {
-    #[cfg_attr(not(test), expect(unused))]
     fn new(node_count: &NodeCountsByLevelAndKind) -> Self {
         let mut node_depth = BTreeMap::new();
         for (level, stats) in node_count.levels_count.iter().enumerate() {
@@ -96,6 +96,34 @@ impl NodeCountsByLevelStatistic {
             );
         }
         Self { node_depth }
+    }
+}
+
+/// A statistic distribution to be printed by a [`StatisticsFormatter`].
+#[derive(Debug)]
+pub enum NodeCountStatistic {
+    NodeCountsByKind(NodeCountsByKindStatistic),
+    NodeCountsByLevelStatistic(NodeCountsByLevelStatistic),
+}
+
+impl From<NodeCountStatistic> for Statistic {
+    fn from(statistic: NodeCountStatistic) -> Self {
+        Statistic::NodeCount(statistic)
+    }
+}
+
+impl PrintStatistic for NodeCountsByLevelAndKind {
+    fn print(&self, writers: &mut [Box<dyn StatisticsFormatter>]) -> std::io::Result<()> {
+        let node_size_per_tree_stats =
+            NodeCountStatistic::NodeCountsByKind(NodeCountsByKindStatistic::new(self)).into();
+        let node_depth_stats =
+            NodeCountStatistic::NodeCountsByLevelStatistic(NodeCountsByLevelStatistic::new(self))
+                .into();
+        for writer in writers {
+            writer.print_statistic(&node_size_per_tree_stats)?;
+            writer.print_statistic(&node_depth_stats)?;
+        }
+        Ok(())
     }
 }
 
