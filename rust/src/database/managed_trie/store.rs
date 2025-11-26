@@ -184,10 +184,7 @@ where
                         // TODO: Fetching the node again here may interfere with cache eviction (https://github.com/0xsoniclabs/sonic-admin/issues/380)
                         Some(manager.get_write_access(new_id)?)
                     };
-                    let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
-
-                    update_log.move_down(depth as usize, old_id);
 
                     // No need to log the update here, we are visiting the node again next
                     // iteration.
@@ -627,12 +624,9 @@ mod tests {
             // The original child should not be marked as dirty
             assert!(!manager.is_dirty(child_id));
 
-            // All three nodes should be present in the log, but the original child should have
-            // moved down.
             assert_eq!(log.count(), 3);
             assert_eq!(log.dirty_nodes(0), [root_id]);
-            assert_eq!(log.dirty_nodes(1), [new_parent_id]);
-            assert_eq!(log.dirty_nodes(2), [child_id]);
+            assert_eq!(log.dirty_nodes(1), [new_parent_id, child_id]);
         });
     }
 
