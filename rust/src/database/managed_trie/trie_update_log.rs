@@ -42,14 +42,6 @@ impl<ID: Copy + Eq + std::hash::Hash> TrieUpdateLog<ID> {
         guard[depth].remove(&id);
     }
 
-    /// Moves the node with the given `id` from the specified `from_depth` to the next level down.
-    pub fn move_down(&self, from_depth: usize, id: ID) {
-        let guard = self.access_level(from_depth + 1);
-        if guard[from_depth].remove(&id).is_some() {
-            guard[from_depth + 1].insert(id);
-        }
-    }
-
     /// Counts the total number of dirty nodes across all levels.
     pub fn count(&self) -> usize {
         let guard = self.dirty_nodes_by_level.read().unwrap();
@@ -169,28 +161,6 @@ mod tests {
     }
 
     #[test]
-    fn move_down_moves_id_from_one_level_to_the_next() {
-        let log: TrieUpdateLog<u32> = TrieUpdateLog::new();
-
-        log.mark_dirty(0, 10);
-        log.move_down(0, 10);
-        let levels = log.dirty_nodes_by_level.read().unwrap();
-        assert_eq!(levels.len(), 2);
-        assert_eq!(levels[0].len(), 0);
-        assert_eq!(levels[1].len(), 1);
-        assert!(levels[1].contains(&10));
-        drop(levels);
-
-        // Moving non-existing id is no-op
-        log.move_down(0, 20);
-        let levels = log.dirty_nodes_by_level.read().unwrap();
-        assert_eq!(levels.len(), 2);
-        assert_eq!(levels[0].len(), 0);
-        assert_eq!(levels[1].len(), 1);
-        assert!(levels[1].contains(&10));
-    }
-
-    #[test]
     fn count_counts_all_dirty_ids_across_levels() {
         let log: TrieUpdateLog<u32> = TrieUpdateLog::new();
 
@@ -209,9 +179,6 @@ mod tests {
         assert_eq!(log.count(), 6);
 
         log.delete(0, 1);
-        assert_eq!(log.count(), 5);
-
-        log.move_down(2, 5);
         assert_eq!(log.count(), 5);
     }
 
