@@ -17,6 +17,7 @@ pub use nodes::{
 
 use crate::{
     database::{
+        NodeVisitor, TrieAccept,
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
             crypto::Commitment, variants::managed::commitment::update_commitments,
@@ -74,6 +75,17 @@ where
     }
 }
 
+impl<M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync> TrieAccept
+    for ManagedVerkleTrie<M>
+{
+    type Node = VerkleNode;
+
+    fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error> {
+        let root = self.manager.get_read_access(*self.root.read().unwrap())?;
+        root.accept(visitor, &*self.manager, 0)
+    }
+}
+
 impl<M> VerkleTrie for ManagedVerkleTrie<M>
 where
     M: NodeManager<Id = VerkleNodeId, Node = VerkleNode>
@@ -116,7 +128,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        database::verkle::test_utils::{make_leaf_key, make_value},
+        database::{
+            MockNodeVisitor,
+            verkle::test_utils::{make_leaf_key, make_value},
+        },
         node_manager::in_memory_node_manager::InMemoryNodeManager,
         sync::{RwLockReadGuard, RwLockWriteGuard},
     };
@@ -186,6 +201,60 @@ mod tests {
         // We currently always set the root id for block height 0
         let stored_root_id = manager.get_root_id(0).unwrap();
         assert_eq!(root_id, stored_root_id);
+    }
+
+    #[test]
+    fn accept_traverses_all_nodes() {
+        // The test uses VerkleNodes to test also the `VerkleNode::accept` implementation.
+        let node_manager = Arc::new(InMemoryNodeManager::new(10));
+
+        let leaf_node_1_id = node_manager.add(VerkleNode::Leaf2(Box::default())).unwrap();
+        let mut inner_node_child = InnerNode::default();
+        inner_node_child.children[0] = leaf_node_1_id;
+        let inner_node_child_id = node_manager
+            .add(VerkleNode::Inner(Box::new(inner_node_child)))
+            .unwrap();
+        let leaf_node_2_id = node_manager
+            .add(VerkleNode::Leaf256(Box::default()))
+            .unwrap();
+        let mut inner_node = InnerNode::default();
+        inner_node.children[0] = inner_node_child_id;
+        inner_node.children[1] = leaf_node_2_id;
+        let inner_node_id = node_manager
+            .add(VerkleNode::Inner(Box::new(inner_node)))
+            .unwrap();
+
+        // Register the root node
+        node_manager.set_root_id(0, inner_node_id).unwrap();
+        let trie = ManagedVerkleTrie::try_new(node_manager.clone()).unwrap();
+
+        let mut mock_visitor = MockNodeVisitor::<VerkleNode>::new();
+        mock_visitor
+            .expect_visit()
+            .withf(|node, level| matches!(node, VerkleNode::Inner(_)) && *level == 0)
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_visitor
+            .expect_visit()
+            .withf(|node, level| matches!(node, VerkleNode::Inner(_)) && *level == 1)
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_visitor
+            .expect_visit()
+            .withf(|node, level| matches!(node, VerkleNode::Leaf2(_)) && *level == 2)
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_visitor
+            .expect_visit()
+            .withf(|node, level| matches!(node, VerkleNode::Leaf256(_)) && *level == 1)
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_visitor
+            .expect_visit()
+            .withf(|node, _| matches!(node, VerkleNode::Empty(_)))
+            .returning(|_, _| Ok(()));
+
+        trie.accept(&mut mock_visitor).unwrap();
     }
 
     struct TestNodeWrapper {

@@ -42,8 +42,6 @@ pub trait VerkleTrie: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
     use crate::{
         database::verkle::{
@@ -53,6 +51,7 @@ mod tests {
         },
         error::BTError,
         node_manager::in_memory_node_manager::InMemoryNodeManager,
+        sync::Arc,
     };
 
     #[rstest_reuse::template]

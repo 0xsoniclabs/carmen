@@ -199,10 +199,11 @@ impl<const P: usize, F: FileBackend, const D: bool> MultiPageCachedFile<P, F, D>
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
-    use crate::{storage::file::MockFileBackend, sync::is_finished};
+    use crate::{
+        storage::file::MockFileBackend,
+        sync::{Arc, is_finished},
+    };
 
     #[test]
     fn accessing_cache_data_does_not_trigger_io_operations() {

@@ -12,6 +12,7 @@ use derive_deftly::Deftly;
 
 use crate::{
     database::{
+        NodeVisitor,
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction, UnionManagedTrieNode},
         verkle::variants::managed::{
             VerkleNodeId,
@@ -25,6 +26,7 @@ use crate::{
         },
     },
     error::{BTResult, Error},
+    node_manager::NodeManager,
     storage::file::derive_deftly_template_FileStorageManager,
     types::{HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
 };
@@ -73,6 +75,23 @@ impl VerkleNode {
             VerkleNode::Leaf2(n) => n.get_commitment_input(),
             VerkleNode::Leaf256(n) => n.get_commitment_input(),
         }
+    }
+
+    /// Accepts a visitor for recursively traversing the node and its children.
+    pub fn accept(
+        &self,
+        visitor: &mut impl NodeVisitor<Self>,
+        manager: &impl NodeManager<Id = VerkleNodeId, Node = VerkleNode>,
+        level: u64,
+    ) -> BTResult<(), Error> {
+        visitor.visit(self, level)?;
+        if let VerkleNode::Inner(inner) = self {
+            for child_id in inner.children.iter() {
+                let child = manager.get_read_access(*child_id)?;
+                child.accept(visitor, manager, level + 1)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -252,6 +271,8 @@ pub fn make_smallest_leaf_node_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    //NOTE: Tests for the accept method are in managed::mod.rs
 
     #[test]
     fn node_type_byte_size_returns_correct_size() {

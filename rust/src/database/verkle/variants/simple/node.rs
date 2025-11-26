@@ -9,10 +9,14 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use crate::{
-    database::verkle::{
-        compute_commitment::compute_leaf_node_commitment,
-        crypto::{Commitment, Scalar},
+    database::{
+        NodeVisitor,
+        verkle::{
+            compute_commitment::compute_leaf_node_commitment,
+            crypto::{Commitment, Scalar},
+        },
     },
+    error::{BTResult, Error},
     types::{Key, Value},
 };
 
@@ -82,6 +86,17 @@ impl Node {
             Node::Inner(inner) => inner.commitment_dirty,
             Node::Leaf(leaf) => leaf.commitment_dirty,
         }
+    }
+
+    /// Accepts a visitor for recursively traversing the node and its children.
+    pub fn accept(&self, visitor: &mut impl NodeVisitor<Self>, level: u64) -> BTResult<(), Error> {
+        visitor.visit(self, level)?;
+        if let Node::Inner(inner) = self {
+            for child in inner.children.iter() {
+                child.accept(visitor, level + 1)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -257,6 +272,8 @@ mod tests {
         crypto::Scalar,
         test_utils::{make_key, make_leaf_key, make_value},
     };
+
+    //NOTE: Tests for the accept method are in simple::mod.rs
 
     #[test]
     fn empty_node_store_creates_inner_node() {

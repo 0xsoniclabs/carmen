@@ -11,7 +11,10 @@
 mod node;
 
 use crate::{
-    database::verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
+    database::{
+        NodeVisitor, TrieAccept,
+        verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
+    },
     error::{BTResult, Error},
     sync::Mutex,
     types::{Key, Value},
@@ -63,6 +66,14 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     }
 }
 
+impl TrieAccept for SimpleInMemoryVerkleTrie {
+    type Node = Node;
+
+    fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error> {
+        self.root.lock().unwrap().accept(visitor, 0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +92,46 @@ mod tests {
         let want = trie.root.lock().unwrap().commit();
 
         assert_eq!(have, want);
+    }
+
+    #[test]
+    fn accept_traverses_all_nodes() {
+        struct TestVisitor {
+            values: Vec<Value>,
+        }
+
+        impl NodeVisitor<Node> for TestVisitor {
+            fn visit(&mut self, node: &Node, _level: u64) -> BTResult<(), Error> {
+                match node {
+                    Node::Leaf(leaf_node) => {
+                        for key in [
+                            make_leaf_key(&[1], 1),
+                            make_leaf_key(&[2], 2),
+                            make_leaf_key(&[3], 3),
+                        ] {
+                            let value = leaf_node.lookup(&key);
+                            if value != Value::default() {
+                                self.values.push(value);
+                            }
+                        }
+                    }
+                    Node::Empty | Node::Inner(_) => {}
+                }
+                Ok(())
+            }
+        }
+        let trie = SimpleInMemoryVerkleTrie::new();
+        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
+        trie.store(&make_leaf_key(&[2], 2), &make_value(2)).unwrap();
+        trie.store(&make_leaf_key(&[3], 3), &make_value(3)).unwrap();
+
+        let mut visitor = TestVisitor { values: Vec::new() };
+        trie.accept(&mut visitor).unwrap();
+
+        visitor.values.sort();
+        assert_eq!(
+            visitor.values,
+            vec![make_value(1), make_value(2), make_value(3)]
+        );
     }
 }
