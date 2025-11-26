@@ -8,10 +8,4 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod crate_crypto;
-pub mod managed;
-pub mod simple;
-
-pub use crate_crypto::CrateCryptoInMemoryVerkleTrie;
-pub use managed::ManagedVerkleTrie;
-pub use simple::SimpleInMemoryVerkleTrie;
+pub mod trie_count;

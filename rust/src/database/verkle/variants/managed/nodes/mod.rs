@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::ops::Deref;
+
 use derive_deftly::Deftly;
 
 use crate::{
@@ -27,6 +29,7 @@ use crate::{
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
+    statistics::trie_count::TrieCountVisitor,
     storage::file::derive_deftly_template_FileStorageManager,
     types::{HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
 };
@@ -95,6 +98,17 @@ impl VerkleNode {
             }
         }
         Ok(())
+    }
+}
+
+impl NodeVisitor<VerkleNode> for TrieCountVisitor {
+    fn visit(&mut self, node: &VerkleNode, level: u64) -> BTResult<(), Error> {
+        match node {
+            VerkleNode::Empty(n) => self.visit(n, level),
+            VerkleNode::Inner(n) => self.visit(n.deref(), level),
+            VerkleNode::Leaf2(n) => self.visit(n.deref(), level),
+            VerkleNode::Leaf256(n) => self.visit(n.deref(), level),
+        }
     }
 }
 
