@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 mod compute_commitment;
-mod crypto;
+pub mod crypto;
 mod embedding;
 mod keyed_update;
 mod state;

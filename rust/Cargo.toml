@@ -37,6 +37,10 @@ harness = false
 name = "carmen_state"
 harness = false
 
+[[bench]]
+name = "pedersen_commitment"
+harness = false
+
 [features]
 tracy = ["tracy-client/default"]
 shuttle = ["quick_cache/shuttle", "dep:shuttle"]
