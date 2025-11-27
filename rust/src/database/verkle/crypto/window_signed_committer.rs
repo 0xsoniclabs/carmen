@@ -44,7 +44,9 @@ impl Committer for WindowSignedCommitter {
             return self.precomp_first_five.mul(scalars);
         }
 
-        self.precomp.mul(scalars)
+        // MSMPrecompWindowSigned does not like slices longer than the number of
+        // points, so we manually truncate it here.
+        self.precomp.mul(&scalars[..256.min(scalars.len())])
     }
 
     fn scalar_mul(&self, scalar: Fr, index: usize) -> Element {
