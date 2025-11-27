@@ -185,24 +185,24 @@ mod tests {
             assert!(t.is_finished());
         });
 
-        // holding a write lock does not allow writes from the corresponding offset
+        // holding a read lock does not allow writes to the corresponding offset
+        sync::thread::scope(|s| {
+            let read_guard = file.locks[0].try_read().unwrap();
+            let t = s.spawn(|| file.write_all_at(&buf, 0).unwrap());
+            sync::thread::sleep(Duration::from_millis(100));
+            assert!(!t.is_finished());
+            drop(read_guard);
+            sync::thread::sleep(Duration::from_millis(100));
+            assert!(t.is_finished());
+        });
+
+        // holding a write lock does not allow writes to the corresponding offset
         sync::thread::scope(|s| {
             let write_guard = file.locks[0].try_write().unwrap();
             let t = s.spawn(|| file.write_all_at(&buf, 0).unwrap());
             sync::thread::sleep(Duration::from_millis(100));
             assert!(!t.is_finished());
             drop(write_guard);
-            sync::thread::sleep(Duration::from_millis(100));
-            assert!(t.is_finished());
-        });
-
-        // holding a read lock does not allow writes from the corresponding offset
-        sync::thread::scope(|s| {
-            let read_guard = file.locks[0].try_write().unwrap();
-            let t = s.spawn(|| file.write_all_at(&buf, 0).unwrap());
-            sync::thread::sleep(Duration::from_millis(100));
-            assert!(!t.is_finished());
-            drop(read_guard);
             sync::thread::sleep(Duration::from_millis(100));
             assert!(t.is_finished());
         });
