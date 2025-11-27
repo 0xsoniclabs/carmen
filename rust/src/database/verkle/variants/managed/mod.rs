@@ -17,12 +17,12 @@ pub use nodes::{
 
 use crate::{
     database::{
-        AcceptVisitor, NodeVisitor,
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
             crypto::Commitment, variants::managed::commitment::update_commitments,
             verkle_trie::VerkleTrie,
         },
+        visitor::{AcceptVisitor, NodeVisitor},
     },
     error::{BTError, BTResult, Error},
     node_manager::NodeManager,
@@ -129,8 +129,8 @@ mod tests {
     use super::*;
     use crate::{
         database::{
-            MockNodeVisitor,
             verkle::test_utils::{make_leaf_key, make_value},
+            visitor::MockNodeVisitor,
         },
         node_manager::in_memory_node_manager::InMemoryNodeManager,
         sync::{RwLockReadGuard, RwLockWriteGuard},
@@ -205,7 +205,6 @@ mod tests {
 
     #[test]
     fn accept_traverses_all_nodes() {
-        // The test uses VerkleNodes to test also the `VerkleNode::accept` implementation.
         let node_manager = Arc::new(InMemoryNodeManager::new(10));
 
         let leaf_node_1_id = node_manager.add(VerkleNode::Leaf2(Box::default())).unwrap();

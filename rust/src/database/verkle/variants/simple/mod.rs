@@ -12,8 +12,8 @@ mod node;
 
 use crate::{
     database::{
-        AcceptVisitor, NodeVisitor,
         verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
+        visitor::{AcceptVisitor, NodeVisitor},
     },
     error::{BTResult, Error},
     sync::Mutex,

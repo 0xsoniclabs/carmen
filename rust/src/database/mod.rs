@@ -10,24 +10,10 @@
 
 mod managed_trie;
 pub mod verkle;
+pub mod visitor;
 
 pub use managed_trie::ManagedTrieNode;
 pub use verkle::{
     CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie,
     VerkleTrieCarmenState,
 };
-
-use crate::error::{BTResult, Error};
-
-/// A trait for accepting a visitor.
-pub trait AcceptVisitor {
-    type Node;
-
-    fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error>;
-}
-
-/// A trait for visiting trie nodes.
-#[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
-pub trait NodeVisitor<N> {
-    fn visit(&mut self, node: &N, level: u64) -> BTResult<(), Error>;
-}

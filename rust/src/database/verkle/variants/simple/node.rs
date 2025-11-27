@@ -10,11 +10,11 @@
 
 use crate::{
     database::{
-        NodeVisitor,
         verkle::{
             compute_commitment::compute_leaf_node_commitment,
             crypto::{Commitment, Scalar},
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
     types::{Key, Value},
@@ -276,7 +276,7 @@ mod tests {
         test_utils::{make_key, make_leaf_key, make_value},
     };
 
-    //NOTE: Tests for the accept method are in simple::mod.rs
+    // NOTE: Tests for the accept method are in simple/mod.rs
 
     #[test]
     fn empty_node_store_creates_inner_node() {
