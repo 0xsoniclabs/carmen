@@ -44,6 +44,7 @@ harness = false
 [features]
 tracy = ["tracy-client/default"]
 shuttle = ["quick_cache/shuttle", "dep:shuttle"]
+storage-statistics = []
 
 [dependencies]
 # datastructures

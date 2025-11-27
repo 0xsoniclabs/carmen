@@ -12,6 +12,7 @@ use crate::statistics::{formatters::StatisticsFormatter, node_count::NodeCountSt
 
 pub mod formatters;
 pub mod node_count;
+pub mod storage;
 
 /// A trait for printing the available statistics on the implementing type with the provided
 /// [`StatisticsFormatter`]s.

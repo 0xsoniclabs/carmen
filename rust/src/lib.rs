@@ -15,6 +15,8 @@
 
 use std::{mem::MaybeUninit, ops::Deref, path::Path};
 
+#[cfg(feature = "storage-statistics")]
+use crate::statistics::storage::StorageOperationLogger;
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
@@ -91,6 +93,9 @@ pub fn open_carmen_db(
         >::new()))),
         b"file" => {
             let storage = VerkleStorage::open(&live_dir, DbMode::ReadWrite)?;
+            #[cfg(feature = "storage-statistics")]
+            let storage = StorageOperationLogger::try_new(storage, Path::new("."))?;
+
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382

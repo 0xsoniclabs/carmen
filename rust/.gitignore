@@ -7,3 +7,4 @@ shuttle_permutation_case.bin
 # Statistics
 carmen_stats*
 node_optimization_results.txt
+.venv/
