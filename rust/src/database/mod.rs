@@ -19,8 +19,8 @@ pub use verkle::{
 
 use crate::error::{BTResult, Error};
 
-/// A trait for accepting a visitor for traversing trie nodes.
-pub trait TrieAccept {
+/// A trait for accepting a visitor.
+pub trait AcceptVisitor {
     type Node;
 
     fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error>;

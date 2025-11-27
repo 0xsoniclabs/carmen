@@ -12,7 +12,7 @@ mod node;
 
 use crate::{
     database::{
-        NodeVisitor, TrieAccept,
+        AcceptVisitor, NodeVisitor,
         verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
     },
     error::{BTResult, Error},
@@ -66,7 +66,7 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     }
 }
 
-impl TrieAccept for SimpleInMemoryVerkleTrie {
+impl AcceptVisitor for SimpleInMemoryVerkleTrie {
     type Node = Node;
 
     fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error> {

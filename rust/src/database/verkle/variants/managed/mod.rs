@@ -17,7 +17,7 @@ pub use nodes::{
 
 use crate::{
     database::{
-        NodeVisitor, TrieAccept,
+        AcceptVisitor, NodeVisitor,
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
             crypto::Commitment, variants::managed::commitment::update_commitments,
@@ -75,7 +75,7 @@ where
     }
 }
 
-impl<M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync> TrieAccept
+impl<M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync> AcceptVisitor
     for ManagedVerkleTrie<M>
 {
     type Node = VerkleNode;
