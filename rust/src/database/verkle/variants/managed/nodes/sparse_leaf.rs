@@ -208,16 +208,15 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
 
 impl<const N: usize> NodeVisitor<SparseLeafNode<N>> for TrieCountVisitor {
     fn visit(&mut self, node: &SparseLeafNode<N>, level: u64) -> BTResult<(), Error> {
-        self.record_node_statistics(
-            node,
+        self.count_node(
             level,
             "Leaf",
-            Some(|node: &SparseLeafNode<N>| {
+            Some(
                 node.values
                     .iter()
                     .filter(|value| value.value != Value::default())
-                    .count() as u64
-            }),
+                    .count() as u64,
+            ),
         );
         Ok(())
     }

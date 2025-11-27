@@ -79,8 +79,8 @@ impl ManagedTrieNode for EmptyNode {
 }
 
 impl NodeVisitor<EmptyNode> for TrieCountVisitor {
-    fn visit(&mut self, node: &EmptyNode, level: u64) -> BTResult<(), Error> {
-        self.record_node_statistics(node, level, "Empty", None::<fn(&EmptyNode) -> u64>);
+    fn visit(&mut self, _node: &EmptyNode, level: u64) -> BTResult<(), Error> {
+        self.count_node(level, "Empty", None);
         Ok(())
     }
 }

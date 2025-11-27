@@ -111,16 +111,15 @@ impl ManagedTrieNode for FullLeafNode {
 
 impl NodeVisitor<FullLeafNode> for TrieCountVisitor {
     fn visit(&mut self, node: &FullLeafNode, level: u64) -> BTResult<(), Error> {
-        self.record_node_statistics(
-            node,
+        self.count_node(
             level,
             "Leaf",
-            Some(|node: &FullLeafNode| {
+            Some(
                 node.values
                     .iter()
                     .filter(|value| **value != Value::default())
-                    .count() as u64
-            }),
+                    .count() as u64,
+            ),
         );
         Ok(())
     }
