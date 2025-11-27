@@ -18,7 +18,7 @@ fn commitment_benchmark(c: &mut Criterion) {
     );
 
     // The first five (0..=4) indices are particularly important for key computations
-    // (tree embedding) and typically use lookup tables with larger window sizes.
+    // (state embedding) and typically use lookup tables with larger window sizes.
     let scenarios = [
         ("0=zero", vec![(0, Scalar::zero())]),
         ("0=random", vec![(0, random)]),
@@ -56,13 +56,12 @@ fn commitment_benchmark(c: &mut Criterion) {
             BenchmarkId::from_parameter("new"),
             &index_values,
             |b, index_values| {
+                let max_index = index_values.iter().map(|(slot, _)| *slot).max().unwrap();
+                let mut scalars = vec![Scalar::zero(); max_index as usize + 1];
+                for (slot, new) in index_values.iter() {
+                    scalars[*slot as usize] = *new;
+                }
                 b.iter(|| {
-                    let max_index = index_values.iter().map(|(slot, _)| *slot).max().unwrap();
-                    let mut scalars = vec![Scalar::zero(); max_index as usize + 1];
-                    for (slot, new) in index_values.iter() {
-                        scalars[*slot as usize] = *new;
-                    }
-
                     Commitment::new(&scalars);
                 });
             },
