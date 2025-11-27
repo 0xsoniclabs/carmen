@@ -34,10 +34,10 @@ use crate::error::BTResult;
 ///
 /// Implementations of this trait are required to ensure that concurrent operations are safe and
 /// free of data races.
-/// All read and write operations must use offsets that are multiples of the
-/// specified chunk size and buffers whose lengths are exactly equal to the chunk size.
-/// If implementations rely on this invariant they are required to check it, and return an
-/// error if it is violated.
+/// Implementations may require all read and write operations to use offsets that are multiples
+/// of the chunk size and buffers whose lengths are equal to the chunk size to ensure safe
+/// concurrent access. Implementations that rely on this invariant are required to check it and
+/// return an error if it is violated.
 #[allow(clippy::len_without_is_empty)]
 #[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait FileBackend: Send + Sync {

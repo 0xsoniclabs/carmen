@@ -166,7 +166,7 @@ mod tests {
         };
         let file = &file;
 
-        // holding a read lock allows reads to the corresponding offset
+        // holding a read lock allows reads from the corresponding offset
         sync::thread::scope(|s| {
             let _read_guard = file.locks[0].try_read().unwrap();
             let t = s.spawn(|| file.read_exact_at(&mut buf, 0).unwrap());
@@ -174,7 +174,7 @@ mod tests {
             assert!(t.is_finished());
         });
 
-        // holding a write lock does not allow reads to the corresponding offset
+        // holding a write lock does not allow reads from the corresponding offset
         sync::thread::scope(|s| {
             let write_guard = file.locks[0].try_write().unwrap();
             let t = s.spawn(|| file.read_exact_at(&mut buf, 0).unwrap());
@@ -185,7 +185,7 @@ mod tests {
             assert!(t.is_finished());
         });
 
-        // holding a write lock does not allow reads to the corresponding offset
+        // holding a write lock does not allow writes from the corresponding offset
         sync::thread::scope(|s| {
             let write_guard = file.locks[0].try_write().unwrap();
             let t = s.spawn(|| file.write_all_at(&buf, 0).unwrap());
@@ -196,7 +196,7 @@ mod tests {
             assert!(t.is_finished());
         });
 
-        // holding a read lock does not allow writes to the corresponding offset
+        // holding a read lock does not allow writes from the corresponding offset
         sync::thread::scope(|s| {
             let read_guard = file.locks[0].try_write().unwrap();
             let t = s.spawn(|| file.write_all_at(&buf, 0).unwrap());
