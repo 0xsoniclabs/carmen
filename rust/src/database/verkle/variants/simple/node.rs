@@ -273,27 +273,25 @@ impl NodeVisitor<Node> for TrieCountVisitor {
     fn visit(&mut self, node: &Node, level: u64) -> BTResult<(), Error> {
         match node {
             Node::Empty => {
-                self.record_node_statistics(node, level, "Empty", None::<fn(&Node) -> u64>);
+                self.count_node(level, "Empty", None);
             }
             Node::Leaf(node) => {
-                self.record_node_statistics(
-                    node,
+                self.count_node(
                     level,
                     "Leaf",
-                    Some(|n: &LeafNode| n.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
+                    Some(node.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
                 );
             }
             Node::Inner(node) => {
-                self.record_node_statistics(
-                    node,
+                self.count_node(
                     level,
                     "Inner",
-                    Some(|n: &InnerNode| {
-                        n.children
+                    Some(
+                        node.children
                             .iter()
                             .filter(|c| !matches!(c, Node::Empty))
-                            .count() as u64
-                    }),
+                            .count() as u64,
+                    ),
                 );
             }
         }
