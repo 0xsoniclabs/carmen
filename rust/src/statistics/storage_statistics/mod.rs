@@ -1,0 +1,627 @@
+// Copyright (c) 2025 Sonic Operations Ltd
+//
+// Use of this software is governed by the Business Source License included
+// in the LICENSE file and at soniclabs.com/bsl11.
+//
+// Change Date: 2028-4-16
+//
+// On the date above, in accordance with the Business Source License, use of
+// this software will be governed by the GNU Lesser General Public License v3.
+
+use std::{
+    fmt,
+    io::Write,
+    path::{Path, PathBuf},
+};
+
+use dashmap::{DashMap, DashSet};
+
+use crate::{
+    error::BTResult,
+    storage::{self, Checkpointable, RootIdProvider, Storage},
+    sync::{Arc, Mutex, atomic, thread},
+    types::TreeId,
+};
+
+/// An operation that can be performed on the storage.
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+enum StorageOperation {
+    Get,
+    Set,
+    Reserve,
+    Delete,
+}
+
+impl std::fmt::Display for StorageOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StorageOperation::Get => write!(f, "G"),
+            StorageOperation::Set => write!(f, "S"),
+            StorageOperation::Reserve => write!(f, "R"),
+            StorageOperation::Delete => write!(f, "D"),
+        }
+    }
+}
+
+/// A storage operation with timestamp and file offset metadata.
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+struct StorageOpWithMetadata {
+    op: StorageOperation,
+    timestamp: u128,
+    offset: u64,
+}
+
+impl fmt::Display for StorageOpWithMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{},{},{}", self.op, self.timestamp, self.offset)
+    }
+}
+
+/// A storage wrapper that collects statistics about storage operations.
+/// It records the type of operation, timestamp, and offset of each operation.
+/// A background worker periodically flushes the collected statistics to disk.
+pub struct StorageStatistics<S: Storage> {
+    storage: S,
+    op_with_time_stats: Arc<DashSet<StorageOpWithMetadata>>,
+    _worker: StorageStatisticsWorker,
+}
+
+impl<S: Storage> StorageStatistics<S> {
+    /// Create a new storage statistics wrapper around the given storage.
+    pub fn try_new(storage: S, path: &Path) -> BTResult<Self, storage::Error> {
+        let op_with_time_stats = Arc::new(DashSet::new());
+        let _worker = StorageStatisticsWorker::new(op_with_time_stats.clone(), path)?;
+        Ok(Self {
+            storage,
+            op_with_time_stats,
+            _worker,
+        })
+    }
+
+    /// Log a storage operation with the current timestamp and offset.
+    fn add(&self, op: StorageOperation, offset: u64) {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_micros();
+        self.op_with_time_stats.insert(StorageOpWithMetadata {
+            op,
+            timestamp,
+            offset,
+        });
+    }
+}
+
+impl<S: Storage> Storage for StorageStatistics<S>
+where
+    S::Id: TreeId,
+{
+    type Id = S::Id;
+
+    type Item = S::Item;
+
+    fn open(path: &std::path::Path) -> BTResult<Self, crate::storage::Error>
+    where
+        Self: Sized,
+    {
+        let storage = S::open(path)?;
+        Self::try_new(storage, path)
+    }
+
+    fn get(&self, id: Self::Id) -> BTResult<Self::Item, crate::storage::Error> {
+        self.add(StorageOperation::Get, id.to_index());
+        let item = self.storage.get(id)?;
+        Ok(item)
+    }
+
+    fn reserve(&self, item: &Self::Item) -> Self::Id {
+        let id = self.storage.reserve(item);
+        self.add(StorageOperation::Reserve, id.to_index());
+        id
+    }
+
+    fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), crate::storage::Error> {
+        self.add(StorageOperation::Set, id.to_index());
+        self.storage.set(id, item)?;
+        Ok(())
+    }
+
+    fn delete(&self, id: Self::Id) -> BTResult<(), crate::storage::Error> {
+        self.add(StorageOperation::Delete, id.to_index());
+        self.storage.delete(id)
+    }
+
+    fn close(self) -> BTResult<(), crate::storage::Error> {
+        self.storage.close()
+    }
+}
+
+impl<S> Checkpointable for StorageStatistics<S>
+where
+    S: Storage + Checkpointable,
+{
+    fn checkpoint(&self) -> BTResult<u64, crate::storage::Error> {
+        self.storage.checkpoint()
+    }
+
+    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), crate::storage::Error> {
+        S::restore(path, checkpoint)
+    }
+}
+
+impl<S> RootIdProvider for StorageStatistics<S>
+where
+    S: Storage + RootIdProvider,
+{
+    type Id = <S as RootIdProvider>::Id;
+
+    fn get_root_id(&self, block_number: u64) -> BTResult<Self::Id, crate::storage::Error> {
+        self.storage.get_root_id(block_number)
+    }
+
+    fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), crate::storage::Error> {
+        self.storage.set_root_id(block_number, id)
+    }
+}
+
+/// Worker that periodically flushes the collected storage statistics to disk.
+/// On close, it writes the total number of operations executed to a separate file.
+pub struct StorageStatisticsWorker {
+    total_op_executed: Arc<DashMap<StorageOperation, u64>>,
+    stop_signal: Arc<atomic::AtomicBool>,
+    has_worker_finished: Arc<atomic::AtomicBool>,
+    storage_path: PathBuf,
+}
+
+impl StorageStatisticsWorker {
+    const OP_WITH_TIME: &str = "carmen_storage_op_with_timestamp.csv";
+    const TOTAL_OP_EXECUTED: &str = "carmen_storage_total_executed_op.csv";
+    const BUFFER_SIZE: usize = 100000;
+
+    /// Construct a new worker and runs it in the background.
+    fn new(
+        op_with_time_stats: Arc<DashSet<StorageOpWithMetadata>>,
+        path: &Path,
+    ) -> BTResult<Self, storage::Error> {
+        let file = Mutex::new(std::fs::File::create(path.join(Self::OP_WITH_TIME))?);
+        file.lock()
+            .unwrap()
+            .write_all("Op,Timestamp,Offset\n".as_bytes())?;
+
+        let stop_signal = Arc::new(atomic::AtomicBool::new(false));
+        let has_worker_finished = Arc::new(atomic::AtomicBool::new(false));
+        let total_op_executed = Arc::new(DashMap::from_iter([
+            (StorageOperation::Get, 0),
+            (StorageOperation::Set, 0),
+            (StorageOperation::Reserve, 0),
+            (StorageOperation::Delete, 0),
+        ]));
+
+        {
+            let stop_signal = stop_signal.clone();
+            let total_op_executed = total_op_executed.clone();
+            let has_worker_finished = has_worker_finished.clone();
+            thread::spawn(move || {
+                while !stop_signal.load(atomic::Ordering::Relaxed) {
+                    thread::sleep(std::time::Duration::from_secs(1));
+                    Self::flush(&op_with_time_stats, &total_op_executed, &file).unwrap();
+                }
+                Self::flush(&op_with_time_stats, &total_op_executed, &file).unwrap(); // Final flush on stop
+                has_worker_finished.store(true, atomic::Ordering::Relaxed);
+            });
+        };
+
+        Ok(Self {
+            total_op_executed,
+            stop_signal,
+            has_worker_finished,
+            storage_path: path.to_path_buf(),
+        })
+    }
+
+    /// Writes to disk the collected statistics and clears the in-memory buffer.
+    fn flush(
+        op_with_timestamp: &DashSet<StorageOpWithMetadata>,
+        total_op_executed: &Arc<DashMap<StorageOperation, u64>>,
+        file: &Mutex<std::fs::File>,
+    ) -> BTResult<(), storage::Error> {
+        let mut file = file.lock().unwrap();
+        let mut entry_to_remove = Vec::with_capacity(Self::BUFFER_SIZE);
+        for entry in op_with_timestamp.iter() {
+            total_op_executed
+                .entry(entry.op)
+                .and_modify(|count| *count += 1);
+            writeln!(file, "{}", *entry)?;
+            entry_to_remove.push(*entry);
+        }
+        op_with_timestamp.retain(|e| !entry_to_remove.contains(e));
+        Ok(())
+    }
+}
+
+impl Drop for StorageStatisticsWorker {
+    /// On drop, stops the background worker and writes the total operations executed to disk.
+    fn drop(&mut self) {
+        self.stop_signal.store(true, atomic::Ordering::Relaxed);
+        while !self.has_worker_finished.load(atomic::Ordering::Relaxed) {
+            thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        let mut file = std::fs::File::create(self.storage_path.join(Self::TOTAL_OP_EXECUTED))
+            .expect("Failed to create total operations executed file");
+        writeln!(file, "Op,Count").unwrap();
+        for entry in self.total_op_executed.iter() {
+            writeln!(file, "{},{}", entry.key(), entry.value()).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use mockall::predicate::eq;
+
+    use super::*;
+    use crate::{
+        statistics::storage_statistics::tests::mock::MockStorage,
+        utils::{
+            test_dir::{Permissions, TestDir},
+            test_nodes::TestNodeId,
+        },
+    };
+
+    #[test]
+    fn storage_statistics_worker_new_initializes_correctly_and_creates_files() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let op_with_time_stats = Arc::new(DashSet::new());
+        let worker = StorageStatisticsWorker::new(op_with_time_stats, test_dir.path())
+            .expect("Failed to create worker");
+
+        assert!(
+            test_dir
+                .path()
+                .join(StorageStatisticsWorker::OP_WITH_TIME)
+                .exists()
+        );
+        assert!(!worker.has_worker_finished.load(atomic::Ordering::Relaxed));
+        for op in [
+            StorageOperation::Get,
+            StorageOperation::Set,
+            StorageOperation::Reserve,
+            StorageOperation::Delete,
+        ] {
+            assert_eq!(*worker.total_op_executed.get(&op).unwrap().value(), 0);
+        }
+
+        drop(worker); // Execute drop logic
+        assert!(
+            test_dir
+                .path()
+                .join(StorageStatisticsWorker::TOTAL_OP_EXECUTED)
+                .exists()
+        );
+    }
+
+    #[test]
+    fn storage_statistics_worker_flush_writes_and_clears_buffer() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let op_with_time_stats = Arc::new(DashSet::new());
+        let total_op_executed = Arc::new(DashMap::from_iter([
+            (StorageOperation::Get, 0),
+            (StorageOperation::Set, 0),
+            (StorageOperation::Reserve, 0),
+            (StorageOperation::Delete, 0),
+        ]));
+        let file_path = test_dir.path().join("test_flush.csv");
+        let file = Mutex::new(std::fs::File::create(&file_path).unwrap());
+        file.lock()
+            .unwrap()
+            .write_all("Op,Timestamp,Offset\n".as_bytes())
+            .unwrap();
+
+        // Add some entries
+        op_with_time_stats.insert(StorageOpWithMetadata {
+            op: StorageOperation::Get,
+            timestamp: 1000,
+            offset: 1,
+        });
+        op_with_time_stats.insert(StorageOpWithMetadata {
+            op: StorageOperation::Set,
+            timestamp: 2000,
+            offset: 2,
+        });
+        op_with_time_stats.insert(StorageOpWithMetadata {
+            op: StorageOperation::Delete,
+            timestamp: 3000,
+            offset: 3,
+        });
+
+        StorageStatisticsWorker::flush(&op_with_time_stats, &total_op_executed, &file).unwrap();
+
+        // Check that the file has the correct content
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("G,1000,1"));
+        assert!(content.contains("S,2000,2"));
+        assert!(content.contains("D,3000,3"));
+
+        // Check that the in-memory buffer is cleared
+        assert!(op_with_time_stats.is_empty());
+
+        // Check that total operations executed are updated
+        assert_eq!(
+            *total_op_executed
+                .get(&StorageOperation::Get)
+                .unwrap()
+                .value(),
+            1
+        );
+        assert_eq!(
+            *total_op_executed
+                .get(&StorageOperation::Set)
+                .unwrap()
+                .value(),
+            1
+        );
+        assert_eq!(
+            *total_op_executed
+                .get(&StorageOperation::Delete)
+                .unwrap()
+                .value(),
+            1
+        );
+        assert_eq!(
+            *total_op_executed
+                .get(&StorageOperation::Reserve)
+                .unwrap()
+                .value(),
+            0
+        );
+    }
+
+    #[test]
+    fn storage_statistics_worker_writes_total_operations_on_drop() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let op_with_time_stats = Arc::new(DashSet::new());
+        let worker = StorageStatisticsWorker::new(op_with_time_stats, test_dir.path()).unwrap();
+
+        worker
+            .total_op_executed
+            .entry(StorageOperation::Get)
+            .and_modify(|count| *count += 5);
+        worker
+            .total_op_executed
+            .entry(StorageOperation::Set)
+            .and_modify(|count| *count += 3);
+
+        drop(worker);
+
+        let content = std::fs::read_to_string(
+            test_dir
+                .path()
+                .join(StorageStatisticsWorker::TOTAL_OP_EXECUTED),
+        )
+        .unwrap();
+        assert!(content.contains("G,5"));
+        assert!(content.contains("S,3"));
+    }
+
+    #[test]
+    fn storage_statistics_worker_stops_worker_thread_on_drop() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let op_with_time_stats = Arc::new(DashSet::new());
+        let worker = StorageStatisticsWorker::new(op_with_time_stats, test_dir.path())
+            .expect("Failed to create worker");
+
+        let has_worker_finished = worker.has_worker_finished.clone();
+        assert!(!has_worker_finished.load(atomic::Ordering::Relaxed));
+
+        drop(worker); // Execute drop logic
+
+        assert!(has_worker_finished.load(atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn storage_statistics_try_new_starts_worker_and_creates_file() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let storage: MockStorage<()> = MockStorage::new();
+        let storage_stats = StorageStatistics::try_new(storage, test_dir.path()).unwrap();
+
+        assert!(
+            test_dir
+                .path()
+                .join(StorageStatisticsWorker::OP_WITH_TIME)
+                .exists()
+        );
+        assert!(
+            !storage_stats
+                ._worker
+                .has_worker_finished
+                .load(atomic::Ordering::Relaxed)
+        );
+    }
+
+    #[test]
+    fn storage_statistics_open_opens_underlying_storage() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let context = MockStorage::<()>::open_context();
+        context
+            .expect()
+            .times(1)
+            .returning(|_| Ok(MockStorage::new()));
+
+        let _storage_stats = StorageStatistics::<MockStorage<()>>::open(test_dir.path()).unwrap();
+    }
+
+    #[rstest::rstest]
+    #[case(StorageOperation::Get)]
+    #[case(StorageOperation::Set)]
+    #[case(StorageOperation::Reserve)]
+    #[case(StorageOperation::Delete)]
+    fn storage_statistics_add_logs_operations_correctly(#[case] op: StorageOperation) {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let storage: MockStorage<()> = MockStorage::new();
+        let storage_stats = StorageStatistics::try_new(storage, test_dir.path()).unwrap();
+        storage_stats.add(op, 42);
+        assert_eq!(storage_stats.op_with_time_stats.len(), 1);
+        let entry = storage_stats.op_with_time_stats.iter().next().unwrap();
+        assert_eq!(entry.op, op);
+        assert_eq!(entry.offset, 42);
+    }
+
+    #[test]
+    fn storage_statistics_logs_storage_op_correctly() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let mut storage: MockStorage<()> = MockStorage::new();
+        storage.expect_reserve().times(1).returning(|_| 0);
+        storage.expect_set().times(2).returning(|_, _| Ok(()));
+        storage.expect_get().times(3).returning(|_| Ok(()));
+        storage.expect_delete().times(4).returning(|_| Ok(()));
+
+        let storage_stats = StorageStatistics::try_new(storage, test_dir.path()).unwrap();
+
+        let _ = storage_stats.reserve(&());
+        for i in 1..3 {
+            let _ = storage_stats.set(i, &());
+        }
+        for i in 4..7 {
+            let _ = storage_stats.get(i);
+        }
+        for i in 7..11 {
+            let _ = storage_stats.delete(i);
+        }
+
+        let has_finished = storage_stats._worker.has_worker_finished.clone();
+        drop(storage_stats);
+        while !has_finished.load(atomic::Ordering::Relaxed) {
+            thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        let content =
+            std::fs::read_to_string(test_dir.path().join(StorageStatisticsWorker::OP_WITH_TIME))
+                .unwrap();
+        let mut op_with_num: HashMap<StorageOperation, Vec<u64>> = HashMap::from_iter([
+            (StorageOperation::Get, vec![]),
+            (StorageOperation::Set, vec![]),
+            (StorageOperation::Reserve, vec![]),
+            (StorageOperation::Delete, vec![]),
+        ]);
+        for line in content.lines().skip(1) {
+            let parts: Vec<&str> = line.split(',').collect();
+            let op = match parts[0] {
+                "G" => StorageOperation::Get,
+                "S" => StorageOperation::Set,
+                "R" => StorageOperation::Reserve,
+                "D" => StorageOperation::Delete,
+                _ => panic!("Unknown operation"),
+            };
+            op_with_num
+                .get_mut(&op)
+                .unwrap()
+                .push(parts[2].parse::<u64>().unwrap());
+        }
+        assert_eq!(op_with_num.get(&StorageOperation::Reserve).unwrap()[0], 0);
+        let set_offsets = op_with_num.get_mut(&StorageOperation::Set).unwrap();
+        set_offsets.sort_unstable();
+        assert_eq!(set_offsets, &vec![1, 2]);
+        let get_offsets = op_with_num.get_mut(&StorageOperation::Get).unwrap();
+        get_offsets.sort_unstable();
+        assert_eq!(get_offsets, &vec![4, 5, 6]);
+        let delete_offsets = op_with_num.get_mut(&StorageOperation::Delete).unwrap();
+        delete_offsets.sort_unstable();
+        assert_eq!(delete_offsets, &vec![7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn storage_statistics_close_forwards_call_to_underlying_storage() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let mut storage: MockStorage<()> = MockStorage::new();
+        storage.expect_close().times(1).returning(|| Ok(()));
+
+        let storage_stats = StorageStatistics::try_new(storage, test_dir.path()).unwrap();
+        storage_stats.close().unwrap();
+    }
+
+    #[test]
+    fn storage_statistics_checkpoint_and_restore_forward_calls() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let mut storage: MockStorage<()> = MockStorage::new();
+        storage.expect_checkpoint().times(1).returning(|| Ok(42));
+        let restore_ctx = MockStorage::<()>::restore_context();
+        restore_ctx
+            .expect()
+            .with(eq(test_dir.to_path_buf()), eq(42))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let storage_stats = StorageStatistics::try_new(storage, test_dir.path()).unwrap();
+        let checkpoint = storage_stats.checkpoint().unwrap();
+        assert_eq!(checkpoint, 42);
+        StorageStatistics::<MockStorage<()>>::restore(test_dir.path(), 42).unwrap();
+    }
+
+    #[test]
+    fn storage_statistics_root_id_provider_forwards_calls() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let mut storage: MockStorage<()> = MockStorage::new();
+        storage
+            .expect_get_root_id()
+            .with(eq(100))
+            .times(1)
+            .returning(|_| Ok(1234));
+        storage
+            .expect_set_root_id()
+            .with(eq(100), eq(1234))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let storage_stats = StorageStatistics::try_new(storage, test_dir.path()).unwrap();
+        let root_id = storage_stats.get_root_id(100).unwrap();
+        assert_eq!(root_id, 1234);
+        storage_stats.set_root_id(100, 1234).unwrap();
+    }
+
+    #[allow(clippy::disallowed_names)]
+    mod mock {
+        use super::*;
+        use crate::storage::Error;
+
+        mockall::mock! {
+
+                pub Storage<T: Send + Sync + 'static> {}
+
+                impl<T: Send + Sync + 'static> Checkpointable for Storage<T> {
+                    fn checkpoint(&self) -> BTResult<u64, Error>;
+
+                    fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error>;
+                }
+
+                impl<T: Send + Sync + 'static> RootIdProvider for Storage<T> {
+                    type Id = TestNodeId;
+
+                    fn get_root_id(&self, block_number: u64) -> BTResult<<Self as RootIdProvider>::Id, Error>;
+
+                    fn set_root_id(&self, block_number: u64, id: <Self as RootIdProvider>::Id) -> BTResult<(), Error>;
+                }
+
+                impl<T: Send + Sync + 'static> Storage for Storage<T> {
+                    type Id = TestNodeId;
+                    type Item = T;
+
+                    fn open(path: &std::path::Path) -> BTResult<Self, Error>
+                    where
+                        Self: Sized;
+
+                    fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
+
+                    fn reserve(&self, item: &<Self as Storage>::Item) -> <Self as Storage>::Id;
+
+                    fn set(&self, id: <Self as Storage>::Id, item: &<Self as Storage>::Item) -> BTResult<(), Error>;
+
+                    fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
+
+                    fn close(self) -> BTResult<(), Error>;
+                }
+        }
+    }
+}
