@@ -19,6 +19,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/flat"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -84,16 +85,27 @@ func init() {
 	// TODO [cleanup]: break this up on a per schema basis
 	for schema := state.Schema(1); schema <= state.Schema(5); schema++ {
 		for _, archive := range generallySupportedArchives {
-			state.RegisterStateFactory(state.Configuration{
+			memoryConfig := state.Configuration{
 				Variant: VariantGoMemory,
 				Schema:  schema,
 				Archive: archive,
-			}, newGoMemoryState)
-			state.RegisterStateFactory(state.Configuration{
+			}
+			fileConfig := state.Configuration{
 				Variant: VariantGoFile,
 				Schema:  schema,
 				Archive: archive,
-			}, newGoCachedFileState)
+			}
+			state.RegisterStateFactory(memoryConfig, newGoMemoryState)
+			state.RegisterStateFactory(fileConfig, newGoCachedFileState)
+
+			// Also register flat database variants.
+			config := memoryConfig
+			config.Variant += "-flat"
+			state.RegisterStateFactory(config, flat.WrapFactory(newGoMemoryState))
+
+			config = fileConfig
+			config.Variant += "-flat"
+			state.RegisterStateFactory(config, flat.WrapFactory(newGoCachedFileState))
 
 			if schema < state.Schema(3) {
 				state.RegisterStateFactory(state.Configuration{
@@ -124,17 +136,28 @@ func init() {
 	}
 
 	for _, setup := range mptSetups {
-		state.RegisterStateFactory(state.Configuration{
+		memoryConfig := state.Configuration{
 			Variant: VariantGoMemory,
 			Schema:  setup.schema,
 			Archive: setup.archive,
-		}, newGoMemoryState)
-
-		state.RegisterStateFactory(state.Configuration{
+		}
+		fileConfig := state.Configuration{
 			Variant: VariantGoFile,
 			Schema:  setup.schema,
 			Archive: setup.archive,
-		}, newGoFileState)
+		}
+
+		state.RegisterStateFactory(memoryConfig, newGoMemoryState)
+		state.RegisterStateFactory(fileConfig, newGoFileState)
+
+		// Also register flat database variants.
+		config := memoryConfig
+		config.Variant += "-flat"
+		state.RegisterStateFactory(config, flat.WrapFactory(newGoMemoryState))
+
+		config = fileConfig
+		config.Variant += "-flat"
+		state.RegisterStateFactory(config, flat.WrapFactory(newGoFileState))
 	}
 }
 
