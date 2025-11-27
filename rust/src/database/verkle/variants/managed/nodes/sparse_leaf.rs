@@ -21,7 +21,7 @@ use crate::{
         visitor::NodeVisitor,
     },
     error::{BTResult, Error},
-    statistics::trie_count::TrieCountVisitor,
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -206,7 +206,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
     }
 }
 
-impl<const N: usize> NodeVisitor<SparseLeafNode<N>> for TrieCountVisitor {
+impl<const N: usize> NodeVisitor<SparseLeafNode<N>> for NodeCountVisitor {
     fn visit(&mut self, node: &SparseLeafNode<N>, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,

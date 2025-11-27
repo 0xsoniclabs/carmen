@@ -19,7 +19,7 @@ use crate::{
         visitor::NodeVisitor,
     },
     error::{BTResult, Error},
-    statistics::trie_count::TrieCountVisitor,
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -78,7 +78,7 @@ impl ManagedTrieNode for EmptyNode {
     }
 }
 
-impl NodeVisitor<EmptyNode> for TrieCountVisitor {
+impl NodeVisitor<EmptyNode> for NodeCountVisitor {
     fn visit(&mut self, _node: &EmptyNode, level: u64) -> BTResult<(), Error> {
         self.count_node(level, "Empty", None);
         Ok(())
