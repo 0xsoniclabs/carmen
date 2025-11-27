@@ -12,7 +12,6 @@ use derive_deftly::Deftly;
 
 use crate::{
     database::{
-        NodeVisitor,
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction, UnionManagedTrieNode},
         verkle::variants::managed::{
             VerkleNodeId,
@@ -24,6 +23,7 @@ use crate::{
                 sparse_leaf::{SparseLeafNode, ValueWithIndex},
             },
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
@@ -275,7 +275,7 @@ pub fn make_smallest_leaf_node_for(
 mod tests {
     use super::*;
 
-    //NOTE: Tests for the accept method are in managed::mod.rs
+    // NOTE: Tests for the accept method are in managed/mod.rs
 
     #[test]
     fn node_type_byte_size_returns_correct_size() {
