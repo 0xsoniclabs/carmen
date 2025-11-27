@@ -8,4 +8,4 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-pub mod trie_count;
+pub mod node_count;

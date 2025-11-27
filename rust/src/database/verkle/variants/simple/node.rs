@@ -17,7 +17,7 @@ use crate::{
         visitor::NodeVisitor,
     },
     error::{BTResult, Error},
-    statistics::trie_count::TrieCountVisitor,
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -269,7 +269,7 @@ impl LeafNode {
     }
 }
 
-impl NodeVisitor<Node> for TrieCountVisitor {
+impl NodeVisitor<Node> for NodeCountVisitor {
     fn visit(&mut self, node: &Node, level: u64) -> BTResult<(), Error> {
         match node {
             Node::Empty => {

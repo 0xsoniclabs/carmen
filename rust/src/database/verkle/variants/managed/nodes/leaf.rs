@@ -20,7 +20,7 @@ use crate::{
         visitor::NodeVisitor,
     },
     error::{BTResult, Error},
-    statistics::trie_count::TrieCountVisitor,
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -109,7 +109,7 @@ impl ManagedTrieNode for FullLeafNode {
     }
 }
 
-impl NodeVisitor<FullLeafNode> for TrieCountVisitor {
+impl NodeVisitor<FullLeafNode> for NodeCountVisitor {
     fn visit(&mut self, node: &FullLeafNode, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,
