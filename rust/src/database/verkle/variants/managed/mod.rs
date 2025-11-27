@@ -32,7 +32,7 @@ use crate::{
 };
 
 mod commitment;
-mod nodes;
+pub mod nodes;
 
 pub struct ManagedVerkleTrie<M>
 where

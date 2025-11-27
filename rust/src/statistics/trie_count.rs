@@ -27,7 +27,7 @@ pub struct NodeSize {
 /// A visitor implementation that collects statistics about nodes.
 #[derive(Default)]
 pub struct TrieCountVisitor {
-    trie_count: TrieCount,
+    pub trie_count: TrieCount,
 }
 
 impl TrieCountVisitor {
