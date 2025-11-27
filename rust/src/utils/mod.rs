@@ -12,3 +12,5 @@
 pub mod shuttle;
 #[cfg(test)]
 pub mod test_dir;
+#[cfg(test)]
+pub mod test_nodes;

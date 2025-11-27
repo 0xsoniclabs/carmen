@@ -162,7 +162,7 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
-        node_manager::test_utils::{TestNode, TestNodeId},
+        utils::test_nodes::{TestNode, TestNodeId},
     };
 
     type TestInMemoryNodeManager = InMemoryNodeManager<TestNodeId, TestNode>;
