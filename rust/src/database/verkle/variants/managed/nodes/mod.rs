@@ -85,10 +85,13 @@ impl VerkleNode {
         level: u64,
     ) -> BTResult<(), Error> {
         visitor.visit(self, level)?;
-        if let VerkleNode::Inner(inner) = self {
-            for child_id in inner.children.iter() {
-                let child = manager.get_read_access(*child_id)?;
-                child.accept(visitor, manager, level + 1)?;
+        match self {
+            VerkleNode::Empty(_) | VerkleNode::Leaf2(_) | VerkleNode::Leaf256(_) => {}
+            VerkleNode::Inner(inner) => {
+                for child_id in inner.children.iter() {
+                    let child = manager.get_read_access(*child_id)?;
+                    child.accept(visitor, manager, level + 1)?;
+                }
             }
         }
         Ok(())

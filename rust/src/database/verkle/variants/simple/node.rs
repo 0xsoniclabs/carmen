@@ -91,9 +91,12 @@ impl Node {
     /// Accepts a visitor for recursively traversing the node and its children.
     pub fn accept(&self, visitor: &mut impl NodeVisitor<Self>, level: u64) -> BTResult<(), Error> {
         visitor.visit(self, level)?;
-        if let Node::Inner(inner) = self {
-            for child in inner.children.iter() {
-                child.accept(visitor, level + 1)?;
+        match self {
+            Node::Empty | Node::Leaf(_) => {}
+            Node::Inner(inner) => {
+                for child in inner.children.iter() {
+                    child.accept(visitor, level + 1)?;
+                }
             }
         }
         Ok(())
