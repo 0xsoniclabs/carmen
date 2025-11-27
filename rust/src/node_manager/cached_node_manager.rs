@@ -296,8 +296,8 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
-        node_manager::test_utils::{TestNode, TestNodeId},
         storage,
+        utils::test_nodes::{TestNode, TestNodeId},
     };
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
