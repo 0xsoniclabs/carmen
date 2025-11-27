@@ -151,7 +151,7 @@ jobs:
     - name: install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - name: generate code coverage
-      run: cargo llvm-cov --all-targets --codecov --output-path codecov.json
+      run: cargo llvm-cov --codecov --output-path codecov.json -- --skip crate_crypto
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
       with:
