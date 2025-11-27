@@ -12,13 +12,13 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::{
-        NodeVisitor,
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
             VerkleNode,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
             nodes::{VerkleNodeKind, id::VerkleNodeId},
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
     statistics::trie_count::TrieCountVisitor,
@@ -105,17 +105,15 @@ impl ManagedTrieNode for InnerNode {
 
 impl NodeVisitor<InnerNode> for TrieCountVisitor {
     fn visit(&mut self, node: &InnerNode, level: u64) -> BTResult<(), Error> {
-        self.record_node_statistics(
-            node,
+        self.count_node(
             level,
             "Inner",
-            Some(move |inner_node: &InnerNode| {
-                inner_node
-                    .children
+            Some(
+                node.children
                     .iter()
                     .filter(|child| child.to_node_kind().unwrap() != VerkleNodeKind::Empty)
-                    .count() as u64
-            }),
+                    .count() as u64,
+            ),
         );
         Ok(())
     }

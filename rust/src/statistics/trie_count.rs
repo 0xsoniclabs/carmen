@@ -13,52 +13,45 @@ use std::collections::BTreeMap;
 /// A component to collect statistics on the whole tree, organized per level.
 #[derive(Default, Clone, Debug)]
 pub struct TrieCount {
-    pub levels_count: Vec<BTreeMap<String, NodeSize>>,
+    levels_count: Vec<BTreeMap<String, NodeSize>>,
 }
 
 /// A component to collect statistics for a single node type and its subkinds.
 #[derive(Default, Clone, Debug)]
 pub struct NodeSize {
-    pub size_count: BTreeMap<u64, u64>,
+    size_count: BTreeMap<u64, u64>,
 }
 
 /// A visitor implementation that collects statistics about nodes.
 #[derive(Default)]
 pub struct TrieCountVisitor {
-    pub trie_count: TrieCount,
+    trie_count: TrieCount,
 }
 
 impl TrieCountVisitor {
     /// Records statistics for the given node.
     /// It takes an optional function to count the number of children of the node and compute
     /// additional statistics over it.
-    pub fn record_node_statistics<N>(
-        &mut self,
-        node: &N,
-        level: u64,
-        type_name: &str,
-        count_num_children: Option<impl Fn(&N) -> u64>,
-    ) {
+    pub fn count_node(&mut self, level: u64, type_name: &str, num_children: Option<u64>) {
         while self.trie_count.levels_count.len() <= level as usize {
             self.trie_count.levels_count.push(BTreeMap::new());
         }
         let level_entry = &mut self.trie_count.levels_count[level as usize];
         let node_entry = level_entry.entry(type_name.to_string()).or_default();
-        if let Some(get_children_count) = count_num_children {
-            let count = get_children_count(node);
-            *node_entry.size_count.entry(count).or_insert(0) += 1;
+        if let Some(num_children) = num_children {
+            *node_entry.size_count.entry(num_children).or_insert(0) += 1;
         }
     }
 }
 
 /// Statistic about the node size distribution in the tree.
 #[derive(Clone, Debug)]
-pub struct NodeSizePerTreeStatistic {
+pub struct NodeSizeStatistic {
     pub aggregated_node_statistics: BTreeMap<String, NodeSize>,
     pub total_nodes: u64,
 }
 
-impl NodeSizePerTreeStatistic {
+impl NodeSizeStatistic {
     #[cfg_attr(not(test), expect(unused))]
     fn new(trie_count: &TrieCount) -> Self {
         let node_count = trie_count.levels_count.iter().fold(
@@ -151,16 +144,14 @@ mod tests {
     fn trie_count_visitor_records_node_statistics_records_statistics_correctly() {
         let mut visitor = TrieCountVisitor::default();
 
-        let count_children = |node: &TestNode| node.children;
-
         let node1 = TestNode { children: 1 };
         let node2 = TestNode { children: 2 };
         let node3 = TestNode { children: 3 };
 
-        visitor.record_node_statistics(&node1, 0, "Inner", Some(count_children));
-        visitor.record_node_statistics(&node1, 0, "Inner", Some(count_children));
-        visitor.record_node_statistics(&node2, 0, "Inner", Some(count_children));
-        visitor.record_node_statistics(&node3, 1, "Leaf", Some(count_children));
+        visitor.count_node(0, "Inner", Some(node1.children));
+        visitor.count_node(0, "Inner", Some(node1.children));
+        visitor.count_node(0, "Inner", Some(node2.children));
+        visitor.count_node(1, "Leaf", Some(node3.children));
 
         let trie_count = &visitor.trie_count;
 
@@ -177,7 +168,7 @@ mod tests {
 
     #[test]
     fn node_size_per_tree_statistic_aggregates_node_sizes_correctly() {
-        let statistic = NodeSizePerTreeStatistic::new(&create_sample_trie_count());
+        let statistic = NodeSizeStatistic::new(&create_sample_trie_count());
 
         assert_eq!(statistic.total_nodes, 19);
 
