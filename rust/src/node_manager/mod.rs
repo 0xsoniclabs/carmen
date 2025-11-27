@@ -18,8 +18,6 @@ use crate::{
 pub mod cached_node_manager;
 pub mod in_memory_node_manager;
 pub mod lock_cache;
-#[cfg(test)]
-mod test_utils;
 
 /// A collection of thread-safe *nodes* that dereference to [`NodeManager::Node`].
 ///

@@ -19,7 +19,7 @@ mod disk_representable;
 mod has_empty;
 mod node_size;
 mod to_node_kind;
-mod tree_id;
+pub mod tree_id;
 mod update;
 
 /// The Carmen live state implementation.
