@@ -58,6 +58,12 @@ impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
     }
 }
 
+impl<T: VerkleTrie> From<T> for VerkleTrieCarmenState<T> {
+    fn from(trie: T) -> Self {
+        Self { trie }
+    }
+}
+
 impl<M> VerkleTrieCarmenState<ManagedVerkleTrie<M>>
 where
     M: NodeManager<Id = VerkleNodeId, Node = VerkleNode>
