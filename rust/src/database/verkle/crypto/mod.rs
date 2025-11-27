@@ -13,6 +13,5 @@ mod opening;
 mod scalar;
 
 pub use commitment::Commitment;
-#[expect(unused)]
 pub use opening::Opening;
 pub use scalar::Scalar;

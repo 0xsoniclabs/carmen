@@ -26,7 +26,6 @@ pub struct Opening {
     pub proof: MultiPointProof,
 }
 
-#[cfg_attr(not(test), expect(unused))]
 impl Opening {
     /// Creates a new opening for a given commitment, proving that it contains the
     /// value at the specified position. The opening can then be verified using
