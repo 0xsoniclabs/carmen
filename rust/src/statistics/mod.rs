@@ -11,6 +11,7 @@
 use crate::statistics::{formatters::StatisticsFormatter, trie_count::TrieCountStatistics};
 
 pub mod formatters;
+pub mod storage_statistics;
 pub mod trie_count;
 
 /// A trait for printing the available statistics on the implementing type with the provided
