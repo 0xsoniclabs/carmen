@@ -24,6 +24,9 @@ pub struct NoSeekFile {
 impl NoSeekFile {
     const NUM_LOCKS: usize = 1024;
 
+    /// Returns a reference to the `RwLock` corresponding to the given buffer and offset.
+    /// This function also checks that all preconditions are met (buffer length matches chunk size,
+    /// offset is aligned to chunk size) and returns an error if not.
     fn lock(&self, buf: &[u8], offset: u64) -> BTResult<&RwLock<()>, std::io::Error> {
         if buf.len() != self.chunk_size {
             return Err(std::io::Error::new(
