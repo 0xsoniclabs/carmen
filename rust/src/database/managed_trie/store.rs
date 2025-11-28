@@ -26,6 +26,7 @@ struct DescendUpdates<'a, T, ID> {
     parent_index: Option<usize>,
     node: Option<RwLockWriteGuard<'a, T>>,
     node_id: ID,
+    is_new: bool,
     updates: KeyedUpdateBatch<'a>,
 }
 
@@ -44,9 +45,10 @@ pub fn store<T>(
     updates: &KeyedUpdateBatch,
     manager: &impl NodeManager<Id = T::Id, Node = T>,
     update_log: &TrieUpdateLog<T::Id>,
+    is_archive: bool,
 ) -> BTResult<(), Error>
 where
-    T: UnionManagedTrieNode + HasEmptyNode,
+    T: UnionManagedTrieNode + HasEmptyNode + Clone,
     T::Id: Copy + Eq + std::hash::Hash + std::fmt::Debug + HasEmptyId,
 {
     let _span = tracy_client::span!("push updates through all levels");
@@ -57,6 +59,7 @@ where
         parent_index: None,
         node: Some(manager.get_write_access(**root_id.as_ref().unwrap())?),
         node_id: **root_id.as_ref().unwrap(),
+        is_new: false,
         updates,
     }];
 
@@ -84,6 +87,27 @@ where
                 current_node_update.node_id,
             )? {
                 StoreAction::Store(stores) => {
+                    if is_archive
+                        && !current_node_update.is_new
+                        && !current_node_update.node_id.is_empty_id()
+                    {
+                        current_node_update.node_id = manager.add((*current_node).clone())?;
+                        current_node_update.node =
+                            Some(manager.get_write_access(current_node_update.node_id)?);
+                        if let Some(index) = current_node_update.parent_index {
+                            parent_node_updates[index]
+                                .node
+                                .as_mut()
+                                .unwrap()
+                                .replace_child(
+                                    current_node_update.updates.first_key(),
+                                    depth - 1,
+                                    current_node_update.node_id,
+                                )?;
+                        } else {
+                            **root_id.as_mut().unwrap() = current_node_update.node_id;
+                        }
+                    }
                     let current_node: &mut T = current_node_update
                         .node
                         .as_mut()
@@ -103,6 +127,27 @@ where
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
+                    if is_archive
+                        && !current_node_update.is_new
+                        && !current_node_update.node_id.is_empty_id()
+                    {
+                        current_node_update.node_id = manager.add((*current_node).clone())?;
+                        current_node_update.node =
+                            Some(manager.get_write_access(current_node_update.node_id)?);
+                        if let Some(index) = current_node_update.parent_index {
+                            parent_node_updates[index]
+                                .node
+                                .as_mut()
+                                .unwrap()
+                                .replace_child(
+                                    current_node_update.updates.first_key(),
+                                    depth - 1,
+                                    current_node_update.node_id,
+                                )?;
+                        } else {
+                            **root_id.as_mut().unwrap() = current_node_update.node_id;
+                        }
+                    }
                     let current_node: &mut T = current_node_update
                         .node
                         .as_mut()
@@ -120,6 +165,7 @@ where
                             } else {
                                 Some(manager.get_write_access(id)?)
                             },
+                            is_new: false,
                             node_id: id,
                             updates,
                         });
@@ -153,9 +199,12 @@ where
                     };
                     let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
+                    current_node_update.is_new = true;
 
-                    manager.delete(old_id)?;
-                    update_log.delete(depth as usize, old_id);
+                    if !is_archive {
+                        manager.delete(old_id)?;
+                        update_log.delete(depth as usize, old_id);
+                    }
 
                     // No need to log the update here, we are visiting the node again next
                     // iteration.
@@ -186,8 +235,9 @@ where
                     };
                     let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
+                    current_node_update.is_new = true;
 
-                    update_log.move_down(depth as usize, old_id);
+                    // update_log.move_down(depth as usize, old_id);
 
                     // No need to log the update here, we are visiting the node again next
                     // iteration.
@@ -334,7 +384,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -386,7 +436,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -422,7 +472,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -472,7 +522,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -533,7 +583,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -578,7 +628,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -644,7 +694,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -683,7 +733,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -753,7 +803,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -791,7 +841,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -824,7 +874,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, false).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
