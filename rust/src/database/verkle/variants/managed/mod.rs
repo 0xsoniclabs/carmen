@@ -286,6 +286,8 @@ mod tests {
                 fn get_root_id(&self, block_height: u64) -> BTResult<<Self as RootIdProvider>::Id, storage::Error>;
 
                 fn set_root_id(&self, block_height: u64, root_id: <Self as RootIdProvider>::Id) -> BTResult<(), storage::Error>;
+
+                fn highest_block_number(&self) -> BTResult<Option<u64>, storage::Error>;
             }
 
             impl NodeManager for TestNodeManager {

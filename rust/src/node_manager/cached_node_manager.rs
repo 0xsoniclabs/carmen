@@ -282,6 +282,10 @@ where
     fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), crate::storage::Error> {
         self.storage.set_root_id(block_number, id)
     }
+
+    fn highest_block_number(&self) -> BTResult<Option<u64>, crate::storage::Error> {
+        self.storage.highest_block_number()
+    }
 }
 
 #[cfg(test)]
@@ -298,6 +302,7 @@ mod tests {
         error::BTError,
         node_manager::test_utils::{TestNode, TestNodeId},
         storage,
+        types::TreeId,
     };
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
@@ -574,6 +579,55 @@ mod tests {
     }
 
     #[test]
+    fn get_root_id_calls_get_root_id_on_underlying_storage_layer() {
+        let block_number = 1;
+        let root_id = TestNodeId::from_idx_and_node_kind(1, ());
+
+        let mut mock_storage = MockCachedNodeManagerStorage::new();
+        mock_storage
+            .expect_get_root_id()
+            .with(eq(block_number))
+            .returning(move |_| Ok(root_id))
+            .times(1);
+
+        let manager = CachedNodeManager::new(10, mock_storage, pin_nothing);
+
+        assert_eq!(manager.get_root_id(block_number), Ok(root_id));
+    }
+
+    #[test]
+    fn set_root_id_calls_set_root_id_on_underlying_storage_layer() {
+        let block_number = 1;
+        let root_id = TestNodeId::from_idx_and_node_kind(1, ());
+
+        let mut mock_storage = MockCachedNodeManagerStorage::new();
+        mock_storage
+            .expect_set_root_id()
+            .with(eq(block_number), eq(root_id))
+            .returning(|_, _| Ok(()))
+            .times(1);
+
+        let manager = CachedNodeManager::new(10, mock_storage, pin_nothing);
+
+        assert!(manager.set_root_id(block_number, root_id).is_ok(),);
+    }
+
+    #[test]
+    fn get_highest_block_number_calls_get_highest_block_number_on_underlying_storage_layer() {
+        let highest_block_number = Some(1);
+
+        let mut mock_storage = MockCachedNodeManagerStorage::new();
+        mock_storage
+            .expect_highest_block_number()
+            .returning(move || Ok(highest_block_number))
+            .times(1);
+
+        let manager = CachedNodeManager::new(10, mock_storage, pin_nothing);
+
+        assert_eq!(manager.highest_block_number(), Ok(highest_block_number));
+    }
+
+    #[test]
     fn node_with_metadata_sets_dirty_flag_on_deref_mut() {
         let mut node = NodeWithMetadata {
             node: 0,
@@ -688,6 +742,8 @@ mod tests {
                     block_number: u64,
                     id: <Self as RootIdProvider>::Id,
                 ) -> BTResult<(), storage::Error>;
+
+                fn highest_block_number(&self) -> BTResult<Option<u64>, storage::Error>;
             }
 
             impl Storage for CachedNodeManagerStorage {

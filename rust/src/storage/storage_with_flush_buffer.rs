@@ -153,6 +153,10 @@ where
     fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), Error> {
         self.storage.set_root_id(block_number, id)
     }
+
+    fn highest_block_number(&self) -> BTResult<Option<u64>, Error> {
+        self.storage.highest_block_number()
+    }
 }
 
 /// A wrapper around a set of flush worker threads that allows to shut them down gracefully.
@@ -543,6 +547,86 @@ mod tests {
     }
 
     #[test]
+    fn get_root_id_calls_get_root_id_on_underlying_storage_layer() {
+        let block_number = 1;
+        let root_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty1);
+
+        let mut mock_storage = MockStorage::new();
+        mock_storage
+            .expect_get_root_id()
+            .with(eq(block_number))
+            .returning(move |_| Ok(root_id))
+            .times(1);
+
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(SkipMap::new()),
+            storage: Arc::new(mock_storage),
+            flush_workers: FlushWorkers {
+                workers: Vec::new(),
+                shutdown: Arc::new(AtomicBool::new(false)),
+            },
+        };
+
+        assert_eq!(
+            storage_with_flush_buffer.get_root_id(block_number),
+            Ok(root_id)
+        );
+    }
+
+    #[test]
+    fn set_root_id_calls_set_root_id_on_underlying_storage_layer() {
+        let block_number = 1;
+        let root_id = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::NonEmpty1);
+
+        let mut mock_storage = MockStorage::new();
+        mock_storage
+            .expect_set_root_id()
+            .with(eq(block_number), eq(root_id))
+            .returning(|_, _| Ok(()))
+            .times(1);
+
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(SkipMap::new()),
+            storage: Arc::new(mock_storage),
+            flush_workers: FlushWorkers {
+                workers: Vec::new(),
+                shutdown: Arc::new(AtomicBool::new(false)),
+            },
+        };
+
+        assert!(
+            storage_with_flush_buffer
+                .set_root_id(block_number, root_id)
+                .is_ok(),
+        );
+    }
+
+    #[test]
+    fn get_highest_block_number_calls_get_highest_block_number_on_underlying_storage_layer() {
+        let highest_block_number = Some(1);
+
+        let mut mock_storage = MockStorage::new();
+        mock_storage
+            .expect_highest_block_number()
+            .returning(move || Ok(highest_block_number))
+            .times(1);
+
+        let storage_with_flush_buffer = StorageWithFlushBuffer {
+            flush_buffer: Arc::new(SkipMap::new()),
+            storage: Arc::new(mock_storage),
+            flush_workers: FlushWorkers {
+                workers: Vec::new(),
+                shutdown: Arc::new(AtomicBool::new(false)),
+            },
+        };
+
+        assert_eq!(
+            storage_with_flush_buffer.highest_block_number(),
+            Ok(highest_block_number)
+        );
+    }
+
+    #[test]
     fn flush_workers_new_spawns_threads() {
         let flush_buffer = Arc::new(SkipMap::new());
         let storage = Arc::new(MockStorage::new());
@@ -672,6 +756,22 @@ mod tests {
                 fn delete(&self, id: <Self as Storage>::Id) -> BTResult<(), Error>;
 
                 fn close(self) -> BTResult<(), Error>;
+            }
+
+            impl RootIdProvider for Storage {
+                type Id = TestNodeId;
+
+                fn get_root_id(&self, block_number: u64) -> BTResult<<Self as RootIdProvider>::Id, Error> {
+                    self.storage.get_root_id(block_number)
+                }
+
+                fn set_root_id(&self, block_number: u64, id: <Self as RootIdProvider>::Id) -> BTResult<(), Error> {
+                    self.storage.set_root_id(block_number, id)
+                }
+
+                fn highest_block_number(&self) -> BTResult<Option<u64>, Error> {
+                    self.storage.highest_block_number()
+                }
             }
         }
     }

@@ -112,4 +112,7 @@ pub trait RootIdProvider {
     /// Sets the root ID for the given block number. The block number must greater than all block
     /// numbers previously passed to `set_root_id`.
     fn set_root_id(&self, block_number: u64, id: Self::Id) -> BTResult<(), Error>;
+
+    /// Returns the highest block number for which a root ID is stored.
+    fn highest_block_number(&self) -> BTResult<Option<u64>, Error>;
 }

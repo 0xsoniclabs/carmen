@@ -288,6 +288,15 @@ where
     fn set_root_id(&self, block_number: u64, id: Self::Id) -> $crate::error::BTResult<(), $crate::storage::Error> {
         self.root_ids_file.set(block_number, id)
     }
+
+    fn highest_block_number(&self) -> $crate::error::BTResult<Option<u64>, $crate::storage::Error> {
+        let count = self.root_ids_file.count();
+        if count == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(count - 1))
+        }
+    }
 }
 }
 
@@ -312,7 +321,7 @@ mod tests {
     use crate::{
         error::{BTError, BTResult},
         storage::{
-            CheckpointParticipant, Checkpointable, Error, Storage,
+            CheckpointParticipant, Checkpointable, Error, RootIdProvider, Storage,
             file::{
                 FromToFile, NodeFileStorage, SeekFile,
                 file_storage_manager::{metadata::Metadata, root_ids_file::RootIdsFile},
@@ -971,6 +980,116 @@ mod tests {
                 .map_err(BTError::into_inner),
             Err(Error::Frozen)
         );
+    }
+
+    #[test]
+    fn get_root_id_gets_root_id_from_root_id_file() {
+        let root_id0 = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
+        let root_id1 = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::Empty);
+
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = TestNodeFileStorageManager {
+            dir: dir.to_path_buf(),
+            checkpoint: AtomicU64::new(0),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.join("root_ids"), 0).unwrap(),
+        };
+
+        assert_eq!(
+            storage.root_ids_file.get(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        );
+        assert_eq!(
+            storage.get_root_id(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        );
+
+        storage.root_ids_file.set(0, root_id0).unwrap();
+        assert_eq!(
+            storage.get_root_id(0).map_err(BTError::into_inner),
+            Ok(root_id0)
+        );
+        assert_eq!(
+            storage.get_root_id(1).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        );
+
+        storage.root_ids_file.set(1, root_id1).unwrap();
+        assert_eq!(
+            storage.get_root_id(0).map_err(BTError::into_inner),
+            Ok(root_id0)
+        );
+        assert_eq!(
+            storage.get_root_id(1).map_err(BTError::into_inner),
+            Ok(root_id1)
+        );
+    }
+
+    #[test]
+    fn set_root_id_sets_root_id_in_root_id_file() {
+        let root_id0 = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
+        let root_id1 = TestNodeId::from_idx_and_node_kind(1, TestNodeKind::Empty);
+
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = TestNodeFileStorageManager {
+            dir: dir.to_path_buf(),
+            checkpoint: AtomicU64::new(0),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.join("root_ids"), 0).unwrap(),
+        };
+
+        assert_eq!(storage.root_ids_file.count(), 0);
+        assert_eq!(
+            storage.root_ids_file.get(0).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        );
+        assert_eq!(
+            storage.root_ids_file.get(1).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        );
+
+        storage.set_root_id(0, root_id0).unwrap();
+        assert_eq!(storage.root_ids_file.count(), 1);
+        assert_eq!(storage.root_ids_file.get(0).unwrap(), root_id0);
+        assert_eq!(
+            storage.root_ids_file.get(1).map_err(BTError::into_inner),
+            Err(Error::NotFound)
+        );
+
+        storage.set_root_id(1, root_id1).unwrap();
+        assert_eq!(storage.root_ids_file.count(), 2);
+        assert_eq!(storage.root_ids_file.get(0).unwrap(), root_id0);
+        assert_eq!(storage.root_ids_file.get(1).unwrap(), root_id1);
+    }
+
+    #[test]
+    fn get_highest_block_number_gets_highest_root_id_from_root_id_file_count_and_subtracts_one() {
+        let root_id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
+
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = TestNodeFileStorageManager {
+            dir: dir.to_path_buf(),
+            checkpoint: AtomicU64::new(0),
+            non_empty1: MockStorage::new(),
+            non_empty2: MockStorage::new(),
+            root_ids_file: RootIdsFile::<TestNodeId>::open(dir.join("root_ids"), 0).unwrap(),
+        };
+
+        assert_eq!(storage.root_ids_file.count(), 0);
+        assert_eq!(storage.highest_block_number().unwrap(), None);
+
+        storage.root_ids_file.set(0, root_id).unwrap();
+        assert_eq!(storage.root_ids_file.count(), 1);
+        assert_eq!(storage.highest_block_number().unwrap(), Some(0));
+
+        storage.root_ids_file.set(1, root_id).unwrap();
+        assert_eq!(storage.root_ids_file.count(), 2);
+        assert_eq!(storage.highest_block_number().unwrap(), Some(1));
     }
 
     #[allow(clippy::disallowed_types)]

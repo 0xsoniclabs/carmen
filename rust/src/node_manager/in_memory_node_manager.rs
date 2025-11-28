@@ -151,6 +151,10 @@ where
         self.root_ids.insert(block_number, id);
         Ok(())
     }
+
+    fn highest_block_number(&self) -> BTResult<Option<u64>, storage::Error> {
+        Ok(self.root_ids.iter().map(|entry| *entry.key()).max())
+    }
 }
 
 #[cfg(test)]
@@ -283,5 +287,92 @@ mod tests {
 
         let received = manager.get_root_id(42).unwrap();
         assert_eq!(received, id);
+    }
+
+    #[test]
+    fn get_root_id_retrieves_root_id_from_root_id_map() {
+        let root_id0 = TestNodeId::from_idx_and_node_kind(0, ());
+        let root_id1 = TestNodeId::from_idx_and_node_kind(1, ());
+
+        let manager = InMemoryNodeManager {
+            nodes: Vec::new(),
+            empty_node: RwLock::new(NodeWrapper {
+                node: TestNode::empty_node(),
+            }),
+            free_slots: ArrayQueue::new(1),
+            root_ids: DashMap::new(),
+            _phantom: std::marker::PhantomData,
+        };
+
+        assert_eq!(
+            manager.get_root_id(0).map_err(BTError::into_inner),
+            Err(storage::Error::NotFound)
+        );
+        assert_eq!(
+            manager.get_root_id(1).map_err(BTError::into_inner),
+            Err(storage::Error::NotFound)
+        );
+
+        manager.root_ids.insert(0, root_id0);
+
+        assert_eq!(manager.get_root_id(0), Ok(root_id0));
+        assert_eq!(
+            manager.get_root_id(1).map_err(BTError::into_inner),
+            Err(storage::Error::NotFound)
+        );
+
+        manager.root_ids.insert(1, root_id1);
+
+        assert_eq!(manager.get_root_id(0), Ok(root_id0));
+        assert_eq!(manager.get_root_id(1), Ok(root_id1));
+    }
+
+    #[test]
+    fn set_root_id_stores_root_id_in_root_id_map() {
+        let root_id = TestNodeId::from_idx_and_node_kind(1, ());
+
+        let manager = InMemoryNodeManager {
+            nodes: Vec::new(),
+            empty_node: RwLock::new(NodeWrapper {
+                node: TestNode::empty_node(),
+            }),
+            free_slots: ArrayQueue::new(1),
+            root_ids: DashMap::new(),
+            _phantom: std::marker::PhantomData,
+        };
+
+        assert_eq!(manager.root_ids.get(&0).as_deref(), None);
+        assert_eq!(manager.root_ids.get(&1).as_deref(), None);
+
+        manager.set_root_id(0, root_id).unwrap();
+        assert_eq!(manager.root_ids.get(&0).as_deref(), Some(&root_id));
+        assert_eq!(manager.root_ids.get(&1).as_deref(), None);
+
+        manager.set_root_id(1, root_id).unwrap();
+        assert_eq!(manager.root_ids.get(&0).as_deref(), Some(&root_id));
+        assert_eq!(manager.root_ids.get(&1).as_deref(), Some(&root_id));
+    }
+
+    #[test]
+    fn get_highest_block_number_gets_highest_block_number_from_root_id_map() {
+        let root_id = TestNodeId::from_idx_and_node_kind(1, ());
+
+        let manager = InMemoryNodeManager {
+            nodes: Vec::new(),
+            empty_node: RwLock::new(NodeWrapper {
+                node: TestNode::empty_node(),
+            }),
+            free_slots: ArrayQueue::new(1),
+            root_ids: DashMap::new(),
+            _phantom: std::marker::PhantomData,
+        };
+
+        assert_eq!(manager.highest_block_number(), Ok(None));
+
+        manager.set_root_id(0, root_id).unwrap();
+        assert_eq!(manager.highest_block_number(), Ok(Some(0)));
+
+        manager.set_root_id(1, root_id).unwrap();
+        assert_eq!(manager.highest_block_number(), Ok(Some(1)));
     }
 }
