@@ -15,7 +15,7 @@ use carmen_rust::{
     database::{
         CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
         verkle::{
-            VerkleTrieCarmenState,
+            StateMode, VerkleTrieCarmenState,
             variants::managed::{VerkleNode, VerkleNodeId},
         },
     },
@@ -43,13 +43,13 @@ impl CarmenStateKind {
     fn make_carmen_state(self) -> Box<dyn CarmenState> {
         match self {
             CarmenStateKind::SimpleInMemoryVerkleTrie => {
-                Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new(None))
+                Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live())
                     as Box<dyn CarmenState>
             }
-            CarmenStateKind::CrateCryptoInMemoryVerkleTrie => Box::new(VerkleTrieCarmenState::<
-                CrateCryptoInMemoryVerkleTrie,
-            >::new(None))
-                as Box<dyn CarmenState>,
+            CarmenStateKind::CrateCryptoInMemoryVerkleTrie => {
+                Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new_live())
+                    as Box<dyn CarmenState>
+            }
             CarmenStateKind::ManagedInMemoryVerkleTrie => {
                 let mem_node_manager = Arc::new(
                     InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(200_000),
@@ -59,7 +59,7 @@ impl CarmenStateKind {
                         carmen_rust::database::ManagedVerkleTrie<
                             InMemoryNodeManager<VerkleNodeId, VerkleNode>,
                         >,
-                    >::try_new(mem_node_manager, None, false)
+                    >::try_new(mem_node_manager, StateMode::Live)
                     .unwrap(),
                 ) as Box<dyn CarmenState>
             }

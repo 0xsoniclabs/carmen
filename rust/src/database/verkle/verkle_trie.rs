@@ -59,7 +59,7 @@ mod tests {
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
     #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
-    #[case::managed(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100)), 0).unwrap()) as Box<dyn VerkleTrie>)]
+    #[case::managed(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100)), None).unwrap()) as Box<dyn VerkleTrie>)]
     fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>) {}
 
     #[rstest_reuse::apply(all_trie_impls)]

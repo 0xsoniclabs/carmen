@@ -18,9 +18,12 @@ use std::{mem::MaybeUninit, ops::Deref, path::Path};
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
-        ManagedTrieNode, VerkleTrieCarmenState,
-        verkle::variants::managed::{
-            FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+        ManagedTrieNode, ManagedVerkleTrie, VerkleTrieCarmenState,
+        verkle::{
+            StateMode,
+            variants::managed::{
+                FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+            },
         },
     },
     error::{BTResult, Error},
@@ -54,6 +57,8 @@ type VerkleStorageManager = VerkleNodeFileStorageManager<
     NodeFileStorage<FullLeafNode, NoSeekFile>,
 >;
 
+type VerkleStorage = StorageWithFlushBuffer<VerkleStorageManager>;
+
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
 /// created. If it is empty, a new, empty state is initialized. If it contains
@@ -71,15 +76,14 @@ pub fn open_carmen_db(
     let archive_dir = directory.join("archive");
     match archive_impl {
         b"file" => {
-            let storage = StorageWithFlushBuffer::<VerkleStorageManager>::open(&archive_dir)?;
+            let storage = VerkleStorage::open(&archive_dir)?;
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
             let live_state = VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(
                 manager.clone(),
-                Some(0),
-                true,
+                StateMode::LiveEmulate,
             )?;
             return Ok(Box::new(CarmenS6FileBasedDb::new(manager, live_state)));
         }
@@ -96,20 +100,19 @@ pub fn open_carmen_db(
     match live_impl {
         b"memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
-        >::new(None)))),
+        >::new_live()))),
         b"crate-crypto-memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::CrateCryptoInMemoryVerkleTrie,
-        >::new(None)))),
+        >::new_live()))),
         b"file" => {
-            let storage = StorageWithFlushBuffer::<VerkleStorageManager>::open(&live_dir)?;
+            let storage = VerkleStorage::open(&live_dir)?;
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
             let live_manager = manager.clone();
-            let live_state = VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(
-                manager, None, false,
-            )?;
+            let live_state =
+                VerkleTrieCarmenState::<ManagedVerkleTrie<_>>::try_new(manager, StateMode::Live)?;
             Ok(Box::new(CarmenS6FileBasedDb::new(live_manager, live_state)))
         }
         b"ldb" => Err(Error::UnsupportedImplementation(
@@ -291,12 +294,8 @@ impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
 
 impl CarmenDb
     for CarmenS6FileBasedDb<
-        StorageWithFlushBuffer<VerkleStorageManager>,
-        VerkleTrieCarmenState<
-            database::ManagedVerkleTrie<
-                CachedNodeManager<StorageWithFlushBuffer<VerkleStorageManager>>,
-            >,
-        >,
+        VerkleStorage,
+        VerkleTrieCarmenState<ManagedVerkleTrie<CachedNodeManager<VerkleStorage>>>,
     >
 {
     fn checkpoint(&self) -> BTResult<(), Error> {
@@ -334,8 +333,7 @@ impl CarmenDb
         let archive_state = Arc::new(
             VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(
                 manager,
-                Some(block),
-                false,
+                StateMode::Archive(block),
             )?,
         );
         Ok(Box::new(archive_state))
@@ -371,7 +369,7 @@ mod tests {
 
         live_state
             .apply_block_update(
-                1,
+                0,
                 Update {
                     balances: &[BalanceUpdate {
                         addr,
@@ -385,7 +383,7 @@ mod tests {
 
         live_state
             .apply_block_update(
-                2,
+                1,
                 Update {
                     balances: &[BalanceUpdate {
                         addr,
@@ -397,9 +395,9 @@ mod tests {
             .unwrap();
         assert_eq!(live_state.get_balance(&addr).unwrap(), balance2);
 
-        let archive_state = db.get_archive_state(1).unwrap();
+        let archive_state = db.get_archive_state(0).unwrap();
         assert_eq!(archive_state.get_balance(&addr).unwrap(), balance1);
-        let archive_state = db.get_archive_state(2).unwrap();
+        let archive_state = db.get_archive_state(1).unwrap();
         assert_eq!(archive_state.get_balance(&addr).unwrap(), balance2);
     }
 
