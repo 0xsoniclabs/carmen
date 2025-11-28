@@ -46,7 +46,7 @@ func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string
 	}
 	zeroBalance := zeroBalanceAmount.Uint256()
 
-	logger.Printf("Calculating total supply...")
+	logger.Printf("Calculating total supply and exporting balances...")
 	progress := logger.NewProgressTracker("visited %d accounts, %.2f accounts/s", 1_000_000)
 	db := &exportableLiveTrie{db: mptState, directory: directory}
 	visitor := totalSupplyCalculatingVisitor{ctx: ctx, progress: progress}
@@ -115,6 +115,8 @@ type totalSupplyCalculatingVisitor struct {
 	accounts    uint64
 }
 
+var minToPrint = uint256.NewInt(1e18)
+
 func (e *totalSupplyCalculatingVisitor) Visit(node mpt.Node, _ mpt.NodeInfo) error {
 	// outside call to interrupt
 	if interrupt.IsCancelled(e.ctx) {
@@ -124,6 +126,12 @@ func (e *totalSupplyCalculatingVisitor) Visit(node mpt.Node, _ mpt.NodeInfo) err
 		balance := n.Info().Balance.Uint256()
 		e.totalSupply.Add(&e.totalSupply, &balance)
 		e.accounts++
+
+		// create table balances (account VARCHAR(50), balance NUMERIC(78));
+		// copy balances from '/tmp/test.sql' with delimiter ',';
+		if minToPrint.Cmp(&balance) < 0 {
+			fmt.Printf("0x%s,%s\n", n.Address(), balance.String())
+		}
 		e.progress.Step(1)
 	}
 	return nil
