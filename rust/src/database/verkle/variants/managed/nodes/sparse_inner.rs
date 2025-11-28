@@ -12,9 +12,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::{
-        managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
+        managed_trie::{DescendAction, LookupResult, ManagedTrieNode, StoreAction},
         verkle::{
-            KeyedUpdate, KeyedUpdateBatch,
+            KeyedUpdateBatch,
             variants::managed::{
                 VerkleNode,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
@@ -109,25 +109,41 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
         }
     }
 
-    fn next_store_action(
+    fn next_store_action<'a>(
         &self,
-        key: KeyedUpdate,
+        updates: KeyedUpdateBatch<'a>,
         depth: u8,
         _self_id: Self::Id,
-    ) -> BTResult<StoreAction<Self::Id, Self::Union>, Error> {
-        let index = key[depth as usize];
-        let slot = VerkleIdWithIndex::get_slot_for(&self.children, index);
+    ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
+        let slots = VerkleIdWithIndex::required_slot_count_for(
+            &self.children,
+            updates
+                .borrowed()
+                .split(depth)
+                .map(|u| u.first_key()[depth as usize]),
+        );
 
-        match slot {
-            None => Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
-                N + 1,
+        if let Some(slots) = slots {
+            Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
+                slots,
                 &self.children,
                 &self.commitment,
-            )?)),
-            Some(slot) => Ok(StoreAction::Descend {
-                index: index as usize,
-                id: self.children[slot].item,
-            }),
+            )?))
+        } else {
+            let mut descent_actions = Vec::new();
+            for sub_updates in updates.split(depth) {
+                let index = sub_updates.first_key()[depth as usize];
+                let slot = VerkleIdWithIndex::get_slot_for(&self.children, index).ok_or(
+                    Error::CorruptedState(
+                        "no available slot for storing value in sparse inner node".to_owned(),
+                    ),
+                )?;
+                descent_actions.push(DescendAction {
+                    id: self.children[slot].item,
+                    updates: sub_updates,
+                });
+            }
+            Ok(StoreAction::Descend(descent_actions))
         }
     }
 
@@ -189,7 +205,7 @@ mod tests {
             },
         },
         error::BTError,
-        types::TreeId,
+        types::{TreeId, Value},
     };
 
     fn make_inner<const N: usize>() -> SparseInnerNode<N> {
@@ -357,19 +373,20 @@ mod tests {
         #[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
     ) {
         let key = Key::from_index_values(1, &[(1, 2)]);
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
         let result = node
             .next_store_action(
-                &key,
+                updates.clone(),
                 1,
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner9), // Irrelevant
             )
             .unwrap();
         assert_eq!(
             result,
-            StoreAction::Descend {
-                index: 2,
-                id: VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner9)
-            }
+            StoreAction::Descend(vec![DescendAction {
+                id: VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner9),
+                updates
+            }])
         );
     }
 
@@ -378,9 +395,10 @@ mod tests {
         #[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
     ) {
         let key = Key::from_index_values(1, &[(1, 250)]);
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
         let result = node
             .next_store_action(
-                &key,
+                updates.clone(),
                 1,
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner9), // Irrelevant
             )
@@ -389,12 +407,12 @@ mod tests {
             StoreAction::HandleTransform(bigger_inner) => {
                 assert_eq!(
                     bigger_inner
-                        .next_store_action(&key, 1, VerkleNodeId::default())
+                        .next_store_action(updates.clone(), 1, VerkleNodeId::default())
                         .unwrap(),
-                    StoreAction::Descend {
-                        index: 250,
-                        id: VerkleNodeId::default()
-                    }
+                    StoreAction::Descend(vec![DescendAction {
+                        id: VerkleNodeId::default(),
+                        updates
+                    }])
                 );
                 // It contains all previous values
                 assert_eq!(
