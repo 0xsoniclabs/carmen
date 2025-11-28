@@ -22,8 +22,8 @@ use crate::{
                 VerkleNodeId,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
-                    empty::EmptyNode, inner::InnerNode, leaf::FullLeafNode,
-                    sparse_leaf::SparseLeafNode,
+                    empty::EmptyNode, inner::FullInnerNode, leaf::FullLeafNode,
+                    sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
                 },
             },
         },
@@ -40,10 +40,11 @@ pub mod empty;
 pub mod id;
 pub mod inner;
 pub mod leaf;
+pub mod sparse_inner;
 pub mod sparse_leaf;
 
 #[cfg(test)]
-pub use tests::{NodeHelperTrait, VerkleManagedTrieNode};
+use tests::VerkleManagedTrieNode;
 
 /// A node in a managed Verkle trie.
 //
@@ -53,7 +54,9 @@ pub use tests::{NodeHelperTrait, VerkleManagedTrieNode};
 #[derive_deftly(FileStorageManager)]
 pub enum VerkleNode {
     Empty(EmptyVerkleNode),
-    Inner(Box<InnerVerkleNode>),
+    Inner3(Box<Inner3VerkleNode>),
+    Inner47(Box<Inner47VerkleNode>),
+    Inner256(Box<Inner256VerkleNode>),
     Leaf1(Box<Leaf1VerkleNode>),
     Leaf2(Box<Leaf2VerkleNode>),
     Leaf21(Box<Leaf21VerkleNode>),
@@ -64,7 +67,9 @@ pub enum VerkleNode {
 }
 
 type EmptyVerkleNode = EmptyNode;
-type InnerVerkleNode = InnerNode;
+type Inner3VerkleNode = SparseInnerNode<3>;
+type Inner47VerkleNode = SparseInnerNode<47>;
+type Inner256VerkleNode = FullInnerNode;
 type Leaf1VerkleNode = SparseLeafNode<1>;
 type Leaf2VerkleNode = SparseLeafNode<2>;
 type Leaf21VerkleNode = SparseLeafNode<21>;
@@ -87,17 +92,40 @@ impl VerkleNode {
         }
     }
 
+    /// Returns the smallest inner node type capable of storing `n` values.
+    pub fn smallest_inner_type_for(n: usize) -> VerkleNodeKind {
+        match n {
+            0 => VerkleNodeKind::Empty,
+            1..=3 => VerkleNodeKind::Inner3,
+            4..=47 => VerkleNodeKind::Inner47,
+            48..=256 => VerkleNodeKind::Inner256,
+            _ => panic!("no inner type for more than 256 children"),
+        }
+    }
+
     /// Returns the commitment input for computing the commitment of this node.
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         match self {
             VerkleNode::Empty(n) => n.get_commitment_input(),
-            VerkleNode::Inner(n) => n.get_commitment_input(),
+            VerkleNode::Inner3(n) => n.get_commitment_input(),
+            VerkleNode::Inner47(n) => n.get_commitment_input(),
+            VerkleNode::Inner256(n) => n.get_commitment_input(),
             VerkleNode::Leaf1(n) => n.get_commitment_input(),
             VerkleNode::Leaf2(n) => n.get_commitment_input(),
             VerkleNode::Leaf21(n) => n.get_commitment_input(),
             VerkleNode::Leaf64(n) => n.get_commitment_input(),
             VerkleNode::Leaf141(n) => n.get_commitment_input(),
             VerkleNode::Leaf256(n) => n.get_commitment_input(),
+        }
+    }
+
+    /// Converts this node to an inner node, if it is one.
+    pub fn as_inner_node(&self) -> Option<&dyn ManagedInnerNode> {
+        match self {
+            VerkleNode::Inner3(n) => Some(n.deref()),
+            VerkleNode::Inner47(n) => Some(n.deref()),
+            VerkleNode::Inner256(n) => Some(n.deref()),
+            _ => None,
         }
     }
 
@@ -117,9 +145,12 @@ impl VerkleNode {
             | VerkleNode::Leaf64(_)
             | VerkleNode::Leaf141(_)
             | VerkleNode::Leaf256(_) => {}
-            VerkleNode::Inner(inner) => {
-                for child_id in inner.children.iter() {
-                    let child = manager.get_read_access(*child_id)?;
+            inner_node => {
+                let inner = inner_node.as_inner_node().ok_or(Error::CorruptedState(
+                    "expected inner node in accept method. Maybe you added a new leaf variant and forgot to update the accept method".to_owned(),
+                ))?;
+                for child_id in inner.iter_children() {
+                    let child = manager.get_read_access(child_id.item)?;
                     child.accept(visitor, manager, level + 1)?;
                 }
             }
@@ -133,7 +164,9 @@ impl NodeVisitor<VerkleNode> for NodeCountVisitor {
     fn visit(&mut self, node: &VerkleNode, level: u64) -> BTResult<(), Error> {
         match node {
             VerkleNode::Empty(n) => self.visit(n, level),
-            VerkleNode::Inner(n) => self.visit(n.deref(), level),
+            VerkleNode::Inner3(n) => self.visit(n.deref(), level),
+            VerkleNode::Inner47(n) => self.visit(n.deref(), level),
+            VerkleNode::Inner256(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf1(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf2(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf21(n) => self.visit(n.deref(), level),
@@ -152,7 +185,9 @@ impl ToNodeKind for VerkleNode {
     fn to_node_kind(&self) -> Option<Self::Target> {
         match self {
             VerkleNode::Empty(_) => Some(VerkleNodeKind::Empty),
-            VerkleNode::Inner(_) => Some(VerkleNodeKind::Inner),
+            VerkleNode::Inner3(_) => Some(VerkleNodeKind::Inner3),
+            VerkleNode::Inner47(_) => Some(VerkleNodeKind::Inner47),
+            VerkleNode::Inner256(_) => Some(VerkleNodeKind::Inner256),
             VerkleNode::Leaf1(_) => Some(VerkleNodeKind::Leaf1),
             VerkleNode::Leaf2(_) => Some(VerkleNodeKind::Leaf2),
             VerkleNode::Leaf21(_) => Some(VerkleNodeKind::Leaf21),
@@ -199,7 +234,9 @@ impl ManagedTrieNode for VerkleNode {
     fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
         match self {
             VerkleNode::Empty(n) => n.lookup(key, depth),
-            VerkleNode::Inner(n) => n.lookup(key, depth),
+            VerkleNode::Inner3(n) => n.lookup(key, depth),
+            VerkleNode::Inner47(n) => n.lookup(key, depth),
+            VerkleNode::Inner256(n) => n.lookup(key, depth),
             VerkleNode::Leaf1(n) => n.lookup(key, depth),
             VerkleNode::Leaf2(n) => n.lookup(key, depth),
             VerkleNode::Leaf21(n) => n.lookup(key, depth),
@@ -217,7 +254,9 @@ impl ManagedTrieNode for VerkleNode {
     ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         match self {
             VerkleNode::Empty(n) => n.next_store_action(updates, depth, self_id),
-            VerkleNode::Inner(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::Inner3(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::Inner47(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::Inner256(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Leaf1(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Leaf2(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Leaf21(n) => n.next_store_action(updates, depth, self_id),
@@ -230,7 +269,9 @@ impl ManagedTrieNode for VerkleNode {
     fn replace_child(&mut self, key: &Key, depth: u8, new: VerkleNodeId) -> BTResult<(), Error> {
         match self {
             VerkleNode::Empty(n) => n.replace_child(key, depth, new),
-            VerkleNode::Inner(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner3(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner47(n) => n.replace_child(key, depth, new),
+            VerkleNode::Inner256(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf1(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf2(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf21(n) => n.replace_child(key, depth, new),
@@ -243,7 +284,9 @@ impl ManagedTrieNode for VerkleNode {
     fn store(&mut self, update: &KeyedUpdate) -> BTResult<Value, Error> {
         match self {
             VerkleNode::Empty(n) => n.store(update),
-            VerkleNode::Inner(n) => n.store(update),
+            VerkleNode::Inner3(n) => n.store(update),
+            VerkleNode::Inner47(n) => n.store(update),
+            VerkleNode::Inner256(n) => n.store(update),
             VerkleNode::Leaf1(n) => n.store(update),
             VerkleNode::Leaf2(n) => n.store(update),
             VerkleNode::Leaf21(n) => n.store(update),
@@ -256,7 +299,9 @@ impl ManagedTrieNode for VerkleNode {
     fn get_commitment(&self) -> Self::Commitment {
         match self {
             VerkleNode::Empty(n) => n.get_commitment(),
-            VerkleNode::Inner(n) => n.get_commitment(),
+            VerkleNode::Inner3(n) => n.get_commitment(),
+            VerkleNode::Inner47(n) => n.get_commitment(),
+            VerkleNode::Inner256(n) => n.get_commitment(),
             VerkleNode::Leaf1(n) => n.get_commitment(),
             VerkleNode::Leaf2(n) => n.get_commitment(),
             VerkleNode::Leaf21(n) => n.get_commitment(),
@@ -269,7 +314,9 @@ impl ManagedTrieNode for VerkleNode {
     fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
         match self {
             VerkleNode::Empty(n) => n.set_commitment(cache),
-            VerkleNode::Inner(n) => n.set_commitment(cache),
+            VerkleNode::Inner3(n) => n.set_commitment(cache),
+            VerkleNode::Inner47(n) => n.set_commitment(cache),
+            VerkleNode::Inner256(n) => n.set_commitment(cache),
             VerkleNode::Leaf1(n) => n.set_commitment(cache),
             VerkleNode::Leaf2(n) => n.set_commitment(cache),
             VerkleNode::Leaf21(n) => n.set_commitment(cache),
@@ -286,7 +333,9 @@ impl ManagedTrieNode for VerkleNode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VerkleNodeKind {
     Empty,
-    Inner,
+    Inner3,
+    Inner47,
+    Inner256,
     Leaf1,
     Leaf2,
     Leaf21,
@@ -299,10 +348,17 @@ impl NodeSize for VerkleNodeKind {
     fn node_byte_size(&self) -> usize {
         let inner_size = match self {
             VerkleNodeKind::Empty => 0,
-            VerkleNodeKind::Inner => {
-                std::mem::size_of::<Box<InnerNode>>() + std::mem::size_of::<InnerNode>()
+            VerkleNodeKind::Inner3 => {
+                std::mem::size_of::<Box<SparseInnerNode<3>>>()
+                    + std::mem::size_of::<SparseInnerNode<3>>()
             }
-
+            VerkleNodeKind::Inner47 => {
+                std::mem::size_of::<Box<SparseInnerNode<47>>>()
+                    + std::mem::size_of::<SparseInnerNode<47>>()
+            }
+            VerkleNodeKind::Inner256 => {
+                std::mem::size_of::<Box<FullInnerNode>>() + std::mem::size_of::<FullInnerNode>()
+            }
             VerkleNodeKind::Leaf1 => {
                 std::mem::size_of::<Box<SparseLeafNode<1>>>()
                     + std::mem::size_of::<SparseLeafNode<1>>()
@@ -332,11 +388,11 @@ impl NodeSize for VerkleNodeKind {
 
     fn min_non_empty_node_size() -> usize {
         // Because we don't store empty nodes, the minimum size is the smallest non-empty node.
-        VerkleNodeKind::Leaf1.node_byte_size()
+        VerkleNodeKind::Inner3.node_byte_size()
     }
 }
 
-/// An item stored in a trie node, together with its index.
+/// An item in a trie node, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(
@@ -355,6 +411,8 @@ where
 
 /// A value of a leaf node in a managed Verkle trie, together with its index.
 pub type ValueWithIndex = ItemWithIndex<Value>;
+/// An ID in a sparse inner node, together with its index.
+pub type VerkleIdWithIndex = ItemWithIndex<VerkleNodeId>;
 
 impl<T> ItemWithIndex<T>
 where
@@ -363,12 +421,9 @@ where
     /// Returns a slot for storing an item with the given index, or `None` if no such slot exists.
     /// A slot is suitable if it either already holds the given index, or if it is empty
     /// (i.e., holds the default item).
-    fn get_slot_for<const N: usize>(values: &[ItemWithIndex<T>; N], index: u8) -> Option<usize>
-    where
-        T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned + Default,
-    {
+    fn get_slot_for<const N: usize>(values: &[ItemWithIndex<T>; N], index: u8) -> Option<usize> {
         let mut empty_slot = None;
-        // We always do a linear search over all items to ensure that we never hold the same index
+        // We always do a linear search over all item to ensure that we never hold the same index
         // twice in different slots. By starting the search at the given index we are very likely
         // to find the matching slot immediately in practice (if index < N).
         for (i, vwi) in values
@@ -385,6 +440,30 @@ where
             }
         }
         empty_slot
+    }
+
+    /// Returns the number of slots that would be required to store the given values or None if they
+    /// already fit.
+    fn get_slots_for<const N: usize>(
+        values: &[ItemWithIndex<T>; N],
+        indices: impl Iterator<Item = u8>,
+    ) -> Option<usize> {
+        let empty_slots = values.iter().filter(|vwi| vwi.item == T::default()).count();
+        let mut new_slots = 0;
+        for index in indices {
+            if values
+                .iter()
+                .any(|vwi| vwi.index == index && vwi.item != T::default())
+            {
+                continue;
+            }
+            new_slots += 1;
+        }
+        if new_slots <= empty_slots {
+            None
+        } else {
+            Some(N - empty_slots + new_slots)
+        }
     }
 }
 
@@ -425,11 +504,57 @@ pub fn make_smallest_leaf_node_for(
             }
             Ok(VerkleNode::Leaf256(Box::new(new_leaf)))
         }
-        VerkleNodeKind::Inner => Err(Error::CorruptedState(
-            "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
+        VerkleNodeKind::Inner3 | VerkleNodeKind::Inner47 | VerkleNodeKind::Inner256 => {
+            Err(Error::CorruptedState(
+                "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
+            )
+            .into())
+        }
+    }
+}
+
+/// Creates the smallest inner node capable of storing `n` children, initialized with the given
+/// `children` and `commitment`.
+pub fn make_smallest_inner_node_for(
+    n: usize,
+    children: &[VerkleIdWithIndex],
+    commitment: VerkleCommitment,
+) -> BTResult<VerkleNode, Error> {
+    match VerkleNode::smallest_inner_type_for(n) {
+        VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
+        VerkleNodeKind::Inner3 => Ok(VerkleNode::Inner3(Box::new(
+            Inner3VerkleNode::from_existing(children, commitment)?,
+        ))),
+        VerkleNodeKind::Inner47 => Ok(VerkleNode::Inner47(Box::new(
+            Inner47VerkleNode::from_existing(children, commitment)?,
+        ))),
+        VerkleNodeKind::Inner256 => {
+            let mut new_inner = FullInnerNode {
+                commitment,
+                ..Default::default()
+            };
+            for c in children {
+                new_inner.children[c.index as usize] = c.item;
+            }
+            Ok(VerkleNode::Inner256(Box::new(new_inner)))
+        }
+        VerkleNodeKind::Leaf1
+        | VerkleNodeKind::Leaf2
+        | VerkleNodeKind::Leaf21
+        | VerkleNodeKind::Leaf64
+        | VerkleNodeKind::Leaf141
+        | VerkleNodeKind::Leaf256 => Err(Error::CorruptedState(
+            "received non-inner type in make_smallest_inner_node_for".to_owned(),
         )
         .into()),
     }
+}
+
+/// A trait to link together full and sparse inner nodes.
+/// It provides a set of operations common to all inner node types.
+pub trait ManagedInnerNode {
+    /// Returns an iterator over all children in the inner node, together with their indexes.
+    fn iter_children(&self) -> Box<dyn Iterator<Item = VerkleIdWithIndex> + '_>;
 }
 
 #[cfg(test)]
@@ -442,7 +567,9 @@ mod tests {
     #[test]
     fn node_type_byte_size_returns_correct_size() {
         let empty_node = VerkleNodeKind::Empty;
-        let inner_node = VerkleNodeKind::Inner;
+        let inner3_node = VerkleNodeKind::Inner3;
+        let inner47_node = VerkleNodeKind::Inner47;
+        let inner256_node = VerkleNodeKind::Inner256;
         let leaf1_node = VerkleNodeKind::Leaf1;
         let leaf2_node = VerkleNodeKind::Leaf2;
         let leaf21_node = VerkleNodeKind::Leaf21;
@@ -455,10 +582,22 @@ mod tests {
             std::mem::size_of::<VerkleNode>()
         );
         assert_eq!(
-            inner_node.node_byte_size(),
+            inner3_node.node_byte_size(),
             std::mem::size_of::<VerkleNode>()
-                + std::mem::size_of::<Box<InnerNode>>()
-                + std::mem::size_of::<InnerNode>()
+                + std::mem::size_of::<Box<SparseInnerNode<3>>>()
+                + std::mem::size_of::<SparseInnerNode<3>>()
+        );
+        assert_eq!(
+            inner47_node.node_byte_size(),
+            std::mem::size_of::<VerkleNode>()
+                + std::mem::size_of::<Box<SparseInnerNode<47>>>()
+                + std::mem::size_of::<SparseInnerNode<47>>()
+        );
+        assert_eq!(
+            inner256_node.node_byte_size(),
+            std::mem::size_of::<VerkleNode>()
+                + std::mem::size_of::<Box<FullInnerNode>>()
+                + std::mem::size_of::<FullInnerNode>()
         );
         assert_eq!(
             leaf1_node.node_byte_size(),
@@ -502,14 +641,16 @@ mod tests {
     fn node_type_min_non_empty_node_size_returns_size_of_smallest_non_empty_node() {
         assert_eq!(
             VerkleNodeKind::min_non_empty_node_size(),
-            VerkleNode::Leaf1(Box::default()).node_byte_size()
+            VerkleNode::Inner3(Box::default()).node_byte_size()
         );
     }
 
     #[test]
     fn node_byte_size_returns_node_type_byte_size() {
         let empty_node = VerkleNode::Empty(EmptyNode);
-        let inner_node = VerkleNode::Inner(Box::default());
+        let inner3_node = VerkleNode::Inner3(Box::default());
+        let inner47_node = VerkleNode::Inner47(Box::default());
+        let inner256_node = VerkleNode::Inner256(Box::default());
         let leaf1_node = VerkleNode::Leaf1(Box::default());
         let leaf2_node = VerkleNode::Leaf2(Box::default());
         let leaf21_node = VerkleNode::Leaf21(Box::default());
@@ -522,8 +663,16 @@ mod tests {
             empty_node.node_byte_size()
         );
         assert_eq!(
-            VerkleNodeKind::Inner.node_byte_size(),
-            inner_node.node_byte_size()
+            VerkleNodeKind::Inner3.node_byte_size(),
+            inner3_node.node_byte_size()
+        );
+        assert_eq!(
+            VerkleNodeKind::Inner47.node_byte_size(),
+            inner47_node.node_byte_size()
+        );
+        assert_eq!(
+            VerkleNodeKind::Inner256.node_byte_size(),
+            inner256_node.node_byte_size()
         );
         assert_eq!(
             VerkleNodeKind::Leaf1.node_byte_size(),
@@ -560,6 +709,36 @@ mod tests {
     }
 
     #[test]
+    fn get_slots_for_returns_number_of_required_slots_or_none_if_values_fit() {
+        let mut node = SparseLeafNode::<5>::default();
+        node.values[1] = ValueWithIndex {
+            index: 1,
+            item: [1; 32],
+        };
+        node.values[2] = ValueWithIndex {
+            index: 10,
+            item: [1; 32],
+        };
+        node.values[3] = ValueWithIndex {
+            index: 100,
+            item: Value::default(),
+        };
+        // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
+
+        // Enough empty slots for all new indices
+        let slots = ValueWithIndex::get_slots_for(&node.values, [100, 101, 102].into_iter());
+        assert_eq!(slots, None);
+
+        // Enough empty slots and slots which get overwritten
+        let slots = ValueWithIndex::get_slots_for(&node.values, [100, 101, 102, 10, 1].into_iter());
+        assert_eq!(slots, None);
+
+        // Not enough empty slots
+        let slots = ValueWithIndex::get_slots_for(&node.values, [100, 101, 102, 103].into_iter());
+        assert_eq!(slots, Some(6)); // 2 existing + 4 new
+    }
+
+    #[test]
     fn node_count_visitor_visit_visit_nodes() {
         let mut visitor = NodeCountVisitor::default();
         let level = 0;
@@ -567,9 +746,9 @@ mod tests {
         let node = VerkleNode::Empty(EmptyNode);
         assert!(visitor.visit(&node, level).is_ok());
 
-        let mut node = InnerVerkleNode::default();
+        let mut node = FullInnerNode::default();
         for i in 0..256 {
-            node.children[i] = VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner);
+            node.children[i] = VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner256);
         }
         assert!(visitor.visit(&node, level + 1).is_ok());
 
@@ -633,21 +812,21 @@ mod tests {
         values[3] = TestItemWithIndex { index: 5, item: 20 };
 
         // Matching index
-        let slot = TestItemWithIndex::get_slot_for(&values, 0);
+        let slot = ItemWithIndex::get_slot_for(&values, 0);
         assert_eq!(slot, Some(0));
 
         // Matching index has precedence over empty slot
-        let slot = TestItemWithIndex::get_slot_for(&values, 5);
+        let slot = ItemWithIndex::get_slot_for(&values, 5);
         assert_eq!(slot, Some(3));
 
         // No matching index, so we return first empty slot
-        let slot = TestItemWithIndex::get_slot_for(&values, 8); // 8 % 2 = 0, so start start search at 0
+        let slot = ItemWithIndex::get_slot_for(&values, 8); // 8 % 2 = 0, so start start search at 0
         assert_eq!(slot, Some(1));
 
         // No matching index and no empty slot
         values[1] = TestItemWithIndex { index: 1, item: 30 };
         values[2] = TestItemWithIndex { index: 2, item: 40 };
-        let slot = TestItemWithIndex::get_slot_for(&values, 250);
+        let slot = ItemWithIndex::get_slot_for(&values, 250);
         assert_eq!(slot, None);
     }
 
@@ -661,6 +840,7 @@ mod tests {
     }
 
     impl<const N: usize> VerkleManagedTrieNode<Value> for SparseLeafNode<N> {}
+    impl<const N: usize> VerkleManagedTrieNode<VerkleNodeId> for SparseInnerNode<N> {}
 
     /// Helper trait to interact with nodes in rstest tests.
     pub trait NodeHelperTrait<T>
@@ -675,6 +855,17 @@ mod tests {
         /// Returns a reference to the specified slot (modulo N).
         fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex {
             &mut self.values[slot % N]
+        }
+
+        fn get_commitment_input(&self) -> VerkleCommitmentInput {
+            self.get_commitment_input().unwrap()
+        }
+    }
+
+    impl<const N: usize> NodeHelperTrait<VerkleNodeId> for SparseInnerNode<N> {
+        /// Returns a reference to the specified slot (modulo N).
+        fn access_slot(&mut self, slot: usize) -> &mut VerkleIdWithIndex {
+            &mut self.children[slot % N]
         }
 
         fn get_commitment_input(&self) -> VerkleCommitmentInput {

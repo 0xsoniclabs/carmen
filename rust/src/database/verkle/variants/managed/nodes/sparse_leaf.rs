@@ -18,9 +18,12 @@ use crate::{
         verkle::{
             KeyedUpdate, KeyedUpdateBatch,
             variants::managed::{
-                InnerNode, VerkleNode, VerkleNodeId,
+                VerkleNode, VerkleNodeId,
                 commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
-                nodes::{ValueWithIndex, make_smallest_leaf_node_for},
+                nodes::{
+                    ValueWithIndex, VerkleIdWithIndex, make_smallest_inner_node_for,
+                    make_smallest_leaf_node_for,
+                },
             },
         },
         visitor::NodeVisitor,
@@ -79,33 +82,6 @@ impl<const N: usize> SparseLeafNode<N> {
             values[*index as usize] = *value;
         }
         Ok(VerkleCommitmentInput::Leaf(values, self.stem))
-    }
-
-    /// Returns the number of slots that would be required to store the given values or None if they
-    /// already fit.
-    fn get_slots_for(
-        values: &[ValueWithIndex],
-        indices: impl Iterator<Item = u8>,
-    ) -> Option<usize> {
-        let empty_slots = values
-            .iter()
-            .filter(|vwi| vwi.item == Value::default())
-            .count();
-        let mut new_slots = 0;
-        for index in indices {
-            if values
-                .iter()
-                .any(|vwi| vwi.index == index && vwi.item != Value::default())
-            {
-                continue;
-            }
-            new_slots += 1;
-        }
-        if new_slots <= empty_slots {
-            None
-        } else {
-            Some(values.len() - empty_slots + new_slots)
-        }
     }
 }
 
@@ -194,13 +170,21 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         // If key does not match the stem, we have to introduce a new inner node.
         if !updates.all_stems_match(&self.stem) {
             let index = self.stem[depth as usize];
-            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
-            return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
-                inner,
-            ))));
+            let self_child = VerkleIdWithIndex {
+                index,
+                item: self_id,
+            };
+            let inner = make_smallest_inner_node_for(
+                2,
+                &[self_child],
+                VerkleCommitment::from_existing(&self.commitment),
+            )?;
+            // TODO: Test that only commitment is copied (not changed bits etc)
+            return Ok(StoreAction::HandleReparent(inner));
         }
 
-        if let Some(slots) = Self::get_slots_for(&self.values, updates.iter().map(|u| u.key()[31]))
+        if let Some(slots) =
+            ValueWithIndex::get_slots_for(&self.values, updates.iter().map(|u| u.key()[31]))
         {
             // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
             return Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
@@ -273,7 +257,6 @@ mod tests {
         error::BTError,
         types::{TreeId, Value},
     };
-
     /// A random stem used by nodes created through [`make_leaf`].
     const STEM: [u8; 31] = [
         199, 138, 41, 113, 63, 133, 10, 244, 221, 149, 172, 110, 253, 27, 18, 76, 151, 202, 22, 80,
@@ -460,38 +443,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn get_slots_for_returns_number_of_required_slots_or_none_if_values_fit() {
-        let mut node = SparseLeafNode::<5>::default();
-        node.values[1] = ValueWithIndex {
-            index: 1,
-            item: VALUE_1,
-        };
-        node.values[2] = ValueWithIndex {
-            index: 10,
-            item: VALUE_1,
-        };
-        node.values[3] = ValueWithIndex {
-            index: 100,
-            item: Value::default(),
-        };
-        // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
-
-        // Enough empty slots for all new indices
-        let slots = SparseLeafNode::<5>::get_slots_for(&node.values, [100, 101, 102].into_iter());
-        assert_eq!(slots, None);
-
-        // Enough empty slots and slots which get overwritten
-        let slots =
-            SparseLeafNode::<5>::get_slots_for(&node.values, [100, 101, 102, 10, 1].into_iter());
-        assert_eq!(slots, None);
-
-        // Not enough empty slots
-        let slots =
-            SparseLeafNode::<5>::get_slots_for(&node.values, [100, 101, 102, 103].into_iter());
-        assert_eq!(slots, Some(6)); // 2 existing + 4 new
-    }
-
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn lookup_with_matching_stem_returns_value_at_final_key_index(
         #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
@@ -533,8 +484,10 @@ mod tests {
             .next_store_action(update, divergence_at as u8, self_id)
             .unwrap();
         match result {
-            StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
-                assert_eq!(inner.children[STEM[divergence_at] as usize], self_id);
+            StoreAction::HandleReparent(VerkleNode::Inner3(inner)) => {
+                let slot =
+                    VerkleIdWithIndex::get_slot_for(&inner.children, STEM[divergence_at]).unwrap();
+                assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }

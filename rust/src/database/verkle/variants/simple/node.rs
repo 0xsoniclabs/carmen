@@ -171,9 +171,9 @@ impl InnerNode {
         if !self.commitment_dirty {
             return self.commitment;
         }
-        let _span = tracy_client::span!("InnerNode::commit");
+        let _span = tracy_client::span!("FullInnerNode::commit");
 
-        let _span = tracy_client::span!("InnerNode::commit");
+        let _span = tracy_client::span!("FullInnerNode::commit");
         let mut values = [Scalar::zero(); 256];
 
         for (i, child) in self.children.iter_mut().enumerate() {
@@ -413,7 +413,7 @@ mod tests {
 
         assert!(
             matches!(root, Node::Inner(_)),
-            "root should be an InnerNode"
+            "root should be an FullInnerNode"
         );
 
         assert_eq!(root.lookup(&key1, 2), make_value(42));
@@ -431,7 +431,7 @@ mod tests {
             2,
         );
         let Node::Inner(inner) = inner else {
-            panic!("expected InnerNode after set");
+            panic!("expected FullInnerNode after set");
         };
         assert!(matches!(inner.children[key[2] as usize], Node::Leaf(_)));
     }
@@ -448,7 +448,7 @@ mod tests {
             2,
         );
         let Node::Inner(mut inner) = inner else {
-            panic!("expected InnerNode after set");
+            panic!("expected FullInnerNode after set");
         };
         assert!(inner.commitment_dirty);
 
@@ -467,7 +467,7 @@ mod tests {
             2,
         );
         let Node::Inner(inner) = inner else {
-            panic!("expected InnerNode after set");
+            panic!("expected FullInnerNode after set");
         };
         assert!(inner.commitment_dirty);
     }
@@ -482,7 +482,7 @@ mod tests {
             2,
         );
         let Node::Inner(mut inner) = inner else {
-            panic!("expected InnerNode after set");
+            panic!("expected FullInnerNode after set");
         };
 
         assert!(!inner.commitment_initialized);
@@ -500,7 +500,7 @@ mod tests {
             2,
         );
         let Node::Inner(mut inner) = inner else {
-            panic!("expected InnerNode after set");
+            panic!("expected FullInnerNode after set");
         };
 
         let commitment = inner.commit();
@@ -584,7 +584,7 @@ mod tests {
             2,
         );
         let Node::Inner(inner) = new_node else {
-            panic!("expected InnerNode after set");
+            panic!("expected FullInnerNode after set");
         };
 
         // Original leaf is now a child of the inner node.

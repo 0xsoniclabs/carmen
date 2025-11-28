@@ -293,7 +293,7 @@ mod tests {
         // this opens:
         // StorageWithFlushBuffer
         //   -> FileStorageManager
-        //     -> A NodeFileStorage for each node type (InnerNode, SparseLeafNode<N>, ...)
+        //     -> A NodeFileStorage for each node type (FullInnerNode, SparseLeafNode<N>, ...)
         //       -> SeekFile
         StorageWithFlushBuffer::<
             TestNodeFileStorageManager<NodeFileStorage<_, SeekFile>, NodeFileStorage<_, SeekFile>>,

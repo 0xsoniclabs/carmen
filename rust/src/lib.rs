@@ -22,7 +22,8 @@ use crate::{
         verkle::{
             StateMode,
             variants::managed::{
-                FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+                FullInnerNode, FullLeafNode, SparseInnerNode, SparseLeafNode, VerkleNode,
+                VerkleNodeFileStorageManager,
             },
         },
     },
@@ -48,7 +49,9 @@ pub mod types;
 mod utils;
 
 type VerkleStorageManager = VerkleNodeFileStorageManager<
-    NodeFileStorage<InnerNode, NoSeekFile>,
+    NodeFileStorage<SparseInnerNode<3>, NoSeekFile>,
+    NodeFileStorage<SparseInnerNode<47>, NoSeekFile>,
+    NodeFileStorage<FullInnerNode, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
