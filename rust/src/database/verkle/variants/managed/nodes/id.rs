@@ -15,6 +15,8 @@ use crate::{
     types::{HasEmptyId, NodeSize, ToNodeKind, TreeId},
 };
 
+//TODO: Add Inner2 type. Philip has the ID already done.
+
 /// An identifier for a node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
@@ -58,13 +60,19 @@ impl VerkleNodeId {
     }
 }
 
+impl Default for VerkleNodeId {
+    fn default() -> Self {
+        VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty)
+    }
+}
+
 impl ToNodeKind for VerkleNodeId {
     type Target = VerkleNodeKind;
 
     fn to_node_kind(&self) -> Option<VerkleNodeKind> {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(VerkleNodeKind::Empty),
-            Self::INNER_NODE_PREFIX => Some(VerkleNodeKind::Inner),
+            Self::INNER_NODE_PREFIX => Some(VerkleNodeKind::Inner256),
             Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
             Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
             // There are only two ways to create a NodeId:
@@ -84,7 +92,8 @@ impl TreeId for VerkleNodeId {
         );
         let prefix = match node_type {
             VerkleNodeKind::Empty => Self::EMPTY_NODE_PREFIX,
-            VerkleNodeKind::Inner => Self::INNER_NODE_PREFIX,
+            VerkleNodeKind::Inner2 => unimplemented!(),
+            VerkleNodeKind::Inner256 => Self::INNER_NODE_PREFIX,
             VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
         };
@@ -128,7 +137,7 @@ mod tests {
         let idx = 0x0000_1234_5678_9abc;
         let cases = [
             (VerkleNodeKind::Empty, 0x0000_0000_0000_0000),
-            (VerkleNodeKind::Inner, 0x0000_4000_0000_0000),
+            (VerkleNodeKind::Inner256, 0x0000_4000_0000_0000),
             (VerkleNodeKind::Leaf2, 0x0000_8000_0000_0000),
             (VerkleNodeKind::Leaf256, 0x0000_C000_0000_0000),
         ];
@@ -162,7 +171,7 @@ mod tests {
             ),
             (
                 VerkleNodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
-                Some(VerkleNodeKind::Inner),
+                Some(VerkleNodeKind::Inner256),
             ),
             (
                 VerkleNodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
@@ -203,8 +212,8 @@ mod tests {
                 VerkleNodeKind::Empty,
             ),
             (
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner),
-                VerkleNodeKind::Inner,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256),
+                VerkleNodeKind::Inner256,
             ),
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf2),

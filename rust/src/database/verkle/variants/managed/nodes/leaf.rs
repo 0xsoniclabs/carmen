@@ -14,7 +14,7 @@ use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
-            InnerNode, VerkleNode, VerkleNodeId,
+            FullInnerNode, VerkleNode, VerkleNodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
         },
     },
@@ -72,8 +72,8 @@ impl ManagedTrieNode for FullLeafNode {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
             let index = self.stem[depth as usize];
-            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
-            return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
+            let inner = FullInnerNode::new_with_leaf(index, self_id, &self.commitment);
+            return Ok(StoreAction::HandleReparent(VerkleNode::Inner256(Box::new(
                 inner,
             ))));
         }
@@ -185,7 +185,7 @@ mod tests {
             .next_store_action(&key, divergence_at as u8, self_id)
             .unwrap();
         match result {
-            StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
+            StoreAction::HandleReparent(VerkleNode::Inner256(inner)) => {
                 assert_eq!(inner.children[56], self_id);
                 // Newly created inner node has commitment of the leaf.
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
