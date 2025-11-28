@@ -79,8 +79,11 @@ impl ManagedTrieNode for EmptyNode {
                 Ok(StoreAction::HandleTransform(new_leaf))
             } else {
                 // Because we have non-matching stems, we need an inner node
-                let new_inner =
-                    make_smallest_inner_node_for(updates.len(), &[], &self.get_commitment())?;
+                let new_inner = make_smallest_inner_node_for(
+                    updates.split(depth).count(),
+                    &[],
+                    &self.get_commitment(),
+                )?;
                 Ok(StoreAction::HandleTransform(new_inner))
             }
         }
@@ -159,7 +162,7 @@ mod tests {
             .unwrap();
         match action {
             StoreAction::HandleTransform(inner) => {
-                assert!(matches!(inner, VerkleNode::Inner256(_)));
+                assert!(matches!(inner, VerkleNode::Inner9(_)));
             }
             _ => panic!("expected HandleTransform to inner node"),
         }
