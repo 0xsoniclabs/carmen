@@ -8,7 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{mem::MaybeUninit, sync::Arc};
+use std::{
+    mem::MaybeUninit,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     CarmenState,
@@ -32,28 +35,60 @@ pub const EMPTY_CODE_HASH: Hash = [
     130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateMode {
+    Live,
+    Archive(u64),
+    LiveEmulate,
+}
+
+/// The current block height of the state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockHeight {
+    /// The block height of a live state which is always at the latest block.
+    Live,
+    /// The block height of an archive state at a specific block height.
+    ArchiveHeight(u64),
+    /// The block height of a live emulating archive state at a specific block height.
+    LiveEmulateHeight(Option<u64>),
+}
+
+impl BlockHeight {
+    /// Returns whether the state is in archive mode.
+    fn is_archive(&self) -> bool {
+        matches!(
+            self,
+            BlockHeight::ArchiveHeight(_) | BlockHeight::LiveEmulateHeight(_)
+        )
+    }
+}
+
 /// An implementation of [`CarmenState`] that uses a Verkle trie as the underlying data structure.
 pub struct VerkleTrieCarmenState<T: VerkleTrie> {
     trie: T,
     embedding: VerkleTrieEmbedding,
+    block_height: Mutex<BlockHeight>,
 }
 
 impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new_live() -> Self {
+        let trie = SimpleInMemoryVerkleTrie::new();
         Self {
-            trie: SimpleInMemoryVerkleTrie::new(),
+            trie,
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(BlockHeight::Live),
         }
     }
 }
 
 impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new_live() -> Self {
+        let trie = CrateCryptoInMemoryVerkleTrie::new();
         Self {
-            trie: CrateCryptoInMemoryVerkleTrie::new(),
+            trie,
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(BlockHeight::Live),
         }
     }
 }
@@ -67,10 +102,21 @@ where
 {
     /// Creates a new [`VerkleTrieCarmenState`] using a managed Verkle trie with the given node
     /// manager. Forwards any errors from [`ManagedVerkleTrie::try_new`].
-    pub fn try_new(manager: Arc<M>) -> BTResult<Self, Error> {
+    pub fn try_new(manager: Arc<M>, state_mode: StateMode) -> BTResult<Self, Error> {
+        let block = match state_mode {
+            StateMode::Live | StateMode::LiveEmulate => manager.highest_block_number()?,
+            StateMode::Archive(block) => Some(block),
+        };
+        let trie = ManagedVerkleTrie::try_new(manager, block)?;
+        let block_height = match state_mode {
+            StateMode::Live => BlockHeight::Live,
+            StateMode::Archive(block) => BlockHeight::ArchiveHeight(block),
+            StateMode::LiveEmulate => BlockHeight::LiveEmulateHeight(block),
+        };
         Ok(Self {
-            trie: ManagedVerkleTrie::try_new(manager)?,
+            trie,
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(block_height),
         })
     }
 }
@@ -140,10 +186,36 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
+        let mut block_height = self.block_height.lock().unwrap();
         if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(update, &self.embedding) {
-            self.trie.store(&update)?;
+            self.trie.store(&update, block_height.is_archive())?;
         }
 
+        let block = match &mut *block_height {
+            BlockHeight::Live => 0, // For the liveDB we always pass block height 0
+            BlockHeight::ArchiveHeight(_) => {
+                return Err(Error::UnsupportedOperation(
+                    "apply_block_updates is not supported on archive states".into(),
+                )
+                .into());
+            }
+            BlockHeight::LiveEmulateHeight(height) => {
+                match height {
+                    Some(height) => {
+                        if block != *height + 1 {
+                            return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
+                        }
+                    }
+                    None => {
+                        if block != 0 {
+                            return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
+                        }
+                    }
+                }
+                *height = Some(block);
+                block
+            }
+        };
         self.trie.after_update(block)?;
         Ok(())
     }
@@ -163,9 +235,9 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::crate_crypto(Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(Arc::new(InMemoryNodeManager::new(100))).unwrap()) as Box<dyn CarmenState>)]
+    #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live()) as Box<dyn CarmenState>)]
+    #[case::crate_crypto(Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new_live()) as Box<dyn CarmenState>)]
+    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(Arc::new(InMemoryNodeManager::new(100)),StateMode::Live).unwrap()) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]
@@ -177,7 +249,7 @@ mod tests {
 
     #[test]
     fn new_creates_empty_state() {
-        let state = VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new();
+        let state = VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live();
         assert_eq!(state.get_hash().unwrap(), Hash::default());
     }
 
@@ -715,6 +787,7 @@ mod tests {
         let state = VerkleTrieCarmenState {
             trie,
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(BlockHeight::LiveEmulateHeight(Some(block_height - 1))),
         };
         state
             .apply_block_update(block_height, Update::default())

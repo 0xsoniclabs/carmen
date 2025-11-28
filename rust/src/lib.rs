@@ -20,10 +20,13 @@ use crate::statistics::storage::StorageOperationLogger;
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
-        ManagedTrieNode, VerkleTrieCarmenState,
-        verkle::variants::managed::{
-            FullInnerNode, FullLeafNode, SparseInnerNode, SparseLeafNode, VerkleNode,
-            VerkleNodeFileStorageManager,
+        ManagedTrieNode, ManagedVerkleTrie, VerkleTrieCarmenState,
+        verkle::{
+            StateMode,
+            variants::managed::{
+                FullInnerNode, FullLeafNode, SparseInnerNode, SparseLeafNode, VerkleNode,
+                VerkleNodeFileStorageManager,
+            },
         },
     },
     error::{BTResult, Error},
@@ -76,21 +79,37 @@ pub fn open_carmen_db(
         return Err(Error::UnsupportedSchema(schema).into());
     }
 
-    let _archive_dir = directory.join("archive");
-    if !matches!(archive_impl, b"none" | b"") {
-        return Err(
-            Error::UnsupportedImplementation("archive is not yet supported".to_owned()).into(),
-        );
-    }
+    let archive_dir = directory.join("archive");
+    match archive_impl {
+        b"file" => {
+            let storage = VerkleStorage::open(&archive_dir, DbMode::ReadWrite)?;
+            let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
+            // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
+            // https://github.com/0xsoniclabs/sonic-admin/issues/382
+            let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
+            let live_state = VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(
+                manager.clone(),
+                StateMode::LiveEmulate,
+            )?;
+            return Ok(Box::new(CarmenS6FileBasedDb::new(manager, live_state)));
+        }
+        b"none" | b"" => (),
+        _ => {
+            return Err(Error::UnsupportedImplementation(
+                "non file archives are not yet supported".to_owned(),
+            )
+            .into());
+        }
+    };
 
     let live_dir = directory.join("live");
     match live_impl {
         b"memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
-        >::new()))),
+        >::new_live()))),
         b"crate-crypto-memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::CrateCryptoInMemoryVerkleTrie,
-        >::new()))),
+        >::new_live()))),
         b"file" => {
             let storage = VerkleStorage::open(&live_dir, DbMode::ReadWrite)?;
             #[cfg(feature = "storage-statistics")]
@@ -100,16 +119,20 @@ pub fn open_carmen_db(
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
-            Ok(Box::new(CarmenS6FileBasedDb::new(
-                manager.clone(),
-                VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(manager)?,
-            )))
+            let live_manager = manager.clone();
+            let live_state =
+                VerkleTrieCarmenState::<ManagedVerkleTrie<_>>::try_new(manager, StateMode::Live)?;
+            Ok(Box::new(CarmenS6FileBasedDb::new(live_manager, live_state)))
         }
         b"ldb" => Err(Error::UnsupportedImplementation(
             "LevelDB-based live state is not supported".to_owned(),
         )
         .into()),
-        _ => Err(Error::UnsupportedImplementation("unknown live implementation".to_owned()).into()),
+        live_impl => Err(Error::UnsupportedImplementation(format!(
+            "unknown live implementation: {:?}",
+            str::from_utf8(live_impl)
+        ))
+        .into()),
     }
 }
 
@@ -274,12 +297,11 @@ impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
     }
 }
 
-impl<S, LS> CarmenDb for CarmenS6FileBasedDb<S, LS>
-where
-    S: Storage,
-    S::Item: Default + Send + Sync,
-    S::Id: Eq + std::hash::Hash + Send + Sync,
-    LS: CarmenState + 'static,
+impl CarmenDb
+    for CarmenS6FileBasedDb<
+        VerkleStorage,
+        VerkleTrieCarmenState<ManagedVerkleTrie<CachedNodeManager<VerkleStorage>>>,
+    >
 {
     fn checkpoint(&self) -> BTResult<(), Error> {
         // TODO: Support checkpoints for archive
@@ -303,8 +325,14 @@ where
         Ok(Box::new(self.live_state.clone()))
     }
 
-    fn get_archive_state(&self, _block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
-        unimplemented!()
+    fn get_archive_state(&self, block: u64) -> BTResult<Box<dyn CarmenState>, Error> {
+        let archive_state = Arc::new(
+            VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(
+                self.manager.clone(),
+                StateMode::Archive(block),
+            )?,
+        );
+        Ok(Box::new(archive_state))
     }
 
     fn get_memory_footprint(&self) -> BTResult<Box<str>, Error> {
@@ -318,9 +346,53 @@ where
 #[cfg(test)]
 mod tests {
     use crypto_bigint::U256;
+    use zerocopy::transmute;
 
     use super::*;
     use crate::utils::test_dir::{Permissions, TestDir};
+
+    #[test]
+    fn xxxx() {
+        let addr = [1; 20];
+        let balance1 = transmute!([[0u8; 16], [2; 16]]);
+        let balance2 = transmute!([[0u8; 16], [3; 16]]);
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"file", &dir).unwrap();
+        let live_state = db.get_live_state().unwrap();
+
+        live_state
+            .apply_block_update(
+                0,
+                Update {
+                    balances: &[BalanceUpdate {
+                        addr,
+                        balance: balance1,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(live_state.get_balance(&addr).unwrap(), balance1);
+
+        live_state
+            .apply_block_update(
+                1,
+                Update {
+                    balances: &[BalanceUpdate {
+                        addr,
+                        balance: balance2,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(live_state.get_balance(&addr).unwrap(), balance2);
+
+        let archive_state = db.get_archive_state(0).unwrap();
+        assert_eq!(archive_state.get_balance(&addr).unwrap(), balance1);
+        let archive_state = db.get_archive_state(1).unwrap();
+        assert_eq!(archive_state.get_balance(&addr).unwrap(), balance2);
+    }
 
     #[test]
     fn file_based_verkle_trie_implementation_supports_closing_and_reopening() {
