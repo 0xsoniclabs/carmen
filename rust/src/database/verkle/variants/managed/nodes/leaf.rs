@@ -17,8 +17,10 @@ use crate::{
             InnerNode, VerkleNode, VerkleNodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -103,6 +105,22 @@ impl ManagedTrieNode for FullLeafNode {
 
     fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
         self.commitment = cache;
+        Ok(())
+    }
+}
+
+impl NodeVisitor<FullLeafNode> for NodeCountVisitor {
+    fn visit(&mut self, node: &FullLeafNode, level: u64) -> BTResult<(), Error> {
+        self.count_node(
+            level,
+            "Leaf",
+            Some(
+                node.values
+                    .iter()
+                    .filter(|value| **value != Value::default())
+                    .count() as u64,
+            ),
+        );
         Ok(())
     }
 }

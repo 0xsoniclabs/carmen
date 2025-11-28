@@ -18,9 +18,11 @@ use crate::{
             commitment::{VerkleCommitment, VerkleCommitmentInput},
             nodes::{VerkleNodeKind, id::VerkleNodeId},
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
-    types::{Key, TreeId},
+    statistics::node_count::NodeCountVisitor,
+    types::{Key, ToNodeKind, TreeId},
 };
 
 /// An inner node in a managed Verkle trie.
@@ -97,6 +99,22 @@ impl ManagedTrieNode for InnerNode {
 
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
         self.commitment = commitment;
+        Ok(())
+    }
+}
+
+impl NodeVisitor<InnerNode> for NodeCountVisitor {
+    fn visit(&mut self, node: &InnerNode, level: u64) -> BTResult<(), Error> {
+        self.count_node(
+            level,
+            "Inner",
+            Some(
+                node.children
+                    .iter()
+                    .filter(|child| child.to_node_kind().unwrap() != VerkleNodeKind::Empty)
+                    .count() as u64,
+            ),
+        );
         Ok(())
     }
 }

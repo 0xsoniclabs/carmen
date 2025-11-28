@@ -18,8 +18,10 @@ use crate::{
             commitment::{VerkleCommitment, VerkleCommitmentInput},
             nodes::make_smallest_leaf_node_for,
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -200,6 +202,22 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
 
     fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
         self.commitment = cache;
+        Ok(())
+    }
+}
+
+impl<const N: usize> NodeVisitor<SparseLeafNode<N>> for NodeCountVisitor {
+    fn visit(&mut self, node: &SparseLeafNode<N>, level: u64) -> BTResult<(), Error> {
+        self.count_node(
+            level,
+            "Leaf",
+            Some(
+                node.values
+                    .iter()
+                    .filter(|value| value.value != Value::default())
+                    .count() as u64,
+            ),
+        );
         Ok(())
     }
 }

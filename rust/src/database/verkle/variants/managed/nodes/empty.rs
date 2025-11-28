@@ -16,8 +16,10 @@ use crate::{
             commitment::{VerkleCommitment, VerkleCommitmentInput},
             nodes::make_smallest_leaf_node_for,
         },
+        visitor::NodeVisitor,
     },
     error::{BTResult, Error},
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -73,6 +75,13 @@ impl ManagedTrieNode for EmptyNode {
 
     fn get_commitment(&self) -> Self::Commitment {
         VerkleCommitment::default()
+    }
+}
+
+impl NodeVisitor<EmptyNode> for NodeCountVisitor {
+    fn visit(&mut self, _node: &EmptyNode, level: u64) -> BTResult<(), Error> {
+        self.count_node(level, "Empty", None);
+        Ok(())
     }
 }
 

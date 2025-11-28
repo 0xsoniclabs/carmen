@@ -17,6 +17,7 @@ use crate::{
         visitor::NodeVisitor,
     },
     error::{BTResult, Error},
+    statistics::node_count::NodeCountVisitor,
     types::{Key, Value},
 };
 
@@ -265,6 +266,36 @@ impl LeafNode {
         self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
         self.commitment_dirty = false;
         self.commitment
+    }
+}
+
+impl NodeVisitor<Node> for NodeCountVisitor {
+    fn visit(&mut self, node: &Node, level: u64) -> BTResult<(), Error> {
+        match node {
+            Node::Empty => {
+                self.count_node(level, "Empty", None);
+            }
+            Node::Leaf(node) => {
+                self.count_node(
+                    level,
+                    "Leaf",
+                    Some(node.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
+                );
+            }
+            Node::Inner(node) => {
+                self.count_node(
+                    level,
+                    "Inner",
+                    Some(
+                        node.children
+                            .iter()
+                            .filter(|c| !matches!(c, Node::Empty))
+                            .count() as u64,
+                    ),
+                );
+            }
+        }
+        Ok(())
     }
 }
 
