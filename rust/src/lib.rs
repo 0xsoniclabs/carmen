@@ -20,10 +20,13 @@ use crate::statistics::storage::StorageOperationLogger;
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
-        ManagedTrieNode, VerkleTrieCarmenState,
-        verkle::variants::managed::{
-            FullInnerNode, FullLeafNode, SparseInnerNode, SparseLeafNode, VerkleNode,
-            VerkleNodeFileStorageManager,
+        ManagedTrieNode, ManagedVerkleTrie, VerkleTrieCarmenState,
+        verkle::{
+            StateMode,
+            variants::managed::{
+                FullInnerNode, FullLeafNode, SparseInnerNode, SparseLeafNode, VerkleNode,
+                VerkleNodeFileStorageManager,
+            },
         },
     },
     error::{BTResult, Error},
@@ -87,10 +90,10 @@ pub fn open_carmen_db(
     match live_impl {
         b"memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::SimpleInMemoryVerkleTrie,
-        >::new()))),
+        >::new_live()))),
         b"crate-crypto-memory" => Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
             database::CrateCryptoInMemoryVerkleTrie,
-        >::new()))),
+        >::new_live()))),
         b"file" => {
             let storage = VerkleStorage::open(&live_dir, DbMode::ReadWrite)?;
             #[cfg(feature = "storage-statistics")]
@@ -102,14 +105,18 @@ pub fn open_carmen_db(
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
             Ok(Box::new(CarmenS6FileBasedDb::new(
                 manager.clone(),
-                VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(manager)?,
+                VerkleTrieCarmenState::<ManagedVerkleTrie<_>>::try_new(manager, StateMode::Live)?,
             )))
         }
         b"ldb" => Err(Error::UnsupportedImplementation(
             "LevelDB-based live state is not supported".to_owned(),
         )
         .into()),
-        _ => Err(Error::UnsupportedImplementation("unknown live implementation".to_owned()).into()),
+        live_impl => Err(Error::UnsupportedImplementation(format!(
+            "unknown live implementation `{}`",
+            String::from_utf8_lossy(live_impl)
+        ))
+        .into()),
     }
 }
 

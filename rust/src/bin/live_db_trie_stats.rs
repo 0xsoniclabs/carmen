@@ -105,7 +105,8 @@ fn main() {
     // NOTE: the `ManagedVerkleTrie` must be dropped before closing the DB, hence the
     // inner scope.
     {
-        let managed_trie = database::ManagedVerkleTrie::<_>::try_new(manager.clone()).unwrap();
+        let managed_trie =
+            database::ManagedVerkleTrie::<_>::try_new(manager.clone(), Some(0)).unwrap();
         let mut count_visitor = NodeCountVisitor::default();
         managed_trie.accept(&mut count_visitor).unwrap();
         count_visitor.node_count.print(&mut formatters).unwrap();
