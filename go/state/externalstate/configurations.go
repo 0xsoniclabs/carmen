@@ -70,7 +70,7 @@ func init() {
 	factories[state.Configuration{
 		Variant: VariantRustFile,
 		Schema:  6,
-		Archive: state.NoArchive,
+		Archive: "file",
 	}] = newRustFileBasedState
 
 	// Register all experimental configurations.
