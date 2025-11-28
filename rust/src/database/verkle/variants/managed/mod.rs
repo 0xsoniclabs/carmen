@@ -24,9 +24,9 @@ use crate::{
         },
         visitor::{AcceptVisitor, NodeVisitor},
     },
-    error::{BTError, BTResult, Error},
+    error::{BTResult, Error},
     node_manager::NodeManager,
-    storage::{self, RootIdProvider},
+    storage::RootIdProvider,
     sync::{Arc, RwLock},
     types::{Key, Value},
 };
@@ -56,16 +56,10 @@ where
     /// a new empty trie is created.
     ///
     /// Returns an error if the root node ID cannot be obtained from the node manager.
-    pub fn try_new(manager: Arc<M>) -> BTResult<Self, Error> {
-        // We currently always pass block height 0 since we assume this to be a live DB.
-        // TODO: Forward actual block height for archive DB
-        let root = match manager.get_root_id(0).map_err(BTError::into_inner) {
-            Ok(root_id) => root_id,
-            Err(storage::Error::NotFound) => {
-                let empty_node = VerkleNode::Empty(EmptyNode {});
-                manager.add(empty_node)?
-            }
-            Err(e) => return Err(e.into()),
+    pub fn try_new(manager: Arc<M>, block_height: Option<u64>) -> BTResult<Self, Error> {
+        let root = match block_height {
+            Some(block) => manager.get_root_id(block)?,
+            None => manager.add(VerkleNode::Empty(EmptyNode {}))?,
         };
         Ok(ManagedVerkleTrie {
             root: RwLock::new(root),
@@ -97,13 +91,13 @@ where
         managed_trie::lookup(*self.root.read().unwrap(), key, &*self.manager)
     }
 
-    fn store(&self, updates: &KeyedUpdateBatch) -> BTResult<(), Error> {
+    fn store(&self, updates: &KeyedUpdateBatch, is_archive: bool) -> BTResult<(), Error> {
         managed_trie::store(
             self.root.write().unwrap(),
             updates,
             &*self.manager,
             &self.update_log,
-            false,
+            is_archive,
         )
     }
 
@@ -116,11 +110,9 @@ where
             .commitment())
     }
 
-    fn after_update(&self, _block_height: u64) -> BTResult<(), Error> {
+    fn after_update(&self, block_height: u64) -> BTResult<(), Error> {
         let root_id = *self.root.read().unwrap();
-        // We currently always pass block height 0 since we assume this to be a live DB.
-        // TODO: Forward actual block height for archive DB
-        self.manager.set_root_id(0, root_id)?;
+        self.manager.set_root_id(block_height, root_id)?;
         Ok(())
     }
 }
@@ -140,30 +132,44 @@ mod tests {
             },
             visitor::MockNodeVisitor,
         },
+        error::BTError,
         node_manager::in_memory_node_manager::InMemoryNodeManager,
+        storage,
         sync::{RwLockReadGuard, RwLockWriteGuard},
     };
 
     // NOTE: Most tests are in verkle_trie.rs
 
+    #[rstest_reuse::template]
+    #[rstest::rstest]
+    #[case::live(false)]
+    #[case::archive(true)]
+    fn is_archive(#[case] is_archive: bool) {}
+
     #[test]
     fn try_new_creates_empty_trie() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
-        let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
+        let trie = ManagedVerkleTrie::try_new(manager.clone(), None).unwrap();
 
         let root_node = manager.get_read_access(*trie.root.read().unwrap()).unwrap();
         assert!(matches!(&**root_node, VerkleNode::Empty(_)));
     }
 
     #[test]
-    fn try_new_gets_root_id_for_block_zero_from_node_manager() {
+    fn try_new_gets_root_id_from_node_manager() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
-        let expected_root_id = manager.add(VerkleNode::Inner256(Box::default())).unwrap();
-        manager.set_root_id(0, expected_root_id).unwrap();
+        let expected_root_id_0 = manager.add(VerkleNode::Inner256(Box::default())).unwrap();
+        let expected_root_id_1 = manager.add(VerkleNode::Inner9(Box::default())).unwrap();
+        manager.set_root_id(0, expected_root_id_0).unwrap();
+        manager.set_root_id(1, expected_root_id_1).unwrap();
 
-        let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
+        let trie = ManagedVerkleTrie::try_new(manager.clone(), Some(0)).unwrap();
         let received_root_id = *trie.root.read().unwrap();
-        assert_eq!(received_root_id, expected_root_id);
+        assert_eq!(received_root_id, expected_root_id_0);
+
+        let trie = ManagedVerkleTrie::try_new(manager.clone(), Some(1)).unwrap();
+        let received_root_id = *trie.root.read().unwrap();
+        assert_eq!(received_root_id, expected_root_id_1);
     }
 
     #[test]
@@ -173,23 +179,24 @@ mod tests {
             .expect_get_root_id()
             .with(eq(0))
             .returning(|_| Err(storage::Error::Frozen.into()));
-        let result = ManagedVerkleTrie::try_new(Arc::new(manager)).map_err(BTError::into_inner);
+        let result =
+            ManagedVerkleTrie::try_new(Arc::new(manager), Some(0)).map_err(BTError::into_inner);
         assert!(matches!(
             result,
             Err(Error::Storage(storage::Error::Frozen))
         ));
     }
 
-    #[test]
-    fn trie_commitment_of_non_empty_trie_is_root_node_commitment() {
+    #[rstest_reuse::apply(is_archive)]
+    fn trie_commitment_of_non_empty_trie_is_root_node_commitment(#[case] is_archive: bool) {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
-        let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
+        let trie = ManagedVerkleTrie::try_new(manager.clone(), None).unwrap();
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[
             (make_leaf_key(&[1], 1), make_value(1)),
             (make_leaf_key(&[2], 2), make_value(2)),
             (make_leaf_key(&[3], 3), make_value(3)),
         ]);
-        trie.store(&updates).unwrap();
+        trie.store(&updates, is_archive).unwrap();
 
         let received = trie.commit().unwrap();
         let expected = manager
@@ -201,18 +208,18 @@ mod tests {
         assert_eq!(received, expected);
     }
 
-    #[test]
-    fn after_update_updates_root_id_in_node_manager() {
+    #[rstest_reuse::apply(is_archive)]
+    fn after_update_updates_root_id_in_node_manager(#[case] is_archive: bool) {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
-        let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
+        let trie = ManagedVerkleTrie::try_new(manager.clone(), None).unwrap();
         let updates =
             KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[1], 1), make_value(1))]);
-        trie.store(&updates).unwrap();
+        trie.store(&updates, is_archive).unwrap();
         let root_id = *trie.root.read().unwrap();
 
-        trie.after_update(42).unwrap();
-        // We currently always set the root id for block height 0
-        let stored_root_id = manager.get_root_id(0).unwrap();
+        let block_height = 42;
+        trie.after_update(block_height).unwrap();
+        let stored_root_id = manager.get_root_id(block_height).unwrap();
         assert_eq!(root_id, stored_root_id);
     }
 
@@ -244,7 +251,7 @@ mod tests {
 
         // Register the root node
         node_manager.set_root_id(0, inner_node_id).unwrap();
-        let trie = ManagedVerkleTrie::try_new(node_manager.clone()).unwrap();
+        let trie = ManagedVerkleTrie::try_new(node_manager.clone(), Some(0)).unwrap();
 
         let mut mock_visitor = MockNodeVisitor::<VerkleNode>::new();
         mock_visitor

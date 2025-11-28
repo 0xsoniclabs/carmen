@@ -29,7 +29,7 @@ pub trait VerkleTrie: Send + Sync {
     fn lookup(&self, key: &Key) -> BTResult<Value, Error>;
 
     /// Stores the values for the keys of the updates.
-    fn store<'u>(&self, updates: &KeyedUpdateBatch<'u>) -> BTResult<(), Error>;
+    fn store<'u>(&self, updates: &KeyedUpdateBatch<'u>, is_archive: bool) -> BTResult<(), Error>;
 
     /// Computes and returns the current root commitment of the trie.
     /// The commitment can be used as cryptographic proof of the trie's state,
@@ -57,20 +57,24 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
-    #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>)]
-    #[case::managed(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100))).unwrap()) as Box<dyn VerkleTrie>)]
-    fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>) {}
+    #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>, false)]
+    #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>, false)]
+    #[case::managed_live(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100)), None).unwrap()) as Box<dyn VerkleTrie>, false)]
+    #[case::managed_archive(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(10000)), None).unwrap()) as Box<dyn VerkleTrie>, true)]
+    fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>, #[case] is_archive: bool) {}
 
     #[rstest_reuse::apply(all_trie_impls)]
-    fn newly_created_trie_is_empty(#[case] trie: Box<dyn VerkleTrie>) {
+    fn newly_created_trie_is_empty(#[case] trie: Box<dyn VerkleTrie>, #[case] _is_archive: bool) {
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), Value::default());
         assert_eq!(trie.lookup(&make_key(&[2])).unwrap(), Value::default());
         assert_eq!(trie.lookup(&make_key(&[3])).unwrap(), Value::default());
     }
 
     #[rstest_reuse::apply(all_trie_impls)]
-    fn commitment_of_empty_trie_is_default_commitment(#[case] trie: Box<dyn VerkleTrie>) {
+    fn commitment_of_empty_trie_is_default_commitment(
+        #[case] trie: Box<dyn VerkleTrie>,
+        #[case] _is_archive: bool,
+    ) {
         assert_eq!(
             trie.commit().map_err(BTError::into_inner),
             Ok(Commitment::default())
@@ -78,7 +82,10 @@ mod tests {
     }
 
     #[rstest_reuse::apply(all_trie_impls)]
-    fn values_can_be_stored_and_looked_up(#[case] trie: Box<dyn VerkleTrie>) {
+    fn values_can_be_stored_and_looked_up(
+        #[case] trie: Box<dyn VerkleTrie>,
+        #[case] is_archive: bool,
+    ) {
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), Value::default());
         assert_eq!(trie.lookup(&make_key(&[2])).unwrap(), Value::default());
         assert_eq!(
@@ -90,10 +97,10 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_key(&[1]),
-            make_value(1),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_key(&[1]), make_value(1))]),
+            is_archive,
+        )
         .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
@@ -107,10 +114,10 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_key(&[2]),
-            make_value(2),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_key(&[2]), make_value(2))]),
+            is_archive,
+        )
         .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
@@ -124,10 +131,10 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_leaf_key(&[0], 1),
-            make_value(3),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[0], 1), make_value(3))]),
+            is_archive,
+        )
         .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
@@ -138,10 +145,10 @@ mod tests {
             Value::default()
         );
 
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_leaf_key(&[0], 2),
-            make_value(4),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[0], 2), make_value(4))]),
+            is_archive,
+        )
         .unwrap();
 
         assert_eq!(trie.lookup(&make_key(&[1])).unwrap(), make_value(1));
@@ -151,31 +158,34 @@ mod tests {
     }
 
     #[rstest_reuse::apply(all_trie_impls)]
-    fn values_can_be_updated(#[case] trie: Box<dyn VerkleTrie>) {
+    fn values_can_be_updated(#[case] trie: Box<dyn VerkleTrie>, #[case] is_archive: bool) {
         let key = make_key(&[1]);
         assert_eq!(trie.lookup(&key).unwrap(), Value::default());
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            key,
-            make_value(1),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(key, make_value(1))]),
+            is_archive,
+        )
         .unwrap();
         assert_eq!(trie.lookup(&key).unwrap(), make_value(1));
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            key,
-            make_value(2),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(key, make_value(2))]),
+            is_archive,
+        )
         .unwrap();
         assert_eq!(trie.lookup(&key).unwrap(), make_value(2));
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            key,
-            make_value(3),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(key, make_value(3))]),
+            is_archive,
+        )
         .unwrap();
         assert_eq!(trie.lookup(&key).unwrap(), make_value(3));
     }
 
     #[rstest_reuse::apply(all_trie_impls)]
-    fn many_values_can_be_stored_and_looked_up(#[case] trie: Box<dyn VerkleTrie>) {
+    fn many_values_can_be_stored_and_looked_up(
+        #[case] trie: Box<dyn VerkleTrie>,
+        #[case] is_archive: bool,
+    ) {
         const N: u32 = 1000;
 
         let to_key = |i: u32| {
@@ -195,10 +205,10 @@ mod tests {
                 let got = trie.lookup(&to_key(j)).unwrap();
                 assert_eq!(got, want, "mismatch for key: {:?}", to_key(j));
             }
-            trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-                to_key(i),
-                make_value(i as u64),
-            )]))
+            trie.store(
+                &KeyedUpdateBatch::from_key_value_pairs(&[(to_key(i), make_value(i as u64))]),
+                is_archive,
+            )
             .unwrap();
         }
     }
@@ -211,19 +221,20 @@ mod tests {
     #[rstest_reuse::apply(all_trie_impls)]
     fn reparented_leaf_is_correctly_included_in_inner_node_commitment(
         #[case] trie: Box<dyn VerkleTrie>,
+        #[case] is_archive: bool,
     ) {
         // Insert a single value. This will create an inner -> leaf.
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_leaf_key(&[2], 0),
-            make_value(1),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[2], 0), make_value(1))]),
+            is_archive,
+        )
         .unwrap();
         // Trigger insertion of another inner node by inserting a key that shares prefix
         // with existing leaf.
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_leaf_key(&[2, 3], 0),
-            make_value(1),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[2, 3], 0), make_value(1))]),
+            is_archive,
+        )
         .unwrap();
         let received = trie.commit().unwrap();
 
@@ -243,12 +254,13 @@ mod tests {
     #[rstest_reuse::apply(all_trie_impls)]
     fn incrementally_computed_commitment_over_reparented_leaf_is_correct(
         #[case] trie: Box<dyn VerkleTrie>,
+        #[case] is_archive: bool,
     ) {
         // Insert a single value. This will create an inner -> leaf.
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_leaf_key(&[2], 0),
-            make_value(1),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[2], 0), make_value(1))]),
+            is_archive,
+        )
         .unwrap();
         let received = trie.commit().unwrap();
 
@@ -258,10 +270,10 @@ mod tests {
 
         // Trigger insertion of another inner node by inserting a key that shares prefix
         // with existing leaf.
-        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[(
-            make_leaf_key(&[2, 3], 0),
-            make_value(1),
-        )]))
+        trie.store(
+            &KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[2, 3], 0), make_value(1))]),
+            is_archive,
+        )
         .unwrap();
         let received = trie.commit().unwrap();
 

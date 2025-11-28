@@ -24,6 +24,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::NodeManager,
     storage::RootIdProvider,
+    sync::Mutex,
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
@@ -32,28 +33,63 @@ pub const EMPTY_CODE_HASH: Hash = [
     130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
 ];
 
+/// The mode of the Verkle trie state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateMode {
+    /// A live state that only keeps the state of the latest block.
+    Live,
+    /// An archive state for a specific block height.
+    Archive(u64),
+    /// An archive state that increases its block height on each update and emulates a live state.
+    EvolvingArchive,
+}
+
+/// The current block height of the state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockHeight {
+    /// The block height of a live state which is always at the latest block.
+    Live,
+    /// The block height of an archive state at a specific block height.
+    Archive(u64),
+    /// The block height of an archive state that increases on each update.
+    /// If the state is empty (i.e., no updates have been applied yet), the height is `None`.
+    EvolvingArchive(Option<u64>),
+}
+
+impl BlockHeight {
+    /// Returns whether the state is in archive mode.
+    fn is_archive(&self) -> bool {
+        matches!(
+            self,
+            BlockHeight::Archive(_) | BlockHeight::EvolvingArchive(_)
+        )
+    }
+}
+
 /// An implementation of [`CarmenState`] that uses a Verkle trie as the underlying data structure.
 pub struct VerkleTrieCarmenState<T: VerkleTrie> {
     trie: T,
     embedding: VerkleTrieEmbedding,
+    block_height: Mutex<BlockHeight>,
 }
 
 impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new_live() -> Self {
         Self {
             trie: SimpleInMemoryVerkleTrie::new(),
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(BlockHeight::Live),
         }
     }
 }
 
 impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new_live() -> Self {
         Self {
             trie: CrateCryptoInMemoryVerkleTrie::new(),
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(BlockHeight::Live),
         }
     }
 }
@@ -67,10 +103,21 @@ where
 {
     /// Creates a new [`VerkleTrieCarmenState`] using a managed Verkle trie with the given node
     /// manager. Forwards any errors from [`ManagedVerkleTrie::try_new`].
-    pub fn try_new(manager: Arc<M>) -> BTResult<Self, Error> {
+    pub fn try_new(manager: Arc<M>, state_mode: StateMode) -> BTResult<Self, Error> {
+        let block = match state_mode {
+            StateMode::Live | StateMode::EvolvingArchive => manager.highest_block_number()?,
+            StateMode::Archive(block) => Some(block),
+        };
+        let trie = ManagedVerkleTrie::try_new(manager, block)?;
+        let block_height = match state_mode {
+            StateMode::Live => BlockHeight::Live,
+            StateMode::Archive(block) => BlockHeight::Archive(block),
+            StateMode::EvolvingArchive => BlockHeight::EvolvingArchive(block),
+        };
         Ok(Self {
-            trie: ManagedVerkleTrie::try_new(manager)?,
+            trie,
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(block_height),
         })
     }
 }
@@ -140,10 +187,35 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
+        let mut block_height = self.block_height.lock().unwrap();
+        let block = match &mut *block_height {
+            BlockHeight::Live => 0, // For the liveDB we always pass block height 0
+            BlockHeight::Archive(_) => {
+                return Err(Error::UnsupportedOperation(
+                    "apply_block_updates is not supported on archive states".into(),
+                )
+                .into());
+            }
+            BlockHeight::EvolvingArchive(height) => {
+                match height {
+                    Some(height) => {
+                        if block != *height + 1 {
+                            return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
+                        }
+                    }
+                    None => {
+                        if block != 0 {
+                            return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
+                        }
+                    }
+                }
+                *height = Some(block);
+                block
+            }
+        };
         if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(update, &self.embedding) {
-            self.trie.store(&update)?;
+            self.trie.store(&update, block_height.is_archive())?;
         }
-
         self.trie.after_update(block)?;
         Ok(())
     }
@@ -157,15 +229,17 @@ mod tests {
     use super::*;
     use crate::{
         database::verkle::{test_utils::FromIndexValues, verkle_trie::MockVerkleTrie},
+        error::BTError,
         node_manager::in_memory_node_manager::InMemoryNodeManager,
         types::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate},
     };
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::crate_crypto(Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new()) as Box<dyn CarmenState>)]
-    #[case::managed(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(Arc::new(InMemoryNodeManager::new(100))).unwrap()) as Box<dyn CarmenState>)]
+    #[case::simple_in_memory(Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live()) as Box<dyn CarmenState>)]
+    #[case::crate_crypto(Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new_live()) as Box<dyn CarmenState>)]
+    #[case::managed_live(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(Arc::new(InMemoryNodeManager::new(100)),StateMode::Live).unwrap()) as Box<dyn CarmenState>)]
+    #[case::managed_evolving_archive(Box::new(VerkleTrieCarmenState::<ManagedVerkleTrie<InMemoryNodeManager<VerkleNodeId, VerkleNode>>>::try_new(Arc::new(InMemoryNodeManager::new(100)),StateMode::EvolvingArchive).unwrap()) as Box<dyn CarmenState>)]
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]
@@ -176,9 +250,63 @@ mod tests {
     }
 
     #[test]
-    fn new_creates_empty_state() {
-        let state = VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new();
+    fn new_live_creates_empty_state() {
+        let state = VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live();
         assert_eq!(state.get_hash().unwrap(), Hash::default());
+
+        let state = VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new_live();
+        assert_eq!(state.get_hash().unwrap(), Hash::default());
+    }
+
+    #[test]
+    fn apply_block_update_on_archive_state_returns_unsupported_operation_error() {
+        let node_manager = Arc::new(InMemoryNodeManager::new(100));
+        let id = node_manager
+            .add(VerkleNode::Inner256(Box::default()))
+            .unwrap();
+        node_manager.set_root_id(2, id).unwrap();
+
+        let state = VerkleTrieCarmenState::try_new(node_manager, StateMode::Archive(2)).unwrap();
+
+        let result = state.apply_block_update(3, Update::default());
+        assert_eq!(
+            result.map_err(BTError::into_inner),
+            Err(Error::UnsupportedOperation(
+                "apply_block_updates is not supported on archive states".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn apply_block_update_on_evolving_archive_state_checks_that_block_is_next_block() {
+        let state = VerkleTrieCarmenState::try_new(
+            Arc::new(InMemoryNodeManager::new(100)),
+            StateMode::EvolvingArchive,
+        )
+        .unwrap();
+
+        let result = state.apply_block_update(1, Update::default());
+        assert_eq!(
+            result.map_err(BTError::into_inner),
+            Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()))
+        );
+
+        let result = state.apply_block_update(0, Update::default());
+        assert!(result.is_ok());
+
+        let result = state.apply_block_update(0, Update::default());
+        assert_eq!(
+            result.map_err(BTError::into_inner),
+            Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()))
+        );
+        let result = state.apply_block_update(2, Update::default());
+        assert_eq!(
+            result.map_err(BTError::into_inner),
+            Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()))
+        );
+
+        let result = state.apply_block_update(1, Update::default());
+        assert!(result.is_ok());
     }
 
     #[rstest_reuse::apply(all_state_impls)]
@@ -189,14 +317,14 @@ mod tests {
         assert!(!state.account_exists(&addr).unwrap());
         assert_eq!(state.get_code_hash(&addr).unwrap(), Hash::default());
 
-        set_code(&*state, addr, &[0x01, 0x02, 0x03]);
+        set_code(&*state, addr, &[0x01, 0x02, 0x03], 0);
         assert!(state.account_exists(&addr).unwrap());
     }
 
     #[rstest_reuse::apply(all_state_impls)]
     fn creating_account_sets_empty_code_hash(#[case] state: Box<dyn CarmenState>) {
         let addr = Address::from_index_values(0, &[(0, 1)]);
-        create_account(&*state, addr);
+        create_account(&*state, addr, 0);
         let code_hash = state.get_code_hash(&addr).unwrap();
         assert_eq!(code_hash, EMPTY_CODE_HASH);
     }
@@ -207,10 +335,10 @@ mod tests {
         let initial_balance = crypto_bigint::U256::from_u32(42).to_be_bytes();
         let initial_nonce = 7u64.to_be_bytes();
 
-        set_balance(&*state, addr, initial_balance);
-        set_nonce(&*state, addr, initial_nonce);
+        set_balance(&*state, addr, initial_balance, 0);
+        set_nonce(&*state, addr, initial_nonce, 1);
 
-        create_account(&*state, addr);
+        create_account(&*state, addr, 2);
 
         let balance = state.get_balance(&addr).unwrap();
         assert_eq!(balance, initial_balance);
@@ -228,11 +356,11 @@ mod tests {
         let nonce = state.get_nonce(&addr2).unwrap();
         assert_eq!(nonce, Nonce::default());
 
-        set_nonce(&*state, addr1, 42u64.to_be_bytes());
+        set_nonce(&*state, addr1, 42u64.to_be_bytes(), 0);
         let nonce = state.get_nonce(&addr1).unwrap();
         assert_eq!(nonce, 42u64.to_be_bytes());
 
-        set_nonce(&*state, addr2, 33u64.to_be_bytes());
+        set_nonce(&*state, addr2, 33u64.to_be_bytes(), 1);
         let nonce = state.get_nonce(&addr2).unwrap();
         assert_eq!(nonce, 33u64.to_be_bytes());
 
@@ -240,7 +368,7 @@ mod tests {
         let nonce = state.get_nonce(&addr1).unwrap();
         assert_eq!(nonce, 42u64.to_be_bytes());
 
-        set_nonce(&*state, addr1, 123u64.to_be_bytes());
+        set_nonce(&*state, addr1, 123u64.to_be_bytes(), 2);
         let nonce = state.get_nonce(&addr1).unwrap();
         assert_eq!(nonce, 123u64.to_be_bytes());
 
@@ -263,11 +391,11 @@ mod tests {
         let amount2 = crypto_bigint::U256::from_u32(33).to_be_bytes();
         let amount3 = crypto_bigint::U256::from_u32(123).to_be_bytes();
 
-        set_balance(&*state, addr1, amount1);
+        set_balance(&*state, addr1, amount1, 0);
         let balance = state.get_balance(&addr1).unwrap();
         assert_eq!(balance, amount1);
 
-        set_balance(&*state, addr2, amount2);
+        set_balance(&*state, addr2, amount2, 1);
         let balance = state.get_balance(&addr2).unwrap();
         assert_eq!(balance, amount2);
 
@@ -275,7 +403,7 @@ mod tests {
         let balance = state.get_balance(&addr1).unwrap();
         assert_eq!(balance, amount1);
 
-        set_balance(&*state, addr1, amount3);
+        set_balance(&*state, addr1, amount3, 2);
         let balance = state.get_balance(&addr1).unwrap();
         assert_eq!(balance, amount3);
 
@@ -299,7 +427,7 @@ mod tests {
 
         let addr = Address::from_index_values(0, &[(0, 1)]);
 
-        set_balance(&*state, addr, full256);
+        set_balance(&*state, addr, full256, 0);
 
         let stored = state.get_balance(&addr).unwrap();
         assert_eq!(stored, truncated128);
@@ -321,8 +449,8 @@ mod tests {
 
         let addr = Address::from_index_values(0, &[(0, 1)]);
 
-        for (name, code) in cases.clone() {
-            set_code(&*state, addr, &code);
+        for (i, (name, code)) in cases.into_iter().enumerate() {
+            set_code(&*state, addr, &code, i as u64);
 
             let len = state.get_code_len(&addr).unwrap();
             assert_eq!(len as usize, code.len());
@@ -367,7 +495,7 @@ mod tests {
         assert_eq!(stored_code_len, 0);
 
         // Set balance
-        set_balance(&*state, addr, balance);
+        set_balance(&*state, addr, balance, 0);
         let stored_balance = state.get_balance(&addr).unwrap();
         assert_eq!(stored_balance, balance);
         let stored_nonce = state.get_nonce(&addr).unwrap();
@@ -376,7 +504,7 @@ mod tests {
         assert_eq!(stored_code_len, 0);
 
         // Set nonce
-        set_nonce(&*state, addr, nonce);
+        set_nonce(&*state, addr, nonce, 1);
         let stored_balance = state.get_balance(&addr).unwrap();
         assert_eq!(stored_balance, balance);
         let stored_nonce = state.get_nonce(&addr).unwrap();
@@ -385,7 +513,7 @@ mod tests {
         assert_eq!(stored_code_len, 0);
 
         // Set code
-        set_code(&*state, addr, &code);
+        set_code(&*state, addr, &code, 2);
         let stored_balance = state.get_balance(&addr).unwrap();
         assert_eq!(stored_balance, balance);
         let stored_nonce = state.get_nonce(&addr).unwrap();
@@ -404,13 +532,13 @@ mod tests {
         let retrieved_value = state.get_storage_value(&addr, &key).unwrap();
         assert_eq!(retrieved_value, Value::default());
 
-        set_storage(&*state, addr, key, value);
+        set_storage(&*state, addr, key, value, 0);
 
         let retrieved_value = state.get_storage_value(&addr, &key).unwrap();
         assert_eq!(retrieved_value, value);
 
         let value2 = Value::from_index_values(0, &[(0, 3), (1, 2), (2, 1)]);
-        set_storage(&*state, addr, key, value2);
+        set_storage(&*state, addr, key, value2, 1);
 
         let retrieved_value = state.get_storage_value(&addr, &key).unwrap();
         assert_eq!(retrieved_value, value2);
@@ -673,7 +801,7 @@ mod tests {
         ];
 
         for (i, update) in updates.into_iter().enumerate() {
-            state.apply_block_update(0, update.clone()).unwrap();
+            state.apply_block_update(i as u64, update.clone()).unwrap();
             let hash = state.get_hash().unwrap();
             let expected = expected_hashes[i];
             assert_eq!(
@@ -715,16 +843,17 @@ mod tests {
         let state = VerkleTrieCarmenState {
             trie,
             embedding: VerkleTrieEmbedding::new(),
+            block_height: Mutex::new(BlockHeight::EvolvingArchive(Some(block_height - 1))),
         };
         state
             .apply_block_update(block_height, Update::default())
             .unwrap();
     }
 
-    fn create_account(state: &dyn CarmenState, addr: Address) {
+    fn create_account(state: &dyn CarmenState, addr: Address, block_number: u64) {
         state
             .apply_block_update(
-                0,
+                block_number,
                 Update {
                     created_accounts: &[addr],
                     ..Default::default()
@@ -733,10 +862,10 @@ mod tests {
             .unwrap();
     }
 
-    fn set_nonce(state: &dyn CarmenState, addr: Address, nonce: Nonce) {
+    fn set_nonce(state: &dyn CarmenState, addr: Address, nonce: Nonce, block_number: u64) {
         state
             .apply_block_update(
-                0,
+                block_number,
                 Update {
                     nonces: &[NonceUpdate { addr, nonce }],
                     ..Default::default()
@@ -745,10 +874,10 @@ mod tests {
             .unwrap();
     }
 
-    fn set_balance(state: &dyn CarmenState, addr: Address, balance: U256) {
+    fn set_balance(state: &dyn CarmenState, addr: Address, balance: U256, block_number: u64) {
         state
             .apply_block_update(
-                0,
+                block_number,
                 Update {
                     balances: &[BalanceUpdate { addr, balance }],
                     ..Default::default()
@@ -757,10 +886,10 @@ mod tests {
             .unwrap();
     }
 
-    fn set_code(state: &dyn CarmenState, addr: Address, code: &[u8]) {
+    fn set_code(state: &dyn CarmenState, addr: Address, code: &[u8], block_number: u64) {
         state
             .apply_block_update(
-                0,
+                block_number,
                 Update {
                     codes: vec![CodeUpdate { addr, code }],
                     ..Default::default()
@@ -769,10 +898,16 @@ mod tests {
             .unwrap();
     }
 
-    fn set_storage(state: &dyn CarmenState, addr: Address, key: Key, value: Value) {
+    fn set_storage(
+        state: &dyn CarmenState,
+        addr: Address,
+        key: Key,
+        value: Value,
+        block_number: u64,
+    ) {
         state
             .apply_block_update(
-                0,
+                block_number,
                 Update {
                     slots: &[SlotUpdate { addr, key, value }],
                     ..Default::default()

@@ -20,5 +20,5 @@ mod verkle_trie;
 
 pub use embedding::VerkleTrieEmbedding;
 pub use keyed_update::{KeyedUpdate, KeyedUpdateBatch};
-pub use state::VerkleTrieCarmenState;
+pub use state::{StateMode, VerkleTrieCarmenState};
 pub use variants::{CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie};

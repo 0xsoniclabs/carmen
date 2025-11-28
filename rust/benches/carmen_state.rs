@@ -15,7 +15,7 @@ use carmen_rust::{
     database::{
         CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie, VerkleTrieEmbedding,
         verkle::{
-            VerkleTrieCarmenState,
+            StateMode, VerkleTrieCarmenState,
             variants::managed::{VerkleNode, VerkleNodeId},
         },
     },
@@ -43,11 +43,11 @@ impl CarmenStateKind {
     fn make_carmen_state(self) -> Box<dyn CarmenState> {
         match self {
             CarmenStateKind::SimpleInMemoryVerkleTrie => {
-                Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new())
+                Box::new(VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live())
                     as Box<dyn CarmenState>
             }
             CarmenStateKind::CrateCryptoInMemoryVerkleTrie => {
-                Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new())
+                Box::new(VerkleTrieCarmenState::<CrateCryptoInMemoryVerkleTrie>::new_live())
                     as Box<dyn CarmenState>
             }
             CarmenStateKind::ManagedInMemoryVerkleTrie => {
@@ -59,7 +59,7 @@ impl CarmenStateKind {
                         carmen_rust::database::ManagedVerkleTrie<
                             InMemoryNodeManager<VerkleNodeId, VerkleNode>,
                         >,
-                    >::try_new(mem_node_manager)
+                    >::try_new(mem_node_manager, StateMode::Live)
                     .unwrap(),
                 ) as Box<dyn CarmenState>
             }
