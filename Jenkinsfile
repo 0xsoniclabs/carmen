@@ -23,7 +23,7 @@ pipeline {
     }
 
     environment {
-        GOMEMLIMIT = '5GiB'
+        GOMEMLIMIT = '1GiB'
         CC = 'clang-19'
         CXX = 'clang++-19'
     }
