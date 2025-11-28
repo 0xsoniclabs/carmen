@@ -58,7 +58,7 @@ pub fn open_carmen_db(
     }
 
     let _archive_dir = directory.join("archive");
-    if !matches!(archive_impl, b"none") {
+    if !matches!(archive_impl, b"none" | b"") {
         return Err(
             Error::UnsupportedImplementation("archive is not yet supported".to_owned()).into(),
         );
