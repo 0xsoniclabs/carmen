@@ -16,9 +16,12 @@ use crate::{
         verkle::{
             KeyedUpdate, KeyedUpdateBatch,
             variants::managed::{
-                InnerNode, VerkleNode, VerkleNodeId,
+                VerkleNode, VerkleNodeId,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
-                nodes::{ValueWithIndex, make_smallest_leaf_node_for},
+                nodes::{
+                    ValueWithIndex, VerkleIdWithIndex, make_smallest_inner_node_for,
+                    make_smallest_leaf_node_for,
+                },
             },
         },
         visitor::NodeVisitor,
@@ -121,10 +124,17 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         // If not all keys match the stem, we have to introduce a new inner node.
         if !updates.all_stems_match(&self.stem) {
             let index = self.stem[depth as usize];
-            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
-            return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
-                inner,
-            ))));
+            let self_child = VerkleIdWithIndex {
+                index,
+                item: self_id,
+            };
+            let inner = make_smallest_inner_node_for(
+                2,
+                &[self_child],
+                VerkleCommitment::from_existing(&self.commitment),
+            )?;
+            // TODO: Test that only commitment is copied (not changed bits etc)
+            return Ok(StoreAction::HandleReparent(inner));
         }
 
         if let Some(slots) = ValueWithIndex::required_slot_count_for(
@@ -202,7 +212,6 @@ mod tests {
         error::BTError,
         types::{TreeId, Value},
     };
-
     /// A random stem used by nodes created through [`make_leaf`].
     const STEM: [u8; 31] = [
         199, 138, 41, 113, 63, 133, 10, 244, 221, 149, 172, 110, 253, 27, 18, 76, 151, 202, 22, 80,
@@ -443,8 +452,10 @@ mod tests {
             .next_store_action(update, divergence_at as u8, self_id)
             .unwrap();
         match result {
-            StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
-                assert_eq!(inner.children[STEM[divergence_at] as usize], self_id);
+            StoreAction::HandleReparent(VerkleNode::Inner9(inner)) => {
+                let slot =
+                    VerkleIdWithIndex::get_slot_for(&inner.children, STEM[divergence_at]).unwrap();
+                assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }
