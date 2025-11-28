@@ -16,8 +16,9 @@ use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
-            InnerNode, VerkleNode, VerkleNodeId,
+            VerkleNode, VerkleNodeId,
             commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+            nodes::{VerkleIdWithIndex, make_smallest_inner_node_for},
         },
         visitor::NodeVisitor,
     },
@@ -122,10 +123,17 @@ impl ManagedTrieNode for FullLeafNode {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
             let index = self.stem[depth as usize];
-            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
-            return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
-                inner,
-            ))));
+            let self_child = VerkleIdWithIndex {
+                index,
+                item: self_id,
+            };
+            let inner = make_smallest_inner_node_for(
+                2,
+                &[self_child],
+                VerkleCommitment::from_existing(&self.commitment),
+            )?;
+            // TODO: Test that only commitment is copied (not changed bits etc)
+            return Ok(StoreAction::HandleReparent(inner));
         }
 
         Ok(StoreAction::Store {
@@ -249,8 +257,9 @@ mod tests {
             .next_store_action(&key, divergence_at as u8, self_id)
             .unwrap();
         match result {
-            StoreAction::HandleReparent(VerkleNode::Inner(inner)) => {
-                assert_eq!(inner.children[56], self_id);
+            StoreAction::HandleReparent(VerkleNode::Inner3(inner)) => {
+                let slot = VerkleIdWithIndex::get_slot_for(&inner.children, 56).unwrap();
+                assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }

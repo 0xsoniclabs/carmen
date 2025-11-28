@@ -18,7 +18,7 @@ use crate::{
         verkle::variants::managed::{
             VerkleNode,
             commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
-            nodes::{VerkleNodeKind, id::VerkleNodeId},
+            nodes::{ManagedInnerNode, VerkleIdWithIndex, VerkleNodeKind, id::VerkleNodeId},
         },
         visitor::NodeVisitor,
     },
@@ -32,12 +32,12 @@ use crate::{
 // serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
-pub struct InnerNode {
+pub struct FullInnerNode {
     pub children: [VerkleNodeId; 256],
     pub commitment: VerkleCommitment,
 }
 
-impl InnerNode {
+impl FullInnerNode {
     /// Creates a new inner node with the given leaf node as child at the given index.
     /// The commitment of the inner node is initialized from the given leaf commitment.
     pub fn new_with_leaf(
@@ -45,7 +45,7 @@ impl InnerNode {
         leaf_id: VerkleNodeId,
         leaf_commitment: &VerkleCommitment,
     ) -> Self {
-        let mut inner = InnerNode::default();
+        let mut inner = FullInnerNode::default();
         inner.children[index as usize] = leaf_id;
         inner.commitment = VerkleCommitment::from_existing(leaf_commitment);
         inner
@@ -57,9 +57,9 @@ impl InnerNode {
     }
 }
 
-impl Default for InnerNode {
+impl Default for FullInnerNode {
     fn default() -> Self {
-        InnerNode {
+        FullInnerNode {
             children: [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256],
             commitment: VerkleCommitment::default(),
         }
@@ -73,8 +73,8 @@ pub struct OnDiskInnerNode {
     pub commitment: OnDiskVerkleCommitment,
 }
 
-impl From<&InnerNode> for OnDiskInnerNode {
-    fn from(node: &InnerNode) -> Self {
+impl From<&FullInnerNode> for OnDiskInnerNode {
+    fn from(node: &FullInnerNode) -> Self {
         OnDiskInnerNode {
             children: node.children,
             commitment: OnDiskVerkleCommitment::from(&node.commitment),
@@ -82,16 +82,16 @@ impl From<&InnerNode> for OnDiskInnerNode {
     }
 }
 
-impl From<OnDiskInnerNode> for InnerNode {
+impl From<OnDiskInnerNode> for FullInnerNode {
     fn from(node: OnDiskInnerNode) -> Self {
-        InnerNode {
+        FullInnerNode {
             children: node.children,
             commitment: VerkleCommitment::from(node.commitment),
         }
     }
 }
 
-impl DiskRepresentable for InnerNode {
+impl DiskRepresentable for FullInnerNode {
     fn from_disk_repr<E>(
         read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
     ) -> Result<Self, E>
@@ -110,7 +110,7 @@ impl DiskRepresentable for InnerNode {
     }
 }
 
-impl ManagedTrieNode for InnerNode {
+impl ManagedTrieNode for FullInnerNode {
     type Union = VerkleNode;
     type Id = VerkleNodeId;
     type Commitment = VerkleCommitment;
@@ -149,8 +149,8 @@ impl ManagedTrieNode for InnerNode {
     }
 }
 
-impl NodeVisitor<InnerNode> for NodeCountVisitor {
-    fn visit(&mut self, node: &InnerNode, level: u64) -> BTResult<(), Error> {
+impl NodeVisitor<FullInnerNode> for NodeCountVisitor {
+    fn visit(&mut self, node: &FullInnerNode, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,
             "Inner",
@@ -160,6 +160,20 @@ impl NodeVisitor<InnerNode> for NodeCountVisitor {
                 .count() as u64,
         );
         Ok(())
+    }
+}
+
+impl ManagedInnerNode for FullInnerNode {
+    fn iter_children(&self) -> Box<dyn Iterator<Item = VerkleIdWithIndex> + '_> {
+        Box::new(
+            self.children
+                .iter()
+                .enumerate()
+                .map(|(index, child_id)| VerkleIdWithIndex {
+                    index: index as u8,
+                    item: *child_id,
+                }),
+        )
     }
 }
 
@@ -178,7 +192,7 @@ mod tests {
 
     #[test]
     fn inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
-        let node: InnerNode = InnerNode::default();
+        let node: FullInnerNode = FullInnerNode::default();
         assert_eq!(node.commitment, VerkleCommitment::default());
         assert_eq!(
             node.children,
@@ -188,9 +202,9 @@ mod tests {
 
     #[test]
     fn get_commitment_input_returns_children() {
-        let node = InnerNode {
+        let node = FullInnerNode {
             children: array::from_fn(|i| {
-                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner)
+                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256)
             }),
             ..Default::default()
         };
@@ -200,11 +214,11 @@ mod tests {
 
     #[test]
     fn lookup_returns_id_of_child_at_key_index() {
-        let mut node = InnerNode::default();
+        let mut node = FullInnerNode::default();
         let depth = 10;
         let index = 78;
         let key = Key::from_index_values(1, &[(depth, index)]);
-        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner);
+        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256);
         node.children[index as usize] = child_id;
 
         let result = node.lookup(&key, depth as u8).unwrap();
@@ -213,18 +227,18 @@ mod tests {
 
     #[test]
     fn next_store_action_is_descend_into_child_at_key_index() {
-        let mut node = InnerNode::default();
+        let mut node = FullInnerNode::default();
         let depth = 10;
         let index = 78;
         let key = Key::from_index_values(1, &[(depth, index)]);
-        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner);
+        let child_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256);
         node.children[index as usize] = child_id;
 
         let result = node
             .next_store_action(
                 &key,
                 depth as u8,
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner),
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256),
             )
             .unwrap();
         assert_eq!(
@@ -238,7 +252,7 @@ mod tests {
 
     #[test]
     fn replace_child_sets_child_id_at_key_index() {
-        let mut node = InnerNode::default();
+        let mut node = FullInnerNode::default();
         let depth = 5;
         let index = 200;
         let key = Key::from_index_values(1, &[(depth, index)]);
@@ -250,7 +264,7 @@ mod tests {
 
     #[test]
     fn commitment_can_be_set_and_retrieved() {
-        let mut node = InnerNode::default();
+        let mut node = FullInnerNode::default();
         assert_eq!(node.get_commitment(), VerkleCommitment::default());
 
         let mut new_commitment = VerkleCommitment::default();
