@@ -17,11 +17,9 @@ use crate::statistics::{
 };
 
 /// A statistics formatter that writes statistics to a writer with indentation support.
-/// It implements the [`StatisticsFormatter`] trait, and creates a different CSV file for each
-/// statistic type.
 pub struct WriterWithIndentation<W: Write> {
-    pub writer: W,
-    pub indentation: Indentation,
+    writer: W,
+    indentation: Indentation,
 }
 
 impl<W: Write> WriterWithIndentation<W> {
@@ -52,7 +50,17 @@ impl<W: Write> WriterWithIndentation<W> {
         self.writer.write_all(b"\n")
     }
 
-    fn print_node_size_per_tree(
+    /// Writes a string to [`Self::writer`] with the current indentation.
+    fn write_with_indentation(&mut self, string: impl AsRef<str>) -> std::io::Result<()> {
+        self.writer
+            .write_all(format!("{}{}", self.indentation, string.as_ref()).as_bytes())
+    }
+
+    // -------------- Statistics writing methods --------------
+
+    /// Writes the [`NodeCountsByKindStatistic`] statistic to [`Self::writer`] in a human-readable
+    /// format with indentation.
+    fn write_node_counts_by_kind(
         &mut self,
         stat: &NodeCountsByKindStatistic,
     ) -> std::io::Result<()> {
@@ -78,7 +86,9 @@ impl<W: Write> WriterWithIndentation<W> {
         Ok(())
     }
 
-    fn print_node_depth(&mut self, item: &NodeCountsByLevel) -> std::io::Result<()> {
+    /// Writes the [`NodeCountsByLevel`] statistic to [`Self::writer`] in a human-readable format
+    /// with indentation.
+    fn write_node_counts_by_level(&mut self, item: &NodeCountsByLevel) -> std::io::Result<()> {
         self.reset();
         self.write_with_indentation("Node depth distribution:\n")?;
         for (level, count) in &item.node_depth {
@@ -87,20 +97,16 @@ impl<W: Write> WriterWithIndentation<W> {
         self.newline()?;
         Ok(())
     }
-
-    /// Writes a string to [`Self::writer`] with the current indentation.
-    fn write_with_indentation(&mut self, string: impl AsRef<str>) -> std::io::Result<()> {
-        self.writer
-            .write_all(format!("{}{}", self.indentation, string.as_ref()).as_bytes())
-    }
 }
 
 impl<W: Write> StatisticsFormatter for WriterWithIndentation<W> {
-    fn print_statistic(&mut self, distribution: &Statistic) -> std::io::Result<()> {
+    fn write_statistic(&mut self, distribution: &Statistic) -> std::io::Result<()> {
         match distribution {
             Statistic::NodeCount(node_count_statistics) => match node_count_statistics {
-                NodeCountStatistic::NodeCountsByKind(stat) => self.print_node_size_per_tree(stat),
-                NodeCountStatistic::NodeCountsByLevel(stat) => self.print_node_depth(stat),
+                NodeCountStatistic::NodeCountsByKind(stat) => self.write_node_counts_by_kind(stat),
+                NodeCountStatistic::NodeCountsByLevel(stat) => {
+                    self.write_node_counts_by_level(stat)
+                }
             },
         }
     }
@@ -114,26 +120,32 @@ pub struct Indentation {
 }
 
 impl Indentation {
+    const SIZE: usize = 4; // spaces
+
+    /// Increases the indentation level by one.
     pub fn inc(&mut self) {
         self.level += 1;
     }
 
+    /// Decreases the indentation level by one.
     fn dec(&mut self) {
         if self.level > 0 {
             self.level -= 1;
         }
     }
 
+    /// Resets the indentation level.
     fn reset(&mut self) {
-        let default = Indentation::default();
-        self.level = default.level;
-        self.size = default.size;
+        let _ = std::mem::take(self);
     }
 }
 
 impl Default for Indentation {
     fn default() -> Self {
-        Self { level: 0, size: 4 } // 4 spaces
+        Self {
+            level: 0,
+            size: Indentation::SIZE,
+        }
     }
 }
 
