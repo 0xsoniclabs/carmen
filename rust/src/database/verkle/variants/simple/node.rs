@@ -273,25 +273,23 @@ impl NodeVisitor<Node> for NodeCountVisitor {
     fn visit(&mut self, node: &Node, level: u64) -> BTResult<(), Error> {
         match node {
             Node::Empty => {
-                self.count_node(level, "Empty", None);
+                self.count_node(level, "Empty", 0); // num children doesn't matter
             }
             Node::Leaf(node) => {
                 self.count_node(
                     level,
                     "Leaf",
-                    Some(node.used_bits.iter().map(|b| b.count_ones() as u64).sum()),
+                    node.used_bits.iter().map(|b| b.count_ones() as u64).sum(),
                 );
             }
             Node::Inner(node) => {
                 self.count_node(
                     level,
                     "Inner",
-                    Some(
-                        node.children
-                            .iter()
-                            .filter(|c| !matches!(c, Node::Empty))
-                            .count() as u64,
-                    ),
+                    node.children
+                        .iter()
+                        .filter(|c| !matches!(c, Node::Empty))
+                        .count() as u64,
                 );
             }
         }
@@ -662,5 +660,53 @@ mod tests {
         assert!(!leaf.commitment_dirty);
 
         assert_ne!(first, third);
+    }
+
+    #[test]
+    fn node_count_visitor_visit_visit_nodes() {
+        let mut visitor = NodeCountVisitor::default();
+        let level = 0;
+
+        let node = Node::Empty;
+        assert!(visitor.visit(&node, level).is_ok());
+
+        let mut node = InnerNode::new();
+        for i in 0..256 {
+            node.children[i] = Node::Inner(InnerNode::new());
+        }
+        let node = Node::Inner(node);
+        assert!(visitor.visit(&node, level + 1).is_ok());
+
+        let mut node = LeafNode::new(&make_key(&[1, 2, 3]));
+        for i in 0..256 {
+            node.used_bits[i / 8] |= 1 << (i % 8);
+        }
+        let node = Node::Leaf(node);
+        assert!(visitor.visit(&node, level + 2).is_ok());
+
+        assert_eq!(
+            visitor.node_count.levels_count[0]
+                .get("Empty")
+                .unwrap()
+                .size_count
+                .get(&0),
+            Some(&1)
+        );
+        assert_eq!(
+            visitor.node_count.levels_count[1]
+                .get("Inner")
+                .unwrap()
+                .size_count
+                .get(&256),
+            Some(&1)
+        );
+        assert_eq!(
+            visitor.node_count.levels_count[2]
+                .get("Leaf")
+                .unwrap()
+                .size_count
+                .get(&256),
+            Some(&1)
+        );
     }
 }

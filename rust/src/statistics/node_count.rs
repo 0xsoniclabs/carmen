@@ -15,33 +15,31 @@ use std::collections::BTreeMap;
 /// with 7 values are on level 3?".
 #[derive(Default, Clone, Debug)]
 pub struct NodeCountsByLevelAndKind {
-    levels_count: Vec<BTreeMap<&'static str, NodeCountBySize>>,
+    pub levels_count: Vec<BTreeMap<&'static str, NodeCountBySize>>,
 }
 
 /// A count of how many nodes there are that contain a certain number of values / children.
 #[derive(Default, Clone, Debug)]
 pub struct NodeCountBySize {
-    size_count: BTreeMap<u64, u64>,
+    pub size_count: BTreeMap<u64, u64>,
 }
 
 /// A visitor implementation that counts the number of nodes within a trie,
 /// as well as their sizes, on a level-by-level basis.
 #[derive(Default)]
 pub struct NodeCountVisitor {
-    node_count: NodeCountsByLevelAndKind,
+    pub node_count: NodeCountsByLevelAndKind,
 }
 
 impl NodeCountVisitor {
     /// Records the occurrence of a node of the given type at the given level,
-    pub fn count_node(&mut self, level: u64, type_name: &'static str, num_children: Option<u64>) {
+    pub fn count_node(&mut self, level: u64, type_name: &'static str, num_children: u64) {
         while self.node_count.levels_count.len() <= level as usize {
             self.node_count.levels_count.push(BTreeMap::new());
         }
         let level_entry = &mut self.node_count.levels_count[level as usize];
         let node_entry = level_entry.entry(type_name).or_default();
-        if let Some(num_children) = num_children {
-            *node_entry.size_count.entry(num_children).or_insert(0) += 1;
-        }
+        *node_entry.size_count.entry(num_children).or_insert(0) += 1;
     }
 }
 
@@ -80,11 +78,11 @@ impl NodeCountsByKindStatistic {
 
 /// Counts of nodes, organized by level.
 #[derive(Clone, Debug)]
-pub struct NodeCountsByLevel {
+pub struct NodeCountsByLevelStatistic {
     pub node_depth: BTreeMap<usize, u64>,
 }
 
-impl NodeCountsByLevel {
+impl NodeCountsByLevelStatistic {
     #[cfg_attr(not(test), expect(unused))]
     fn new(node_count: &NodeCountsByLevelAndKind) -> Self {
         let mut node_depth = BTreeMap::new();
@@ -149,10 +147,10 @@ mod tests {
         let node2 = TestNode { children: 2 };
         let node3 = TestNode { children: 3 };
 
-        visitor.count_node(0, "Inner", Some(node1.children));
-        visitor.count_node(0, "Inner", Some(node1.children));
-        visitor.count_node(0, "Inner", Some(node2.children));
-        visitor.count_node(1, "Leaf", Some(node3.children));
+        visitor.count_node(0, "Inner", node1.children);
+        visitor.count_node(0, "Inner", node1.children);
+        visitor.count_node(0, "Inner", node2.children);
+        visitor.count_node(1, "Leaf", node3.children);
 
         let node_count = &visitor.node_count;
 
@@ -184,7 +182,7 @@ mod tests {
 
     #[test]
     fn node_counts_by_level_statistic_computes_depths_correctly() {
-        let statistic = NodeCountsByLevel::new(&create_sample_node_counts());
+        let statistic = NodeCountsByLevelStatistic::new(&create_sample_node_counts());
         assert_eq!(statistic.node_depth.get(&0), Some(&9));
         assert_eq!(statistic.node_depth.get(&1), Some(&10));
     }

@@ -108,12 +108,10 @@ impl NodeVisitor<InnerNode> for NodeCountVisitor {
         self.count_node(
             level,
             "Inner",
-            Some(
-                node.children
-                    .iter()
-                    .filter(|child| child.to_node_kind().unwrap() != VerkleNodeKind::Empty)
-                    .count() as u64,
-            ),
+            node.children
+                .iter()
+                .filter(|child| child.to_node_kind().unwrap() != VerkleNodeKind::Empty)
+                .count() as u64,
         );
         Ok(())
     }

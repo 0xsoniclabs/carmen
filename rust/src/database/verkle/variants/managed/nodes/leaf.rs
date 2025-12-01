@@ -114,12 +114,10 @@ impl NodeVisitor<FullLeafNode> for NodeCountVisitor {
         self.count_node(
             level,
             "Leaf",
-            Some(
-                node.values
-                    .iter()
-                    .filter(|value| **value != Value::default())
-                    .count() as u64,
-            ),
+            node.values
+                .iter()
+                .filter(|value| **value != Value::default())
+                .count() as u64,
         );
         Ok(())
     }
