@@ -120,8 +120,8 @@ impl PrintStatistic for NodeCountsByLevelAndKind {
             NodeCountStatistic::NodeCountsByLevelStatistic(NodeCountsByLevelStatistic::new(self))
                 .into();
         for writer in writers {
-            writer.print_statistic(&node_size_per_tree_stats)?;
-            writer.print_statistic(&node_depth_stats)?;
+            writer.write_statistic(&node_size_per_tree_stats)?;
+            writer.write_statistic(&node_depth_stats)?;
         }
         Ok(())
     }
