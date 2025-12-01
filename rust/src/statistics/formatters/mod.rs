@@ -16,5 +16,5 @@ pub mod writer_with_indentation;
 /// Trait for formatting and writing statistics distributions.
 pub trait StatisticsFormatter {
     /// Formats and writes the given distribution.
-    fn print_statistic(&mut self, statistic: &Statistic) -> std::io::Result<()>;
+    fn write_statistic(&mut self, statistic: &Statistic) -> std::io::Result<()>;
 }
