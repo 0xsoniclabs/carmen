@@ -13,7 +13,7 @@ use std::io::Write;
 use crate::statistics::{
     Statistic,
     formatters::StatisticsFormatter,
-    node_count::{NodeCountStatistic, NodeCountsByKindStatistic, NodeCountsByLevel},
+    node_count::{NodeCountStatistic, NodeCountsByKindStatistic, NodeCountsByLevelStatistic},
 };
 
 /// A statistics formatter that writes statistics to a writer with indentation support.
@@ -86,9 +86,12 @@ impl<W: Write> WriterWithIndentation<W> {
         Ok(())
     }
 
-    /// Writes the [`NodeCountsByLevel`] statistic to [`Self::writer`] in a human-readable format
-    /// with indentation.
-    fn write_node_counts_by_level(&mut self, item: &NodeCountsByLevel) -> std::io::Result<()> {
+    /// Writes the [`NodeCountsByLevelStatistic`] statistic to [`Self::writer`] in a human-readable
+    /// format with indentation.
+    fn write_node_counts_by_level(
+        &mut self,
+        item: &NodeCountsByLevelStatistic,
+    ) -> std::io::Result<()> {
         self.reset();
         self.write_with_indentation("Node depth distribution:\n")?;
         for (level, count) in &item.node_depth {
@@ -104,7 +107,7 @@ impl<W: Write> StatisticsFormatter for WriterWithIndentation<W> {
         match distribution {
             Statistic::NodeCount(node_count_statistics) => match node_count_statistics {
                 NodeCountStatistic::NodeCountsByKind(stat) => self.write_node_counts_by_kind(stat),
-                NodeCountStatistic::NodeCountsByLevel(stat) => {
+                NodeCountStatistic::NodeCountsByLevelStatistic(stat) => {
                     self.write_node_counts_by_level(stat)
                 }
             },
@@ -160,5 +163,163 @@ impl std::fmt::Display for Indentation {
             write!(f, "{}", "╴".repeat(size))?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::statistics::node_count::NodeCountBySize;
+
+    #[test]
+    fn write_node_counts_by_kind_writes_correctly() {
+        let mut output = Vec::new();
+        let mut writer = WriterWithIndentation::new(&mut output);
+
+        let mut node_counts_by_kind_statistic = NodeCountsByKindStatistic {
+            total_nodes: 4,
+            aggregated_node_statistics: std::collections::BTreeMap::new(),
+        };
+        node_counts_by_kind_statistic
+            .aggregated_node_statistics
+            .insert(
+                "Leaf",
+                NodeCountBySize {
+                    size_count: BTreeMap::from([(1, 3)]),
+                },
+            );
+        node_counts_by_kind_statistic
+            .aggregated_node_statistics
+            .insert(
+                "Inner",
+                NodeCountBySize {
+                    size_count: BTreeMap::from([(2, 1)]),
+                },
+            );
+
+        writer
+            .write_statistic(&Statistic::NodeCount(NodeCountStatistic::NodeCountsByKind(
+                node_counts_by_kind_statistic,
+            )))
+            .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "--- Node distribution ---\n\
+            Total nodes: 4\n\
+            ╰╴╴╴Node types:\n\
+            ╰╴╴╴╴╴╴╴Inner: 1\n\
+            ╰╴╴╴╴╴╴╴╴╴╴╴Inner_2: 1\n\
+            ╰╴╴╴╴╴╴╴Leaf: 3\n\
+            ╰╴╴╴╴╴╴╴╴╴╴╴Leaf_1: 3\n\
+            \n"
+        );
+    }
+
+    #[test]
+    fn write_node_counts_by_level_writes_correctly() {
+        let mut output = Vec::new();
+        let mut writer = WriterWithIndentation::new(&mut output);
+        let node_counts_by_level = NodeCountsByLevelStatistic {
+            node_depth: BTreeMap::from([(0, 2), (1, 3), (2, 5)]),
+        };
+
+        writer
+            .write_statistic(&Statistic::NodeCount(
+                NodeCountStatistic::NodeCountsByLevelStatistic(node_counts_by_level),
+            ))
+            .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Node depth distribution:\n\
+            0, 2\n\
+            1, 3\n\
+            2, 5\n\
+            \n"
+        );
+    }
+
+    #[test]
+    fn write_with_indentation_uses_indentation() {
+        let mut output = Vec::new();
+        let mut writer = WriterWithIndentation::new(&mut output);
+
+        writer.write_with_indentation("Level 0\n").unwrap();
+        writer.inc();
+        writer.write_with_indentation("Level 1\n").unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Level 0\n\
+            ╰╴╴╴Level 1\n"
+        );
+    }
+
+    #[test]
+    fn formats_indentation_correctly() {
+        let mut output = Vec::new();
+        let mut writer = WriterWithIndentation::new(&mut output);
+
+        writer.write_with_indentation("Level 0\n").unwrap();
+        writer.inc();
+        writer.write_with_indentation("Level 1\n").unwrap();
+        writer.inc();
+        writer.write_with_indentation("Level 2\n").unwrap();
+        writer.dec();
+        writer.write_with_indentation("Back to Level 1\n").unwrap();
+        writer.dec();
+        writer.write_with_indentation("Back to Level 0\n").unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Level 0\n\
+            ╰╴╴╴Level 1\n\
+            ╰╴╴╴╴╴╴╴Level 2\n\
+            ╰╴╴╴Back to Level 1\n\
+            Back to Level 0\n"
+        );
+    }
+
+    #[test]
+    fn newline_writes_newline_without_indentation() {
+        let mut output = Vec::new();
+        let mut writer = WriterWithIndentation::new(&mut output);
+
+        writer.inc();
+        writer.newline().unwrap();
+        writer.write_with_indentation("After newline\n").unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "\n\
+            ╰╴╴╴After newline\n"
+        );
+    }
+
+    #[test]
+    fn indentation_formats_correctly() {
+        let mut indentation = Indentation::default();
+        assert_eq!(indentation.to_string(), "");
+
+        indentation.inc();
+        assert_eq!(indentation.to_string(), "╰╴╴╴");
+
+        indentation.inc();
+        assert_eq!(indentation.to_string(), "╰╴╴╴╴╴╴╴");
+
+        indentation.dec();
+        assert_eq!(indentation.to_string(), "╰╴╴╴");
+
+        indentation.dec();
+        assert_eq!(indentation.to_string(), "");
+
+        indentation.dec(); // should not go below 0
+        assert_eq!(indentation.to_string(), "");
+
+        indentation.reset();
+        assert_eq!(indentation.to_string(), "");
     }
 }
