@@ -28,17 +28,16 @@ pub struct NodeCountBySize {
 /// as well as their sizes, on a level-by-level basis.
 #[derive(Default)]
 pub struct NodeCountVisitor {
-    trie_count: NodeCountsByLevelAndKind,
+    node_count: NodeCountsByLevelAndKind,
 }
 
 impl NodeCountVisitor {
-    /// Records statistics for the given node.
-    /// additional statistics over it.
+    /// Records the occurrence of a node of the given type at the given level,
     pub fn count_node(&mut self, level: u64, type_name: &'static str, num_children: Option<u64>) {
-        while self.trie_count.levels_count.len() <= level as usize {
-            self.trie_count.levels_count.push(BTreeMap::new());
+        while self.node_count.levels_count.len() <= level as usize {
+            self.node_count.levels_count.push(BTreeMap::new());
         }
-        let level_entry = &mut self.trie_count.levels_count[level as usize];
+        let level_entry = &mut self.node_count.levels_count[level as usize];
         let node_entry = level_entry.entry(type_name).or_default();
         if let Some(num_children) = num_children {
             *node_entry.size_count.entry(num_children).or_insert(0) += 1;
@@ -46,23 +45,23 @@ impl NodeCountVisitor {
     }
 }
 
-/// Statistic about the node size distribution in the tree.
+/// Counts of nodes, organized by kind.
 #[derive(Clone, Debug)]
-pub struct NodeSizeStatistic {
+pub struct NodeCountsByKindStatistic {
     pub aggregated_node_statistics: BTreeMap<&'static str, NodeCountBySize>,
     pub total_nodes: u64,
 }
 
-impl NodeSizeStatistic {
+impl NodeCountsByKindStatistic {
     #[cfg_attr(not(test), expect(unused))]
-    fn new(trie_count: &NodeCountsByLevelAndKind) -> Self {
-        let node_count = trie_count.levels_count.iter().fold(
+    fn new(counts: &NodeCountsByLevelAndKind) -> Self {
+        let node_count = counts.levels_count.iter().fold(
             BTreeMap::<&'static str, NodeCountBySize>::default(),
             |mut acc, stats| {
                 for (kind, count) in stats.iter() {
-                    let new_entry = acc.entry(*kind).or_default();
+                    let acc_entry = acc.entry(*kind).or_default();
                     for (size, size_count) in count.size_count.iter() {
-                        *new_entry.size_count.entry(*size).or_insert(0) += size_count;
+                        *acc_entry.size_count.entry(*size).or_insert(0) += size_count;
                     }
                 }
                 acc
@@ -79,17 +78,17 @@ impl NodeSizeStatistic {
     }
 }
 
-/// Statistic about the node depth distribution in the tree.
+/// Counts of nodes, organized by level.
 #[derive(Clone, Debug)]
-pub struct NodeDepthStatistic {
+pub struct NodeCountsByLevel {
     pub node_depth: BTreeMap<usize, u64>,
 }
 
-impl NodeDepthStatistic {
+impl NodeCountsByLevel {
     #[cfg_attr(not(test), expect(unused))]
-    fn new(trie_count: &NodeCountsByLevelAndKind) -> Self {
+    fn new(node_count: &NodeCountsByLevelAndKind) -> Self {
         let mut node_depth = BTreeMap::new();
-        for (level, stats) in trie_count.levels_count.iter().enumerate() {
+        for (level, stats) in node_count.levels_count.iter().enumerate() {
             node_depth.insert(
                 level,
                 stats
@@ -106,18 +105,18 @@ impl NodeDepthStatistic {
 mod tests {
     use super::*;
 
-    fn create_sample_trie_count() -> NodeCountsByLevelAndKind {
-        let mut trie_count = NodeCountsByLevelAndKind::default();
+    fn create_sample_node_counts() -> NodeCountsByLevelAndKind {
+        let mut node_count = NodeCountsByLevelAndKind::default();
 
         // Level 0
-        trie_count.levels_count.push(BTreeMap::new());
-        trie_count.levels_count[0].insert(
+        node_count.levels_count.push(BTreeMap::new());
+        node_count.levels_count[0].insert(
             "Inner",
             NodeCountBySize {
                 size_count: BTreeMap::from([(2, 3), (3, 1)]),
             },
         );
-        trie_count.levels_count[0].insert(
+        node_count.levels_count[0].insert(
             "Leaf",
             NodeCountBySize {
                 size_count: BTreeMap::from([(1, 5)]),
@@ -125,25 +124,25 @@ mod tests {
         );
 
         // Level 1
-        trie_count.levels_count.push(BTreeMap::new());
-        trie_count.levels_count[1].insert(
+        node_count.levels_count.push(BTreeMap::new());
+        node_count.levels_count[1].insert(
             "Inner",
             NodeCountBySize {
                 size_count: BTreeMap::from([(2, 2), (4, 3)]),
             },
         );
-        trie_count.levels_count[1].insert(
+        node_count.levels_count[1].insert(
             "Leaf",
             NodeCountBySize {
                 size_count: BTreeMap::from([(1, 5)]),
             },
         );
 
-        trie_count
+        node_count
     }
 
     #[test]
-    fn trie_count_visitor_records_node_statistics_records_statistics_correctly() {
+    fn node_count_visitor_records_node_statistics_records_statistics_correctly() {
         let mut visitor = NodeCountVisitor::default();
 
         let node1 = TestNode { children: 1 };
@@ -155,22 +154,22 @@ mod tests {
         visitor.count_node(0, "Inner", Some(node2.children));
         visitor.count_node(1, "Leaf", Some(node3.children));
 
-        let trie_count = &visitor.trie_count;
+        let node_count = &visitor.node_count;
 
-        assert_eq!(trie_count.levels_count.len(), 2);
-        let level0 = &trie_count.levels_count[0];
+        assert_eq!(node_count.levels_count.len(), 2);
+        let level0 = &node_count.levels_count[0];
         let inner_stats = level0.get("Inner").unwrap();
         assert_eq!(inner_stats.size_count.get(&1), Some(&2));
         assert_eq!(inner_stats.size_count.get(&2), Some(&1));
 
-        let level1 = &trie_count.levels_count[1];
+        let level1 = &node_count.levels_count[1];
         let leaf_stats = level1.get("Leaf").unwrap();
         assert_eq!(leaf_stats.size_count.get(&3), Some(&1));
     }
 
     #[test]
-    fn node_size_per_tree_statistic_aggregates_node_sizes_correctly() {
-        let statistic = NodeSizeStatistic::new(&create_sample_trie_count());
+    fn node_counts_by_kind_statistic_aggregates_node_sizes_correctly() {
+        let statistic = NodeCountsByKindStatistic::new(&create_sample_node_counts());
 
         assert_eq!(statistic.total_nodes, 19);
 
@@ -184,8 +183,8 @@ mod tests {
     }
 
     #[test]
-    fn node_depth_statistic_computes_depths_correctly() {
-        let statistic = NodeDepthStatistic::new(&create_sample_trie_count());
+    fn node_counts_by_level_statistic_computes_depths_correctly() {
+        let statistic = NodeCountsByLevel::new(&create_sample_node_counts());
         assert_eq!(statistic.node_depth.get(&0), Some(&9));
         assert_eq!(statistic.node_depth.get(&1), Some(&10));
     }
