@@ -129,6 +129,9 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to fetch block %d from archive: %v", expectation.block, err)
 				}
+				if config.config.Variant[:4] == "rust" {
+					defer block.Close()
+				}
 
 				got, err := block.GetBalance(expectation.account)
 				if err != nil {

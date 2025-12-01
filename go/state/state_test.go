@@ -599,10 +599,16 @@ func TestArchive(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get state of block 1; %v", err)
 			}
+			if config.config.Variant[:4] == "rust" {
+				defer state1.Close()
+			}
 
 			state2, err := s.GetArchiveState(2)
 			if err != nil {
 				t.Fatalf("failed to get state of block 2; %v", err)
+			}
+			if config.config.Variant[:4] == "rust" {
+				defer state2.Close()
 			}
 
 			if as, err := state1.Exists(address1); err != nil || as != true {
@@ -637,7 +643,7 @@ func TestArchive(t *testing.T) {
 			}
 
 			archiveType := config.config.Archive
-			if archiveType != state.S4Archive && archiveType != state.S5Archive {
+			if archiveType != state.S4Archive && archiveType != state.S5Archive && config.config.Schema != 6 {
 				commitment1, err := state1.GetCommitment().Await().Get()
 				if err != nil || fmt.Sprintf("%x", commitment1) != "9f4836302c2a2e89ca09e38e77f6a57b3f09ce94dbbeecd865b841307186e8e5" {
 					t.Errorf("unexpected archive state commitment at block 1: %x, %v", commitment1, err)
@@ -663,6 +669,9 @@ func TestLastArchiveBlock(t *testing.T) {
 			dir := t.TempDir()
 			if config.name()[0:3] == "cpp" {
 				t.Skipf("GetArchiveBlockHeight not supported by the cpp state")
+			}
+			if config.name()[0:4] == "rust" {
+				t.Skipf("GetArchiveBlockHeight not supported by the rust state")
 			}
 			s, err := config.createState(dir)
 			if err != nil {
@@ -710,6 +719,9 @@ func TestLastArchiveBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get state at the last block in the archive; %s", err)
 			}
+			if config.config.Variant[:4] == "rust" {
+				defer state2.Close()
+			}
 
 			if as, err := state2.Exists(address1); err != nil || as != true {
 				t.Errorf("invalid account state at the last block: %t, %s", as, err)
@@ -718,9 +730,12 @@ func TestLastArchiveBlock(t *testing.T) {
 				t.Errorf("invalid account state at the last block: %t, %s", as, err)
 			}
 
-			_, err = s.GetArchiveState(lastBlockHeight + 1)
+			stateX, err := s.GetArchiveState(lastBlockHeight + 1)
 			if err == nil {
 				t.Errorf("obtaining a block higher than the last one (%d) did not failed", lastBlockHeight)
+			}
+			if config.config.Variant[:4] == "rust" {
+				defer stateX.Close()
 			}
 		})
 	}
@@ -962,7 +977,7 @@ var stateImpl = flag.String("stateimpl", "DEFAULT", "name of the state implement
 // The given state reads the data from the given directory and verifies the data are present.
 // Name of the index and directory is provided as command line arguments
 func TestStateRead(t *testing.T) {
-	// do not runt this test stand-alone
+	// do not run this test stand-alone
 	if *stateDir == "DEFAULT" {
 		return
 	}

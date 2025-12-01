@@ -475,7 +475,9 @@ func (s *ExternalState) Close() error {
 			return fmt.Errorf("failed to release external state (error code %v)", result)
 		}
 		s.state = nil
-		result = s.bindings.Close(s.database)
+	}
+	if s.database != nil {
+		result := s.bindings.Close(s.database)
 		if result != C.kResult_Success {
 			return fmt.Errorf("failed to close external database (error code %v)", result)
 		}
