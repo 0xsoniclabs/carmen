@@ -64,8 +64,7 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     let token = LifetimeToken;
     if live_impl.is_null()
         || live_impl_len <= 0
-        || archive_impl.is_null()
-        || archive_impl_len <= 0
+        || (archive_impl.is_null() && archive_impl_len != 0)
         || directory.is_null()
         || directory_len <= 0
         || database_out.is_null()
@@ -79,13 +78,21 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
     let live_impl = unsafe {
         slice_from_raw_parts_scoped(live_impl as *const u8, live_impl_len as usize, &token)
     };
-    // SAFETY:
-    // - `archive_impl` is a valid pointer to a byte array of length `archive_impl_length`
-    //   (precondition)
-    // - `archive_impl` is valid for reads for the duration of the call (precondition)
-    // - `archive_impl` is not mutated for the duration of the call (precondition)
-    let archive_impl = unsafe {
-        slice_from_raw_parts_scoped(archive_impl as *const u8, archive_impl_len as usize, &token)
+    let archive_impl = if archive_impl.is_null() {
+        b""
+    } else {
+        // SAFETY:
+        // - `archive_impl` is a valid pointer to a byte array of length `archive_impl_length`
+        //   (precondition)
+        // - `archive_impl` is valid for reads for the duration of the call (precondition)
+        // - `archive_impl` is not mutated for the duration of the call (precondition)
+        unsafe {
+            slice_from_raw_parts_scoped(
+                archive_impl as *const u8,
+                archive_impl_len as usize,
+                &token,
+            )
+        }
     };
     // SAFETY:
     // - `directory` is a valid pointer to a byte array of length `directory_len` (precondition)
@@ -1257,8 +1264,8 @@ mod tests {
                 6,
                 live_impl,
                 live_impl_len,
-                std::ptr::null(), // invalid
-                archive_impl_len,
+                std::ptr::null(), // invalid combination
+                archive_impl_len, // invalid combination
                 dir,
                 dir_len,
                 &mut out_database,
