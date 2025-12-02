@@ -537,7 +537,7 @@ func (s *ExternalState) GetArchiveBlockHeight() (uint64, bool, error) {
 	var blockHeight C.int64_t
 	result := s.bindings.GetArchiveBlockHeight(s.database, &blockHeight)
 	if result != C.kResult_Success {
-		return 0, false, fmt.Errorf("failed to get archive block height (error code %v)", result)
+		return 0, false, state.NoArchiveError
 	}
 	if blockHeight < 0 {
 		return 0, true, nil
