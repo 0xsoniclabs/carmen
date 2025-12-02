@@ -250,10 +250,7 @@ pub fn make_smallest_leaf_node_for(
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_leaf_type_for(n) {
         VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
-        VerkleNodeKind::Leaf2 => Ok(VerkleNode::Leaf2(Box::new(
-            SparseLeafNode::<2>::from_existing(stem, values, commitment)?,
-        ))),
-        VerkleNodeKind::Leaf256 => {
+        VerkleNodeKind::Leaf2 | VerkleNodeKind::Leaf256 => {
             let mut new_leaf = FullLeafNode {
                 stem,
                 commitment,
