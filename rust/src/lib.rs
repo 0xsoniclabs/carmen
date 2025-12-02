@@ -44,6 +44,18 @@ pub mod sync;
 pub mod types;
 mod utils;
 
+type VerkleStorageManager = VerkleNodeFileStorageManager<
+    NodeFileStorage<InnerNode, NoSeekFile>,
+    NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
+    NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+    NodeFileStorage<SparseLeafNode<5>, NoSeekFile>,
+    NodeFileStorage<SparseLeafNode<18>, NoSeekFile>,
+    NodeFileStorage<SparseLeafNode<146>, NoSeekFile>,
+    NodeFileStorage<FullLeafNode, NoSeekFile>,
+>;
+
+type VerkleStorage = StorageWithFlushBuffer<VerkleStorageManager>;
+
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
 /// created. If it is empty, a new, empty state is initialized. If it contains
@@ -74,12 +86,7 @@ pub fn open_carmen_db(
             database::CrateCryptoInMemoryVerkleTrie,
         >::new()))),
         b"file" => {
-            type FileStorage = VerkleNodeFileStorageManager<
-                NodeFileStorage<InnerNode, NoSeekFile>,
-                NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
-                NodeFileStorage<FullLeafNode, NoSeekFile>,
-            >;
-            let storage = StorageWithFlushBuffer::<FileStorage>::open(&live_dir)?;
+            let storage = VerkleStorage::open(&live_dir)?;
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382

@@ -223,7 +223,7 @@ mod tests {
             compute_commitment::compute_leaf_node_commitment,
             crypto::Scalar,
             test_utils::FromIndexValues,
-            variants::managed::{InnerNode, nodes::leaf::FullLeafNode},
+            variants::managed::nodes::{inner::InnerNode, leaf::FullLeafNode},
         },
         node_manager::in_memory_node_manager::InMemoryNodeManager,
         types::{HasEmptyId, Key},

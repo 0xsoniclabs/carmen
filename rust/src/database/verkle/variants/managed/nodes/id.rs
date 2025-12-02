@@ -27,14 +27,20 @@ use crate::{
 pub struct VerkleNodeId([u8; 6]);
 
 impl VerkleNodeId {
-    // The upper 2 bits are used to encode the node type.
+    // The upper 4 bits are used to encode the node type.
     const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
-    const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
-    const LEAF_NODE_2_PREFIX: u64 = 0x0000_8000_0000_0000;
-    const LEAF_NODE_256_PREFIX: u64 = 0x0000_C000_0000_0000;
 
-    const PREFIX_MASK: u64 = 0x0000_C000_0000_0000;
-    const INDEX_MASK: u64 = 0x0000_3FFF_FFFF_FFFF;
+    const INNER_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
+
+    const LEAF_NODE_1_PREFIX: u64 = 0x0000_5000_0000_0000;
+    const LEAF_NODE_2_PREFIX: u64 = 0x0000_6000_0000_0000;
+    const LEAF_NODE_5_PREFIX: u64 = 0x0000_7000_0000_0000;
+    const LEAF_NODE_18_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_146_PREFIX: u64 = 0x0000_9000_0000_0000;
+    const LEAF_NODE_256_PREFIX: u64 = 0x0000_A000_0000_0000;
+
+    const PREFIX_MASK: u64 = 0x0000_F000_0000_0000;
+    const INDEX_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
 
     fn from_u64(value: u64) -> Self {
         let mut bytes = [0; 6];
@@ -49,6 +55,12 @@ impl VerkleNodeId {
     }
 }
 
+impl Default for VerkleNodeId {
+    fn default() -> Self {
+        Self::empty_id()
+    }
+}
+
 impl ToNodeKind for VerkleNodeId {
     type Target = VerkleNodeKind;
 
@@ -56,7 +68,11 @@ impl ToNodeKind for VerkleNodeId {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(VerkleNodeKind::Empty),
             Self::INNER_NODE_PREFIX => Some(VerkleNodeKind::Inner),
+            Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
+            Self::LEAF_NODE_5_PREFIX => Some(VerkleNodeKind::Leaf5),
+            Self::LEAF_NODE_18_PREFIX => Some(VerkleNodeKind::Leaf18),
+            Self::LEAF_NODE_146_PREFIX => Some(VerkleNodeKind::Leaf146),
             Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
@@ -76,7 +92,11 @@ impl TreeId for VerkleNodeId {
         let prefix = match node_type {
             VerkleNodeKind::Empty => Self::EMPTY_NODE_PREFIX,
             VerkleNodeKind::Inner => Self::INNER_NODE_PREFIX,
+            VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
+            VerkleNodeKind::Leaf5 => Self::LEAF_NODE_5_PREFIX,
+            VerkleNodeKind::Leaf18 => Self::LEAF_NODE_18_PREFIX,
+            VerkleNodeKind::Leaf146 => Self::LEAF_NODE_146_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
         };
         VerkleNodeId::from_u64(idx | prefix)
@@ -126,12 +146,16 @@ mod tests {
 
     #[test]
     fn from_idx_and_node_type_creates_id_from_lower_6_bytes_logic_or_node_type_prefix() {
-        let idx = 0x0000_1234_5678_9abc;
+        let idx = 0x0000_0123_4567_89ab;
         let cases = [
             (VerkleNodeKind::Empty, 0x0000_0000_0000_0000),
             (VerkleNodeKind::Inner, 0x0000_4000_0000_0000),
-            (VerkleNodeKind::Leaf2, 0x0000_8000_0000_0000),
-            (VerkleNodeKind::Leaf256, 0x0000_C000_0000_0000),
+            (VerkleNodeKind::Leaf1, 0x0000_5000_0000_0000),
+            (VerkleNodeKind::Leaf2, 0x0000_6000_0000_0000),
+            (VerkleNodeKind::Leaf5, 0x0000_7000_0000_0000),
+            (VerkleNodeKind::Leaf18, 0x0000_8000_0000_0000),
+            (VerkleNodeKind::Leaf146, 0x0000_9000_0000_0000),
+            (VerkleNodeKind::Leaf256, 0x0000_A000_0000_0000),
         ];
 
         for (node_type, prefix) in cases {
@@ -151,7 +175,7 @@ mod tests {
     #[test]
     fn to_index_masks_out_node_type() {
         let id = VerkleNodeId([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
-        assert_eq!(id.to_index(), 0x3f_ff_ff_ff_ff_ff);
+        assert_eq!(id.to_index(), 0x0f_ff_ff_ff_ff_ff);
     }
 
     #[test]
@@ -166,11 +190,27 @@ mod tests {
                 Some(VerkleNodeKind::Inner),
             ),
             (
-                VerkleNodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                VerkleNodeId([0x50, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf1),
+            ),
+            (
+                VerkleNodeId([0x60, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Leaf2),
             ),
             (
-                VerkleNodeId([0xc0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                VerkleNodeId([0x70, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf5),
+            ),
+            (
+                VerkleNodeId([0x80, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf18),
+            ),
+            (
+                VerkleNodeId([0x90, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::Leaf146),
+            ),
+            (
+                VerkleNodeId([0xA0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Leaf256),
             ),
         ];
@@ -179,10 +219,11 @@ mod tests {
         }
     }
 
-    // Note: this is currently impossible because we have 4 node types and use 2 bits for the
-    // prefix. If we add more node types, and there are in valid prefixes we should implement this
-    // test.
-    // #[test] fn node_id_to_node_type_returns_node_for_invalid_prefixes() {}
+    #[test]
+    fn node_id_to_node_type_returns_none_for_invalid_prefixes() {
+        let id = VerkleNodeId([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(id.to_node_kind(), None);
+    }
 
     #[test]
     fn from_u64_constructs_integer_from_lower_6_bytes() {
@@ -208,8 +249,24 @@ mod tests {
                 VerkleNodeKind::Inner,
             ),
             (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf1),
+                VerkleNodeKind::Leaf1,
+            ),
+            (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf2),
                 VerkleNodeKind::Leaf2,
+            ),
+            (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf5),
+                VerkleNodeKind::Leaf5,
+            ),
+            (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf18),
+                VerkleNodeKind::Leaf18,
+            ),
+            (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf146),
+                VerkleNodeKind::Leaf146,
             ),
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf256),
@@ -243,7 +300,7 @@ mod tests {
                 "{:?}",
                 VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Leaf256)
             ),
-            "VerkleNodeId { kind: Leaf256, idx: 2, raw: [192, 0, 0, 0, 0, 2] }"
+            "VerkleNodeId { kind: Leaf256, idx: 2, raw: [160, 0, 0, 0, 0, 2] }"
         );
     }
 }
