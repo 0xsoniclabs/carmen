@@ -16,4 +16,3 @@ mod window_signed_committer;
 pub use commitment::Commitment;
 pub use opening::Opening;
 pub use scalar::Scalar;
-mod msm_unsigned_carry;
