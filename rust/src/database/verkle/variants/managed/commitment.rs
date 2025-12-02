@@ -134,8 +134,8 @@ pub enum VerkleCommitmentInput {
 /// This function assumes the update log and the node manager to be in a consistent state:
 /// - All nodes marked as dirty in the update log must exist in the node manager.
 /// - All nodes marked as dirty in the update log must have a dirty [`VerkleCommitment`].
-/// - For a dirty inner node on level `L`, all of its children in [`VerkleCommitment::changed`] must
-///   be contained in the update log on level `L+1`.
+/// - For a dirty inner node on level `L`, all of its children in
+///   [`VerkleCommitment::changed_indices`] must be contained in the update log on level `L+1`.
 ///
 /// After successful completion, the update log is cleared.
 pub fn update_commitments(
