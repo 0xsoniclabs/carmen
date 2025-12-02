@@ -59,7 +59,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			db.AddBalance(addr2, minBalance)
 			db.AddBalance(addr3, maxBalance)
 			db.EndTransaction()
-			db.EndBlock(1)
+			db.EndBlock(0)
 
 			// Second block: check balances and modify them.
 			db.BeginBlock()
@@ -79,7 +79,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			db.SubBalance(addr3, maxBalance)
 
 			db.EndTransaction()
-			db.EndBlock(2)
+			db.EndBlock(1)
 
 			// Third block: check modified balances.
 			db.BeginBlock()
@@ -96,7 +96,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			}
 
 			db.EndTransaction()
-			db.EndBlock(3)
+			db.EndBlock(2)
 
 			if err := db.Flush(); err != nil {
 				t.Fatalf("failed to flush the DB: %v", err)
@@ -113,15 +113,15 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 				account common.Address
 				balance amount.Amount
 			}{
+				{0, addr1, minBalance},
+				{0, addr2, minBalance},
+				{0, addr3, maxBalance},
 				{1, addr1, minBalance},
-				{1, addr2, minBalance},
-				{1, addr3, maxBalance},
+				{1, addr2, maxBalance},
+				{1, addr3, minBalance},
 				{2, addr1, minBalance},
 				{2, addr2, maxBalance},
 				{2, addr3, minBalance},
-				{3, addr1, minBalance},
-				{3, addr2, maxBalance},
-				{3, addr3, minBalance},
 			}
 
 			for _, expectation := range expectations {
@@ -234,7 +234,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 		defer ref.Close()
 		mod(ref)
 		ref.EndTransaction()
-		ref.EndBlock(1)
+		ref.EndBlock(0)
 		want[s] = ref.GetHash()
 	}
 	for i := 0; i < 3; i++ {
@@ -255,7 +255,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 
 				mod(stateDb)
 				stateDb.EndTransaction()
-				stateDb.EndBlock(1)
+				stateDb.EndBlock(0)
 				if got := stateDb.GetHash(); want[config.config.Schema] != got {
 					t.Errorf("Invalid hash, wanted %v, got %v", want, got)
 				}
@@ -376,7 +376,7 @@ func TestPersistentStateDB(t *testing.T) {
 			}
 
 			stateDb.EndTransaction()
-			stateDb.EndBlock(1)
+			stateDb.EndBlock(0)
 			stateDb.BeginBlock()
 			stateDb.BeginTransaction()
 
@@ -392,7 +392,7 @@ func TestPersistentStateDB(t *testing.T) {
 			}
 
 			stateDb.EndTransaction()
-			stateDb.EndBlock(2)
+			stateDb.EndBlock(1)
 			stateDb.EndEpoch(1)
 
 			if err := stateDb.Close(); err != nil {
@@ -467,7 +467,7 @@ func TestStateDBRead(t *testing.T) {
 	}
 
 	// state in archive
-	as1, err := stateDb.GetArchiveStateDB(1)
+	as1, err := stateDb.GetArchiveStateDB(0)
 	if as1 == nil || err != nil {
 		t.Fatalf("Unable to get archive stateDB, err: %v", err)
 	}
@@ -484,7 +484,7 @@ func TestStateDBRead(t *testing.T) {
 		t.Errorf("Unexpected value, val: %v != %v", balance, 0)
 	}
 
-	as2, err := stateDb.GetArchiveStateDB(2)
+	as2, err := stateDb.GetArchiveStateDB(1)
 	if as2 == nil || err != nil {
 		t.Fatalf("Unable to get archive stateDB, err: %v", err)
 	}
@@ -547,18 +547,18 @@ func TestStateDBArchive(t *testing.T) {
 
 			stateDb.BeginBlock()
 			stateDb.AddBalance(address1, amount.New(22))
-			stateDb.EndBlock(2)
+			stateDb.EndBlock(1)
 
 			if err := stateDb.Flush(); err != nil { // wait until archives are written
 				t.Fatalf("failed to flush StateDB; %s", err)
 			}
 
-			state1, err := stateDb.GetArchiveStateDB(1)
+			state1, err := stateDb.GetArchiveStateDB(0)
 			if err != nil {
 				t.Fatalf("failed to get state of block 1; %s", err)
 			}
 
-			state2, err := stateDb.GetArchiveStateDB(2)
+			state2, err := stateDb.GetArchiveStateDB(1)
 			if err != nil {
 				t.Fatalf("failed to get state of block 2; %s", err)
 			}
@@ -680,7 +680,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				}
 				db.EndTransaction()
 			}
-			db.EndBlock(1)
+			db.EndBlock(0)
 
 			// In the next block we have two transactions:
 			db.BeginBlock()
@@ -737,7 +737,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				db.EndTransaction()
 
 			}
-			db.EndBlock(2)
+			db.EndBlock(1)
 
 			// Check the state after the block.
 			db.BeginBlock()
@@ -748,7 +748,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				}
 				db.EndTransaction()
 			}
-			db.EndBlock(3)
+			db.EndBlock(2)
 		})
 	}
 }
