@@ -58,6 +58,7 @@ type externalBindings interface {
 	ReleaseState(state unsafe.Pointer) C.enum_Result
 	GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result
 	GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result
+	GetArchiveBlockHeight(database unsafe.Pointer, outBlock *C.int64_t) C.enum_Result
 	AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result
 	GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result
 	GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result
@@ -96,6 +97,10 @@ func (r rustBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Poi
 
 func (r rustBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetArchiveState(database, block, outState)
+}
+
+func (r rustBindings) GetArchiveBlockHeight(database unsafe.Pointer, outHeight *C.int64_t) C.enum_Result {
+	return C.Carmen_Rust_GetArchiveBlockHeight(database, outHeight)
 }
 
 func (r rustBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
@@ -167,6 +172,10 @@ func (c cppBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Poin
 
 func (c cppBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Cpp_GetArchiveState(database, block, outState)
+}
+
+func (c cppBindings) GetArchiveBlockHeight(database unsafe.Pointer, outHeight *C.int64_t) C.enum_Result {
+	return C.kResult_UnsupportedOperation
 }
 
 func (c cppBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
@@ -525,7 +534,15 @@ func (s *ExternalState) GetArchiveState(block uint64) (state.State, error) {
 }
 
 func (s *ExternalState) GetArchiveBlockHeight() (uint64, bool, error) {
-	return 0, false, state.NoArchiveError
+	var blockHeight C.int64_t
+	result := s.bindings.GetArchiveBlockHeight(s.database, &blockHeight)
+	if result != C.kResult_Success {
+		return 0, false, fmt.Errorf("failed to get archive block height (error code %v)", result)
+	}
+	if blockHeight < 0 {
+		return 0, true, nil
+	}
+	return uint64(blockHeight), false, nil
 }
 
 func (s *ExternalState) Check() error {

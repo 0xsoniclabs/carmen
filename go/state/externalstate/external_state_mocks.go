@@ -102,6 +102,20 @@ func (mr *MockexternalBindingsMockRecorder) Flush(database any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Flush", reflect.TypeOf((*MockexternalBindings)(nil).Flush), database)
 }
 
+// GetArchiveBlockHeight mocks base method.
+func (m *MockexternalBindings) GetArchiveBlockHeight(database unsafe.Pointer, outBlock *C.int64_t) C.enum_Result {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetArchiveBlockHeight", database, outBlock)
+	ret0, _ := ret[0].(C.enum_Result)
+	return ret0
+}
+
+// GetArchiveBlockHeight indicates an expected call of GetArchiveBlockHeight.
+func (mr *MockexternalBindingsMockRecorder) GetArchiveBlockHeight(database, outBlock any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetArchiveBlockHeight", reflect.TypeOf((*MockexternalBindings)(nil).GetArchiveBlockHeight), database, outBlock)
+}
+
 // GetArchiveState mocks base method.
 func (m *MockexternalBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
 	m.ctrl.T.Helper()

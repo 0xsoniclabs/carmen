@@ -664,9 +664,6 @@ func TestLastArchiveBlock(t *testing.T) {
 			if config.name()[0:3] == "cpp" {
 				t.Skipf("GetArchiveBlockHeight not supported by the cpp state")
 			}
-			if config.name()[0:4] == "rust" {
-				t.Skipf("GetArchiveBlockHeight not supported by the rust state")
-			}
 			s, err := config.createState(dir)
 			if err != nil {
 				if errors.Is(err, UnsupportedConfiguration) {

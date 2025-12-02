@@ -106,6 +106,13 @@ DUPLICATE_FOR_LANGS(enum Result,
                     GetArchiveState(C_Database database, uint64_t block,
                                     C_State* out_state));
 
+/// Retrieves the last block number of the blockchain and writes it into
+/// `out_block`. If there are no blocks yet, -1 is written. If this method is
+/// called on a database without an archive state, the semantics are undefined.
+/// The implementation may write an arbitrary value or return an error.
+DUPLICATE_FOR_LANGS(enum Result, GetArchiveBlockHeight(C_Database database,
+                                                       int64_t* out_block));
+
 // ------------------------------- Accounts -----------------------------------
 
 // Checks if the given account exists.
