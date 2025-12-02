@@ -18,7 +18,7 @@ use crate::{
         verkle::variants::managed::{
             InnerNode, VerkleNode, VerkleNodeId,
             commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
-            nodes::make_smallest_leaf_node_for,
+            nodes::{ValueWithIndex, make_smallest_leaf_node_for},
         },
         visitor::NodeVisitor,
     },
@@ -26,20 +26,6 @@ use crate::{
     statistics::node_count::NodeCountVisitor,
     types::{DiskRepresentable, Key, Value},
 };
-
-/// A value of a leaf node in a managed Verkle trie, together with its index.
-// NOTE: Changing the layout of this struct will break backwards compatibility of the
-// serialization format.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned,
-)]
-#[repr(C)]
-pub struct ValueWithIndex {
-    /// The index of the value in the leaf node.
-    pub index: u8,
-    /// The value stored in the leaf node.
-    pub value: Value,
-}
 
 /// A sparsely populated leaf node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
@@ -68,12 +54,14 @@ impl<const N: usize> SparseLeafNode<N> {
 
         // Insert values from previous leaf using get_slot_for to ensure no duplicate indices.
         for vwi in values {
-            if vwi.value == Value::default() {
+            if vwi.item == Value::default() {
                 continue;
             }
-            let slot = Self::get_slot_for(&leaf.values, vwi.index).ok_or(Error::CorruptedState(
-                "too many non-zero values to fit into sparse leaf".to_owned(),
-            ))?;
+            let slot = ValueWithIndex::get_slot_for(&leaf.values, vwi.index).ok_or(
+                Error::CorruptedState(format!(
+                    "too many non-zero values to fit into sparse leaf of size {N}"
+                )),
+            )?;
             leaf.values[slot] = *vwi;
         }
 
@@ -84,34 +72,10 @@ impl<const N: usize> SparseLeafNode<N> {
     // TODO: This should not have to pass 256 values: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         let mut values = [Value::default(); 256];
-        for ValueWithIndex { index, value } in &self.values {
+        for ValueWithIndex { index, item: value } in &self.values {
             values[*index as usize] = *value;
         }
         Ok(VerkleCommitmentInput::Leaf(values, self.stem))
-    }
-
-    /// Returns a slot for storing a value with the given index, or `None` if no such slot exists.
-    /// A slot is suitable if it either already holds the given index, or if it is empty
-    /// (i.e., holds the default value).
-    fn get_slot_for(values: &[ValueWithIndex], index: u8) -> Option<usize> {
-        let mut empty_slot = None;
-        // We always do a linear search over all values to ensure that we never hold the same index
-        // twice in different slots. By starting the search at the given index we are very likely
-        // to find the matching slot immediately in practice (if index < N).
-        for (i, vwi) in values
-            .iter()
-            .enumerate()
-            .cycle()
-            .skip(index as usize)
-            .take(N)
-        {
-            if vwi.index == index {
-                return Some(i);
-            } else if empty_slot.is_none() && vwi.value == Value::default() {
-                empty_slot = Some(i);
-            }
-        }
-        empty_slot
     }
 }
 
@@ -183,7 +147,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         if key[..31] != self.stem[..] {
             return Ok(LookupResult::Value(Value::default()));
         }
-        for ValueWithIndex { index, value } in &self.values {
+        for ValueWithIndex { index, item: value } in &self.values {
             if *index == key[31] {
                 return Ok(LookupResult::Value(*value));
             }
@@ -207,7 +171,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         }
 
         // If we have a free/matching slot, we can store the value directly.
-        if Self::get_slot_for(&self.values, key[31]).is_some() {
+        if ValueWithIndex::get_slot_for(&self.values, key[31]).is_some() {
             return Ok(StoreAction::Store {
                 index: key[31] as usize,
             });
@@ -230,13 +194,13 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             .into());
         }
 
-        let slot = Self::get_slot_for(&self.values, key[31]).ok_or(Error::CorruptedState(
-            "no available slot for storing value in sparse leaf".to_owned(),
-        ))?;
-        let prev_value = self.values[slot].value;
+        let slot = ValueWithIndex::get_slot_for(&self.values, key[31]).ok_or(
+            Error::CorruptedState("no available slot for storing value in sparse leaf".to_owned()),
+        )?;
+        let prev_value = self.values[slot].item;
         self.values[slot] = ValueWithIndex {
             index: key[31],
-            value: *value,
+            item: *value,
         };
 
         Ok(prev_value)
@@ -246,8 +210,8 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         self.commitment
     }
 
-    fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = cache;
+    fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
+        self.commitment = commitment;
         Ok(())
     }
 }
@@ -259,7 +223,7 @@ impl<const N: usize> NodeVisitor<SparseLeafNode<N>> for NodeCountVisitor {
             "Leaf",
             node.values
                 .iter()
-                .filter(|value| value.value != Value::default())
+                .filter(|value| value.item != Value::default())
                 .count() as u64,
         );
         Ok(())
@@ -272,7 +236,10 @@ mod tests {
     use crate::{
         database::{
             managed_trie::TrieCommitment,
-            verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
+            verkle::{
+                test_utils::FromIndexValues,
+                variants::managed::nodes::{VerkleManagedTrieNode, VerkleNodeKind},
+            },
         },
         error::BTError,
         types::{TreeId, Value},
@@ -306,12 +273,12 @@ mod tests {
         let mut values = [ValueWithIndex::default(); N];
         values[0] = ValueWithIndex {
             index: INDEX_1,
-            value: VALUE_1,
+            item: VALUE_1,
         };
         for (i, value) in values.iter_mut().enumerate().skip(1) {
             *value = ValueWithIndex {
                 index: INDEX_1 + i as u8,
-                value: LEAF_DEFAULT_VALUE,
+                item: LEAF_DEFAULT_VALUE,
             }
         }
         SparseLeafNode {
@@ -321,37 +288,12 @@ mod tests {
         }
     }
 
-    trait VerkleManagedTrieNode:
-        ManagedTrieNode<Union = VerkleNode, Id = VerkleNodeId, Commitment = VerkleCommitment>
-        + GenericHelperTrait
-    {
-    }
-
-    impl<const N: usize> VerkleManagedTrieNode for SparseLeafNode<N> {}
-
-    /// Helper trait to interact with generic leaf nodes in rstest tests.
-    trait GenericHelperTrait {
-        fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex;
-        fn get_commitment_input(&self) -> VerkleCommitmentInput;
-    }
-
-    impl<const N: usize> GenericHelperTrait for SparseLeafNode<N> {
-        /// Returns a reference to the specified slot (modulo N).
-        fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex {
-            &mut self.values[slot % N]
-        }
-
-        fn get_commitment_input(&self) -> VerkleCommitmentInput {
-            self.get_commitment_input().unwrap()
-        }
-    }
-
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::leaf2(Box::new(make_leaf::<2>()) as Box<dyn VerkleManagedTrieNode>)]
-    #[case::leaf7(Box::new(make_leaf::<7>()) as Box<dyn VerkleManagedTrieNode>)]
-    #[case::leaf99(Box::new(make_leaf::<99>()) as Box<dyn VerkleManagedTrieNode>)]
-    fn different_leaf_sizes(#[case] node: Box<dyn VerkleManagedTrieNode>) {}
+    #[case::leaf2(Box::new(make_leaf::<2>()) as Box<dyn VerkleManagedTrieNode<Value>>)]
+    #[case::leaf7(Box::new(make_leaf::<7>()) as Box<dyn VerkleManagedTrieNode<Value>>)]
+    #[case::leaf99(Box::new(make_leaf::<99>()) as Box<dyn VerkleManagedTrieNode<Value>>)]
+    fn different_leaf_sizes(#[case] node: Box<dyn VerkleManagedTrieNode<Value>>) {}
 
     fn make_node_id() -> VerkleNodeId {
         VerkleNodeId::from_idx_and_node_kind(123, VerkleNodeKind::Leaf2) // The actual node kind is irrelevant for tests
@@ -367,7 +309,7 @@ mod tests {
 
         for (i, value) in node.values.iter().enumerate() {
             assert_eq!(value.index, i as u8);
-            assert_eq!(value.value, Value::default());
+            assert_eq!(value.item, Value::default());
         }
     }
 
@@ -380,16 +322,16 @@ mod tests {
         {
             let values = [ValueWithIndex {
                 index: 2,
-                value: VALUE_1,
+                item: VALUE_1,
             }];
             let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
             assert_eq!(node.stem, STEM);
             assert_eq!(node.commitment, commitment);
             // Index is put into the correct slot
             assert_eq!(node.values[0].index, 0);
-            assert_eq!(node.values[0].value, Value::default());
+            assert_eq!(node.values[0].item, Value::default());
             assert_eq!(node.values[1].index, 1);
-            assert_eq!(node.values[1].value, Value::default());
+            assert_eq!(node.values[1].item, Value::default());
             assert_eq!(node.values[2], values[0]);
         }
 
@@ -397,7 +339,7 @@ mod tests {
         {
             let values = [ValueWithIndex {
                 index: 18,
-                value: VALUE_1,
+                item: VALUE_1,
             }];
             let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
             // The value is put into the first available slot.
@@ -410,15 +352,15 @@ mod tests {
             let values = [
                 ValueWithIndex {
                     index: 18,
-                    value: VALUE_1,
+                    item: VALUE_1,
                 },
                 ValueWithIndex {
                     index: 0,
-                    value: VALUE_1,
+                    item: VALUE_1,
                 },
                 ValueWithIndex {
                     index: 1,
-                    value: VALUE_1,
+                    item: VALUE_1,
                 },
             ];
             let node = SparseLeafNode::<3>::from_existing(STEM, &values, commitment).unwrap();
@@ -434,15 +376,15 @@ mod tests {
             let values = [
                 ValueWithIndex {
                     index: 20,
-                    value: VALUE_1,
+                    item: VALUE_1,
                 },
                 ValueWithIndex {
                     index: 0,
-                    value: Value::default(),
+                    item: Value::default(),
                 },
                 ValueWithIndex {
                     index: 1,
-                    value: VALUE_1,
+                    item: VALUE_1,
                 },
             ];
             let node = SparseLeafNode::<2>::from_existing(STEM, &values, commitment).unwrap();
@@ -456,22 +398,22 @@ mod tests {
         let values = [
             ValueWithIndex {
                 index: 0,
-                value: VALUE_1,
+                item: VALUE_1,
             },
             ValueWithIndex {
                 index: 1,
-                value: VALUE_1,
+                item: VALUE_1,
             },
             ValueWithIndex {
                 index: 2,
-                value: VALUE_1,
+                item: VALUE_1,
             },
         ];
         let commitment = VerkleCommitment::default();
         let result = SparseLeafNode::<2>::from_existing(STEM, &values, commitment);
         assert!(matches!(
             result.map_err(BTError::into_inner),
-            Err(Error::CorruptedState(e)) if e.contains("too many non-zero values to fit into sparse leaf")
+            Err(Error::CorruptedState(e)) if e.contains("too many non-zero values to fit into sparse leaf of size 2")
         ));
     }
 
@@ -479,7 +421,7 @@ mod tests {
     fn get_commitment_input_returns_values_and_stem() {
         let node = make_leaf::<2>();
         let mut expected_values = [Value::default(); 256];
-        for ValueWithIndex { index, value } in &node.values {
+        for ValueWithIndex { index, item: value } in &node.values {
             expected_values[*index as usize] = *value;
         }
         let result = node.get_commitment_input().unwrap();
@@ -489,32 +431,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn get_slot_returns_slot_with_matching_index_or_empty_slot() {
-        let mut node = make_leaf::<7>();
-
-        // Matching index
-        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, INDEX_1);
-        assert_eq!(slot, Some(0));
-
-        // Matching index has precedence over empty slot
-        node.values[1].value = Value::default();
-        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, INDEX_1 + 3);
-        assert_eq!(slot, Some(3));
-
-        // No matching index, so we return first empty slot
-        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, 250);
-        assert_eq!(slot, Some(1));
-
-        // No matching index and no empty slot
-        node.values[1].value = VALUE_1;
-        let slot = SparseLeafNode::<7>::get_slot_for(&node.values, 250);
-        assert_eq!(slot, None);
-    }
-
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn lookup_with_matching_stem_returns_value_at_final_key_index(
-        #[case] node: Box<dyn VerkleManagedTrieNode>,
+        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
         let key = [&STEM[..], &[INDEX_1]].concat().try_into().unwrap();
         let result = node.lookup(&key, 0).unwrap();
@@ -530,14 +449,14 @@ mod tests {
         assert_eq!(other_result, LookupResult::Value(Value::default()));
 
         // Other index has default value
-        let other_key = Key::from_index_values(1, &[(31, INDEX_1 + 1)]);
+        let other_key = [&STEM[..], &[INDEX_1 - 1]].concat().try_into().unwrap();
         let other_result = node.lookup(&other_key, 0).unwrap();
         assert_eq!(other_result, LookupResult::Value(Value::default()));
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_non_matching_stem_is_reparent(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode>,
+        #[case] mut node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
         let mut commitment = VerkleCommitment::default();
         commitment.store(123, VALUE_1);
@@ -563,7 +482,7 @@ mod tests {
 
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_matching_stem_is_store_if_matching_slot_exists(
-        #[case] node: Box<dyn VerkleManagedTrieNode>,
+        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
         let mut node = node;
         let index = 142;
@@ -580,11 +499,11 @@ mod tests {
 
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_matching_stem_is_store_if_slot_with_default_value_exists(
-        #[case] node: Box<dyn VerkleManagedTrieNode>,
+        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
         let mut node = node;
         let index = 200;
-        node.access_slot(5).value = Value::default();
+        node.access_slot(5).item = Value::default();
         let key: Key = [&STEM[..], &[index]].concat().try_into().unwrap();
         let result = node.next_store_action(&key, 0, make_node_id()).unwrap();
         assert_eq!(
@@ -597,7 +516,7 @@ mod tests {
 
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_matching_stem_is_transform_to_bigger_leaf_if_no_free_slots(
-        #[case] node: Box<dyn VerkleManagedTrieNode>,
+        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
         let mut node = node;
         let mut commitment = VerkleCommitment::default();
@@ -629,7 +548,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
-    fn store_sets_value_at_final_key_index(#[case] node: Box<dyn VerkleManagedTrieNode>) {
+    fn store_sets_value_at_final_key_index(#[case] node: Box<dyn VerkleManagedTrieNode<Value>>) {
         let mut node = node;
         let index = 78;
         node.access_slot(3).index = index;
@@ -647,7 +566,9 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
-    fn store_with_non_matching_stem_returns_error(#[case] node: Box<dyn VerkleManagedTrieNode>) {
+    fn store_with_non_matching_stem_returns_error(
+        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
+    ) {
         let mut node = node;
         let key = Key::from_index_values(1, &[(31, 78)]);
         let result = node.store(&key, &VALUE_1);
@@ -658,7 +579,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
-    fn store_returns_error_if_no_free_slot(#[case] node: Box<dyn VerkleManagedTrieNode>) {
+    fn store_returns_error_if_no_free_slot(#[case] node: Box<dyn VerkleManagedTrieNode<Value>>) {
         let mut node = node;
         let key = [&STEM[..], &[INDEX_1 - 1]].concat().try_into().unwrap();
         let result = node.store(&key, &VALUE_1);
