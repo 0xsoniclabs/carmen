@@ -323,27 +323,54 @@ mod tests {
 
     #[test]
     fn file_based_verkle_trie_implementation_supports_closing_and_reopening() {
+        // This test writes to 512 leaf nodes. In two leaf nodes only one slot gets set, in two leaf
+        // nodes two slots get set and so on.
+        // This makes sure that no matter the variants of sparse leaf nodes that are used for
+        // storage optimization of leaf nodes, there will  always be at least two nodes for each
+        // variant.
+        let key_indices_offset: u16 = 256; // first leaf stores 64, second 265-64
+
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
 
-        let addr = [4; 20];
-        let balance = U256::from(42u64).to_be_bytes();
+        let mut slot_updates = Vec::new();
+        for address_idx in 0..256 * 2 {
+            for key_idx in key_indices_offset..=key_indices_offset + address_idx {
+                let mut addr = [0; 20];
+                addr[..2].copy_from_slice(&address_idx.to_be_bytes());
+                let key = U256::from(key_idx);
+                slot_updates.push(SlotUpdate {
+                    addr,
+                    key: key.to_be_bytes(),
+                    value: key.to_be_bytes(),
+                });
+            }
+        }
+        let update = Update {
+            slots: &slot_updates,
+            ..Default::default()
+        };
+
         db.get_live_state()
             .unwrap()
-            .apply_block_update(
-                0,
-                Update {
-                    balances: &[BalanceUpdate { addr, balance }],
-                    ..Default::default()
-                },
-            )
+            .apply_block_update(0, update)
             .unwrap();
 
         db.close().unwrap();
 
         let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
-        let received = db.get_live_state().unwrap().get_balance(&addr).unwrap();
-        assert_eq!(received, balance);
+        let live = db.get_live_state().unwrap();
+        for address_idx in 0..2 * 256 {
+            for key_idx in key_indices_offset..=key_indices_offset + address_idx {
+                let mut addr = [0; 20];
+                addr[..2].copy_from_slice(&address_idx.to_be_bytes());
+                let key = U256::from(key_idx);
+                assert_eq!(
+                    live.get_storage_value(&addr, &key.to_be_bytes()).unwrap(),
+                    key.to_be_bytes()
+                );
+            }
+        }
     }
 
     #[test]
