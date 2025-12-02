@@ -336,6 +336,56 @@ unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) -> bindings::R
     bindings::Result_kResult_Success
 }
 
+/// Retrieves the last block number of the blockchain and writes it into `out_block`. If there are
+/// no blocks yet, -1 is written. If this method is called on a database without an archive state,
+/// the semantics are undefined. The implementation may write an arbitrary value or return an error.
+///
+/// # Safety
+/// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
+///   CarmenDb` object
+/// - `db` must be valid for reads for the duration of the call
+/// - `db` must not be mutated for the duration of the call
+/// - `db.inner` must be a valid pointer to a `dyn CarmenDb`
+/// - `db.inner` must be valid for reads for the duration of the lifetime of `token`
+/// - `db.inner` must not be mutated for the duration of the lifetime of `token`
+/// - `out_block` must be a valid pointer to a `i64`
+/// - `out_block` must be valid for writes for the duration of the call
+#[unsafe(no_mangle)]
+unsafe extern "C" fn Carmen_Rust_GetArchiveBlockHeight(
+    db: *mut c_void,
+    out_block: *mut i64,
+) -> bindings::Result {
+    let token = LifetimeToken;
+    if db.is_null() || out_block.is_null() {
+        return bindings::Result_kResult_InvalidArguments;
+    }
+    // SAFETY:
+    // - `db` is a valid pointer to a `StateWrapper` object (precondition)
+    // - `db` is valid for reads for the duration of the call (precondition)
+    // - `db` is not mutated for the duration of the call (precondition)
+    let db = unsafe { ref_from_ptr_scoped(db as *const DbWrapper, &token) };
+    // SAFETY:
+    // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
+    // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
+    // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
+    match db.get_archive_block_height() {
+        Ok(block_height) => {
+            let block_height = block_height
+                .map(|block_height| block_height as i64)
+                .unwrap_or(-1);
+            // SAFETY:
+            // - `out_block` is a valid pointer to a `i64` (precondition)
+            // - `out_block` is valid for writes for the duration of the call (precondition)
+            unsafe {
+                std::ptr::write(out_block, block_height);
+            }
+            bindings::Result_kResult_Success
+        }
+        Err(err) => err.into(),
+    }
+}
+
 /// Checks if the given account exists.
 ///
 /// # Safety
