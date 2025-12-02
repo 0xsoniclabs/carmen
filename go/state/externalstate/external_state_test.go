@@ -41,7 +41,7 @@ func TestAccountsAreInitiallyUnknown(t *testing.T) {
 
 func TestAccountsCanBeCreated(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+		state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
 		if account_state != true {
 			t.Errorf("Created account does not exist, got %v", account_state)
@@ -55,8 +55,8 @@ func TestAccountsCanBeDeleted(t *testing.T) {
 			t.Skip("Schema 6 does not support account existence checks")
 		}
 
-		state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
-		state.Apply(2, common.Update{DeletedAccounts: []common.Address{address1}})
+		state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
+		state.Apply(1, common.Update{DeletedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
 		if account_state != false {
 			t.Errorf("Deleted account is not deleted, got %v", account_state)
@@ -78,7 +78,7 @@ func TestReadUninitializedBalance(t *testing.T) {
 
 func TestWriteAndReadBalance(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		err := state.Apply(1, common.Update{
+		err := state.Apply(0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 		})
 		if err != nil {
@@ -108,7 +108,7 @@ func TestReadUninitializedNonce(t *testing.T) {
 
 func TestWriteAndReadNonce(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		err := state.Apply(1, common.Update{
+		err := state.Apply(0, common.Update{
 			Nonces: []common.NonceUpdate{{Account: address1, Nonce: nonce1}},
 		})
 		if err != nil {
@@ -138,7 +138,7 @@ func TestReadUninitializedSlot(t *testing.T) {
 
 func TestWriteAndReadSlot(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		err := state.Apply(1, common.Update{
+		err := state.Apply(0, common.Update{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 		})
 		if err != nil {
