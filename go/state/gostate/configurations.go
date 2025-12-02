@@ -99,13 +99,15 @@ func init() {
 			state.RegisterStateFactory(fileConfig, newGoCachedFileState)
 
 			// Also register flat database variants.
-			config := memoryConfig
-			config.Variant += "-flat"
-			state.RegisterStateFactory(config, flat.WrapFactory(newGoMemoryState))
+			if schema == state.Schema(5) {
+				config := memoryConfig
+				config.Variant += "-flat"
+				state.RegisterStateFactory(config, flat.WrapFactory(newGoMemoryState))
 
-			config = fileConfig
-			config.Variant += "-flat"
-			state.RegisterStateFactory(config, flat.WrapFactory(newGoCachedFileState))
+				config = fileConfig
+				config.Variant += "-flat"
+				state.RegisterStateFactory(config, flat.WrapFactory(newGoCachedFileState))
+			}
 
 			if schema < state.Schema(3) {
 				state.RegisterStateFactory(state.Configuration{
@@ -151,13 +153,15 @@ func init() {
 		state.RegisterStateFactory(fileConfig, newGoFileState)
 
 		// Also register flat database variants.
-		config := memoryConfig
-		config.Variant += "-flat"
-		state.RegisterStateFactory(config, flat.WrapFactory(newGoMemoryState))
+		if setup.schema == state.Schema(5) {
+			config := memoryConfig
+			config.Variant += "-flat"
+			state.RegisterStateFactory(config, flat.WrapFactory(newGoMemoryState))
 
-		config = fileConfig
-		config.Variant += "-flat"
-		state.RegisterStateFactory(config, flat.WrapFactory(newGoFileState))
+			config = fileConfig
+			config.Variant += "-flat"
+			state.RegisterStateFactory(config, flat.WrapFactory(newGoFileState))
+		}
 	}
 }
 
