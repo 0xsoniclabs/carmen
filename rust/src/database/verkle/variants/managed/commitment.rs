@@ -226,12 +226,14 @@ pub fn process_update(
             let mut scalars = [Scalar::zero(); 256];
             for (i, child_id) in children.iter().enumerate() {
                 if !vc.initialized {
-                    scalars[i] = manager
-                        .get_read_access(*child_id)
-                        .unwrap()
-                        .get_commitment()
-                        .commitment
-                        .to_scalar();
+                    if !child_id.is_empty_id() {
+                        scalars[i] = manager
+                            .get_read_access(*child_id)
+                            .unwrap()
+                            .get_commitment()
+                            .commitment
+                            .to_scalar();
+                    }
                     continue;
                 }
 
