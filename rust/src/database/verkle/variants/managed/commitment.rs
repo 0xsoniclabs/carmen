@@ -30,7 +30,7 @@ use crate::{
 /// it after the node has been modified.
 ///
 /// NOTE: While this type is meant to be part of trie nodes, a dirty commitment should never
-/// be persisted to disk. The dirty flag and changed bits are nevertheless part of the on-disk
+/// be persisted to disk. The dirty flag, changed indices etc. are nevertheless part of the on-disk
 /// representation, so that the entire node can be transmuted to/from bytes using zerocopy.
 /// Related issue: <https://github.com/0xsoniclabs/sonic-admin/issues/373>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
@@ -38,9 +38,9 @@ use crate::{
 pub struct VerkleCommitment {
     /// The commitment of the node, or of the node previously at this position in the trie.
     commitment: Commitment,
-    /// A bitfield indicating which slots in a leaf node have been used before.
-    /// This allows to distinguish between empty slots and slots that have been set to zero.
-    used_slots: [u8; 256 / 8],
+    /// A bitfield indicating which indices in a leaf node have been used before.
+    /// This allows to distinguish between empty indices and indices that have been set to zero.
+    committed_used_indices: [u8; 256 / 8],
     /// Whether this commitment has been computed at least once. This dictates whether
     /// point-wise updates over dirty children can be used, or a full computation is required.
     /// Not being initialized does not imply the commitment being zero, as it may have been
@@ -50,9 +50,17 @@ pub struct VerkleCommitment {
     /// Whether the commitment is dirty and needs to be recomputed.
     // bool does not implement FromBytes, so we use u8 instead
     dirty: u8,
-    /// A bitfield indicating which children or slots have been changed since
+    /// A bitfield indicating which children or values have been changed since
     /// the last commitment computation.
-    changed: [u8; 256 / 8],
+    changed_indices: [u8; 256 / 8],
+    /// The two partial commitments used as part of the leaf commitment computation.
+    c1: Commitment,
+    c2: Commitment,
+    /// The values that were committed at the time of the last commitment computation.
+    /// This is only needed for leaf nodes.
+    // TODO: This could be avoided by recomputing leaf commitments directly after storing values.
+    // https://github.com/0xsoniclabs/sonic-admin/issues/542
+    committed_values: [Value; 256],
 }
 
 impl VerkleCommitment {
@@ -64,10 +72,13 @@ impl VerkleCommitment {
     pub fn from_existing(existing: &VerkleCommitment) -> Self {
         VerkleCommitment {
             commitment: existing.commitment,
-            used_slots: [0u8; 256 / 8],
+            committed_used_indices: [0u8; 256 / 8],
             initialized: 0,
             dirty: 0,
-            changed: [0u8; 256 / 8],
+            changed_indices: [0u8; 256 / 8],
+            c1: Commitment::default(),
+            c2: Commitment::default(),
+            committed_values: [Value::default(); 256],
         }
     }
 
@@ -84,10 +95,13 @@ impl Default for VerkleCommitment {
     fn default() -> Self {
         Self {
             commitment: Commitment::default(),
-            used_slots: [0u8; 256 / 8],
+            committed_used_indices: [0u8; 256 / 8],
             initialized: 0,
             dirty: 0,
-            changed: [0u8; 256 / 8],
+            c1: Commitment::default(),
+            c2: Commitment::default(),
+            committed_values: [Value::default(); 256],
+            changed_indices: [0u8; 256 / 8],
         }
     }
 }
@@ -95,13 +109,15 @@ impl Default for VerkleCommitment {
 impl TrieCommitment for VerkleCommitment {
     fn modify_child(&mut self, index: usize) {
         self.dirty = 1;
-        self.changed[index / 8] |= 1 << (index % 8);
+        self.changed_indices[index / 8] |= 1 << (index % 8);
     }
 
-    fn store(&mut self, index: usize, _prev: Value) {
-        self.used_slots[index / 8] |= 1 << (index % 8);
-        self.changed[index / 8] |= 1 << (index % 8);
-        self.dirty = 1;
+    fn store(&mut self, index: usize, prev: Value) {
+        if self.changed_indices[index / 8] & (1 << (index % 8)) == 0 {
+            self.changed_indices[index / 8] |= 1 << (index % 8);
+            self.committed_values[index] = prev;
+            self.dirty = 1;
+        }
     }
 }
 
@@ -144,8 +160,18 @@ pub fn update_commitments(
 
             match lock.get_commitment_input()? {
                 VerkleCommitmentInput::Leaf(values, stem) => {
-                    // TODO: Consider caching leaf node commitments https://github.com/0xsoniclabs/sonic-admin/issues/386
-                    vc.commitment = compute_leaf_node_commitment(&values, &vc.used_slots, &stem);
+                    let _span = tracy_client::span!("leaf node");
+
+                    compute_leaf_node_commitment(
+                        vc.changed_indices,
+                        &vc.committed_values,
+                        &values,
+                        &stem,
+                        &mut vc.committed_used_indices,
+                        &mut vc.c1,
+                        &mut vc.c2,
+                        &mut vc.commitment,
+                    );
                 }
                 VerkleCommitmentInput::Inner(children) => {
                     let _span = tracy_client::span!("inner node");
@@ -161,7 +187,7 @@ pub fn update_commitments(
                             continue;
                         }
 
-                        if vc.changed[i / 8] & (1 << (i % 8)) == 0 {
+                        if vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
                             continue;
                         }
 
@@ -182,11 +208,10 @@ pub fn update_commitments(
             }
 
             vc.dirty = 0;
-            vc.changed.fill(0);
+            vc.changed_indices.fill(0);
             lock.set_commitment(vc)?;
         }
     }
-
     log.clear();
     Ok(())
 }
@@ -196,6 +221,7 @@ mod tests {
     use super::*;
     use crate::{
         database::verkle::{
+            compute_commitment::compute_leaf_node_commitment,
             crypto::Scalar,
             test_utils::FromIndexValues,
             variants::managed::{InnerNode, nodes::leaf::FullLeafNode},
@@ -208,17 +234,23 @@ mod tests {
     fn verkle_commitment_from_existing_copies_commitment() {
         let original = VerkleCommitment {
             commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
-            used_slots: [1u8; 256 / 8],
+            committed_used_indices: [1u8; 256 / 8],
             initialized: 1,
             dirty: 1,
-            changed: [1u8; 256 / 8],
+            changed_indices: [7u8; 256 / 8],
+            c1: Commitment::new(&[Scalar::from(7)]),
+            c2: Commitment::new(&[Scalar::from(11)]),
+            committed_values: [[7u8; 32]; 256],
         };
         let new = VerkleCommitment::from_existing(&original);
         assert_eq!(new.commitment, original.commitment);
-        assert_eq!(new.used_slots, [0u8; 256 / 8]);
+        assert_eq!(new.committed_used_indices, [0u8; 256 / 8]);
         assert_eq!(new.initialized, 0);
         assert_eq!(new.dirty, 0);
-        assert_eq!(new.changed, [0u8; 256 / 8]);
+        assert_eq!(new.changed_indices, [0u8; 256 / 8]);
+        assert_eq!(new.c1, Commitment::default());
+        assert_eq!(new.c2, Commitment::default());
+        assert_eq!(new.committed_values, [Value::default(); 256]);
     }
 
     #[test]
@@ -250,7 +282,7 @@ mod tests {
     fn verkle_commitment_default_returns_clean_cache_with_default_commitment() {
         let vc: VerkleCommitment = VerkleCommitment::default();
         assert_eq!(vc.commitment, Commitment::default());
-        assert_eq!(vc.used_slots, [0u8; 256 / 8]);
+        assert_eq!(vc.committed_used_indices, [0u8; 256 / 8]);
         assert_eq!(vc.dirty, 0);
     }
 
@@ -261,19 +293,18 @@ mod tests {
         vc.modify_child(42);
         assert!(vc.is_dirty());
         for i in 0..256 {
-            assert_eq!(vc.changed[i / 8] & (1 << (i % 8)) != 0, i == 42);
+            assert_eq!(vc.changed_indices[i / 8] & (1 << (i % 8)) != 0, i == 42);
         }
     }
 
     #[test]
-    fn verkle_commitment_store_marks_used_slots_and_changed_and_dirty() {
+    fn verkle_commitment_store_marks_dirty_and_changed() {
         let mut vc = VerkleCommitment::default();
         assert!(!vc.is_dirty());
         vc.store(42, [0u8; 32]);
         assert!(vc.is_dirty());
         for i in 0..256 {
-            assert_eq!(vc.used_slots[i / 8] & (1 << (i % 8)) != 0, i == 42);
-            assert_eq!(vc.changed[i / 8] & (1 << (i % 8)) != 0, i == 42);
+            assert_eq!(vc.changed_indices[i / 8] & (1 << (i % 8)) != 0, i == 42);
         }
     }
 
@@ -292,8 +323,21 @@ mod tests {
         };
         leaf.store(&key, &[42u8; 32]).unwrap();
         leaf.commitment.store(key[31] as usize, [0u8; 32]);
-        let expected_leaf_commitment =
-            compute_leaf_node_commitment(&leaf.values, &leaf.commitment.used_slots, &leaf.stem);
+
+        let expected_leaf_commitment = {
+            let mut vc = leaf.commitment;
+            compute_leaf_node_commitment(
+                vc.changed_indices,
+                &[Value::default(); 256],
+                &leaf.values,
+                &leaf.stem,
+                &mut vc.committed_used_indices,
+                &mut vc.c1,
+                &mut vc.c2,
+                &mut vc.commitment,
+            );
+            vc.commitment
+        };
         let leaf_id = manager.add(VerkleNode::Leaf256(Box::new(leaf))).unwrap();
         log.mark_dirty(2, leaf_id);
 
@@ -338,23 +382,38 @@ mod tests {
             let leaf_node_commitment = manager.get_read_access(leaf_id).unwrap().get_commitment();
             assert_eq!(leaf_node_commitment.commitment, expected_leaf_commitment);
             assert!(!leaf_node_commitment.is_dirty());
-            assert!(leaf_node_commitment.changed.iter().all(|&b| b == 0));
+            assert!(leaf_node_commitment.changed_indices.iter().all(|&b| b == 0));
         }
 
         {
             let inner_node_commitment = manager.get_read_access(inner_id).unwrap().get_commitment();
             assert_eq!(inner_node_commitment.commitment, expected_inner_commitment);
             assert!(!inner_node_commitment.is_dirty());
-            assert!(inner_node_commitment.changed.iter().all(|&b| b == 0));
+            assert!(
+                inner_node_commitment
+                    .changed_indices
+                    .iter()
+                    .all(|&b| b == 0)
+            );
         }
 
         {
             let root_node_commitment = manager.get_read_access(root_id).unwrap().get_commitment();
             assert_eq!(root_node_commitment.commitment, expected_root_commitment);
             assert!(!root_node_commitment.is_dirty());
-            assert!(root_node_commitment.changed.iter().all(|&b| b == 0));
+            assert!(root_node_commitment.changed_indices.iter().all(|&b| b == 0));
         }
 
         assert_eq!(log.count(), 0);
+    }
+
+    #[test]
+    fn verkle_commitment_store_remembers_committed_value() {
+        let mut cache = VerkleCommitment::default();
+        cache.store(42, [1u8; 32]);
+        assert_eq!(cache.committed_values[42], [1u8; 32]);
+        // Only the first previous value (= the committed one) is remembered.
+        cache.store(42, [7u8; 32]);
+        assert_eq!(cache.committed_values[42], [1u8; 32]);
     }
 }

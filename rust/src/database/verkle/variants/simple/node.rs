@@ -22,6 +22,7 @@ use crate::{
 };
 
 /// A node in the simple in-memory Verkle trie.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Node {
     Empty,
@@ -167,6 +168,7 @@ impl InnerNode {
         if !self.commitment_dirty {
             return self.commitment;
         }
+        let _span = tracy_client::span!("InnerNode::commit");
 
         let _span = tracy_client::span!("InnerNode::commit");
         let mut values = [Scalar::zero(); 256];
@@ -198,17 +200,33 @@ impl InnerNode {
 }
 
 /// A leaf node in the simple in-memory Verkle trie, containing 256 values.
-///
-/// Alongside the values and commitment, the leaf node also stores:
-/// - The 31-byte stem that is common to all keys in this leaf, required to distinguish from keys
-///   that share a common prefix, as well as for non-existence proofs.
-/// - A bitmap indicating which of the 256 values have been modified at some point, required for
-///   future state expiry schemes.
 #[derive(Debug)]
 pub struct LeafNode {
+    /// The 31-byte stem that is common to all keys in this leaf, required to distinguish from keys
+    /// that share a common prefix, as well as for non-existence proofs.
     stem: [u8; 31],
+
     values: Box<[Value; 256]>,
-    used_bits: [u8; 256 / 8],
+
+    /// The values committed in the last commitment computation.
+    // TODO: This could be avoided by recomputing leaf commitments directly after storing values.
+    // https://github.com/0xsoniclabs/sonic-admin/issues/542
+    committed_values: Box<[Value; 256]>,
+
+    /// A bit field indicating which of the 256 values have been modified at some point, required
+    /// for future state expiry schemes. Bits are updated during commitment computation.
+    committed_used_indices: [u8; 256 / 8],
+
+    /// A bit field indicating which of the 256 values have been modified since the last commitment
+    /// computation.
+    changed_indices: [u8; 256 / 8],
+
+    /// Partial commitment for the lower 128 values.
+    c1: Commitment,
+
+    /// Partial commitment for the upper 128 values.
+    c2: Commitment,
+
     commitment: Commitment,
     commitment_dirty: bool,
 }
@@ -220,7 +238,11 @@ impl LeafNode {
         LeafNode {
             stem: key[..31].try_into().unwrap(), // safe to unwrap because `Key` is 32 bytes long
             values,
-            used_bits: [0; 256 / 8],
+            committed_values: Box::new([Value::default(); 256]),
+            committed_used_indices: [0; 256 / 8],
+            changed_indices: [0; 256 / 8],
+            c1: Commitment::default(),
+            c2: Commitment::default(),
             commitment: Commitment::default(),
             commitment_dirty: true,
         }
@@ -243,8 +265,11 @@ impl LeafNode {
     pub fn store(mut self, key: &Key, depth: u8, value: &Value) -> Node {
         if key[..31] == self.stem {
             let suffix = key[31];
+            if self.changed_indices[suffix as usize / 8] & (1 << (suffix % 8)) == 0 {
+                self.committed_values[suffix as usize] = self.values[suffix as usize];
+                self.changed_indices[suffix as usize / 8] |= 1 << (suffix as usize % 8);
+            }
             self.values[suffix as usize] = *value;
-            self.used_bits[(suffix / 8) as usize] |= 1 << (suffix % 8);
             self.commitment_dirty = true;
             return Node::Leaf(self);
         }
@@ -263,7 +288,17 @@ impl LeafNode {
             return self.commitment;
         }
         let _span = tracy_client::span!("LeafNode::commit");
-        self.commitment = compute_leaf_node_commitment(&self.values, &self.used_bits, &self.stem);
+        compute_leaf_node_commitment(
+            self.changed_indices,
+            &self.committed_values,
+            &self.values,
+            &self.stem,
+            &mut self.committed_used_indices,
+            &mut self.c1,
+            &mut self.c2,
+            &mut self.commitment,
+        );
+        self.changed_indices = [0; 256 / 8];
         self.commitment_dirty = false;
         self.commitment
     }
@@ -279,7 +314,10 @@ impl NodeVisitor<Node> for NodeCountVisitor {
                 self.count_node(
                     level,
                     "Leaf",
-                    node.used_bits.iter().map(|b| b.count_ones() as u64).sum(),
+                    node.committed_used_indices
+                        .iter()
+                        .map(|b| b.count_ones() as u64)
+                        .sum(),
                 );
             }
             Node::Inner(node) => {
@@ -461,7 +499,11 @@ mod tests {
             Box::new([Value::default(); 256]),
             "all values should be initialized to zero"
         );
-        assert_eq!(leaf.used_bits, [0; 256 / 8], "used bitmap should be empty");
+        assert_eq!(
+            leaf.committed_used_indices,
+            [0; 256 / 8],
+            "used bitmap should be empty"
+        );
     }
 
     #[test]
@@ -517,7 +559,7 @@ mod tests {
     #[test]
     fn leaf_node_can_store_and_lookup_values() {
         fn is_used(leaf: &LeafNode, suffix: u8) -> bool {
-            leaf.used_bits[(suffix / 8) as usize] & (1 << (suffix % 8)) != 0
+            leaf.changed_indices[(suffix / 8) as usize] & (1 << (suffix % 8)) != 0
         }
 
         let key1 = make_leaf_key(&[1, 2, 3], 1);
@@ -679,7 +721,7 @@ mod tests {
 
         let mut node = LeafNode::new(&make_key(&[1, 2, 3]));
         for i in 0..256 {
-            node.used_bits[i / 8] |= 1 << (i % 8);
+            node.committed_used_indices[i / 8] |= 1 << (i % 8);
         }
         let node = Node::Leaf(node);
         assert!(visitor.visit(&node, level + 2).is_ok());

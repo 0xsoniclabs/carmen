@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::LazyLock;
+use std::{ops::Add, sync::LazyLock};
 
 use ark_ff::{BigInteger, PrimeField};
 use banderwagon::{Element, Fr};
@@ -89,6 +89,17 @@ impl Commitment {
 
     fn as_element(&self) -> Element {
         Element::from_bytes_unchecked_uncompressed(self.point_bytes)
+    }
+}
+
+impl Add<Self> for Commitment {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let sum_point = self.as_element() + rhs.as_element();
+        Commitment {
+            point_bytes: sum_point.to_bytes_uncompressed(),
+        }
     }
 }
 
@@ -247,5 +258,21 @@ mod slow_tests {
         let _ = c.to_scalar();
         let _ = c.hash();
         let _ = c.compress();
+    }
+
+    #[test]
+    fn commitments_can_be_added() {
+        // Two different generator points
+        let c1 = Commitment::new(&[Scalar::from(77), Scalar::zero()]);
+        let c2 = Commitment::new(&[Scalar::zero(), Scalar::from(33)]);
+        let c3 = Commitment::new(&[Scalar::from(77), Scalar::from(33)]);
+        assert_eq!(c1 + c2, c3);
+
+        // Updating a single point
+        let c1 = Commitment::new(&[Scalar::from(10)]);
+        let c2 = Commitment::new(&[Scalar::from(35) - Scalar::from(10)]);
+        let mut c3 = c1;
+        c3.update(0, Scalar::from(10), Scalar::from(35));
+        assert_eq!(c1 + c2, c3);
     }
 }

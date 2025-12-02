@@ -256,6 +256,7 @@ impl NodeSize for VerkleNodeKind {
 
 /// Creates the smallest leaf node capable of storing `n` values, initialized with the given
 /// `stem`, `values` and `commitment`.
+#[allow(clippy::large_types_passed_by_value)] // Needs to be copied anyway
 pub fn make_smallest_leaf_node_for(
     n: usize,
     stem: [u8; 31],
