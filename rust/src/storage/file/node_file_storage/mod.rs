@@ -100,7 +100,7 @@ where
         }
         if reuse_list_file
             .reusable_indices()
-            .any(|&idx| idx >= metadata.nodes)
+            .any(|&idx| idx < metadata.frozen_nodes || idx >= metadata.nodes)
         {
             return Err(Error::DatabaseCorruption.into());
         }
@@ -118,7 +118,7 @@ where
             T::size(),
         )?;
         let len = node_file.len()?;
-        if len < metadata.nodes * size_of::<T>() as u64 {
+        if len < metadata.nodes * T::size() as u64 {
             return Err(Error::DatabaseCorruption.into());
         }
 
@@ -186,6 +186,13 @@ where
     }
 
     fn close(self) -> BTResult<(), Error> {
+        // Zero pad the file to ensure its size matches the number of nodes in case nodes were
+        // reserved but not written out because of transformations. To make sure no existing
+        // nodes are overwritten, we write at the current next_idx position.
+        self.node_file.write_all_at(
+            &vec![0; T::size()],
+            self.next_idx.load(Ordering::Relaxed) * T::size() as u64,
+        )?;
         self.node_file.flush()?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
         reuse_list_file.write_to_disk()?;
@@ -204,6 +211,7 @@ where
 
 impl<T, F> CheckpointParticipant for NodeFileStorage<T, F>
 where
+    T: DiskRepresentable,
     F: FileBackend,
 {
     fn ensure(&self, checkpoint: u64) -> BTResult<(), Error> {
@@ -218,6 +226,13 @@ where
             return Err(Error::Checkpoint.into());
         }
 
+        // Zero pad the file to ensure its size matches the number of nodes in case nodes were
+        // reserved but not written out because of transformations. To make sure no existing
+        // nodes are overwritten, we write at the current next_idx position.
+        self.node_file.write_all_at(
+            &vec![0; T::size()],
+            self.next_idx.load(Ordering::Relaxed) * T::size() as u64,
+        )?;
         self.node_file.flush()?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
         reuse_list_file.write_to_disk()?;
@@ -341,7 +356,7 @@ mod tests {
 
             assert!(NodeFileStorage::open(&dir).is_ok());
         }
-        // frozen nodes larger than total nodes
+        // frozen node count larger than total node count
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 0, 1, 1, 0);
@@ -351,7 +366,7 @@ mod tests {
                 Err(Error::DatabaseCorruption)
             ));
         }
-        // frozen reuse indices larger than total reuse indices
+        // frozen reuse indices count larger than total reuse indices count
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 1, 0, 0, 1);
@@ -361,7 +376,7 @@ mod tests {
                 Err(Error::DatabaseCorruption)
             ));
         }
-        // metadata contains larger node count that node file sizes allows
+        // node file size smaller than what metadata claims
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 2, 0, 0, 0);
@@ -373,10 +388,46 @@ mod tests {
                 Err(Error::DatabaseCorruption)
             ));
         }
-        // metadata contains larger frozen count that reuse list file sizes allows
+        // reuse list file smaller than what metadata claims
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 0, 0, 2, 0);
+            write_reuse_list(&dir, &[0]);
+            write_nodes(&dir, &[[0; 32]]);
+
+            assert!(matches!(
+                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                Err(Error::DatabaseCorruption)
+            ));
+        }
+        // frozen reuse indices larger than frozen node count
+        {
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+            write_metadata(&dir, 0, 1, 0, 1, 1);
+            write_reuse_list(&dir, &[0]);
+            write_nodes(&dir, &[[0; 32]]);
+
+            assert!(matches!(
+                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                Err(Error::DatabaseCorruption)
+            ));
+        }
+        // reusable reuse indices larger than node count
+        {
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+            write_metadata(&dir, 0, 1, 0, 1, 0);
+            write_reuse_list(&dir, &[1]);
+            write_nodes(&dir, &[[0; 32]]);
+
+            assert!(matches!(
+                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                Err(Error::DatabaseCorruption)
+            ));
+        }
+        // reusable reuse indices smaller or equal to frozen node count
+        {
+            let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+            write_metadata(&dir, 0, 1, 1, 1, 0);
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
@@ -625,11 +676,13 @@ mod tests {
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
         let storage = NodeFileStorage::open(&dir).unwrap();
-        // freeze one node and add another one and freeze one reuse index and add another one
         {
+            // freeze second node, and a third node, reserve a fourth node
             storage.frozen_nodes.store(2, Ordering::Relaxed);
             storage.next_idx.store(3, Ordering::Relaxed);
             storage.set(2, &[2; 32]).unwrap();
+            storage.next_idx.store(4, Ordering::Relaxed);
+            // freeze second reuse index add a third reuse index
             let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
             reuse_list_file.write_to_disk().unwrap();
             reuse_list_file.freeze_temporarily();
@@ -646,14 +699,19 @@ mod tests {
             metadata,
             NodeFileStorageMetadata {
                 last_checkpoint: 0,
-                nodes: 3,
+                nodes: 4,
                 frozen_nodes: 2,
                 reuse_indices: 3,
                 frozen_reuse_indices: 2,
             }
         );
         let nodes = fs::read(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        assert_eq!(nodes, [[0u8; 32], [1; 32], [2; 32]].as_bytes());
+        assert_eq!(
+            nodes,
+            // the existing two nodes, the newly added node, a zero node for the reserved but not
+            // written node and another zero node for padding
+            [[0u8; 32], [1; 32], [2; 32], [0; 32], [0; 32]].as_bytes()
+        );
         let reuse_list_indices = fs::read(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
         assert_eq!(reuse_list_indices, [0u64, 1, 2].as_bytes());
     }
@@ -747,8 +805,8 @@ mod tests {
 
         // check that nodes have been flushed
         let nodes = fs::read(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        assert_eq!(nodes[..size_of::<TestNode>()], [0; 32]);
-        assert_eq!(nodes[size_of::<TestNode>()..], [1; 32]);
+        // the existing two nodes and a zero node for padding
+        assert_eq!(nodes, [[0u8; 32], [1; 32], [0; 32]].as_bytes());
 
         // check that reuse list has been flushed and frozen
         let reuse_indices = fs::read(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
