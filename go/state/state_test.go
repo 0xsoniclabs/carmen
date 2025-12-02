@@ -599,17 +599,13 @@ func TestArchive(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get state of block 1; %v", err)
 			}
-			if config.config.Variant[:4] == "rust" {
-				defer state1.Close()
-			}
+			defer state1.Close()
 
 			state2, err := s.GetArchiveState(2)
 			if err != nil {
 				t.Fatalf("failed to get state of block 2; %v", err)
 			}
-			if config.config.Variant[:4] == "rust" {
-				defer state2.Close()
-			}
+			defer state2.Close()
 
 			if as, err := state1.Exists(address1); err != nil || as != true {
 				t.Errorf("invalid account state at block 1: %t, %v", as, err)
@@ -719,9 +715,7 @@ func TestLastArchiveBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get state at the last block in the archive; %s", err)
 			}
-			if config.config.Variant[:4] == "rust" {
-				defer state2.Close()
-			}
+			defer state2.Close()
 
 			if as, err := state2.Exists(address1); err != nil || as != true {
 				t.Errorf("invalid account state at the last block: %t, %s", as, err)
@@ -730,12 +724,9 @@ func TestLastArchiveBlock(t *testing.T) {
 				t.Errorf("invalid account state at the last block: %t, %s", as, err)
 			}
 
-			stateX, err := s.GetArchiveState(lastBlockHeight + 1)
+			_, err = s.GetArchiveState(lastBlockHeight + 1)
 			if err == nil {
 				t.Errorf("obtaining a block higher than the last one (%d) did not failed", lastBlockHeight)
-			}
-			if config.config.Variant[:4] == "rust" {
-				defer stateX.Close()
 			}
 		})
 	}
