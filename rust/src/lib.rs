@@ -29,7 +29,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::cached_node_manager::CachedNodeManager,
     storage::{
-        Storage,
+        RootIdProvider, Storage,
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
@@ -149,6 +149,12 @@ pub trait CarmenDb: Send + Sync {
     /// provided state.
     fn get_archive_state(&self, block: u64) -> BTResult<Box<dyn CarmenState>, Error>;
 
+    /// Retrieves the last block number of the blockchain and writes it into `out_block`. If there
+    /// are no blocks yet, -1 is written. If this method is called on a database without an
+    /// archive state, the semantics are undefined. The implementation may write an arbitrary
+    /// value or return an error.
+    fn get_archive_block_height(&self) -> BTResult<i64, Error>;
+
     /// Returns a summary of the used memory.
     fn get_memory_footprint(&self) -> BTResult<Box<str>, Error>;
 }
@@ -266,6 +272,13 @@ impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
         unimplemented!()
     }
 
+    fn get_archive_block_height(&self) -> BTResult<i64, Error> {
+        Err(Error::UnsupportedOperation(
+            "get_archive_block_height is not supported for in-memory databases".to_string(),
+        )
+        .into())
+    }
+
     fn get_memory_footprint(&self) -> BTResult<Box<str>, Error> {
         Err(
             Error::UnsupportedOperation("get_memory_footprint is not yet implemented".to_string())
@@ -337,6 +350,15 @@ impl CarmenDb
             )?,
         );
         Ok(Box::new(archive_state))
+    }
+
+    fn get_archive_block_height(&self) -> BTResult<i64, Error> {
+        let manager = self.manager.lock().unwrap();
+        let manager = manager.as_ref().unwrap();
+        Ok(manager
+            .highest_block_number()?
+            .map(|b| b as i64)
+            .unwrap_or(-1))
     }
 
     fn get_memory_footprint(&self) -> BTResult<Box<str>, Error> {
