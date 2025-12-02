@@ -441,9 +441,6 @@ func (s *ExternalState) GetCommitment() future.Future[result.Result[common.Hash]
 }
 
 func (s *ExternalState) Apply(block uint64, update common.Update) error {
-	if update.IsEmpty() {
-		return nil
-	}
 	if err := update.Normalize(); err != nil {
 		return err
 	}
