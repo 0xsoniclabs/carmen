@@ -192,11 +192,11 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
 
         let block = match &mut *block_height {
             BlockHeight::Live => 0, // For the liveDB we always pass block height 0
-            BlockHeight::ArchiveHeight(height) => {
-                if block != *height + 1 {
-                    return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
-                }
-                block
+            BlockHeight::ArchiveHeight(_) => {
+                return Err(Error::UnsupportedOperation(
+                    "apply_block_updates is not supported on archive states".into(),
+                )
+                .into());
             }
             BlockHeight::LiveEmulateHeight(height) => {
                 match height {
@@ -769,7 +769,7 @@ mod tests {
             .returning(|_| Ok(()));
         let state = VerkleTrieCarmenState {
             trie,
-            block_height: Mutex::new(BlockHeight::ArchiveHeight(block_height - 1)),
+            block_height: Mutex::new(BlockHeight::LiveEmulateHeight(Some(block_height - 1))),
         };
         state
             .apply_block_update(block_height, Update::default())
