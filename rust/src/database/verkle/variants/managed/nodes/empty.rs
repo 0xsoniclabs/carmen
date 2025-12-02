@@ -12,9 +12,9 @@ use crate::{
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::variants::managed::{
-            InnerNode, VerkleNode, VerkleNodeId,
+            VerkleNode, VerkleNodeId,
             commitment::{VerkleCommitment, VerkleCommitmentInput},
-            nodes::make_smallest_leaf_node_for,
+            nodes::{inner::InnerNode, make_smallest_leaf_node_for},
         },
         visitor::NodeVisitor,
     },
