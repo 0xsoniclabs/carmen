@@ -87,7 +87,7 @@ pub fn open_carmen_db(
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
             let storage = StorageWithFlushBuffer::<FileStorage>::open(&live_dir)?;
-            let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
+            let is_pinned = |node: &VerkleNode| false;
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
