@@ -49,11 +49,7 @@ mod utils;
 
 type VerkleStorageManager = VerkleNodeFileStorageManager<
     NodeFileStorage<InnerNode, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<64>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<141>, NoSeekFile>,
     NodeFileStorage<FullLeafNode, NoSeekFile>,
 >;
 
