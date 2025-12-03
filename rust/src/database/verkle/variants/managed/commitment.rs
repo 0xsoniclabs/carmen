@@ -62,6 +62,9 @@ pub struct VerkleCommitment {
     // TODO: This could be avoided by recomputing leaf commitments directly after storing values.
     // https://github.com/0xsoniclabs/sonic-admin/issues/542
     committed_values: [Value; 256],
+
+    // TEST
+    commitment_scalar: Scalar,
 }
 
 impl VerkleCommitment {
@@ -80,6 +83,7 @@ impl VerkleCommitment {
             c1: Commitment::default(),
             c2: Commitment::default(),
             committed_values: [Value::default(); 256],
+            commitment_scalar: existing.commitment.to_scalar(),
         }
     }
 
@@ -103,6 +107,7 @@ impl Default for VerkleCommitment {
             c2: Commitment::default(),
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
+            commitment_scalar: Scalar::zero(),
         }
     }
 }
@@ -142,6 +147,7 @@ impl From<OnDiskVerkleCommitment> for VerkleCommitment {
             dirty: false,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
+            commitment_scalar: odvc.commitment.to_scalar(),
         }
     }
 }
@@ -191,12 +197,12 @@ pub fn update_commitments_sequential(
 pub fn process_update(
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
     id: VerkleNodeId,
-    previous_commitments: &DashMap<VerkleNodeId, Commitment>,
+    previous_commitments: &DashMap<VerkleNodeId, Scalar>,
 ) {
     let mut lock = manager.get_write_access(id).unwrap();
     let mut vc = lock.get_commitment();
     assert!(vc.dirty);
-    previous_commitments.insert(id, vc.commitment);
+    previous_commitments.insert(id, vc.commitment_scalar);
     match lock.get_commitment_input().unwrap() {
         VerkleCommitmentInput::Leaf(values, stem) => {
             let _span = tracy_client::span!("update leaf");
@@ -231,8 +237,7 @@ pub fn process_update(
                             .get_read_access(*child_id)
                             .unwrap()
                             .get_commitment()
-                            .commitment
-                            .to_scalar();
+                            .commitment_scalar;
                     }
                     continue;
                 }
@@ -246,15 +251,14 @@ pub fn process_update(
                 let prev_commitment = previous_commitments
                     .get(child_id)
                     .expect("previous commitment should have been set in lower level");
-                let prev_commitment = prev_commitment.to_scalar();
 
                 if use_batch_update {
-                    scalars[i] = child_commitment.commitment().to_scalar() - prev_commitment;
+                    scalars[i] = child_commitment.commitment_scalar - *prev_commitment;
                 } else {
                     vc.commitment.update(
                         i as u8,
-                        prev_commitment,
-                        child_commitment.commitment().to_scalar(),
+                        *prev_commitment,
+                        child_commitment.commitment_scalar,
                     );
                 }
             }
@@ -274,6 +278,7 @@ pub fn process_update(
     vc.dirty = false;
     // TODO: Test this (currently not caught by any test!)
     vc.changed_indices.fill(0);
+    vc.commitment_scalar = vc.commitment.to_scalar();
     lock.set_commitment(vc).unwrap();
 }
 
@@ -538,6 +543,7 @@ mod tests {
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
+            commitment_scalar: Scalar::from(12345),
         };
         let new = VerkleCommitment::from_existing(&original);
         assert_eq!(new.commitment, original.commitment);
@@ -548,6 +554,7 @@ mod tests {
         assert_eq!(new.c1, Commitment::default());
         assert_eq!(new.c2, Commitment::default());
         assert_eq!(new.committed_values, [Value::default(); 256]);
+        assert_eq!(new.commitment_scalar, original.commitment.to_scalar());
     }
 
     #[test]
