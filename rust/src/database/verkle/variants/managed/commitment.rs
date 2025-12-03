@@ -23,7 +23,7 @@ use crate::{
     },
     error::{BTResult, Error},
     node_manager::NodeManager,
-    types::Value,
+    types::{HasEmptyId, Value},
 };
 
 /// The commitment of a managed verkle trie node, together with metadata required to recompute
@@ -175,11 +175,13 @@ pub fn update_commitments(
                     let mut scalars = [Scalar::zero(); 256];
                     for (i, child_id) in children.iter().enumerate() {
                         if vc.initialized == 0 {
-                            scalars[i] = manager
-                                .get_read_access(*child_id)?
-                                .get_commitment()
-                                .commitment
-                                .to_scalar();
+                            if !child_id.is_empty_id() {
+                                scalars[i] = manager
+                                    .get_read_access(*child_id)?
+                                    .get_commitment()
+                                    .commitment
+                                    .to_scalar();
+                            }
                             continue;
                         }
 
