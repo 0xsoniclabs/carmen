@@ -19,7 +19,8 @@ use carmen_rust::{
     database::{
         self, VerkleTrieCarmenState,
         verkle::variants::managed::{
-            FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+            FullInnerNode, FullLeafNode, SparseInnerNode, SparseLeafNode, VerkleNode,
+            VerkleNodeFileStorageManager,
         },
         visitor::AcceptVisitor,
     },
@@ -73,8 +74,14 @@ struct Args {
 
 fn main() {
     type FileStorage = VerkleNodeFileStorageManager<
-        NodeFileStorage<InnerNode, NoSeekFile>,
+        NodeFileStorage<SparseInnerNode<3>, NoSeekFile>,
+        NodeFileStorage<SparseInnerNode<47>, NoSeekFile>,
+        NodeFileStorage<FullInnerNode, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
         NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<64>, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<141>, NoSeekFile>,
         NodeFileStorage<FullLeafNode, NoSeekFile>,
     >;
 
