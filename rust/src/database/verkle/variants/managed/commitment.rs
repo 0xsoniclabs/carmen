@@ -70,6 +70,9 @@ pub struct VerkleCommitment {
     // TODO: This could be avoided by recomputing leaf commitments directly after storing values.
     // https://github.com/0xsoniclabs/sonic-admin/issues/542
     committed_values: [Value; 256],
+
+    // TEST
+    commitment_scalar: Scalar,
 }
 
 impl VerkleCommitment {
@@ -98,6 +101,7 @@ impl VerkleCommitment {
         VerkleCommitment {
             commitment: existing.commitment,
             changed_indices,
+            commitment_scalar: existing.commitment.to_scalar(),
             ..Default::default()
         }
     }
@@ -131,6 +135,7 @@ impl Default for VerkleCommitment {
             c2: Commitment::default(),
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
+            commitment_scalar: Scalar::zero(),
         }
     }
 }
@@ -174,14 +179,16 @@ pub struct OnDiskVerkleCommitment {
 
 impl From<OnDiskVerkleCommitment> for VerkleCommitment {
     fn from(odvc: OnDiskVerkleCommitment) -> Self {
+        let commitment = Commitment::from_bytes(odvc.commitment);
         VerkleCommitment {
-            commitment: Commitment::from_bytes(odvc.commitment),
+            commitment,
             committed_used_indices: odvc.committed_used_indices,
             c1: Commitment::from_bytes(odvc.c1),
             c2: Commitment::from_bytes(odvc.c2),
             status: CommitmentStatus::Clean,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
+            commitment_scalar: commitment.to_scalar(),
         }
     }
 }
@@ -231,12 +238,12 @@ pub fn update_commitments_sequential(
 pub fn process_update(
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
     id: VerkleNodeId,
-    previous_commitments: &DashMap<VerkleNodeId, Commitment>,
+    previous_commitments: &DashMap<VerkleNodeId, Scalar>,
 ) {
     let mut lock = manager.get_write_access(id).unwrap();
     let mut vc = lock.get_commitment();
     assert!(!vc.is_clean());
-    previous_commitments.insert(id, vc.commitment);
+    previous_commitments.insert(id, vc.commitment_scalar);
     match lock.get_commitment_input().unwrap() {
         VerkleCommitmentInput::Leaf(values, stem) => {
             let _span = tracy_client::span!("update leaf");
@@ -271,8 +278,7 @@ pub fn process_update(
                             .get_read_access(*child_id)
                             .unwrap()
                             .get_commitment()
-                            .commitment
-                            .to_scalar();
+                            .commitment_scalar;
                     }
                     continue;
                 }
@@ -286,15 +292,14 @@ pub fn process_update(
                 let prev_commitment = previous_commitments
                     .get(child_id)
                     .expect("previous commitment should have been set in lower level");
-                let prev_commitment = prev_commitment.to_scalar();
 
                 if use_batch_update {
-                    scalars[i] = child_commitment.commitment().to_scalar() - prev_commitment;
+                    scalars[i] = child_commitment.commitment_scalar - *prev_commitment;
                 } else {
                     vc.commitment.update(
                         i as u8,
-                        prev_commitment,
-                        child_commitment.commitment().to_scalar(),
+                        *prev_commitment,
+                        child_commitment.commitment_scalar,
                     );
                 }
             }
@@ -312,6 +317,7 @@ pub fn process_update(
     vc.status = CommitmentStatus::Clean;
     // TODO: Test this (currently not caught by any test!)
     vc.changed_indices.fill(0);
+    vc.commitment_scalar = vc.commitment.to_scalar();
     lock.set_commitment(vc).unwrap();
 }
 
@@ -443,8 +449,7 @@ fn update_commitment_thread(
                                 .get_read_access(children[i])
                                 .unwrap()
                                 .get_commitment()
-                                .commitment
-                                .to_scalar(),
+                                .commitment_scalar,
                         );
                         return delta_i;
                     }
@@ -473,18 +478,16 @@ fn update_commitment_thread(
         }
     }
 
+    vc.commitment_scalar = vc.commitment.to_scalar();
+
     if parent_is_initialized {
         delta_commitment.update(
             index_in_parent as u8,
-            node.get_commitment().commitment.to_scalar(),
-            vc.commitment.to_scalar(),
+            node.get_commitment().commitment_scalar,
+            vc.commitment_scalar,
         );
     } else {
-        delta_commitment.update(
-            index_in_parent as u8,
-            Scalar::zero(),
-            vc.commitment.to_scalar(),
-        );
+        delta_commitment.update(index_in_parent as u8, Scalar::zero(), vc.commitment_scalar);
     }
 
     // eprintln!(
@@ -549,6 +552,7 @@ mod tests {
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
+            commitment_scalar: Scalar::from(12345),
         };
 
         let new = VerkleCommitment::from_existing(&original, None);
@@ -559,6 +563,7 @@ mod tests {
         assert_eq!(new.c1, Commitment::default());
         assert_eq!(new.c2, Commitment::default());
         assert_eq!(new.committed_values, [Value::default(); 256]);
+        assert_eq!(new.commitment_scalar, original.commitment.to_scalar());
 
         let new = VerkleCommitment::from_existing(&original, Some(10));
         assert_eq!(
@@ -656,14 +661,16 @@ mod tests {
 
     #[test]
     fn verkle_commitment_can_be_converted_to_and_from_on_disk_representation() {
+        let commitment = Commitment::new(&[Scalar::from(42), Scalar::from(33)]);
         let original = VerkleCommitment {
-            commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
+            commitment,
             committed_used_indices: [1u8; 256 / 8],
             status: CommitmentStatus::Clean,
             changed_indices: [7u8; 256 / 8],
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
+            commitment_scalar: commitment.to_scalar(),
         };
         let on_disk_commitment: OnDiskVerkleCommitment = (&original).into();
         let disk_repr = on_disk_commitment.to_disk_repr();
@@ -682,6 +689,7 @@ mod tests {
                 c1: original.c1,
                 c2: original.c2,
                 status: CommitmentStatus::Clean,
+                commitment_scalar: original.commitment_scalar,
                 // The remaining fields are not preserved on disk
                 ..Default::default()
             }
