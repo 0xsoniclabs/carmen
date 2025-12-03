@@ -72,13 +72,7 @@ impl VerkleCommitment {
     pub fn from_existing(existing: &VerkleCommitment) -> Self {
         VerkleCommitment {
             commitment: existing.commitment,
-            committed_used_indices: [0u8; 256 / 8],
-            initialized: 0,
-            dirty: 0,
-            changed_indices: [0u8; 256 / 8],
-            c1: Commitment::default(),
-            c2: Commitment::default(),
-            committed_values: [Value::default(); 256],
+            ..Default::default()
         }
     }
 
@@ -113,6 +107,8 @@ impl TrieCommitment for VerkleCommitment {
     }
 
     fn store(&mut self, index: usize, prev: Value) {
+        // Since we want to compute the difference to the previously committed value,
+        // we only set it the first time a new value is stored at this index.
         if self.changed_indices[index / 8] & (1 << (index % 8)) == 0 {
             self.changed_indices[index / 8] |= 1 << (index % 8);
             self.committed_values[index] = prev;
