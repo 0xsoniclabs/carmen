@@ -69,9 +69,14 @@ impl VerkleCommitment {
     /// however copies the existing commitment value. This allows to compute the delta between
     /// the commitment that used to be stored at this position, and the new commitment after
     /// it has been initialized.
-    pub fn from_existing(existing: &VerkleCommitment) -> Self {
+    pub fn from_existing(existing: &VerkleCommitment, dirty_index: Option<u8>) -> Self {
+        let mut changed_indices = [0u8; 256 / 8];
+        if let Some(index) = dirty_index {
+            changed_indices[index as usize / 8] |= 1 << (index as usize % 8);
+        }
         VerkleCommitment {
             commitment: existing.commitment,
+            changed_indices,
             ..Default::default()
         }
     }
@@ -241,7 +246,8 @@ mod tests {
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
         };
-        let new = VerkleCommitment::from_existing(&original);
+        // TODO: Test that dirty index is set correctly
+        let new = VerkleCommitment::from_existing(&original, None);
         assert_eq!(new.commitment, original.commitment);
         assert_eq!(new.committed_used_indices, [0u8; 256 / 8]);
         assert_eq!(new.initialized, 0);

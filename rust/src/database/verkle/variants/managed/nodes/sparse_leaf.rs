@@ -128,10 +128,11 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
                 index,
                 item: self_id,
             };
+            let dirty_index = self.commitment.is_dirty().then_some(index);
             let inner = make_smallest_inner_node_for(
                 2,
                 &[self_child],
-                &VerkleCommitment::from_existing(&self.commitment),
+                &VerkleCommitment::from_existing(&self.commitment, dirty_index),
             )?;
             return Ok(StoreAction::HandleReparent(inner));
         }
