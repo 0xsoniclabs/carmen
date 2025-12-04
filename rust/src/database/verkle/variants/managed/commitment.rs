@@ -345,13 +345,14 @@ pub fn update_commitments_concurrent(
     Ok(())
 }
 
-// TODO: Instead of returning a delta, return commitment (needs self position)
+// TODO: Try returning delta instead of commitment again - just to make sure
 fn update_commitment_thread(
     dbg_recursion_level: usize,
     mut node: RwLockWriteGuard<'_, impl DerefMut<Target = VerkleNode>>,
     index_in_parent: usize,
     delta_commitment: &mut Commitment,
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+    parent_is_initialized: bool,
 ) {
     // eprintln!(
     //     "{}updating commitment in thread",
@@ -364,11 +365,10 @@ fn update_commitment_thread(
     // );
 
     let mut vc = node.get_commitment();
-    assert!(vc.dirty); // FIXME: Why is this assertion failing with bertha?
+    assert!(vc.dirty);
 
     match node.get_commitment_input().unwrap() {
         VerkleCommitmentInput::Leaf(values, stem) => {
-            // eprintln!("{}its a leaf", "  ".repeat(dbg_recursion_level));
             let _span = tracy_client::span!("update leaf");
 
             compute_leaf_node_commitment(
@@ -388,44 +388,46 @@ fn update_commitment_thread(
 
             let mut child_delta_commitments = [Commitment::default(); 256];
 
+            // TODO: Filter before iterating?
             child_delta_commitments
                 .par_iter_mut()
                 .enumerate()
                 .for_each(|(i, delta_i)| {
                     if !vc.initialized && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
-                        // FIXME HACK: New nodes that are reparented are not marked as dirty in
-                        // parent - need to recurse here anyway. For other
-                        // implementations this was not an issue since we
-                        // always worked through the log. => We should
-                        // probably mark as dirty in parent?
-                        if manager
-                            .get_read_access(children[i])
-                            .unwrap()
-                            .get_commitment()
-                            .is_dirty()
-                        {
-                            let child_node = manager.get_write_access(children[i]).unwrap();
-                            update_commitment_thread(
-                                dbg_recursion_level + 1,
-                                child_node,
-                                i,
-                                delta_i,
-                                manager,
-                            );
-                            return;
-                        }
-
-                        delta_i.update(
-                            i as u8,
-                            Scalar::zero(),
-                            manager
+                        if !children[i].is_empty_id() {
+                            // FIXME HACK: New nodes that are reparented are not marked as dirty in
+                            // parent - need to recurse here anyway. For other
+                            // implementations this was not an issue since we
+                            // always worked through the log. => We should
+                            // probably mark as dirty in parent?
+                            if manager
                                 .get_read_access(children[i])
                                 .unwrap()
                                 .get_commitment()
-                                .commitment()
-                                .to_scalar(),
-                        );
+                                .is_dirty()
+                            {
+                                let child_node = manager.get_write_access(children[i]).unwrap();
+                                update_commitment_thread(
+                                    dbg_recursion_level + 1,
+                                    child_node,
+                                    i,
+                                    delta_i,
+                                    manager,
+                                    vc.initialized,
+                                );
+                                return;
+                            }
 
+                            delta_i.update(
+                                i as u8,
+                                Scalar::zero(),
+                                manager
+                                    .get_read_access(children[i])
+                                    .unwrap()
+                                    .get_commitment()
+                                    .commitment_scalar,
+                            );
+                        }
                         return;
                     }
 
@@ -440,15 +442,17 @@ fn update_commitment_thread(
                         i,
                         delta_i,
                         manager,
+                        vc.initialized,
                     );
                 });
 
             let _span = tracy_client::span!("sum up child delta commitments");
-            let delta_commitment = child_delta_commitments
+            let child_sum = child_delta_commitments
                 .into_iter()
                 .enumerate()
                 .filter_map(|(i, c)| {
-                    if vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
+                    // TODO: Could also skip default commitments here
+                    if vc.initialized && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
                         None
                     } else {
                         Some(c)
@@ -469,26 +473,32 @@ fn update_commitment_thread(
                 });
 
             if !vc.initialized {
-                vc.commitment = delta_commitment;
-                vc.initialized = true;
+                vc.commitment = child_sum;
             } else {
-                vc.commitment = vc.commitment + delta_commitment;
+                vc.commitment = vc.commitment + child_sum;
             }
         }
     }
 
-    // let delta = vc.commitment.to_scalar() - node.get_commitment().commitment().to_scalar();
-    delta_commitment.update(
-        index_in_parent as u8,
-        node.get_commitment().commitment().to_scalar(),
-        vc.commitment.to_scalar(),
-    );
+    vc.commitment_scalar = vc.commitment.to_scalar();
+
+    if parent_is_initialized {
+        delta_commitment.update(
+            index_in_parent as u8,
+            node.get_commitment().commitment_scalar,
+            vc.commitment_scalar,
+        );
+    } else {
+        delta_commitment.update(index_in_parent as u8, Scalar::zero(), vc.commitment_scalar);
+    }
+
     // eprintln!(
     //     "{}setting delta to {:?}",
     //     "  ".repeat(dbg_recursion_level),
     //     delta
     // );
     vc.dirty = false;
+    vc.initialized = true;
     // TODO: Test this (currently not caught by any test!)
     vc.changed_indices.fill(0);
     node.set_commitment(vc).unwrap();
@@ -504,6 +514,8 @@ pub fn update_commitments_concurrent_recursive(
         return Ok(());
     }
 
+    // Don't delegate to another implementation in tests
+    #[cfg(not(test))]
     if log.count() <= 8 {
         return update_commitments_concurrent(log, manager);
     }
@@ -512,7 +524,7 @@ pub fn update_commitments_concurrent_recursive(
 
     let mut delta_commitment = Commitment::default();
     let root = manager.get_write_access(root_id).unwrap();
-    update_commitment_thread(0, root, 0, &mut delta_commitment, manager);
+    update_commitment_thread(0, root, 0, &mut delta_commitment, manager, false);
 
     log.clear();
     Ok(())
