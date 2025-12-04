@@ -44,10 +44,14 @@ impl InnerNode {
         index: u8,
         leaf_id: VerkleNodeId,
         leaf_commitment: &VerkleCommitment,
+        leaf_commitment_is_dirty: bool,
     ) -> Self {
         let mut inner = InnerNode::default();
         inner.children[index as usize] = leaf_id;
-        inner.commitment = VerkleCommitment::from_existing(leaf_commitment);
+        inner.commitment = VerkleCommitment::from_existing(
+            leaf_commitment,
+            leaf_commitment_is_dirty.then_some(index),
+        );
         inner
     }
 

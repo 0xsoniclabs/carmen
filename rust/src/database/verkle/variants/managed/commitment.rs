@@ -73,13 +73,17 @@ impl VerkleCommitment {
     /// however copies the existing commitment value. This allows to compute the delta between
     /// the commitment that used to be stored at this position, and the new commitment after
     /// it has been initialized.
-    pub fn from_existing(existing: &VerkleCommitment) -> Self {
+    pub fn from_existing(existing: &VerkleCommitment, dirty_index: Option<u8>) -> Self {
+        let mut changed_indices = [0u8; 256 / 8];
+        if let Some(index) = dirty_index {
+            changed_indices[index as usize / 8] |= 1 << (index as usize % 8);
+        }
         VerkleCommitment {
             commitment: existing.commitment,
             committed_used_indices: [0u8; 256 / 8],
             initialized: false,
             dirty: false,
-            changed_indices: [0u8; 256 / 8],
+            changed_indices,
             c1: Commitment::default(),
             c2: Commitment::default(),
             committed_values: [Value::default(); 256],
@@ -395,29 +399,6 @@ fn update_commitment_thread(
                 .for_each(|(i, delta_i)| {
                     if !vc.initialized && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
                         if !children[i].is_empty_id() {
-                            // FIXME HACK: New nodes that are reparented are not marked as dirty in
-                            // parent - need to recurse here anyway. For other
-                            // implementations this was not an issue since we
-                            // always worked through the log. => We should
-                            // probably mark as dirty in parent?
-                            if manager
-                                .get_read_access(children[i])
-                                .unwrap()
-                                .get_commitment()
-                                .is_dirty()
-                            {
-                                let child_node = manager.get_write_access(children[i]).unwrap();
-                                update_commitment_thread(
-                                    dbg_recursion_level + 1,
-                                    child_node,
-                                    i,
-                                    delta_i,
-                                    manager,
-                                    vc.initialized,
-                                );
-                                return;
-                            }
-
                             delta_i.update(
                                 i as u8,
                                 Scalar::zero(),
@@ -557,7 +538,8 @@ mod tests {
             committed_values: [[7u8; 32]; 256],
             commitment_scalar: Scalar::from(12345),
         };
-        let new = VerkleCommitment::from_existing(&original);
+        // TODO: Test that dirty index is set correctly
+        let new = VerkleCommitment::from_existing(&original, None);
         assert_eq!(new.commitment, original.commitment);
         assert_eq!(new.committed_used_indices, [0u8; 256 / 8]);
         assert!(!new.initialized);

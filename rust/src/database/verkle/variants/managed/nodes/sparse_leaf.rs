@@ -200,7 +200,12 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         // If key does not match the stem, we have to introduce a new inner node.
         if key[..31] != self.stem[..] {
             let index = self.stem[depth as usize];
-            let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
+            let inner = InnerNode::new_with_leaf(
+                index,
+                self_id,
+                &self.commitment,
+                self.commitment.is_dirty(),
+            );
             return Ok(StoreAction::HandleReparent(VerkleNode::Inner(Box::new(
                 inner,
             ))));
