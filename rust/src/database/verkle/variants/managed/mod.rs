@@ -22,7 +22,7 @@ use crate::{
             crypto::Commitment,
             variants::managed::commitment::{
                 update_commitments_concurrent, update_commitments_concurrent_recursive,
-                update_commitments_sequential,
+                update_commitments_concurrent_task_graph, update_commitments_sequential,
             },
             verkle_trie::VerkleTrie,
         },
@@ -109,7 +109,12 @@ where
     fn commit(&self) -> BTResult<Commitment, Error> {
         // update_commitments_sequential(&self.update_log, &*self.manager)?;
         // update_commitments_concurrent(&self.update_log, &*self.manager)?;
-        update_commitments_concurrent_recursive(
+        // update_commitments_concurrent_recursive(
+        //     *self.root.read().unwrap(),
+        //     &self.update_log,
+        //     &*self.manager,
+        // )?;
+        update_commitments_concurrent_task_graph(
             *self.root.read().unwrap(),
             &self.update_log,
             &*self.manager,
