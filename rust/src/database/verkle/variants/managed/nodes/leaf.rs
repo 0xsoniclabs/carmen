@@ -10,6 +10,7 @@
 
 use std::borrow::Cow;
 
+use itertools::Itertools;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -130,8 +131,21 @@ impl ManagedTrieNode for FullLeafNode {
                 index,
                 item: self_id,
             };
+            let (slots, same_slot) = updates
+                .iter()
+                .map(|u| u.key()[depth as usize])
+                .chain([index])
+                .dedup()
+                .fold((0, false), |(count, found), slot| {
+                    if slot == index {
+                        (count + 1, true)
+                    } else {
+                        (count + 1, found)
+                    }
+                });
+            let slots = slots + !same_slot as usize;
             let inner = make_smallest_inner_node_for(
-                2,
+                slots,
                 &[self_child],
                 VerkleCommitment::from_existing(&self.commitment),
             )?;
