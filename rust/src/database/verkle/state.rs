@@ -221,7 +221,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
                 block
             }
         };
-        if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(update, &self.embedding) {
+        if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(&update, &self.embedding) {
             self.trie.store(&update, block_height.is_archive())?;
         }
         self.trie.after_update(block)?;
