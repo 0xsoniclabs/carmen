@@ -175,8 +175,15 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
                 item: self_id,
             };
             let dirty_index = self.commitment.is_dirty().then_some(index);
+            let slots = updates
+                .split(depth)
+                .map(|updates| {
+                    (self.stem[..depth as usize] != updates.first_key()[..depth as usize]) as usize
+                })
+                .sum::<usize>()
+                + 1;
             let inner = make_smallest_inner_node_for(
-                2,
+                slots,
                 &[self_child],
                 &VerkleCommitment::from_existing(&self.commitment, dirty_index),
             )?;
