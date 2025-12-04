@@ -8,4 +8,20 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use crate::statistics::{formatters::StatisticsFormatter, node_count::NodeCountStatistic};
+
+pub mod formatters;
 pub mod node_count;
+
+/// A trait for printing the available statistics on the implementing type with the provided
+/// [`StatisticsFormatter`]s.
+pub trait PrintStatistic {
+    /// Prints all the available `Statistics` using the provided [`StatisticsFormatter`]s.
+    fn print(&self, writers: &mut [Box<dyn StatisticsFormatter>]) -> std::io::Result<()>;
+}
+
+/// Union of all available statistics distributions.
+#[derive(Debug)]
+pub enum Statistic {
+    NodeCount(NodeCountStatistic),
+}
