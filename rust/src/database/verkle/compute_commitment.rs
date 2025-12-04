@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use rayon::prelude::*;
+
 use crate::{
     database::verkle::crypto::{Commitment, Scalar},
     types::Value,
@@ -58,10 +60,10 @@ pub fn compute_leaf_node_commitment(
 ) {
     let prev_c1 = *c1;
     let prev_c2 = *c2;
-    for (i, (prev_value, cur_value)) in prev_values.iter().zip(cur_values.iter()).enumerate() {
-        if changed_indices[i / 8] & (1 << (i % 8)) == 0 {
-            continue;
-        }
+
+    let update_index = |i: usize| {
+        let prev_value = prev_values[i];
+        let cur_value = cur_values[i];
 
         let mut prev_lower = Scalar::from_le_bytes(&prev_value[..16]);
         let prev_upper = Scalar::from_le_bytes(&prev_value[16..]);
@@ -72,10 +74,38 @@ pub fn compute_leaf_node_commitment(
         let upper = Scalar::from_le_bytes(&cur_value[16..]);
         lower.set_bit128();
 
-        let c = if i < 128 { &mut *c1 } else { &mut *c2 };
-        c.update(((i * 2) % 256) as u8, prev_lower, lower);
-        c.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
-        committed_used_indices[i / 8] |= 1 << (i % 8);
+        let mut delta_commitment = Commitment::default();
+        delta_commitment.update(((i * 2) % 256) as u8, prev_lower, lower);
+        delta_commitment.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+        delta_commitment
+    };
+
+    // TODO: Can we avoid allocation?
+    let c1_indices: Vec<_> = (0..128)
+        .filter(|i| changed_indices[i / 8] & (1 << (i % 8)) != 0)
+        .collect();
+
+    let c2_indices: Vec<_> = (128..256)
+        .filter(|i| changed_indices[i / 8] & (1 << (i % 8)) != 0)
+        .collect();
+
+    let c1_delta = c1_indices
+        .par_iter()
+        .map(|&i| update_index(i))
+        .fold(Commitment::default, |acc, c| acc + c)
+        .reduce(Commitment::default, |acc, c| acc + c);
+
+    let c2_delta = c2_indices
+        .par_iter()
+        .map(|&i| update_index(i))
+        .fold(Commitment::default, |acc, c| acc + c)
+        .reduce(Commitment::default, |acc, c| acc + c);
+
+    *c1 = *c1 + c1_delta;
+    *c2 = *c2 + c2_delta;
+
+    for i in 0..(256 / 8) {
+        committed_used_indices[i] |= changed_indices[i];
     }
 
     if *c == Commitment::default() {
