@@ -82,8 +82,15 @@ impl ManagedTrieNode for FullLeafNode {
                 index,
                 item: self_id,
             };
+            let slots = updates
+                .split(depth)
+                .map(|updates| {
+                    (self.stem[..depth as usize] != updates.first_key()[..depth as usize]) as usize
+                })
+                .sum::<usize>()
+                + 1;
             let inner = make_smallest_inner_node_for(
-                2,
+                slots,
                 &[self_child],
                 &VerkleCommitment::from_existing(&self.commitment),
             )?;
