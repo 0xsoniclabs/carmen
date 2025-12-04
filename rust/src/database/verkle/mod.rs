@@ -8,10 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-mod compute_commitment;
 pub mod crypto;
 mod embedding;
 mod keyed_update;
+mod leaf_commitment;
 mod state;
 #[cfg(test)]
 mod test_utils;

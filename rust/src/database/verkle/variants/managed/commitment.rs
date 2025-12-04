@@ -17,8 +17,8 @@ use crate::{
     database::{
         managed_trie::{ManagedTrieNode, TrieCommitment, TrieUpdateLog},
         verkle::{
-            compute_commitment::compute_leaf_node_commitment,
             crypto::{Commitment, Scalar},
+            leaf_commitment::compute_leaf_node_commitment,
             variants::managed::{VerkleNode, VerkleNodeId},
         },
     },
@@ -684,8 +684,8 @@ mod tests {
     use crate::{
         database::verkle::{
             KeyedUpdate,
-            compute_commitment::compute_leaf_node_commitment,
             crypto::Scalar,
+            leaf_commitment::compute_leaf_node_commitment,
             test_utils::FromIndexValues,
             variants::managed::{FullInnerNode, nodes::leaf::FullLeafNode},
         },

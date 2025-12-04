@@ -11,9 +11,9 @@
 use crate::{
     database::{
         verkle::{
-            compute_commitment::compute_leaf_node_commitment,
             crypto::{Commitment, Scalar},
             keyed_update::KeyedUpdateBatch,
+            leaf_commitment::compute_leaf_node_commitment,
         },
         visitor::NodeVisitor,
     },
