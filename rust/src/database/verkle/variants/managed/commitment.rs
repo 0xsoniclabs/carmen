@@ -390,64 +390,43 @@ fn update_commitment_thread(
             // eprintln!("{}its an inner", "  ".repeat(dbg_recursion_level));
             let _span = tracy_client::span!("update inner");
 
-            let mut child_delta_commitments = [Commitment::default(); 256];
-
-            // TODO: Filter before iterating?
-            child_delta_commitments
-                .par_iter_mut()
-                .enumerate()
-                .for_each(|(i, delta_i)| {
+            let child_sum = (0..children.len())
+                .filter(|i| {
+                    // Only keep children that have either been changed, or if this node is not yet
+                    // initialized, keep all that are not empty.
+                    !(vc.initialized && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
+                        || children[*i].is_empty_id())
+                })
+                .collect::<Vec<_>>()
+                .par_iter()
+                .map(|i| {
+                    let i = *i;
+                    let mut delta_i = Commitment::default();
+                    // TODO: Can we get rid of one of the checks here?
                     if !vc.initialized && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
-                        if !children[i].is_empty_id() {
-                            delta_i.update(
-                                i as u8,
-                                Scalar::zero(),
-                                manager
-                                    .get_read_access(children[i])
-                                    .unwrap()
-                                    .get_commitment()
-                                    .commitment_scalar,
-                            );
-                        }
-                        return;
+                        delta_i.update(
+                            i as u8,
+                            Scalar::zero(),
+                            manager
+                                .get_read_access(children[i])
+                                .unwrap()
+                                .get_commitment()
+                                .commitment_scalar,
+                        );
+                        return delta_i;
                     }
 
-                    if vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
-                        return;
-                    }
                     // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
                     let child_node = manager.get_write_access(children[i]).unwrap();
                     update_commitment_thread(
                         dbg_recursion_level + 1,
                         child_node,
                         i,
-                        delta_i,
+                        &mut delta_i,
                         manager,
                         vc.initialized,
                     );
-                });
-
-            let _span = tracy_client::span!("sum up child delta commitments");
-            let child_sum = child_delta_commitments
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, c)| {
-                    // TODO: Could also skip default commitments here
-                    if vc.initialized && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
-                        None
-                    } else {
-                        Some(c)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .into_par_iter()
-                .chunks(4)
-                .fold(Commitment::default, |acc, chunk| {
-                    let mut res = acc;
-                    for c in chunk {
-                        res = res + c;
-                    }
-                    res
+                    delta_i
                 })
                 .reduce(Commitment::default, |acc, delta_commitment| {
                     acc + delta_commitment
