@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::sync::LazyLock;
+use std::{ops::Add, sync::LazyLock};
 
 use ark_ff::{BigInteger, PrimeField};
 use banderwagon::{Element, Fr};
@@ -89,6 +89,18 @@ impl Commitment {
 
     fn as_element(&self) -> Element {
         Element::from_bytes_unchecked_uncompressed(self.point_bytes)
+    }
+}
+
+impl Add<Self> for Commitment {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let _span = tracy_client::span!("Commitment::add");
+        let sum_point = self.as_element() + rhs.as_element();
+        Commitment {
+            point_bytes: sum_point.to_bytes_uncompressed(),
+        }
     }
 }
 

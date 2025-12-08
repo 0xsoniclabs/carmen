@@ -45,27 +45,62 @@ import (
 
 func Benchmark_PolySingleUpdate(b *testing.B) {
 	var random banderwagon.Fr
-	random.SetBytes(hexutil.MustDecode("0x8ace54a66ae992faf22d3eedb0edecff16ded1e168c474263519eb3b388008b4"))
-	for _, i := range []int{0, 1, 2, 3, 4, 5, 32, 64, 128, 255} {
+	random.SetBytesLE(hexutil.MustDecode("0x46123387734d09ce6f083425adf3b9d8bf70359cdae94686794a4a23ac478000"))
+	fmt.Printf("random: %x\n", random.BytesLE())
+	for _, i := range []int{0, 4, 32, 64, 255} {
 		b.Run(fmt.Sprintf("index=%d", i), func(b *testing.B) {
-			benchmark_SinglePoint(b, i, random)
+			config := getConfig() // < the polynomial commit "engine"
+
+			// All 0, but one point is set to `random`
+			poly := make([]banderwagon.Fr, VectorSize)
+			poly[i] = random
+
+			for b.Loop() {
+				res := config.Commit(poly)
+				_ = res
+				// fmt.Printf("%x\n", res.Bytes())
+				// return
+			}
 		})
 	}
-
 }
 
-func benchmark_SinglePoint(
-	b *testing.B,
-	index int,
-	value banderwagon.Fr,
-) {
+func Benchmark_PolyFullCommit(b *testing.B) {
+	var random banderwagon.Fr
+	random.SetBytesLE(hexutil.MustDecode("0x46123387734d09ce6f083425adf3b9d8bf70359cdae94686794a4a23ac478000"))
 	config := getConfig() // < the polynomial commit "engine"
 
-	// All 0, but one point is set to `value`
 	poly := make([]banderwagon.Fr, VectorSize)
-	poly[index] = value
+	for i := 0; i < VectorSize; i++ {
+		poly[i] = random
+	}
 	for b.Loop() {
 		config.Commit(poly)
+	}
+}
+
+func Benchmark_CommitAdd(b *testing.B) {
+	var random banderwagon.Fr
+	random.SetBytesLE(hexutil.MustDecode("0x46123387734d09ce6f083425adf3b9d8bf70359cdae94686794a4a23ac478000"))
+	config := getConfig() // < the polynomial commit "engine"
+
+	poly := make([]banderwagon.Fr, VectorSize)
+	for i := 0; i < VectorSize; i++ {
+		poly[i] = random
+	}
+	c1 := config.Commit(poly)
+
+	var c1v banderwagon.Fr
+	c1.MapToScalarField(&c1v)
+	for i := 0; i < VectorSize; i++ {
+		poly[i] = c1v
+	}
+	c2 := config.Commit(poly)
+
+	for b.Loop() {
+		var res banderwagon.Element
+		res.Add(&c1, &c2)
+		// fmt.Printf("%x\n", res.Bytes())
 	}
 }
 
