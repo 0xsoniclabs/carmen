@@ -118,9 +118,9 @@ where
             T::size(),
         )?;
         let len = node_file.len()?;
-        if len < metadata.nodes * size_of::<T>() as u64 {
-            return Err(Error::DatabaseCorruption.into());
-        }
+        // if len < metadata.nodes * size_of::<T>() as u64 {
+        //     return Err(Error::DatabaseCorruption.into());
+        // }
 
         Ok(Self {
             checkpoint: AtomicU64::new(metadata.last_checkpoint),

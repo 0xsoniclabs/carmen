@@ -9,7 +9,8 @@ import itertools
 from sortedcontainers import SortedSet, SortedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
-CSV_PATH = './stat_results/5M/carmen_stats_node_counts_by_kind.csv'
+CSV_PATH = '../archive.csv'
+# CSV_PATH = './stat_results/5M/carmen_stats_node_counts_by_kind.csv'
 # CSV_PATH = './carmen_stats_node_counts_by_kind.csv'
 
 df = pd.read_csv(CSV_PATH)
@@ -68,6 +69,7 @@ leaf_node_sizes = [sparse_leaf_node_size(
     element) for element in range(256)]
 leaf_node_sizes.append(full_leaf_node_size)
 
+print(leaf_node_sizes)
 # %% [markdown]
 # # Brute force approach
 
@@ -324,9 +326,9 @@ def solve(node_name, node_range, node_info: dict, max_node: int, node_sizes: dic
 
 
 with open("node_optimization_results.txt", "w") as writer:
-    solve("Inner", range(1, 5),
+    solve("Inner", range(1, 10),
           node_info['Inner'], 256, inner_node_sizes, 0, writer)
-    solve("Leaf", range(1, 5),
+    solve("Leaf", range(1, 10),
           node_info['Leaf'], 256, leaf_node_sizes, 0.002, writer)
     writer.flush()
 

@@ -154,7 +154,7 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
 }
 
 impl<const N: usize> NodeVisitor<SparseInnerNode<N>> for NodeCountVisitor {
-    fn visit(&mut self, node: &SparseInnerNode<N>, level: u64) -> BTResult<(), Error> {
+    fn visit(&self, node: &SparseInnerNode<N>, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,
             "Inner",

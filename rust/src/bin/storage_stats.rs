@@ -101,7 +101,12 @@ fn main() {
 
     let mut count_visitor = NodeCountVisitor::default();
     managed_trie.accept(&mut count_visitor).unwrap();
-    count_visitor.node_count.print(&mut formatters).unwrap();
+    count_visitor
+        .node_count
+        .lock()
+        .unwrap()
+        .print(&mut formatters)
+        .unwrap();
 
     // Close the DB
     let _ = &CarmenS6FileBasedDb::new(manager, VerkleTrieCarmenState::from(managed_trie))

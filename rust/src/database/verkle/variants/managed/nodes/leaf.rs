@@ -166,7 +166,7 @@ impl ManagedTrieNode for FullLeafNode {
 }
 
 impl NodeVisitor<FullLeafNode> for NodeCountVisitor {
-    fn visit(&mut self, node: &FullLeafNode, level: u64) -> BTResult<(), Error> {
+    fn visit(&self, node: &FullLeafNode, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,
             "Leaf",

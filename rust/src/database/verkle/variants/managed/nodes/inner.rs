@@ -150,7 +150,7 @@ impl ManagedTrieNode for FullInnerNode {
 }
 
 impl NodeVisitor<FullInnerNode> for NodeCountVisitor {
-    fn visit(&mut self, node: &FullInnerNode, level: u64) -> BTResult<(), Error> {
+    fn visit(&self, node: &FullInnerNode, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,
             "Inner",

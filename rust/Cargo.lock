@@ -325,6 +325,7 @@ dependencies = [
  "itertools 0.14.0",
  "mockall",
  "quick_cache",
+ "rayon",
  "rstest",
  "rstest_reuse",
  "sha3",

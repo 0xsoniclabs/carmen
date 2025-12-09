@@ -80,7 +80,10 @@ impl<M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync> AcceptV
 {
     type Node = VerkleNode;
 
-    fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error> {
+    fn accept(
+        &self,
+        visitor: &(impl NodeVisitor<Self::Node> + Send + Sync),
+    ) -> BTResult<(), Error> {
         let root = self.manager.get_read_access(*self.root.read().unwrap())?;
         root.accept(visitor, &*self.manager, 0)
     }

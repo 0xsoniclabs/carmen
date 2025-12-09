@@ -14,11 +14,12 @@ use crate::error::{BTResult, Error};
 pub trait AcceptVisitor {
     type Node;
 
-    fn accept(&self, visitor: &mut impl NodeVisitor<Self::Node>) -> BTResult<(), Error>;
+    fn accept(&self, visitor: &(impl NodeVisitor<Self::Node> + Send + Sync))
+    -> BTResult<(), Error>;
 }
 
 /// A trait for visiting trie nodes.
 #[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait NodeVisitor<N> {
-    fn visit(&mut self, node: &N, level: u64) -> BTResult<(), Error>;
+    fn visit(&self, node: &N, level: u64) -> BTResult<(), Error>;
 }
