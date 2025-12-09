@@ -9,7 +9,8 @@ import itertools
 from sortedcontainers import SortedSet, SortedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
-CSV_PATH = './carmen_stats_node_distribution.csv'
+CSV_PATH = './stat_results/5M/carmen_stats_node_counts_by_kind.csv'
+# CSV_PATH = './carmen_stats_node_counts_by_kind.csv'
 
 df = pd.read_csv(CSV_PATH)
 # Remove all empty nodes
@@ -27,15 +28,19 @@ for name, group in grouped_df.groupby('Node Type'):
     node_info[name]['subtype_count'] = dict()
     node_info[name]['prefix_sum'] = dict()
     for index, row in group.iterrows():
-        id = int(row['Node Subtype'].strip(name + '_')) - 1
+        id = int(row['Node Subtype'].strip(name + '_'))
         node_info[name]['subtype_count'][id] = row['Node Count']
         node_info[name]['prefix_sum'][id] = row['PrefixSum']
+
+print(node_info['Inner']['subtype_count'])
+print(node_info['Leaf']['subtype_count'])
 
 # %%
 # Define the sizes of the nodes
 # NOTE: These sizes are based on the current implementation of the trie nodes in Carmen and needs to be manually updated if the implementation changes.
 
-commitment_size = 64 + 256 / 8
+# commitment_size = 64 + 256 / 8 + 2
+commitment_size = 32
 id_size = 6
 id_index = 1
 full_inner_node_size = commitment_size + 256 * id_size
@@ -46,7 +51,7 @@ def sparse_inner_node_size(
 
 
 inner_node_sizes = [sparse_inner_node_size(
-    element + 1) for element in range(255)]
+    element) for element in range(256)]
 inner_node_sizes.append(full_inner_node_size)
 
 value_size = 32
@@ -60,7 +65,7 @@ def sparse_leaf_node_size(num_children): return commitment_size + \
 
 
 leaf_node_sizes = [sparse_leaf_node_size(
-    element + 1) for element in range(255)]
+    element) for element in range(256)]
 leaf_node_sizes.append(full_leaf_node_size)
 
 # %% [markdown]
@@ -120,6 +125,18 @@ def calculate_size(num_nodes_to_use, prefix_sum: dict, max_node: int, node_sizes
 # %%
 
 
+def calculate_size_for_indexes(indices, node_prefix_sum: dict, node_sizes: dict):
+    space_occupied = 0
+    already_covered_nodes = 0
+    cur_solution = SortedDict()
+    for value in indices:
+        num_nodes_covered = node_prefix_sum[value] - already_covered_nodes
+        space_occupied += node_sizes[value] * num_nodes_covered
+        already_covered_nodes += num_nodes_covered
+        cur_solution[value] = num_nodes_covered
+    return cur_solution, space_occupied
+
+
 def solve_greedy(num_nodes_to_use, node_prefix_sum: dict, max_node: int, node_sizes: dict):
     assert num_nodes_to_use > 0
 
@@ -127,17 +144,6 @@ def solve_greedy(num_nodes_to_use, node_prefix_sum: dict, max_node: int, node_si
     available_nodes = [i for i in node_prefix_sum.keys() if i != max_node]
     initial_indexes = SortedSet()  # The set of indexes of the selected node sizes
     initial_indexes.add(max_node)  # always include the biggest node
-
-    def calculate_size_for_indexes(indices):
-        space_occupied = 0
-        already_covered_nodes = 0
-        cur_solution = SortedDict()
-        for value in indices:
-            num_nodes_covered = node_prefix_sum[value] - already_covered_nodes
-            space_occupied += node_sizes[value] * num_nodes_covered
-            already_covered_nodes += num_nodes_covered
-            cur_solution[value] = num_nodes_covered
-        return cur_solution, space_occupied
 
     # Initial minimum solution to the worst case (only the biggest node)
     min_size = node_prefix_sum[max_node] * node_sizes[max_node]
@@ -153,17 +159,17 @@ def solve_greedy(num_nodes_to_use, node_prefix_sum: dict, max_node: int, node_si
             current_indexes = SortedSet(min_solution.keys())
             current_indexes.add(candidate_key)
             current_solution, current_size = calculate_size_for_indexes(
-                current_indexes)
+                current_indexes, node_prefix_sum, node_sizes)
             if current_size < min_tmp_size:
                 min_tmp_size = current_size
                 min_tmp_solution = current_solution
         min_solution = min_tmp_solution
         min_size = min_tmp_size
 
-    solution = dict()
-    for key in min_solution:
-        solution[key + 1] = min_solution[key]
-    return solution, min_size
+    # solution = dict()
+    # for key in min_solution:
+    #     solution[key] = min_solution[key]
+    return min_solution, min_size
 
 # %% [markdown]
 # # Mixed Integer Programming
@@ -226,8 +232,7 @@ def solve_mip(num_nodes_to_use, node_count_by_type: dict, node_prefix_sum: dict,
     solution = dict()
     for j in nodes_range:
         if nodes_lp_variable[j].varValue >= 1:
-            # every node is shifted by 1
-            solution[j + 1] = nodes_lp_variable[j].varValue
+            solution[j] = nodes_lp_variable[j].varValue
     size = problem.objective.value()
 
     return solution, size
@@ -319,10 +324,44 @@ def solve(node_name, node_range, node_info: dict, max_node: int, node_sizes: dic
 
 
 with open("node_optimization_results.txt", "w") as writer:
-    solve("Inner", range(1, 10),
-          node_info['Inner'], 255, inner_node_sizes, 0, writer)
-    solve("Leaf", range(1, 10),
-          node_info['Leaf'], 255, leaf_node_sizes, 0.002, writer)
+    solve("Inner", range(1, 5),
+          node_info['Inner'], 256, inner_node_sizes, 0, writer)
+    solve("Leaf", range(1, 5),
+          node_info['Leaf'], 256, leaf_node_sizes, 0.002, writer)
     writer.flush()
 
 # %%
+
+
+def min_storage_size(node_info: dict, node_sizes: dict, node_type: str):
+    min_size = 0
+    for i in node_info[node_type]['subtype_count'].keys():
+        num_nodes_covered = node_info[node_type]['subtype_count'][i]
+        min_size += node_sizes[i] * num_nodes_covered
+    return min_size
+
+
+with open("node_optimization_results.txt", "a") as writer:
+    writer.write("Minimum possible storage sizes:\n")
+    inner_min_size = min_storage_size(node_info, inner_node_sizes, 'Inner')
+    leaf_min_size = min_storage_size(node_info, leaf_node_sizes, 'Leaf')
+    writer.write(
+        f"  Inner nodes minimum size: {inner_min_size / (1024 * 1024)} MiB\n")
+    writer.write(
+        f"  Leaf nodes minimum size: {leaf_min_size / (1024 * 1024)} MiB\n")
+    writer.write(
+        f"  Total minimum size: {(inner_min_size + leaf_min_size) / (1024 * 1024)} MiB\n")
+    writer.write("-------------------------------\n\n")
+    writer.flush()
+
+# TODo: folder size for leaf 0
+res = calculate_size_for_indexes(SortedSet(
+    [0, 1, 20, 63, 140, 255]), node_info['Leaf']['prefix_sum'], leaf_node_sizes)
+for key in res[0].keys():
+    num_nodes = res[0][key]
+    folder_size = leaf_node_sizes[key] * num_nodes
+    print(
+        f"Leaf node specialization {key + 1}: {num_nodes} nodes, size {folder_size / (1024 * 1024)} MiB")
+
+# print(node_info['Leaf']['prefix_sum'])
+print(leaf_node_sizes)
