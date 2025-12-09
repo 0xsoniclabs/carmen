@@ -49,7 +49,7 @@ pub struct NodeFileStorage<T, F> {
     prepared_metadata_path: PathBuf,
 
     node_file: F,
-    next_idx: AtomicU64,
+    pub next_idx: AtomicU64,
     frozen_nodes: AtomicU64,
 
     reuse_list_file: Mutex<ReuseListFile>,
