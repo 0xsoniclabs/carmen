@@ -14,6 +14,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub use node_file_storage_metadata::NodeFileStorageMetadata;
+
 use crate::{
     error::BTResult,
     storage::{
@@ -21,9 +23,7 @@ use crate::{
         file::{
             FileBackend, FromToFile,
             node_file_storage::{
-                node_file_storage_metadata::{
-                    NodeFileStorageCheckpointMetadata, NodeFileStorageMetadata,
-                },
+                node_file_storage_metadata::NodeFileStorageCheckpointMetadata,
                 reuse_list_file::ReuseListFile,
             },
         },
@@ -34,6 +34,7 @@ use crate::{
     },
     types::DiskRepresentable,
 };
+
 mod node_file_storage_metadata;
 mod reuse_list_file;
 
