@@ -18,7 +18,7 @@ use crate::{
         verkle::{
             KeyedUpdateBatch,
             variants::managed::{
-                VerkleNode,
+                InnerDeltaNode, VerkleNode,
                 commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
@@ -141,6 +141,23 @@ impl ManagedTrieNode for FullInnerNode {
     }
 }
 
+impl From<InnerDeltaNode> for FullInnerNode {
+    fn from(delta_node: InnerDeltaNode) -> Self {
+        FullInnerNode {
+            children: {
+                let mut children = delta_node.children;
+                for VerkleIdWithIndex { index, item } in delta_node.children_delta {
+                    if item != VerkleNodeId::default() {
+                        children[index as usize] = item;
+                    }
+                }
+                children
+            },
+            commitment: delta_node.commitment,
+        }
+    }
+}
+
 impl NodeVisitor<FullInnerNode> for NodeCountVisitor {
     fn visit(&mut self, node: &FullInnerNode, level: u64) -> BTResult<(), Error> {
         self.count_node(
@@ -178,8 +195,9 @@ mod tests {
         database::{
             managed_trie::TrieCommitment,
             verkle::{
-                KeyedUpdateBatch, test_utils::FromIndexValues,
-                variants::managed::nodes::VerkleNodeKind,
+                KeyedUpdateBatch,
+                test_utils::FromIndexValues,
+                variants::managed::nodes::{ItemWithIndex, VerkleNodeKind},
             },
         },
         types::{TreeId, Value},
@@ -315,5 +333,47 @@ mod tests {
 
         node.set_commitment(new_commitment).unwrap();
         assert_eq!(node.get_commitment(), new_commitment);
+    }
+
+    #[test]
+    fn from_inner_delta_node_applies_delta_on_top_of_old_children_and_copies_commitment() {
+        let old_children = array::from_fn(|i| {
+            VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256)
+        });
+        let mut children_delta = array::from_fn(|i| ItemWithIndex {
+            index: i as u8,
+            item: VerkleNodeId::default(),
+        });
+        children_delta[1] = ItemWithIndex {
+            index: 2,
+            item: VerkleNodeId::from_idx_and_node_kind(500, VerkleNodeKind::Leaf1),
+        };
+        children_delta[3] = ItemWithIndex {
+            index: 4,
+            item: VerkleNodeId::from_idx_and_node_kind(600, VerkleNodeKind::Leaf1),
+        };
+
+        let mut commitment = VerkleCommitment::default();
+        commitment.modify_child(10);
+        commitment.modify_child(20);
+
+        let delta_node = InnerDeltaNode {
+            children: old_children,
+            children_delta,
+            commitment,
+            full_inner_node_id: VerkleNodeId::default(),
+        };
+
+        let full_inner_node = FullInnerNode::from(delta_node);
+
+        for i in 0..256 {
+            let expected_child = match i {
+                2 => VerkleNodeId::from_idx_and_node_kind(500, VerkleNodeKind::Leaf1),
+                4 => VerkleNodeId::from_idx_and_node_kind(600, VerkleNodeKind::Leaf1),
+                _ => VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256),
+            };
+            assert_eq!(full_inner_node.children[i], expected_child);
+        }
+        assert_eq!(full_inner_node.commitment, commitment);
     }
 }
