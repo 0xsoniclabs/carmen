@@ -39,6 +39,7 @@ use crate::{
 pub mod empty;
 pub mod id;
 pub mod inner;
+pub mod inner_delta;
 pub mod leaf;
 pub mod sparse_inner;
 pub mod sparse_leaf;
