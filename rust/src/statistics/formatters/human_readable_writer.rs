@@ -116,10 +116,9 @@ impl<W: Write> StatisticsFormatter for HumanReadableWriter<W> {
 }
 
 /// A utility to manage indentation levels for formatted output.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Indentation {
     level: usize,
-    size: usize,
 }
 
 impl Indentation {
@@ -143,19 +142,10 @@ impl Indentation {
     }
 }
 
-impl Default for Indentation {
-    fn default() -> Self {
-        Self {
-            level: 0,
-            size: Indentation::SIZE,
-        }
-    }
-}
-
 impl std::fmt::Display for Indentation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..self.level {
-            let mut size = self.size;
+            let mut size = Indentation::SIZE;
             if i == 0 {
                 write!(f, "╰")?;
                 size = size.saturating_sub(1);
