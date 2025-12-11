@@ -358,8 +358,8 @@ fn file_backend_benchmark(
         |b, (operation, access, chunk_size, threads, backend)| {
             let chunk_size = *chunk_size;
             let threads = *threads;
+            init_file_fn();
             b.iter_custom(|iterations| {
-                init_file_fn();
                 execute_with_threads(
                     threads as u64,
                     iterations,
