@@ -80,7 +80,7 @@ pub fn open_carmen_db(
 
             let is_pinned = |node: &Node| node.get_commitment().is_dirty();
 
-            let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
+            let manager = Arc::new(CachedNodeManager::new(100_000, storage, is_pinned));
 
             Ok(Box::new(CarmenS6Db::new(VerkleTrieCarmenState::<
                 database::ManagedVerkleTrie<_>,
