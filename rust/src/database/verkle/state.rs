@@ -13,11 +13,10 @@ use std::{mem::MaybeUninit, sync::Arc};
 use crate::{
     CarmenState,
     database::verkle::{
-        ManagedVerkleTrie,
+        KeyedUpdateBatch, ManagedVerkleTrie,
         embedding::{
             code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
         },
-        keyed_update::{KeyedUpdate, KeyedUpdateBatch},
         variants::{
             CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
             managed::{VerkleNode, VerkleNodeId},
@@ -136,22 +135,8 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
-        if let Ok(updates) = KeyedUpdateBatch::try_from(update) {
-            for update in &*updates {
-                match update {
-                    KeyedUpdate::FullSlot { key, value } => {
-                        self.trie.store(key, value)?;
-                    }
-                    KeyedUpdate::PartialSlot { key, value, mask } => {
-                        let existing_value = self.trie.lookup(key)?;
-                        let mut new_value = [0u8; 32];
-                        for i in 0..32 {
-                            new_value[i] = (existing_value[i] & !mask[i]) | (value[i] & mask[i]);
-                        }
-                        self.trie.store(key, &new_value)?;
-                    }
-                }
-            }
+        if let Ok(update) = KeyedUpdateBatch::try_from(update) {
+            self.trie.store(&update)?;
         }
 
         self.trie.after_update(block)?;

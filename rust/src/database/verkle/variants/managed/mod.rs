@@ -19,8 +19,8 @@ use crate::{
     database::{
         managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
         verkle::{
-            crypto::Commitment, variants::managed::commitment::update_commitments,
-            verkle_trie::VerkleTrie,
+            KeyedUpdate, crypto::Commitment, keyed_update::KeyedUpdateBatch,
+            variants::managed::commitment::update_commitments, verkle_trie::VerkleTrie,
         },
         visitor::{AcceptVisitor, NodeVisitor},
     },
@@ -97,9 +97,32 @@ where
         lookup(*self.root.read().unwrap(), key, &*self.manager)
     }
 
-    fn store(&self, key: &Key, value: &Value) -> BTResult<(), Error> {
-        let root_id_lock = self.root.write().unwrap();
-        store(root_id_lock, key, value, &*self.manager, &self.update_log)
+    fn store(&self, updates: &KeyedUpdateBatch) -> BTResult<(), Error> {
+        for update in updates.iter() {
+            match update {
+                KeyedUpdate::FullSlot { key, value } => {
+                    store(
+                        self.root.write().unwrap(),
+                        key,
+                        value,
+                        &*self.manager,
+                        &self.update_log,
+                    )?;
+                }
+                KeyedUpdate::PartialSlot { key, .. } => {
+                    let mut new_value = self.lookup(key)?;
+                    update.apply_to_value(&mut new_value);
+                    store(
+                        self.root.write().unwrap(),
+                        key,
+                        &new_value,
+                        &*self.manager,
+                        &self.update_log,
+                    )?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
@@ -176,9 +199,12 @@ mod tests {
     fn trie_commitment_of_non_empty_trie_is_root_node_commitment() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
-        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
-        trie.store(&make_leaf_key(&[2], 2), &make_value(2)).unwrap();
-        trie.store(&make_leaf_key(&[3], 3), &make_value(3)).unwrap();
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[
+            (make_leaf_key(&[1], 1), make_value(1)),
+            (make_leaf_key(&[2], 2), make_value(2)),
+            (make_leaf_key(&[3], 3), make_value(3)),
+        ]);
+        trie.store(&updates).unwrap();
 
         let received = trie.commit().unwrap();
         let expected = manager
@@ -194,7 +220,9 @@ mod tests {
     fn after_update_updates_root_id_in_node_manager() {
         let manager = Arc::new(InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10));
         let trie = ManagedVerkleTrie::try_new(manager.clone()).unwrap();
-        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
+        let updates =
+            KeyedUpdateBatch::from_key_value_pairs(&[(make_leaf_key(&[1], 1), make_value(1))]);
+        trie.store(&updates).unwrap();
         let root_id = *trie.root.read().unwrap();
 
         trie.after_update(42).unwrap();

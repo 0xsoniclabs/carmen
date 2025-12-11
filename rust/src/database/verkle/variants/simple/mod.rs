@@ -12,7 +12,10 @@ mod node;
 
 use crate::{
     database::{
-        verkle::{crypto::Commitment, variants::simple::node::Node, verkle_trie::VerkleTrie},
+        verkle::{
+            crypto::Commitment, keyed_update::KeyedUpdateBatch, variants::simple::node::Node,
+            verkle_trie::VerkleTrie,
+        },
         visitor::{AcceptVisitor, NodeVisitor},
     },
     error::{BTResult, Error},
@@ -48,10 +51,10 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
         Ok(self.root.lock().unwrap().lookup(key, 0))
     }
 
-    fn store(&self, key: &Key, value: &Value) -> BTResult<(), Error> {
+    fn store(&self, updates: &KeyedUpdateBatch) -> BTResult<(), Error> {
         let mut root_lock = self.root.lock().unwrap();
         let root = std::mem::replace(&mut *root_lock, Node::Empty);
-        *root_lock = root.store(key, 0, value);
+        *root_lock = root.store(updates.borrowed(), 0);
         Ok(())
     }
 
@@ -77,16 +80,22 @@ impl AcceptVisitor for SimpleInMemoryVerkleTrie {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::verkle::test_utils::{make_leaf_key, make_value};
+    use crate::database::verkle::{
+        KeyedUpdateBatch,
+        test_utils::{make_leaf_key, make_value},
+    };
 
     // NOTE: Most tests are in verkle_trie.rs
 
     #[test]
     fn commitment_of_non_empty_trie_is_root_node_commitment() {
         let trie = SimpleInMemoryVerkleTrie::new();
-        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
-        trie.store(&make_leaf_key(&[2], 2), &make_value(2)).unwrap();
-        trie.store(&make_leaf_key(&[3], 3), &make_value(3)).unwrap();
+        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[
+            (make_leaf_key(&[1], 1), make_value(1)),
+            (make_leaf_key(&[2], 2), make_value(2)),
+            (make_leaf_key(&[3], 3), make_value(3)),
+        ]))
+        .unwrap();
 
         let have = trie.commit().unwrap();
         let want = trie.root.lock().unwrap().commit();
@@ -121,9 +130,12 @@ mod tests {
             }
         }
         let trie = SimpleInMemoryVerkleTrie::new();
-        trie.store(&make_leaf_key(&[1], 1), &make_value(1)).unwrap();
-        trie.store(&make_leaf_key(&[2], 2), &make_value(2)).unwrap();
-        trie.store(&make_leaf_key(&[3], 3), &make_value(3)).unwrap();
+        trie.store(&KeyedUpdateBatch::from_key_value_pairs(&[
+            (make_leaf_key(&[1], 1), make_value(1)),
+            (make_leaf_key(&[2], 2), make_value(2)),
+            (make_leaf_key(&[3], 3), make_value(3)),
+        ]))
+        .unwrap();
 
         let mut visitor = TestVisitor { values: Vec::new() };
         trie.accept(&mut visitor).unwrap();
