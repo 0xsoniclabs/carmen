@@ -19,85 +19,69 @@ use crate::statistics::{
 /// A statistics formatter that writes statistics to a writer in a human-readable format.
 pub struct HumanReadableWriter<W: Write> {
     writer: W,
-    indentation: Indentation,
 }
 
 impl<W: Write> HumanReadableWriter<W> {
     pub fn new(writer: W) -> Self {
-        Self {
-            writer,
-            indentation: Indentation::default(),
-        }
+        Self { writer }
     }
 
-    /// Increases the indentation level by one.
-    fn inc(&mut self) {
-        self.indentation.inc();
-    }
-
-    /// Decreases the indentation level by one.
-    fn dec(&mut self) {
-        self.indentation.dec();
-    }
-
-    /// Resets the indentation level.
-    fn reset(&mut self) {
-        self.indentation.reset();
-    }
-
-    /// Writes a newline character without indenting the next line.
-    fn newline(&mut self) -> std::io::Result<()> {
-        self.writer.write_all(b"\n")
-    }
-
-    /// Writes a string to [`Self::writer`] with the current indentation.
-    fn write_with_indentation(&mut self, string: impl AsRef<str>) -> std::io::Result<()> {
-        self.writer
-            .write_all(format!("{}{}", self.indentation, string.as_ref()).as_bytes())
+    fn write(&mut self, string: impl AsRef<str>) -> std::io::Result<()> {
+        self.writer.write_all(string.as_ref().as_bytes())
     }
 
     // -------------- Statistics writing methods --------------
 
     /// Writes the [`NodeCountsByKindStatistic`] statistic to [`Self::writer`] in a human-readable
-    /// format with indentation.
+    /// format using a tree-like structure.
     fn write_node_counts_by_kind(
         &mut self,
         stat: &NodeCountsByKindStatistic,
     ) -> std::io::Result<()> {
-        self.reset();
-        self.write_with_indentation("--- Node distribution ---\n")?;
-        self.write_with_indentation(format!("Total nodes: {}\n", stat.total_nodes))?;
-        self.inc();
-        self.write_with_indentation("Node kind and size distribution:\n")?;
-        self.inc();
-        for (node_kind, stats) in &stat.aggregated_node_statistics {
+        self.write(format!("Total nodes: {}\n", stat.total_nodes))?;
+        for (i, (node_kind, stats)) in stat.aggregated_node_statistics.iter().enumerate() {
+            let last_kind = i == stat.aggregated_node_statistics.len() - 1;
+            if !last_kind {
+                self.write("├──")?;
+            } else {
+                self.write("╰──")?;
+            }
+
             let node_count = stats.size_count.values().sum::<u64>();
-            self.write_with_indentation(format!("{node_kind}: {node_count}\n"))?;
-            self.inc();
+            self.write(format!(" {node_kind}: {node_count}\n"))?;
             let mut sizes = stats.size_count.keys().collect::<Vec<_>>();
             sizes.sort();
-            for size in sizes {
+            for (i, size) in sizes.iter().enumerate() {
+                if !last_kind {
+                    self.write("│  ")?;
+                } else {
+                    self.write("   ")?;
+                }
+                if i < sizes.len() - 1 {
+                    self.write("├──")?;
+                } else {
+                    self.write("╰──")?;
+                }
+
                 let size_count = stats.size_count[size];
-                self.write_with_indentation(format!("{size}: {size_count}\n"))?;
+                self.write(format!(" {size}: {size_count}\n"))?;
             }
-            self.dec();
         }
-        self.newline()?;
+        self.write("\n")?;
         Ok(())
     }
 
     /// Writes the [`NodeCountsByLevelStatistic`] statistic to [`Self::writer`] in a human-readable
-    /// format with indentation.
+    /// format.
     fn write_node_counts_by_level(
         &mut self,
         item: &NodeCountsByLevelStatistic,
     ) -> std::io::Result<()> {
-        self.reset();
-        self.write_with_indentation("Node counts by level:\n")?;
+        self.write("Node counts by level:\n")?;
         for (level, count) in &item.node_depth {
-            self.write_with_indentation(format!("{level}, {count}\n"))?;
+            self.write(format!("{level}, {count}\n"))?;
         }
-        self.newline()?;
+        self.write("\n")?;
         Ok(())
     }
 }
@@ -112,47 +96,6 @@ impl<W: Write> StatisticsFormatter for HumanReadableWriter<W> {
                 }
             },
         }
-    }
-}
-
-/// A utility to manage indentation levels for formatted output.
-#[derive(Clone, Debug, Default)]
-pub struct Indentation {
-    level: usize,
-}
-
-impl Indentation {
-    const SIZE: usize = 4; // spaces
-
-    /// Increases the indentation level by one.
-    pub fn inc(&mut self) {
-        self.level += 1;
-    }
-
-    /// Decreases the indentation level by one.
-    fn dec(&mut self) {
-        if self.level > 0 {
-            self.level -= 1;
-        }
-    }
-
-    /// Resets the indentation level.
-    fn reset(&mut self) {
-        let _ = std::mem::take(self);
-    }
-}
-
-impl std::fmt::Display for Indentation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for i in 0..self.level {
-            let mut size = Indentation::SIZE;
-            if i == 0 {
-                write!(f, "╰")?;
-                size = size.saturating_sub(1);
-            }
-            write!(f, "{}", "╴".repeat(size))?;
-        }
-        Ok(())
     }
 }
 
@@ -197,13 +140,12 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            "--- Node distribution ---\n\
-            Total nodes: 4\n\
-            ╰╴╴╴Node kind and size distribution:\n\
-            ╰╴╴╴╴╴╴╴Inner: 1\n\
-            ╰╴╴╴╴╴╴╴╴╴╴╴2: 1\n\
-            ╰╴╴╴╴╴╴╴Leaf: 3\n\
-            ╰╴╴╴╴╴╴╴╴╴╴╴1: 3\n\
+            "Total nodes: 4\n\
+            ├── Inner: 1\n\
+            │  ╰── 2: 1\n\
+            ╰── Leaf: 3\n"
+                .to_owned()
+                + "   ╰── 1: 3\n\
             \n"
         );
     }
@@ -230,86 +172,5 @@ mod tests {
             2, 5\n\
             \n"
         );
-    }
-
-    #[test]
-    fn write_with_indentation_uses_indentation() {
-        let mut output = Vec::new();
-        let mut writer = HumanReadableWriter::new(&mut output);
-
-        writer.write_with_indentation("Level 0\n").unwrap();
-        writer.inc();
-        writer.write_with_indentation("Level 1\n").unwrap();
-
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "Level 0\n\
-            ╰╴╴╴Level 1\n"
-        );
-    }
-
-    #[test]
-    fn formats_indentation_correctly() {
-        let mut output = Vec::new();
-        let mut writer = HumanReadableWriter::new(&mut output);
-
-        writer.write_with_indentation("Level 0\n").unwrap();
-        writer.inc();
-        writer.write_with_indentation("Level 1\n").unwrap();
-        writer.inc();
-        writer.write_with_indentation("Level 2\n").unwrap();
-        writer.dec();
-        writer.write_with_indentation("Back to Level 1\n").unwrap();
-        writer.dec();
-        writer.write_with_indentation("Back to Level 0\n").unwrap();
-
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "Level 0\n\
-            ╰╴╴╴Level 1\n\
-            ╰╴╴╴╴╴╴╴Level 2\n\
-            ╰╴╴╴Back to Level 1\n\
-            Back to Level 0\n"
-        );
-    }
-
-    #[test]
-    fn newline_writes_newline_without_indentation() {
-        let mut output = Vec::new();
-        let mut writer = HumanReadableWriter::new(&mut output);
-
-        writer.inc();
-        writer.newline().unwrap();
-        writer.write_with_indentation("After newline\n").unwrap();
-
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "\n\
-            ╰╴╴╴After newline\n"
-        );
-    }
-
-    #[test]
-    fn indentation_formats_correctly() {
-        let mut indentation = Indentation::default();
-        assert_eq!(indentation.to_string(), "");
-
-        indentation.inc();
-        assert_eq!(indentation.to_string(), "╰╴╴╴");
-
-        indentation.inc();
-        assert_eq!(indentation.to_string(), "╰╴╴╴╴╴╴╴");
-
-        indentation.dec();
-        assert_eq!(indentation.to_string(), "╰╴╴╴");
-
-        indentation.dec();
-        assert_eq!(indentation.to_string(), "");
-
-        indentation.dec(); // should not go below 0
-        assert_eq!(indentation.to_string(), "");
-
-        indentation.reset();
-        assert_eq!(indentation.to_string(), "");
     }
 }
