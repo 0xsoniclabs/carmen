@@ -42,13 +42,14 @@ impl VerkleNodeId {
     const INNER_NODE_3_PREFIX: u64 = 0x0000_1000_0000_0000;
     const INNER_NODE_47_PREFIX: u64 = 0x0000_2000_0000_0000;
     const INNER_NODE_256_PREFIX: u64 = 0x0000_3000_0000_0000;
+    const INNER_DELTA_NODE_PREFIX: u64 = 0x0000_4000_0000_0000;
 
-    const LEAF_NODE_1_PREFIX: u64 = 0x0000_4000_0000_0000;
-    const LEAF_NODE_2_PREFIX: u64 = 0x0000_5000_0000_0000;
-    const LEAF_NODE_21_PREFIX: u64 = 0x0000_6000_0000_0000;
-    const LEAF_NODE_64_PREFIX: u64 = 0x0000_7000_0000_0000;
-    const LEAF_NODE_141_PREFIX: u64 = 0x0000_8000_0000_0000;
-    const LEAF_NODE_256_PREFIX: u64 = 0x0000_9000_0000_0000;
+    const LEAF_NODE_1_PREFIX: u64 = 0x0000_5000_0000_0000;
+    const LEAF_NODE_2_PREFIX: u64 = 0x0000_6000_0000_0000;
+    const LEAF_NODE_21_PREFIX: u64 = 0x0000_7000_0000_0000;
+    const LEAF_NODE_64_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_141_PREFIX: u64 = 0x0000_9000_0000_0000;
+    const LEAF_NODE_256_PREFIX: u64 = 0x0000_a000_0000_0000;
 
     const PREFIX_MASK: u64 = 0x0000_F000_0000_0000;
     const INDEX_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
@@ -81,6 +82,7 @@ impl ToNodeKind for VerkleNodeId {
             Self::INNER_NODE_3_PREFIX => Some(VerkleNodeKind::Inner3),
             Self::INNER_NODE_47_PREFIX => Some(VerkleNodeKind::Inner47),
             Self::INNER_NODE_256_PREFIX => Some(VerkleNodeKind::Inner256),
+            Self::INNER_DELTA_NODE_PREFIX => Some(VerkleNodeKind::InnerDelta),
             Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
             Self::LEAF_NODE_21_PREFIX => Some(VerkleNodeKind::Leaf21),
@@ -107,6 +109,7 @@ impl TreeId for VerkleNodeId {
             VerkleNodeKind::Inner3 => Self::INNER_NODE_3_PREFIX,
             VerkleNodeKind::Inner47 => Self::INNER_NODE_47_PREFIX,
             VerkleNodeKind::Inner256 => Self::INNER_NODE_256_PREFIX,
+            VerkleNodeKind::InnerDelta => Self::INNER_DELTA_NODE_PREFIX,
             VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,

@@ -48,7 +48,7 @@ pub fn store<T>(
     is_archive: bool,
 ) -> BTResult<(), Error>
 where
-    T: UnionManagedTrieNode + HasEmptyNode + Clone,
+    T: UnionManagedTrieNode + HasEmptyNode,
     T::Id: Copy + Eq + std::hash::Hash + std::fmt::Debug + HasEmptyId,
 {
     let _span = tracy_client::span!("push updates through all levels");
@@ -91,7 +91,8 @@ where
                         && !current_node_update.is_new
                         && !current_node_update.node_id.is_empty_id()
                     {
-                        current_node_update.node_id = manager.add((*current_node).clone())?;
+                        current_node_update.node_id =
+                            manager.add(current_node.copy_on_write(current_node_update.node_id))?;
                         current_node_update.node =
                             Some(manager.get_write_access(current_node_update.node_id)?);
                         if let Some(index) = current_node_update.parent_index {
@@ -131,7 +132,8 @@ where
                         && !current_node_update.is_new
                         && !current_node_update.node_id.is_empty_id()
                     {
-                        current_node_update.node_id = manager.add((*current_node).clone())?;
+                        current_node_update.node_id =
+                            manager.add(current_node.copy_on_write(current_node_update.node_id))?;
                         current_node_update.node =
                             Some(manager.get_write_access(current_node_update.node_id)?);
                         if let Some(index) = current_node_update.parent_index {
