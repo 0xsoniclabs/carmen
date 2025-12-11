@@ -78,14 +78,14 @@ impl ToNodeKind for VerkleNodeId {
     fn to_node_kind(&self) -> Option<VerkleNodeKind> {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(VerkleNodeKind::Empty),
-            Self::INNER_NODE_3_PREFIX => Some(VerkleNodeKind::Inner3),
-            Self::INNER_NODE_47_PREFIX => Some(VerkleNodeKind::Inner47),
+            // Self::INNER_NODE_3_PREFIX => Some(VerkleNodeKind::Inner3),
+            // Self::INNER_NODE_47_PREFIX => Some(VerkleNodeKind::Inner47),
             Self::INNER_NODE_256_PREFIX => Some(VerkleNodeKind::Inner256),
-            Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
-            Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
-            Self::LEAF_NODE_21_PREFIX => Some(VerkleNodeKind::Leaf21),
-            Self::LEAF_NODE_64_PREFIX => Some(VerkleNodeKind::Leaf64),
-            Self::LEAF_NODE_141_PREFIX => Some(VerkleNodeKind::Leaf141),
+            // Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
+            // Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
+            // Self::LEAF_NODE_21_PREFIX => Some(VerkleNodeKind::Leaf21),
+            // Self::LEAF_NODE_64_PREFIX => Some(VerkleNodeKind::Leaf64),
+            // Self::LEAF_NODE_141_PREFIX => Some(VerkleNodeKind::Leaf141),
             Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
@@ -104,15 +104,15 @@ impl TreeId for VerkleNodeId {
         );
         let prefix = match node_type {
             VerkleNodeKind::Empty => Self::EMPTY_NODE_PREFIX,
-            VerkleNodeKind::Inner3 => Self::INNER_NODE_3_PREFIX,
-            VerkleNodeKind::Inner47 => Self::INNER_NODE_47_PREFIX,
+            // VerkleNodeKind::Inner3 => Self::INNER_NODE_3_PREFIX,
+            // VerkleNodeKind::Inner47 => Self::INNER_NODE_47_PREFIX,
             VerkleNodeKind::Inner256 => Self::INNER_NODE_256_PREFIX,
-            VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
-            VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
+            // VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
+            // VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
-            VerkleNodeKind::Leaf21 => Self::LEAF_NODE_21_PREFIX,
-            VerkleNodeKind::Leaf64 => Self::LEAF_NODE_64_PREFIX,
-            VerkleNodeKind::Leaf141 => Self::LEAF_NODE_141_PREFIX,
+            // VerkleNodeKind::Leaf21 => Self::LEAF_NODE_21_PREFIX,
+            // VerkleNodeKind::Leaf64 => Self::LEAF_NODE_64_PREFIX,
+            // VerkleNodeKind::Leaf141 => Self::LEAF_NODE_141_PREFIX,
         };
         VerkleNodeId::from_u64(idx | prefix)
     }

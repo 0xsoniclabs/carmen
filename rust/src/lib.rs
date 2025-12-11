@@ -76,14 +76,14 @@ pub fn open_carmen_db(
         >::new()))),
         b"file" => {
             type FileStorage = VerkleNodeFileStorageManager<
-                NodeFileStorage<SparseInnerNode<3>, NoSeekFile>,
-                NodeFileStorage<SparseInnerNode<47>, NoSeekFile>,
+                // NodeFileStorage<SparseInnerNode<3>, NoSeekFile>,
+                // NodeFileStorage<SparseInnerNode<47>, NoSeekFile>,
                 NodeFileStorage<InnerNode, NoSeekFile>,
-                NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
-                NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
-                NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
-                NodeFileStorage<SparseLeafNode<64>, NoSeekFile>,
-                NodeFileStorage<SparseLeafNode<141>, NoSeekFile>,
+                // NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
+                // NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+                // NodeFileStorage<SparseLeafNode<21>, NoSeekFile>,
+                // NodeFileStorage<SparseLeafNode<64>, NoSeekFile>,
+                // NodeFileStorage<SparseLeafNode<141>, NoSeekFile>,
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
             let storage = StorageWithFlushBuffer::<FileStorage>::open(&live_dir)?;
