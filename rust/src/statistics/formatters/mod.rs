@@ -11,7 +11,7 @@
 use crate::statistics::Statistic;
 
 pub mod csv_writer;
-pub mod writer_with_indentation;
+pub mod human_readable_writer;
 
 /// Trait for formatting and writing statistics distributions.
 pub trait StatisticsFormatter {
