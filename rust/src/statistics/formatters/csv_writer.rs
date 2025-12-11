@@ -28,15 +28,13 @@ impl CSVWriter {
 /// Writes [`NodeCountsByKindStatistic`] in CSV format.
 fn write_node_counts_by_kind(stat: &NodeCountsByKindStatistic, path: &Path) -> std::io::Result<()> {
     let mut wtr = CSVWriter::init(path, "node_counts_by_kind")?;
-    wtr.write_all(b"Node Type,Node Subtype,Node Count\n")?;
-    for (type_name, stats) in &stat.aggregated_node_statistics {
-        let node_count = stats.size_count.values().sum::<u64>();
-        wtr.write_all(format!("{type_name},{type_name},{node_count}\n").as_bytes())?;
-        let mut kinds = stats.size_count.keys().collect::<Vec<_>>();
-        kinds.sort();
-        for kind in kinds {
-            let kind_count = stats.size_count[kind];
-            wtr.write_all(format!("{type_name},{type_name}_{kind},{kind_count}\n").as_bytes())?;
+    wtr.write_all(b"Node Kind,Node Size,Count\n")?;
+    for (node_kind, stats) in &stat.aggregated_node_statistics {
+        let mut sizes = stats.size_count.keys().collect::<Vec<_>>();
+        sizes.sort();
+        for size in sizes {
+            let size_count = stats.size_count[size];
+            wtr.write_all(format!("{node_kind},{size},{size_count}\n").as_bytes())?;
         }
     }
     Ok(())
@@ -48,7 +46,7 @@ fn write_node_counts_by_level(
     path: &Path,
 ) -> std::io::Result<()> {
     let mut wtr = CSVWriter::init(path, "node_counts_by_level")?;
-    wtr.write_all(b"Level,Node Count\n")?;
+    wtr.write_all(b"Level,Count\n")?;
     for (level, count) in &stat.node_depth {
         wtr.write_all(format!("{level},{count}\n").as_bytes())?;
     }
@@ -116,11 +114,9 @@ mod tests {
                 .unwrap();
         assert_eq!(
             content,
-            "Node Type,Node Subtype,Node Count\n\
-             Inner,Inner,1\n\
-             Inner,Inner_2,1\n\
-             Leaf,Leaf,3\n\
-             Leaf,Leaf_1,3\n"
+            "Node Kind,Node Size,Count\n\
+             Inner,2,1\n\
+             Leaf,1,3\n"
         );
     }
 
@@ -137,7 +133,7 @@ mod tests {
                 .unwrap();
         assert_eq!(
             content,
-            "Level,Node Count\n\
+            "Level,Count\n\
              0,2\n\
              1,3\n\
              2,5\n"

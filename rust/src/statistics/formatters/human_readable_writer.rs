@@ -16,13 +16,13 @@ use crate::statistics::{
     node_count::{NodeCountStatistic, NodeCountsByKindStatistic, NodeCountsByLevelStatistic},
 };
 
-/// A statistics formatter that writes statistics to a writer with indentation support.
-pub struct WriterWithIndentation<W: Write> {
+/// A statistics formatter that writes statistics to a writer in a human-readable format.
+pub struct HumanReadableWriter<W: Write> {
     writer: W,
     indentation: Indentation,
 }
 
-impl<W: Write> WriterWithIndentation<W> {
+impl<W: Write> HumanReadableWriter<W> {
     pub fn new(writer: W) -> Self {
         Self {
             writer,
@@ -68,17 +68,17 @@ impl<W: Write> WriterWithIndentation<W> {
         self.write_with_indentation("--- Node distribution ---\n")?;
         self.write_with_indentation(format!("Total nodes: {}\n", stat.total_nodes))?;
         self.inc();
-        self.write_with_indentation("Node types:\n")?;
+        self.write_with_indentation("Node kind and size distribution:\n")?;
         self.inc();
-        for (type_name, stats) in &stat.aggregated_node_statistics {
+        for (node_kind, stats) in &stat.aggregated_node_statistics {
             let node_count = stats.size_count.values().sum::<u64>();
-            self.write_with_indentation(format!("{type_name}: {node_count}\n"))?;
+            self.write_with_indentation(format!("{node_kind}: {node_count}\n"))?;
             self.inc();
-            let mut kinds = stats.size_count.keys().collect::<Vec<_>>();
-            kinds.sort();
-            for kind in kinds {
-                let kind_count = stats.size_count[kind];
-                self.write_with_indentation(format!("{type_name}_{kind}: {kind_count}\n"))?;
+            let mut sizes = stats.size_count.keys().collect::<Vec<_>>();
+            sizes.sort();
+            for size in sizes {
+                let size_count = stats.size_count[size];
+                self.write_with_indentation(format!("{size}: {size_count}\n"))?;
             }
             self.dec();
         }
@@ -93,7 +93,7 @@ impl<W: Write> WriterWithIndentation<W> {
         item: &NodeCountsByLevelStatistic,
     ) -> std::io::Result<()> {
         self.reset();
-        self.write_with_indentation("Node depth distribution:\n")?;
+        self.write_with_indentation("Node counts by level:\n")?;
         for (level, count) in &item.node_depth {
             self.write_with_indentation(format!("{level}, {count}\n"))?;
         }
@@ -102,7 +102,7 @@ impl<W: Write> WriterWithIndentation<W> {
     }
 }
 
-impl<W: Write> StatisticsFormatter for WriterWithIndentation<W> {
+impl<W: Write> StatisticsFormatter for HumanReadableWriter<W> {
     fn write_statistic(&mut self, distribution: &Statistic) -> std::io::Result<()> {
         match distribution {
             Statistic::NodeCount(node_count_statistics) => match node_count_statistics {
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn write_node_counts_by_kind_writes_correctly() {
         let mut output = Vec::new();
-        let mut writer = WriterWithIndentation::new(&mut output);
+        let mut writer = HumanReadableWriter::new(&mut output);
 
         let mut node_counts_by_kind_statistic = NodeCountsByKindStatistic {
             total_nodes: 4,
@@ -209,11 +209,11 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "--- Node distribution ---\n\
             Total nodes: 4\n\
-            ╰╴╴╴Node types:\n\
+            ╰╴╴╴Node kind and size distribution:\n\
             ╰╴╴╴╴╴╴╴Inner: 1\n\
-            ╰╴╴╴╴╴╴╴╴╴╴╴Inner_2: 1\n\
+            ╰╴╴╴╴╴╴╴╴╴╴╴2: 1\n\
             ╰╴╴╴╴╴╴╴Leaf: 3\n\
-            ╰╴╴╴╴╴╴╴╴╴╴╴Leaf_1: 3\n\
+            ╰╴╴╴╴╴╴╴╴╴╴╴1: 3\n\
             \n"
         );
     }
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn write_node_counts_by_level_writes_correctly() {
         let mut output = Vec::new();
-        let mut writer = WriterWithIndentation::new(&mut output);
+        let mut writer = HumanReadableWriter::new(&mut output);
         let node_counts_by_level = NodeCountsByLevelStatistic {
             node_depth: BTreeMap::from([(0, 2), (1, 3), (2, 5)]),
         };
@@ -234,7 +234,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            "Node depth distribution:\n\
+            "Node counts by level:\n\
             0, 2\n\
             1, 3\n\
             2, 5\n\
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn write_with_indentation_uses_indentation() {
         let mut output = Vec::new();
-        let mut writer = WriterWithIndentation::new(&mut output);
+        let mut writer = HumanReadableWriter::new(&mut output);
 
         writer.write_with_indentation("Level 0\n").unwrap();
         writer.inc();
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn formats_indentation_correctly() {
         let mut output = Vec::new();
-        let mut writer = WriterWithIndentation::new(&mut output);
+        let mut writer = HumanReadableWriter::new(&mut output);
 
         writer.write_with_indentation("Level 0\n").unwrap();
         writer.inc();
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn newline_writes_newline_without_indentation() {
         let mut output = Vec::new();
-        let mut writer = WriterWithIndentation::new(&mut output);
+        let mut writer = HumanReadableWriter::new(&mut output);
 
         writer.inc();
         writer.newline().unwrap();
