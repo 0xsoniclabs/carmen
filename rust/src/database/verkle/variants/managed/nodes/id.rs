@@ -42,6 +42,8 @@ impl VerkleNodeId {
     const LEAF_NODE_146_PREFIX: u64 = 0x0000_9000_0000_0000;
     const LEAF_NODE_256_PREFIX: u64 = 0x0000_A000_0000_0000;
 
+    const INNER_DELTA_NODE_PREFIX: u64 = 0x0000_B000_0000_0000;
+
     const PREFIX_MASK: u64 = 0x0000_F000_0000_0000;
     const INDEX_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
 
@@ -74,6 +76,7 @@ impl ToNodeKind for VerkleNodeId {
             Self::INNER_NODE_15_PREFIX => Some(VerkleNodeKind::Inner15),
             Self::INNER_NODE_21_PREFIX => Some(VerkleNodeKind::Inner21),
             Self::INNER_NODE_256_PREFIX => Some(VerkleNodeKind::Inner256),
+            Self::INNER_DELTA_NODE_PREFIX => Some(VerkleNodeKind::InnerDelta),
             Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
             Self::LEAF_NODE_5_PREFIX => Some(VerkleNodeKind::Leaf5),
@@ -101,6 +104,7 @@ impl TreeId for VerkleNodeId {
             VerkleNodeKind::Inner15 => Self::INNER_NODE_15_PREFIX,
             VerkleNodeKind::Inner21 => Self::INNER_NODE_21_PREFIX,
             VerkleNodeKind::Inner256 => Self::INNER_NODE_256_PREFIX,
+            VerkleNodeKind::InnerDelta => Self::INNER_DELTA_NODE_PREFIX,
             VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf5 => Self::LEAF_NODE_5_PREFIX,

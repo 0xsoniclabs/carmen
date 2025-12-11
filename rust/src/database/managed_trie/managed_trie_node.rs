@@ -51,7 +51,9 @@ pub struct DescendAction<'a, ID> {
 }
 
 /// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
-pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {}
+pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {
+    fn copy_on_write(&self, id: Self::Id) -> Self;
+}
 
 /// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)
 /// trie (Verkle, Binary, Merkle-Patricia, ...).
