@@ -326,9 +326,11 @@ mod tests {
         // This test writes to 512 leaf nodes. In two leaf nodes only one slot gets set, in two leaf
         // nodes two slots get set and so on.
         // This makes sure that no matter the variants of sparse leaf nodes that are used for
-        // storage optimization of leaf nodes, there will  always be at least two nodes for each
-        // variant.
-        let key_indices_offset: u16 = 256; // first leaf stores 64, second 265-64
+        // storage optimization, there will always be at least two nodes for each variant.
+
+        // Skip the first 256 indices to avoid special casing in embedding, where the first leaf
+        // only stores 64 values, and the second second 192.
+        let key_indices_offset: u16 = 256;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
