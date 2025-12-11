@@ -15,6 +15,8 @@
 
 use std::{mem::MaybeUninit, ops::Deref, path::Path};
 
+#[cfg(feature = "storage-stats")]
+use crate::statistics::storage::StorageStatistics;
 pub use crate::types::{ArchiveImpl, BalanceUpdate, LiveImpl, Update};
 use crate::{
     database::{
@@ -80,6 +82,12 @@ pub fn open_carmen_db(
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
             let storage = StorageWithFlushBuffer::<FileStorage>::open(&live_dir)?;
+            #[cfg(feature = "storage-stats")]
+            let storage = StorageStatistics::<StorageWithFlushBuffer<FileStorage>>::try_new(
+                storage,
+                Path::new("."),
+            )?;
+
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
