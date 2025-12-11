@@ -145,8 +145,8 @@ impl InnerNode {
         self.children[key[depth as usize] as usize].lookup(key, depth + 1)
     }
 
-    /// Stores the value for the given key by forwarding the request to the child at
-    /// position `key[depth]`.
+    /// Stores the given updates by forwarding the request to the children at the corresponding key
+    /// positions at `depth`.
     ///
     /// If no child exists at that position, a new leaf node is created.
     ///
@@ -261,7 +261,7 @@ impl LeafNode {
         }
     }
 
-    /// Stores the value for the given key.
+    /// Stores the given updates.
     ///
     /// If the stem of the key does not match the stem of this leaf, the leaf is split
     /// into an inner node with two children (the existing leaf and a new leaf for the key).
