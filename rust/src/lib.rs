@@ -87,7 +87,7 @@ pub fn open_carmen_db(
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
-            let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
+            let manager = Arc::new(CachedNodeManager::new(100_000, storage, is_pinned));
             Ok(Box::new(CarmenS6FileBasedDb::new(
                 manager.clone(),
                 VerkleTrieCarmenState::<database::ManagedVerkleTrie<_>>::try_new(manager)?,
