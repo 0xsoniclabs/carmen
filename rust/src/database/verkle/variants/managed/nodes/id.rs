@@ -39,15 +39,16 @@ impl VerkleNodeId {
     // The upper 4 bits are used to encode the node type.
     const EMPTY_NODE_PREFIX: u64 = 0x0000_0000_0000_0000;
 
-    const INNER_NODE_3_PREFIX: u64 = 0x0000_1000_0000_0000;
-    const INNER_NODE_47_PREFIX: u64 = 0x0000_2000_0000_0000;
+    const INNER_NODE_9_PREFIX: u64 = 0x0000_1000_0000_0000;
+    const INNER_NODE_15_PREFIX: u64 = 0x0000_2000_0000_0000;
     const INNER_NODE_256_PREFIX: u64 = 0x0000_3000_0000_0000;
+    const INNER_NODE_21_PREFIX: u64 = 0x0000_A000_0000_0000;
 
     const LEAF_NODE_1_PREFIX: u64 = 0x0000_4000_0000_0000;
     const LEAF_NODE_2_PREFIX: u64 = 0x0000_5000_0000_0000;
-    const LEAF_NODE_21_PREFIX: u64 = 0x0000_6000_0000_0000;
-    const LEAF_NODE_64_PREFIX: u64 = 0x0000_7000_0000_0000;
-    const LEAF_NODE_141_PREFIX: u64 = 0x0000_8000_0000_0000;
+    const LEAF_NODE_5_PREFIX: u64 = 0x0000_6000_0000_0000;
+    const LEAF_NODE_18_PREFIX: u64 = 0x0000_7000_0000_0000;
+    const LEAF_NODE_146_PREFIX: u64 = 0x0000_8000_0000_0000;
     const LEAF_NODE_256_PREFIX: u64 = 0x0000_9000_0000_0000;
 
     const PREFIX_MASK: u64 = 0x0000_F000_0000_0000;
@@ -78,14 +79,15 @@ impl ToNodeKind for VerkleNodeId {
     fn to_node_kind(&self) -> Option<VerkleNodeKind> {
         match self.to_u64() & Self::PREFIX_MASK {
             Self::EMPTY_NODE_PREFIX => Some(VerkleNodeKind::Empty),
-            // Self::INNER_NODE_3_PREFIX => Some(VerkleNodeKind::Inner3),
-            // Self::INNER_NODE_47_PREFIX => Some(VerkleNodeKind::Inner47),
+            Self::INNER_NODE_9_PREFIX => Some(VerkleNodeKind::Inner9),
+            Self::INNER_NODE_15_PREFIX => Some(VerkleNodeKind::Inner15),
+            Self::INNER_NODE_21_PREFIX => Some(VerkleNodeKind::Inner21),
             Self::INNER_NODE_256_PREFIX => Some(VerkleNodeKind::Inner256),
-            // Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
-            // Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
-            // Self::LEAF_NODE_21_PREFIX => Some(VerkleNodeKind::Leaf21),
-            // Self::LEAF_NODE_64_PREFIX => Some(VerkleNodeKind::Leaf64),
-            // Self::LEAF_NODE_141_PREFIX => Some(VerkleNodeKind::Leaf141),
+            Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
+            Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
+            Self::LEAF_NODE_5_PREFIX => Some(VerkleNodeKind::Leaf5),
+            Self::LEAF_NODE_18_PREFIX => Some(VerkleNodeKind::Leaf18),
+            Self::LEAF_NODE_146_PREFIX => Some(VerkleNodeKind::Leaf146),
             Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
@@ -104,15 +106,16 @@ impl TreeId for VerkleNodeId {
         );
         let prefix = match node_type {
             VerkleNodeKind::Empty => Self::EMPTY_NODE_PREFIX,
-            // VerkleNodeKind::Inner3 => Self::INNER_NODE_3_PREFIX,
-            // VerkleNodeKind::Inner47 => Self::INNER_NODE_47_PREFIX,
+            VerkleNodeKind::Inner9 => Self::INNER_NODE_9_PREFIX,
+            VerkleNodeKind::Inner15 => Self::INNER_NODE_15_PREFIX,
+            VerkleNodeKind::Inner21 => Self::INNER_NODE_21_PREFIX,
             VerkleNodeKind::Inner256 => Self::INNER_NODE_256_PREFIX,
-            // VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
-            // VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
+            VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
+            VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
-            // VerkleNodeKind::Leaf21 => Self::LEAF_NODE_21_PREFIX,
-            // VerkleNodeKind::Leaf64 => Self::LEAF_NODE_64_PREFIX,
-            // VerkleNodeKind::Leaf141 => Self::LEAF_NODE_141_PREFIX,
+            VerkleNodeKind::Leaf5 => Self::LEAF_NODE_5_PREFIX,
+            VerkleNodeKind::Leaf18 => Self::LEAF_NODE_18_PREFIX,
+            VerkleNodeKind::Leaf146 => Self::LEAF_NODE_146_PREFIX,
         };
         VerkleNodeId::from_u64(idx | prefix)
     }
