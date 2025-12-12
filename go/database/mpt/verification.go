@@ -199,7 +199,7 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 	if source.getConfig().HashStorageLocation == HashStoredWithNode {
 		// Check hashes of roots.
 		observer.Progress(fmt.Sprintf("Checking %d root hashes ...", len(roots)))
-		refIds := newNodeIds(uint64(len(roots)))
+		refIds := newNodeIds()
 		for _, root := range roots {
 			refIds.Put(root.NodeRef.id)
 		}
@@ -340,12 +340,9 @@ type nodeIdCollection struct {
 }
 
 // newNodeIds creates a new NodeIDs collector.
-// The input capacity is used for allocating a slice,
-// which is used for exporting sorted and unique NodeIds.
-func newNodeIds(capacity uint64) *nodeIdCollection {
+func newNodeIds() *nodeIdCollection {
 	return &nodeIdCollection{
-		nodeIds:     make(map[NodeId]struct{}),
-		nodeIdsKeys: make([]NodeId, 0, capacity),
+		nodeIds: make(map[NodeId]struct{}),
 	}
 }
 
@@ -364,6 +361,9 @@ func (n *nodeIdCollection) Size() uint64 {
 // The returned slice is re-used for further calls of this method to save on memory allocations.
 func (n *nodeIdCollection) DrainToOrderedKeys() []NodeId {
 	n.nodeIdsKeys = n.nodeIdsKeys[0:0]
+	if cap(n.nodeIdsKeys) < len(n.nodeIds) {
+		n.nodeIdsKeys = make([]NodeId, 0, len(n.nodeIds))
+	}
 	// collect keys ...
 	for id := range n.nodeIds {
 		n.nodeIdsKeys = append(n.nodeIdsKeys, id)
@@ -465,7 +465,7 @@ func verifyHashesStoredWithNodes[N any](
 	batchSize := getBatchSize(150) // empirically determined item size
 
 	// re-used for each loop to save on allocations
-	referencedIds := newNodeIds(batchSize / 3) // pre-allocate only a fraction of the capacity to prevent huge allocations and GC when not the whole batch is used.
+	referencedIds := newNodeIds()
 
 	// check other nodes
 	lowerBound := ids.GetLowerBound()
