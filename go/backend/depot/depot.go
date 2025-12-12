@@ -11,7 +11,6 @@
 package depot
 
 import (
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
@@ -38,6 +37,4 @@ type Depot[I common.Identifier] interface {
 
 	// Also, depots need to be flush and closable.
 	common.FlushAndCloser
-
-	backend.Snapshotable
 }

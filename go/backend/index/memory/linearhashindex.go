@@ -13,7 +13,6 @@ package memory
 import (
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/index/indexhash"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -91,22 +90,6 @@ func (m *LinearHashIndex[K, I]) Flush() error {
 // Close closes the storage and clean-ups all possible dirty values.
 func (m *LinearHashIndex[K, I]) Close() error {
 	return nil
-}
-
-func (s *LinearHashIndex[K, I]) GetProof() (backend.Proof, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *LinearHashIndex[K, I]) CreateSnapshot() (backend.Snapshot, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *LinearHashIndex[K, I]) Restore(data backend.SnapshotData) error {
-	return backend.ErrSnapshotNotSupported
-}
-
-func (s *LinearHashIndex[K, I]) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	return nil, backend.ErrSnapshotNotSupported
 }
 
 func (m *LinearHashIndex[K, I]) GetMemoryFootprint() *common.MemoryFootprint {

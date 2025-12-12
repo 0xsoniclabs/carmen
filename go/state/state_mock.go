@@ -5,7 +5,6 @@
 //
 //	mockgen -source state.go -destination state_mock.go -package state
 //
-
 // Package state is a generated GoMock package.
 package state
 
@@ -14,7 +13,6 @@ import (
 	io "io"
 	reflect "reflect"
 
-	backend "github.com/0xsoniclabs/carmen/go/backend"
 	common "github.com/0xsoniclabs/carmen/go/common"
 	amount "github.com/0xsoniclabs/carmen/go/common/amount"
 	future "github.com/0xsoniclabs/carmen/go/common/future"
@@ -27,7 +25,6 @@ import (
 type MockState struct {
 	ctrl     *gomock.Controller
 	recorder *MockStateMockRecorder
-	isgomock struct{}
 }
 
 // MockStateMockRecorder is the mock recorder for MockState.
@@ -87,21 +84,6 @@ func (m *MockState) Close() error {
 func (mr *MockStateMockRecorder) Close() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockState)(nil).Close))
-}
-
-// CreateSnapshot mocks base method.
-func (m *MockState) CreateSnapshot() (backend.Snapshot, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSnapshot")
-	ret0, _ := ret[0].(backend.Snapshot)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateSnapshot indicates an expected call of CreateSnapshot.
-func (mr *MockStateMockRecorder) CreateSnapshot() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSnapshot", reflect.TypeOf((*MockState)(nil).CreateSnapshot))
 }
 
 // CreateWitnessProof mocks base method.
@@ -317,36 +299,6 @@ func (mr *MockStateMockRecorder) GetNonce(address any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNonce", reflect.TypeOf((*MockState)(nil).GetNonce), address)
 }
 
-// GetProof mocks base method.
-func (m *MockState) GetProof() (backend.Proof, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProof")
-	ret0, _ := ret[0].(backend.Proof)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetProof indicates an expected call of GetProof.
-func (mr *MockStateMockRecorder) GetProof() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProof", reflect.TypeOf((*MockState)(nil).GetProof))
-}
-
-// GetSnapshotVerifier mocks base method.
-func (m *MockState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSnapshotVerifier", metadata)
-	ret0, _ := ret[0].(backend.SnapshotVerifier)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetSnapshotVerifier indicates an expected call of GetSnapshotVerifier.
-func (mr *MockStateMockRecorder) GetSnapshotVerifier(metadata any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSnapshotVerifier", reflect.TypeOf((*MockState)(nil).GetSnapshotVerifier), metadata)
-}
-
 // GetStorage mocks base method.
 func (m *MockState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
 	m.ctrl.T.Helper()
@@ -377,25 +329,10 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockState)(nil).HasEmptyStorage), addr)
 }
 
-// Restore mocks base method.
-func (m *MockState) Restore(data backend.SnapshotData) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Restore", data)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Restore indicates an expected call of Restore.
-func (mr *MockStateMockRecorder) Restore(data any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Restore", reflect.TypeOf((*MockState)(nil).Restore), data)
-}
-
 // MockLiveDB is a mock of LiveDB interface.
 type MockLiveDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockLiveDBMockRecorder
-	isgomock struct{}
 }
 
 // MockLiveDBMockRecorder is the mock recorder for MockLiveDB.
@@ -577,20 +514,6 @@ func (mr *MockLiveDBMockRecorder) GetNonce(address any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNonce", reflect.TypeOf((*MockLiveDB)(nil).GetNonce), address)
 }
 
-// GetSnapshotableComponents mocks base method.
-func (m *MockLiveDB) GetSnapshotableComponents() []backend.Snapshotable {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSnapshotableComponents")
-	ret0, _ := ret[0].([]backend.Snapshotable)
-	return ret0
-}
-
-// GetSnapshotableComponents indicates an expected call of GetSnapshotableComponents.
-func (mr *MockLiveDBMockRecorder) GetSnapshotableComponents() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSnapshotableComponents", reflect.TypeOf((*MockLiveDB)(nil).GetSnapshotableComponents))
-}
-
 // GetStorage mocks base method.
 func (m *MockLiveDB) GetStorage(address common.Address, key common.Key) (common.Value, error) {
 	m.ctrl.T.Helper()
@@ -619,18 +542,4 @@ func (m *MockLiveDB) HasEmptyStorage(addr common.Address) (bool, error) {
 func (mr *MockLiveDBMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockLiveDB)(nil).HasEmptyStorage), addr)
-}
-
-// RunPostRestoreTasks mocks base method.
-func (m *MockLiveDB) RunPostRestoreTasks() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunPostRestoreTasks")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RunPostRestoreTasks indicates an expected call of RunPostRestoreTasks.
-func (mr *MockLiveDBMockRecorder) RunPostRestoreTasks() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPostRestoreTasks", reflect.TypeOf((*MockLiveDB)(nil).RunPostRestoreTasks))
 }

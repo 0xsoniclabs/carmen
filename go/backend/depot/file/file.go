@@ -14,14 +14,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/backend"
-	"github.com/0xsoniclabs/carmen/go/backend/depot"
-	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
-	"github.com/0xsoniclabs/carmen/go/backend/memsnap"
-	"github.com/0xsoniclabs/carmen/go/common"
 	"io"
 	"os"
 	"unsafe"
+
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 const OffsetSize = 8 // uint64
@@ -38,7 +36,6 @@ type Depot[I common.Identifier] struct {
 	emptyPage       []byte // pre-generated slice for empty hashing pages
 	pagesCalls      int    // amount of GetPage calls in total
 	fragmentedCalls int    // amount of GetPage calls being fragmented
-	lastSnapshot    *memsnap.SnapshotSource
 }
 
 // NewDepot constructs a new instance of Depot.
@@ -198,22 +195,6 @@ func (m *Depot[I]) setPage(hashGroup int, data []byte) (err error) {
 func (m *Depot[I]) Set(id I, value []byte) error {
 	pageNum := m.itemGroup(id)
 
-	// copy-on-write for snapshotting
-	if m.lastSnapshot != nil && !m.lastSnapshot.Contains(pageNum) {
-		oldPage, err := m.GetPage(pageNum)
-		if err != nil {
-			return err
-		}
-		oldHash, err := m.hashTree.GetPageHash(pageNum)
-		if err != nil {
-			return err
-		}
-		err = m.lastSnapshot.AddIntoSnapshot(pageNum, oldPage, oldHash)
-		if err != nil {
-			return err
-		}
-	}
-
 	// write the value to the end of data file
 	offset, err := m.contentsFile.Seek(0, io.SeekEnd)
 	if err != nil {
@@ -290,43 +271,8 @@ func (m *Depot[I]) GetStateHash() (common.Hash, error) {
 	return m.hashTree.HashRoot()
 }
 
-// GetProof returns a proof the snapshot exhibits if it is created
-// for the current state of the data structure.
-func (m *Depot[I]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-	return depot.NewProof(hash), nil
-}
-
-// CreateSnapshot creates a snapshot of the current state of the data
-// structure. The snapshot should be shielded from subsequent modifications
-// and be accessible until released.
-func (m *Depot[I]) CreateSnapshot() (backend.Snapshot, error) {
-	branchingFactor := m.hashTree.GetBranchingFactor()
-	hash, err := m.hashTree.HashRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	newSnap := memsnap.NewSnapshotSource(m, m.lastSnapshot) // insert between the last snapshot and the store
-	if m.lastSnapshot != nil {
-		m.lastSnapshot.SetNextSource(newSnap) // new snapshot now follows after the former last one
-	}
-	m.lastSnapshot = newSnap
-
-	pagesCount, err := m.getPagesCount()
-	if err != nil {
-		return nil, err
-	}
-	snapshot := depot.CreateDepotSnapshotFromDepot(branchingFactor, hash, pagesCount, newSnap)
-	return snapshot, nil
-}
-
 // reset sets the depot into the empty state
 func (m *Depot[I]) reset() error {
-	m.lastSnapshot = nil
 	if err := m.offsetsFile.Truncate(0); err != nil {
 		return fmt.Errorf("failed to reset offsets file; %s", err)
 	}
@@ -337,40 +283,6 @@ func (m *Depot[I]) reset() error {
 		return fmt.Errorf("failed to reset hashTree; %s", err)
 	}
 	return nil
-}
-
-// Restore restores the data structure to the given snapshot state. This
-// may invalidate any former snapshots created on the data structure. In
-// particular, it is not required to be able to synchronize to a former
-// snapshot derived from the targeted data structure.
-func (m *Depot[I]) Restore(snapshotData backend.SnapshotData) error {
-	snapshot, err := depot.CreateDepotSnapshotFromData(snapshotData)
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot; %s", err)
-	}
-	if snapshot.GetBranchingFactor() != m.hashTree.GetBranchingFactor() {
-		return fmt.Errorf("unable to restore snapshot - unexpected branching factor %d (expected %d)", snapshot.GetBranchingFactor(), m.hashTree.GetBranchingFactor())
-	}
-	partsNum := snapshot.GetNumParts()
-
-	if err := m.reset(); err != nil {
-		return fmt.Errorf("unable to reset depot for restoring a snapshot; %s", err)
-	}
-
-	for i := 0; i < partsNum; i++ {
-		data, err := snapshot.GetPartData(i)
-		if err != nil {
-			return err
-		}
-		if err = m.setPage(i, data); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (m *Depot[I]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return depot.CreateDepotSnapshotVerifier(), nil
 }
 
 // Flush the depot
@@ -388,17 +300,10 @@ func (m *Depot[I]) Close() error {
 		m.contentsFile.Close())
 }
 
-func (m *Depot[I]) ReleasePreviousSnapshot() {
-	m.lastSnapshot = nil
-}
-
 // GetMemoryFootprint provides the size of the depot in memory in bytes
 func (m *Depot[I]) GetMemoryFootprint() *common.MemoryFootprint {
 	mf := common.NewMemoryFootprint(unsafe.Sizeof(*m))
 	mf.AddChild("hashTree", m.hashTree.GetMemoryFootprint())
-	if m.lastSnapshot != nil {
-		mf.AddChild("lastSnapshot", m.lastSnapshot.GetMemoryFootprint())
-	}
 	mf.SetNote(m.getFragmentationReport())
 	return mf
 }

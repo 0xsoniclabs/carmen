@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -252,26 +251,6 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 func (s *verkleState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	return nil, archive.ErrWitnessProofNotSupported // not supported at the moment, will be implemented later
-}
-
-//
-//		Snapshot features -- not supported in Verkle Trie
-//
-
-func (s *verkleState) GetProof() (backend.Proof, error) {
-	return nil, backend.ErrSnapshotNotSupported // not supported at the moment, will be implemented later
-}
-
-func (s *verkleState) CreateSnapshot() (backend.Snapshot, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *verkleState) Restore(data backend.SnapshotData) error {
-	return backend.ErrSnapshotNotSupported
-}
-
-func (s *verkleState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	return nil, backend.ErrSnapshotNotSupported
 }
 
 //

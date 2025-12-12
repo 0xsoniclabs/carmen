@@ -23,7 +23,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	mptio "github.com/0xsoniclabs/carmen/go/database/mpt/io"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -200,22 +199,6 @@ func (s *ArchiveState) Flush() error {
 func (s *ArchiveState) Close() error {
 	// no-op in ArchiveState
 	return nil
-}
-
-func (s *ArchiveState) GetProof() (backend.Proof, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *ArchiveState) CreateSnapshot() (backend.Snapshot, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *ArchiveState) Restore(data backend.SnapshotData) error {
-	return backend.ErrSnapshotNotSupported
-}
-
-func (s *ArchiveState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	return nil, backend.ErrSnapshotNotSupported
 }
 
 func (s *ArchiveState) GetArchiveState(block uint64) (state.State, error) {

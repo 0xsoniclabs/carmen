@@ -19,7 +19,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
@@ -153,30 +152,6 @@ func (s *syncedState) Check() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.Check()
-}
-
-func (s *syncedState) GetProof() (backend.Proof, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state.GetProof()
-}
-
-func (s *syncedState) CreateSnapshot() (backend.Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state.CreateSnapshot()
-}
-
-func (s *syncedState) Restore(data backend.SnapshotData) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state.Restore(data)
-}
-
-func (s *syncedState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state.GetSnapshotVerifier(metadata)
 }
 
 func (s *syncedState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {

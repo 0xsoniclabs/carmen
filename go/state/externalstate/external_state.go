@@ -38,7 +38,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
@@ -485,22 +484,6 @@ func (s *ExternalState) Close() error {
 		s.database = nil
 	}
 	return nil
-}
-
-func (s *ExternalState) GetProof() (backend.Proof, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *ExternalState) CreateSnapshot() (backend.Snapshot, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *ExternalState) Restore(data backend.SnapshotData) error {
-	return backend.ErrSnapshotNotSupported
-}
-
-func (s *ExternalState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	return nil, backend.ErrSnapshotNotSupported
 }
 
 func (s *ExternalState) GetMemoryFootprint() *common.MemoryFootprint {

@@ -13,7 +13,6 @@ package cache
 import (
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
@@ -82,28 +81,6 @@ func (m *Index[K, I]) Flush() error {
 func (m *Index[K, I]) Close() error {
 	m.cache.Clear()
 	return m.wrapped.Close()
-}
-
-func (m *Index[K, I]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.NewIndexProof(common.Hash{}, hash), nil
-}
-
-func (m *Index[K, I]) CreateSnapshot() (backend.Snapshot, error) {
-	return m.wrapped.CreateSnapshot()
-}
-
-func (m *Index[K, I]) Restore(data backend.SnapshotData) error {
-	m.cache.Clear()
-	return m.wrapped.Restore(data)
-}
-
-func (m *Index[K, I]) GetSnapshotVerifier(data []byte) (backend.SnapshotVerifier, error) {
-	return m.wrapped.GetSnapshotVerifier(data)
 }
 
 // GetMemoryFootprint provides the size of the index in memory in bytes

@@ -15,7 +15,6 @@ import (
 	"hash"
 	"io"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/depot"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/multimap"
@@ -324,14 +323,6 @@ func (s *GoSchema2) Close() (lastErr error) {
 	}
 
 	return lastErr
-}
-
-func (s *GoSchema2) GetSnapshotableComponents() []backend.Snapshotable {
-	return nil // = snapshotting not supported
-}
-
-func (s *GoSchema2) RunPostRestoreTasks() error {
-	return backend.ErrSnapshotNotSupported
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory

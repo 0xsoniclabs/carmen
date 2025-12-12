@@ -25,7 +25,6 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
@@ -402,33 +401,6 @@ func (s *State) Export(ctx context.Context, out io.Writer) (common.Hash, error) 
 		return common.Hash{}, state.ExportNotSupported
 	}
 	return s.backend.Export(ctx, out)
-}
-
-// Snapshot & Recovery
-func (s *State) GetProof() (backend.Proof, error) {
-	if s.backend == nil {
-		return nil, backend.ErrSnapshotNotSupported
-	}
-	return s.backend.GetProof()
-}
-
-func (s *State) CreateSnapshot() (backend.Snapshot, error) {
-	if s.backend == nil {
-		return nil, backend.ErrSnapshotNotSupported
-	}
-	return s.backend.CreateSnapshot()
-}
-func (s *State) Restore(data backend.SnapshotData) error {
-	if s.backend == nil {
-		return backend.ErrSnapshotNotSupported
-	}
-	return s.backend.Restore(data)
-}
-func (s *State) GetSnapshotVerifier(data []byte) (backend.SnapshotVerifier, error) {
-	if s.backend == nil {
-		return nil, backend.ErrSnapshotNotSupported
-	}
-	return s.backend.GetSnapshotVerifier(data)
 }
 
 // --- Helpers ---

@@ -13,9 +13,6 @@ package file
 import (
 	"errors"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/backend"
-	"github.com/0xsoniclabs/carmen/go/backend/memsnap"
-	"github.com/0xsoniclabs/carmen/go/backend/store"
 	"io"
 	"os"
 	"unsafe"
@@ -34,7 +31,6 @@ type Store[I common.Identifier, V any] struct {
 	hashedPageSize int // the amount of the page bytes to be passed into the hashing function - rounded to whole items
 	itemSize       int // the amount of bytes per one value
 	pagesCount     int // the amount of store pages
-	lastSnapshot   *memsnap.SnapshotSource
 }
 
 // NewStore constructs a new instance of FileStore.
@@ -108,21 +104,6 @@ func (m *Store[I, V]) GetHash(partNum int) (hash common.Hash, err error) {
 func (m *Store[I, V]) Set(id I, value V) error {
 	pageNum, itemPosition := m.itemPosition(id)
 
-	if m.lastSnapshot != nil && !m.lastSnapshot.Contains(pageNum) { // backup into snapshot if first write into page
-		oldPage, err := m.GetPage(pageNum)
-		if err != nil {
-			return fmt.Errorf("failed to get page; %s", err)
-		}
-		oldHash, err := m.hashTree.GetPageHash(pageNum)
-		if err != nil {
-			return fmt.Errorf("failed to get page hash; %s", err)
-		}
-		err = m.lastSnapshot.AddIntoSnapshot(pageNum, oldPage, oldHash)
-		if err != nil {
-			return fmt.Errorf("failed to add into snapshot; %s", err)
-		}
-	}
-
 	_, err := m.file.WriteAt(m.serializer.ToBytes(value), itemPosition)
 	if err != nil {
 		return fmt.Errorf("failed to write into data file; %s", err)
@@ -159,82 +140,6 @@ func (m *Store[I, V]) GetStateHash() (common.Hash, error) {
 	return m.hashTree.HashRoot()
 }
 
-// GetProof returns a proof the snapshot exhibits if it is created
-// for the current state of the data structure.
-func (m *Store[I, V]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-	return store.NewProof(hash), nil
-}
-
-// CreateSnapshot creates a snapshot of the current state of the data
-// structure. The snapshot should be shielded from subsequent modifications
-// and be accessible until released.
-func (m *Store[I, V]) CreateSnapshot() (backend.Snapshot, error) {
-	branchingFactor := m.hashTree.GetBranchingFactor()
-	hash, err := m.hashTree.HashRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	newSnap := memsnap.NewSnapshotSource(m, m.lastSnapshot) // insert between the last snapshot and the store
-	if m.lastSnapshot != nil {
-		m.lastSnapshot.SetNextSource(newSnap) // new snapshot now follows after the former last one
-	}
-	m.lastSnapshot = newSnap
-
-	snapshot := store.CreateStoreSnapshotFromStore[V](m.serializer, branchingFactor, hash, m.pagesCount, newSnap)
-	return snapshot, nil
-}
-
-// Restore restores the data structure to the given snapshot state. This
-// may invalidate any former snapshots created on the data structure. In
-// particular, it is not required to be able to synchronize to a former
-// snapshot derived from the targeted data structure.
-func (m *Store[I, V]) Restore(snapshotData backend.SnapshotData) error {
-	snapshot, err := store.CreateStoreSnapshotFromData[V](m.serializer, snapshotData)
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot; %s", err)
-	}
-	if snapshot.GetBranchingFactor() != m.hashTree.GetBranchingFactor() {
-		return fmt.Errorf("unable to restore snapshot - unexpected branching factor")
-	}
-
-	err = m.hashTree.Reset()
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot - failed to remove old hashTree; %s", err)
-	}
-
-	var pageStart int64
-	partsNum := snapshot.GetNumParts()
-	for i := 0; i < partsNum; i++ {
-		data, err := snapshot.GetPartData(i)
-		if err != nil {
-			return err
-		}
-		if len(data) != m.hashedPageSize {
-			return fmt.Errorf("unable to restore snapshot - unexpected length of store part")
-		}
-		_, err = m.file.WriteAt(data, pageStart)
-		if err != nil {
-			return fmt.Errorf("failed to write page into data file; %s", err)
-		}
-		m.hashTree.MarkUpdated(i)
-		pageStart += int64(m.pageSize)
-	}
-	return nil
-}
-
-func (m *Store[I, V]) ReleasePreviousSnapshot() {
-	m.lastSnapshot = nil
-}
-
-func (m *Store[I, V]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return store.CreateStoreSnapshotVerifier[V](m.serializer), nil
-}
-
 // Flush the store
 func (m *Store[I, V]) Flush() error {
 	return m.file.Sync()
@@ -249,8 +154,5 @@ func (m *Store[I, V]) Close() error {
 func (m *Store[I, V]) GetMemoryFootprint() *common.MemoryFootprint {
 	mf := common.NewMemoryFootprint(unsafe.Sizeof(*m))
 	mf.AddChild("hashTree", m.hashTree.GetMemoryFootprint())
-	if m.lastSnapshot != nil {
-		mf.AddChild("lastSnapshot", m.lastSnapshot.GetMemoryFootprint())
-	}
 	return mf
 }

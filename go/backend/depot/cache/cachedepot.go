@@ -11,10 +11,10 @@
 package cache
 
 import (
-	"github.com/0xsoniclabs/carmen/go/backend"
+	"unsafe"
+
 	"github.com/0xsoniclabs/carmen/go/backend/depot"
 	"github.com/0xsoniclabs/carmen/go/common"
-	"unsafe"
 )
 
 // Depot wraps a Depot with a cache.
@@ -64,23 +64,6 @@ func (m *Depot[I]) GetSize(id I) (size int, err error) {
 		m.sizeCache.Set(id, size)
 	}
 	return size, err
-}
-
-func (m *Depot[I]) GetProof() (backend.Proof, error) {
-	return m.depot.GetProof()
-}
-
-func (m *Depot[I]) CreateSnapshot() (backend.Snapshot, error) {
-	return m.depot.CreateSnapshot()
-}
-
-func (m *Depot[I]) Restore(data backend.SnapshotData) error {
-	m.cache.Clear()
-	return m.depot.Restore(data)
-}
-
-func (m *Depot[I]) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	return m.depot.GetSnapshotVerifier(metadata)
 }
 
 // GetStateHash computes and returns a cryptographical hash of the stored data

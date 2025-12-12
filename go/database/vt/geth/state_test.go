@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -269,22 +268,6 @@ func TestState_HasEmptyStorage_Unsupported(t *testing.T) {
 			empty, err := st.HasEmptyStorage(common.Address{1})
 			require.NoError(t, err)
 			require.True(t, empty)
-		})
-	}
-}
-
-func TestState_Snapshot_Unsupported(t *testing.T) {
-	for name, stateInit := range initTestedState() {
-		t.Run(name, func(t *testing.T) {
-			st := stateInit(state.Parameters{}, t)
-			_, err := st.GetProof()
-			require.ErrorIs(t, err, backend.ErrSnapshotNotSupported, "expected snapshot not supported error")
-			_, err = st.CreateSnapshot()
-			require.ErrorIs(t, err, backend.ErrSnapshotNotSupported, "expected snapshot not supported error")
-			err = st.Restore(nil)
-			require.ErrorIs(t, err, backend.ErrSnapshotNotSupported, "expected snapshot not supported error")
-			_, err = st.GetSnapshotVerifier(nil)
-			require.ErrorIs(t, err, backend.ErrSnapshotNotSupported, "expected snapshot not supported error")
 		})
 	}
 }

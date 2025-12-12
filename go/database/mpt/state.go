@@ -19,7 +19,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"github.com/0xsoniclabs/carmen/go/state"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/tracy"
 )
@@ -392,16 +391,6 @@ func (s *MptState) closeWithError(externalError error) error {
 		err,
 		s.lock.Release(),
 	)
-}
-
-func (s *MptState) GetSnapshotableComponents() []backend.Snapshotable {
-	//panic("not implemented")
-	return nil
-}
-
-func (s *MptState) RunPostRestoreTasks() error {
-	//panic("not implemented")
-	return nil
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory
