@@ -16,7 +16,6 @@ import (
 	"context"
 	"io"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
@@ -101,9 +100,6 @@ type State interface {
 	// Export writes data from LiveDB into out.
 	// If successful, expected root hash is returned.
 	Export(ctx context.Context, out io.Writer) (common.Hash, error)
-
-	// States can be snapshotted.
-	backend.Snapshotable
 }
 
 type LiveDB interface {
@@ -120,12 +116,4 @@ type LiveDB interface {
 	Flush() error
 	Close() error
 	common.MemoryFootprintProvider
-
-	// getSnapshotableComponents lists all components required to back-up or restore
-	// for snapshotting this schema. Returns nil if snapshotting is not supported.
-	GetSnapshotableComponents() []backend.Snapshotable
-
-	// Called after synching to a new state, requisting the schema to update cached
-	// values or tables not covered by the snapshot synchronization.
-	RunPostRestoreTasks() error
 }

@@ -15,12 +15,9 @@ import (
 	"hash"
 	"io"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/depot"
-	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/store"
-	"github.com/0xsoniclabs/carmen/go/backend/store/memory"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"golang.org/x/crypto/sha3"
@@ -333,57 +330,6 @@ func (s *GoSchema3) Close() (lastErr error) {
 	}
 
 	return lastErr
-}
-
-func (s *GoSchema3) GetSnapshotableComponents() []backend.Snapshotable {
-	return []backend.Snapshotable{
-		s.addressIndex,
-		s.slotIndex,
-		s.accountsStore,
-		s.noncesStore,
-		s.reincarnationsStore,
-		s.balancesStore,
-		s.valuesStore,
-		s.codesDepot,
-	}
-}
-
-func (s *GoSchema3) RunPostRestoreTasks() error {
-	// To complete the syncing, the hashes of codes need to be updated.
-	if s.hasher == nil {
-		s.hasher = sha3.NewLegacyKeccak256()
-	}
-	numAccounts := s.addressIndex.Size()
-
-	// We create a in-memory store with all the hashes and sync this one into
-	// the actual code hash store. This way, a full reset can be realized in
-	// case the depot is not empty.
-	store, err := memory.NewStore[uint32, common.Hash](common.HashSerializer{}, common.PageSize, hashtree.GetNoHashFactory())
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	for i := uint32(0); i < numAccounts; i++ {
-		code, err := s.codesDepot.Get(i)
-		if err != nil {
-			return err
-		}
-		var hash common.Hash
-		if len(code) != 0 {
-			hash = common.GetHash(s.hasher, code)
-		}
-		if err := store.Set(i, hash); err != nil {
-			return err
-		}
-	}
-
-	snapshot, err := store.CreateSnapshot()
-	if err != nil {
-		return err
-	}
-
-	return s.codeHashesStore.Restore(snapshot.GetData())
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory

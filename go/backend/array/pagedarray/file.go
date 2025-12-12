@@ -12,9 +12,10 @@ package pagedarray
 
 import (
 	"fmt"
+	"unsafe"
+
 	"github.com/0xsoniclabs/carmen/go/backend/pagepool"
 	"github.com/0xsoniclabs/carmen/go/common"
-	"unsafe"
 )
 
 // Array is a filesystem-based array.Array implementation - it stores mapping of ID to value in binary files.
@@ -98,19 +99,6 @@ func (m *Array[I, V]) GetPage(pageId int) ([]byte, error) {
 	}
 
 	return page.GetContent()[0 : m.pageSize/m.itemSize*m.itemSize], nil
-}
-
-// SetPage allows the callsite to import a page from a snapshot
-func (m *Array[I, V]) SetPage(pageId int, data []byte) error {
-	page, err := m.pagePool.Get(pageId)
-	if err != nil {
-		return fmt.Errorf("failed to load store page %d; %s", pageId, err)
-	}
-	if pageId >= m.pagesCount {
-		m.pagesCount = pageId + 1
-	}
-	page.FromBytes(data)
-	return nil
 }
 
 func (m *Array[I, V]) GetPagesCount() int {

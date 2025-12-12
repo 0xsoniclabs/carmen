@@ -15,7 +15,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
@@ -308,27 +307,6 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 		func() { state.Export(nil, nil) },
 		"Export should panic as it is not implemented",
 	)
-}
-
-func TestState_GetProof_ReturnsNotSupportedError(t *testing.T) {
-	_, err := newState().GetProof()
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
-}
-
-func TestState_CreateSnapshot_ReturnsNotSupportedError(t *testing.T) {
-	_, err := newState().CreateSnapshot()
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
-}
-
-func TestState_Restore_ReturnsNotSupportedError(t *testing.T) {
-	var data backend.SnapshotData
-	err := newState().Restore(data)
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
-}
-
-func TestState_GetSnapshotVerifier_ReturnsNotSupportedError(t *testing.T) {
-	_, err := newState().GetSnapshotVerifier(nil)
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 // --- Tests comparing with Geth reference implementation ---

@@ -13,7 +13,6 @@ package index
 import (
 	"errors"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
@@ -45,9 +44,6 @@ type Index[K comparable, I common.Identifier] interface {
 
 	// Also, indexes need to be flush and closable.
 	common.FlushAndCloser
-
-	// Snapshotable indexes.
-	backend.Snapshotable
 }
 
 var (

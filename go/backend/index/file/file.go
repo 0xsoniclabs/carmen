@@ -18,9 +18,6 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
-	"github.com/0xsoniclabs/carmen/go/backend/array"
-	"github.com/0xsoniclabs/carmen/go/backend/array/pagedarray"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/index/indexhash"
 	"github.com/0xsoniclabs/carmen/go/backend/pagepool"
@@ -36,8 +33,6 @@ const (
 	pagePoolSize      = 1 << 17
 
 	uint32ByteSize = 4
-
-	bulkInsertKeysNum = 1 << 25 // the number of keys that are accumulated while snapshot restoration before they are actually inserted. Approx 1GB, depends on key size.
 )
 
 // Index is a file implementation of index.Index. It uses common.LinearHashMap to store key-identifier pairs.
@@ -50,8 +45,6 @@ const (
 // The pages are 4kB for an optimal IO when pages are stored/loaded from/to the disk.
 type Index[K comparable, I common.Identifier] struct {
 	table           *LinearHashMap[K, I]
-	keys            array.Array[I, K]           // map of indexes to keys for snapshot
-	hashes          array.Array[I, common.Hash] // map of indexes to hashes for snapshot
 	keySerializer   common.Serializer[K]
 	indexSerializer common.Serializer[I]
 	hashIndex       *indexhash.IndexHash[K]
@@ -104,26 +97,8 @@ func NewParamIndex[K comparable, I common.Identifier](
 	pageFactory := PageFactory(pageSize, keySerializer, indexSerializer, comparator)
 	pagePool := pagepool.NewPagePool[PageId, *IndexPage[K, I]](pagePoolSize, pageStorage, pageFactory)
 
-	// --- Reverse table initialisation ---
-	keys := path + "/keys"
-	if err := os.MkdirAll(keys, 0700); err != nil {
-		return nil, err
-	}
-	hashes, err := pagedarray.NewArray[I, K](keys, keySerializer, common.PageSize, pagePoolSize)
-	if err != nil {
-		return
-	}
-
-	hashTablePath := path + "/hashes"
-	if err := os.MkdirAll(hashTablePath, 0700); err != nil {
-		return nil, err
-	}
-	hashesStore, err := pagedarray.NewArray[I, common.Hash](hashTablePath, common.HashSerializer{}, common.PageSize, pagePoolSize)
-
 	inst = &Index[K, I]{
 		table:           NewLinearHashMap[K, I](pageItems, numBuckets, size, pagePool, hasher, comparator),
-		keys:            hashes,
-		hashes:          hashesStore,
 		keySerializer:   keySerializer,
 		indexSerializer: indexSerializer,
 		hashIndex:       indexhash.InitIndexHash[K](hash, keySerializer),
@@ -150,23 +125,6 @@ func (m *Index[K, I]) GetOrAdd(key K) (val I, err error) {
 	if !exists {
 		val = m.maxIndex
 		m.maxIndex += 1 // increment to next index
-
-		// commit hash for the snapshot block height window
-		keysPerPart := I(index.GetKeysPerPart(m.keySerializer))
-		if val%keysPerPart == 0 {
-			hash, err := m.GetStateHash()
-			if err != nil {
-				return val, err
-			}
-			if err := m.hashes.Set(val/keysPerPart, hash); err != nil {
-				return val, err
-			}
-		}
-
-		if err := m.keys.Set(val, key); err != nil {
-			return val, err
-		}
-
 		m.hashIndex.AddKey(key)
 	}
 
@@ -188,14 +146,6 @@ func (m *Index[K, I]) bulkInsert(keys []K) error {
 	tuples := make([]keyTuple[K, I], 0, len(keys))
 	for idx, key := range keys {
 		tuples = append(tuples, keyTuple[K, I]{key, m.table.GetBucketId(&key), m.maxIndex + I(idx)})
-	}
-
-	// store values for snapshot using the original order
-	for _, key := range keys {
-		if err := m.keys.Set(m.maxIndex, key); err != nil {
-			return err
-		}
-		m.maxIndex += 1 // increment to next index
 	}
 
 	// sort by bucketIds before inserting into LinearHash for better performance
@@ -248,12 +198,6 @@ func (m *Index[K, I]) Flush() error {
 	if err := m.pageStore.Flush(); err != nil {
 		return err
 	}
-	if err := m.keys.Flush(); err != nil {
-		return err
-	}
-	if err := m.hashes.Flush(); err != nil {
-		return err
-	}
 
 	// store metadata
 	if err := m.writeMetadata(); err != nil {
@@ -273,156 +217,7 @@ func (m *Index[K, I]) Close() error {
 	if err := m.pageStore.Close(); err != nil {
 		return err
 	}
-	if err := m.keys.Close(); err != nil {
-		return err
-	}
-	if err := m.hashes.Close(); err != nil {
-		return err
-	}
 
-	return nil
-}
-
-func (m *Index[K, I]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.NewIndexProof(common.Hash{}, hash), nil
-}
-
-func (m *Index[K, I]) CreateSnapshot() (backend.Snapshot, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.CreateIndexSnapshotFromIndex[K](
-		m.keySerializer,
-		hash,
-		m.table.Size(),
-		&indexSnapshotSource[K, I]{m, m.table.Size(), hash}), nil
-}
-
-func (m *Index[K, I]) Restore(data backend.SnapshotData) error {
-	snapshot, err := index.CreateIndexSnapshotFromData(m.keySerializer, data)
-	if err != nil {
-		return err
-	}
-
-	// Reset and re-initialize the index.
-	if err := m.table.Clear(); err != nil {
-		return err
-	}
-
-	m.hashIndex.Clear()
-	m.maxIndex = 0
-
-	keysBuffer := make([]K, 0, bulkInsertKeysNum)
-	var lastHash common.Hash
-	for j := 0; j < snapshot.GetNumParts(); j++ {
-		part, err := snapshot.GetPart(j)
-		if err != nil {
-			return err
-		}
-		indexPart, ok := part.(*index.IndexPart[K])
-		if !ok {
-			return fmt.Errorf("invalid part format encountered")
-		}
-		for _, key := range indexPart.GetKeys() {
-			keysBuffer = append(keysBuffer, key)
-			// flush when needed
-			if len(keysBuffer) == bulkInsertKeysNum {
-				if err := m.bulkInsert(keysBuffer); err != nil {
-					return err
-				}
-				keysBuffer = keysBuffer[0:0]
-			}
-		}
-
-		// import proofs
-		proof, err := snapshot.GetProof(j)
-		if err != nil {
-			return err
-		}
-		indexProof, ok := proof.(*index.IndexProof)
-		if !ok {
-			return fmt.Errorf("invalid proof format encountered")
-		}
-		if err := m.hashes.Set(I(j), indexProof.GetBeforeHash()); err != nil {
-			return err
-		}
-
-		lastHash = indexProof.GetAfterHash()
-	}
-
-	// flush remaining keys
-	if len(keysBuffer) > 0 {
-		if err := m.bulkInsert(keysBuffer); err != nil {
-			return err
-		}
-	}
-
-	// import the last hash only if the last part is full
-	keysPerPart := index.GetKeysPerPart(m.keySerializer)
-	if m.table.Size()%keysPerPart == 0 {
-		if err := m.hashes.Set(I(snapshot.GetNumParts()), lastHash); err != nil {
-			return err
-		}
-	}
-
-	m.hashIndex = indexhash.InitIndexHash[K](lastHash, m.keySerializer)
-
-	return nil
-}
-
-func (m *Index[K, I]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return index.CreateIndexSnapshotVerifier[K](m.keySerializer), nil
-}
-
-type indexSnapshotSource[K comparable, I common.Identifier] struct {
-	index   *Index[K, I] // The index this snapshot is based on.
-	numKeys int          // The number of keys at the time the snapshot was created.
-	hash    common.Hash  // The hash at the time the snapshot was created.
-}
-
-func (m *indexSnapshotSource[K, I]) GetHash(keyHeight int) (common.Hash, error) {
-	keysPerPart := index.GetKeysPerPart(m.index.keySerializer)
-
-	if keyHeight == m.numKeys {
-		return m.hash, nil
-	}
-	if keyHeight > m.numKeys {
-		return common.Hash{}, fmt.Errorf("invalid key height, not covered by snapshot")
-	}
-
-	if keyHeight%keysPerPart != 0 {
-		return common.Hash{}, fmt.Errorf("invalid key height, only supported at part boundaries")
-	}
-
-	hash, err := m.index.hashes.Get(I(keyHeight / keysPerPart))
-	if err != nil {
-		return hash, err
-	}
-
-	return hash, nil
-}
-
-func (m *indexSnapshotSource[K, I]) GetKeys(from, to int) ([]K, error) {
-	keys := make([]K, 0, to-from)
-	for i := from; i < to; i++ {
-		key, err := m.index.keys.Get(I(i))
-		if err != nil {
-			return nil, err
-		}
-		keys = append(keys, key)
-	}
-	return keys, nil
-}
-
-func (m *indexSnapshotSource[K, I]) Release() error {
-	// nothing to do
 	return nil
 }
 
@@ -434,8 +229,6 @@ func (m *Index[K, I]) GetMemoryFootprint() *common.MemoryFootprint {
 	memoryFootprint.AddChild("linearHash", m.table.GetMemoryFootprint())
 	memoryFootprint.AddChild("pagePool", m.pagePool.GetMemoryFootprint())
 	memoryFootprint.AddChild("pageStore", m.pageStore.GetMemoryFootprint())
-	memoryFootprint.AddChild("keys", m.keys.GetMemoryFootprint())
-	memoryFootprint.AddChild("hashes", m.hashes.GetMemoryFootprint())
 	memoryFootprint.SetNote(fmt.Sprintf("(items: %d)", m.maxIndex))
 	return memoryFootprint
 }

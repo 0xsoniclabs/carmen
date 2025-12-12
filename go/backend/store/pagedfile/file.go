@@ -12,22 +12,19 @@ package pagedfile
 
 import (
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/backend"
-	"github.com/0xsoniclabs/carmen/go/backend/array/pagedarray"
-	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
-	"github.com/0xsoniclabs/carmen/go/backend/memsnap"
-	"github.com/0xsoniclabs/carmen/go/backend/store"
-	"github.com/0xsoniclabs/carmen/go/common"
 	"os"
 	"unsafe"
+
+	"github.com/0xsoniclabs/carmen/go/backend/array/pagedarray"
+	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // Store is a filesystem-based store.Store implementation - it stores mapping of ID to value in binary files.
 type Store[I common.Identifier, V any] struct {
-	array        *pagedarray.Array[I, V]
-	serializer   common.Serializer[V]
-	hashTree     hashtree.HashTree
-	lastSnapshot *memsnap.SnapshotSource
+	array      *pagedarray.Array[I, V]
+	serializer common.Serializer[V]
+	hashTree   hashtree.HashTree
 }
 
 // NewStore constructs a new instance of FileStore.
@@ -52,18 +49,6 @@ func NewStore[I common.Identifier, V any](path string, serializer common.Seriali
 	}
 
 	arr.SetOnDirtyPageCallback(func(pageId int, pageBytes []byte) error {
-		if m.lastSnapshot != nil && !m.lastSnapshot.Contains(pageId) { // backup into snapshot if first write into page
-			oldPage := make([]byte, len(pageBytes))
-			copy(oldPage, pageBytes)
-			oldHash, err := m.hashTree.GetPageHash(pageId)
-			if err != nil {
-				return fmt.Errorf("failed to get page hash; %s", err)
-			}
-			err = m.lastSnapshot.AddIntoSnapshot(pageId, oldPage, oldHash)
-			if err != nil {
-				return fmt.Errorf("failed to add into snapshot; %s", err)
-			}
-		}
 		hashTree.MarkUpdated(pageId)
 		return nil
 	})
@@ -96,78 +81,6 @@ func (m *Store[I, V]) GetStateHash() (hash common.Hash, err error) {
 	return m.hashTree.HashRoot()
 }
 
-// GetProof returns a proof the snapshot exhibits if it is created
-// for the current state of the data structure.
-func (m *Store[I, V]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-	return store.NewProof(hash), nil
-}
-
-// CreateSnapshot creates a snapshot of the current state of the data
-// structure. The snapshot should be shielded from subsequent modifications
-// and be accessible until released.
-func (m *Store[I, V]) CreateSnapshot() (backend.Snapshot, error) {
-	branchingFactor := m.hashTree.GetBranchingFactor()
-	hash, err := m.hashTree.HashRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	newSnap := memsnap.NewSnapshotSource(m, m.lastSnapshot) // insert between the last snapshot and the store
-	if m.lastSnapshot != nil {
-		m.lastSnapshot.SetNextSource(newSnap) // new snapshot now follows after the former last one
-	}
-	m.lastSnapshot = newSnap
-
-	snapshot := store.CreateStoreSnapshotFromStore[V](m.serializer, branchingFactor, hash, m.array.GetPagesCount(), newSnap)
-	return snapshot, nil
-}
-
-// Restore restores the data structure to the given snapshot state. This
-// may invalidate any former snapshots created on the data structure. In
-// particular, it is not required to be able to synchronize to a former
-// snapshot derived from the targeted data structure.
-func (m *Store[I, V]) Restore(snapshotData backend.SnapshotData) error {
-	snapshot, err := store.CreateStoreSnapshotFromData[V](m.serializer, snapshotData)
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot; %s", err)
-	}
-	if snapshot.GetBranchingFactor() != m.hashTree.GetBranchingFactor() {
-		return fmt.Errorf("unable to restore snapshot - unexpected branching factor")
-	}
-
-	err = m.hashTree.Reset()
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot - failed to remove old hashTree; %s", err)
-	}
-
-	partsNum := snapshot.GetNumParts()
-	for pageId := 0; pageId < partsNum; pageId++ {
-		data, err := snapshot.GetPartData(pageId)
-		if err != nil {
-			return err
-		}
-		err = m.array.SetPage(pageId, data)
-		if err != nil {
-			return fmt.Errorf("unable to restore snapshot - failed to set page; %s", err)
-		}
-		m.hashTree.MarkUpdated(pageId)
-	}
-
-	return nil
-}
-
-func (m *Store[I, V]) ReleasePreviousSnapshot() {
-	m.lastSnapshot = nil
-}
-
-func (m *Store[I, V]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return store.CreateStoreSnapshotVerifier[V](m.serializer), nil
-}
-
 // Flush all changes to the disk
 func (m *Store[I, V]) Flush() (err error) {
 	// flush dirty pages and update the hashTree
@@ -194,8 +107,5 @@ func (m *Store[I, V]) GetMemoryFootprint() *common.MemoryFootprint {
 	mf := common.NewMemoryFootprint(unsafe.Sizeof(*m))
 	mf.AddChild("hashTree", m.hashTree.GetMemoryFootprint())
 	mf.AddChild("array", m.array.GetMemoryFootprint())
-	if m.lastSnapshot != nil {
-		mf.AddChild("lastSnapshot", m.lastSnapshot.GetMemoryFootprint())
-	}
 	return mf
 }

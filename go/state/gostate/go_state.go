@@ -17,7 +17,6 @@ import (
 	"io"
 	"runtime"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -371,84 +370,8 @@ func (s *GoState) Check() error {
 	return s.stateError
 }
 
-func (s *GoState) GetProof() (backend.Proof, error) {
-	components := s.live.GetSnapshotableComponents()
-	if components == nil {
-		return nil, backend.ErrSnapshotNotSupported
-	}
-	proofs := make([]backend.Proof, 0, len(components))
-	for _, component := range components {
-		proof, err := component.GetProof()
-		if err != nil {
-			return nil, err
-		}
-		proofs = append(proofs, proof)
-	}
-	return backend.GetComposedProof(proofs), nil
-}
-
 func (s *GoState) Export(context.Context, io.Writer) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
-}
-
-func (s *GoState) CreateSnapshot() (backend.Snapshot, error) {
-	components := s.live.GetSnapshotableComponents()
-	if components == nil {
-		return nil, backend.ErrSnapshotNotSupported
-	}
-	snapshots := make([]backend.Snapshot, 0, len(components))
-	for _, component := range components {
-		snapshot, err := component.CreateSnapshot()
-		if err != nil {
-			return nil, err
-		}
-		snapshots = append(snapshots, snapshot)
-	}
-	return backend.NewComposedSnapshot(snapshots), nil
-}
-
-func (s *GoState) Restore(data backend.SnapshotData) error {
-	components := s.live.GetSnapshotableComponents()
-	if components == nil {
-		return backend.ErrSnapshotNotSupported
-	}
-	subdata, _, err := backend.SplitCompositeData(data)
-	if err != nil {
-		return err
-	}
-	if len(subdata) != len(components) {
-		return fmt.Errorf("invalid snapshot data format")
-	}
-	for i, component := range components {
-		if err := component.Restore(subdata[i]); err != nil {
-			return err
-		}
-	}
-	return s.live.RunPostRestoreTasks()
-}
-
-func (s *GoState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier, error) {
-	components := s.live.GetSnapshotableComponents()
-	if components == nil {
-		return nil, backend.ErrSnapshotNotSupported
-	}
-	subMetaData, partCounts, err := backend.SplitCompositeMetaData(metadata)
-	if err != nil {
-		return nil, err
-	}
-	if len(subMetaData) != len(components) {
-		return nil, fmt.Errorf("invalid snapshot data format")
-	}
-
-	verifiers := make([]backend.SnapshotVerifier, 0, len(components))
-	for i, component := range components {
-		verifier, err := component.GetSnapshotVerifier(subMetaData[i])
-		if err != nil {
-			return nil, err
-		}
-		verifiers = append(verifiers, verifier)
-	}
-	return backend.NewComposedSnapshotVerifier(verifiers, partCounts), nil
 }
 
 func (s *GoState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
