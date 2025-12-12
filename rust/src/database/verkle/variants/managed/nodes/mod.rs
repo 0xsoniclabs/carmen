@@ -239,9 +239,8 @@ impl UnionManagedTrieNode for VerkleNode {
             VerkleNode::Inner47(n) => VerkleNode::Inner47(n.clone()),
             VerkleNode::Inner256(n) => {
                 if changed_children.len() <= InnerDeltaNode::DELTA_SIZE {
-                    println!("full to delta but full: {}", changed_children.len());
-                    VerkleNode::Inner256(n.clone())
-                    //VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
+                    println!("full to delta: {}", changed_children.len());
+                    VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
                 } else {
                     println!("full to full: {}", changed_children.len());
                     VerkleNode::Inner256(n.clone())
