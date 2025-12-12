@@ -11,7 +11,12 @@
 package flat
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
@@ -33,7 +38,8 @@ func TestWrapFactory_ProducesAStateFactoryWrappingGivenFactory(t *testing.T) {
 	wrapped.EXPECT().Close()
 
 	params := state.Parameters{
-		Variant: "test",
+		Directory: t.TempDir(),
+		Variant:   "test",
 	}
 
 	counter := 0
@@ -70,13 +76,106 @@ func TestState_CanBeOpenedAndClosed(t *testing.T) {
 
 	backend.EXPECT().Close().Return(nil)
 
-	flatState := NewState(backend)
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
 }
 
 func TestState_CanBeOpenedAndClosedWithoutBackend(t *testing.T) {
-	flatState := NewState(nil)
+	flatState, err := NewState(t.TempDir(), nil)
+	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
+}
+
+func TestState_NewState_CreatesDataFile(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	state, err := NewState(dir, nil)
+	require.NoError(err)
+
+	file := filepath.Join(dir, "live", "flat.db")
+	require.FileExists(file)
+
+	require.NoError(state.Close())
+	require.FileExists(file)
+}
+
+func TestState_NewState_InvalidPath_ReportsError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "file.txt")
+	require.NoError(t, os.WriteFile(dir, []byte("not a directory"), 0o644))
+
+	state, err := NewState(dir, nil)
+	require.ErrorContains(t, err, "not a directory")
+	require.Nil(t, state)
+}
+
+func TestState_NewState_NoPermissionToCreateFile_ReportsError(t *testing.T) {
+	dir := t.TempDir()
+	liveDir := filepath.Join(dir, "live")
+	require.NoError(t, os.MkdirAll(liveDir, 0o700))
+
+	require.NoError(t, os.Chmod(liveDir, 0o400)) // < -- read-only
+	defer func() {
+		require.NoError(t, os.Chmod(liveDir, 0o700))
+	}()
+
+	state, err := NewState(dir, nil)
+	require.ErrorContains(t, err, "permission denied")
+	require.Nil(t, state)
+}
+
+func TestState_NewState_NoPermissionToReadFile_ReportsError(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "live", "flat.db")
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
+	require.NoError(t, os.WriteFile(file, []byte("data"), 0o000)) // < -- no permissions
+	defer func() {
+		require.NoError(t, os.Chmod(file, 0o700))
+	}()
+	state, err := NewState(dir, nil)
+	require.ErrorContains(t, err, "failed to open existing flat state")
+	require.Nil(t, state)
+}
+
+func TestState_NewState_CorruptedFile_ReportsError(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "live", "flat.db")
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
+	require.NoError(t, os.WriteFile(file, []byte("some invalid data"), 0o700))
+	state, err := NewState(dir, nil)
+	require.ErrorContains(t, err, "failed to load existing flat state")
+	require.Nil(t, state)
+}
+
+func TestState_StateCanBeClosedAndReopened(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+
+	// Create and close state.
+	stateA, err := NewState(dir, nil)
+	require.NoError(err)
+
+	require.NoError(stateA.Apply(0, common.Update{
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{1}, Nonce: common.Nonce{2}},
+			{Account: common.Address{3}, Nonce: common.Nonce{4}},
+		},
+	}))
+
+	require.NoError(stateA.Close())
+
+	// Reopen state.
+	stateB, err := NewState(dir, nil)
+	require.NoError(err)
+
+	nonce, err := stateB.GetNonce(common.Address{1})
+	require.NoError(err)
+	require.Equal(common.Nonce{2}, nonce)
+	nonce, err = stateB.GetNonce(common.Address{3})
+	require.NoError(err)
+	require.Equal(common.Nonce{4}, nonce)
+
+	require.NoError(stateB.Close())
 }
 
 func TestState_Close_IssueDuringCloseIsReported(t *testing.T) {
@@ -86,8 +185,9 @@ func TestState_Close_IssueDuringCloseIsReported(t *testing.T) {
 	issue := errors.New("backend close failed")
 	backend.EXPECT().Close().Return(issue)
 
-	flatState := NewState(backend)
-	err := flatState.Close()
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+	err = flatState.Close()
 	require.ErrorIs(t, err, issue)
 }
 
@@ -299,7 +399,9 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 	backend.EXPECT().Close().Return(nil)
 
 	address := common.Address{0x01}
-	state := NewState(backend)
+	state, err := NewState(t.TempDir(), backend)
+	require.NoError(err)
+
 	require.False(state.Exists(address))
 
 	require.NoError(state.Apply(1, common.Update{
@@ -331,8 +433,10 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 		backend.EXPECT().Close(),
 	)
 
-	flatState := NewState(backend)
-	err := flatState.Apply(block, update)
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	err = flatState.Apply(block, update)
 	require.NoError(t, err)
 
 	require.NoError(t, flatState.Close())
@@ -346,8 +450,10 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 		},
 	}
 
-	flatState := NewState(nil)
-	err := flatState.Apply(block, update)
+	flatState, err := NewState(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	err = flatState.Apply(block, update)
 	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
 }
@@ -364,7 +470,8 @@ func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
 		backend.EXPECT().Close(),
 	)
 
-	flatState := NewState(backend)
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
 
 	// The sync-wrapper is redirecting all GetHash calls to GetCommitment. So
 	// we unwrap it here, to target the GetHash function.
@@ -387,7 +494,9 @@ func TestState_GetCommitment_IsForwardedToBackend(t *testing.T) {
 		backend.EXPECT().Close(),
 	)
 
-	flatState := NewState(backend)
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
 	got, err := flatState.GetCommitment().Await().Get()
 	require.NoError(t, err)
 	require.Equal(t, hash, got)
@@ -396,7 +505,9 @@ func TestState_GetCommitment_IsForwardedToBackend(t *testing.T) {
 }
 
 func TestState_GetCommitment_MissingBackend_ReturnsZeroHash(t *testing.T) {
-	flatState := NewState(nil)
+	flatState, err := NewState(t.TempDir(), nil)
+	require.NoError(t, err)
+
 	got, err := flatState.GetCommitment().Await().Get()
 	require.NoError(t, err)
 	require.Equal(t, common.Hash{}, got)
@@ -446,7 +557,8 @@ func TestState_Check_IssueReportedByBackendIsForwarded(t *testing.T) {
 }
 
 func TestState_Check_CanHandleMissingBackend(t *testing.T) {
-	state := NewState(nil)
+	state, err := NewState(t.TempDir(), nil)
+	require.NoError(t, err)
 	require.NoError(t, state.Check())
 }
 
@@ -464,6 +576,7 @@ func TestState_Flush_SyncsAndConsultsBackend(t *testing.T) {
 	backend.EXPECT().Flush().Return(issue)
 
 	state := &State{
+		file:     filepath.Join(t.TempDir(), "flat.db"),
 		backend:  backend,
 		commands: make(chan command, 1),
 		syncs:    syncs,
@@ -493,8 +606,18 @@ func TestState_Flush_IssueReportedBySyncIsForwarded(t *testing.T) {
 }
 
 func TestState_Flush_CanHandleMissingBackend(t *testing.T) {
-	state := NewState(nil)
+	state, err := NewState(t.TempDir(), nil)
+	require.NoError(t, err)
 	require.NoError(t, state.Flush())
+}
+
+func TestState_FlushToDisk_NoWritePermission_ReportsError(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "flat.db")
+	require.NoError(t, os.WriteFile(file, nil, 0o400)) // read-only
+
+	state := &State{file: file}
+	require.ErrorContains(t, state.flushToDisk(), "failed to open flat state file for writing")
 }
 
 func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
@@ -515,6 +638,7 @@ func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
 	backend.EXPECT().Close().Return(issue)
 
 	state := &State{
+		file:     filepath.Join(t.TempDir(), "flat.db"),
 		backend:  backend,
 		commands: make(chan command, 1),
 		syncs:    syncs,
@@ -783,6 +907,158 @@ func TestState_SnapshotFeatures_NotSupportedWithoutBackend(t *testing.T) {
 	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
+func TestState_StoreAndLoad_NonEmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T) {
+	require := require.New(t)
+	state := &State{
+		accounts: map[common.Address]account{
+			{0x01}: {
+				balance:  amount.New(12345),
+				nonce:    common.Nonce{42},
+				codeSize: 123,
+				codeHash: common.Hash{0x0A},
+			},
+			{0x02}: {
+				balance:  amount.New(54321),
+				nonce:    common.Nonce{24},
+				codeSize: 321,
+				codeHash: common.Hash{0x0B},
+			},
+		},
+		storage: map[slotKey]common.Value{
+			{common.Address{1}, common.Key{1}}: {1},
+			{common.Address{1}, common.Key{2}}: {2},
+			{common.Address{2}, common.Key{3}}: {3},
+		},
+		codes: map[common.Hash][]byte{
+			{0x0A, 0x0B}: {},
+			{0x0B, 0x0C}: {0xDE, 0xAD, 0xBE, 0xEF},
+		},
+	}
+
+	// Store to buffer
+	buf := new(bytes.Buffer)
+	require.NoError(state.store(buf))
+
+	// Load into new state
+	restored := &State{}
+	require.NoError(restored.load(bytes.NewReader(buf.Bytes())))
+
+	// Check roundtrip
+	require.Equal(state.accounts, restored.accounts)
+	require.Equal(state.storage, restored.storage)
+	require.Equal(state.codes, restored.codes)
+}
+
+func TestState_StoreAndLoad_EmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T) {
+	require := require.New(t)
+	state := &State{
+		accounts: map[common.Address]account{},
+		storage:  map[slotKey]common.Value{},
+		codes:    map[common.Hash][]byte{},
+	}
+	buf := new(bytes.Buffer)
+	require.NoError(state.store(buf))
+	restored := &State{}
+	require.NoError(restored.load(bytes.NewReader(buf.Bytes())))
+	require.Empty(restored.accounts)
+	require.Empty(restored.storage)
+	require.Empty(restored.codes)
+}
+
+func TestState_Store_IoError_IsReported(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	state := &State{
+		accounts: map[common.Address]account{
+			{}: {},
+		},
+		storage: map[slotKey]common.Value{
+			{}: {},
+		},
+		codes: map[common.Hash][]byte{
+			{}: {},
+		},
+	}
+
+	// Counter number of write calls.
+	numWriteCalls := 0
+	counter := NewMock_Writer(ctrl)
+	counter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+		numWriteCalls++
+		return len(p), nil
+	}).AnyTimes()
+	require.NoError(state.store(counter))
+
+	// Now simulate an error on each write call in turn.
+	issue := errors.New("simulated write error")
+	for i := range numWriteCalls {
+		errorWriter := NewMock_Writer(ctrl)
+		currentCall := 0
+		errorWriter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+			if currentCall == i {
+				return 0, issue
+			}
+			currentCall++
+			return len(p), nil
+		}).AnyTimes()
+		require.ErrorIs(state.store(errorWriter), issue)
+	}
+}
+
+func TestState_Load_InvalidMagicNumber_ReportsAnIssue(t *testing.T) {
+	require := require.New(t)
+	buf := new(bytes.Buffer)
+	require.NoError(binary.Write(buf, binary.BigEndian, uint32(0xDEADBEEF)))
+	err := (&State{}).load(bytes.NewReader(buf.Bytes()))
+	require.ErrorContains(err, "invalid state magic number")
+}
+
+func TestState_Load_IoError_IsReported(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	state := &State{
+		accounts: map[common.Address]account{
+			{}: {},
+		},
+		storage: map[slotKey]common.Value{
+			{}: {},
+		},
+		codes: map[common.Hash][]byte{
+			{}: {1, 2, 3},
+		},
+	}
+	buf := new(bytes.Buffer)
+	require.NoError(state.store(buf))
+
+	// Counter number of write calls.
+	numReadCalls := 0
+	counter := NewMock_Reader(ctrl)
+	reader := bytes.NewReader(buf.Bytes())
+	counter.EXPECT().Read(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+		numReadCalls++
+		return reader.Read(p)
+	}).AnyTimes()
+	require.NoError(state.load(counter))
+
+	// Now simulate an error on each read call in turn.
+	issue := errors.New("simulated read error")
+	for i := range numReadCalls {
+		errorReader := NewMock_Reader(ctrl)
+		currentCall := 0
+		reader := bytes.NewReader(buf.Bytes())
+		errorReader.EXPECT().Read(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+			if currentCall == i {
+				return 0, issue
+			}
+			currentCall++
+			return reader.Read(p)
+		}).AnyTimes()
+		require.ErrorIs(state.load(errorReader), issue)
+	}
+}
+
 // --- issue collector tests ---
 
 func TestIssueCollector_HandleIssue_CollectsIssues(t *testing.T) {
@@ -887,4 +1163,14 @@ func TestMemoryFootprintOfMap_GivesApproximationBasedOnKeyValueTypes(t *testing.
 	}
 	footprint = memoryFootprintOfMap(int16ToByteMap)
 	require.EqualValues(t, footprint.Total(), (2+1)*3)
+}
+
+// -- Interfaces to generate mock implementations ---
+
+type _Reader interface {
+	io.Reader
+}
+
+type _Writer interface {
+	io.Writer
 }

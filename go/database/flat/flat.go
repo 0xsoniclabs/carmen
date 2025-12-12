@@ -11,11 +11,17 @@
 package flat
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -49,6 +55,9 @@ type State struct {
 	accounts map[common.Address]account
 	storage  map[slotKey]common.Value
 	codes    map[common.Hash][]byte
+
+	// The file location of the flat database on disk.
+	file string
 
 	// Backend storage for computing commits. May be nil, in which case no
 	// commitments are produced.
@@ -96,37 +105,61 @@ type update struct {
 
 // NewState creates a new flat State instance that wraps the provided backend state.
 // The resulting state is wrapped into a synced state for thread-safe access.
-func NewState(backend state.State) state.State {
+func NewState(path string, backend state.State) (state.State, error) {
 	// Unwrap the backend from any synced state to avoid double synchronization.
 	// The flat state will handle synchronization itself.
 	if backend != nil {
 		backend = state.UnsafeUnwrapSyncedState(backend)
 	}
 
+	file := filepath.Join(path, "live", "flat.db")
+
 	res := &State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
 		codes:    make(map[common.Hash][]byte),
+		file:     file,
 		backend:  backend,
 	}
 
-	if backend == nil {
-		return state.WrapIntoSyncedState(res)
+	// Load existing state from disk if available.
+	if _, err := os.Stat(file); err == nil {
+		file, err := os.Open(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open existing flat state: %w", err)
+		}
+		bufferedReader := bufio.NewReader(file)
+		err = errors.Join(res.load(bufferedReader), file.Close())
+		if err != nil {
+			return nil, fmt.Errorf("failed to load existing flat state: %w", err)
+		}
+	} else {
+		// If it does not exist, prepare the directory and create an empty file.
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			return nil, fmt.Errorf("failed to create directories for flat state: %w", err)
+		}
+		err := os.WriteFile(file, nil, 0o700)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create empty flat state file: %w", err)
+		}
 	}
 
-	// Start background work to keep the backend up to date.
+	if backend == nil {
+		return state.WrapIntoSyncedState(res), nil
+	}
+
 	commands := make(chan command, 1024)
 	syncs := make(chan struct{})
 	done := make(chan struct{})
+
 	go func() {
 		defer close(done)
 		processCommands(backend, commands, syncs, &res.issues)
 	}()
-
 	res.commands = commands
 	res.syncs = syncs
 	res.done = done
-	return state.WrapIntoSyncedState(res)
+	return state.WrapIntoSyncedState(res), nil
 }
 
 // WrapFactory wraps an existing state factory to produce flat State instances.
@@ -136,7 +169,7 @@ func WrapFactory(innerFactory state.StateFactory) state.StateFactory {
 		if err != nil {
 			return nil, err
 		}
-		return NewState(inner), nil
+		return NewState(params.Directory, inner)
 	}
 }
 
@@ -292,7 +325,7 @@ func (s *State) Check() error {
 }
 
 func (s *State) Flush() error {
-	if err := s.sync(); err != nil {
+	if err := s.flushToDisk(); err != nil {
 		return err
 	}
 	if s.backend == nil {
@@ -301,8 +334,24 @@ func (s *State) Flush() error {
 	return s.backend.Flush()
 }
 
-func (s *State) Close() error {
+func (s *State) flushToDisk() error {
 	if err := s.sync(); err != nil {
+		return err
+	}
+	file, err := os.Create(s.file)
+	if err != nil {
+		return fmt.Errorf("failed to open flat state file for writing: %w", err)
+	}
+	buffer := bufio.NewWriter(file)
+	return errors.Join(
+		s.store(buffer),
+		buffer.Flush(),
+		file.Close(),
+	)
+}
+
+func (s *State) Close() error {
+	if err := s.flushToDisk(); err != nil {
 		return err
 	}
 	if s.commands == nil {
@@ -424,4 +473,185 @@ func memoryFootprintOfMap[A comparable, B any](m map[A]B) *common.MemoryFootprin
 		reflect.TypeFor[A]().Size() +
 			reflect.TypeFor[B]().Size()
 	return common.NewMemoryFootprint(uintptr(len(m)) * entrySize)
+}
+
+// --- State Export/Import ---
+
+// Magic number for state export/import format
+const stateMagic uint32 = 0xF1A7DB42
+
+// store exports the state to a binary writer. Accounts, storage, and codes are
+// sorted by key, such that the output is deterministic.
+func (s *State) store(w io.Writer) error {
+	// Write magic number
+	if err := binary.Write(w, binary.BigEndian, stateMagic); err != nil {
+		return err
+	}
+
+	// --- Accounts ---
+
+	accKeys := slices.SortedFunc(maps.Keys(s.accounts), func(i, j common.Address) int {
+		return i.Compare(&j)
+	})
+	if err := binary.Write(w, binary.BigEndian, uint32(len(accKeys))); err != nil {
+		return err
+	}
+	for _, addr := range accKeys {
+		acc := s.accounts[addr]
+		if _, err := w.Write(addr[:]); err != nil {
+			return err
+		}
+		bal := acc.balance.Bytes32()
+		if _, err := w.Write(bal[:]); err != nil {
+			return err
+		}
+		if _, err := w.Write(acc.nonce[:]); err != nil {
+			return err
+		}
+		if err := binary.Write(w, binary.BigEndian, uint32(acc.codeSize)); err != nil {
+			return err
+		}
+		if _, err := w.Write(acc.codeHash[:]); err != nil {
+			return err
+		}
+	}
+
+	// --- Storage ---
+	slotKeys := slices.SortedFunc(maps.Keys(s.storage), func(i, j slotKey) int {
+		cmp := i.address.Compare(&j.address)
+		if cmp != 0 {
+			return cmp
+		}
+		return i.key.Compare(&j.key)
+	})
+	if err := binary.Write(w, binary.BigEndian, uint32(len(slotKeys))); err != nil {
+		return err
+	}
+	for _, sk := range slotKeys {
+		if _, err := w.Write(sk.address[:]); err != nil {
+			return err
+		}
+		if _, err := w.Write(sk.key[:]); err != nil {
+			return err
+		}
+		val := s.storage[sk]
+		if _, err := w.Write(val[:]); err != nil {
+			return err
+		}
+	}
+
+	// --- Codes ---
+	codeKeys := slices.SortedFunc(maps.Keys(s.codes), func(i, j common.Hash) int {
+		return i.Compare(&j)
+	})
+	if err := binary.Write(w, binary.BigEndian, uint32(len(codeKeys))); err != nil {
+		return err
+	}
+	for _, hash := range codeKeys {
+		code := s.codes[hash]
+		if _, err := w.Write(hash[:]); err != nil {
+			return err
+		}
+		if err := binary.Write(w, binary.BigEndian, uint32(len(code))); err != nil {
+			return err
+		}
+		if _, err := w.Write(code); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// load imports the state from a binary reader. Clears current state before import.
+func (s *State) load(r io.Reader) error {
+	// Read and check magic number
+	var magic uint32
+	if err := binary.Read(r, binary.BigEndian, &magic); err != nil {
+		return err
+	}
+	if magic != stateMagic {
+		return fmt.Errorf("invalid state magic number: %x", magic)
+	}
+
+	// Clear current state
+	s.accounts = make(map[common.Address]account)
+	s.storage = make(map[slotKey]common.Value)
+	s.codes = make(map[common.Hash][]byte)
+
+	// --- Accounts ---
+	var accCount uint32
+	if err := binary.Read(r, binary.BigEndian, &accCount); err != nil {
+		return err
+	}
+	for i := uint32(0); i < accCount; i++ {
+		var addr common.Address
+		var bal [32]byte
+		var nonce common.Nonce
+		var codeSize uint32
+		var codeHash common.Hash
+		if _, err := io.ReadFull(r, addr[:]); err != nil {
+			return err
+		}
+		if _, err := io.ReadFull(r, bal[:]); err != nil {
+			return err
+		}
+		if _, err := io.ReadFull(r, nonce[:]); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &codeSize); err != nil {
+			return err
+		}
+		if _, err := io.ReadFull(r, codeHash[:]); err != nil {
+			return err
+		}
+		s.accounts[addr] = account{
+			balance:  amount.NewFromBytes(bal[:]...),
+			nonce:    nonce,
+			codeSize: int(codeSize),
+			codeHash: codeHash,
+		}
+	}
+
+	// --- Storage ---
+	var slotCount uint32
+	if err := binary.Read(r, binary.BigEndian, &slotCount); err != nil {
+		return err
+	}
+	for i := uint32(0); i < slotCount; i++ {
+		var addr common.Address
+		var key common.Key
+		var value common.Value
+		if _, err := io.ReadFull(r, addr[:]); err != nil {
+			return err
+		}
+		if _, err := io.ReadFull(r, key[:]); err != nil {
+			return err
+		}
+		if _, err := io.ReadFull(r, value[:]); err != nil {
+			return err
+		}
+		s.storage[slotKey{addr, key}] = value
+	}
+
+	// --- Codes ---
+	var codeCount uint32
+	if err := binary.Read(r, binary.BigEndian, &codeCount); err != nil {
+		return err
+	}
+	for i := uint32(0); i < codeCount; i++ {
+		var hash common.Hash
+		var codeLen uint32
+		if _, err := io.ReadFull(r, hash[:]); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &codeLen); err != nil {
+			return err
+		}
+		code := make([]byte, codeLen)
+		if _, err := io.ReadFull(r, code); err != nil {
+			return err
+		}
+		s.codes[hash] = code
+	}
+	return nil
 }
