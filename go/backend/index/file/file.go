@@ -18,8 +18,6 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend/array"
-	"github.com/0xsoniclabs/carmen/go/backend/array/pagedarray"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/index/indexhash"
 	"github.com/0xsoniclabs/carmen/go/backend/pagepool"
@@ -47,8 +45,6 @@ const (
 // The pages are 4kB for an optimal IO when pages are stored/loaded from/to the disk.
 type Index[K comparable, I common.Identifier] struct {
 	table           *LinearHashMap[K, I]
-	keys            array.Array[I, K]           // map of indexes to keys for snapshot
-	hashes          array.Array[I, common.Hash] // map of indexes to hashes for snapshot
 	keySerializer   common.Serializer[K]
 	indexSerializer common.Serializer[I]
 	hashIndex       *indexhash.IndexHash[K]
@@ -101,26 +97,8 @@ func NewParamIndex[K comparable, I common.Identifier](
 	pageFactory := PageFactory(pageSize, keySerializer, indexSerializer, comparator)
 	pagePool := pagepool.NewPagePool[PageId, *IndexPage[K, I]](pagePoolSize, pageStorage, pageFactory)
 
-	// --- Reverse table initialisation ---
-	keys := path + "/keys"
-	if err := os.MkdirAll(keys, 0700); err != nil {
-		return nil, err
-	}
-	hashes, err := pagedarray.NewArray[I, K](keys, keySerializer, common.PageSize, pagePoolSize)
-	if err != nil {
-		return
-	}
-
-	hashTablePath := path + "/hashes"
-	if err := os.MkdirAll(hashTablePath, 0700); err != nil {
-		return nil, err
-	}
-	hashesStore, err := pagedarray.NewArray[I, common.Hash](hashTablePath, common.HashSerializer{}, common.PageSize, pagePoolSize)
-
 	inst = &Index[K, I]{
 		table:           NewLinearHashMap[K, I](pageItems, numBuckets, size, pagePool, hasher, comparator),
-		keys:            hashes,
-		hashes:          hashesStore,
 		keySerializer:   keySerializer,
 		indexSerializer: indexSerializer,
 		hashIndex:       indexhash.InitIndexHash[K](hash, keySerializer),
@@ -147,23 +125,6 @@ func (m *Index[K, I]) GetOrAdd(key K) (val I, err error) {
 	if !exists {
 		val = m.maxIndex
 		m.maxIndex += 1 // increment to next index
-
-		// commit hash for the snapshot block height window
-		keysPerPart := I(index.GetKeysPerPart(m.keySerializer))
-		if val%keysPerPart == 0 {
-			hash, err := m.GetStateHash()
-			if err != nil {
-				return val, err
-			}
-			if err := m.hashes.Set(val/keysPerPart, hash); err != nil {
-				return val, err
-			}
-		}
-
-		if err := m.keys.Set(val, key); err != nil {
-			return val, err
-		}
-
 		m.hashIndex.AddKey(key)
 	}
 
@@ -185,14 +146,6 @@ func (m *Index[K, I]) bulkInsert(keys []K) error {
 	tuples := make([]keyTuple[K, I], 0, len(keys))
 	for idx, key := range keys {
 		tuples = append(tuples, keyTuple[K, I]{key, m.table.GetBucketId(&key), m.maxIndex + I(idx)})
-	}
-
-	// store values for snapshot using the original order
-	for _, key := range keys {
-		if err := m.keys.Set(m.maxIndex, key); err != nil {
-			return err
-		}
-		m.maxIndex += 1 // increment to next index
 	}
 
 	// sort by bucketIds before inserting into LinearHash for better performance
@@ -245,12 +198,6 @@ func (m *Index[K, I]) Flush() error {
 	if err := m.pageStore.Flush(); err != nil {
 		return err
 	}
-	if err := m.keys.Flush(); err != nil {
-		return err
-	}
-	if err := m.hashes.Flush(); err != nil {
-		return err
-	}
 
 	// store metadata
 	if err := m.writeMetadata(); err != nil {
@@ -270,12 +217,6 @@ func (m *Index[K, I]) Close() error {
 	if err := m.pageStore.Close(); err != nil {
 		return err
 	}
-	if err := m.keys.Close(); err != nil {
-		return err
-	}
-	if err := m.hashes.Close(); err != nil {
-		return err
-	}
 
 	return nil
 }
@@ -288,8 +229,6 @@ func (m *Index[K, I]) GetMemoryFootprint() *common.MemoryFootprint {
 	memoryFootprint.AddChild("linearHash", m.table.GetMemoryFootprint())
 	memoryFootprint.AddChild("pagePool", m.pagePool.GetMemoryFootprint())
 	memoryFootprint.AddChild("pageStore", m.pageStore.GetMemoryFootprint())
-	memoryFootprint.AddChild("keys", m.keys.GetMemoryFootprint())
-	memoryFootprint.AddChild("hashes", m.hashes.GetMemoryFootprint())
 	memoryFootprint.SetNote(fmt.Sprintf("(items: %d)", m.maxIndex))
 	return memoryFootprint
 }
