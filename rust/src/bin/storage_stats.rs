@@ -80,11 +80,21 @@ fn main() {
     >;
 
     let args = Args::parse();
-
     let storage_path = Path::new(&args.db_path);
+
+    // TODO: We should have a way of opening the DB in read-only mode.
+    if !std::fs::read_dir(storage_path)
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|entry| entry.file_type().unwrap().is_file() && entry.file_name() == "metadata.bin")
+    {
+        eprintln!("error: the specified path does not appear to contain a valid Carmen database");
+        std::process::exit(1);
+    }
+
     let is_pinned = |_n: &VerkleNode| false; // We don't care about the pinned status for stats
     let storage = FileStorage::open(storage_path).unwrap();
-    let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
+    let manager = Arc::new(CachedNodeManager::new(100_000, storage, is_pinned));
     let mut formatters: Vec<_> = args
         .formatter
         .into_iter()

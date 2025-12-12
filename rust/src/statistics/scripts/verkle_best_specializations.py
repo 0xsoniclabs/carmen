@@ -1,0 +1,526 @@
+# %% Read the CSV and process data
+import os
+import sys
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import pulp
+from sortedcontainers import SortedDict, SortedSet
+
+CSV_PATH = "./stat_results/history/carmen_stats_node_counts_by_kind.csv"
+
+# NOTE: These sizes are based on the current implementation of the trie nodes in Carmen and needs to be manually updated if the implementation changes.
+
+# Node size constants
+COMMITMENT_SIZE = 32
+# COMMITMENT_SIZE = 64 + 256 / 8 + 2
+
+# Inner node constants
+ID_SIZE = 6
+ID_INDEX_SIZE = 1
+INNER_NODE_CHILDREN = 256
+FULL_INNER_NODE_SIZE = COMMITMENT_SIZE + INNER_NODE_CHILDREN * ID_SIZE
+
+# Leaf node constants
+VALUE_SIZE = 32
+VALUE_INDEX_SIZE = 1
+STEM_SIZE = 31
+LEAF_NODE_CHILDREN = 256
+FULL_LEAF_NODE_SIZE = COMMITMENT_SIZE + LEAF_NODE_CHILDREN * VALUE_SIZE + STEM_SIZE
+
+
+def print_size_constants(writer):
+    """Print the node size constants to the given writer."""
+    writer.write("--------- NODE SIZE CONSTANTS --------\n")
+    writer.write("Common:\n")
+    writer.write(f"  Commitment size: {COMMITMENT_SIZE} bytes\n")
+    writer.write("Inner node sizes:\n")
+    writer.write(f"  ID size: {ID_SIZE} bytes\n")
+    writer.write(f"  ID index size: {ID_INDEX_SIZE} bytes\n")
+    writer.write(f"  Full inner node size: {FULL_INNER_NODE_SIZE} bytes\n")
+    writer.write("Leaf node sizes:\n")
+    writer.write(f"  Value size: {VALUE_SIZE} bytes\n")
+    writer.write(f"  Value index size: {VALUE_INDEX_SIZE} bytes\n")
+    writer.write(f"  Stem size: {STEM_SIZE} bytes\n")
+    writer.write(f"  Full leaf node size: {FULL_LEAF_NODE_SIZE} bytes\n")
+    writer.write("-------------------------------\n")
+
+
+def sparse_leaf_node_size(num_children: int) -> int:
+    """Return the size of a sparse leaf node with the given number of children."""
+    return COMMITMENT_SIZE + num_children * (VALUE_SIZE + VALUE_INDEX_SIZE) + STEM_SIZE
+
+
+# Precompute leaf node sizes for all possible children counts
+leaf_node_sizes = [sparse_leaf_node_size(n) for n in range(256)]
+leaf_node_sizes.append(FULL_LEAF_NODE_SIZE)
+
+
+def sparse_inner_node_size(num_children: int) -> int:
+    """Return the size of a sparse inner node with the given number of children."""
+    return COMMITMENT_SIZE + num_children * (ID_SIZE + ID_INDEX_SIZE)
+
+
+# Precompute inner node sizes for all possible children counts
+inner_node_sizes = [sparse_inner_node_size(n) for n in range(INNER_NODE_CHILDREN)]
+inner_node_sizes.append(FULL_INNER_NODE_SIZE)
+
+
+def load_statistics(csv_path):
+    """
+    Load node statistics from a CSV file.
+    Args:
+        csv_path (str): Path to the CSV file containing node statistics.
+    Returns:
+        dict: A nested dictionary containing node statistics organized by Node Kind.
+
+        The structure is as follows:
+        {
+            "Node Kind": {
+                # Number of nodes of this kind
+                "total_count": int,
+                # Number of node of this kind with a specific node size
+                "node_size": {Node Size (int): Count (int), ...},
+                # Prefix sum of counts for each node size.
+                "prefix_sum": {Node Size (int): Prefix Sum (int), ...} #
+            },
+            ...
+        }
+    """
+
+    df = pd.read_csv(csv_path)
+    # Remove all empty nodes
+    df = df[df["Node Kind"] != "Empty"]
+    # Group by `Node Kind` and calculate the prefix sum of `Count` within each group
+    grouped_df = (
+        df.groupby("Node Kind")
+        .apply(lambda x: x.assign(PrefixSum=x["Count"].cumsum()))
+        .reset_index(drop=True)
+    )
+    # Collect the node info into a nested dictionary
+    node_info = dict()
+    for node_kind, group in grouped_df.groupby("Node Kind"):
+        node_info[node_kind] = {
+            # Total number of nodes of this kind
+            "total_count": group["Count"].sum(),
+            "node_size": {
+                int(row["Node Size"]): row["Count"] for _, row in group.iterrows()
+            },
+            "prefix_sum": {
+                int(row["Node Size"]): row["PrefixSum"] for _, row in group.iterrows()
+            },
+        }
+    return node_info
+
+
+# %% Greedy approach
+
+
+def calculate_size_for_indices(indices, node_prefix_sum: dict, node_sizes: dict):
+    """
+    Calculate the total storage size and node allocation for a given set of specialization indices.
+
+    Args:
+        indices (Iterable[int]): The set of specialization indices to use.
+        node_prefix_sum (dict): Mapping from index to prefix sum of node counts.
+        node_sizes (dict): Mapping from index to node size in bytes.
+
+    Returns:
+        (SortedDict, int): A mapping from index to number of nodes covered, and the total space occupied.
+    """
+    space_occupied = 0
+    already_covered_nodes = 0
+    cur_solution = SortedDict()
+    for idx in indices:
+        num_nodes_covered = node_prefix_sum[idx] - already_covered_nodes
+        space_occupied += node_sizes[idx] * num_nodes_covered
+        already_covered_nodes += num_nodes_covered
+        cur_solution[idx] = num_nodes_covered
+    return cur_solution, space_occupied
+
+
+def best_variants_with_upper_bound_greedy(
+    num_nodes_to_use: int, node_prefix_sum: dict, max_node: int, node_sizes: dict
+):
+    """
+    Greedily select the best set of node specializations to minimize storage size.
+
+    Args:
+        num_nodes_to_use (int): Number of specializations to select.
+        node_prefix_sum (dict): Mapping from index to prefix sum of node counts.
+        max_node (int): The index of the largest node specialization (always included).
+        node_sizes (dict): Mapping from index to node size in bytes.
+
+    Returns:
+        (SortedDict, int): The selected specialization mapping and the total storage size.
+    """
+    assert num_nodes_to_use > 0
+
+    # Always include the largest node specialization
+    available_nodes = [i for i in node_prefix_sum.keys() if i != max_node]
+    # Initial solution: only the largest node specialization
+    min_solution = SortedDict({max_node: node_prefix_sum[max_node]})
+    min_size = node_prefix_sum[max_node] * node_sizes[max_node]
+
+    while len(min_solution) < num_nodes_to_use:
+        best_candidate_solution = min_solution.copy()
+        best_candidate_size = sys.maxsize
+
+        for candidate in available_nodes:
+            if candidate in min_solution:
+                continue
+            candidate_indices = SortedSet(min_solution.keys())
+            candidate_indices.add(candidate)
+            candidate_solution, candidate_size = calculate_size_for_indices(
+                candidate_indices, node_prefix_sum, node_sizes
+            )
+            if candidate_size < best_candidate_size:
+                best_candidate_size = candidate_size
+                best_candidate_solution = candidate_solution
+
+        min_solution = best_candidate_solution
+        min_size = best_candidate_size
+
+    return min_solution, min_size
+
+
+# %% Integer Linear Programming approach
+
+
+def best_variants_with_upper_bound_ilp(
+    num_specializations,
+    node_count_by_size: dict,
+    node_prefix_sum: dict,
+    max_node_index: int,
+    node_sizes: dict,
+    greedy_solution: tuple,
+    node_pruning_threshold: float,
+):
+    """
+    Solve the node specialization problem using Integer Linear Programming (ILP).
+
+    Args:
+        num_specializations (int): Number of specializations to select.
+        node_count_by_size (dict): Mapping from node size index to count.
+        node_prefix_sum (dict): Mapping from node size index to prefix sum of node counts.
+        max_node_index (int): The index of the largest node specialization (always included).
+        node_sizes (dict): Mapping from node size index to node size in bytes.
+        greedy_solution (tuple): Greedy solution (for initial values, not required by solver).
+        node_pruning_threshold (float): Threshold (fraction) to prune node sizes with very few nodes.
+
+    Returns:
+        (dict, float): Mapping from node size index to number of nodes covered, and the total storage size.
+    """
+    greedy_dict, _ = greedy_solution
+    total_node_count = max(node_prefix_sum.values())
+    assert num_specializations > 0
+
+    # --- Setup ILP problem ---
+    problem = pulp.LpProblem("TrieNodeSpecialization", pulp.LpMinimize)
+    node_indices = list(node_prefix_sum.keys())
+
+    # --- Variables ---
+    # Integer variable: number of nodes covered by each specialization
+    node_count_vars = {
+        i: pulp.LpVariable(
+            f"n_{i}", lowBound=0, upBound=node_prefix_sum[i], cat=pulp.LpInteger
+        )
+        for i in node_indices
+    }
+    # Binary variable: whether a specialization is used
+    node_used_bin = pulp.LpVariable.dicts("n_bin", node_indices, 0, 1, cat="Binary")
+
+    # --- Objective function ---
+    problem += (
+        pulp.lpSum([node_count_vars[i] * node_sizes[i] for i in node_indices]),
+        "MinimizeTotalTrieSize",
+    )
+
+    # --- Constraints ---
+    # 1. Cover all nodes
+    problem += (
+        pulp.lpSum(node_count_vars[i] for i in node_indices) == total_node_count,
+        "CoverAllNodes",
+    )
+
+    # 2. Prune node sizes with very few nodes
+    threshold_count = (node_pruning_threshold * total_node_count) / 100.0
+    for i in node_indices:
+        if node_count_by_size[i] < threshold_count:
+            problem += node_count_vars[i] == 0
+
+    # 3. Each specialization covers only its share minus what previous specializations cover
+    for i in node_indices:
+        problem += (
+            node_count_vars[i]
+            <= node_prefix_sum[i]
+            - pulp.lpSum(node_count_vars[j] for j in node_indices if j < i),
+            f"Node_{i}_Coverage",
+        )
+
+    # 4. The largest specialization must cover at least its node count
+    problem += (
+        node_count_by_size[max_node_index] <= node_count_vars[max_node_index],
+        "LargestNodeMustCoverOwnCount",
+    )
+
+    # 5. Link integer and binary variables
+    for i in node_indices:
+        problem += (
+            node_count_vars[i] <= (node_prefix_sum[i] + 1) * node_used_bin[i],
+            f"LinkVar_{i}_Existence",
+        )
+
+    # 6. Limit the number of specializations used
+    problem += (
+        pulp.lpSum([node_used_bin[i] for i in node_indices]) == num_specializations,
+        "LimitNumSpecializations",
+    )
+
+    # --- Solve ---
+    solver = pulp.getSolver("SCIP_PY", msg=0, threads=os.cpu_count())
+    problem.solve(solver)
+
+    # --- Collect solution ---
+    solution = {
+        i: int(node_count_vars[i].varValue)
+        for i in node_indices
+        if node_count_vars[i].varValue is not None and node_count_vars[i].varValue >= 1
+    }
+    total_size = problem.objective.value()
+
+    return solution, total_size
+
+
+# %% Print and plot results
+
+
+def print_results(solution_type, solution, size, prev_solution_size, writer):
+    """
+    Print and log the results of a node specialization solution.
+
+    Args:
+        solution_type (str): The type of solution ("Greedy" or "ILP").
+        solution (dict): Mapping from specialization index to number of nodes covered.
+        size (int or float): Total storage size in bytes.
+        prev_solution_size (int or float or None): Previous solution size for comparison.
+        writer (file-like): Output stream to write results.
+    """
+    num_specializations = len(solution)
+    size_mib = size / (1024 * 1024)
+    writer.write(f"{solution_type} solution:\n")
+    writer.write(f"    Specializations used: {num_specializations}\n")
+    writer.write(f"    Node allocation: {solution}\n")
+    writer.write(f"    Total size: {size_mib:.3f} MiB\n")
+    if prev_solution_size is not None:
+        saved_space_mib = (prev_solution_size - size) / (1024 * 1024)
+        saved_percent = 100.0 * (prev_solution_size - size) / prev_solution_size
+        writer.write(f"    Saved space: {saved_space_mib:.3f} MiB\n")
+        writer.write(f"    Saved percent: {saved_percent:.2f}%\n")
+
+
+def plot_solution_sizes(
+    node_name, node_range, solution_sizes_greedy, solution_sizes_ilp
+):
+    """
+    Plot the storage size for different numbers of specializations using Greedy and ILP solutions.
+
+    Args:
+        node_name (str): Name of the node type ("Inner" or "Leaf").
+        node_range (iterable): Range of specialization counts.
+        solution_sizes_greedy (list): Storage sizes from the greedy approach.
+        solution_sizes_ilp (list): Storage sizes from the ILP approach.
+    """
+
+    def _plot(title, x_range, greedy_sizes, ilp_sizes):
+        sns.set_theme()
+        sns.set_context("talk")
+        plt.figure(figsize=(10, 6))
+        plt.plot(
+            x_range,
+            [size / (1024 * 1024) for size in greedy_sizes],
+            marker="o",
+            label="Greedy Solution Size (MiB)",
+        )
+        if ilp_sizes:
+            plt.plot(
+                x_range,
+                [size / (1024 * 1024) for size in ilp_sizes],
+                marker="o",
+                label="ILP Solution Size (MiB)",
+            )
+        plt.title(title)
+        plt.xlabel("Number of specializations")
+        plt.ylabel("Storage size (MiB)")
+        plt.xticks(x_range, fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    # Plot full range
+    _plot(node_name, node_range, solution_sizes_greedy, solution_sizes_ilp)
+
+    # Plot zoomed-in (excluding the first specialization count)
+    if len(node_range) > 1:
+        _plot(
+            f"{node_name} (zoomed, without specialization size 1)",
+            node_range[1:],
+            solution_sizes_greedy[1:],
+            solution_sizes_ilp[1:] if solution_sizes_ilp else [],
+        )
+
+
+# %% Solve for Inner and Leaf nodes
+
+
+def get_best_variants(
+    node_name,
+    node_range,
+    node_info: dict,
+    max_node: int,
+    node_sizes: dict,
+    node_pruning_threshold: float,
+    writer,
+    ignore_ilp=True,
+):
+    """
+    Get the best node specialization variants for a given range of specialization counts.
+
+    Args:
+        node_name (str): Name of the node type ("Inner" or "Leaf").
+        node_range (iterable): Range of specialization counts. A solution will be computed for each value of the range.
+        node_info (dict): Node statistics information.
+        max_node (int): The index of the largest node specialization (always included).
+        node_sizes (dict): Mapping from index to node size in bytes.
+        node_pruning_threshold (float): Threshold (fraction) to prune nodes with less than this fraction of total nodes in the ILP approach. This improves performance but degrades solution quality.
+        writer (file-like): Output stream to write results.
+        ignore_ilp (bool): Whether to skip the ILP solution. Defaults to True.
+    """
+
+    solution_sizes_greedy = []
+    solution_sizes_ilp = []
+
+    # Ensure max_node is present in node_info
+    if max_node not in node_info["node_size"]:
+        node_info["node_size"][max_node] = 0
+    if max_node not in node_info["prefix_sum"]:
+        # Set prefix_sum for max_node to the maximum value in prefix_sum
+        node_info["prefix_sum"][max_node] = max(node_info["prefix_sum"].values())
+
+    writer.write("\n-------------------------------\n")
+    writer.write(f"--------- {node_name} nodes ---------\n")
+
+    prev_greedy_solution_size = None
+    prev_ilp_solution_size = None
+
+    for num_specializations in node_range:
+        greedy_solution, greedy_size = best_variants_with_upper_bound_greedy(
+            num_specializations, node_info["prefix_sum"], max_node, node_sizes
+        )
+        print_results(
+            "Greedy",
+            greedy_solution,
+            greedy_size,
+            prev_greedy_solution_size,
+            writer,
+        )
+        solution_sizes_greedy.append(greedy_size)
+        prev_greedy_solution_size = greedy_size
+
+        if not ignore_ilp:
+            ilp_solution, ilp_size = best_variants_with_upper_bound_ilp(
+                num_specializations,
+                node_info["node_size"],
+                node_info["prefix_sum"],
+                max_node,
+                node_sizes,
+                (greedy_solution, greedy_size),
+                node_pruning_threshold,
+            )
+            print_results(
+                "ILP",
+                ilp_solution,
+                ilp_size,
+                prev_ilp_solution_size,
+                writer,
+            )
+            solution_sizes_ilp.append(ilp_size)
+            diff_percent = (greedy_size - ilp_size) / ilp_size * 100 if ilp_size else 0
+            writer.write(f"Difference between Greedy and ILP: {diff_percent:.2f}%\n")
+            prev_ilp_solution_size = ilp_size
+
+    # Plot results
+    plot_solution_sizes(
+        node_name, node_range, solution_sizes_greedy, solution_sizes_ilp
+    )
+    writer.write("-------------------------------\n\n")
+
+
+def min_storage_size(node_info: dict, node_sizes: dict, node_type: str):
+    """
+    Compute the minimum possible storage size for a given node type.
+    Args:
+        node_info (dict): Node statistics information.
+        node_sizes (dict): Mapping from index to node size in bytes.
+        node_type (str): The type of the node ("Inner" or "Leaf").
+    Returns:
+        int: The minimum possible storage size in bytes.
+    """
+
+    min_size = 0
+    for i in node_info[node_type]["node_size"].keys():
+        num_nodes_covered = node_info[node_type]["node_size"][i]
+        min_size += node_sizes[i] * num_nodes_covered
+    return min_size
+
+
+# %% Compute the best variants and write results to file
+
+node_info = load_statistics(CSV_PATH)
+
+with open("node_optimization_results.txt", "w") as writer:
+    print_size_constants(writer)
+    # Best variants for Inner and Leaf nodes
+    get_best_variants(
+        "Inner",
+        range(1, 10),
+        node_info["Inner"],
+        256,
+        inner_node_sizes,
+        0,
+        writer,
+    )
+    get_best_variants(
+        "Leaf", range(1, 10), node_info["Leaf"], 256, leaf_node_sizes, 0.002, writer
+    )
+    # Minimum storage sizes with all specializations
+    writer.write("Minimum possible storage sizes:\n")
+    inner_min_size = min_storage_size(node_info, inner_node_sizes, "Inner")
+    leaf_min_size = min_storage_size(node_info, leaf_node_sizes, "Leaf")
+    writer.write(f"  Inner nodes minimum size: {inner_min_size / (1024 * 1024)} MiB\n")
+    writer.write(f"  Leaf nodes minimum size: {leaf_min_size / (1024 * 1024)} MiB\n")
+    writer.write(
+        f"  Total minimum size: {(inner_min_size + leaf_min_size) / (1024 * 1024)} MiB\n"
+    )
+    writer.write("-------------------------------\n\n")
+    writer.flush()
+
+# %% Storage size for the selected specialization
+
+# Change this to the selected specializations
+specializations = []
+
+res = calculate_size_for_indices(
+    SortedSet(specializations), node_info["Leaf"]["prefix_sum"], leaf_node_sizes
+)
+for key in res[0].keys():
+    num_nodes = res[0][key]
+    folder_size = leaf_node_sizes[key] * num_nodes
+    print(
+        f"Leaf node specialization {key + 1}: {num_nodes} nodes, size {folder_size / (1024 * 1024)} MiB"
+    )
+
+# %%
