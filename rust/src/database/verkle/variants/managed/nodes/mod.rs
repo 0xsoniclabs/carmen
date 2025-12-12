@@ -232,15 +232,27 @@ impl Default for VerkleNode {
 }
 
 impl UnionManagedTrieNode for VerkleNode {
-    fn copy_on_write(&self, id: Self::Id) -> Self {
+    fn copy_on_write(&self, id: Self::Id, changed_children: Vec<u8>) -> Self {
         match self {
             VerkleNode::Empty(n) => VerkleNode::Empty(*n),
             VerkleNode::Inner3(n) => VerkleNode::Inner3(n.clone()),
             VerkleNode::Inner47(n) => VerkleNode::Inner47(n.clone()),
             VerkleNode::Inner256(n) => {
-                VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
+                if changed_children.len() <= InnerDeltaNode::DELTA_SIZE {
+                    VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
+                } else {
+                    VerkleNode::Inner256(n.clone())
+                }
             }
-            VerkleNode::InnerDelta(n) => VerkleNode::InnerDelta(n.clone()),
+            VerkleNode::InnerDelta(n) => {
+                if ItemWithIndex::get_slots_for(&n.children_delta, changed_children.into_iter())
+                    .is_some()
+                {
+                    VerkleNode::Inner256(Box::new(FullInnerNode::from(&**n)))
+                } else {
+                    VerkleNode::InnerDelta(n.clone())
+                }
+            }
             VerkleNode::Leaf1(n) => VerkleNode::Leaf1(n.clone()),
             VerkleNode::Leaf2(n) => VerkleNode::Leaf2(n.clone()),
             VerkleNode::Leaf21(n) => VerkleNode::Leaf21(n.clone()),

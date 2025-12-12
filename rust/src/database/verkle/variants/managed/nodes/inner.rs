@@ -18,9 +18,12 @@ use crate::{
         verkle::{
             KeyedUpdateBatch,
             variants::managed::{
-                VerkleNode,
+                InnerDeltaNode, VerkleNode,
                 commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
-                nodes::{ManagedInnerNode, VerkleIdWithIndex, VerkleNodeKind, id::VerkleNodeId},
+                nodes::{
+                    ItemWithIndex, ManagedInnerNode, VerkleIdWithIndex, VerkleNodeKind,
+                    id::VerkleNodeId,
+                },
             },
         },
         visitor::NodeVisitor,
@@ -91,6 +94,21 @@ impl From<OnDiskInnerNode> for FullInnerNode {
             children: node.children,
             commitment: VerkleCommitment::from(node.commitment),
         }
+    }
+}
+
+impl From<&InnerDeltaNode> for FullInnerNode {
+    fn from(delta: &InnerDeltaNode) -> Self {
+        let mut node = FullInnerNode {
+            children: delta.children,
+            commitment: delta.commitment,
+        };
+        for ItemWithIndex { index, item } in delta.children_delta {
+            if item != VerkleNodeId::default() {
+                node.children[index as usize] = item;
+            }
+        }
+        node
     }
 }
 

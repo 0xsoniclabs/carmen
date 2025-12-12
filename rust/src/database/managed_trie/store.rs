@@ -91,8 +91,9 @@ where
                         && !current_node_update.is_new
                         && !current_node_update.node_id.is_empty_id()
                     {
-                        current_node_update.node_id =
-                            manager.add(current_node.copy_on_write(current_node_update.node_id))?;
+                        current_node_update.node_id = manager.add(
+                            current_node.copy_on_write(current_node_update.node_id, Vec::new()),
+                        )?;
                         current_node_update.node =
                             Some(manager.get_write_access(current_node_update.node_id)?);
                         if let Some(index) = current_node_update.parent_index {
@@ -128,12 +129,43 @@ where
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
+                    let current_node: &T = current_node_update
+                        .node
+                        .as_ref()
+                        .map(|guard| &***guard)
+                        .unwrap_or(&empty_node);
+                    let mut trie_commitment = current_node.get_commitment();
+
+                    let mut changed_children = Vec::new();
+                    for DescendAction { id, updates } in descent_actions {
+                        let index = updates.first_key()[depth as usize];
+                        trie_commitment.modify_child(index as usize);
+
+                        let node = manager.get_write_access(id)?;
+                        if matches!(
+                            node.next_store_action(updates.clone(), depth + 1, id)?,
+                            StoreAction::HandleReparent(_) | StoreAction::HandleTransform(_)
+                        ) {
+                            changed_children.push(index);
+                        }
+
+                        next_node_updates.push(DescendUpdates {
+                            parent_index: Some(i),
+                            node: if id.is_empty_id() { None } else { Some(node) },
+                            is_new: false,
+                            node_id: id,
+                            updates,
+                        });
+                    }
+
                     if is_archive
                         && !current_node_update.is_new
                         && !current_node_update.node_id.is_empty_id()
                     {
-                        current_node_update.node_id =
-                            manager.add(current_node.copy_on_write(current_node_update.node_id))?;
+                        current_node_update.node_id = manager.add(
+                            current_node
+                                .copy_on_write(current_node_update.node_id, changed_children),
+                        )?;
                         current_node_update.node =
                             Some(manager.get_write_access(current_node_update.node_id)?);
                         if let Some(index) = current_node_update.parent_index {
@@ -155,24 +187,6 @@ where
                         .as_mut()
                         .map(|guard| &mut ***guard)
                         .unwrap_or(&mut empty_node);
-                    let mut trie_commitment = current_node.get_commitment();
-                    for DescendAction { id, updates } in descent_actions {
-                        let index = updates.first_key()[depth as usize] as usize;
-                        trie_commitment.modify_child(index);
-
-                        next_node_updates.push(DescendUpdates {
-                            parent_index: Some(i),
-                            node: if id.is_empty_id() {
-                                None
-                            } else {
-                                Some(manager.get_write_access(id)?)
-                            },
-                            is_new: false,
-                            node_id: id,
-                            updates,
-                        });
-                    }
-
                     current_node.set_commitment(trie_commitment)?;
                     update_log.mark_dirty(depth as usize, current_node_update.node_id);
                     i += 1;
