@@ -59,6 +59,7 @@ impl FullInnerNode {
 
     /// Returns the children of this inner node as commitment input.
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
+        println!("commitment input: {:?}", self.children);
         Ok(VerkleCommitmentInput::Inner(self.children))
     }
 }

@@ -125,6 +125,7 @@ impl InnerDeltaNode {
                 input[index as usize] = item;
             }
         }
+        println!("commitment input: {input:?}");
         Ok(VerkleCommitmentInput::Inner(input))
     }
 }
