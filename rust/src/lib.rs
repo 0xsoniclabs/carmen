@@ -26,7 +26,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::cached_node_manager::CachedNodeManager,
     storage::{
-        Storage,
+        DbMode, Storage,
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
@@ -86,7 +86,7 @@ pub fn open_carmen_db(
             database::CrateCryptoInMemoryVerkleTrie,
         >::new()))),
         b"file" => {
-            let storage = VerkleStorage::open(&live_dir)?;
+            let storage = VerkleStorage::open(&live_dir, DbMode::ReadWrite)?;
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382

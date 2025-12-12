@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::{fs::OpenOptions, path::Path};
 
 pub use self::error::Error;
 use crate::error::BTResult;
@@ -17,6 +17,46 @@ use crate::error::BTResult;
 mod error;
 pub mod file;
 pub mod storage_with_flush_buffer;
+#[cfg(test)]
+use tests::all_db_modes;
+
+/// The mode in which the database can be opened.
+#[derive(Debug, Clone, Copy)]
+pub enum DbMode {
+    Read,
+    ReadWrite,
+}
+
+impl DbMode {
+    /// Returns if the database mode allows write access.
+    pub fn has_write_access(&self) -> bool {
+        matches!(self, DbMode::ReadWrite)
+    }
+
+    /// Returns if the database mode is read-only.
+    pub fn read_only(&self) -> bool {
+        matches!(self, DbMode::Read)
+    }
+
+    /// Converts the database mode to the corresponding [`std::fs::OpenOptions`] instance for
+    /// opening files.
+    /// Files are always opened in append. In `ReadWrite` mode, files
+    /// are created if they do not exist.
+    pub fn to_open_options(&self) -> OpenOptions {
+        match self {
+            DbMode::Read => {
+                let mut options = OpenOptions::new();
+                options.create(false).truncate(false).read(true);
+                options
+            }
+            DbMode::ReadWrite => {
+                let mut options = OpenOptions::new();
+                options.create(true).truncate(false).read(true).write(true);
+                options
+            }
+        }
+    }
+}
 
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
@@ -27,11 +67,11 @@ pub trait Storage: Send + Sync {
     /// The type of the item stored in the storage.
     type Item;
 
-    /// Opens the storage backend at the given path and restores the state of the last committed
-    /// checkpoint.
+    /// Opens the storage backend at the given path in the given mode and restores the state of the
+    /// last committed checkpoint.
     /// Depending on the implementation, the path is required to be a directory or a
     /// file.
-    fn open(path: &Path) -> BTResult<Self, Error>
+    fn open(path: &Path, db_mode: DbMode) -> BTResult<Self, Error>
     where
         Self: Sized;
 
@@ -115,4 +155,34 @@ pub trait RootIdProvider {
 
     /// Returns the highest block number for which a root ID is stored.
     fn highest_block_number(&self) -> BTResult<Option<u64>, Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::test_dir::{Permissions, TestDir};
+
+    #[test]
+    fn db_mode_to_open_options_returns_correct_options() {
+        let tmp_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let non_existing_file = tmp_dir.path().join("non_existing_file");
+        let existing_file = tmp_dir.path().join("existing_file");
+        std::fs::write(&existing_file, b"").unwrap();
+
+        let read_options = DbMode::Read.to_open_options();
+        assert!(read_options.open(&non_existing_file).is_err());
+        assert!(read_options.open(&existing_file).is_ok());
+
+        let read_write_options = DbMode::ReadWrite.to_open_options();
+        assert!(read_write_options.open(&non_existing_file).is_ok());
+        // File is created if it does not exist with ReadWrite mode
+        assert!(std::fs::exists(non_existing_file).unwrap());
+        assert!(read_write_options.open(&existing_file).is_ok());
+    }
+
+    #[rstest_reuse::template]
+    #[rstest::rstest]
+    #[case::read(DbMode::Read)]
+    #[case::read_write(DbMode::ReadWrite)]
+    pub fn all_db_modes(#[case] db_mode: DbMode) {}
 }

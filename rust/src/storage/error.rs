@@ -27,6 +27,8 @@ pub enum Error {
     DatabaseCorruption,
     #[error("opening the database failed: the database was not properly closed")]
     DirtyOpen,
+    #[error("operation not permitted in read-only mode")]
+    ReadOnly,
     #[error("IO error in storage: {0}")]
     Io(#[from] std::io::Error),
     #[error("internal logic error: {0}")]
@@ -41,6 +43,7 @@ impl PartialEq for Error {
             | (Error::IdNodeVariantMismatch, Error::IdNodeVariantMismatch)
             | (Error::InvalidId, Error::InvalidId)
             | (Error::Checkpoint, Error::Checkpoint)
+            | (Error::ReadOnly, Error::ReadOnly)
             | (Error::DirtyOpen, Error::DirtyOpen)
             | (Error::DatabaseCorruption, Error::DatabaseCorruption) => true,
             (Error::Internal(a), Error::Internal(b)) => a == b,
@@ -57,6 +60,7 @@ impl PartialEq for Error {
                 | Error::Checkpoint
                 | Error::DatabaseCorruption
                 | Error::DirtyOpen
+                | Error::ReadOnly
                 | Error::Io(_)
                 | Error::Internal(_),
                 _,

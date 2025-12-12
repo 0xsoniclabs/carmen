@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     marker::PhantomData,
     path::{Path, PathBuf},
 };
@@ -17,7 +17,7 @@ use std::{
 use crate::{
     error::BTResult,
     storage::{
-        CheckpointParticipant, Error, Storage,
+        CheckpointParticipant, DbMode, Error, Storage,
         file::{
             FileBackend, FromToFile,
             node_file_storage::{
@@ -51,6 +51,7 @@ pub struct NodeFileStorage<T, F> {
     node_file: F,
     next_idx: AtomicU64,
     frozen_nodes: AtomicU64,
+    db_mode: DbMode,
 
     reuse_list_file: Mutex<ReuseListFile>,
 
@@ -65,6 +66,13 @@ impl<T, F> NodeFileStorage<T, F> {
     pub const PREPARED_METADATA_FILE: &'static str = "prepared_metadata.bin";
 }
 
+impl<T, F> NodeFileStorage<T, F>
+where
+    T: DiskRepresentable + Send + Sync,
+    F: FileBackend,
+{
+}
+
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
     T: DiskRepresentable + Send + Sync,
@@ -77,10 +85,13 @@ where
     /// If the directory does not exist, it will be created.
     /// If the files do not exist, they will be created.
     /// If the files exist, they will be opened and their data verified.
-    fn open(dir: &Path) -> BTResult<Self, Error> {
-        fs::create_dir_all(dir)?;
+    fn open(dir: &Path, db_mode: DbMode) -> BTResult<Self, Error> {
+        if db_mode.has_write_access() {
+            fs::create_dir_all(dir)?;
+        }
 
-        let metadata = NodeFileStorageMetadata::read_or_init(dir.join(Self::METADATA_FILE))?;
+        let metadata =
+            NodeFileStorageMetadata::read_or_init(dir.join(Self::METADATA_FILE), db_mode)?;
         if metadata.frozen_nodes > metadata.nodes
             || metadata.frozen_reuse_indices > metadata.reuse_indices
         {
@@ -105,16 +116,9 @@ where
             return Err(Error::DatabaseCorruption.into());
         }
 
-        let mut file_opts = OpenOptions::new();
-        file_opts
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true);
-
         let node_file = F::open(
             dir.join(Self::NODE_STORE_FILE).as_path(),
-            file_opts,
+            db_mode.to_open_options(),
             T::size(),
         )?;
         let len = node_file.len()?;
@@ -131,12 +135,16 @@ where
             node_file,
             next_idx: AtomicU64::new(metadata.nodes),
             frozen_nodes: AtomicU64::new(metadata.frozen_nodes),
+            db_mode,
 
             reuse_list_file: Mutex::new(reuse_list_file),
 
             _node_type: PhantomData,
         })
     }
+
+    //TODO: Should we leave the write op fail when opened for reading, or should we check all the
+    // time to give proper error messages?
 
     fn get(&self, idx: Self::Id) -> BTResult<Self::Item, Error> {
         let offset = idx * T::size() as u64;
@@ -159,6 +167,9 @@ where
     }
 
     fn set(&self, idx: Self::Id, node: &Self::Item) -> BTResult<(), Error> {
+        if self.db_mode.read_only() {
+            return Err(Error::ReadOnly.into());
+        }
         if idx >= self.next_idx.load(Ordering::Relaxed)
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
@@ -173,6 +184,9 @@ where
     }
 
     fn delete(&self, idx: Self::Id) -> BTResult<(), Error> {
+        if self.db_mode.read_only() {
+            return Err(Error::ReadOnly.into());
+        }
         if idx >= self.next_idx.load(Ordering::Relaxed)
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
@@ -186,6 +200,10 @@ where
     }
 
     fn close(self) -> BTResult<(), Error> {
+        // Nothing to write in read-only db_mode
+        if self.db_mode.read_only() {
+            return Ok(());
+        }
         // Zero pad the file to ensure its size matches the number of nodes in case nodes were
         // reserved but not written out because of transformations. To make sure no existing
         // nodes are overwritten, we write at the current next_idx position.
@@ -222,6 +240,9 @@ where
     }
 
     fn prepare(&self, checkpoint: u64) -> BTResult<(), Error> {
+        if self.db_mode.read_only() {
+            return Err(Error::ReadOnly.into());
+        }
         if checkpoint != self.checkpoint.load(Ordering::Relaxed) + 1 {
             return Err(Error::Checkpoint.into());
         }
@@ -251,11 +272,16 @@ where
     }
 
     fn commit(&self, checkpoint: u64) -> BTResult<(), Error> {
+        if self.db_mode.read_only() {
+            return Err(Error::ReadOnly.into());
+        }
         if checkpoint != self.checkpoint.load(Ordering::Relaxed) + 1 {
             return Err(Error::Checkpoint.into());
         }
-        let prepared_metadata =
-            NodeFileStorageCheckpointMetadata::read_or_init(&self.prepared_metadata_path)?;
+        let prepared_metadata = NodeFileStorageCheckpointMetadata::read_or_init(
+            &self.prepared_metadata_path,
+            DbMode::ReadWrite,
+        )?;
         if checkpoint != prepared_metadata.checkpoint {
             return Err(Error::Checkpoint.into());
         }
@@ -266,12 +292,17 @@ where
     }
 
     fn abort(&self, checkpoint: u64) -> BTResult<(), Error> {
+        if self.db_mode.read_only() {
+            return Err(Error::ReadOnly.into());
+        }
         if checkpoint != self.checkpoint.load(Ordering::Relaxed) + 1 {
             return Err(Error::Checkpoint.into());
         }
         fs::remove_file(&self.prepared_metadata_path)?;
-        let committed_metadata =
-            NodeFileStorageCheckpointMetadata::read_or_init(&self.committed_metadata_path)?;
+        let committed_metadata = NodeFileStorageCheckpointMetadata::read_or_init(
+            &self.committed_metadata_path,
+            DbMode::ReadWrite,
+        )?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
         reuse_list_file.unfreeze_temp();
         if reuse_list_file.frozen_count() != committed_metadata.frozen_reuse_indices as usize {
@@ -285,6 +316,7 @@ where
     fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error> {
         let committed_metadata = NodeFileStorageCheckpointMetadata::read_or_init(
             path.join(Self::COMMITTED_METADATA_FILE),
+            DbMode::Read,
         )?;
         if checkpoint != committed_metadata.checkpoint {
             return Err(Error::Checkpoint.into());
@@ -313,7 +345,7 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
-        storage::{Error, file::SeekFile},
+        storage::{DbMode, Error, all_db_modes, file::SeekFile},
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -322,12 +354,12 @@ mod tests {
     type NodeFileStorage = super::NodeFileStorage<TestNode, SeekFile>;
 
     #[test]
-    fn open_creates_new_directory_and_files_for_non_existing_path() {
+    fn open_creates_new_directory_and_files_for_non_existing_path_if_db_mode_has_write_access() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("non_existing_dir");
         let path = path.as_path();
 
-        assert!(NodeFileStorage::open(path).is_ok());
+        assert!(NodeFileStorage::open(path, DbMode::ReadWrite).is_ok());
 
         assert!(fs::exists(path.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(path.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
@@ -335,10 +367,10 @@ mod tests {
     }
 
     #[test]
-    fn open_creates_new_files_in_empty_directory() {
+    fn open_creates_new_files_in_empty_directory_if_db_mode_has_write_access() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        assert!(NodeFileStorage::open(&dir).is_ok());
+        assert!(NodeFileStorage::open(&dir, DbMode::ReadWrite).is_ok());
 
         assert!(fs::exists(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap());
         assert!(fs::exists(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap());
@@ -346,7 +378,26 @@ mod tests {
     }
 
     #[test]
-    fn open_performs_consistency_checks_on_existing_files() {
+    fn open_fails_for_non_existing_path_and_empty_directory_if_db_mode_is_read_only() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.join("non_existing_dir");
+        let path = path.as_path();
+
+        assert!(matches!(
+            NodeFileStorage::open(path, DbMode::Read).map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
+
+        let empty_dir = dir.join("empty_dir");
+        fs::create_dir_all(&empty_dir).unwrap();
+        assert!(matches!(
+            NodeFileStorage::open(&empty_dir, DbMode::Read).map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
+    }
+
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_performs_consistency_checks_on_existing_files(#[case] db_mode: DbMode) {
         // files have valid sizes
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
@@ -354,7 +405,7 @@ mod tests {
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
-            assert!(NodeFileStorage::open(&dir).is_ok());
+            assert!(NodeFileStorage::open(&dir, db_mode).is_ok());
         }
         // frozen node count larger than total node count
         {
@@ -362,7 +413,7 @@ mod tests {
             write_metadata(&dir, 0, 0, 1, 1, 0);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -372,7 +423,7 @@ mod tests {
             write_metadata(&dir, 0, 1, 0, 0, 1);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -384,7 +435,7 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -396,7 +447,7 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -408,7 +459,7 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -420,7 +471,7 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
@@ -432,59 +483,52 @@ mod tests {
             write_nodes(&dir, &[[0; 32]]);
 
             assert!(matches!(
-                NodeFileStorage::open(&dir).map_err(BTError::into_inner),
+                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
                 Err(Error::DatabaseCorruption)
             ));
         }
     }
 
-    #[test]
-    fn open_forwards_io_errors() {
-        let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
-
-        assert!(matches!(
-            NodeFileStorage::open(&dir).map_err(BTError::into_inner),
-            Err(Error::Io(_))
-        ));
-    }
-
-    #[test]
-    fn get_reads_data_when_index_in_bounds_and_not_in_reuse_list() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn get_reads_data_when_index_in_bounds_and_not_in_reuse_list(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 3, 0, 1, 0);
         write_reuse_list(&dir, &[1]);
         write_nodes(&dir, &[[0; 32], [1; 32], [2; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
 
         assert_eq!(storage.get(0).unwrap(), [0; 32]);
         assert_eq!(storage.get(2).unwrap(), [2; 32]);
     }
 
-    #[test]
-    fn get_returns_error_when_index_larger_than_highest_assigned_index() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn get_returns_error_when_index_larger_than_highest_assigned_index(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
-        assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
+        write_metadata(&dir, 0, 3, 0, 1, 0);
+        write_reuse_list(&dir, &[1]);
+        write_nodes(&dir, &[[0; 32], [1; 32], [2; 32]]);
 
-        // index 0 is the next index to be assigned, and was therefore not yet assigned
+        let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
+        assert_eq!(storage.next_idx.load(Ordering::Relaxed), 3);
+
         assert!(matches!(
-            storage.get(0).map_err(BTError::into_inner),
+            storage.get(10000).map_err(BTError::into_inner),
             Err(Error::NotFound)
         ));
     }
 
-    #[test]
-    fn get_returns_error_when_index_in_reuse_list() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn get_returns_error_when_index_in_reuse_list(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 1, 0, 1, 0);
         write_reuse_list(&dir, &[0]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
 
         // in reuse list
         assert!(matches!(
@@ -493,23 +537,23 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn reserve_returns_last_index_from_non_frozen_part_of_reuse_list() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn reserve_returns_last_index_from_non_frozen_part_of_reuse_list(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 4, 2, 3, 1);
         write_reuse_list(&dir, &[1, 3, 2]);
         write_nodes(&dir, &[[0; 32], [1; 32], [2; 32], [3; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
 
         assert_eq!(storage.reserve(&[0; 32]), 2); // last index in reuse list
         assert_eq!(storage.reserve(&[0; 32]), 3); // next index in reuse list
         assert_eq!(storage.reserve(&[0; 32]), 4); // new index
     }
 
-    #[test]
-    fn reserve_returns_new_index_if_no_reuse_available() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn reserve_returns_new_index_if_no_reuse_available(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         // create a single node -> index 0 is used
@@ -517,7 +561,7 @@ mod tests {
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
 
         assert_eq!(storage.reserve(&[0; 32]), 1);
     }
@@ -533,7 +577,7 @@ mod tests {
 
         // create storage and call set with existing and new nodes
         {
-            let storage = NodeFileStorage::open(&dir).unwrap();
+            let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
             storage.next_idx.store(5, Ordering::Relaxed);
 
             // add new node at end
@@ -570,7 +614,7 @@ mod tests {
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
 
         assert!(matches!(
             storage.set(0, &[0; 32]).map_err(BTError::into_inner),
@@ -586,7 +630,7 @@ mod tests {
         write_reuse_list(&dir, &[0]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
 
         assert!(matches!(
             storage.set(0, &[0; 32]).map_err(BTError::into_inner),
@@ -598,12 +642,24 @@ mod tests {
     fn set_returns_error_if_index_larger_than_highest_assigned_index() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
 
         assert!(matches!(
             storage.set(0, &[0; 32]).map_err(BTError::into_inner),
             Err(Error::NotFound)
+        ));
+    }
+
+    #[test]
+    fn set_returns_error_if_db_is_read_only() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        init_db(&dir, 0, &[], 0, &[], 0);
+
+        let storage = NodeFileStorage::open(&dir, DbMode::Read).unwrap();
+        assert!(matches!(
+            storage.set(0, &[0; 32]).map_err(BTError::into_inner),
+            Err(Error::ReadOnly)
         ));
     }
 
@@ -615,7 +671,7 @@ mod tests {
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         storage.delete(0).unwrap();
         storage.delete(1).unwrap();
         let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
@@ -632,7 +688,7 @@ mod tests {
         write_reuse_list(&dir, &[]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         assert!(matches!(
             storage.delete(0).map_err(BTError::into_inner),
             Err(Error::Frozen)
@@ -643,7 +699,7 @@ mod tests {
     fn delete_returns_error_if_index_larger_than_highest_assigned_index() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 0);
 
         assert!(matches!(
@@ -660,7 +716,7 @@ mod tests {
         write_reuse_list(&dir, &[0]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         assert!(matches!(
             storage.delete(0).map_err(BTError::into_inner),
             Err(Error::NotFound)
@@ -668,14 +724,26 @@ mod tests {
     }
 
     #[test]
-    fn close_flushes_files_and_writes_metadata() {
+    fn delete_returns_error_if_db_is_read_only() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        init_db(&dir, 0, &[], 0, &[], 0);
+
+        let storage = NodeFileStorage::open(&dir, DbMode::Read).unwrap();
+        assert!(matches!(
+            storage.delete(0).map_err(BTError::into_inner),
+            Err(Error::ReadOnly)
+        ));
+    }
+
+    #[test]
+    fn close_flushes_files_and_writes_metadata_if_db_mode_has_write_access() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 2, 1, 2, 1);
         write_reuse_list(&dir, &[0, 1]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         {
             // freeze second node, and a third node, reserve a fourth node
             storage.frozen_nodes.store(2, Ordering::Relaxed);
@@ -692,9 +760,11 @@ mod tests {
 
         storage.close().unwrap();
 
-        let metadata =
-            NodeFileStorageMetadata::read_or_init(dir.join(NodeFileStorage::METADATA_FILE))
-                .unwrap();
+        let metadata = NodeFileStorageMetadata::read_or_init(
+            dir.join(NodeFileStorage::METADATA_FILE),
+            DbMode::Read,
+        )
+        .unwrap();
         assert_eq!(
             metadata,
             NodeFileStorageMetadata {
@@ -717,14 +787,46 @@ mod tests {
     }
 
     #[test]
-    fn open_recovers_closed_state() {
+    fn close_is_no_op_if_db_is_read_only() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 2, 1, 2, 1);
         write_reuse_list(&dir, &[0, 1]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::Read).unwrap();
+        storage.close().unwrap();
+
+        let metadata = NodeFileStorageMetadata::read_or_init(
+            dir.join(NodeFileStorage::METADATA_FILE),
+            DbMode::Read,
+        )
+        .unwrap();
+        assert_eq!(
+            metadata,
+            NodeFileStorageMetadata {
+                last_checkpoint: 0,
+                nodes: 2,
+                frozen_nodes: 1,
+                reuse_indices: 2,
+                frozen_reuse_indices: 1,
+            }
+        );
+        let nodes = fs::read(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
+        assert_eq!(nodes, [[0u8; 32], [1; 32]].as_bytes());
+        let reuse_list_indices = fs::read(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
+        assert_eq!(reuse_list_indices, [0u64, 1].as_bytes());
+    }
+
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_recovers_closed_state(#[case] db_mode: DbMode) {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        write_metadata(&dir, 0, 2, 1, 2, 1);
+        write_reuse_list(&dir, &[0, 1]);
+        write_nodes(&dir, &[[0; 32], [1; 32]]);
+
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
         // freeze one node and add another one and freeze one reuse index and add another one
         {
             storage.frozen_nodes.store(2, Ordering::Relaxed);
@@ -739,7 +841,7 @@ mod tests {
 
         storage.close().unwrap();
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
         assert_eq!(storage.checkpoint.load(Ordering::Relaxed), 0);
         assert_eq!(storage.next_idx.load(Ordering::Relaxed), 3);
         assert_eq!(storage.frozen_nodes.load(Ordering::Relaxed), 2);
@@ -748,14 +850,14 @@ mod tests {
         assert_eq!(reuse_list_file.frozen_count(), 2);
     }
 
-    #[test]
-    fn ensure_returns_if_checkpoint_matches() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn ensure_returns_if_checkpoint_matches(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let checkpoint = 1;
-        write_metadata(&dir, checkpoint, 0, 0, 0, 0);
+        init_db(&dir, checkpoint, &[], 0, &[], 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), db_mode).unwrap();
         assert!(storage.ensure(checkpoint).is_ok());
         assert!(matches!(
             storage.ensure(checkpoint - 1).map_err(BTError::into_inner),
@@ -774,7 +876,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadWrite).unwrap();
         assert!(matches!(
             storage.prepare(checkpoint).map_err(BTError::into_inner),
             Err(Error::Checkpoint)
@@ -799,7 +901,7 @@ mod tests {
             frozen_reuse_indices: 2,
         };
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadWrite).unwrap();
 
         storage.prepare(1).unwrap();
 
@@ -825,9 +927,22 @@ mod tests {
         // check that prepared metadata has been written
         let prepared_metadata = NodeFileStorageCheckpointMetadata::read_or_init(
             dir.join(NodeFileStorage::PREPARED_METADATA_FILE),
+            DbMode::ReadWrite,
         )
         .unwrap();
         assert_eq!(prepared_metadata, expected_prepared_metadata);
+    }
+
+    #[test]
+    fn prepare_fails_if_db_is_read_only_mode() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        init_db(&dir, 0, &[], 0, &[], 0);
+
+        let storage = NodeFileStorage::open(dir.path(), DbMode::Read).unwrap();
+        assert!(matches!(
+            storage.prepare(1).map_err(BTError::into_inner),
+            Err(Error::ReadOnly)
+        ));
     }
 
     #[test]
@@ -837,7 +952,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadWrite).unwrap();
         assert!(matches!(
             storage.commit(checkpoint).map_err(BTError::into_inner),
             Err(Error::Checkpoint)
@@ -855,7 +970,7 @@ mod tests {
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadWrite).unwrap();
 
         // Attempting to commit without a prepared metadata file fails.
         assert!(matches!(
@@ -901,7 +1016,7 @@ mod tests {
         write_reuse_list(&dir, &[0]);
         write_nodes(&dir, &[[0; 32]]);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadWrite).unwrap();
         assert_eq!(storage.checkpoint.load(Ordering::Relaxed), 1);
 
         let new_metadata = NodeFileStorageCheckpointMetadata {
@@ -929,13 +1044,25 @@ mod tests {
     }
 
     #[test]
+    fn commit_fails_if_db_is_read_only() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        init_db(&dir, 0, &[], 0, &[], 0);
+
+        let storage = NodeFileStorage::open(dir.path(), DbMode::Read).unwrap();
+        assert!(matches!(
+            storage.commit(1).map_err(BTError::into_inner),
+            Err(Error::ReadOnly)
+        ));
+    }
+
+    #[test]
     fn abort_fails_if_requested_checkpoint_is_not_one_larger_than_current_one() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let checkpoint = 1;
         write_metadata(&dir, checkpoint, 0, 0, 0, 0);
 
-        let storage = NodeFileStorage::open(dir.path()).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadWrite).unwrap();
         assert!(matches!(
             storage.abort(checkpoint).map_err(BTError::into_inner),
             Err(Error::Checkpoint)
@@ -977,7 +1104,7 @@ mod tests {
         write_reuse_list(&dir, &[0, 2]); // one frozen + one new
         write_nodes(&dir, &[[0; 32], [1; 32], [2; 32], [3; 32]]); // two frozen + two new
 
-        let storage = NodeFileStorage::open(&dir).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadWrite).unwrap();
 
         // simulate prepared state
         {
@@ -1018,6 +1145,18 @@ mod tests {
     }
 
     #[test]
+    fn abort_fails_if_db_is_read_only() {
+        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        init_db(&test_dir, 0, &[], 0, &[], 0);
+
+        let storage = NodeFileStorage::open(test_dir.path(), DbMode::Read).unwrap();
+        assert!(matches!(
+            storage.abort(1).map_err(BTError::into_inner),
+            Err(Error::ReadOnly)
+        ));
+    }
+
+    #[test]
     fn restore_overwrites_metadata_with_committed_metadata() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
@@ -1043,9 +1182,11 @@ mod tests {
 
         NodeFileStorage::restore(&dir, 1).unwrap();
 
-        let metadata =
-            NodeFileStorageMetadata::read_or_init(dir.join(NodeFileStorage::METADATA_FILE))
-                .unwrap();
+        let metadata = NodeFileStorageMetadata::read_or_init(
+            dir.join(NodeFileStorage::METADATA_FILE),
+            DbMode::Read,
+        )
+        .unwrap();
         assert_eq!(
             metadata,
             NodeFileStorageMetadata {
@@ -1150,5 +1291,27 @@ mod tests {
             nodes.as_bytes(),
         )
         .unwrap();
+    }
+
+    /// Initializes a test database by writing the metadata, reuse list and node files to the
+    /// specified directory.
+    fn init_db(
+        dir: impl AsRef<Path>,
+        checkpoint: u64,
+        nodes: &[TestNode],
+        frozen_nodes: u64,
+        reuse_indices: &[u64],
+        frozen_reuse_indices: u64,
+    ) {
+        write_metadata(
+            &dir,
+            checkpoint,
+            nodes.len() as u64,
+            frozen_nodes,
+            reuse_indices.len() as u64,
+            frozen_reuse_indices,
+        );
+        write_reuse_list(&dir, reuse_indices);
+        write_nodes(&dir, nodes);
     }
 }

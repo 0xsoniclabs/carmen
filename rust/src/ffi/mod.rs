@@ -29,6 +29,7 @@ mod bindings {
                     | crate::storage::Error::Frozen
                     | crate::storage::Error::IdNodeVariantMismatch
                     | crate::storage::Error::InvalidId
+                    | crate::storage::Error::ReadOnly
                     | crate::storage::Error::Checkpoint
                     | crate::storage::Error::Internal(_),
                 )

@@ -10,7 +10,7 @@
 
 use std::{
     cmp,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
 };
@@ -20,7 +20,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use crate::{
     error::BTResult,
-    storage::Error,
+    storage::{DbMode, Error},
     sync::{
         Mutex,
         atomic::{AtomicU64, Ordering},
@@ -47,14 +47,12 @@ where
 
     /// Opens the file at `path` and fills the cache with the ids corresponding to the highest block
     /// numbers. If the file does not exist, it is created.
-    pub fn open(path: impl AsRef<Path>, frozen_count: u64) -> BTResult<Self, Error> {
-        let mut file_opts = OpenOptions::new();
-        file_opts
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true);
-        let mut file = file_opts.open(path)?;
+    pub fn open(
+        path: impl AsRef<Path>,
+        frozen_count: u64,
+        db_mode: DbMode,
+    ) -> BTResult<Self, Error> {
+        let mut file = db_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
         if len < frozen_count * size_of::<ID>() as u64 {
             return Err(Error::DatabaseCorruption.into());
@@ -136,14 +134,15 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
+        storage::all_db_modes,
         utils::test_dir::{Permissions, TestDir},
     };
 
     type Id = [u8; 6];
     type RootIdsFile = super::RootIdsFile<Id>;
 
-    #[test]
-    fn open_reads_frozen_part_of_file() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_reads_frozen_part_of_file(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("root_ids");
 
@@ -151,7 +150,7 @@ mod tests {
         fs::write(path.as_path(), ids.as_bytes()).unwrap();
 
         let frozen_count = 2;
-        let root_ids_file = RootIdsFile::open(path, frozen_count).unwrap();
+        let root_ids_file = RootIdsFile::open(path, frozen_count, db_mode).unwrap();
         assert_eq!(root_ids_file.id_count.load(Ordering::Relaxed), frozen_count);
         assert_eq!(root_ids_file.cache.len(), frozen_count as usize);
         let mut cached_ids = root_ids_file
@@ -163,15 +162,15 @@ mod tests {
         assert_eq!(cached_ids, &ids[..frozen_count as usize]);
     }
 
-    #[test]
-    fn open_returns_error_for_invalid_file_size() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_returns_error_for_invalid_file_size(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("root_ids");
 
         fs::write(path.as_path(), [0; 10]).unwrap();
 
         let frozen_count = 2;
-        let result = RootIdsFile::open(path, frozen_count);
+        let result = RootIdsFile::open(path, frozen_count, db_mode);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::DatabaseCorruption)
@@ -183,7 +182,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.join("root_ids");
 
-        let result = RootIdsFile::open(path, 0);
+        let result = RootIdsFile::open(path, 0, DbMode::ReadWrite);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))
