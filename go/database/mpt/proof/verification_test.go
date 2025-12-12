@@ -114,7 +114,7 @@ func TestVerification_VerifyProofArchiveTrie_InvalidBlockNumber(t *testing.T) {
 		}
 	}).AnyTimes()
 
-	if err := verifyArchiveTrie(context.Background(), archiveTrie, 0, 1000, observer); err != nil {
+	if err := verifyArchiveTrie(context.Background(), archiveTrie, 0, 1000, observer, 10); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestVerification_VerifyProofArchiveTrie_EmptyBlockchain(t *testing.T) {
 	// no observer will be called
 	observer := mpt.NewMockVerificationObserver(ctrl)
 
-	if err := verifyArchiveTrie(context.Background(), archiveTrie, 0, 1000, observer); err != nil {
+	if err := verifyArchiveTrie(context.Background(), archiveTrie, 0, 1000, observer, 10); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -232,7 +232,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 
 	injectedError := fmt.Errorf("injected error")
 	var count int
-	threshold := 1000_000
+	threshold := 1_000_000
 	errorInjectingArchiveVerifiableTrieMock := NewMockverifiableArchiveTrie(ctrl)
 	errorInjectingArchiveVerifiableTrieMock.EXPECT().GetBlockHeight().DoAndReturn(func() (uint64, bool, error) {
 		if count >= threshold {
@@ -292,7 +292,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 	}).AnyTimes()
 
 	// count the number of executions first
-	if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer); err != nil {
+	if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer, 10); err != nil {
 		t.Fatalf("failed to verify archive trie: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 	for i := 0; i < loops; i++ {
 		count = 0     // reset the counter
 		threshold = i // update the threshold every loop
-		if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer); !errors.Is(err, injectedError) {
+		if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer, 10); !errors.Is(err, injectedError) {
 			t.Errorf("expected error %v, got %v", injectedError, err)
 		}
 	}
@@ -336,7 +336,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 	injectedError := fmt.Errorf("injected error")
 
 	var count int
-	threshold := 1000_000
+	threshold := 1_000_000
 	errorInjectingVerifiableTrieMock := NewMockverifiableTrie(ctrl)
 	errorInjectingVerifiableTrieMock.EXPECT().UpdateHashes().DoAndReturn(func() (common.Hash, *mpt.NodeHashes, error) {
 		if count >= threshold {
@@ -416,7 +416,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 	}).AnyTimes()
 
 	// count the number of executions first
-	if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer); err != nil {
+	if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer, 10); err != nil {
 		t.Fatalf("failed to verify archive trie: %v", err)
 	}
 
@@ -425,7 +425,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 	for i := 0; i < loops; i++ {
 		count = 0     // reset the counter
 		threshold = i // update the threshold every loop
-		if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer); !errors.Is(err, injectedError) {
+		if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer, 10); !errors.Is(err, injectedError) {
 			t.Errorf("expected error %v, got %v", injectedError, err)
 		}
 	}
@@ -458,7 +458,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	}
 
 	var counter int
-	threshold := 1000_000
+	threshold := 1_000_000
 	errorInjectingTrieMock := NewMockverifiableTrie(ctrl)
 	errorInjectingTrieMock.EXPECT().UpdateHashes().DoAndReturn(trie.UpdateHashes).AnyTimes()
 	errorInjectingTrieMock.EXPECT().VisitTrie(gomock.Any(), gomock.Any()).DoAndReturn(trie.VisitTrie).AnyTimes()
@@ -483,7 +483,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	}).AnyTimes()
 
 	// count the number of executions first
-	if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer); err != nil {
+	if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer, 10); err != nil {
 		t.Fatalf("failed to verify archive trie: %v", err)
 	}
 
@@ -492,7 +492,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 	for i := 0; i < loops; i++ {
 		counter = 0   // reset the counter
 		threshold = i // update the threshold every loop
-		if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer); !errors.Is(err, ErrInvalidProof) {
+		if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer, 10); !errors.Is(err, ErrInvalidProof) {
 			t.Errorf("expected error %v, got %v", ErrInvalidProof, err)
 		}
 	}
