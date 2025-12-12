@@ -494,12 +494,6 @@ func TestState_StateModificationsWithoutErrorHaveExpectedEffects(t *testing.T) {
 			if _, err := state.Apply(0, &update); err != nil {
 				t.Errorf("error to apply: %s", err)
 			}
-			if state.GetSnapshotableComponents() != nil {
-				t.Errorf("not implemented method should return nil")
-			}
-			if err := state.RunPostRestoreTasks(); err != nil {
-				t.Errorf("error to access data: %s", err)
-			}
 		})
 	}
 }

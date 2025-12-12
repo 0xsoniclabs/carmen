@@ -13,7 +13,6 @@ package index
 import (
 	"errors"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
@@ -45,11 +44,16 @@ type Index[K comparable, I common.Identifier] interface {
 
 	// Also, indexes need to be flush and closable.
 	common.FlushAndCloser
-
-	// Snapshotable indexes.
-	backend.Snapshotable
 }
 
 var (
 	ErrNotFound = errors.New("index: key not found")
 )
+
+// maxBytesPerPart the approximate size aimed for per part.
+const maxBytesPerPart = 4096
+
+// GetKeysPerPart computes the number of keys to be stored per part.
+func GetKeysPerPart[K any](serializer common.Serializer[K]) int {
+	return maxBytesPerPart / serializer.Size()
+}

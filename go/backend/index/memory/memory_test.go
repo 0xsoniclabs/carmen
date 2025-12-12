@@ -14,7 +14,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
@@ -29,7 +28,6 @@ func TestMemoryIndexImplements(t *testing.T) {
 	var memory Index[common.Address, uint32]
 	var _ index.Index[common.Address, uint32] = &memory
 	var _ io.Closer = &memory
-	var _ backend.Snapshotable = &memory
 }
 
 func TestStoringIntoMemoryIndex(t *testing.T) {

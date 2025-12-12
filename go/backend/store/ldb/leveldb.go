@@ -13,9 +13,9 @@ package ldb
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/0xsoniclabs/carmen/go/backend"
-	"github.com/0xsoniclabs/carmen/go/backend/store"
 	"unsafe"
+
+	"github.com/0xsoniclabs/carmen/go/backend"
 
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -155,84 +155,6 @@ func (m *Store[I, V]) setPagesCount(count int) error {
 // GetStateHash computes and returns a cryptographical hash of the stored data
 func (m *Store[I, V]) GetStateHash() (common.Hash, error) {
 	return m.hashTree.HashRoot()
-}
-
-// GetProof returns a proof the snapshot exhibits if it is created
-// for the current state of the data structure.
-func (m *Store[I, V]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-	return store.NewProof(hash), nil
-}
-
-// CreateSnapshot creates a snapshot of the current state of the data
-// structure. The snapshot should be shielded from subsequent modifications
-// and be accessible until released.
-func (m *Store[I, V]) CreateSnapshot() (backend.Snapshot, error) {
-	branchingFactor := m.hashTree.GetBranchingFactor()
-	hash, err := m.hashTree.HashRoot()
-	if err != nil {
-		return nil, err
-	}
-	snap, err := m.db.GetSnapshot()
-	if err != nil {
-		return nil, err
-	}
-
-	newSnap := &SnapshotSource[I, V]{
-		snap:  snap,
-		store: m,
-	}
-
-	snapshot := store.CreateStoreSnapshotFromStore[V](m.valueSerializer, branchingFactor, hash, m.pagesCount, newSnap)
-	return snapshot, nil
-}
-
-// Restore restores the data structure to the given snapshot state. This
-// may invalidate any former snapshots created on the data structure. In
-// particular, it is not required to be able to synchronize to a former
-// snapshot derived from the targeted data structure.
-func (m *Store[I, V]) Restore(snapshotData backend.SnapshotData) error {
-	snapshot, err := store.CreateStoreSnapshotFromData[V](m.valueSerializer, snapshotData)
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot; %s", err)
-	}
-	if snapshot.GetBranchingFactor() != m.hashTree.GetBranchingFactor() {
-		return fmt.Errorf("unable to restore snapshot - unexpected branching factor")
-	}
-
-	err = m.hashTree.Reset()
-	if err != nil {
-		return fmt.Errorf("unable to restore snapshot - failed to remove old hashTree; %s", err)
-	}
-
-	var id I
-	partsNum := snapshot.GetNumParts()
-	for partNum := 0; partNum < partsNum; partNum++ {
-		data, err := snapshot.GetPartData(partNum)
-		if err != nil {
-			return err
-		}
-		if len(data) != m.pageSize*m.itemSize {
-			return fmt.Errorf("unable to restore snapshot - unexpected length of store part")
-		}
-		for i := 0; i < m.pageSize && len(data) != 0; i++ {
-			err := m.Set(id, m.valueSerializer.FromBytes(data[0:m.itemSize]))
-			if err != nil {
-				return err
-			}
-			data = data[m.itemSize:]
-			id++
-		}
-		m.hashTree.MarkUpdated(partNum)
-	}
-	return nil
-}
-
-func (m *Store[I, V]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return store.CreateStoreSnapshotVerifier[V](m.valueSerializer), nil
 }
 
 func (m *Store[I, V]) Flush() error {

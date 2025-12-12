@@ -18,7 +18,6 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/array"
 	"github.com/0xsoniclabs/carmen/go/backend/array/pagedarray"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
@@ -36,8 +35,6 @@ const (
 	pagePoolSize      = 1 << 17
 
 	uint32ByteSize = 4
-
-	bulkInsertKeysNum = 1 << 25 // the number of keys that are accumulated while snapshot restoration before they are actually inserted. Approx 1GB, depends on key size.
 )
 
 // Index is a file implementation of index.Index. It uses common.LinearHashMap to store key-identifier pairs.
@@ -280,149 +277,6 @@ func (m *Index[K, I]) Close() error {
 		return err
 	}
 
-	return nil
-}
-
-func (m *Index[K, I]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.NewIndexProof(common.Hash{}, hash), nil
-}
-
-func (m *Index[K, I]) CreateSnapshot() (backend.Snapshot, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.CreateIndexSnapshotFromIndex[K](
-		m.keySerializer,
-		hash,
-		m.table.Size(),
-		&indexSnapshotSource[K, I]{m, m.table.Size(), hash}), nil
-}
-
-func (m *Index[K, I]) Restore(data backend.SnapshotData) error {
-	snapshot, err := index.CreateIndexSnapshotFromData(m.keySerializer, data)
-	if err != nil {
-		return err
-	}
-
-	// Reset and re-initialize the index.
-	if err := m.table.Clear(); err != nil {
-		return err
-	}
-
-	m.hashIndex.Clear()
-	m.maxIndex = 0
-
-	keysBuffer := make([]K, 0, bulkInsertKeysNum)
-	var lastHash common.Hash
-	for j := 0; j < snapshot.GetNumParts(); j++ {
-		part, err := snapshot.GetPart(j)
-		if err != nil {
-			return err
-		}
-		indexPart, ok := part.(*index.IndexPart[K])
-		if !ok {
-			return fmt.Errorf("invalid part format encountered")
-		}
-		for _, key := range indexPart.GetKeys() {
-			keysBuffer = append(keysBuffer, key)
-			// flush when needed
-			if len(keysBuffer) == bulkInsertKeysNum {
-				if err := m.bulkInsert(keysBuffer); err != nil {
-					return err
-				}
-				keysBuffer = keysBuffer[0:0]
-			}
-		}
-
-		// import proofs
-		proof, err := snapshot.GetProof(j)
-		if err != nil {
-			return err
-		}
-		indexProof, ok := proof.(*index.IndexProof)
-		if !ok {
-			return fmt.Errorf("invalid proof format encountered")
-		}
-		if err := m.hashes.Set(I(j), indexProof.GetBeforeHash()); err != nil {
-			return err
-		}
-
-		lastHash = indexProof.GetAfterHash()
-	}
-
-	// flush remaining keys
-	if len(keysBuffer) > 0 {
-		if err := m.bulkInsert(keysBuffer); err != nil {
-			return err
-		}
-	}
-
-	// import the last hash only if the last part is full
-	keysPerPart := index.GetKeysPerPart(m.keySerializer)
-	if m.table.Size()%keysPerPart == 0 {
-		if err := m.hashes.Set(I(snapshot.GetNumParts()), lastHash); err != nil {
-			return err
-		}
-	}
-
-	m.hashIndex = indexhash.InitIndexHash[K](lastHash, m.keySerializer)
-
-	return nil
-}
-
-func (m *Index[K, I]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return index.CreateIndexSnapshotVerifier[K](m.keySerializer), nil
-}
-
-type indexSnapshotSource[K comparable, I common.Identifier] struct {
-	index   *Index[K, I] // The index this snapshot is based on.
-	numKeys int          // The number of keys at the time the snapshot was created.
-	hash    common.Hash  // The hash at the time the snapshot was created.
-}
-
-func (m *indexSnapshotSource[K, I]) GetHash(keyHeight int) (common.Hash, error) {
-	keysPerPart := index.GetKeysPerPart(m.index.keySerializer)
-
-	if keyHeight == m.numKeys {
-		return m.hash, nil
-	}
-	if keyHeight > m.numKeys {
-		return common.Hash{}, fmt.Errorf("invalid key height, not covered by snapshot")
-	}
-
-	if keyHeight%keysPerPart != 0 {
-		return common.Hash{}, fmt.Errorf("invalid key height, only supported at part boundaries")
-	}
-
-	hash, err := m.index.hashes.Get(I(keyHeight / keysPerPart))
-	if err != nil {
-		return hash, err
-	}
-
-	return hash, nil
-}
-
-func (m *indexSnapshotSource[K, I]) GetKeys(from, to int) ([]K, error) {
-	keys := make([]K, 0, to-from)
-	for i := from; i < to; i++ {
-		key, err := m.index.keys.Get(I(i))
-		if err != nil {
-			return nil, err
-		}
-		keys = append(keys, key)
-	}
-	return keys, nil
-}
-
-func (m *indexSnapshotSource[K, I]) Release() error {
-	// nothing to do
 	return nil
 }
 

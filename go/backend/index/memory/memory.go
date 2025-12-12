@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/index/indexhash"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -100,63 +99,6 @@ func (m *Index[K, I]) Flush() error {
 // Close closes the storage and clean-ups all possible dirty values.
 func (m *Index[K, I]) Close() error {
 	return nil
-}
-
-func (m *Index[K, I]) GetProof() (backend.Proof, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.NewIndexProof(common.Hash{}, hash), nil
-}
-
-func (m *Index[K, I]) CreateSnapshot() (backend.Snapshot, error) {
-	hash, err := m.GetStateHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return index.CreateIndexSnapshotFromIndex[K](
-		m.keySerializer,
-		hash,
-		len(m.list),
-		&indexSnapshotSource[K, I]{m, len(m.list), hash}), nil
-}
-
-func (m *Index[K, I]) Restore(data backend.SnapshotData) error {
-	snapshot, err := index.CreateIndexSnapshotFromData(m.keySerializer, data)
-	if err != nil {
-		return err
-	}
-
-	// Reset and re-initialize the index.
-	m.hashIndex.Clear()
-	m.hashes = m.hashes[0:0]
-	m.list = m.list[0:0]
-	m.data = make(map[K]I, initCapacity)
-
-	for j := 0; j < snapshot.GetNumParts(); j++ {
-		part, err := snapshot.GetPart(j)
-		if err != nil {
-			return err
-		}
-		indexPart, ok := part.(*index.IndexPart[K])
-		if !ok {
-			return fmt.Errorf("invalid part format encountered")
-		}
-		for _, key := range indexPart.GetKeys() {
-			if _, err := m.GetOrAdd(key); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (m *Index[K, I]) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return index.CreateIndexSnapshotVerifier(m.keySerializer), nil
 }
 
 type indexSnapshotSource[K comparable, I common.Identifier] struct {

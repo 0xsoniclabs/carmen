@@ -12,8 +12,10 @@ package depot_test
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
+	"io"
+	"testing"
+
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/depot"
 	"github.com/0xsoniclabs/carmen/go/backend/depot/cache"
@@ -25,8 +27,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htldb"
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htmemory"
 	"github.com/0xsoniclabs/carmen/go/common"
-	"io"
-	"testing"
 )
 
 // test depot parameters (different from benchmark depot parameters)
@@ -235,49 +235,6 @@ func TestDepotMutability(t *testing.T) {
 	}
 }
 
-func TestDepotPersistence(t *testing.T) {
-	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
-		if factory.label == "Memory" {
-			continue
-		}
-		t.Run(factory.label, func(t *testing.T) {
-			dir := t.TempDir()
-
-			d1 := factory.getDepot(dir)
-			err := d1.Set(1, B)
-			if err != nil {
-				t.Fatalf("failed to set into a depot; %s", err)
-			}
-			snap1, err := d1.CreateSnapshot()
-			if err != nil {
-				t.Fatalf("failed to create snapshot; %s", err)
-			}
-			parts1 := snap1.GetNumParts()
-			_ = snap1.Release()
-			_ = d1.Close()
-
-			d2 := factory.getDepot(dir)
-			value, err := d2.Get(1)
-			if err != nil {
-				t.Fatalf("failed to get from a depot; %s", err)
-			}
-			if !bytes.Equal(value, B) {
-				t.Errorf("value stored into a depo not persisted")
-			}
-			snap2, err := d2.CreateSnapshot()
-			if err != nil {
-				t.Fatalf("failed to create snapshot; %s", err)
-			}
-			parts2 := snap2.GetNumParts()
-			if parts1 != parts2 {
-				t.Errorf("num of parts persisted in the depo does not match: %d != %d", parts1, parts2)
-			}
-			_ = snap2.Release()
-			_ = d2.Close()
-		})
-	}
-}
-
 func TestHashing(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
@@ -440,128 +397,6 @@ func TestDepotPages(t *testing.T) {
 				0x00, 0x00, 0x00, 0x00,
 			}) {
 				t.Errorf("unexpected page 9: %x", page)
-			}
-		})
-	}
-}
-
-func TestDepotSnapshotRecovery(t *testing.T) {
-	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
-		t.Run(factory.label, func(t *testing.T) {
-			depot1 := factory.getDepot(t.TempDir())
-			defer depot1.Close()
-
-			const numEntries = 32
-			for i := 0; i < numEntries; i++ {
-				val := binary.LittleEndian.AppendUint32(nil, uint32(i))
-				if err := depot1.Set(uint32(i), val); err != nil {
-					t.Fatalf("failed to set store item %d; %s", i, err)
-				}
-			}
-			stateHash1, err := depot1.GetStateHash()
-			if err != nil {
-				t.Fatalf("failed to get state hash; %s", err)
-			}
-
-			snapshot1, err := depot1.CreateSnapshot()
-			if err != nil {
-				t.Fatalf("failed to create snapshot; %s", err)
-			}
-			snapshot1data := snapshot1.GetData()
-
-			if snapshot1.GetNumParts() != numEntries/GroupSize {
-				t.Errorf("unexpected amount of snapshot parts: %d", snapshot1.GetNumParts())
-			}
-
-			depot2 := factory.getDepot(t.TempDir())
-			defer depot2.Close()
-
-			err = depot2.Restore(snapshot1data)
-			if err != nil {
-				t.Fatalf("failed to recover snapshot; %s", err)
-			}
-
-			for i := 0; i < numEntries; i++ {
-				expected := binary.LittleEndian.AppendUint32(nil, uint32(i))
-				if value, err := depot2.Get(uint32(i)); err != nil || !bytes.Equal(value, expected) {
-					t.Errorf("incorrect Get result for recovered store, key %d; %x, %s", i, value, err)
-				}
-			}
-			stateHash2, err := depot2.GetStateHash()
-			if err != nil {
-				t.Fatalf("failed to get recovered store hash; %s", err)
-			}
-			if stateHash1 != stateHash2 {
-				t.Errorf("recovered store hash does not match")
-			}
-		})
-	}
-}
-
-func TestDepotSnapshotRecoveryOverriding(t *testing.T) {
-	for _, factory := range getDepotsFactories(t, 3, 2) {
-		t.Run(factory.label, func(t *testing.T) {
-			depot1 := factory.getDepot(t.TempDir())
-			defer depot1.Close()
-
-			const numEntries = 32
-			for i := 0; i < numEntries; i++ {
-				val := binary.LittleEndian.AppendUint32(nil, uint32(i))
-				if err := depot1.Set(uint32(i), val); err != nil {
-					t.Fatalf("failed to set store item %d; %s", i, err)
-				}
-			}
-			stateHash1, err := depot1.GetStateHash()
-			if err != nil {
-				t.Fatalf("failed to get state hash; %s", err)
-			}
-
-			snapshot1, err := depot1.CreateSnapshot()
-			if err != nil {
-				t.Fatalf("failed to create snapshot; %s", err)
-			}
-			snapshot1data := snapshot1.GetData()
-
-			// ensure the snapshot is used - change something in the depot after the snapshot is created
-			if err := depot1.Set(uint32(2), []byte{0xAA, 0xBB}); err != nil {
-				t.Fatalf("failed to set store item %d; %s", 2, err)
-			}
-
-			depot2 := factory.getDepot(t.TempDir())
-			defer depot2.Close()
-
-			// the depot2 will be filled with data before the restore - these should be removed during restore
-			for i := 0; i < numEntries+5; i++ {
-				val := binary.LittleEndian.AppendUint32(nil, uint32(i))
-				if err := depot2.Set(uint32(i), val); err != nil {
-					t.Fatalf("failed to set store item %d; %s", i, err)
-				}
-
-			}
-
-			err = depot2.Restore(snapshot1data)
-			if err != nil {
-				t.Fatalf("failed to recover snapshot; %s", err)
-			}
-
-			for i := 0; i < numEntries; i++ {
-				expected := binary.LittleEndian.AppendUint32(nil, uint32(i))
-				if value, err := depot2.Get(uint32(i)); err != nil || !bytes.Equal(value, expected) {
-					t.Errorf("incorrect Get result for recovered store, key %d; %x != %x, %s", i, value, expected, err)
-				}
-			}
-			for i := numEntries; i < numEntries+8; i++ {
-				if value, err := depot2.Get(uint32(i)); err != nil || value != nil {
-					t.Errorf("incorrect Get result for recovered store, key %d; %x != nil, %s", i, value, err)
-				}
-			}
-
-			stateHash2, err := depot2.GetStateHash()
-			if err != nil {
-				t.Fatalf("failed to get recovered store hash; %s", err)
-			}
-			if stateHash1 != stateHash2 {
-				t.Errorf("recovered store hash does not match")
 			}
 		})
 	}

@@ -14,7 +14,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
@@ -714,73 +713,6 @@ func TestState_Export_NotSupportedWithoutBackend(t *testing.T) {
 
 	_, err := flatState.Export(t.Context(), nil)
 	require.ErrorIs(t, err, state.ExportNotSupported)
-}
-
-func TestState_GetProof_ForwardsToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	backend.EXPECT().GetProof().Return(nil, nil)
-
-	flatState := &State{
-		backend: backend,
-	}
-	gotProof, err := flatState.GetProof()
-	require.NoError(t, err)
-	require.Nil(t, gotProof)
-}
-
-func TestState_CreateSnapshot_ForwardsToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-	backend.EXPECT().CreateSnapshot().Return(nil, nil)
-
-	flatState := &State{
-		backend: backend,
-	}
-	gotSnapshot, err := flatState.CreateSnapshot()
-	require.NoError(t, err)
-	require.Nil(t, gotSnapshot)
-}
-
-func TestState_Restore_ForwardsToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	inner := state.NewMockState(ctrl)
-
-	inner.EXPECT().Restore(nil).Return(nil)
-	flatState := &State{
-		backend: inner,
-	}
-
-	require.NoError(t, flatState.Restore(nil))
-}
-
-func TestState_GetSnapshotVerifier_ForwardsToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	inner := state.NewMockState(ctrl)
-
-	inner.EXPECT().GetSnapshotVerifier([]byte{0x01, 0x02}).Return(nil, nil)
-	flatState := &State{
-		backend: inner,
-	}
-	_, err := flatState.GetSnapshotVerifier([]byte{0x01, 0x02})
-	require.NoError(t, err)
-}
-
-func TestState_SnapshotFeatures_NotSupportedWithoutBackend(t *testing.T) {
-	flatState := &State{}
-
-	_, err := flatState.GetProof()
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
-
-	_, err = flatState.CreateSnapshot()
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
-
-	err = flatState.Restore(nil)
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
-
-	_, err = flatState.GetSnapshotVerifier(nil)
-	require.ErrorIs(t, err, backend.ErrSnapshotNotSupported)
 }
 
 // --- issue collector tests ---

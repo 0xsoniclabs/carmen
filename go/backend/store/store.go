@@ -11,7 +11,6 @@
 package store
 
 import (
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
@@ -35,6 +34,4 @@ type Store[I common.Identifier, V any] interface {
 
 	// Also, stores need to be flush and closable.
 	common.FlushAndCloser
-
-	backend.Snapshotable
 }

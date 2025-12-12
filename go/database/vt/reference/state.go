@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
@@ -198,19 +197,4 @@ func (s *State) CreateWitnessProof(address common.Address, keys ...common.Key) (
 
 func (s *State) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
 	panic("not implemented")
-}
-
-// Snapshot & Recovery
-func (s *State) GetProof() (backend.Proof, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-
-func (s *State) CreateSnapshot() (backend.Snapshot, error) {
-	return nil, backend.ErrSnapshotNotSupported
-}
-func (s *State) Restore(backend.SnapshotData) error {
-	return backend.ErrSnapshotNotSupported
-}
-func (s *State) GetSnapshotVerifier([]byte) (backend.SnapshotVerifier, error) {
-	return nil, backend.ErrSnapshotNotSupported
 }
