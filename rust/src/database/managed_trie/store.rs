@@ -51,6 +51,7 @@ where
     T: UnionManagedTrieNode + HasEmptyNode,
     T::Id: Copy + Eq + std::hash::Hash + std::fmt::Debug + HasEmptyId,
 {
+    println!("store");
     let _span = tracy_client::span!("push updates through all levels");
     let updates = updates.borrowed();
     // Wrap the root ID lock into an Option so we can release it once we are deep enough in the tree

@@ -239,18 +239,35 @@ impl UnionManagedTrieNode for VerkleNode {
             VerkleNode::Inner47(n) => VerkleNode::Inner47(n.clone()),
             VerkleNode::Inner256(n) => {
                 if changed_children.len() <= InnerDeltaNode::DELTA_SIZE {
-                    VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
+                    println!("full to delta but full: {}", changed_children.len());
+                    VerkleNode::Inner256(n.clone())
+                    //VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
                 } else {
+                    println!("full to full: {}", changed_children.len());
                     VerkleNode::Inner256(n.clone())
                 }
             }
             VerkleNode::InnerDelta(n) => {
-                if ItemWithIndex::get_slots_for(&n.children_delta, changed_children.into_iter())
-                    .is_some()
+                let s = ItemWithIndex::get_slots_for(
+                    &n.children_delta,
+                    changed_children.clone().into_iter(),
+                );
+                if ItemWithIndex::get_slots_for(
+                    &n.children_delta,
+                    changed_children.clone().into_iter(),
+                )
+                .is_some()
                 {
+                    println!("delta to full: {}, {:?}", changed_children.len(), s);
                     VerkleNode::Inner256(Box::new(FullInnerNode::from(&**n)))
                 } else {
-                    VerkleNode::InnerDelta(n.clone())
+                    println!(
+                        "delta to delta but inner: {} {:?}",
+                        changed_children.len(),
+                        s
+                    );
+                    VerkleNode::Inner256(Box::new(FullInnerNode::from(&**n)))
+                    //VerkleNode::InnerDelta(n.clone())
                 }
             }
             VerkleNode::Leaf1(n) => VerkleNode::Leaf1(n.clone()),
