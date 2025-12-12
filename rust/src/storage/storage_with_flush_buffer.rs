@@ -14,7 +14,7 @@ use crossbeam_skiplist::SkipMap;
 
 use crate::{
     error::BTResult,
-    storage::{Checkpointable, Error, RootIdProvider, Storage},
+    storage::{Checkpointable, Error, FileMode, RootIdProvider, Storage},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -58,8 +58,8 @@ where
     type Id = S::Id;
     type Item = S::Item;
 
-    fn open(path: &Path) -> BTResult<Self, Error> {
-        let storage = Arc::new(S::open(path)?);
+    fn open(path: &Path, mode: FileMode) -> BTResult<Self, Error> {
+        let storage = Arc::new(S::open(path, mode)?);
         let flush_buffer = Arc::new(SkipMap::new());
         let workers = FlushWorkers::new(&flush_buffer, &storage);
         Ok(StorageWithFlushBuffer {
@@ -297,7 +297,7 @@ mod tests {
         //       -> SeekFile
         StorageWithFlushBuffer::<
             TestNodeFileStorageManager<NodeFileStorage<_, SeekFile>, NodeFileStorage<_, SeekFile>>,
-        >::open(&dir)
+        >::open(&dir, FileMode::ReadWrite)
         .unwrap();
     }
 
@@ -309,7 +309,7 @@ mod tests {
         // expectations set up.
         let storage = StorageWithFlushBuffer::<
             TestNodeFileStorageManager<NodeFileStorage<_, SeekFile>, NodeFileStorage<_, SeekFile>>,
-        >::open(&dir)
+        >::open(&dir, FileMode::ReadWrite)
         .unwrap();
 
         // The node store files should be locked while opened
@@ -711,7 +711,11 @@ mod tests {
                 // Use an actual storage as mockall does not use shuttle sync primitives, which we
                 // need to ensure context switches between shuttle threads.
                 let storage = Arc::new(
-                    NodeFileStorage::<NonEmpty1TestNode, SeekFile>::open(&testdir).unwrap(),
+                    NodeFileStorage::<NonEmpty1TestNode, SeekFile>::open(
+                        &testdir,
+                        FileMode::ReadWrite,
+                    )
+                    .unwrap(),
                 );
                 let node = NonEmpty1TestNode::default();
                 let id = storage.reserve(&node);
@@ -745,7 +749,7 @@ mod tests {
                 type Id = TestNodeId;
                 type Item = TestNode;
 
-                fn open(_path: &Path) -> BTResult<Self, Error>;
+                fn open(_path: &Path, mode: FileMode) -> BTResult<Self, Error>;
 
                 fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 

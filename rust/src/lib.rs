@@ -26,7 +26,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::cached_node_manager::CachedNodeManager,
     storage::{
-        Storage,
+        FileMode, Storage,
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
@@ -79,7 +79,8 @@ pub fn open_carmen_db(
                 NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
                 NodeFileStorage<FullLeafNode, NoSeekFile>,
             >;
-            let storage = StorageWithFlushBuffer::<FileStorage>::open(&live_dir)?;
+            let storage =
+                StorageWithFlushBuffer::<FileStorage>::open(&live_dir, FileMode::ReadWrite)?;
             let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382

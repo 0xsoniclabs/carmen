@@ -750,7 +750,7 @@ mod tests {
                 type Id = TestNodeId;
                 type Item = TestNode;
 
-                fn open(_path: &Path) -> BTResult<Self, storage::Error>;
+                fn open(_path: &Path, mode: storage::FileMode) -> BTResult<Self, storage::Error>;
 
                 fn get(
                     &self,

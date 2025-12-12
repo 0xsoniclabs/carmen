@@ -24,7 +24,7 @@ use carmen_rust::{
         cached_node_manager::CachedNodeManager,
         lock_cache::{EvictionHooks, LockCache},
     },
-    storage::{self, Storage},
+    storage::{self, FileMode, Storage},
     types::{HasEmptyId, HasEmptyNode},
 };
 use criterion::{BenchmarkId, criterion_group, criterion_main};
@@ -110,7 +110,7 @@ impl Storage for ProducerStorage {
     type Id = BenchId;
     type Item = BenchValue;
 
-    fn open(_path: &std::path::Path) -> BTResult<Self, storage::Error> {
+    fn open(_path: &std::path::Path, _mode: FileMode) -> BTResult<Self, storage::Error> {
         Ok(Self::new())
     }
 

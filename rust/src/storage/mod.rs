@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::{fs::OpenOptions, path::Path};
 
 pub use self::error::Error;
 use crate::error::BTResult;
@@ -17,6 +17,46 @@ use crate::error::BTResult;
 mod error;
 pub mod file;
 pub mod storage_with_flush_buffer;
+#[cfg(test)]
+pub mod test_utils;
+
+#[derive(Debug, Clone, Copy)]
+pub enum FileMode {
+    Read,
+    ReadWrite,
+}
+
+impl FileMode {
+    pub fn has_write_access(&self) -> bool {
+        matches!(self, FileMode::ReadWrite)
+    }
+
+    pub fn has_read_access(&self) -> bool {
+        matches!(self, FileMode::Read | FileMode::ReadWrite) // Always true for now
+    }
+
+    pub fn to_open_options(&self) -> OpenOptions {
+        match self {
+            FileMode::Read => get_read_open_options(),
+            FileMode::ReadWrite => get_rw_open_options(),
+        }
+    }
+}
+
+/// Returns OpenOptions configured for reading (no creation, read access only).
+pub fn get_read_open_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.create(false).truncate(false).read(true);
+    options
+}
+
+/// Returns OpenOptions configured for writing (creating file, read and write access, no
+/// truncation).
+pub fn get_rw_open_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(false).read(true).write(true);
+    options
+}
 
 /// A trait for storage backends that can store and retrieve items by their IDs.
 /// This is used for multiple layers of the storage system, but with different types for
@@ -31,7 +71,7 @@ pub trait Storage: Send + Sync {
     /// checkpoint.
     /// Depending on the implementation, the path is required to be a directory or a
     /// file.
-    fn open(path: &Path) -> BTResult<Self, Error>
+    fn open(path: &Path, mode: FileMode) -> BTResult<Self, Error>
     where
         Self: Sized;
 
