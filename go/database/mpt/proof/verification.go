@@ -28,6 +28,8 @@ import (
 // ErrInvalidProof is an error returned when a witness proof is not invalid.
 const ErrInvalidProof = common.ConstError("invalid proof")
 
+const numEmptyAddressesToVerify = 1000
+
 // VerifyArchiveTrie verifies the consistency of witness proofs for an archive trie.
 // It reads the trie for each block within the input range.
 // It gets account and storage slots and extracts a witness proof for each account and its storage.
@@ -40,14 +42,20 @@ func VerifyArchiveTrie(ctx context.Context, dir string, config mpt.MptConfig, fr
 
 	observer.StartVerification()
 	err = errors.Join(
-		verifyArchiveTrie(ctx, trie, from, to, observer),
+		verifyArchiveTrie(ctx, trie, from, to, observer, numEmptyAddressesToVerify),
 		trie.Close(),
 	)
 	observer.EndVerification(err)
 	return err
 }
 
-func verifyArchiveTrie(ctx context.Context, trie verifiableArchiveTrie, from, to int, observer mpt.VerificationObserver) error {
+func verifyArchiveTrie(
+	ctx context.Context,
+	trie verifiableArchiveTrie,
+	from, to int,
+	observer mpt.VerificationObserver,
+	numEmptyAccountsToVerify int,
+) error {
 	blockHeight, empty, err := trie.GetBlockHeight()
 	if err != nil {
 		return err
@@ -65,7 +73,7 @@ func verifyArchiveTrie(ctx context.Context, trie verifiableArchiveTrie, from, to
 	for i := from; i <= to; i++ {
 		trieView := &archiveTrie{trie: trie, block: uint64(i)}
 		observer.Progress(fmt.Sprintf("Verifying block: %d ", i))
-		if err := verifyTrie(ctx, trieView, observer); err != nil {
+		if err := verifyTrie(ctx, trieView, observer, numEmptyAccountsToVerify); err != nil {
 			return err
 		}
 	}
@@ -85,14 +93,19 @@ func VerifyLiveTrie(ctx context.Context, dir string, config mpt.MptConfig, obser
 
 	observer.StartVerification()
 	err = errors.Join(
-		verifyTrie(ctx, trie, observer),
+		verifyTrie(ctx, trie, observer, numEmptyAddressesToVerify),
 		trie.Close(),
 	)
 	observer.EndVerification(err)
 	return err
 }
 
-func verifyTrie(ctx context.Context, trie verifiableTrie, observer mpt.VerificationObserver) error {
+func verifyTrie(
+	ctx context.Context,
+	trie verifiableTrie,
+	observer mpt.VerificationObserver,
+	numEmptyAddressesToVerify int,
+) error {
 	rootHash, hints, err := trie.UpdateHashes()
 	if hints != nil {
 		hints.Release()
@@ -107,14 +120,13 @@ func verifyTrie(ctx context.Context, trie verifiableTrie, observer mpt.Verificat
 		rootHash:  rootHash,
 		trie:      trie,
 		observer:  observer,
-		logWindow: 1000_000,
+		logWindow: 1_000_000,
 	}
 	if err := trie.VisitTrie(mpt.ReadAccess{}, &visitor); err != nil || visitor.err != nil {
 		return errors.Join(err, visitor.err)
 	}
 
-	const numAddresses = 1000
-	return verifyEmptyAccount(trie, rootHash, numAddresses, observer)
+	return verifyEmptyAccount(trie, rootHash, numEmptyAddressesToVerify, observer)
 }
 
 // verifyEmptyAccount verifies the consistency of witness proofs for empty accounts that are not present in the trie.
