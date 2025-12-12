@@ -49,11 +49,3 @@ type Index[K comparable, I common.Identifier] interface {
 var (
 	ErrNotFound = errors.New("index: key not found")
 )
-
-// maxBytesPerPart the approximate size aimed for per part.
-const maxBytesPerPart = 4096
-
-// GetKeysPerPart computes the number of keys to be stored per part.
-func GetKeysPerPart[K any](serializer common.Serializer[K]) int {
-	return maxBytesPerPart / serializer.Size()
-}

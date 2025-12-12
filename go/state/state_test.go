@@ -780,16 +780,6 @@ func TestPersistentState(t *testing.T) {
 	}
 }
 
-func fillStateForSnapshotting(state state.State) {
-	state.Apply(0, common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1, Balance: amount.New(12)}},
-		Nonces:          []common.NonceUpdate{{Account: address2, Nonce: common.Nonce{14}}},
-		Codes:           []common.CodeUpdate{{Account: address3, Code: []byte{0, 8, 15}}},
-		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-	})
-}
-
 var stateDir = flag.String("statedir", "DEFAULT", "directory where the state is persisted")
 var stateImpl = flag.String("stateimpl", "DEFAULT", "name of the state implementation")
 

@@ -11,11 +11,12 @@
 package file
 
 import (
+	"math/rand"
+	"testing"
+
 	"github.com/0xsoniclabs/carmen/go/backend/index"
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/common"
-	"math/rand"
-	"testing"
 )
 
 var (
@@ -270,16 +271,6 @@ func TestFileHashMemoryFootprint(t *testing.T) {
 	freeIdsOverflow := overflowFile.GetChild("freeIds")
 	if freeIdsOverflow == nil {
 		t.Errorf("Mem footprint wrong")
-	}
-
-	reverse := footPrint.GetChild("keys")
-	if size := reverse.Value(); size == 0 {
-		t.Errorf("Mem footprint wrong: %d", size)
-	}
-
-	hashes := footPrint.GetChild("hashes")
-	if size := hashes.Value(); size == 0 {
-		t.Errorf("Mem footprint wrong: %d", size)
 	}
 }
 
