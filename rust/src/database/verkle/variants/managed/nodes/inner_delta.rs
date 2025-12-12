@@ -109,8 +109,10 @@ impl InnerDeltaNode {
     // TODO: This should not have to pass 256 values: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         let mut input = self.children;
-        for VerkleIdWithIndex { index, item: value } in &self.children_delta {
-            input[*index as usize] = *value;
+        for VerkleIdWithIndex { index, item } in self.children_delta {
+            if item != VerkleNodeId::default() {
+                input[index as usize] = item;
+            }
         }
         Ok(VerkleCommitmentInput::Inner(input))
     }
@@ -181,8 +183,13 @@ impl ManagedTrieNode for InnerDeltaNode {
                         "no available slot for storing value in sparse inner node".to_owned(),
                     ),
                 )?;
+                let id = if self.children_delta[slot].item != VerkleNodeId::default() {
+                    self.children_delta[slot].item
+                } else {
+                    self.children[index as usize]
+                };
                 descent_actions.push(DescendAction {
-                    id: self.children_delta[slot].item,
+                    id,
                     updates: sub_updates,
                 });
             }
