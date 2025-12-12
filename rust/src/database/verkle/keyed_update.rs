@@ -109,7 +109,7 @@ impl<'a> KeyedUpdateBatch<'a> {
     /// This is used to group updates for insertion into child nodes. It is therefore expected that
     /// all bytes at smaller (shallower) depths are equal. However, this is not enforced.
     ///
-    /// This method should for performance reasons only be called on borrowed data. This can be
+    /// For performance reasons, this method should only be called on borrowed data. This can be
     /// ensured by calling `.borrowed()` first.
     pub fn split(self, depth: u8) -> impl Iterator<Item = KeyedUpdateBatch<'a>> {
         SplitIter {
