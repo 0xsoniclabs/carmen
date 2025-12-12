@@ -19,9 +19,8 @@ use std::{
 };
 
 use carmen_rust::{
-    CarmenDb, CarmenS6FileBasedDb,
     database::{
-        self, VerkleTrieCarmenState,
+        self,
         verkle::variants::managed::{
             FullLeafNode, InnerNode, SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
         },
@@ -86,20 +85,21 @@ fn main() {
     let is_pinned = |_n: &VerkleNode| false; // We don't care about the pinned status for stats
     let storage = FileStorage::open(storage_path).unwrap();
     let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
-    let managed_trie = database::ManagedVerkleTrie::<_>::try_new(manager.clone()).unwrap();
-
     let mut formatters: Vec<_> = args
         .formatter
         .into_iter()
         .map(Formatter::to_formatter)
         .collect();
 
-    let mut count_visitor = NodeCountVisitor::default();
-    managed_trie.accept(&mut count_visitor).unwrap();
-    count_visitor.node_count.print(&mut formatters).unwrap();
+    // NOTE: the `ManagedVerkleTrie` must be dropped before closing the DB, hence the
+    // inner scope.
+    {
+        let managed_trie = database::ManagedVerkleTrie::<_>::try_new(manager.clone()).unwrap();
+        let mut count_visitor = NodeCountVisitor::default();
+        managed_trie.accept(&mut count_visitor).unwrap();
+        count_visitor.node_count.print(&mut formatters).unwrap();
+    }
 
     // Close the DB
-    CarmenS6FileBasedDb::new(manager, VerkleTrieCarmenState::from(managed_trie))
-        .close()
-        .unwrap();
+    Arc::into_inner(manager).unwrap().close().unwrap();
 }
