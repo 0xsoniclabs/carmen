@@ -17,9 +17,9 @@ pub use nodes::{
 
 use crate::{
     database::{
-        managed_trie::{ManagedTrieNode, TrieUpdateLog, lookup, store},
+        managed_trie::{self, ManagedTrieNode, TrieUpdateLog},
         verkle::{
-            KeyedUpdate, crypto::Commitment, keyed_update::KeyedUpdateBatch,
+            crypto::Commitment, keyed_update::KeyedUpdateBatch,
             variants::managed::commitment::update_commitments, verkle_trie::VerkleTrie,
         },
         visitor::{AcceptVisitor, NodeVisitor},
@@ -94,35 +94,16 @@ where
         + Sync,
 {
     fn lookup(&self, key: &Key) -> BTResult<Value, Error> {
-        lookup(*self.root.read().unwrap(), key, &*self.manager)
+        managed_trie::lookup(*self.root.read().unwrap(), key, &*self.manager)
     }
 
     fn store(&self, updates: &KeyedUpdateBatch) -> BTResult<(), Error> {
-        for update in updates.iter() {
-            match update {
-                KeyedUpdate::FullSlot { key, value } => {
-                    store(
-                        self.root.write().unwrap(),
-                        key,
-                        value,
-                        &*self.manager,
-                        &self.update_log,
-                    )?;
-                }
-                KeyedUpdate::PartialSlot { key, .. } => {
-                    let mut new_value = self.lookup(key)?;
-                    update.apply_to_value(&mut new_value);
-                    store(
-                        self.root.write().unwrap(),
-                        key,
-                        &new_value,
-                        &*self.manager,
-                        &self.update_log,
-                    )?;
-                }
-            }
-        }
-        Ok(())
+        managed_trie::store(
+            self.root.write().unwrap(),
+            updates,
+            &*self.manager,
+            &self.update_log,
+        )
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {
