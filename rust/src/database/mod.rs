@@ -15,5 +15,5 @@ pub mod visitor;
 pub use managed_trie::ManagedTrieNode;
 pub use verkle::{
     CrateCryptoInMemoryVerkleTrie, ManagedVerkleTrie, SimpleInMemoryVerkleTrie,
-    VerkleTrieCarmenState,
+    VerkleTrieCarmenState, VerkleTrieEmbedding,
 };

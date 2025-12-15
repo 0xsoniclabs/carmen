@@ -13,7 +13,7 @@ use std::{cell::LazyCell, sync::Arc};
 use carmen_rust::{
     CarmenState, Update,
     database::{
-        CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
+        CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie, VerkleTrieEmbedding,
         verkle::{
             VerkleTrieCarmenState,
             variants::managed::{VerkleNode, VerkleNodeId},
@@ -105,6 +105,9 @@ impl InitialState {
     fn init(self, carmen_state: &dyn CarmenState) {
         let num_accounts = self.num_accounts();
         let num_storage_keys = self.num_storage_keys();
+        // We assume that all keys fit into the embedding cache, which is
+        // fully warmed up after this call.
+        assert!(num_storage_keys < VerkleTrieEmbedding::CACHE_SIZE);
         let mut slots_update = vec![];
         for i in 0..num_accounts {
             let account_address = {
@@ -250,6 +253,13 @@ fn state_update_benchmark(c: &mut criterion::Criterion) {
                 let all_slot_updates = &all_slot_updates;
                 let init = move || {
                     let carmen_state = state_type.make_carmen_state();
+                    assert!(all_slot_updates.len() < VerkleTrieEmbedding::CACHE_SIZE);
+                    for update in all_slot_updates.iter() {
+                        // Warm up embedding cache by reading all keys once.
+                        carmen_state
+                            .get_storage_value(&update.addr, &update.key)
+                            .unwrap();
+                    }
                     let mut batches = Vec::with_capacity(NUM_KEYS / batch_size);
                     for b in 0..(NUM_KEYS / batch_size) {
                         let mut batch = Vec::with_capacity(batch_size);

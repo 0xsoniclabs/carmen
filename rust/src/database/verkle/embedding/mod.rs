@@ -36,7 +36,7 @@ impl Default for VerkleTrieEmbedding {
 }
 
 impl VerkleTrieEmbedding {
-    const CACHE_SIZE: usize = 1_000_000;
+    pub const CACHE_SIZE: usize = 1_000_000;
 
     pub fn new() -> Self {
         VerkleTrieEmbedding {
