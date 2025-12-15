@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::fmt::Debug;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -19,18 +21,7 @@ use crate::{
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    FromBytes,
-    IntoBytes,
-    Immutable,
-    Unaligned,
-    PartialOrd,
-    Ord,
+    Clone, Copy, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, Unaligned, PartialOrd, Ord,
 )]
 #[repr(transparent)]
 pub struct VerkleNodeId([u8; 6]);
@@ -116,6 +107,16 @@ impl HasEmptyId for VerkleNodeId {
 
     fn empty_id() -> Self {
         VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty)
+    }
+}
+
+impl Debug for VerkleNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VerkleNodeId")
+            .field("kind", &self.to_node_kind().unwrap())
+            .field("idx", &self.to_index())
+            .field("raw", &self.0)
+            .finish()
     }
 }
 
@@ -225,6 +226,24 @@ mod tests {
         assert_eq!(
             VerkleNodeId::min_non_empty_node_size(),
             VerkleNodeKind::min_non_empty_node_size()
+        );
+    }
+
+    #[test]
+    fn debug_print_kind_index_and_raw_bytes() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner)
+            ),
+            "VerkleNodeId { kind: Inner, idx: 1, raw: [64, 0, 0, 0, 0, 1] }"
+        );
+        assert_eq!(
+            format!(
+                "{:?}",
+                VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Leaf256)
+            ),
+            "VerkleNodeId { kind: Leaf256, idx: 2, raw: [192, 0, 0, 0, 0, 2] }"
         );
     }
 }
