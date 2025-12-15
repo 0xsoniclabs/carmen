@@ -31,7 +31,7 @@ pub enum LookupResult<ID> {
 pub enum StoreAction<'a, ID, U> {
     /// Indicates that the updates can be stored directly in this node.
     Store(KeyedUpdateBatch<'a>),
-    /// Indicates that the updates can be stored child nodes of this node.
+    /// Indicates that the updates can be stored in child nodes of this node.
     Descend(Vec<DescendAction<'a, ID>>), // TODO: replace with iterator if possible
     /// Indicates that a new node had to be created at this node's depth, which is the
     /// new parent of this node. The contained `U` is the new node.
