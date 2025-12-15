@@ -101,10 +101,6 @@ func (m *Array[I, V]) GetPage(pageId int) ([]byte, error) {
 	return page.GetContent()[0 : m.pageSize/m.itemSize*m.itemSize], nil
 }
 
-func (m *Array[I, V]) GetPagesCount() int {
-	return m.pagesCount
-}
-
 // Flush all changes to the disk
 func (m *Array[I, V]) Flush() (err error) {
 	// flush data file changes to disk

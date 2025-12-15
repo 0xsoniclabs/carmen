@@ -235,6 +235,34 @@ func TestDepotMutability(t *testing.T) {
 	}
 }
 
+func TestDepotPersistence(t *testing.T) {
+	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
+		if factory.label == "Memory" {
+			continue
+		}
+		t.Run(factory.label, func(t *testing.T) {
+			dir := t.TempDir()
+
+			d1 := factory.getDepot(dir)
+			err := d1.Set(1, B)
+			if err != nil {
+				t.Fatalf("failed to set into a depot; %s", err)
+			}
+			_ = d1.Close()
+
+			d2 := factory.getDepot(dir)
+			value, err := d2.Get(1)
+			if err != nil {
+				t.Fatalf("failed to get from a depot; %s", err)
+			}
+			if !bytes.Equal(value, B) {
+				t.Errorf("value stored into a depo not persisted")
+			}
+			_ = d2.Close()
+		})
+	}
+}
+
 func TestHashing(t *testing.T) {
 	for _, factory := range getDepotsFactories(t, BranchingFactor, GroupSize) {
 		t.Run(factory.label, func(t *testing.T) {
