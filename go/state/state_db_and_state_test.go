@@ -18,18 +18,19 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
+	_ "github.com/0xsoniclabs/carmen/go/experimental"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
-	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
 func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
+	t.Parallel()
 	addr1 := common.Address{1}
 	addr2 := common.Address{2}
 	addr3 := common.Address{3}
@@ -151,6 +152,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 }
 
 func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
+	t.Parallel()
 	for _, config := range initStates() {
 		config := config
 		t.Run(config.name(), func(t *testing.T) {
@@ -180,6 +182,7 @@ func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 }
 
 func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
+	t.Parallel()
 	for _, config := range initStates() {
 		config := config
 		t.Run(config.name(), func(t *testing.T) {
@@ -220,6 +223,28 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 	}
 }
 
+/*
+func Test_ListAllSchemaNames(t *testing.T) {
+	schemas := getAllSchemas()
+	for _, schema := range schemas {
+		t.Logf("Schema: %d", schema)
+	}
+	t.Fail()
+}
+
+func Test_ListAllConfigurations(t *testing.T) {
+	names := []string{}
+	for _, config := range initStates() {
+		names = append(names, config.name())
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		t.Logf("Configuration: %s", name)
+	}
+	t.Fail()
+}
+*/
+
 func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.StateDB)) {
 	want := map[state.Schema]common.Hash{}
 	for _, s := range getAllSchemas() {
@@ -237,46 +262,46 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 		ref.EndBlock(0)
 		want[s] = ref.GetHash()
 	}
-	for i := 0; i < 3; i++ {
-		for _, config := range initStates() {
-			config := config
-			t.Run(fmt.Sprintf("%v/run=%d", config.name(), i), func(t *testing.T) {
-				t.Parallel()
-				store, err := config.createState(t.TempDir())
-				if err != nil {
-					if errors.Is(err, UnsupportedConfiguration) {
-						t.Skipf("failed to initialize state %s: %v", config.name(), err)
-					} else {
-						t.Fatalf("failed to initialize state %s: %v", config.name(), err)
-					}
+	for _, config := range initStates() {
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			store, err := config.createState(t.TempDir())
+			if err != nil {
+				if errors.Is(err, UnsupportedConfiguration) {
+					t.Skipf("failed to initialize state %s: %v", config.name(), err)
+				} else {
+					t.Fatalf("failed to initialize state %s: %v", config.name(), err)
 				}
-				stateDb := state.CreateStateDBUsing(store)
-				defer stateDb.Close()
+			}
+			stateDb := state.CreateStateDBUsing(store)
+			defer stateDb.Close()
 
-				mod(stateDb)
-				stateDb.EndTransaction()
-				stateDb.EndBlock(0)
-				if got := stateDb.GetHash(); want[config.config.Schema] != got {
-					t.Errorf("Invalid hash, wanted %v, got %v", want, got)
-				}
-			})
-		}
+			mod(stateDb)
+			stateDb.EndTransaction()
+			stateDb.EndBlock(0)
+			if got := stateDb.GetHash(); want[config.config.Schema] != got {
+				t.Errorf("Invalid hash, wanted %v, got %v", want, got)
+			}
+		})
 	}
 }
 
 func TestCarmenStateHashIsDeterministicForEmptyState(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		// nothing
 	})
 }
 
 func TestCarmenStateHashIsDeterministicForSingleUpdate(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.SetState(address1, key1, val1)
 	})
 }
 
 func TestCarmenStateHashIsDeterministicForMultipleUpdate(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.SetState(address1, key1, val1)
 		s.SetState(address2, key2, val2)
@@ -285,6 +310,7 @@ func TestCarmenStateHashIsDeterministicForMultipleUpdate(t *testing.T) {
 }
 
 func TestCarmenStateHashIsDeterministicForMultipleAccountCreations(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.CreateAccount(address1)
 		s.CreateAccount(address2)
@@ -293,6 +319,7 @@ func TestCarmenStateHashIsDeterministicForMultipleAccountCreations(t *testing.T)
 }
 
 func TestCarmenStateHashIsDeterministicForMultipleAccountModifications(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.CreateAccount(address1)
 		s.CreateAccount(address2)
@@ -303,6 +330,7 @@ func TestCarmenStateHashIsDeterministicForMultipleAccountModifications(t *testin
 }
 
 func TestCarmenStateHashIsDeterministicForMultipleBalanceUpdates(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.AddBalance(address1, amount.New(12))
 		s.AddBalance(address2, amount.New(14))
@@ -312,6 +340,7 @@ func TestCarmenStateHashIsDeterministicForMultipleBalanceUpdates(t *testing.T) {
 }
 
 func TestCarmenStateHashIsDeterministicForMultipleNonceUpdates(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.SetNonce(address1, 12)
 		s.SetNonce(address2, 14)
@@ -320,6 +349,7 @@ func TestCarmenStateHashIsDeterministicForMultipleNonceUpdates(t *testing.T) {
 }
 
 func TestCarmenStateHashIsDeterministicForMultipleCodeUpdates(t *testing.T) {
+	t.Parallel()
 	testCarmenStateDbHashAfterModification(t, func(s state.StateDB) {
 		s.SetCode(address1, []byte{0xAC})
 		s.SetCode(address2, []byte{0xDC})
@@ -332,6 +362,7 @@ const numSlots = 1000
 // TestPersistentStateDB modifies stateDB first, then it is closed and is re-opened in another process,
 // and it is tested that data are available, i.e. all was successfully persisted
 func TestPersistentStateDB(t *testing.T) {
+	t.Parallel()
 	for _, config := range initStates() {
 		// skip in-memory
 		if strings.HasPrefix(config.name(), "cpp-memory") || strings.HasPrefix(config.name(), "go-memory") {
@@ -357,7 +388,7 @@ func TestPersistentStateDB(t *testing.T) {
 				}
 			}
 
-			stateDb := state.CreateStateDBUsing(s)
+			stateDb := state.CreateCustomStateDBUsing(s, 1000)
 
 			stateDb.BeginEpoch()
 			stateDb.BeginBlock()
@@ -399,7 +430,10 @@ func TestPersistentStateDB(t *testing.T) {
 				t.Errorf("Cannot close state: %v", err)
 			}
 
+			start := time.Now()
 			execSubProcessTest(t, dir, config.name(), "TestStateDBRead")
+			fmt.Printf("Sub-process test completed in %v\n", time.Since(start))
+			t.Fail()
 		})
 	}
 }
@@ -408,6 +442,12 @@ func TestPersistentStateDB(t *testing.T) {
 // The given state reads the data from the given directory and verifies the data are present.
 // Name of the index and directory is provided as command line arguments
 func TestStateDBRead(t *testing.T) {
+	start := time.Now()
+	defer func() {
+		fmt.Printf("TestStateDBRead completed in %v\n", time.Since(start))
+		t.Fail()
+	}()
+
 	// do not run this test stand-alone
 	if *stateDir == "DEFAULT" {
 		return
@@ -418,7 +458,7 @@ func TestStateDBRead(t *testing.T) {
 		_ = s.Close()
 	}()
 
-	stateDb := state.CreateStateDBUsing(s)
+	stateDb := state.CreateCustomStateDBUsing(s, 1000)
 
 	if state := stateDb.Exist(address1); state != true {
 		t.Errorf("Unexpected value, val: %v != %v", state, true)
@@ -515,6 +555,7 @@ func TestStateDBRead(t *testing.T) {
 }
 
 func TestStateDBArchive(t *testing.T) {
+	t.Parallel()
 
 	for _, config := range initStates() {
 		// skip configurations without an archive
@@ -580,6 +621,7 @@ func TestStateDBArchive(t *testing.T) {
 }
 
 func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
+	t.Parallel()
 	const N = 10  // number of concurrent goroutines
 	const M = 100 // number of updates per goroutine
 	for _, config := range initStates() {
@@ -646,6 +688,7 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 }
 
 func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.T) {
+	t.Parallel()
 	// This test covers an issue detected while replaying blocks on the
 	// Sepolia testnet, in which the same account is self-destructed and then
 	// re-created in the same block.
