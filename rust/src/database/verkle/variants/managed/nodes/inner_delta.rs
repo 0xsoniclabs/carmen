@@ -139,13 +139,15 @@ impl ManagedTrieNode for InnerDeltaNode {
 
     fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
         let slot = VerkleIdWithIndex::get_slot_for(&self.children_delta, key[depth as usize]);
-        match slot {
-            Some(slot) if self.children_delta[slot].index == key[depth as usize] => {
-                Ok(LookupResult::Node(self.children_delta[slot].item))
-            }
-            _ => Ok(LookupResult::Node(
+        if let Some(slot) = slot
+            && self.children_delta[slot].index == key[depth as usize]
+            && self.children_delta[slot].item != VerkleNodeId::default()
+        {
+            Ok(LookupResult::Node(self.children_delta[slot].item))
+        } else {
+            Ok(LookupResult::Node(
                 self.children[key[depth as usize] as usize],
-            )),
+            ))
         }
     }
 
@@ -180,7 +182,7 @@ impl ManagedTrieNode for InnerDeltaNode {
                 let index = sub_updates.first_key()[depth as usize];
                 let slot = VerkleIdWithIndex::get_slot_for(&self.children_delta, index).ok_or(
                     Error::CorruptedState(
-                        "no available slot for storing value in sparse inner node".to_owned(),
+                        "no available slot for storing value in inner delta node".to_owned(),
                     ),
                 )?;
                 let id = if self.children_delta[slot].item != VerkleNodeId::default() {
