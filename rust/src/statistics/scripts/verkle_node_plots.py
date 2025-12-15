@@ -5,13 +5,13 @@ import matplotlib.pyplot as plt
 
 sns.set_theme(style="whitegrid")
 
-CSV_PATH = "./carmen_stats_node_counts_by_kind.csv"
+CSV_PATH = "./stat_results/history/carmen_stats_node_counts_by_kind.csv"
 
 
 def load_and_prepare_data(csv_path):
     """
     Load the node statistics CSV and add total rows for each Node Kind.
-    Returns a DataFrame with both subtype and total rows.
+    Returns a DataFrame with both per-size and total counts.
     """
     df = pd.read_csv(csv_path)
     node_kinds = df["Node Kind"].unique()
@@ -21,7 +21,7 @@ def load_and_prepare_data(csv_path):
         total_count = kind_rows["Count"].sum()
         total_rows.append({"Node Kind": kind, "Node Size": kind, "Count": total_count})
     total_df = pd.DataFrame(total_rows)
-    return pd.concat([df, total_df], ignore_index=True)
+    return (df, total_df)
 
 
 def pie_plot(data, values_col, labels_col, title, pad=20):
@@ -62,7 +62,7 @@ def filter_and_group(df, kind, size_col="Node Size", count_col="Count", threshol
 
 def pie_with_other(df, kind, threshold, label_col="Node Size", count_col="Count"):
     """
-    Pie plot for a node kind, grouping subtypes below threshold into 'Other'.
+    Pie plot of node size distribution for a given node kind, grouping node sizes with counts below threshold into 'Other'.
     """
     sub_df = df[(df["Node Kind"] == kind) & (df[label_col] != kind)].copy()
     total = sub_df[count_col].sum()
@@ -94,39 +94,24 @@ def set_plot_params():
 # %%  --- Main analysis and plotting ---
 
 set_plot_params()
-df = load_and_prepare_data(CSV_PATH)
+df, total_df = load_and_prepare_data(CSV_PATH)
 
 # Pie: All node kinds (with totals)
-all_kinds_df = df[df["Node Kind"] == df["Node Size"]]
-pie_plot(all_kinds_df, "Count", "Node Kind", "Distribution of Node Kinds")
+all_kinds_df = total_df.copy()
+all_kinds_df.loc[all_kinds_df["Node Kind"] == "Empty", "Node Kind"] = "Wasted"
+# Rename Leaf and Inner to "Used", and sum them together
+all_kinds_df.loc[all_kinds_df["Node Kind"] == "Leaf", "Node Kind"] = "Used"
+all_kinds_df.loc[all_kinds_df["Node Kind"] == "Inner", "Node Kind"] = "Used"
+all_kinds_df = all_kinds_df.groupby("Node Kind", as_index=False)["Count"].sum()
+pie_plot(all_kinds_df, "Count", "Node Kind", "Used slots vs Wasted slots")
 
 # Pie: All node kinds, excluding "Empty"
-non_empty_df = all_kinds_df[all_kinds_df["Node Kind"] != "Empty"]
+non_empty_df = total_df[total_df["Node Kind"] != "Empty"]
 pie_plot(
     non_empty_df,
     "Count",
     "Node Kind",
     "Distribution of Node Kinds (excluding Empty nodes)",
-)
-
-# Pie: Leaf node subtypes above threshold
-leaf_threshold = 0.01
-leaf_subtypes_df, _ = filter_and_group(df, "Leaf", threshold=leaf_threshold)
-pie_plot(
-    leaf_subtypes_df,
-    "Count",
-    "Node Size",
-    f"Distribution of Leaf node children ({leaf_threshold * 100:.2f}% threshold)",
-)
-
-# Pie: Inner node subtypes above threshold
-inner_threshold = 0.01
-inner_subtypes_df, _ = filter_and_group(df, "Inner", threshold=inner_threshold)
-pie_plot(
-    inner_subtypes_df,
-    "Count",
-    "Node Size",
-    f"Distribution of Inner node children ({inner_threshold * 100:.1f}% threshold)",
 )
 
 # Bar: Inner node subtypes above 2% threshold

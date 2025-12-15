@@ -8,10 +8,6 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-//! A command line tool to print storage statistics for a Carmen database.
-//! The tool reads a storage path containing a Carmen database a prints various
-//! statistics about the storage using the specified output formatters.
-
 use std::{
     io::stdout,
     path::{Path, PathBuf},
@@ -59,7 +55,9 @@ impl Formatter {
     }
 }
 
-/// Storage Statistics Tool
+/// A command line tool to print statistics about the Live State storage of a Carmen DB.
+/// The tool reads a path containing a Carmen Live State a prints various
+/// statistics using the specified output formatters.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {

@@ -8,7 +8,7 @@ import seaborn as sns
 import pulp
 from sortedcontainers import SortedDict, SortedSet
 
-CSV_PATH = "./stat_results/history/carmen_stats_node_counts_by_kind.csv"
+CSV_PATH = "../../carmen_stats_node_counts_by_kind.csv"
 
 # NOTE: These sizes are based on the current implementation of the trie nodes in Carmen and needs to be manually updated if the implementation changes.
 
@@ -311,7 +311,8 @@ def print_results(solution_type, solution, size, prev_solution_size, writer):
     size_mib = size / (1024 * 1024)
     writer.write(f"{solution_type} solution:\n")
     writer.write(f"    Specializations used: {num_specializations}\n")
-    writer.write(f"    Node allocation: {solution}\n")
+    solution_str = ", ".join([f"{k} ({v} nodes)" for k, v in solution.items()])
+    writer.write(f"    Specializations: {solution_str}\n")
     writer.write(f"    Total size: {size_mib:.3f} MiB\n")
     if prev_solution_size is not None:
         saved_space_mib = (prev_solution_size - size) / (1024 * 1024)
@@ -384,7 +385,7 @@ def get_best_variants(
     node_sizes: dict,
     node_pruning_threshold: float,
     writer,
-    ignore_ilp=True,
+    greedy_only=True,
 ):
     """
     Get the best node specialization variants for a given range of specialization counts.
@@ -396,8 +397,7 @@ def get_best_variants(
         max_node (int): The index of the largest node specialization (always included).
         node_sizes (dict): Mapping from index to node size in bytes.
         node_pruning_threshold (float): Threshold (fraction) to prune nodes with less than this fraction of total nodes in the ILP approach. This improves performance but degrades solution quality.
-        writer (file-like): Output stream to write results.
-        ignore_ilp (bool): Whether to skip the ILP solution. Defaults to True.
+        greedy_only (bool): Whether to skip the ILP solution, which can be slow. Defaults to True.
     """
 
     solution_sizes_greedy = []
@@ -430,7 +430,7 @@ def get_best_variants(
         solution_sizes_greedy.append(greedy_size)
         prev_greedy_solution_size = greedy_size
 
-        if not ignore_ilp:
+        if not greedy_only:
             ilp_solution, ilp_size = best_variants_with_upper_bound_ilp(
                 num_specializations,
                 node_info["node_size"],
