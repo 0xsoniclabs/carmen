@@ -166,15 +166,8 @@ impl ManagedTrieNode for InnerDeltaNode {
         );
 
         if slots.is_some() {
-            let mut children = self.children;
-            for ItemWithIndex { index, item } in self.children_delta {
-                children[index as usize] = item;
-            }
             Ok(StoreAction::HandleTransform(VerkleNode::Inner256(
-                Box::new(FullInnerNode {
-                    children,
-                    commitment: self.commitment,
-                }),
+                Box::new(FullInnerNode::from(self)),
             )))
         } else {
             let mut descent_actions = Vec::new();
