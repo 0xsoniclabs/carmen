@@ -84,7 +84,10 @@ fn main() {
 
     // TODO: We should have a way of opening the DB in read-only mode.
     if !std::fs::read_dir(storage_path)
-        .unwrap()
+        .unwrap_or_else(|_| {
+            eprintln!("error: could not read database at the specified path");
+            std::process::exit(1);
+        })
         .filter_map(Result::ok)
         .any(|entry| entry.file_type().unwrap().is_file() && entry.file_name() == "metadata.bin")
     {
