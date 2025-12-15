@@ -490,6 +490,7 @@ func (s *State) store(w io.Writer) error {
 
 	// --- Accounts ---
 
+	// Sort accounts by address for deterministic output.
 	accKeys := slices.SortedFunc(maps.Keys(s.accounts), func(i, j common.Address) int {
 		return i.Compare(&j)
 	})
@@ -517,6 +518,8 @@ func (s *State) store(w io.Writer) error {
 	}
 
 	// --- Storage ---
+
+	// Sort storage slots by (address, key) for deterministic output.
 	slotKeys := slices.SortedFunc(maps.Keys(s.storage), func(i, j slotKey) int {
 		cmp := i.address.Compare(&j.address)
 		if cmp != 0 {
@@ -541,6 +544,8 @@ func (s *State) store(w io.Writer) error {
 	}
 
 	// --- Codes ---
+
+	// Sort codes by hash for deterministic output.
 	codeKeys := slices.SortedFunc(maps.Keys(s.codes), func(i, j common.Hash) int {
 		return i.Compare(&j)
 	})

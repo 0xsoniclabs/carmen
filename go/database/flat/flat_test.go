@@ -965,6 +965,36 @@ func TestState_StoreAndLoad_EmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T
 	require.Empty(restored.codes)
 }
 
+func TestState_Store_ProducesDeterministicOutput(t *testing.T) {
+	require := require.New(t)
+
+	state := &State{
+		accounts: map[common.Address]account{
+			{1}: {nonce: common.Nonce{3}},
+			{2}: {nonce: common.Nonce{4}},
+		},
+		storage: map[slotKey]common.Value{
+			{common.Address{1}, common.Key{10}}: {100},
+			{common.Address{2}, common.Key{20}}: {200},
+		},
+		codes: map[common.Hash][]byte{
+			{}:  {},
+			{1}: {1, 2, 3},
+		},
+	}
+
+	buf := new(bytes.Buffer)
+	require.NoError(state.store(buf))
+	want := buf.Bytes()
+
+	for range 50 {
+		buf := new(bytes.Buffer)
+		require.NoError(state.store(buf))
+		have := buf.Bytes()
+		require.Equal(want, have)
+	}
+}
+
 func TestState_Store_IoError_IsReported(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
