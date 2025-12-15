@@ -91,31 +91,31 @@ where
                 current_node_update.node_id,
             )? {
                 StoreAction::Store(stores) => {
-                    let current_node: &mut T = current_node_update
+                    let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
                         .map(|guard| &mut ***guard)
                         .unwrap_or(&mut empty_node);
-                    let mut trie_commitment = current_node.get_commitment();
+                    let mut trie_commitment = current_node_mut.get_commitment();
 
                     for update in stores.iter() {
-                        let prev_value = current_node.store(update)?;
+                        let prev_value = current_node_mut.store(update)?;
 
                         trie_commitment.store(update.key()[31] as usize, prev_value);
                     }
 
-                    current_node.set_commitment(trie_commitment)?;
+                    current_node_mut.set_commitment(trie_commitment)?;
                     update_log.mark_dirty(depth as usize, current_node_update.node_id);
 
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
-                    let current_node: &mut T = current_node_update
+                    let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
                         .map(|guard| &mut ***guard)
                         .unwrap_or(&mut empty_node);
-                    let mut trie_commitment = current_node.get_commitment();
+                    let mut trie_commitment = current_node_mut.get_commitment();
                     for DescendAction { id, updates } in descent_actions {
                         let index = updates.first_key()[depth as usize] as usize;
                         trie_commitment.modify_child(index);
@@ -132,7 +132,7 @@ where
                         });
                     }
 
-                    current_node.set_commitment(trie_commitment)?;
+                    current_node_mut.set_commitment(trie_commitment)?;
                     update_log.mark_dirty(depth as usize, current_node_update.node_id);
                     i += 1;
                 }
@@ -422,10 +422,9 @@ mod tests {
     }
 
     #[test]
-    fn descending_two_levels_deep_releases_lock_on_root_id() {
+    fn descending_one_level_deep_releases_lock_on_root_id() {
         let (manager, log, root_id, root_id_lock) = boilerplate();
         let child_id = manager.insert(manager.make());
-        let grandchild_id = manager.insert(manager.make());
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
@@ -451,18 +450,7 @@ mod tests {
                 || root_id_lock.try_read().ok(),
                 "timed out waiting for root_id to be unlocked",
             );
-            descend_into(
-                &manager,
-                child_id,
-                Some(root_id),
-                vec![DescendAction {
-                    id: grandchild_id,
-                    updates: updates.clone(),
-                }],
-                &updates,
-                1,
-            );
-            complete_store(&manager, grandchild_id, &updates, 2);
+            complete_store(&manager, child_id, &updates, 1);
         });
     }
 
@@ -825,7 +813,7 @@ mod tests {
     }
 
     #[test]
-    fn store_applies_storeaction_reparent_immediately_and_then_processes_reparented_node() {
+    fn store_applies_storeaction_reparent_and_processes_new_parent_node_next() {
         let (manager, log, root_id, root_id_lock) = boilerplate();
         let key1 = [1; 32];
         let key2 = [2; 32];
@@ -837,22 +825,22 @@ mod tests {
             });
 
             manager.expect_write_access(root_id, vec![]);
-            let reparented_node = manager.make();
-            let reparented_node_id = reparented_node.id();
+            let new_parent_node = manager.make();
+            let new_parent_node_id = new_parent_node.id();
             manager.expect(
                 root_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 0,
                     self_id: root_id,
-                    result: StoreAction::HandleReparent(reparented_node.clone()),
+                    result: StoreAction::HandleReparent(new_parent_node.clone()),
                 },
             );
-            manager.expect_add(reparented_node);
-            manager.expect_write_access(reparented_node_id, vec![root_id]);
+            manager.expect_add(new_parent_node);
+            manager.expect_write_access(new_parent_node_id, vec![root_id]);
             manager.wait_for_unlock(root_id);
-            complete_store(&manager, reparented_node_id, &updates, 0);
-            manager.wait_for_unlock(reparented_node_id);
+            complete_store(&manager, new_parent_node_id, &updates, 0);
+            manager.wait_for_unlock(new_parent_node_id);
         });
     }
 }

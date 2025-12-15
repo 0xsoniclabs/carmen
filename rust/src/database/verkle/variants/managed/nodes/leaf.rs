@@ -74,7 +74,7 @@ impl ManagedTrieNode for FullLeafNode {
         depth: u8,
         self_id: Self::Id,
     ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
-        // If key does not match the stem, we have to introduce a new inner node.
+        // If not all keys match the stem, we have to introduce a new inner node.
         if !updates.all_stems_match(&self.stem) {
             let index = self.stem[depth as usize];
             let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
@@ -83,7 +83,7 @@ impl ManagedTrieNode for FullLeafNode {
             ))));
         }
 
-        // All updates fit into this sparse leaf.
+        // All updates fit into this leaf.
         Ok(StoreAction::Store(updates))
     }
 

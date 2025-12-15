@@ -117,7 +117,7 @@ impl<const N: usize> SparseLeafNode<N> {
 
     /// Returns the number of slots that would be required to store the given values or None if they
     /// already fit.
-    fn get_slot_number_for(
+    fn required_slot_count_for(
         values: &[ValueWithIndex],
         indices: impl Iterator<Item = u8>,
     ) -> Option<usize> {
@@ -181,7 +181,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         depth: u8,
         self_id: Self::Id,
     ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
-        // If key does not match the stem, we have to introduce a new inner node.
+        // If not all keys match the stem, we have to introduce a new inner node.
         if !updates.all_stems_match(&self.stem) {
             let index = self.stem[depth as usize];
             let inner = InnerNode::new_with_leaf(index, self_id, &self.commitment);
@@ -191,7 +191,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         }
 
         if let Some(slots) =
-            Self::get_slot_number_for(&self.values, updates.iter().map(|u| u.key()[31]))
+            Self::required_slot_count_for(&self.values, updates.iter().map(|u| u.key()[31]))
         {
             // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
             return Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
@@ -499,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn get_slots_for_returns_number_of_required_slots_or_none_if_values_fit() {
+    fn required_slot_count_for_returns_number_of_required_slots_or_none_if_values_fit() {
         let mut node = SparseLeafNode::<5>::default();
         node.values[1] = ValueWithIndex {
             index: 1,
@@ -517,22 +517,22 @@ mod tests {
 
         // Enough empty slots for all new indices
         let slots =
-            SparseLeafNode::<5>::get_slot_number_for(&node.values, [100, 101, 102].into_iter());
+            SparseLeafNode::<5>::required_slot_count_for(&node.values, [100, 101, 102].into_iter());
         assert_eq!(slots, None);
 
         // Enough empty slots and slots which get overwritten
-        let slots = SparseLeafNode::<5>::get_slot_number_for(
+        let slots = SparseLeafNode::<5>::required_slot_count_for(
             &node.values,
             [100, 101, 102, 10, 1].into_iter(),
         );
         assert_eq!(slots, None);
 
         // Not enough empty slots
-        let slots = SparseLeafNode::<5>::get_slot_number_for(
+        let slots = SparseLeafNode::<5>::required_slot_count_for(
             &node.values,
             [100, 101, 102, 103].into_iter(),
         );
-        assert_eq!(slots, Some(6)); // 2 existing + 4 new
+        assert_eq!(slots, Some(6)); // 2 existing + 1 reused + 3 new
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]

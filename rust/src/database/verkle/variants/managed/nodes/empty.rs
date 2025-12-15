@@ -153,8 +153,8 @@ mod tests {
             )
             .unwrap();
         match action {
-            StoreAction::HandleTransform(leaf) => {
-                assert!(matches!(leaf, VerkleNode::Inner(_)));
+            StoreAction::HandleTransform(inner) => {
+                assert!(matches!(inner, VerkleNode::Inner(_)));
             }
             _ => panic!("expected HandleTransform to inner node"),
         }
