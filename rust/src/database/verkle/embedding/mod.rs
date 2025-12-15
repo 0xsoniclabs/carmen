@@ -10,7 +10,7 @@
 
 pub mod code;
 
-use std::{convert::Infallible, sync::LazyLock};
+use std::convert::Infallible;
 
 use crypto_bigint::U256;
 use quick_cache::sync::Cache;
@@ -25,92 +25,109 @@ const CODE_OFFSET: U256 = U256::from_u64(128);
 const VERKLE_NODE_WIDTH: U256 = U256::from_u64(256);
 const VERKLE_NODE_WIDTH_LOG2: u64 = 8;
 
-/// Returns the key of the basic data fields (nonce, balance, code size) for the given address.
-pub fn get_basic_data_key(address: &Address) -> Key {
-    get_trie_key(address, &U256::ZERO, 0)
+pub struct VerkleTrieEmbedding {
+    cache: Cache<(Address, U256), Key>,
 }
 
-/// Returns the key of the code hash field for the given address.
-pub fn get_code_hash_key(address: &Address) -> Key {
-    get_trie_key(address, &U256::ZERO, 1)
+impl Default for VerkleTrieEmbedding {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-/// Returns the key of the code chunk with the given chunk number for the given address.
-pub fn get_code_chunk_key(address: &Address, chunk_number: u32) -> Key {
-    // Derived from
-    // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
+impl VerkleTrieEmbedding {
+    const CACHE_SIZE: usize = 1_000_000;
 
-    let chunk_offset = U256::from_u32(chunk_number) + CODE_OFFSET;
-    // Safe to unwrap because VERKLE_NODE_WIDTH is non-zero.
-    let (tree_index, sub_index) = chunk_offset.div_rem(&VERKLE_NODE_WIDTH.to_nz().unwrap());
-    let sub_index = sub_index.to_words()[0] as u8;
-    get_trie_key(address, &tree_index, sub_index)
-}
-
-/// Returns the storage key for the given address and storage key.
-pub fn get_storage_key(address: &Address, key: &Key) -> Key {
-    // Derived from
-    // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203
-
-    let code_storage_delta = CODE_OFFSET - HEADER_STORAGE_OFFSET;
-    let mut tree_index = U256::from_be_slice(key);
-    let suffix;
-
-    if tree_index < code_storage_delta {
-        tree_index += HEADER_STORAGE_OFFSET;
-        suffix = tree_index.to_le_bytes()[0];
-        tree_index = U256::ZERO;
-    } else {
-        suffix = key[key.len() - 1];
-        tree_index >>= 8;
-        tree_index += U256::ONE << (248 - VERKLE_NODE_WIDTH_LOG2 as u32);
+    pub fn new() -> Self {
+        VerkleTrieEmbedding {
+            cache: Cache::new(Self::CACHE_SIZE),
+        }
     }
 
-    get_trie_key(address, &tree_index, suffix)
-}
+    /// Returns the key of the basic data fields (nonce, balance, code size) for the given address.
+    pub fn get_basic_data_key(&self, address: &Address) -> Key {
+        self.get_trie_key(address, &U256::ZERO, 0)
+    }
 
-/// Retries the Verkle trie key for the given address, tree index, and sub index from a cache or
-/// computes it if it is not cached.
-///
-/// The key is computed by:
-///   - `C = Commit([2+256*64, address_low, address_high, tree_index_low, tree_index_high])`
-///   - `H = Hash(C)`
-///   - `K = append(H[..31], subIndex)`
-fn get_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
-    fn compute_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
-        // Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
+    /// Returns the key of the code hash field for the given address.
+    pub fn get_code_hash_key(&self, address: &Address) -> Key {
+        self.get_trie_key(address, &U256::ZERO, 1)
+    }
 
-        let mut expanded = [0u8; 32];
-        expanded[12..].copy_from_slice(address);
+    /// Returns the key of the code chunk with the given chunk number for the given address.
+    pub fn get_code_chunk_key(&self, address: &Address, chunk_number: u32) -> Key {
+        // Derived from
+        // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
 
-        let mut values = [Scalar::zero(); 5];
-        values[0] = Scalar::from(2 + 256 * 64);
-        values[1] = Scalar::from_le_bytes(&expanded[..16]);
-        values[2] = Scalar::from_le_bytes(&expanded[16..]);
+        let chunk_offset = U256::from_u32(chunk_number) + CODE_OFFSET;
+        // Safe to unwrap because VERKLE_NODE_WIDTH is non-zero.
+        let (tree_index, sub_index) = chunk_offset.div_rem(&VERKLE_NODE_WIDTH.to_nz().unwrap());
+        let sub_index = sub_index.to_words()[0] as u8;
+        self.get_trie_key(address, &tree_index, sub_index)
+    }
 
-        let index = tree_index.to_le_bytes();
-        values[3] = Scalar::from_le_bytes(&index[..16]);
-        values[4] = Scalar::from_le_bytes(&index[16..]);
+    /// Returns the storage key for the given address and storage key.
+    pub fn get_storage_key(&self, address: &Address, key: &Key) -> Key {
+        // Derived from
+        // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203
 
-        let hash = Commitment::new(&values).hash();
+        let code_storage_delta = CODE_OFFSET - HEADER_STORAGE_OFFSET;
+        let mut tree_index = U256::from_be_slice(key);
+        let suffix;
 
-        let mut result: Key = [0; 32];
-        result[..31].copy_from_slice(&hash[..31]);
+        if tree_index < code_storage_delta {
+            tree_index += HEADER_STORAGE_OFFSET;
+            suffix = tree_index.to_le_bytes()[0];
+            tree_index = U256::ZERO;
+        } else {
+            suffix = key[key.len() - 1];
+            tree_index >>= 8;
+            tree_index += U256::ONE << (248 - VERKLE_NODE_WIDTH_LOG2 as u32);
+        }
+
+        self.get_trie_key(address, &tree_index, suffix)
+    }
+
+    /// Retries the Verkle trie key for the given address, tree index, and sub index from a cache or
+    /// computes it if it is not cached.
+    ///
+    /// The key is computed by:
+    ///   - `C = Commit([2+256*64, address_low, address_high, tree_index_low, tree_index_high])`
+    ///   - `H = Hash(C)`
+    ///   - `K = append(H[..31], subIndex)`
+    fn get_trie_key(&self, address: &Address, tree_index: &U256, sub_index: u8) -> Key {
+        fn compute_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
+            // Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
+
+            let mut expanded = [0u8; 32];
+            expanded[12..].copy_from_slice(address);
+
+            let mut values = [Scalar::zero(); 5];
+            values[0] = Scalar::from(2 + 256 * 64);
+            values[1] = Scalar::from_le_bytes(&expanded[..16]);
+            values[2] = Scalar::from_le_bytes(&expanded[16..]);
+
+            let index = tree_index.to_le_bytes();
+            values[3] = Scalar::from_le_bytes(&index[..16]);
+            values[4] = Scalar::from_le_bytes(&index[16..]);
+
+            let hash = Commitment::new(&values).hash();
+
+            let mut result: Key = [0; 32];
+            result[..31].copy_from_slice(&hash[..31]);
+            result[31] = sub_index;
+            result
+        }
+
+        let mut result = self
+            .cache
+            .get_or_insert_with(&(*address, *tree_index), || {
+                Ok::<_, Infallible>(compute_trie_key(address, tree_index, 0))
+            })
+            .unwrap(); // this cannot fail
         result[31] = sub_index;
         result
     }
-
-    const EMBEDDING_CACHE_SIZE: usize = 1_000_000;
-    static EMBEDDING_CACHE: LazyLock<Cache<(Address, U256), Key>> =
-        LazyLock::new(|| Cache::new(EMBEDDING_CACHE_SIZE));
-
-    let mut result = EMBEDDING_CACHE
-        .get_or_insert_with(&(*address, *tree_index), || {
-            Ok::<_, Infallible>(compute_trie_key(address, tree_index, 0))
-        })
-        .unwrap(); // this cannot fail
-    result[31] = sub_index;
-    result
 }
 
 #[cfg(test)]
@@ -151,11 +168,12 @@ mod tests {
             "0xe90ba1e60076c244ed0fb1c758215729113789a96db3e3ad107bc9a034d2e201",
             "0xe90ba1e60076c244ed0fb1c758215729113789a96db3e3ad107bc9a034d2e202",
         ];
+        let embedding = VerkleTrieEmbedding::new();
         for i in 0..3_u8 {
             for j in 0..3_u8 {
                 for k in 0..3_u8 {
                     let address = Address::from_index_values(0, &[(0, i)]);
-                    let received = get_trie_key(&address, &U256::from(j), k);
+                    let received = embedding.get_trie_key(&address, &U256::from(j), k);
                     let expected = expected[(i * 9 + j * 3 + k) as usize];
                     assert_eq!(
                         expected,
@@ -188,8 +206,9 @@ mod tests {
             ),
         ];
 
+        let embedding = VerkleTrieEmbedding::new();
         for (address, expected) in cases {
-            let received = get_basic_data_key(&address);
+            let received = embedding.get_basic_data_key(&address);
             assert_eq!(expected, const_hex::encode_prefixed(received.as_bytes()));
         }
     }
@@ -215,8 +234,9 @@ mod tests {
             ),
         ];
 
+        let embedding = VerkleTrieEmbedding::new();
         for (address, expected) in cases {
-            let received = get_code_hash_key(&address);
+            let received = embedding.get_code_hash_key(&address);
             assert_eq!(expected, const_hex::encode_prefixed(received.as_bytes()));
         }
     }
@@ -253,14 +273,15 @@ mod tests {
             "0xd75be820dcce35587927c307e59e43ba7d7abab1224c302d6c0566fc07a34f90",
         ];
 
+        let embedding = VerkleTrieEmbedding::new();
         for i in 0..3 {
             for (j, offset) in [0, 1, 2, 16, 64, 128, 255, 256, 10_000]
                 .into_iter()
                 .enumerate()
             {
                 let expected = expected[i * 9 + j];
-                let received =
-                    get_code_chunk_key(&Address::from_index_values(0, &[(0, i as u8)]), offset);
+                let received = embedding
+                    .get_code_chunk_key(&Address::from_index_values(0, &[(0, i as u8)]), offset);
                 assert_eq!(
                     expected,
                     const_hex::encode_prefixed(received.as_bytes()),
@@ -284,12 +305,13 @@ mod tests {
             "0x4b620aca83b506397a4bd7ee689ef0e71cc3b76eb86c12d90b69c59b2e766900",
         ];
 
+        let embedding = VerkleTrieEmbedding::new();
         for i in 0..3 {
             for j in 0..3 {
                 let expected = expected[i * 3 + j];
                 let address = Address::from_index_values(0, &[(0, i as u8)]);
                 let key = Key::from_index_values(0, &[(0, j as u8)]);
-                let received = get_storage_key(&address, &key);
+                let received = embedding.get_storage_key(&address, &key);
                 assert_eq!(
                     expected,
                     const_hex::encode_prefixed(received.as_bytes()),

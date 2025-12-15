@@ -14,9 +14,7 @@ use crate::{
     CarmenState,
     database::verkle::{
         KeyedUpdateBatch, ManagedVerkleTrie,
-        embedding::{
-            code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
-        },
+        embedding::{VerkleTrieEmbedding, code},
         variants::{
             CrateCryptoInMemoryVerkleTrie, SimpleInMemoryVerkleTrie,
             managed::{VerkleNode, VerkleNodeId},
@@ -37,21 +35,26 @@ pub const EMPTY_CODE_HASH: Hash = [
 /// An implementation of [`CarmenState`] that uses a Verkle trie as the underlying data structure.
 pub struct VerkleTrieCarmenState<T: VerkleTrie> {
     trie: T,
+    embedding: VerkleTrieEmbedding,
 }
 
 impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let trie = SimpleInMemoryVerkleTrie::new();
-        Self { trie }
+        Self {
+            trie: SimpleInMemoryVerkleTrie::new(),
+            embedding: VerkleTrieEmbedding::new(),
+        }
     }
 }
 
 impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let trie = CrateCryptoInMemoryVerkleTrie::new();
-        Self { trie }
+        Self {
+            trie: CrateCryptoInMemoryVerkleTrie::new(),
+            embedding: VerkleTrieEmbedding::new(),
+        }
     }
 }
 
@@ -65,8 +68,10 @@ where
     /// Creates a new [`VerkleTrieCarmenState`] using a managed Verkle trie with the given node
     /// manager. Forwards any errors from [`ManagedVerkleTrie::try_new`].
     pub fn try_new(manager: Arc<M>) -> BTResult<Self, Error> {
-        let trie = ManagedVerkleTrie::try_new(manager)?;
-        Ok(Self { trie })
+        Ok(Self {
+            trie: ManagedVerkleTrie::try_new(manager)?,
+            embedding: VerkleTrieEmbedding::new(),
+        })
     }
 }
 
@@ -76,7 +81,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     }
 
     fn get_balance(&self, addr: &Address) -> BTResult<U256, Error> {
-        let key = get_basic_data_key(addr);
+        let key = self.embedding.get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
         let mut result = U256::default();
         result[16..].copy_from_slice(&value[16..32]);
@@ -84,14 +89,14 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     }
 
     fn get_nonce(&self, addr: &Address) -> BTResult<Nonce, Error> {
-        let key = get_basic_data_key(addr);
+        let key = self.embedding.get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
         // Safe to unwrap: Always 8 bytes
         Ok(value[8..16].try_into().unwrap())
     }
 
     fn get_storage_value(&self, addr: &Address, key: &Key) -> BTResult<Value, Error> {
-        let key = get_storage_key(addr, key);
+        let key = self.embedding.get_storage_key(addr, key);
         let value = self.trie.lookup(&key)?;
         Ok(Value::from(value))
     }
@@ -101,7 +106,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
         let chunk_count = len / 31 + 1;
         let mut chunks = Vec::with_capacity(chunk_count as usize);
         for i in 0..chunk_count {
-            let key = get_code_chunk_key(addr, i);
+            let key = self.embedding.get_code_chunk_key(addr, i);
             let chunk = self.trie.lookup(&key)?;
             chunks.push(chunk);
         }
@@ -115,13 +120,13 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     }
 
     fn get_code_hash(&self, addr: &Address) -> BTResult<Hash, Error> {
-        let key = get_code_hash_key(addr);
+        let key = self.embedding.get_code_hash_key(addr);
         let value = self.trie.lookup(&key)?;
         Ok(Hash::from(value))
     }
 
     fn get_code_len(&self, addr: &Address) -> BTResult<u32, Error> {
-        let key = get_basic_data_key(addr);
+        let key = self.embedding.get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
         // Safe to unwrap - slice is always 4 bytes
         Ok(u32::from_be_bytes(value[4..8].try_into().unwrap()))
@@ -135,7 +140,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
-        if let Ok(update) = KeyedUpdateBatch::try_from(update) {
+        if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(update, &self.embedding) {
             self.trie.store(&update)?;
         }
 
@@ -415,6 +420,8 @@ mod tests {
     fn state_with_content_has_same_commitment_as_geth(#[case] state: Box<dyn CarmenState>) {
         const PUSH32: u8 = 0x7f;
 
+        let embedding = VerkleTrieEmbedding::new();
+
         let addr1 = Address::from_index_values(0, &[(0, 0)]);
         let addr2 = Address::from_index_values(0, &[(0, 174)]);
         let addr3 = Address::from_index_values(0, &[(0, 51), (1, 1)]);
@@ -423,8 +430,14 @@ mod tests {
         // This way we can trigger an inner node to be inserted after the first update, which
         // then covers some edge cases in point-wise commitment updates (depending on trie
         // implementation).
-        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr2)[0]);
-        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr3)[0]);
+        assert_eq!(
+            embedding.get_basic_data_key(&addr1)[0],
+            embedding.get_basic_data_key(&addr2)[0]
+        );
+        assert_eq!(
+            embedding.get_basic_data_key(&addr1)[0],
+            embedding.get_basic_data_key(&addr3)[0]
+        );
 
         let code1 = Vec::from_index_values(0, &[(0, 0x01), (1, 0x02)]);
         // Truncated push data
@@ -503,6 +516,8 @@ mod tests {
     fn incremental_updates_result_in_same_commitments_as_geth(#[case] state: Box<dyn CarmenState>) {
         const PUSH32: u8 = 0x7f;
 
+        let embedding = VerkleTrieEmbedding::new();
+
         let addr1 = Address::from_index_values(0, &[(0, 0)]);
         let addr2 = Address::from_index_values(0, &[(0, 174)]);
         let addr3 = Address::from_index_values(0, &[(0, 51), (1, 1)]);
@@ -511,8 +526,14 @@ mod tests {
         // This way we can trigger an inner node to be inserted after the first update, which
         // then covers some edge cases in point-wise commitment updates (depending on trie
         // implementation).
-        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr2)[0]);
-        assert_eq!(get_basic_data_key(&addr1)[0], get_basic_data_key(&addr3)[0]);
+        assert_eq!(
+            embedding.get_basic_data_key(&addr1)[0],
+            embedding.get_basic_data_key(&addr2)[0]
+        );
+        assert_eq!(
+            embedding.get_basic_data_key(&addr1)[0],
+            embedding.get_basic_data_key(&addr3)[0]
+        );
 
         let code1 = Vec::from_index_values(0, &[(0, 0x01), (1, 0x02)]);
         let code2 = Vec::from_index_values(0, &[(0, 0x11), (1, 0x12)]);
@@ -691,7 +712,10 @@ mod tests {
             .with(eq(block_height))
             .times(1)
             .returning(|_| Ok(()));
-        let state = VerkleTrieCarmenState { trie };
+        let state = VerkleTrieCarmenState {
+            trie,
+            embedding: VerkleTrieEmbedding::new(),
+        };
         state
             .apply_block_update(block_height, Update::default())
             .unwrap();

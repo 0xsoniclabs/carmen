@@ -19,9 +19,7 @@ use verkle_trie::Key;
 
 use crate::{
     database::verkle::{
-        embedding::{
-            code, get_basic_data_key, get_code_chunk_key, get_code_hash_key, get_storage_key,
-        },
+        embedding::{VerkleTrieEmbedding, code},
         state::EMPTY_CODE_HASH,
     },
     types::{BalanceUpdate, CodeUpdate, Hash, NonceUpdate, SlotUpdate, Update, Value},
@@ -145,10 +143,11 @@ impl Deref for KeyedUpdateBatch<'_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyUpdate;
 
-impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
-    type Error = EmptyUpdate;
-
-    fn try_from(update: Update<'_>) -> Result<Self, Self::Error> {
+impl KeyedUpdateBatch<'static> {
+    pub fn try_from_with_embedding(
+        update: Update<'_>,
+        embedding: &VerkleTrieEmbedding,
+    ) -> Result<Self, EmptyUpdate> {
         let mut updates = Vec::with_capacity(
             // in practice created_accounts also have other updates, so we don't count them here
             update.balances.len()
@@ -161,20 +160,20 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
             // Because the mask is all zeros, we don't overwrite any data, so we also don't have to
             // account for nonce, balance or code length updates here.
             updates.push(KeyedUpdate::PartialSlot {
-                key: get_basic_data_key(addr),
+                key: embedding.get_basic_data_key(addr),
                 value: [0u8; 32],
                 mask: mask_for_range(0..0),
             });
             // If we also get a code update for this account, we have to make sure that this does
             // not override the actual code hash. This is checked when processing the code update.
             updates.push(KeyedUpdate::FullSlot {
-                key: get_code_hash_key(addr),
+                key: embedding.get_code_hash_key(addr),
                 value: EMPTY_CODE_HASH,
             });
         }
         for BalanceUpdate { addr, balance } in update.balances {
             updates.push(KeyedUpdate::PartialSlot {
-                key: get_basic_data_key(addr),
+                key: embedding.get_basic_data_key(addr),
                 value: *balance,
                 mask: mask_for_range(16..32),
             });
@@ -183,7 +182,7 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
             let mut value = [0u8; 32];
             value[8..16].copy_from_slice(nonce);
             updates.push(KeyedUpdate::PartialSlot {
-                key: get_basic_data_key(addr),
+                key: embedding.get_basic_data_key(addr),
                 value,
                 mask: mask_for_range(8..16),
             });
@@ -193,7 +192,7 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
             let mut value = [0u8; 32];
             value[4..8].copy_from_slice(&code_len.to_be_bytes());
             updates.push(KeyedUpdate::PartialSlot {
-                key: get_basic_data_key(&addr),
+                key: embedding.get_basic_data_key(&addr),
                 value,
                 mask: mask_for_range(4..8),
             });
@@ -201,7 +200,7 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
             let mut hasher = Keccak256::new();
             hasher.update(code);
             let code_hash = Hash::from(hasher.finalize());
-            let key = get_code_hash_key(&addr);
+            let key = embedding.get_code_hash_key(&addr);
             let update = KeyedUpdate::FullSlot {
                 key,
                 value: code_hash,
@@ -217,14 +216,14 @@ impl TryFrom<Update<'_>> for KeyedUpdateBatch<'static> {
 
             for (i, chunk) in code::split_code(code).into_iter().enumerate() {
                 updates.push(KeyedUpdate::FullSlot {
-                    key: get_code_chunk_key(&addr, i as u32),
+                    key: embedding.get_code_chunk_key(&addr, i as u32),
                     value: chunk,
                 });
             }
         }
         for SlotUpdate { addr, key, value } in update.slots {
             updates.push(KeyedUpdate::FullSlot {
-                key: get_storage_key(addr, key),
+                key: embedding.get_storage_key(addr, key),
                 value: *value,
             });
         }
@@ -530,6 +529,8 @@ mod tests {
 
     #[test]
     fn try_from_update_converts_balance_and_nonce_and_code_and_slot_updates_and_sorts_updates() {
+        let embedding = VerkleTrieEmbedding::new();
+
         let update = Update {
             created_accounts: &[[1; 20], [2; 20]],
             deleted_accounts: &[[3; 20], [4; 20]], // These will be ignored
@@ -577,7 +578,8 @@ mod tests {
             ],
         };
 
-        let keyed_updates: KeyedUpdateBatch = update.clone().try_into().unwrap();
+        let keyed_updates =
+            KeyedUpdateBatch::try_from_with_embedding(update.clone(), &embedding).unwrap();
 
         // Verify total number of updates
         assert_eq!(
@@ -600,7 +602,7 @@ mod tests {
             let mut found = false;
             for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update
-                    && *key == get_basic_data_key(addr)
+                    && *key == embedding.get_basic_data_key(addr)
                     && *value == [0u8; 32]
                     && *mask == mask_for_range(0..0)
                 {
@@ -616,7 +618,7 @@ mod tests {
             let mut found = false;
             for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update
-                    && *key == get_basic_data_key(&balance_update.addr)
+                    && *key == embedding.get_basic_data_key(&balance_update.addr)
                     && *value == balance_update.balance
                     && *mask == mask_for_range(16..32)
                 {
@@ -634,7 +636,7 @@ mod tests {
                 if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update {
                     let mut expected_value = [0u8; 32];
                     expected_value[8..16].copy_from_slice(&nonce_update.nonce);
-                    if *key == get_basic_data_key(&nonce_update.addr)
+                    if *key == embedding.get_basic_data_key(&nonce_update.addr)
                         && *value == expected_value
                         && *mask == mask_for_range(8..16)
                     {
@@ -657,7 +659,7 @@ mod tests {
                     let code_len = code_update.code.len() as u32;
                     let mut expected_value = [0u8; 32];
                     expected_value[4..8].copy_from_slice(&code_len.to_be_bytes());
-                    if *key == get_basic_data_key(&code_update.addr)
+                    if *key == embedding.get_basic_data_key(&code_update.addr)
                         && *value == expected_value
                         && *mask == mask_for_range(4..8)
                     {
@@ -665,7 +667,7 @@ mod tests {
                         found_code_len = true;
                     }
                 } else if let KeyedUpdate::FullSlot { key, value } = keyed_update {
-                    if key == &get_code_hash_key(&code_update.addr) {
+                    if key == &embedding.get_code_hash_key(&code_update.addr) {
                         let mut hasher = Keccak256::new();
                         hasher.update(code_update.code);
                         let expected_hash = Hash::from(hasher.finalize());
@@ -676,7 +678,7 @@ mod tests {
                     } else {
                         for (i, chunk) in code::split_code(code_update.code).into_iter().enumerate()
                         {
-                            if *key == get_code_chunk_key(&code_update.addr, i as u32)
+                            if *key == embedding.get_code_chunk_key(&code_update.addr, i as u32)
                                 && *value == chunk
                             {
                                 assert!(!found_chunks[i]);
@@ -703,7 +705,7 @@ mod tests {
             let mut found = false;
             for keyed_update in &*keyed_updates {
                 if let KeyedUpdate::FullSlot { key, value } = keyed_update
-                    && *key == get_storage_key(&slot_update.addr, &slot_update.key)
+                    && *key == embedding.get_storage_key(&slot_update.addr, &slot_update.key)
                     && *value == slot_update.value
                 {
                     assert!(!found);
