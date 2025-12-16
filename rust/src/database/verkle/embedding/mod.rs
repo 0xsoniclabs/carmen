@@ -25,6 +25,7 @@ const CODE_OFFSET: U256 = U256::from_u64(128);
 const VERKLE_NODE_WIDTH: U256 = U256::from_u64(256);
 const VERKLE_NODE_WIDTH_LOG2: u64 = 8;
 
+/// Embedding cache for the Verkle trie for basic account data, code, and storage keys.
 pub struct VerkleTrieEmbedding {
     cache: Cache<(Address, U256), Key>,
 }
