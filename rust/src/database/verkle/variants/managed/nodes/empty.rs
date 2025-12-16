@@ -74,13 +74,13 @@ impl ManagedTrieNode for EmptyNode {
                     updates.split(31).count(), // this counts the number of distinct keys
                     stem,
                     &[],
-                    self.get_commitment(),
+                    &self.get_commitment(),
                 )?;
                 Ok(StoreAction::HandleTransform(new_leaf))
             } else {
                 // Because we have non-matching stems, we need an inner node
                 let new_inner =
-                    make_smallest_inner_node_for(updates.len(), &[], self.get_commitment())?;
+                    make_smallest_inner_node_for(updates.len(), &[], &self.get_commitment())?;
                 Ok(StoreAction::HandleTransform(new_inner))
             }
         }
@@ -224,7 +224,7 @@ mod tests {
                         smallest_leaf_size(),
                         [0; 31],
                         &[],
-                        VerkleCommitment::default()
+                        &VerkleCommitment::default()
                     )
                     .unwrap(),
                 );
@@ -256,7 +256,7 @@ mod tests {
             StoreAction::HandleTransform(leaf) => {
                 assert_eq!(
                     leaf,
-                    make_smallest_leaf_node_for(256, [0; 31], &[], VerkleCommitment::default())
+                    make_smallest_leaf_node_for(256, [0; 31], &[], &VerkleCommitment::default())
                         .unwrap(),
                 );
             }
@@ -273,10 +273,10 @@ mod tests {
 
     fn smallest_leaf_size() -> usize {
         let prev =
-            make_smallest_leaf_node_for(1, [0; 31], &[], VerkleCommitment::default()).unwrap();
+            make_smallest_leaf_node_for(1, [0; 31], &[], &VerkleCommitment::default()).unwrap();
         for i in 2..=256 {
             let leaf =
-                make_smallest_leaf_node_for(i, [0; 31], &[], VerkleCommitment::default()).unwrap();
+                make_smallest_leaf_node_for(i, [0; 31], &[], &VerkleCommitment::default()).unwrap();
             if prev != leaf {
                 return i - 1;
             }
