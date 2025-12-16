@@ -43,18 +43,12 @@ impl DbMode {
     /// Files are always opened in append. In `ReadWrite` mode, files
     /// are created if they do not exist.
     pub fn to_open_options(&self) -> OpenOptions {
+        let mut options = OpenOptions::new();
         match self {
-            DbMode::Read => {
-                let mut options = OpenOptions::new();
-                options.create(false).truncate(false).read(true);
-                options
-            }
-            DbMode::ReadWrite => {
-                let mut options = OpenOptions::new();
-                options.create(true).truncate(false).read(true).write(true);
-                options
-            }
-        }
+            DbMode::Read => options.create(false).truncate(false).read(true),
+            DbMode::ReadWrite => options.create(true).truncate(false).read(true).write(true),
+        };
+        options
     }
 }
 

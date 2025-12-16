@@ -66,13 +66,6 @@ impl<T, F> NodeFileStorage<T, F> {
     pub const PREPARED_METADATA_FILE: &'static str = "prepared_metadata.bin";
 }
 
-impl<T, F> NodeFileStorage<T, F>
-where
-    T: DiskRepresentable + Send + Sync,
-    F: FileBackend,
-{
-}
-
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
     T: DiskRepresentable + Send + Sync,
@@ -142,9 +135,6 @@ where
             _node_type: PhantomData,
         })
     }
-
-    //TODO: Should we leave the write op fail when opened for reading, or should we check all the
-    // time to give proper error messages?
 
     fn get(&self, idx: Self::Id) -> BTResult<Self::Item, Error> {
         let offset = idx * T::size() as u64;

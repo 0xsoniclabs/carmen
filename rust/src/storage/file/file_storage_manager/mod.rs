@@ -91,7 +91,6 @@ where
     pub const PREPARED_METADATA_FILE: &str = "prepared_metadata.bin";
     pub const ROOT_IDS_FILE: &str = "root_ids.bin";
 
-
 }
 
 impl<$STORAGE_GENERICS> $crate::storage::Storage for $MANAGER_TYPE<$STORAGE_GENERICS>
@@ -467,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn open_fails_for_invalid_directory_if_db_mode_is_read_only() {
+    fn open_fails_if_db_files_do_not_exist_if_db_mode_is_read_only() {
         type FileStorageManager = TestNodeFileStorageManager<
             NodeFileStorage<NonEmpty1TestNode, SeekFile>,
             NodeFileStorage<NonEmpty2TestNode, SeekFile>,
@@ -764,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn close_only_calls_close_on_all_storages_if_db_mode_is_read_only() {
+    fn close_does_not_write_metadata_if_db_mode_is_read_only() {
         type TestNodeFileStorageManager = super::TestNodeFileStorageManager<
             MockStorage<NonEmpty1TestNode>,
             MockStorage<NonEmpty2TestNode>,

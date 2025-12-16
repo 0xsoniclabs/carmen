@@ -20,8 +20,8 @@ use crate::{
 /// An extension trait for types that can be read from and written to files as byte slices.
 pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
     /// Creates a new instance by reading from the file at the given path.
-    /// If the file does not exist and the `init` flag is set, it is created and initialized with
-    /// the default value.
+    /// If the file does not exist and the `db_mode` has write access, it is created and initialized
+    /// with the default value.
     fn read_or_init(path: impl AsRef<Path>, db_mode: DbMode) -> BTResult<Self, Error> {
         let path = path.as_ref();
         let mut file = db_mode.to_open_options().open(path)?;
