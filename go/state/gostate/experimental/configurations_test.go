@@ -38,7 +38,9 @@ func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
 		config := config
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()
-			st, err := fact(state.Parameters{})
+			st, err := fact(state.Parameters{
+				Directory: t.TempDir(),
+			})
 			if err != nil {
 				t.Fatalf("failed to create state: %v", err)
 			}
