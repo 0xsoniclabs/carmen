@@ -70,8 +70,12 @@ impl ManagedTrieNode for EmptyNode {
             // Safe to unwrap: Slice is always 31 bytes
             let stem = updates.first_key()[..31].try_into().unwrap();
             if updates.all_stems_match(&stem) {
-                let new_leaf =
-                    make_smallest_leaf_node_for(updates.len(), stem, &[], self.get_commitment())?;
+                let new_leaf = make_smallest_leaf_node_for(
+                    updates.split(depth).count(),
+                    stem,
+                    &[],
+                    self.get_commitment(),
+                )?;
                 Ok(StoreAction::HandleTransform(new_leaf))
             } else {
                 // Because we have non-matching stems, we need an inner node
