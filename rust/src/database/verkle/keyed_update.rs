@@ -11,12 +11,13 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    iter,
     ops::{Deref, Range},
 };
 
 use rayon::{
-    iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelBridge, ParallelIterator},
+    iter::{
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+    },
     slice::ParallelSliceMut,
 };
 use sha3::{Digest, Keccak256};
@@ -153,30 +154,33 @@ impl KeyedUpdateBatch<'static> {
         update: &Update<'_>,
         embedding: &VerkleTrieEmbedding,
     ) -> Result<Self, EmptyUpdate> {
-        let created_accounts = update.created_accounts.into_par_iter().flat_map(|addr| {
+        let created_account_basic_data = update.created_accounts.into_par_iter().map(|addr| {
             // This is just to set the used bit.
             // Because the mask is all zeros, we don't overwrite any data, so we also don't
             // have to account for nonce, balance or code length updates here.
-            iter::once(KeyedUpdate::PartialSlot {
+            KeyedUpdate::PartialSlot {
                 key: embedding.get_basic_data_key(addr),
                 value: [0u8; 32],
                 mask: mask_for_range(0..0),
-            })
-            .chain(if !update.codes.iter().any(|c| c.addr == *addr) {
+            }
+        });
+
+        let created_account_empty_code_hash =
+            update.created_accounts.into_par_iter().flat_map(|addr| {
                 // If there is no code update for this account, we have to set the code hash
                 // to EMPTY_CODE_HASH to represent the creation of an account with no code.
-                Some(KeyedUpdate::FullSlot {
-                    key: embedding.get_code_hash_key(addr),
-                    value: EMPTY_CODE_HASH,
-                })
-            } else {
                 // Otherwise, the code update will set the code hash, so we don't need to do
                 // it here (and can't because then we would have duplicate updates to the
                 // same key).
-                None
-            })
-            .par_bridge()
-        });
+                update
+                    .codes
+                    .iter()
+                    .all(|c| c.addr != *addr)
+                    .then(|| KeyedUpdate::FullSlot {
+                        key: embedding.get_code_hash_key(addr),
+                        value: EMPTY_CODE_HASH,
+                    })
+            });
 
         let balance_updates =
             update
@@ -225,17 +229,16 @@ impl KeyedUpdateBatch<'static> {
                         value: code_hash,
                     },
                 ]
-                .into_iter()
+                .into_par_iter()
                 .chain(
                     code::split_code(code)
-                        .into_iter()
+                        .into_par_iter()
                         .enumerate()
                         .map(|(i, chunk)| KeyedUpdate::FullSlot {
                             key: embedding.get_code_chunk_key(addr, i as u32),
                             value: chunk,
                         }),
                 )
-                .par_bridge()
             });
 
         let slot_updates = update
@@ -246,7 +249,8 @@ impl KeyedUpdateBatch<'static> {
                 value: *value,
             });
 
-        let mut updates = created_accounts
+        let mut updates = created_account_basic_data
+            .chain(created_account_empty_code_hash)
             .chain(balance_updates)
             .chain(nonce_updates)
             .chain(code_updates)
