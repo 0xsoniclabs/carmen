@@ -334,51 +334,43 @@ impl NodeSize for VerkleNodeKind {
     }
 }
 
-/// An item stored in a trie node, together with its index.
+/// An item (value or child ID) stored in a sparse trie node, together with its index.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned,
 )]
 #[repr(C)]
-pub struct ItemWithIndex<T>
-where
-    T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned,
-{
-    /// The index of the item in the node.
+pub struct ItemWithIndex<T> {
     pub index: u8,
-    /// The item stored in the node.
     pub item: T,
 }
 
-/// A value of a leaf node in a managed Verkle trie, together with its index.
+/// A value of a sparse leaf node in a managed Verkle trie, together with its index.
 pub type ValueWithIndex = ItemWithIndex<Value>;
 
 impl<T> ItemWithIndex<T>
 where
-    T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned + Default,
+    T: Clone + Copy + Default + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned,
 {
-    /// Returns a slot for storing an item with the given index, or `None` if no such slot exists.
-    /// A slot is suitable if it either already holds the given index, or if it is empty
-    /// (i.e., holds the default item).
-    fn get_slot_for<const N: usize>(values: &[ItemWithIndex<T>; N], index: u8) -> Option<usize>
-    where
-        T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned + Default,
-    {
+    /// Returns a slot in `items` for storing an item with the given index, or `None` if no such
+    /// slot exists. A slot is suitable if it either already holds the given index, or if it is
+    /// empty (i.e., holds the default item).
+    fn get_slot_for<const N: usize>(items: &[ItemWithIndex<T>; N], index: u8) -> Option<usize> {
         let mut empty_slot = None;
         // We always do a linear search over all items to ensure that we never hold the same index
         // twice in different slots. By starting the search at the given index we are very likely
         // to find the matching slot immediately in practice (if index < N).
-        for (i, vwi) in values
+        for (i, iwi) in items
             .iter()
             .enumerate()
             .cycle()
             .skip(index as usize)
             .take(N)
         {
-            if vwi.index == index {
+            if iwi.index == index {
                 return Some(i);
-            } else if empty_slot.is_none() && vwi.item == T::default() {
+            } else if empty_slot.is_none() && iwi.item == T::default() {
                 empty_slot = Some(i);
             }
         }
@@ -663,7 +655,7 @@ mod tests {
         assert_eq!(slot, Some(3));
 
         // No matching index, so we return first empty slot
-        let slot = TestItemWithIndex::get_slot_for(&values, 8); // 8 % 2 = 0, so start start search at 0
+        let slot = TestItemWithIndex::get_slot_for(&values, 8); // 8 % 4 = 0, so start start search at 0
         assert_eq!(slot, Some(1));
 
         // No matching index and no empty slot
@@ -674,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn item_with_index_required_slot_count_for_returns_number_of_required_slots_or_none_if_values_fit()
+    fn item_with_index_required_slot_count_for_returns_number_of_required_slots_or_none_if_items_fit()
      {
         let mut items = [ItemWithIndex::default(); 5];
         items[1] = ItemWithIndex {
@@ -689,7 +681,7 @@ mod tests {
             index: 100,
             item: Value::default(),
         };
-        // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
+        // `items` now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
 
         // Enough empty slots for all new indices
         let slots = ItemWithIndex::required_slot_count_for(&items, [100, 101, 102].into_iter());
@@ -706,7 +698,7 @@ mod tests {
         assert_eq!(slots, Some(6)); // 2 existing + 1 reused + 3 new
     }
 
-    /// A trait to link together multiple managed trie node variants in rstest tests.
+    /// A supertrait combining [`ManagedTrieNode`] and [`NodeHelperTrait`] for use in rstest tests.
     pub trait VerkleManagedTrieNode<T>:
         ManagedTrieNode<Union = VerkleNode, Id = VerkleNodeId, Commitment = VerkleCommitment>
         + NodeHelperTrait<T>
@@ -715,25 +707,12 @@ mod tests {
     {
     }
 
-    impl<const N: usize> VerkleManagedTrieNode<Value> for SparseLeafNode<N> {}
-
-    /// Helper trait to interact with nodes in rstest tests.
+    /// Helper trait to interact with generic node types in rstest tests.
     pub trait NodeHelperTrait<T>
     where
         T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned + Default,
     {
         fn access_slot(&mut self, slot: usize) -> &mut ItemWithIndex<T>;
         fn get_commitment_input(&self) -> VerkleCommitmentInput;
-    }
-
-    impl<const N: usize> NodeHelperTrait<Value> for SparseLeafNode<N> {
-        /// Returns a reference to the specified slot (modulo N).
-        fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex {
-            &mut self.values[slot % N]
-        }
-
-        fn get_commitment_input(&self) -> VerkleCommitmentInput {
-            self.get_commitment_input().unwrap()
-        }
     }
 }

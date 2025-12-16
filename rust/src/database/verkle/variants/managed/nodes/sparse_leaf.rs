@@ -196,7 +196,9 @@ mod tests {
             verkle::{
                 KeyedUpdateBatch,
                 test_utils::FromIndexValues,
-                variants::managed::nodes::{VerkleManagedTrieNode, VerkleNodeKind},
+                variants::managed::nodes::{
+                    NodeHelperTrait, VerkleManagedTrieNode, VerkleNodeKind,
+                },
             },
         },
         error::BTError,
@@ -223,6 +225,19 @@ mod tests {
         166, 44, 74, 233, 251, 79, 182, 249, 35, 197, 45, 50, 195, 162, 212, 116, 96, 23, 91, 167,
         136, 247, 205, 100, 142, 115, 103, 29, 77, 105, 53, 21,
     ];
+
+    impl<const N: usize> VerkleManagedTrieNode<Value> for SparseLeafNode<N> {}
+
+    impl<const N: usize> NodeHelperTrait<Value> for SparseLeafNode<N> {
+        /// Returns a reference to the specified slot (modulo N).
+        fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex {
+            &mut self.values[slot % N]
+        }
+
+        fn get_commitment_input(&self) -> VerkleCommitmentInput {
+            self.get_commitment_input().unwrap()
+        }
+    }
 
     /// Creates a leaf of size N with stem [`STEM`], the first slot set to [`INDEX_1`] and
     /// [`VALUE_1`], and all other slots set to [`LEAF_DEFAULT_VALUE`] and a unique index in
@@ -387,76 +402,6 @@ mod tests {
             result,
             VerkleCommitmentInput::Leaf(expected_values, node.stem)
         );
-    }
-
-    #[test]
-    fn get_slots_for_returns_number_of_required_slots_or_none_if_values_fit() {
-        let mut node = SparseLeafNode::<5>::default();
-        node.values[1] = ValueWithIndex {
-            index: 1,
-            item: VALUE_1,
-        };
-        node.values[2] = ValueWithIndex {
-            index: 10,
-            item: VALUE_1,
-        };
-        node.values[3] = ValueWithIndex {
-            index: 100,
-            item: Value::default(),
-        };
-        // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
-
-        // Enough empty slots for all new indices
-        let slots =
-            ValueWithIndex::required_slot_count_for(&node.values, [100, 101, 102].into_iter());
-        assert_eq!(slots, None);
-
-        // Enough empty slots and slots which get overwritten
-        let slots = ValueWithIndex::required_slot_count_for(
-            &node.values,
-            [100, 101, 102, 10, 1].into_iter(),
-        );
-        assert_eq!(slots, None);
-
-        // Not enough empty slots
-        let slots =
-            ValueWithIndex::required_slot_count_for(&node.values, [100, 101, 102, 103].into_iter());
-        assert_eq!(slots, Some(6)); // 2 existing + 4 new
-    }
-
-    #[test]
-    fn required_slot_count_for_returns_number_of_required_slots_or_none_if_values_fit() {
-        let mut node = SparseLeafNode::<5>::default();
-        node.values[1] = ValueWithIndex {
-            index: 1,
-            item: VALUE_1,
-        };
-        node.values[2] = ValueWithIndex {
-            index: 10,
-            item: VALUE_1,
-        };
-        node.values[3] = ValueWithIndex {
-            index: 100,
-            item: Value::default(),
-        };
-        // node now has 2 occupied slots (for indices 1 and 10) and 3 empty slots
-
-        // Enough empty slots for all new indices
-        let slots =
-            ValueWithIndex::required_slot_count_for(&node.values, [100, 101, 102].into_iter());
-        assert_eq!(slots, None);
-
-        // Enough empty slots and slots which get overwritten
-        let slots = ValueWithIndex::required_slot_count_for(
-            &node.values,
-            [100, 101, 102, 10, 1].into_iter(),
-        );
-        assert_eq!(slots, None);
-
-        // Not enough empty slots
-        let slots =
-            ValueWithIndex::required_slot_count_for(&node.values, [100, 101, 102, 103].into_iter());
-        assert_eq!(slots, Some(6)); // 2 existing + 1 reused + 3 new
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
