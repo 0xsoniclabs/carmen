@@ -12,6 +12,7 @@ package reference
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
@@ -29,20 +30,26 @@ var (
 	mainStorageOffsetLshVerkleNodeWidth = new(uint256.Int).Lsh(uint256.NewInt(1), 248-uint(verkleNodeWidthLog2))
 )
 
+// embedding provides methods to compute Verkle trie keys for various
+// account-related data fields.
+type embedding struct {
+	cache keyCache
+}
+
 // getBasicDataKey returns the Verkle trie key of the basic data field for
 // the specified account. The basic fields cover the code size, nonce, and
 // balance of the account.
-func getBasicDataKey(address common.Address) trie.Key {
-	return getTrieKey(address, *uint256.NewInt(0), 0)
+func (e *embedding) getBasicDataKey(address common.Address) trie.Key {
+	return e.getTrieKey(address, *uint256.NewInt(0), 0)
 }
 
 // getCodeHashKey returns the Verkle trie key of the code hash field for
 // the specified account.
-func getCodeHashKey(address common.Address) trie.Key {
-	return getTrieKey(address, *uint256.NewInt(0), 1)
+func (e *embedding) getCodeHashKey(address common.Address) trie.Key {
+	return e.getTrieKey(address, *uint256.NewInt(0), 1)
 }
 
-func getCodeChunkKey(address common.Address, chunkNumber int) trie.Key {
+func (e *embedding) getCodeChunkKey(address common.Address, chunkNumber int) trie.Key {
 	// Derived from
 	// https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
 	var (
@@ -51,12 +58,12 @@ func getCodeChunkKey(address common.Address, chunkNumber int) trie.Key {
 		treeIndex, subIndexMod = new(uint256.Int).DivMod(chunkOffset, verkleNodeWidth, new(uint256.Int))
 		subIndex               = byte(subIndexMod.Uint64())
 	)
-	return getTrieKey(address, *treeIndex, subIndex)
+	return e.getTrieKey(address, *treeIndex, subIndex)
 }
 
 // getStorageKey returns the Verkle trie key of the storage slot addressed an
 // address/key pair.
-func getStorageKey(address common.Address, key common.Key) trie.Key {
+func (e *embedding) getStorageKey(address common.Address, key common.Key) trie.Key {
 	// Derived from
 	// https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203
 
@@ -73,15 +80,63 @@ func getStorageKey(address common.Address, key common.Key) trie.Key {
 		treeIndex.Add(&treeIndex, mainStorageOffsetLshVerkleNodeWidth)
 	}
 
-	return getTrieKey(address, treeIndex, suffix)
+	return e.getTrieKey(address, treeIndex, suffix)
+}
+
+func (e *embedding) getTrieKey(
+	address common.Address,
+	index uint256.Int,
+	subIndex byte,
+) trie.Key {
+	return e.cache.getTrieKey(address, index, subIndex)
+}
+
+// keyCache is a naive, never-evicting cache for computed trie keys.
+// TODO: Replace with a proper cache with eviction policy.
+type keyCache struct {
+	mu    sync.Mutex
+	cache map[keyCacheKey]trie.Key
+}
+
+type keyCacheKey struct {
+	address common.Address
+	index   uint256.Int
 }
 
 // getTrieKey is a helper function for hashing information to obtain trie keys.
-func getTrieKey(
+func (c *keyCache) getTrieKey(
 	address common.Address,
 	treeIndex uint256.Int,
 	subIndex byte,
 ) trie.Key {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Check the cache first.
+	key := keyCacheKey{
+		address: address,
+		index:   treeIndex,
+	}
+	if res, ok := c.cache[key]; ok {
+		res[31] = subIndex
+		return res
+	}
+
+	res := _getTrieKey(address, treeIndex, subIndex)
+	if c.cache == nil {
+		c.cache = make(map[keyCacheKey]trie.Key)
+	}
+	c.cache[key] = res
+	return res
+}
+
+// _getTrieKey is the uncached version of getTrieKey.
+func _getTrieKey(
+	address common.Address,
+	treeIndex uint256.Int,
+	subIndex byte,
+) trie.Key {
+	// Compute the key for the given address and index.
 	// Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
 
 	// The key is computed by:
