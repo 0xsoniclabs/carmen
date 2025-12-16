@@ -46,10 +46,10 @@ impl<const N: usize> SparseInnerNode<N> {
     /// Returns an error if there are more than N non-zero children.
     pub fn from_existing(
         children: &[VerkleIdWithIndex],
-        commitment: VerkleCommitment,
+        commitment: &VerkleCommitment,
     ) -> BTResult<Self, Error> {
         let mut inner = SparseInnerNode {
-            commitment,
+            commitment: *commitment,
             ..Default::default()
         };
 
@@ -122,7 +122,7 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
             None => Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
                 N + 1,
                 &self.children,
-                self.commitment,
+                &self.commitment,
             )?)),
             Some(slot) => Ok(StoreAction::Descend {
                 index: index as usize,
@@ -218,7 +218,7 @@ mod tests {
         // Case 1: Contains an index that fits at the corresponding slot in a SparseInnerNode<3>.
         {
             let children = [VerkleIdWithIndex { index: 2, item: ID }];
-            let node = SparseInnerNode::<3>::from_existing(&children, commitment).unwrap();
+            let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
             assert_eq!(node.commitment, commitment);
             // Index is put into the correct slot
             assert_eq!(node.children[0].index, 0);
@@ -234,7 +234,7 @@ mod tests {
                 index: 18,
                 item: ID,
             }];
-            let node = SparseInnerNode::<3>::from_existing(&children, commitment).unwrap();
+            let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
             // The value is put into the first available slot.
             // Note that the search begins at slot 18 % 3, which happens to be 0.
             assert_eq!(node.children[0], children[0]);
@@ -250,7 +250,7 @@ mod tests {
                 VerkleIdWithIndex { index: 0, item: ID },
                 VerkleIdWithIndex { index: 1, item: ID },
             ];
-            let node = SparseInnerNode::<3>::from_existing(&children, commitment).unwrap();
+            let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
             // Since the first slot is taken by index 18, index 0 and 1 get shifted back by one.
             assert_eq!(node.children[0], children[0]);
             assert_eq!(node.children[1], children[1]);
@@ -271,7 +271,7 @@ mod tests {
                 },
                 VerkleIdWithIndex { index: 1, item: ID },
             ];
-            let node = SparseInnerNode::<2>::from_existing(&children, commitment).unwrap();
+            let node = SparseInnerNode::<2>::from_existing(&children, &commitment).unwrap();
             assert_eq!(node.children[0], children[0]);
             assert_eq!(node.children[1], children[2]);
         }
@@ -286,7 +286,7 @@ mod tests {
             VerkleIdWithIndex { index: 2, item: ID },
         ];
         let commitment = VerkleCommitment::default();
-        let result = SparseInnerNode::<2>::from_existing(&children, commitment);
+        let result = SparseInnerNode::<2>::from_existing(&children, &commitment);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("too many non-zero IDs to fit into sparse inner of size 2")));

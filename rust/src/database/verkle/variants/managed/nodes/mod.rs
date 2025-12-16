@@ -480,12 +480,11 @@ where
 
 /// Creates the smallest leaf node capable of storing `n` values, initialized with the given
 /// `stem`, `values` and `commitment`.
-#[allow(clippy::large_types_passed_by_value)] // Needs to be copied anyway
 pub fn make_smallest_leaf_node_for(
     n: usize,
     stem: [u8; 31],
     values: &[ValueWithIndex],
-    commitment: VerkleCommitment,
+    commitment: &VerkleCommitment,
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_leaf_type_for(n) {
         VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
@@ -507,7 +506,7 @@ pub fn make_smallest_leaf_node_for(
         VerkleNodeKind::Leaf256 => {
             let mut new_leaf = FullLeafNode {
                 stem,
-                commitment,
+                commitment: *commitment,
                 ..Default::default()
             };
             for v in values {
@@ -530,7 +529,7 @@ pub fn make_smallest_leaf_node_for(
 pub fn make_smallest_inner_node_for(
     n: usize,
     children: &[VerkleIdWithIndex],
-    commitment: VerkleCommitment,
+    commitment: &VerkleCommitment,
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_inner_type_for(n) {
         VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
@@ -545,7 +544,7 @@ pub fn make_smallest_inner_node_for(
         ))),
         VerkleNodeKind::Inner256 => {
             let mut new_inner = FullInnerNode {
-                commitment,
+                commitment: *commitment,
                 ..Default::default()
             };
             for c in children {

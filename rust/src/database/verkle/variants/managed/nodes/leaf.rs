@@ -85,7 +85,7 @@ impl ManagedTrieNode for FullLeafNode {
             let inner = make_smallest_inner_node_for(
                 2,
                 &[self_child],
-                VerkleCommitment::from_existing(&self.commitment),
+                &VerkleCommitment::from_existing(&self.commitment),
             )?;
             // TODO: Test that only commitment is copied (not changed bits etc)
             return Ok(StoreAction::HandleReparent(inner));
