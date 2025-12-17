@@ -133,7 +133,6 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
                 &[self_child],
                 &VerkleCommitment::from_existing(&self.commitment),
             )?;
-            // TODO: Test that only commitment is copied (not changed bits etc)
             return Ok(StoreAction::HandleReparent(inner));
         }
 
@@ -212,6 +211,7 @@ mod tests {
         error::BTError,
         types::{TreeId, Value},
     };
+
     /// A random stem used by nodes created through [`make_leaf`].
     const STEM: [u8; 31] = [
         199, 138, 41, 113, 63, 133, 10, 244, 221, 149, 172, 110, 253, 27, 18, 76, 151, 202, 22, 80,

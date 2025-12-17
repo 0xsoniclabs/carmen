@@ -87,7 +87,6 @@ impl ManagedTrieNode for FullLeafNode {
                 &[self_child],
                 &VerkleCommitment::from_existing(&self.commitment),
             )?;
-            // TODO: Test that only commitment is copied (not changed bits etc)
             return Ok(StoreAction::HandleReparent(inner));
         }
 

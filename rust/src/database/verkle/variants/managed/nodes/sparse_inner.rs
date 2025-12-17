@@ -19,7 +19,7 @@ use crate::{
                 VerkleNode,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
-                    ManagedInnerNode, VerkleIdWithIndex, VerkleNodeKind, id::VerkleNodeId,
+                    VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                     make_smallest_inner_node_for,
                 },
             },
@@ -43,7 +43,7 @@ pub struct SparseInnerNode<const N: usize> {
 
 impl<const N: usize> SparseInnerNode<N> {
     /// Creates a sparse inner node from existing children and commitment.
-    /// Returns an error if there are more than N non-zero children.
+    /// Returns an error if there are more than N non-default children.
     pub fn from_existing(
         children: &[VerkleIdWithIndex],
         commitment: &VerkleCommitment,
@@ -53,30 +53,30 @@ impl<const N: usize> SparseInnerNode<N> {
             ..Default::default()
         };
 
-        // Insert values from previous leaf using get_slot_for to ensure no duplicate indices.
-        for vwi in children {
-            if vwi.item == VerkleNodeId::default() {
+        // Insert values from previous node using get_slot_for to ensure no duplicate indices.
+        for iwi in children {
+            if iwi.item == VerkleNodeId::default() {
                 continue;
             }
-            let slot = VerkleIdWithIndex::get_slot_for(&inner.children, vwi.index).ok_or(
+            let slot = VerkleIdWithIndex::get_slot_for(&inner.children, iwi.index).ok_or(
                 Error::CorruptedState(format!(
-                    "too many non-zero IDs to fit into sparse inner of size {N}"
+                    "too many non-default IDs to fit into sparse inner of size {N}"
                 )),
             )?;
-            inner.children[slot] = *vwi;
+            inner.children[slot] = *iwi;
         }
 
         Ok(inner)
     }
 
     /// Returns the children of this inner node as commitment input.
-    // TODO: This should not have to pass 256 values: https://github.com/0xsoniclabs/sonic-admin/issues/384
+    // TODO: This should not have to pass 256 IDs: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
-        let mut values = [VerkleNodeId::default(); 256];
+        let mut children = [VerkleNodeId::default(); 256];
         for VerkleIdWithIndex { index, item: value } in &self.children {
-            values[*index as usize] = *value;
+            children[*index as usize] = *value;
         }
-        Ok(VerkleCommitmentInput::Inner(values))
+        Ok(VerkleCommitmentInput::Inner(children))
     }
 }
 
@@ -102,9 +102,7 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
     fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
         let slot = VerkleIdWithIndex::get_slot_for(&self.children, key[depth as usize]);
         match slot {
-            Some(slot) if self.children[slot].index == key[depth as usize] => {
-                Ok(LookupResult::Node(self.children[slot].item))
-            }
+            Some(slot) => Ok(LookupResult::Node(self.children[slot].item)),
             _ => Ok(LookupResult::Node(VerkleNodeId::default())),
         }
     }
@@ -185,7 +183,7 @@ impl<const N: usize> NodeVisitor<SparseInnerNode<N>> for NodeCountVisitor {
     }
 }
 
-impl<const N: usize> ManagedInnerNode for SparseInnerNode<N> {
+impl<const N: usize> VerkleManagedInnerNode for SparseInnerNode<N> {
     fn iter_children(&self) -> Box<dyn Iterator<Item = VerkleIdWithIndex> + '_> {
         Box::new(self.children.iter().copied())
     }
@@ -226,6 +224,19 @@ mod tests {
     fn different_inner_sizes(#[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>) {}
 
     #[test]
+    fn sparse_inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
+        const N: usize = 2;
+        let node: SparseInnerNode<N> = SparseInnerNode::default();
+
+        assert_eq!(node.commitment, VerkleCommitment::default());
+
+        for (i, value) in node.children.iter().enumerate() {
+            assert_eq!(value.index, i as u8);
+            assert_eq!(value.item, VerkleNodeId::default());
+        }
+    }
+
+    #[test]
     fn from_existing_copies_children_and_commitment_correctly() {
         let ID = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner9);
         let mut commitment = VerkleCommitment::default();
@@ -236,7 +247,7 @@ mod tests {
             let children = [VerkleIdWithIndex { index: 2, item: ID }];
             let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
             assert_eq!(node.commitment, commitment);
-            // Index is put into the correct slot
+            // The child is put into the correct slot.
             assert_eq!(node.children[0].index, 0);
             assert_eq!(node.children[0].item, VerkleNodeId::default());
             assert_eq!(node.children[1].index, 1);
@@ -251,7 +262,7 @@ mod tests {
                 item: ID,
             }];
             let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
-            // The value is put into the first available slot.
+            // The child is put into the first available slot.
             // Note that the search begins at slot 18 % 3, which happens to be 0.
             assert_eq!(node.children[0], children[0]);
         }
@@ -273,8 +284,8 @@ mod tests {
             assert_eq!(node.children[2], children[2]);
         }
 
-        // Case 4: There are more values that can fit into a SparseInnerNode<2>, but some of them
-        // are zero and can be skipped.
+        // Case 4: There are more children that can fit into a SparseInnerNode<2>, but some of them
+        // are the default ID and can be skipped.
         {
             let children = [
                 VerkleIdWithIndex {
@@ -294,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn from_existing_returns_error_if_too_many_non_zero_values_are_provided() {
+    fn from_existing_returns_error_if_too_many_non_default_children_are_provided() {
         let ID = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner9);
         let children = [
             VerkleIdWithIndex { index: 0, item: ID },
@@ -306,29 +317,6 @@ mod tests {
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("too many non-zero IDs to fit into sparse inner of size 2")));
-    }
-
-    #[test]
-    fn sparse_inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
-        let node: SparseInnerNode<3> = SparseInnerNode::default();
-        assert_eq!(node.commitment, VerkleCommitment::default());
-        assert_eq!(
-            node.children,
-            [
-                VerkleIdWithIndex {
-                    index: 0,
-                    item: VerkleNodeId::default(),
-                },
-                VerkleIdWithIndex {
-                    index: 1,
-                    item: VerkleNodeId::default(),
-                },
-                VerkleIdWithIndex {
-                    index: 2,
-                    item: VerkleNodeId::default(),
-                },
-            ]
-        );
     }
 
     #[test]
@@ -357,7 +345,7 @@ mod tests {
             ))
         );
 
-        // Lookup an index that exists but it's empty
+        // Lookup an index that exists but is empty
         node.access_slot(2).item = VerkleNodeId::default();
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(result, LookupResult::Node(VerkleNodeId::default()));
@@ -378,13 +366,13 @@ mod tests {
             .next_store_action(
                 updates.clone(),
                 1,
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner9), // Irrelevant
+                VerkleNodeId::default(), // Irrelevant
             )
             .unwrap();
         assert_eq!(
             result,
             StoreAction::Descend(vec![DescendAction {
-                id: VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner9),
+                id: VerkleNodeId::default(),
                 updates
             }])
         );
@@ -438,7 +426,7 @@ mod tests {
         assert_eq!(result, LookupResult::Node(new_id));
 
         // Non-existing index but with available slot
-        node.access_slot(1).item = VerkleNodeId::default(); // Free up slot at index 1
+        node.access_slot(1).item = VerkleNodeId::default(); // Free up slot 1
         let key = Key::from_index_values(1, &[(1, 250)]);
         let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner9);
         node.replace_child(&key, 1, new_id).unwrap();

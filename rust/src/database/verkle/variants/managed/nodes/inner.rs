@@ -18,7 +18,9 @@ use crate::{
             variants::managed::{
                 VerkleNode,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
-                nodes::{ManagedInnerNode, VerkleIdWithIndex, VerkleNodeKind, id::VerkleNodeId},
+                nodes::{
+                    VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
+                },
             },
         },
         visitor::NodeVisitor,
@@ -39,19 +41,6 @@ pub struct FullInnerNode {
 }
 
 impl FullInnerNode {
-    /// Creates a new inner node with the given leaf node as child at the given index.
-    /// The commitment of the inner node is initialized from the given leaf commitment.
-    pub fn new_with_leaf(
-        index: u8,
-        leaf_id: VerkleNodeId,
-        leaf_commitment: &VerkleCommitment,
-    ) -> Self {
-        let mut inner = FullInnerNode::default();
-        inner.children[index as usize] = leaf_id;
-        inner.commitment = VerkleCommitment::from_existing(leaf_commitment);
-        inner
-    }
-
     /// Returns the children of this inner node as commitment input.
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
         Ok(VerkleCommitmentInput::Inner(self.children))
@@ -124,7 +113,7 @@ impl NodeVisitor<FullInnerNode> for NodeCountVisitor {
     }
 }
 
-impl ManagedInnerNode for FullInnerNode {
+impl VerkleManagedInnerNode for FullInnerNode {
     fn iter_children(&self) -> Box<dyn Iterator<Item = VerkleIdWithIndex> + '_> {
         Box::new(
             self.children
