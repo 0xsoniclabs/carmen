@@ -71,7 +71,7 @@ impl ManagedTrieNode for EmptyNode {
             let stem = updates.first_key()[..31].try_into().unwrap();
             if updates.all_stems_match(&stem) {
                 let new_leaf = make_smallest_leaf_node_for(
-                    updates.split(depth).count(),
+                    updates.split(31).count(), // this counts the number of distinct keys
                     stem,
                     &[],
                     self.get_commitment(),
@@ -103,7 +103,9 @@ impl NodeVisitor<EmptyNode> for NodeCountVisitor {
 mod tests {
     use super::*;
     use crate::{
-        database::verkle::{KeyedUpdateBatch, variants::managed::nodes::VerkleNodeKind},
+        database::verkle::{
+            KeyedUpdateBatch, test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind,
+        },
         error::BTError,
         types::TreeId,
     };
@@ -196,9 +198,90 @@ mod tests {
     }
 
     #[test]
+    fn next_store_action_converts_to_leaf_of_minimal_necessary_size() {
+        let mut updates = Vec::new();
+        for i in 0..smallest_leaf_size() {
+            updates.push((
+                Key::from_index_values(0, &[(31, i as u8)]),
+                Value::default(),
+            ));
+        }
+        updates.push((Key::from_index_values(0, &[(31, 0)]), Value::default()));
+
+        let update = KeyedUpdateBatch::from_key_value_pairs(&updates);
+        let empty = EmptyNode;
+        let action = empty
+            .next_store_action(
+                update,
+                1,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
+            )
+            .unwrap();
+        match action {
+            StoreAction::HandleTransform(leaf) => {
+                assert_eq!(
+                    leaf,
+                    make_smallest_leaf_node_for(
+                        smallest_leaf_size(),
+                        [0; 31],
+                        &[],
+                        VerkleCommitment::default()
+                    )
+                    .unwrap(),
+                );
+            }
+            _ => panic!("expected HandleTransform to leaf node"),
+        }
+    }
+
+    #[test]
+    fn next_store_action_splits_update_at_byte_31_to_determine_leaf_size() {
+        let mut updates = Vec::new();
+        for i in 0..256 {
+            updates.push((
+                Key::from_index_values(0, &[(31, i as u8)]),
+                Value::default(),
+            ));
+        }
+
+        let update = KeyedUpdateBatch::from_key_value_pairs(&updates);
+        let empty = EmptyNode;
+        let action = empty
+            .next_store_action(
+                update,
+                1,
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty),
+            )
+            .unwrap();
+        match action {
+            StoreAction::HandleTransform(leaf) => {
+                assert_eq!(
+                    leaf,
+                    make_smallest_leaf_node_for(256, [0; 31], &[], VerkleCommitment::default())
+                        .unwrap(),
+                );
+            }
+            _ => panic!("expected HandleTransform to leaf node"),
+        }
+    }
+
+    #[test]
     fn get_commitment_returns_default_commitment() {
         let node = EmptyNode;
         let commitment = node.get_commitment();
         assert_eq!(commitment, VerkleCommitment::default());
+    }
+
+    fn smallest_leaf_size() -> usize {
+        let prev =
+            make_smallest_leaf_node_for(1, [0; 31], &[], VerkleCommitment::default()).unwrap();
+        for i in 2..=256 {
+            let leaf =
+                make_smallest_leaf_node_for(i, [0; 31], &[], VerkleCommitment::default()).unwrap();
+            if prev != leaf {
+                return i - 1;
+            }
+        }
+        unreachable!();
     }
 }
