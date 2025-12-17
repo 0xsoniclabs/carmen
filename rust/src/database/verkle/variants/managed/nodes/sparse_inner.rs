@@ -314,9 +314,10 @@ mod tests {
         ];
         let commitment = VerkleCommitment::default();
         let result = SparseInnerNode::<2>::from_existing(&children, &commitment);
+
         assert!(matches!(
             result.map_err(BTError::into_inner),
-            Err(Error::CorruptedState(e)) if e.contains("too many non-zero IDs to fit into sparse inner of size 2")));
+            Err(Error::CorruptedState(e)) if e.contains("too many non-default IDs to fit into sparse inner of size 2")));
     }
 
     #[test]
