@@ -240,8 +240,9 @@ impl UnionManagedTrieNode for VerkleNode {
     fn copy_on_write(&self, id: Self::Id, changed_children: Vec<u8>) -> Self {
         match self {
             VerkleNode::Empty(n) => VerkleNode::Empty(*n),
-            VerkleNode::Inner3(n) => VerkleNode::Inner3(n.clone()),
-            VerkleNode::Inner47(n) => VerkleNode::Inner47(n.clone()),
+            VerkleNode::Inner9(n) => VerkleNode::Inner9(n.clone()),
+            VerkleNode::Inner15(n) => VerkleNode::Inner15(n.clone()),
+            VerkleNode::Inner21(n) => VerkleNode::Inner21(n.clone()),
             VerkleNode::Inner256(n) => {
                 if changed_children.len() <= InnerDeltaNode::DELTA_SIZE {
                     VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
@@ -250,8 +251,11 @@ impl UnionManagedTrieNode for VerkleNode {
                 }
             }
             VerkleNode::InnerDelta(n) => {
-                if ItemWithIndex::get_slots_for(&n.children_delta, changed_children.into_iter())
-                    .is_some()
+                if ItemWithIndex::required_slot_count_for(
+                    &n.children_delta,
+                    changed_children.into_iter(),
+                )
+                .is_some()
                 {
                     VerkleNode::Inner256(Box::new(FullInnerNode::from(&**n)))
                 } else {
@@ -260,9 +264,9 @@ impl UnionManagedTrieNode for VerkleNode {
             }
             VerkleNode::Leaf1(n) => VerkleNode::Leaf1(n.clone()),
             VerkleNode::Leaf2(n) => VerkleNode::Leaf2(n.clone()),
-            VerkleNode::Leaf21(n) => VerkleNode::Leaf21(n.clone()),
-            VerkleNode::Leaf64(n) => VerkleNode::Leaf64(n.clone()),
-            VerkleNode::Leaf141(n) => VerkleNode::Leaf141(n.clone()),
+            VerkleNode::Leaf5(n) => VerkleNode::Leaf5(n.clone()),
+            VerkleNode::Leaf18(n) => VerkleNode::Leaf18(n.clone()),
+            VerkleNode::Leaf146(n) => VerkleNode::Leaf146(n.clone()),
             VerkleNode::Leaf256(n) => VerkleNode::Leaf256(n.clone()),
         }
     }

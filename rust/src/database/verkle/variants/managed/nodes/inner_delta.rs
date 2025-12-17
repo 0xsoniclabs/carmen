@@ -21,8 +21,7 @@ use crate::{
                 FullInnerNode, VerkleNode,
                 commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
-                    ItemWithIndex, VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind,
-                    id::VerkleNodeId,
+                    VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                 },
             },
         },
@@ -157,7 +156,7 @@ impl ManagedTrieNode for InnerDeltaNode {
         depth: u8,
         _self_id: Self::Id,
     ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
-        let slots = VerkleIdWithIndex::get_slots_for(
+        let slots = VerkleIdWithIndex::required_slot_count_for(
             &self.children_delta,
             updates
                 .borrowed()
