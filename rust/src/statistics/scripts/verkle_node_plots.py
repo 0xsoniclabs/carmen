@@ -50,20 +50,13 @@ def bar_plot(data, x_col, y_col, title, order=None, pad=20, rotation=45):
     plt.show()
 
 
-def filter_and_group(df, kind, size_col="Node Size", count_col="Count", threshold=0.01):
+def group_below_threshold(df, kind, threshold=0.01):
     """
-    Filter subtypes of a given kind by a minimum percentage threshold.
-    Returns a DataFrame with subtypes above the threshold.
+    Group all counts below the given threshold into an "Other" category.
+    Returns a DataFrame with the grouped data.
     """
-    sub_df = df[(df["Node Kind"] == kind) & (df[size_col] != kind)]
-    total = sub_df[count_col].sum()
-    return sub_df[sub_df[count_col] / total >= threshold], total
-
-
-def pie_with_other(df, kind, threshold, label_col="Node Size", count_col="Count"):
-    """
-    Pie plot of node size distribution for a given node kind, grouping node sizes with counts below threshold into 'Other'.
-    """
+    label_col = "Node Size"
+    count_col = "Count"
     sub_df = df[(df["Node Kind"] == kind) & (df[label_col] != kind)].copy()
     total = sub_df[count_col].sum()
     sub_df["Percentage"] = sub_df[count_col] / total
@@ -75,12 +68,7 @@ def pie_with_other(df, kind, threshold, label_col="Node Size", count_col="Count"
             [above, pd.DataFrame([{label_col: "Other", count_col: other_count}])],
             ignore_index=True,
         )
-    pie_plot(
-        above,
-        count_col,
-        label_col,
-        f"Distribution of {kind} node children ({threshold * 100:.1f}% threshold)",
-    )
+    return above
 
 
 def set_plot_params():
@@ -96,14 +84,6 @@ def set_plot_params():
 set_plot_params()
 df, total_df = load_and_prepare_data(CSV_PATH)
 
-# Pie: All node kinds (with totals)
-all_kinds_df = total_df.copy()
-all_kinds_df.loc[all_kinds_df["Node Kind"] == "Empty", "Node Kind"] = "Wasted"
-# Rename Leaf and Inner to "Used", and sum them together
-all_kinds_df.loc[all_kinds_df["Node Kind"] == "Leaf", "Node Kind"] = "Used"
-all_kinds_df.loc[all_kinds_df["Node Kind"] == "Inner", "Node Kind"] = "Used"
-all_kinds_df = all_kinds_df.groupby("Node Kind", as_index=False)["Count"].sum()
-pie_plot(all_kinds_df, "Count", "Node Kind", "Used slots vs Wasted slots")
 
 # Pie: All node kinds, excluding "Empty"
 non_empty_df = total_df[total_df["Node Kind"] != "Empty"]
@@ -114,9 +94,9 @@ pie_plot(
     "Distribution of Node Kinds (excluding Empty nodes)",
 )
 
-# Bar: Inner node subtypes above 2% threshold
+# Bar: Inner node children count above 2% threshold
 inner_bar_threshold = 0.02
-inner_bar_df, _ = filter_and_group(df, "Inner", threshold=inner_bar_threshold)
+inner_bar_df = group_below_threshold(df, "Inner", threshold=inner_bar_threshold)
 bar_plot(
     inner_bar_df,
     "Node Size",
@@ -128,7 +108,21 @@ bar_plot(
 )
 
 # Pie: Inner node subtypes, group below 0.5% as "Other"
-pie_with_other(df, "Inner", threshold=0.005)
+threshold = 0.005
+inner_pie_df = group_below_threshold(df, "Inner", threshold=threshold)
+pie_plot(
+    inner_pie_df,
+    "Count",
+    "Node Size",
+    f"Distribution of Inner node children ({threshold * 100}% threshold)",
+)
 
 # Pie: Leaf node subtypes, group below 2% as "Other"
-pie_with_other(df, "Leaf", threshold=0.02)
+threshold = 0.02
+leaf_pie_df = group_below_threshold(df, "Leaf", threshold=threshold)
+pie_plot(
+    leaf_pie_df,
+    "Count",
+    "Node Size",
+    f"Distribution of Leaf node values ({threshold * 100}% threshold)",
+)

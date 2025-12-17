@@ -55,9 +55,9 @@ impl Formatter {
     }
 }
 
-/// A command line tool to print statistics about the Live State storage of a Carmen DB.
-/// The tool reads a path containing a Carmen Live State a prints various
-/// statistics using the specified output formatters.
+/// A command line tool to print statistics about a Carmen LiveDB (Rust variants only).
+/// The tool reads a path containing a Carmen LiveDB and prints various statistics using
+/// the specified output formatters.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -71,9 +71,13 @@ struct Args {
 }
 
 fn main() {
-    type FileStorage = VerkleNodeFileStorageManager<
+    type VerkleStorageManager = VerkleNodeFileStorageManager<
         NodeFileStorage<InnerNode, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
         NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<5>, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<18>, NoSeekFile>,
+        NodeFileStorage<SparseLeafNode<146>, NoSeekFile>,
         NodeFileStorage<FullLeafNode, NoSeekFile>,
     >;
 
@@ -94,7 +98,7 @@ fn main() {
     }
 
     let is_pinned = |_n: &VerkleNode| false; // We don't care about the pinned status for stats
-    let storage = FileStorage::open(storage_path).unwrap();
+    let storage = VerkleStorageManager::open(storage_path).unwrap();
     let manager = Arc::new(CachedNodeManager::new(100_000, storage, is_pinned));
     let mut formatters: Vec<_> = args
         .formatter
