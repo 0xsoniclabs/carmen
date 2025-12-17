@@ -94,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn read_or_init_fails_if_file_does_not_exist_if_db_mode_is_read_only() {
+    fn read_or_init_fails_if_file_does_not_exist_in_read_only_mode() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 

@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn open_does_not_create_db_dirty_file_if_db_mode_is_read_only() {
+    fn open_does_not_create_db_dirty_file_in_read_only_mode() {
         type FileStorageManager = TestNodeFileStorageManager<
             NodeFileStorage<NonEmpty1TestNode, SeekFile>,
             NodeFileStorage<NonEmpty2TestNode, SeekFile>,
@@ -466,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn open_fails_if_db_files_do_not_exist_if_db_mode_is_read_only() {
+    fn open_fails_if_db_files_do_not_exist_in_read_only_mode() {
         type FileStorageManager = TestNodeFileStorageManager<
             NodeFileStorage<NonEmpty1TestNode, SeekFile>,
             NodeFileStorage<NonEmpty2TestNode, SeekFile>,
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn set_returns_error_if_db_is_read_only() {
+    fn set_returns_error_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
@@ -704,7 +704,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_returns_error_if_db_is_read_only() {
+    fn delete_returns_error_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
@@ -763,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn close_does_not_write_metadata_if_db_mode_is_read_only() {
+    fn close_does_not_write_metadata_in_read_only_mode() {
         type TestNodeFileStorageManager = super::TestNodeFileStorageManager<
             MockStorage<NonEmpty1TestNode>,
             MockStorage<NonEmpty2TestNode>,
@@ -826,15 +826,15 @@ mod tests {
 
         // The prepared metadata file should not exist after a successful checkpoint.
         assert!(!fs::exists(dir.join(
-               TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
-           )).unwrap());
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
+        )).unwrap());
         // The committed metadata file should exist and contain the new checkpoint.
         assert_eq!(
-               Metadata::read_or_init(dir.join(
-                   TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
-               ), DbMode::Read).unwrap().checkpoint_number,
-               old_checkpoint + 1
-           );
+            Metadata::read_or_init(dir.join(
+                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
+            ), DbMode::Read).unwrap().checkpoint_number,
+            old_checkpoint + 1
+    );
         // The checkpoint variable should be updated to the new checkpoint.
         assert_eq!(
             storage.checkpoint.load(Ordering::Acquire),
@@ -852,8 +852,8 @@ mod tests {
             root_id_count: 0,
         };
         old_metadata.write(dir.join(
-               TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
-           )).unwrap();
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
+        )).unwrap();
 
         let mut storage =
             make_test_node_file_storage(dir.path(), DbMode::ReadWrite, old_checkpoint);
@@ -885,15 +885,15 @@ mod tests {
 
         // The prepared metadata file should not exist after a failed checkpoint.
         assert!(!fs::exists(dir.join(
-               TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
-           )).unwrap());
+            TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::PREPARED_METADATA_FILE
+        )).unwrap());
         // The committed metadata file should exist and contain the old checkpoint.
         assert_eq!(
-               Metadata::read_or_init(dir.join(
-                   TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
-               ), DbMode::Read).unwrap().checkpoint_number,
-               old_checkpoint
-           );
+            Metadata::read_or_init(dir.join(
+                TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
+            ), DbMode::Read).unwrap().checkpoint_number,
+            old_checkpoint
+        );
         // The checkpoint variable should still be the old checkpoint.
         assert_eq!(storage.checkpoint.load(Ordering::Acquire), old_checkpoint);
     }
@@ -1152,7 +1152,7 @@ mod tests {
     }
 
     #[test]
-    fn set_root_id_fails_if_db_mode() {
+    fn set_root_id_fails_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let root_id0 = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
         let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);

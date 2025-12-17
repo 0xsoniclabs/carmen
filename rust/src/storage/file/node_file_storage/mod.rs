@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn open_fails_for_non_existing_path_and_empty_directory_if_db_mode_is_read_only() {
+    fn open_fails_for_non_existing_path_and_empty_directory_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("non_existing_dir");
         let path = path.as_path();
@@ -644,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn set_returns_error_if_db_is_read_only() {
+    fn set_returns_error_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
@@ -716,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_returns_error_if_db_is_read_only() {
+    fn delete_returns_error_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn close_is_no_op_if_db_is_read_only() {
+    fn close_is_no_op_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 2, 1, 2, 1);
@@ -926,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_fails_if_db_is_read_only_mode() {
+    fn prepare_fails_in_read_only_mode_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
@@ -1036,7 +1036,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_fails_if_db_is_read_only() {
+    fn commit_fails_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn abort_fails_if_db_is_read_only() {
+    fn abort_fails_in_read_only_mode() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&test_dir, 0, &[], 0, &[], 0);
 
