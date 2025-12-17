@@ -90,7 +90,6 @@ where
     pub const COMMITTED_METADATA_FILE: &str = "committed_metadata.bin";
     pub const PREPARED_METADATA_FILE: &str = "prepared_metadata.bin";
     pub const ROOT_IDS_FILE: &str = "root_ids.bin";
-
 }
 
 impl<$STORAGE_GENERICS> $crate::storage::Storage for $MANAGER_TYPE<$STORAGE_GENERICS>
