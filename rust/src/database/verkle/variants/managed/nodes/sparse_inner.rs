@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(
             result,
             StoreAction::Descend(vec![DescendAction {
-                id: VerkleNodeId::default(),
+                id: VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner9),
                 updates
             }])
         );
