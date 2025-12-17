@@ -196,9 +196,7 @@ mod tests {
             verkle::{
                 KeyedUpdateBatch,
                 test_utils::FromIndexValues,
-                variants::managed::nodes::{
-                    NodeHelperTrait, VerkleManagedTrieNode, VerkleNodeKind,
-                },
+                variants::managed::nodes::{NodeAccess, VerkleManagedTrieNode, VerkleNodeKind},
             },
         },
         error::BTError,
@@ -228,7 +226,7 @@ mod tests {
 
     impl<const N: usize> VerkleManagedTrieNode<Value> for SparseLeafNode<N> {}
 
-    impl<const N: usize> NodeHelperTrait<Value> for SparseLeafNode<N> {
+    impl<const N: usize> NodeAccess<Value> for SparseLeafNode<N> {
         /// Returns a reference to the specified slot (modulo N).
         fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex {
             &mut self.values[slot % N]

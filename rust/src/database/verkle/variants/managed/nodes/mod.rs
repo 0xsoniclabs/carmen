@@ -43,7 +43,7 @@ pub mod leaf;
 pub mod sparse_leaf;
 
 #[cfg(test)]
-pub use tests::{NodeHelperTrait, VerkleManagedTrieNode};
+pub use tests::{NodeAccess, VerkleManagedTrieNode};
 
 /// A node in a managed Verkle trie.
 //
@@ -351,7 +351,7 @@ pub type ValueWithIndex = ItemWithIndex<Value>;
 
 impl<T> ItemWithIndex<T>
 where
-    T: Clone + Copy + Default + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned,
+    T: Default + PartialEq,
 {
     /// Returns a slot in `items` for storing an item with the given index, or `None` if no such
     /// slot exists. A slot is suitable if it either already holds the given index, or if it is
@@ -383,7 +383,7 @@ where
         items: &[ItemWithIndex<T>; N],
         indices: impl Iterator<Item = u8>,
     ) -> Option<usize> {
-        let empty_slots = items.iter().filter(|vwi| vwi.item == T::default()).count();
+        let empty_slots = items.iter().filter(|iwi| iwi.item == T::default()).count();
         let mut new_slots = 0;
         for index in indices {
             if items
@@ -701,18 +701,19 @@ mod tests {
     /// A supertrait combining [`ManagedTrieNode`] and [`NodeHelperTrait`] for use in rstest tests.
     pub trait VerkleManagedTrieNode<T>:
         ManagedTrieNode<Union = VerkleNode, Id = VerkleNodeId, Commitment = VerkleCommitment>
-        + NodeHelperTrait<T>
+        + NodeAccess<T>
     where
-        T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned + Default,
+        T: Clone + Copy + Default + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned,
     {
     }
 
     /// Helper trait to interact with generic node types in rstest tests.
-    pub trait NodeHelperTrait<T>
+    pub trait NodeAccess<T>
     where
-        T: Clone + Copy + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned + Default,
+        T: Clone + Copy + Default + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned,
     {
         fn access_slot(&mut self, slot: usize) -> &mut ItemWithIndex<T>;
+
         fn get_commitment_input(&self) -> VerkleCommitmentInput;
     }
 }
