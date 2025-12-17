@@ -129,7 +129,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
 
         if let Some(slots) = ValueWithIndex::required_slot_count_for(
             &self.values,
-            updates.iter().map(|u| u.key()[31]),
+            updates.clone().split(31).map(|u| u.first_key()[31]),
         ) {
             // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
             return Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
