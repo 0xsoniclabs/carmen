@@ -94,7 +94,7 @@ func CalculateArchiveTotalSupply(ctx context.Context, logger *Log, directory str
 	progress := logger.NewProgressTracker("visited %d accounts, %.2f accounts/s", 1_000_000)
 	db := exportableArchiveTrie{trie: archive, block: block}
 	visitor := totalSupplyCalculatingVisitor{ctx: ctx, progress: progress}
-	if err := db.Visit(&visitor, false); err != nil {
+	if err := db.Visit(&visitor, true); err != nil {
 		return fmt.Errorf("failed visiting content: %v", err)
 	}
 
