@@ -142,7 +142,7 @@ impl From<OnDiskVerkleCommitment> for VerkleCommitment {
             dirty: false,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
-            commitment_scalar: Scalar::zero(),
+            commitment_scalar: odvc.commitment.to_scalar(),
         }
     }
 }
