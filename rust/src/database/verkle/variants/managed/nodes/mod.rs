@@ -124,7 +124,7 @@ impl VerkleNode {
     }
 
     /// Converts this node to an inner node, if it is one.
-    pub fn as_inner_node(&self) -> Option<&dyn ManagedInnerNode> {
+    pub fn as_inner_node(&self) -> Option<&dyn VerkleManagedInnerNode> {
         match self {
             VerkleNode::Inner9(n) => Some(n.deref()),
             VerkleNode::Inner15(n) => Some(n.deref()),
@@ -434,7 +434,7 @@ where
     /// empty (i.e., holds the default item).
     fn get_slot_for<const N: usize>(items: &[ItemWithIndex<T>; N], index: u8) -> Option<usize> {
         let mut empty_slot = None;
-        // We always do a linear search over all item to ensure that we never hold the same index
+        // We always do a linear search over all items to ensure that we never hold the same index
         // twice in different slots. By starting the search at the given index we are very likely
         // to find the matching slot immediately in practice (if index < N).
         for (i, iwi) in items
@@ -566,7 +566,7 @@ pub fn make_smallest_inner_node_for(
 
 /// A trait to link together full and sparse inner nodes.
 /// It provides a set of operations common to all inner node types.
-pub trait ManagedInnerNode {
+pub trait VerkleManagedInnerNode {
     /// Returns an iterator over all children in the inner node, together with their indexes.
     fn iter_children(&self) -> Box<dyn Iterator<Item = VerkleIdWithIndex> + '_>;
 }
