@@ -26,7 +26,7 @@ func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string
 	}
 
 	if info.Config.Name != mpt.S5LiveConfig.Name {
-		return fmt.Errorf("can only support export of LiveDB instances, found %v in directory", info.Mode)
+		return fmt.Errorf("can only calculate total supply on LiveDB instances, found %v in directory", info.Mode)
 	}
 
 	mptState, err := mpt.OpenGoFileState(directory, info.Config, mpt.NodeCacheConfig{Capacity: exportCacheCapacitySize})
