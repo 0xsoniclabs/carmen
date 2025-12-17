@@ -70,7 +70,7 @@ func CalculateArchiveTotalSupply(ctx context.Context, logger *Log, directory str
 	}
 
 	if info.Config.Name != mpt.S5ArchiveConfig.Name {
-		return fmt.Errorf("can only support export of S5 Archive instances, found %v in directory", info.Config.Name)
+		return fmt.Errorf("can only calculate total supply on S5 Archive instances, found %v in directory", info.Config.Name)
 	}
 
 	archive, err := mpt.OpenArchiveTrie(directory, info.Config, mpt.NodeCacheConfig{Capacity: exportCacheCapacitySize}, mpt.ArchiveConfig{})
