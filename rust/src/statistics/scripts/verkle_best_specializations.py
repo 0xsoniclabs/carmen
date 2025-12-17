@@ -8,7 +8,7 @@ import seaborn as sns
 import pulp
 from sortedcontainers import SortedDict, SortedSet
 
-CSV_PATH = "../../carmen_stats_node_counts_by_kind.csv"
+CSV_PATH = "../../../carmen_stats_node_counts_by_kind.csv"
 
 # NOTE: These sizes are based on the current implementation of the trie nodes in Carmen and needs to be manually updated if the implementation changes.
 

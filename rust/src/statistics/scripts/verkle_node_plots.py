@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 sns.set_theme(style="whitegrid")
 
-CSV_PATH = "./stat_results/history/carmen_stats_node_counts_by_kind.csv"
+CSV_PATH = "../../../carmen_stats_node_counts_by_kind.csv"
 
 
 def load_and_prepare_data(csv_path):
