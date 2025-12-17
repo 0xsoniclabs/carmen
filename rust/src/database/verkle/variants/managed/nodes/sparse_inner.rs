@@ -224,7 +224,7 @@ mod tests {
     fn different_inner_sizes(#[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>) {}
 
     #[test]
-    fn sparse_inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
+    fn sparse_inner_node_default_returns_inner_node_with_default_ids_and_unique_indices() {
         const N: usize = 2;
         let node: SparseInnerNode<N> = SparseInnerNode::default();
 
@@ -314,9 +314,10 @@ mod tests {
         ];
         let commitment = VerkleCommitment::default();
         let result = SparseInnerNode::<2>::from_existing(&children, &commitment);
+
         assert!(matches!(
             result.map_err(BTError::into_inner),
-            Err(Error::CorruptedState(e)) if e.contains("too many non-zero IDs to fit into sparse inner of size 2")));
+            Err(Error::CorruptedState(e)) if e.contains("too many non-default IDs to fit into sparse inner of size 2")));
     }
 
     #[test]
