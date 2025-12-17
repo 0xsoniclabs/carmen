@@ -99,7 +99,8 @@ where
     type Id = $ID;
     type Item = $tname;
 
-    /// Opens or creates the file backends for the individual node types in the specified directory.
+    /// Opens the file backends for the individual node types in the specified directory in the given mode.
+    /// If the mode has write access, the directory is created if it does not exist.
     fn open(dir: &::std::path::Path, db_mode: $crate::storage::DbMode) -> $crate::error::BTResult<Self, $crate::storage::Error> {
         if db_mode.has_write_access() {
             std::fs::create_dir_all(dir)?;

@@ -74,10 +74,12 @@ where
     type Id = u64;
     type Item = T;
 
-    /// Creates all files for a file-based node storage in the specified directory.
-    /// If the directory does not exist, it will be created.
-    /// If the files do not exist, they will be created.
-    /// If the files exist, they will be opened and their data verified.
+    /// Opens the specified file-based node storage in the specified directory.
+    ///
+    /// If the `db_mode` has write access:
+    ///     - If the directory does not exist, it will be created.
+    ///     - If the files do not exist, they will be created.
+    ///     - If the files exist, they will be opened and their data verified.
     fn open(dir: &Path, db_mode: DbMode) -> BTResult<Self, Error> {
         if db_mode.has_write_access() {
             fs::create_dir_all(dir)?;
