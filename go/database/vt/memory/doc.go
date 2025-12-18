@@ -11,7 +11,7 @@
 // Package memory implements a simple in-memory Verkle trie (S6) for the Carmen
 // project providing
 //   - a performance-oriented implementation of the Verkle trie in Carmen
-//   - a proofing ground for optimizations on the Go side of Carmen
+//   - a proving ground for optimizations on the Go side of Carmen
 //   - a benchmark implementation for comparing with other implementations
 //
 // The implementation is maintained to be suitable for testing and benchmarking
