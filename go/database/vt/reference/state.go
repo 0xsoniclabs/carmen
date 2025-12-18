@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,22 +31,32 @@ import (
 // State is an in-memory implementation of a chain-state tracking account and
 // storage data using a Verkle Trie. It implements the state.State interface.
 type State struct {
-	trie      *trie.Trie
+	trie      Trie
 	embedding embedding
 }
 
-// NewState creates a new, empty in-memory state instance.
-func NewState(_ state.Parameters) (state.State, error) {
-	return &State{
-		trie: &trie.Trie{},
-	}, nil
+// Trie defines the minimal interface required from a Verkle trie for use by
+// the State implementation. This allows different trie implementations to be
+// used by the State.
+type Trie interface {
+	Config() any
+	Get(key trie.Key) trie.Value
+	Set(key trie.Key, value trie.Value)
+	Commit() commit.Commitment
 }
 
-// newState creates a new, empty in-memory state instance.
-func newState() *State {
-	return &State{
-		trie: &trie.Trie{},
-	}
+// NewState creates a new, empty in-memory state instance.
+func NewState(params state.Parameters) (state.State, error) {
+	return NewStateUsing(&trie.Trie{}), nil
+}
+
+// NewStateUsing creates a state wrapping the given Trie instance.
+func NewStateUsing(trie Trie) state.State {
+	return &State{trie: trie}
+}
+
+func (s *State) TrieConfig() any {
+	return s.trie.Config()
 }
 
 func (s *State) Exists(address common.Address) (bool, error) {

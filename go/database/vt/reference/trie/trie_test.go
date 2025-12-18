@@ -136,3 +136,10 @@ func TestTrie_CommitmentOfNonEmptyTrieIsRootNodeCommitment(t *testing.T) {
 	want := trie.root.commit()
 	require.True(have.Equal(want), "Commitment should match the root's commitment")
 }
+
+func TestTrie_ConfigIsNil(t *testing.T) {
+	require := require.New(t)
+
+	trie := &Trie{}
+	require.Nil(trie.Config())
+}

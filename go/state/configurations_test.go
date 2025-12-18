@@ -40,7 +40,7 @@ func TestStateConfigs_AllSetupsCreateDataInCorrectDirectories(t *testing.T) {
 		t.Run(config.String(), func(t *testing.T) {
 			if config.Schema == 0 || config.Schema == 6 {
 				switch strings.TrimSuffix(string(config.Variant), "-flat") {
-				case "go-memory", "go-geth-memory", "go-reference":
+				case "go-memory", "go-memory-seq", "go-geth-memory", "go-reference":
 					t.Skipf("%d/%s not supported", config.Schema, config.Variant)
 				}
 			}

@@ -47,6 +47,11 @@ func NewTrie(config TrieConfig) *Trie {
 	return &Trie{config: config}
 }
 
+// Config returns the configuration used to create the trie.
+func (t *Trie) Config() any {
+	return t.config
+}
+
 // Get retrieves the value associated with the given key from the trie. All keys
 // that have not been set will return the zero value.
 func (t *Trie) Get(key Key) Value {

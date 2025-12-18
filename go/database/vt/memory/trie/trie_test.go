@@ -28,6 +28,19 @@ func TestTrie_InitialTrieIsEmpty(t *testing.T) {
 	require.Zero(trie.Get(Key{3}))
 }
 
+func TestTrie_Config_ReturnsConfigUsedToCreateTrie(t *testing.T) {
+	require := require.New(t)
+
+	for _, config := range []TrieConfig{
+		{},
+		{ParallelCommit: true},
+		{ParallelCommit: false},
+	} {
+		trie := NewTrie(config)
+		require.Equal(config, trie.Config())
+	}
+}
+
 func TestTrie_ValuesCanBeSetAndRetrieved(t *testing.T) {
 	require := require.New(t)
 

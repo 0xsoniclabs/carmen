@@ -35,6 +35,12 @@ type Trie struct {
 	root node
 }
 
+// Config returns nil, as this simple in-memory trie does not have configurable
+// options.
+func (t *Trie) Config() any {
+	return nil
+}
+
 // Get retrieves the value associated with the given key from the trie. All keys
 // that have not been set will return the zero value.
 func (t *Trie) Get(key Key) Value {
