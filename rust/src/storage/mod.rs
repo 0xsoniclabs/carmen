@@ -23,7 +23,7 @@ use tests::all_db_modes;
 /// The mode in which the database can be opened.
 #[derive(Debug, Clone, Copy)]
 pub enum DbMode {
-    Read,
+    ReadOnly,
     ReadWrite,
 }
 
@@ -35,17 +35,17 @@ impl DbMode {
 
     /// Returns if the database mode is read-only.
     pub fn read_only(&self) -> bool {
-        matches!(self, DbMode::Read)
+        matches!(self, DbMode::ReadOnly)
     }
 
     /// Converts the database mode to the corresponding [`std::fs::OpenOptions`] instance for
     /// opening files.
-    /// Files are always opened in append. In `ReadWrite` mode, files
+    /// Files are never truncated. In `ReadWrite` mode, files
     /// are created if they do not exist.
     pub fn to_open_options(&self) -> OpenOptions {
         let mut options = OpenOptions::new();
         match self {
-            DbMode::Read => options.create(false).truncate(false).read(true),
+            DbMode::ReadOnly => options.create(false).truncate(false).read(true),
             DbMode::ReadWrite => options.create(true).truncate(false).read(true).write(true),
         };
         options
@@ -163,7 +163,7 @@ mod tests {
         let existing_file = tmp_dir.path().join("existing_file");
         std::fs::write(&existing_file, b"").unwrap();
 
-        let read_options = DbMode::Read.to_open_options();
+        let read_options = DbMode::ReadOnly.to_open_options();
         assert!(read_options.open(&non_existing_file).is_err());
         assert!(read_options.open(&existing_file).is_ok());
 
@@ -176,7 +176,7 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::read(DbMode::Read)]
+    #[case::read(DbMode::ReadOnly)]
     #[case::read_write(DbMode::ReadWrite)]
     pub fn all_db_modes(#[case] db_mode: DbMode) {}
 }

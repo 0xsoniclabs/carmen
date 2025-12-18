@@ -84,7 +84,7 @@ fn main() {
     let args = Args::parse();
     let storage_path = Path::new(&args.db_path);
 
-    let storage = VerkleStorageManager::open(storage_path, DbMode::Read)
+    let storage = VerkleStorageManager::open(storage_path, DbMode::ReadOnly)
         .map_err(|e| {
             eprintln!("error: could not open database at the specified path: {e}");
             std::process::exit(1);

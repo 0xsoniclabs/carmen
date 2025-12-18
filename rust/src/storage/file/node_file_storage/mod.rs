@@ -308,7 +308,7 @@ where
     fn restore(path: &Path, checkpoint: u64) -> BTResult<(), Error> {
         let committed_metadata = NodeFileStorageCheckpointMetadata::read_or_init(
             path.join(Self::COMMITTED_METADATA_FILE),
-            DbMode::Read,
+            DbMode::ReadOnly,
         )?;
         if checkpoint != committed_metadata.checkpoint {
             return Err(Error::Checkpoint.into());
@@ -376,14 +376,14 @@ mod tests {
         let path = path.as_path();
 
         assert!(matches!(
-            NodeFileStorage::open(path, DbMode::Read).map_err(BTError::into_inner),
+            NodeFileStorage::open(path, DbMode::ReadOnly).map_err(BTError::into_inner),
             Err(Error::Io(_))
         ));
 
         let empty_dir = dir.join("empty_dir");
         fs::create_dir_all(&empty_dir).unwrap();
         assert!(matches!(
-            NodeFileStorage::open(&empty_dir, DbMode::Read).map_err(BTError::into_inner),
+            NodeFileStorage::open(&empty_dir, DbMode::ReadOnly).map_err(BTError::into_inner),
             Err(Error::Io(_))
         ));
     }
@@ -648,7 +648,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
-        let storage = NodeFileStorage::open(&dir, DbMode::Read).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadOnly).unwrap();
         assert!(matches!(
             storage.set(0, &[0; 32]).map_err(BTError::into_inner),
             Err(Error::ReadOnly)
@@ -720,7 +720,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
-        let storage = NodeFileStorage::open(&dir, DbMode::Read).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadOnly).unwrap();
         assert!(matches!(
             storage.delete(0).map_err(BTError::into_inner),
             Err(Error::ReadOnly)
@@ -754,7 +754,7 @@ mod tests {
 
         let metadata = NodeFileStorageMetadata::read_or_init(
             dir.join(NodeFileStorage::METADATA_FILE),
-            DbMode::Read,
+            DbMode::ReadOnly,
         )
         .unwrap();
         assert_eq!(
@@ -786,28 +786,28 @@ mod tests {
         write_reuse_list(&dir, &[0, 1]);
         write_nodes(&dir, &[[0; 32], [1; 32]]);
 
-        let storage = NodeFileStorage::open(&dir, DbMode::Read).unwrap();
+        let storage = NodeFileStorage::open(&dir, DbMode::ReadOnly).unwrap();
+        let get_modified_timestamp = |path: &Path| fs::metadata(path).unwrap().modified().unwrap();
+
+        let metadata_timestamp = get_modified_timestamp(&dir.join(NodeFileStorage::METADATA_FILE));
+        let nodes_timestamp = get_modified_timestamp(&dir.join(NodeFileStorage::NODE_STORE_FILE));
+        let reuse_list_timestamp =
+            get_modified_timestamp(&dir.join(NodeFileStorage::REUSE_LIST_FILE));
+
         storage.close().unwrap();
 
-        let metadata = NodeFileStorageMetadata::read_or_init(
-            dir.join(NodeFileStorage::METADATA_FILE),
-            DbMode::Read,
-        )
-        .unwrap();
         assert_eq!(
-            metadata,
-            NodeFileStorageMetadata {
-                last_checkpoint: 0,
-                nodes: 2,
-                frozen_nodes: 1,
-                reuse_indices: 2,
-                frozen_reuse_indices: 1,
-            }
+            metadata_timestamp,
+            get_modified_timestamp(&dir.join(NodeFileStorage::METADATA_FILE))
         );
-        let nodes = fs::read(dir.join(NodeFileStorage::NODE_STORE_FILE)).unwrap();
-        assert_eq!(nodes, [[0u8; 32], [1; 32]].as_bytes());
-        let reuse_list_indices = fs::read(dir.join(NodeFileStorage::REUSE_LIST_FILE)).unwrap();
-        assert_eq!(reuse_list_indices, [0u64, 1].as_bytes());
+        assert_eq!(
+            nodes_timestamp,
+            get_modified_timestamp(&dir.join(NodeFileStorage::NODE_STORE_FILE))
+        );
+        assert_eq!(
+            reuse_list_timestamp,
+            get_modified_timestamp(&dir.join(NodeFileStorage::REUSE_LIST_FILE))
+        );
     }
 
     #[rstest_reuse::apply(all_db_modes)]
@@ -930,7 +930,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
-        let storage = NodeFileStorage::open(dir.path(), DbMode::Read).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadOnly).unwrap();
         assert!(matches!(
             storage.prepare(1).map_err(BTError::into_inner),
             Err(Error::ReadOnly)
@@ -1040,7 +1040,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&dir, 0, &[], 0, &[], 0);
 
-        let storage = NodeFileStorage::open(dir.path(), DbMode::Read).unwrap();
+        let storage = NodeFileStorage::open(dir.path(), DbMode::ReadOnly).unwrap();
         assert!(matches!(
             storage.commit(1).map_err(BTError::into_inner),
             Err(Error::ReadOnly)
@@ -1141,7 +1141,7 @@ mod tests {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         init_db(&test_dir, 0, &[], 0, &[], 0);
 
-        let storage = NodeFileStorage::open(test_dir.path(), DbMode::Read).unwrap();
+        let storage = NodeFileStorage::open(test_dir.path(), DbMode::ReadOnly).unwrap();
         assert!(matches!(
             storage.abort(1).map_err(BTError::into_inner),
             Err(Error::ReadOnly)
@@ -1176,7 +1176,7 @@ mod tests {
 
         let metadata = NodeFileStorageMetadata::read_or_init(
             dir.join(NodeFileStorage::METADATA_FILE),
-            DbMode::Read,
+            DbMode::ReadOnly,
         )
         .unwrap();
         assert_eq!(

@@ -26,7 +26,9 @@ pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
         let path = path.as_ref();
         let mut file = db_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
-        if len == 0 {
+        if len == 0 && db_mode.read_only() {
+            return Err(Error::DatabaseCorruption.into());
+        } else if len == 0 {
             // File was just created
             fs::write(path, Self::default().as_bytes())?;
         } else if len != std::mem::size_of::<Self>() as u64 {
@@ -98,7 +100,7 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 
-        let result = Dummy::read_or_init(path, DbMode::Read);
+        let result = Dummy::read_or_init(path, DbMode::ReadOnly);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))

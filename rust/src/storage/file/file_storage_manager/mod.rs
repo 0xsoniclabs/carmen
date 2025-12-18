@@ -273,7 +273,7 @@ where
     fn restore(dir: &::std::path::Path, checkpoint: u64) -> $crate::error::BTResult<(), $crate::storage::Error> {
         let committed_metadata = <$crate::storage::file::file_storage_manager::metadata::Metadata as $crate::storage::file::FromToFile>::read_or_init(
             dir.join(Self::COMMITTED_METADATA_FILE),
-            $crate::storage::DbMode::Read,
+            $crate::storage::DbMode::ReadOnly,
         )?;
         if checkpoint != committed_metadata.checkpoint_number {
             return Err($crate::storage::Error::Checkpoint.into());
@@ -448,24 +448,6 @@ mod tests {
     }
 
     #[test]
-    fn open_does_not_create_db_dirty_file_in_read_only_mode() {
-        type FileStorageManager = TestNodeFileStorageManager<
-            NodeFileStorage<NonEmpty1TestNode, SeekFile>,
-            NodeFileStorage<NonEmpty2TestNode, SeekFile>,
-        >;
-
-        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-
-        let storage = FileStorageManager::open(&dir, DbMode::ReadWrite).unwrap();
-        assert!(fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
-        storage.close().unwrap();
-        assert!(!fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
-        let storage = FileStorageManager::open(&dir, DbMode::Read).unwrap();
-        assert!(!fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
-        storage.close().unwrap();
-    }
-
-    #[test]
     fn open_fails_if_db_files_do_not_exist_in_read_only_mode() {
         type FileStorageManager = TestNodeFileStorageManager<
             NodeFileStorage<NonEmpty1TestNode, SeekFile>,
@@ -474,7 +456,22 @@ mod tests {
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         assert!(matches!(
-            FileStorageManager::open(&dir, DbMode::Read).map_err(BTError::into_inner),
+            FileStorageManager::open(&dir, DbMode::ReadOnly).map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
+    }
+
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_fails_if_folder_does_not_exist(#[case] db_mode: DbMode) {
+        type FileStorageManager = TestNodeFileStorageManager<
+            NodeFileStorage<NonEmpty1TestNode, SeekFile>,
+            NodeFileStorage<NonEmpty2TestNode, SeekFile>,
+        >;
+
+        let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
+        let non_existing_dir = dir.join("non_existing_dir");
+        assert!(matches!(
+            FileStorageManager::open(&non_existing_dir, db_mode).map_err(BTError::into_inner),
             Err(Error::Io(_))
         ));
     }
@@ -494,6 +491,24 @@ mod tests {
             FileStorageManager::open(&dir, db_mode).map_err(BTError::into_inner),
             Err(Error::DirtyOpen)
         ));
+    }
+
+    #[test]
+    fn open_does_not_create_db_dirty_file_in_read_only_mode() {
+        type FileStorageManager = TestNodeFileStorageManager<
+            NodeFileStorage<NonEmpty1TestNode, SeekFile>,
+            NodeFileStorage<NonEmpty2TestNode, SeekFile>,
+        >;
+
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+
+        let storage = FileStorageManager::open(&dir, DbMode::ReadWrite).unwrap();
+        assert!(fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
+        storage.close().unwrap();
+        assert!(!fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
+        let storage = FileStorageManager::open(&dir, DbMode::ReadOnly).unwrap();
+        assert!(!fs::exists(dir.join(FileStorageManager::DB_DIRTY_FILE)).unwrap());
+        storage.close().unwrap();
     }
 
     #[rstest_reuse::apply(all_db_modes)]
@@ -657,7 +672,7 @@ mod tests {
     fn set_returns_error_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
+        let storage = make_test_node_file_storage(dir.path(), DbMode::ReadOnly, 0);
 
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty2);
         let node = TestNode::NonEmpty2(Box::default());
@@ -707,7 +722,7 @@ mod tests {
     fn delete_returns_error_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
+        let storage = make_test_node_file_storage(dir.path(), DbMode::ReadOnly, 0);
 
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty2);
 
@@ -771,7 +786,7 @@ mod tests {
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let mut storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
+        let mut storage = make_test_node_file_storage(dir.path(), DbMode::ReadOnly, 0);
 
         storage
             .non_empty1
@@ -832,7 +847,7 @@ mod tests {
         assert_eq!(
             Metadata::read_or_init(dir.join(
                 TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
-            ), DbMode::Read).unwrap().checkpoint_number,
+            ), DbMode::ReadOnly).unwrap().checkpoint_number,
             old_checkpoint + 1
     );
         // The checkpoint variable should be updated to the new checkpoint.
@@ -891,7 +906,7 @@ mod tests {
         assert_eq!(
             Metadata::read_or_init(dir.join(
                 TestNodeFileStorageManager::<MockStorage<_>, MockStorage<_>>::COMMITTED_METADATA_FILE,
-            ), DbMode::Read).unwrap().checkpoint_number,
+            ), DbMode::ReadOnly).unwrap().checkpoint_number,
             old_checkpoint
         );
         // The checkpoint variable should still be the old checkpoint.
@@ -902,7 +917,7 @@ mod tests {
     fn checkpoint_fails_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
-        let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
+        let storage = make_test_node_file_storage(dir.path(), DbMode::ReadOnly, 0);
 
         assert!(matches!(
             storage.checkpoint().map_err(BTError::into_inner),
@@ -1155,7 +1170,7 @@ mod tests {
     fn set_root_id_fails_in_read_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let root_id0 = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::Empty);
-        let storage = make_test_node_file_storage(dir.path(), DbMode::Read, 0);
+        let storage = make_test_node_file_storage(dir.path(), DbMode::ReadOnly, 0);
 
         assert!(matches!(
             storage
