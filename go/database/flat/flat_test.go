@@ -11,8 +11,6 @@
 package flat
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"io"
 	"os"
