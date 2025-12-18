@@ -28,6 +28,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
+//go:generate mockgen -source state.go -destination state_mock.go -package reference
+
 // State is an in-memory implementation of a chain-state tracking account and
 // storage data using a Verkle Trie. It implements the state.State interface.
 type State struct {
