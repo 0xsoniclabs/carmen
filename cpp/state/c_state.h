@@ -82,8 +82,7 @@ DUPLICATE_FOR_LANGS(enum Result,
 // storage. All internally cached modifications is synced to disk.
 DUPLICATE_FOR_LANGS(enum Result, Flush(C_Database database));
 
-// Closes this database, releasing all IO handles and locks on external
-// resources and causing its destruction.
+// Closes this database, releasing all resources and causing its destruction.
 DUPLICATE_FOR_LANGS(enum Result, Close(C_Database database));
 
 // ------------------------- Live and Archive State ---------------------------

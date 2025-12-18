@@ -159,8 +159,7 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     bindings::Result_kResult_Success
 }
 
-/// Closes this database, releasing all IO handles and locks on external resources and causing its
-/// destruction.
+/// Closes this database, releasing all resources and causing its destruction.
 ///
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn

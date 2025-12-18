@@ -116,8 +116,7 @@ pub trait CarmenDb: Send + Sync {
     /// storage.
     fn checkpoint(&self) -> BTResult<(), Error>;
 
-    /// Closes this database, releasing all IO handles and locks on external resources and causing
-    /// its destruction.
+    /// Closes this database, releasing all resources and causing its destruction.
     fn close(self: Box<Self>) -> BTResult<(), Error>;
 
     /// Returns a handle to the live state. The resulting state must be released and must not
