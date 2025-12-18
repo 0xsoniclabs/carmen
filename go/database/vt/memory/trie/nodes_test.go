@@ -11,6 +11,7 @@
 package trie
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
@@ -439,4 +440,22 @@ func TestLeafNode_Commit_SequentialAndParallelProduceSameResults(t *testing.T) {
 	s = seq.commit_seq()
 	p = par.commit_par()
 	require.Equal(t, s.Hash(), p.Hash(), "Commitments after updating high value should match")
+}
+
+func Benchmark_AllocateSmallArray(b *testing.B) {
+	for _, size := range []int{0, 1, 2, 4, 8, 16, 32, 64, 128, 256} {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			benchmark_AllocateArray(b, size)
+		})
+	}
+}
+
+func benchmark_AllocateArray(b *testing.B, size int) {
+	last := make([]*task, 0, size)
+	for b.Loop() {
+		if cap(last) != size {
+			b.Fail()
+		}
+		last = make([]*task, 0, size)
+	}
 }

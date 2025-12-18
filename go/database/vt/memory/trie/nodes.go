@@ -31,7 +31,9 @@ type node interface {
 	// performed to update its commitment. The resulting list should list the
 	// tasks in order of dependencies, i.e., when processing the list from start
 	// to end, tasks producing inputs for other tasks should appear before
-	// tasks consuming those inputs.
+	// tasks consuming those inputs. Furthermore, the last task in the list
+	// should be the task that updates this node's commitment. When this task is
+	// completed, this node's commitment must be up to date.
 	collectCommitTasks(tasks *[]*task)
 }
 
@@ -103,7 +105,7 @@ func (i *inner) collectCommitTasks(tasks *[]*task) {
 	}
 
 	// Produce one task for every dirty child.
-	directChildTasks := make([]*task, 0, 256)
+	directChildTasks := make([]*task, 0, i.dirtyChildCommitments.popCount())
 	delta := [commit.VectorSize]commit.Commitment{}
 	for j := range i.children {
 		if i.dirtyChildCommitments.get(byte(j)) {

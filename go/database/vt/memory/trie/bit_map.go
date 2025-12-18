@@ -10,6 +10,8 @@
 
 package trie
 
+import "math/bits"
+
 // bitMap is a simple bitmap implementation for 256 bits.
 type bitMap [256 / 64]uint64
 
@@ -34,4 +36,13 @@ func (b *bitMap) clear() {
 // any returns true if any bit in the bitmap is set.
 func (b *bitMap) any() bool {
 	return b[0]|b[1]|b[2]|b[3] != 0
+}
+
+// popCount returns the number of bits set in the bitmap.
+func (b *bitMap) popCount() int {
+	count := 0
+	for _, v := range b {
+		count += bits.OnesCount64(v)
+	}
+	return count
 }

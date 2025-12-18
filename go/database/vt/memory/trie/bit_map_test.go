@@ -72,3 +72,14 @@ func TestBitMap_Clear_RemovesAllBits(t *testing.T) {
 		require.False(bm.get(byte(i)), "All bits should be cleared after clear")
 	}
 }
+
+func TestBitMap_PopCount_CountsTheNumberOfOneBits(t *testing.T) {
+	require := require.New(t)
+
+	bm := bitMap{}
+	for i := range 256 {
+		require.Equal(i, bm.popCount(), "Pop count before setting index %d", i)
+		bm.set(byte(i))
+		require.Equal(i+1, bm.popCount(), "Pop count after setting index %d", i)
+	}
+}
