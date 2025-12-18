@@ -173,7 +173,7 @@ type leaf struct {
 	used   bitMap     // A bitmap indicating which suffixes (last byte of the key) are used.
 
 	// The cached commitment of this inner node. This is only valid if both
-	// lowDirty and highDirty are false.
+	// c1Dirty and c2Dirty are false.
 	commitment commit.Commitment
 
 	// --- Commitment caching ---
