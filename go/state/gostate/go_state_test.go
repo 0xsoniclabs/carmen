@@ -165,6 +165,9 @@ func TestBasicOperations(t *testing.T) {
 			if config.config.Schema == 0 || config.config.Schema == 6 {
 				t.Skipf("scheme %d not supported", config.config.Schema)
 			}
+			if strings.Contains(config.name(), "flat") {
+				t.Skipf("flat variants not supported")
+			}
 
 			// delete account
 			err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
@@ -280,6 +283,9 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 		t.Run(config.name(), func(t *testing.T) {
 			if config.config.Schema == 0 || config.config.Schema == 6 {
 				t.Skipf("scheme %d not supported", config.config.Schema)
+			}
+			if strings.Contains(config.name(), "flat") {
+				t.Skipf("flat variants not supported")
 			}
 
 			state, err := config.createState(t.TempDir())
