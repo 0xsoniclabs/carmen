@@ -237,32 +237,32 @@ func TestLeafNode_Set_TracksDirtyState(t *testing.T) {
 	leaf := newLeaf(stem)
 
 	// initially, the leaf is clean
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
-	// setting a value in the low range marks the low part as dirty
+	// setting a value with index [0..127] range marks C1 as dirty
 	leaf.set(Key{1, 2, 3, 31: 1}, 0, Value{10})
-	require.True(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.True(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
-	// setting a value in the high range marks the high part as dirty
+	// setting a value with index [128..255] range marks C2 as dirty
 	leaf.set(Key{1, 2, 3, 31: 130}, 0, Value{20})
-	require.True(leaf.lowDirty)
-	require.True(leaf.highDirty)
+	require.True(leaf.c1Dirty)
+	require.True(leaf.c2Dirty)
 
 	// committing clears the dirty state
 	leaf.commit()
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	// setting the same value does not change the dirty state
 	leaf.set(Key{1, 2, 3, 31: 1}, 0, Value{10})
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	leaf.set(Key{1, 2, 3, 31: 130}, 0, Value{20})
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 }
 
 func TestLeafNode_CanSetAndGetValues(t *testing.T) {
@@ -362,31 +362,31 @@ func TestLeafNode_CommitmentDirtyStateIsTracked(t *testing.T) {
 	key2 := Key{1, 2, 3, 31: 130}
 
 	leaf := newLeaf(key1)
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	leaf.set(key1, 0, Value{10})
-	require.True(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.True(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	leaf.set(key2, 0, Value{20})
-	require.True(leaf.lowDirty)
-	require.True(leaf.highDirty)
+	require.True(leaf.c1Dirty)
+	require.True(leaf.c2Dirty)
 
 	first := leaf.commit()
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	second := leaf.commit()
 	require.True(first.Equal(second))
 
 	leaf.set(key1, 0, Value{30})
-	require.True(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.True(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	third := leaf.commit()
-	require.False(leaf.lowDirty)
-	require.False(leaf.highDirty)
+	require.False(leaf.c1Dirty)
+	require.False(leaf.c2Dirty)
 
 	require.False(first.Equal(third))
 }
@@ -413,33 +413,33 @@ func TestLeafNode_Commit_SequentialAndParallelProduceSameResults(t *testing.T) {
 	p := par.commit_par()
 	require.Equal(t, s.Hash(), p.Hash(), "Commitments of empty leaf should match")
 
-	// --- set low value ---
+	// --- set value in the C1 range ---
 	seq.set(Key{1, 2, 3, 31: 1}, 0, Value{10})
 	par.set(Key{1, 2, 3, 31: 1}, 0, Value{10})
 	s = seq.commit_seq()
 	p = par.commit_par()
-	require.Equal(t, s.Hash(), p.Hash(), "Commitments after setting low value should match")
+	require.Equal(t, s.Hash(), p.Hash(), "Commitments after setting value in the C1 range should match")
 
-	// --- set high value ---
+	// --- set value in the C2 range ---
 	seq.set(Key{1, 2, 3, 31: 160}, 0, Value{10})
 	par.set(Key{1, 2, 3, 31: 160}, 0, Value{10})
 	s = seq.commit_seq()
 	p = par.commit_par()
-	require.Equal(t, s.Hash(), p.Hash(), "Commitments after setting high value should match")
+	require.Equal(t, s.Hash(), p.Hash(), "Commitments after setting value in the C2 range should match")
 
-	// --- update low value ---
+	// --- update value in the C1 range ---
 	seq.set(Key{1, 2, 3, 31: 1}, 0, Value{20})
 	par.set(Key{1, 2, 3, 31: 1}, 0, Value{20})
 	s = seq.commit_seq()
 	p = par.commit_par()
-	require.Equal(t, s.Hash(), p.Hash(), "Commitments after updating low value should match")
+	require.Equal(t, s.Hash(), p.Hash(), "Commitments after updating value in the C1 range should match")
 
-	// --- update high value ---
+	// --- update value in the C2 range ---
 	seq.set(Key{1, 2, 3, 31: 160}, 0, Value{20})
 	par.set(Key{1, 2, 3, 31: 160}, 0, Value{20})
 	s = seq.commit_seq()
 	p = par.commit_par()
-	require.Equal(t, s.Hash(), p.Hash(), "Commitments after updating high value should match")
+	require.Equal(t, s.Hash(), p.Hash(), "Commitments after updating value in the C2 range should match")
 }
 
 func Benchmark_AllocateSmallArray(b *testing.B) {

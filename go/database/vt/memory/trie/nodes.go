@@ -179,8 +179,8 @@ type leaf struct {
 	// --- Commitment caching ---
 	c1           commit.Commitment
 	c2           commit.Commitment
-	lowDirty     bool
-	highDirty    bool
+	c1Dirty      bool
+	c2Dirty      bool
 	oldUsed      bitMap
 	oldValues    [256]Value
 	oldValuesSet bitMap // < whether oldValues[i] is set to a meaningful value
@@ -232,9 +232,9 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 			l.oldValues[suffix] = old
 		}
 		if suffix < 128 {
-			l.lowDirty = true
+			l.c1Dirty = true
 		} else {
-			l.highDirty = true
+			l.c2Dirty = true
 		}
 		return l
 	}
@@ -247,7 +247,7 @@ func (l *leaf) set(key Key, depth byte, value Value) node {
 }
 
 func (l *leaf) commit() commit.Commitment {
-	if !l.lowDirty && !l.highDirty {
+	if !l.c1Dirty && !l.c2Dirty {
 		return l.commitment
 	}
 	zone := tracy.ZoneBegin("leaf::commit")
@@ -256,25 +256,25 @@ func (l *leaf) commit() commit.Commitment {
 	leafDelta := [commit.VectorSize]commit.Value{}
 
 	// update c1 - lower half + used bit
-	if l.lowDirty {
+	if l.c1Dirty {
 		delta := [commit.VectorSize]commit.Value{}
 		for i := range 128 {
 			if !l.oldValuesSet.get(byte(i)) {
 				continue
 			}
-			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
+			oldLower := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
 			if l.oldUsed.get(byte(i)) {
-				old.SetBit128()
+				oldLower.SetBit128()
 			}
-			new := commit.NewValueFromLittleEndianBytes(l.values[i][:16])
+			newLower := commit.NewValueFromLittleEndianBytes(l.values[i][:16])
 			if l.used.get(byte(i)) {
-				new.SetBit128()
+				newLower.SetBit128()
 			}
-			delta[2*i] = *new.Sub(old)
+			delta[2*i] = *newLower.Sub(oldLower)
 
-			old = commit.NewValueFromLittleEndianBytes(l.oldValues[i][16:])
-			new = commit.NewValueFromLittleEndianBytes(l.values[i][16:])
-			delta[2*i+1] = *new.Sub(old)
+			oldUpper := commit.NewValueFromLittleEndianBytes(l.oldValues[i][16:])
+			newUpper := commit.NewValueFromLittleEndianBytes(l.values[i][16:])
+			delta[2*i+1] = *newUpper.Sub(oldUpper)
 		}
 
 		newC1 := l.c1
@@ -286,29 +286,29 @@ func (l *leaf) commit() commit.Commitment {
 		leafDelta[2] = deltaC1
 		l.c1 = newC1
 
-		l.lowDirty = false
+		l.c1Dirty = false
 	}
 
 	// update c2 - upper half
-	if l.highDirty {
+	if l.c2Dirty {
 		delta := [commit.VectorSize]commit.Value{}
 		for i := range 128 {
 			if !l.oldValuesSet.get(byte(i + 128)) {
 				continue
 			}
-			old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
+			oldLower := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
 			if l.oldUsed.get(byte(i + 128)) {
-				old.SetBit128()
+				oldLower.SetBit128()
 			}
-			new := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
+			newLower := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
 			if l.used.get(byte(i + 128)) {
-				new.SetBit128()
+				newLower.SetBit128()
 			}
-			delta[2*i] = *new.Sub(old)
+			delta[2*i] = *newLower.Sub(oldLower)
 
-			old = commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][16:])
-			new = commit.NewValueFromLittleEndianBytes(l.values[i+128][16:])
-			delta[2*i+1] = *new.Sub(old)
+			oldUpper := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][16:])
+			newUpper := commit.NewValueFromLittleEndianBytes(l.values[i+128][16:])
+			delta[2*i+1] = *newUpper.Sub(oldUpper)
 		}
 
 		newC2 := l.c2
@@ -320,7 +320,7 @@ func (l *leaf) commit() commit.Commitment {
 		leafDelta[3] = deltaC2
 		l.c2 = newC2
 
-		l.highDirty = false
+		l.c2Dirty = false
 	}
 
 	// Compute commitment of changes and add to node commitment.
@@ -334,7 +334,7 @@ func (l *leaf) commit() commit.Commitment {
 }
 
 func (l *leaf) collectCommitTasks(tasks *[]*task) {
-	if !l.lowDirty && !l.highDirty {
+	if !l.c1Dirty && !l.c2Dirty {
 		return // nothing to do
 	}
 
@@ -354,7 +354,7 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 	}
 
 	// create a task for updating C1
-	if l.lowDirty {
+	if l.c1Dirty {
 		childTasks = append(childTasks, newTask(
 			func() {
 				delta := [commit.VectorSize]commit.Value{}
@@ -388,14 +388,14 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 				leafDelta[0] = commit.Commit(poly)
 				l.c1 = newC1
 
-				l.lowDirty = false
+				l.c1Dirty = false
 			},
 			0,
 		))
 	}
 
 	// create a task for updating C2
-	if l.highDirty {
+	if l.c2Dirty {
 		childTasks = append(childTasks, newTask(
 			func() {
 				delta := [commit.VectorSize]commit.Value{}
@@ -429,7 +429,7 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 				leafDelta[1] = commit.Commit(poly)
 				l.c2 = newC2
 
-				l.highDirty = false
+				l.c2Dirty = false
 			},
 			0,
 		))
