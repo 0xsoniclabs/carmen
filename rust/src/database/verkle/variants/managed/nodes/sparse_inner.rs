@@ -206,11 +206,13 @@ mod tests {
         types::{TreeId, Value},
     };
 
+    const CHILDREN_NODE_KIND: VerkleNodeKind = VerkleNodeKind::Inner9;
+
     fn make_inner<const N: usize>() -> SparseInnerNode<N> {
         SparseInnerNode::<N> {
             children: array::from_fn(|i| VerkleIdWithIndex {
                 index: i as u8,
-                item: VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner9),
+                item: VerkleNodeId::from_idx_and_node_kind(i as u64, CHILDREN_NODE_KIND),
             }),
             commitment: VerkleCommitment::default(),
         }
@@ -238,7 +240,7 @@ mod tests {
 
     #[test]
     fn from_existing_copies_children_and_commitment_correctly() {
-        let ID = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner9);
+        let ID = VerkleNodeId::from_idx_and_node_kind(42, CHILDREN_NODE_KIND);
         let mut commitment = VerkleCommitment::default();
         commitment.modify_child(2);
 
@@ -306,7 +308,7 @@ mod tests {
 
     #[test]
     fn from_existing_returns_error_if_too_many_non_default_children_are_provided() {
-        let ID = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner9);
+        let ID = VerkleNodeId::from_idx_and_node_kind(42, CHILDREN_NODE_KIND);
         let children = [
             VerkleIdWithIndex { index: 0, item: ID },
             VerkleIdWithIndex { index: 1, item: ID },
@@ -340,10 +342,7 @@ mod tests {
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(
             result,
-            LookupResult::Node(VerkleNodeId::from_idx_and_node_kind(
-                2,
-                VerkleNodeKind::Inner9
-            ))
+            LookupResult::Node(VerkleNodeId::from_idx_and_node_kind(2, CHILDREN_NODE_KIND))
         );
 
         // Lookup an index that exists but is empty
@@ -373,7 +372,7 @@ mod tests {
         assert_eq!(
             result,
             StoreAction::Descend(vec![DescendAction {
-                id: VerkleNodeId::default(),
+                id: VerkleNodeId::from_idx_and_node_kind(2, CHILDREN_NODE_KIND),
                 updates
             }])
         );
@@ -389,7 +388,7 @@ mod tests {
             .next_store_action(
                 updates.clone(),
                 1,
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner9), // Irrelevant
+                VerkleNodeId::from_idx_and_node_kind(0, CHILDREN_NODE_KIND), // Irrelevant
             )
             .unwrap();
         match result {
@@ -421,7 +420,7 @@ mod tests {
     ) {
         // Existing index
         let key = Key::from_index_values(1, &[(1, 2)]);
-        let new_id = VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner9);
+        let new_id = VerkleNodeId::from_idx_and_node_kind(999, CHILDREN_NODE_KIND);
         node.replace_child(&key, 1, new_id).unwrap();
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(result, LookupResult::Node(new_id));
@@ -429,7 +428,7 @@ mod tests {
         // Non-existing index but with available slot
         node.access_slot(1).item = VerkleNodeId::default(); // Free up slot 1
         let key = Key::from_index_values(1, &[(1, 250)]);
-        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner9);
+        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, CHILDREN_NODE_KIND);
         node.replace_child(&key, 1, new_id).unwrap();
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(result, LookupResult::Node(new_id));
@@ -440,7 +439,7 @@ mod tests {
         #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
     ) {
         let key = Key::from_index_values(1, &[(1, 250)]);
-        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner9);
+        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, CHILDREN_NODE_KIND);
         let result = node.replace_child(&key, 1, new_id);
         assert!(matches!(
             result.map_err(BTError::into_inner),
