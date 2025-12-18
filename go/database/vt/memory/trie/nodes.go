@@ -255,72 +255,11 @@ func (l *leaf) commit() commit.Commitment {
 
 	leafDelta := [commit.VectorSize]commit.Value{}
 
-	// update c1 - lower half + used bit
 	if l.c1Dirty {
-		delta := [commit.VectorSize]commit.Value{}
-		for i := range 128 {
-			if !l.oldValuesSet.get(byte(i)) {
-				continue
-			}
-			oldLower := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
-			if l.oldUsed.get(byte(i)) {
-				oldLower.SetBit128()
-			}
-			newLower := commit.NewValueFromLittleEndianBytes(l.values[i][:16])
-			if l.used.get(byte(i)) {
-				newLower.SetBit128()
-			}
-			delta[2*i] = *newLower.Sub(oldLower)
-
-			oldUpper := commit.NewValueFromLittleEndianBytes(l.oldValues[i][16:])
-			newUpper := commit.NewValueFromLittleEndianBytes(l.values[i][16:])
-			delta[2*i+1] = *newUpper.Sub(oldUpper)
-		}
-
-		newC1 := l.c1
-		newC1.Add(commit.Commit(delta))
-
-		deltaC1 := newC1.ToValue()
-		deltaC1 = *deltaC1.Sub(l.c1.ToValue())
-
-		leafDelta[2] = deltaC1
-		l.c1 = newC1
-
-		l.c1Dirty = false
+		leafDelta[2] = l.updateC1()
 	}
-
-	// update c2 - upper half
 	if l.c2Dirty {
-		delta := [commit.VectorSize]commit.Value{}
-		for i := range 128 {
-			if !l.oldValuesSet.get(byte(i + 128)) {
-				continue
-			}
-			oldLower := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
-			if l.oldUsed.get(byte(i + 128)) {
-				oldLower.SetBit128()
-			}
-			newLower := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
-			if l.used.get(byte(i + 128)) {
-				newLower.SetBit128()
-			}
-			delta[2*i] = *newLower.Sub(oldLower)
-
-			oldUpper := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][16:])
-			newUpper := commit.NewValueFromLittleEndianBytes(l.values[i+128][16:])
-			delta[2*i+1] = *newUpper.Sub(oldUpper)
-		}
-
-		newC2 := l.c2
-		newC2.Add(commit.Commit(delta))
-
-		deltaC2 := newC2.ToValue()
-		deltaC2 = *deltaC2.Sub(l.c2.ToValue())
-
-		leafDelta[3] = deltaC2
-		l.c2 = newC2
-
-		l.c2Dirty = false
+		leafDelta[3] = l.updateC2()
 	}
 
 	// Compute commitment of changes and add to node commitment.
@@ -357,38 +296,9 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 	if l.c1Dirty {
 		childTasks = append(childTasks, newTask(
 			func() {
-				delta := [commit.VectorSize]commit.Value{}
-				for i := range 128 {
-					if !l.oldValuesSet.get(byte(i)) {
-						continue
-					}
-					old := commit.NewValueFromLittleEndianBytes(l.oldValues[i][:16])
-					if l.oldUsed.get(byte(i)) {
-						old.SetBit128()
-					}
-					new := commit.NewValueFromLittleEndianBytes(l.values[i][:16])
-					if l.used.get(byte(i)) {
-						new.SetBit128()
-					}
-					delta[2*i] = *new.Sub(old)
-
-					old = commit.NewValueFromLittleEndianBytes(l.oldValues[i][16:])
-					new = commit.NewValueFromLittleEndianBytes(l.values[i][16:])
-					delta[2*i+1] = *new.Sub(old)
-				}
-
-				newC1 := l.c1
-				newC1.Add(commit.Commit(delta))
-
-				deltaC1 := newC1.ToValue()
-				deltaC1 = *deltaC1.Sub(l.c1.ToValue())
-
 				poly := [commit.VectorSize]commit.Value{}
-				poly[2] = deltaC1
+				poly[2] = l.updateC1()
 				leafDelta[0] = commit.Commit(poly)
-				l.c1 = newC1
-
-				l.c1Dirty = false
 			},
 			0,
 		))
@@ -398,38 +308,9 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 	if l.c2Dirty {
 		childTasks = append(childTasks, newTask(
 			func() {
-				delta := [commit.VectorSize]commit.Value{}
-				for i := range 128 {
-					if !l.oldValuesSet.get(byte(i + 128)) {
-						continue
-					}
-					old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][:16])
-					if l.oldUsed.get(byte(i + 128)) {
-						old.SetBit128()
-					}
-					new := commit.NewValueFromLittleEndianBytes(l.values[i+128][:16])
-					if l.used.get(byte(i + 128)) {
-						new.SetBit128()
-					}
-					delta[2*i] = *new.Sub(old)
-
-					old = commit.NewValueFromLittleEndianBytes(l.oldValues[i+128][16:])
-					new = commit.NewValueFromLittleEndianBytes(l.values[i+128][16:])
-					delta[2*i+1] = *new.Sub(old)
-				}
-
-				newC2 := l.c2
-				newC2.Add(commit.Commit(delta))
-
-				deltaC2 := newC2.ToValue()
-				deltaC2 = *deltaC2.Sub(l.c2.ToValue())
-
 				poly := [commit.VectorSize]commit.Value{}
-				poly[3] = deltaC2
+				poly[3] = l.updateC2()
 				leafDelta[1] = commit.Commit(poly)
-				l.c2 = newC2
-
-				l.c2Dirty = false
 			},
 			0,
 		))
@@ -461,4 +342,57 @@ func (l *leaf) collectCommitTasks(tasks *[]*task) {
 
 func (l *leaf) isUsed(index byte) bool {
 	return l.used.get(index)
+}
+
+// updateC1 updates the C1 commitment of the leaf and returns the delta value
+// representing the change in polynomial coefficient for the leaf node
+// commitment.
+func (l *leaf) updateC1() commit.Value {
+	l.c1Dirty = false
+	return l._updateCX(&l.c1, 0)
+}
+
+// updateC2 updates the C2 commitment of the leaf and returns the delta value
+// representing the change in polynomial coefficient for the leaf node
+// commitment.
+func (l *leaf) updateC2() commit.Value {
+	l.c2Dirty = false
+	return l._updateCX(&l.c2, 128)
+}
+
+// _updateCX updates either the C1 or C2 commitment of the leaf, depending
+// on the provided dataOffset. It returns the delta value representing the
+// change in polynomial coefficient for the leaf node commitment.
+func (l *leaf) _updateCX(
+	commitment *commit.Commitment,
+	dataOffset int,
+) commit.Value {
+	delta := [commit.VectorSize]commit.Value{}
+	for i := range 128 {
+		if !l.oldValuesSet.get(byte(i + dataOffset)) {
+			continue
+		}
+		old := commit.NewValueFromLittleEndianBytes(l.oldValues[i+dataOffset][:16])
+		if l.oldUsed.get(byte(i + dataOffset)) {
+			old.SetBit128()
+		}
+		new := commit.NewValueFromLittleEndianBytes(l.values[i+dataOffset][:16])
+		if l.used.get(byte(i + dataOffset)) {
+			new.SetBit128()
+		}
+		delta[2*i] = *new.Sub(old)
+
+		old = commit.NewValueFromLittleEndianBytes(l.oldValues[i+dataOffset][16:])
+		new = commit.NewValueFromLittleEndianBytes(l.values[i+dataOffset][16:])
+		delta[2*i+1] = *new.Sub(old)
+	}
+
+	newCommitment := *commitment
+	newCommitment.Add(commit.Commit(delta))
+
+	deltaCommitment := newCommitment.ToValue()
+	deltaCommitment = *deltaCommitment.Sub(commitment.ToValue())
+	*commitment = newCommitment
+
+	return deltaCommitment
 }
