@@ -243,144 +243,140 @@ mod tests {
     use crate::{
         database::{
             managed_trie::TrieCommitment,
-            verkle::{
-                test_utils::FromIndexValues,
-                variants::managed::nodes::{VerkleManagedTrieNode, VerkleNodeKind},
-            },
+            verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
         },
         error::BTError,
         types::TreeId,
     };
 
-    fn make_inner() -> InnerDeltaNode {
+    fn make_inner_with_empty_delta() -> InnerDeltaNode {
         InnerDeltaNode {
+            children: array::from_fn(|i| {
+                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner9)
+            }),
             children_delta: array::from_fn(|i| VerkleIdWithIndex {
                 index: i as u8,
-                item: VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner3),
+                item: VerkleNodeId::default(),
             }),
             full_inner_node_id: VerkleNodeId::default(),
             commitment: VerkleCommitment::default(),
         }
     }
 
-    #[rstest_reuse::template]
-    #[rstest::rstest]
-    #[case::inner3(Box::new(make_inner()) as Box<dyn VerkleManagedTrieNode<VerkleNodeId>>)]
-    fn different_inner_sizes(#[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>) {}
-
     #[test]
     fn from_existing_copies_commitment_and_sets_id_of_full_inner_node() {
-        let mut commitment = VerkleCommitment::default();
-        commitment.modify_child(2);
+        let mut full_inner = FullInnerNode {
+            children: array::from_fn(|i| {
+                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner9)
+            }),
+            commitment: VerkleCommitment::default(),
+        };
+        full_inner.commitment.modify_child(2);
 
         let full_inner_node_id =
             VerkleNodeId::from_idx_and_node_kind(100, VerkleNodeKind::Inner256);
 
-        let node = InnerDeltaNode::from_full_inner(full_inner_node_id, commitment);
-        assert_eq!(node.commitment, commitment);
+        let node = InnerDeltaNode::from_full_inner(&full_inner, full_inner_node_id);
+        assert_eq!(node.commitment, full_inner.commitment);
         assert_eq!(node.full_inner_node_id, full_inner_node_id);
-        // All slots are empty
-        for (i, child_delta) in node.children_delta.iter().enumerate() {
-            assert_eq!(node.children_delta[i].index, 0);
-            assert_eq!(child_delta.item, VerkleNodeId::default());
-        }
-    }
-
-    #[test]
-    fn sparse_inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
-        let node = make_inner();
-        assert_eq!(node.commitment, VerkleCommitment::default());
-        assert_eq!(node.children_delta, <[VerkleIdWithIndex; 20]>::default());
+        assert_eq!(node.children, full_inner.children);
+        assert_eq!(
+            node.children_delta,
+            array::from_fn(|i| {
+                VerkleIdWithIndex {
+                    index: i as u8,
+                    item: VerkleNodeId::default(),
+                }
+            })
+        );
     }
 
     #[test]
     fn get_commitment_input_returns_children() {
         let mut full_inner_node = FullInnerNode::default();
         full_inner_node.children[77] =
-            VerkleNodeId::from_idx_and_node_kind(888, VerkleNodeKind::Inner3);
+            VerkleNodeId::from_idx_and_node_kind(888, VerkleNodeKind::Inner9);
         full_inner_node.children[99] =
-            VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner3);
+            VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner9);
 
-        let mut node = make_inner();
+        let full_inner_node_id = VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256);
+
+        let mut node = InnerDeltaNode::from_full_inner(&full_inner_node, full_inner_node_id);
         // Override one previously 0 child
         node.children_delta[3] = VerkleIdWithIndex {
             index: 33,
-            item: VerkleNodeId::from_idx_and_node_kind(333, VerkleNodeKind::Inner3),
+            item: VerkleNodeId::from_idx_and_node_kind(333, VerkleNodeKind::Inner9),
         };
         // Override one previously non-0 child
         node.children_delta[7] = VerkleIdWithIndex {
             index: 77,
-            item: VerkleNodeId::from_idx_and_node_kind(777, VerkleNodeKind::Inner3),
+            item: VerkleNodeId::from_idx_and_node_kind(777, VerkleNodeKind::Inner9),
         };
 
         let mut expected_children = [VerkleNodeId::default(); 256];
-        expected_children[33] = VerkleNodeId::from_idx_and_node_kind(333, VerkleNodeKind::Inner3);
-        expected_children[77] = VerkleNodeId::from_idx_and_node_kind(777, VerkleNodeKind::Inner3);
-        expected_children[99] = VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner3);
+        expected_children[33] = VerkleNodeId::from_idx_and_node_kind(333, VerkleNodeKind::Inner9);
+        expected_children[77] = VerkleNodeId::from_idx_and_node_kind(777, VerkleNodeKind::Inner9);
+        expected_children[99] = VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner9);
 
-        let result = node
-            .get_commitment_input(|_id| Ok(VerkleNode::Inner256(Box::new(full_inner_node))))
-            .unwrap();
+        let result = node.get_commitment_input().unwrap();
         assert_eq!(result, VerkleCommitmentInput::Inner(expected_children));
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn lookup_returns_id_of_child_at_key_index(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
-        // Lookup an index that exists
+    #[test]
+    fn lookup_returns_id_of_child_at_key_index() {
+        let mut node = make_inner_with_empty_delta();
+        // Lookup an index that is not in the delta
         let key = Key::from_index_values(1, &[(1, 2)]);
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(
             result,
             LookupResult::Node(VerkleNodeId::from_idx_and_node_kind(
                 2,
-                VerkleNodeKind::Inner3
+                VerkleNodeKind::Inner9
             ))
         );
 
-        // Lookup an index that exists but it's empty
-        node.access_slot(2).item = VerkleNodeId::default();
+        // Lookup an index that is in the delta
+        let id = VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner15);
+        node.children_delta[2].item = id;
         let result = node.lookup(&key, 1).unwrap();
-        assert_eq!(result, LookupResult::Node(VerkleNodeId::default()));
-
-        // Lookup an index that does not exist
-        let key = Key::from_index_values(1, &[(1, 250)]);
-        let result = node.lookup(&key, 1).unwrap();
-        assert_eq!(result, LookupResult::Node(VerkleNodeId::default()));
+        assert_eq!(result, LookupResult::Node(id));
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn next_store_action_with_available_slot_is_descend(
-        #[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn next_store_action_with_available_slot_is_descend() {
+        let node = make_inner_with_empty_delta();
         let key = Key::from_index_values(1, &[(1, 2)]);
         let result = node
             .next_store_action(
                 KeyedUpdateBatch::from_key_value_pairs(&[(key, [0; 32])]),
                 1,
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner3), // Irrelevant
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner9), // Irrelevant
             )
             .unwrap();
         assert_eq!(
             result,
             StoreAction::Descend(vec![DescendAction {
                 updates: KeyedUpdateBatch::from_key_value_pairs(&[(key, [0; 32])]),
-                id: VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner3)
+                id: VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner9)
             }])
         );
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn next_store_action_with_no_available_slot_is_handle_transform(
-        #[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn next_store_action_with_no_available_slot_is_handle_transform() {
+        let mut node = make_inner_with_empty_delta();
+        node.children_delta = array::from_fn(|i| VerkleIdWithIndex {
+            index: i as u8,
+            item: VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner9),
+        });
+
         let key = Key::from_index_values(1, &[(1, 250)]);
         let result = node
             .next_store_action(
                 KeyedUpdateBatch::from_key_value_pairs(&[(key, [0; 32])]),
                 1,
-                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner3), // Irrelevant
+                VerkleNodeId::default(), // Irrelevant
             )
             .unwrap();
         match result {
@@ -394,14 +390,14 @@ mod tests {
                         )
                         .unwrap(),
                     StoreAction::Descend(vec![DescendAction {
+                        id: VerkleNodeId::from_idx_and_node_kind(250, VerkleNodeKind::Inner9),
                         updates: KeyedUpdateBatch::from_key_value_pairs(&[(key, [0; 32])]),
-                        id: VerkleNodeId::default()
                     }])
                 );
                 // It contains all previous values
                 assert_eq!(
                     bigger_inner.get_commitment_input().unwrap(),
-                    node.get_commitment_input()
+                    node.get_commitment_input().unwrap()
                 );
                 // The commitment is copied over
                 assert_eq!(bigger_inner.get_commitment(), node.get_commitment());
@@ -410,32 +406,34 @@ mod tests {
         }
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn replace_child_sets_child_id_at_key_index(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn replace_child_sets_child_id_at_key_index() {
+        let mut node = make_inner_with_empty_delta();
         // Existing index
         let key = Key::from_index_values(1, &[(1, 2)]);
-        let new_id = VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner3);
+        let new_id = VerkleNodeId::from_idx_and_node_kind(999, VerkleNodeKind::Inner9);
         node.replace_child(&key, 1, new_id).unwrap();
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(result, LookupResult::Node(new_id));
 
         // Non-existing index but with available slot
-        node.access_slot(1).item = VerkleNodeId::default(); // Free up slot at index 1
+        node.children_delta[1].item = VerkleNodeId::default(); // Free up slot at index 1
         let key = Key::from_index_values(1, &[(1, 250)]);
-        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner3);
+        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner9);
         node.replace_child(&key, 1, new_id).unwrap();
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(result, LookupResult::Node(new_id));
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn replace_child_returns_error_if_no_slot_available(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn replace_child_returns_error_if_no_slot_available() {
+        let mut node = make_inner_with_empty_delta();
+        node.children_delta = array::from_fn(|i| VerkleIdWithIndex {
+            index: i as u8,
+            item: VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner9),
+        });
         let key = Key::from_index_values(1, &[(1, 250)]);
-        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner3);
+        let new_id = VerkleNodeId::from_idx_and_node_kind(1000, VerkleNodeKind::Inner9);
         let result = node.replace_child(&key, 1, new_id);
         assert!(matches!(
             result.map_err(BTError::into_inner),
@@ -445,7 +443,7 @@ mod tests {
 
     #[test]
     fn commitment_can_be_set_and_retrieved() {
-        let mut node = make_inner();
+        let mut node = make_inner_with_empty_delta();
         assert_eq!(node.get_commitment(), VerkleCommitment::default());
 
         let mut new_commitment = VerkleCommitment::default();

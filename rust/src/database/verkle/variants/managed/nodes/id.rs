@@ -166,6 +166,7 @@ mod tests {
             (VerkleNodeKind::Inner15, 0x0000_2000_0000_0000),
             (VerkleNodeKind::Inner21, 0x0000_3000_0000_0000),
             (VerkleNodeKind::Inner256, 0x0000_4000_0000_0000),
+            (VerkleNodeKind::InnerDelta, 0x0000_B000_0000_0000),
             (VerkleNodeKind::Leaf1, 0x0000_5000_0000_0000),
             (VerkleNodeKind::Leaf2, 0x0000_6000_0000_0000),
             (VerkleNodeKind::Leaf5, 0x0000_7000_0000_0000),
@@ -216,6 +217,10 @@ mod tests {
             (
                 VerkleNodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Inner256),
+            ),
+            (
+                VerkleNodeId([0xB0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::InnerDelta),
             ),
             (
                 VerkleNodeId([0x50, 0x00, 0x00, 0x00, 0x00, 0x2a]),
@@ -287,6 +292,10 @@ mod tests {
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256),
                 VerkleNodeKind::Inner256,
+            ),
+            (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::InnerDelta),
+                VerkleNodeKind::InnerDelta,
             ),
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf1),

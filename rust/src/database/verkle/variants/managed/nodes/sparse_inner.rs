@@ -369,15 +369,7 @@ mod tests {
 
     #[test]
     fn get_commitment_input_returns_children() {
-        let mut node = make_inner::<16>();
-        node.children[3] = VerkleIdWithIndex {
-            index: 33,
-            item: VerkleNodeId::from_idx_and_node_kind(333, VerkleNodeKind::Inner3),
-        };
-        node.children[7] = VerkleIdWithIndex {
-            index: 77,
-            item: VerkleNodeId::from_idx_and_node_kind(777, VerkleNodeKind::Inner3),
-        };
+        let node = make_inner::<16>();
         let mut expected_children = [VerkleNodeId::default(); 256];
         for VerkleIdWithIndex { index, item } in &node.children {
             expected_children[*index as usize] = *item;
