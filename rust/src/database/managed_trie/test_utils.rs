@@ -348,7 +348,11 @@ impl ManagedTrieNode for RcNode {
     }
 }
 
-impl UnionManagedTrieNode for RcNode {}
+impl UnionManagedTrieNode for RcNode {
+    fn copy_on_write(&self, _id: Self::Id, _changed_children: Vec<u8>) -> Self {
+        self.clone()
+    }
+}
 
 /// A wrapper around an `RcNode` that tracks its dirty status.
 /// The node is marked as dirty whenever it is accessed through [`DerefMut`].
