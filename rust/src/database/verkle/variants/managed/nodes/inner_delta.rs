@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::{array, borrow::Cow};
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -16,11 +18,10 @@ use crate::{
         verkle::{
             KeyedUpdateBatch,
             variants::managed::{
-                VerkleNode,
+                FullInnerNode, VerkleNode,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
-                    make_smallest_inner_node_for,
                 },
             },
         },
@@ -28,82 +29,112 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
-    types::{Key, ToNodeKind},
+    types::{DiskRepresentable, Key, ToNodeKind},
 };
 
 /// An inner node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
-pub struct SparseInnerNode<const N: usize> {
-    pub children: [VerkleIdWithIndex; N],
+pub struct InnerDeltaNode {
+    pub children: [VerkleNodeId; 256],
+    pub children_delta: [VerkleIdWithIndex; Self::DELTA_SIZE],
+    pub full_inner_node_id: VerkleNodeId,
     pub commitment: VerkleCommitment,
 }
 
-impl<const N: usize> SparseInnerNode<N> {
-    /// Creates a sparse inner node from existing children and commitment.
-    /// Returns an error if there are more than N non-default children.
-    pub fn from_existing(
-        children: &[VerkleIdWithIndex],
-        commitment: &VerkleCommitment,
-    ) -> BTResult<Self, Error> {
-        let mut inner = SparseInnerNode {
-            commitment: *commitment,
-            ..Default::default()
-        };
+#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+struct OnDiskInnerDeltaNode {
+    pub children_delta: [VerkleIdWithIndex; InnerDeltaNode::DELTA_SIZE],
+    pub full_inner_node_id: VerkleNodeId,
+    pub commitment: VerkleCommitment,
+}
 
-        // Insert values from previous node using get_slot_for to ensure no duplicate indices.
-        for iwi in children {
-            if iwi.item == VerkleNodeId::default() {
-                continue;
-            }
-            let slot = VerkleIdWithIndex::get_slot_for(&inner.children, iwi.index).ok_or(
-                Error::CorruptedState(format!(
-                    "too many non-default IDs to fit into sparse inner of size {N}"
-                )),
-            )?;
-            inner.children[slot] = *iwi;
+// This still needs to load the full inner node to reconstruct.
+impl From<OnDiskInnerDeltaNode> for InnerDeltaNode {
+    fn from(delta_node: OnDiskInnerDeltaNode) -> Self {
+        InnerDeltaNode {
+            children: [VerkleNodeId::default(); 256],
+            children_delta: delta_node.children_delta,
+            full_inner_node_id: delta_node.full_inner_node_id,
+            commitment: delta_node.commitment,
         }
+    }
+}
 
-        Ok(inner)
+impl From<&InnerDeltaNode> for OnDiskInnerDeltaNode {
+    fn from(node: &InnerDeltaNode) -> Self {
+        OnDiskInnerDeltaNode {
+            children_delta: node.children_delta,
+            full_inner_node_id: node.full_inner_node_id,
+            commitment: node.commitment,
+        }
+    }
+}
+
+impl DiskRepresentable for InnerDeltaNode {
+    fn from_disk_repr<E>(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        OnDiskInnerDeltaNode::from_disk_repr(read_into_buffer).map(Into::into)
+    }
+
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Owned(OnDiskInnerDeltaNode::from(self).to_disk_repr().into_owned())
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<OnDiskInnerDeltaNode>()
+    }
+}
+
+impl InnerDeltaNode {
+    pub const DELTA_SIZE: usize = 20;
+
+    /// Creates a delta inner node from existing full inner node and its id.
+    pub fn from_full_inner(inner_node: &FullInnerNode, inner_node_id: VerkleNodeId) -> Self {
+        InnerDeltaNode {
+            children: inner_node.children,
+            children_delta: array::from_fn(|i| VerkleIdWithIndex {
+                index: i as u8,
+                item: VerkleNodeId::default(),
+            }),
+            full_inner_node_id: inner_node_id,
+            commitment: inner_node.commitment,
+        }
     }
 
     /// Returns the children of this inner node as commitment input.
     // TODO: This should not have to pass 256 IDs: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
-        let mut children = [VerkleNodeId::default(); 256];
-        for VerkleIdWithIndex { index, item: value } in &self.children {
-            children[*index as usize] = *value;
+        let mut children = self.children;
+        for VerkleIdWithIndex { index, item } in self.children_delta {
+            if item != VerkleNodeId::default() {
+                children[index as usize] = item;
+            }
         }
         Ok(VerkleCommitmentInput::Inner(children))
     }
 }
 
-impl<const N: usize> Default for SparseInnerNode<N> {
-    fn default() -> Self {
-        let mut children = [VerkleIdWithIndex::default(); N];
-        children.iter_mut().enumerate().for_each(|(i, v)| {
-            v.index = i as u8;
-        });
-
-        SparseInnerNode {
-            children,
-            commitment: VerkleCommitment::default(),
-        }
-    }
-}
-
-impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
+impl ManagedTrieNode for InnerDeltaNode {
     type Union = VerkleNode;
     type Id = VerkleNodeId;
     type Commitment = VerkleCommitment;
 
     fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
-        let slot = VerkleIdWithIndex::get_slot_for(&self.children, key[depth as usize]);
-        match slot {
-            Some(slot) => Ok(LookupResult::Node(self.children[slot].item)),
-            _ => Ok(LookupResult::Node(VerkleNodeId::default())),
+        let slot = VerkleIdWithIndex::get_slot_for(&self.children_delta, key[depth as usize]);
+        if let Some(slot) = slot
+            && self.children_delta[slot].index == key[depth as usize]
+            && self.children_delta[slot].item != VerkleNodeId::default()
+        {
+            Ok(LookupResult::Node(self.children_delta[slot].item))
+        } else {
+            Ok(LookupResult::Node(
+                self.children[key[depth as usize] as usize],
+            ))
         }
     }
 
@@ -114,30 +145,33 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
         _self_id: Self::Id,
     ) -> BTResult<StoreAction<'a, Self::Id, Self::Union>, Error> {
         let slots = VerkleIdWithIndex::required_slot_count_for(
-            &self.children,
+            &self.children_delta,
             updates
                 .borrowed()
                 .split(depth)
                 .map(|u| u.first_key()[depth as usize]),
         );
 
-        if let Some(slots) = slots {
-            Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
-                slots,
-                &self.children,
-                &self.commitment,
-            )?))
+        if slots.is_some() {
+            Ok(StoreAction::HandleTransform(VerkleNode::Inner256(
+                Box::new(FullInnerNode::from(self.clone())),
+            )))
         } else {
             let mut descent_actions = Vec::new();
             for sub_updates in updates.split(depth) {
                 let index = sub_updates.first_key()[depth as usize];
-                let slot = VerkleIdWithIndex::get_slot_for(&self.children, index).ok_or(
+                let slot = VerkleIdWithIndex::get_slot_for(&self.children_delta, index).ok_or(
                     Error::CorruptedState(
-                        "no available slot for storing value in sparse inner node".to_owned(),
+                        "no available slot for storing value in inner delta node".to_owned(),
                     ),
                 )?;
+                let id = if self.children_delta[slot].item != VerkleNodeId::default() {
+                    self.children_delta[slot].item
+                } else {
+                    self.children[index as usize]
+                };
                 descent_actions.push(DescendAction {
-                    id: self.children[slot].item,
+                    id,
                     updates: sub_updates,
                 });
             }
@@ -147,9 +181,9 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
 
     fn replace_child(&mut self, key: &Key, depth: u8, new: VerkleNodeId) -> BTResult<(), Error> {
         let index = key[depth as usize];
-        match VerkleIdWithIndex::get_slot_for(&self.children, index) {
+        match VerkleIdWithIndex::get_slot_for(&self.children_delta, index) {
             Some(slot) => {
-                self.children[slot] = VerkleIdWithIndex { index, item: new };
+                self.children_delta[slot] = VerkleIdWithIndex { index, item: new };
                 Ok(())
             }
             _ => Err(Error::CorruptedState(
@@ -169,12 +203,12 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
     }
 }
 
-impl<const N: usize> NodeVisitor<SparseInnerNode<N>> for NodeCountVisitor {
-    fn visit(&mut self, node: &SparseInnerNode<N>, level: u64) -> BTResult<(), Error> {
+impl NodeVisitor<InnerDeltaNode> for NodeCountVisitor {
+    fn visit(&mut self, node: &InnerDeltaNode, level: u64) -> BTResult<(), Error> {
         self.count_node(
             level,
             "Inner",
-            node.children
+            node.children_delta
                 .iter()
                 .filter(|child| child.item.to_node_kind().unwrap() != VerkleNodeKind::Empty)
                 .count() as u64,
@@ -183,9 +217,9 @@ impl<const N: usize> NodeVisitor<SparseInnerNode<N>> for NodeCountVisitor {
     }
 }
 
-impl<const N: usize> VerkleManagedInnerNode for SparseInnerNode<N> {
+impl VerkleManagedInnerNode for InnerDeltaNode {
     fn iter_children(&self) -> Box<dyn Iterator<Item = VerkleIdWithIndex> + '_> {
-        Box::new(self.children.iter().copied())
+        Box::new(self.children_delta.iter().copied())
     }
 }
 
@@ -197,10 +231,7 @@ mod tests {
     use crate::{
         database::{
             managed_trie::TrieCommitment,
-            verkle::{
-                test_utils::FromIndexValues,
-                variants::managed::nodes::{NodeAccess, VerkleManagedTrieNode, VerkleNodeKind},
-            },
+            verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
         },
         error::BTError,
         types::{TreeId, Value},
@@ -208,136 +239,83 @@ mod tests {
 
     const TEST_CHILD_NODE_KIND: VerkleNodeKind = VerkleNodeKind::Inner9;
 
-    fn make_inner<const N: usize>() -> SparseInnerNode<N> {
-        SparseInnerNode::<N> {
-            children: array::from_fn(|i| VerkleIdWithIndex {
-                index: i as u8,
-                item: VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND),
+    fn make_inner_with_empty_delta() -> InnerDeltaNode {
+        InnerDeltaNode {
+            children: array::from_fn(|i| {
+                VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND)
             }),
+            children_delta: array::from_fn(|i| VerkleIdWithIndex {
+                index: i as u8,
+                item: VerkleNodeId::default(),
+            }),
+            full_inner_node_id: VerkleNodeId::default(),
             commitment: VerkleCommitment::default(),
         }
     }
 
-    #[rstest_reuse::template]
-    #[rstest::rstest]
-    #[case::inner3(Box::new(make_inner::<3>()) as Box<dyn VerkleManagedTrieNode<VerkleNodeId>>)]
-    #[case::inner7(Box::new(make_inner::<7>()) as Box<dyn VerkleManagedTrieNode<VerkleNodeId>>)]
-    #[case::inner99(Box::new(make_inner::<99>()) as Box<dyn VerkleManagedTrieNode<VerkleNodeId>>)]
-    fn different_inner_sizes(#[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>) {}
-
     #[test]
-    fn sparse_inner_node_default_returns_inner_node_with_default_ids_and_unique_indices() {
-        const N: usize = 2;
-        let node: SparseInnerNode<N> = SparseInnerNode::default();
+    fn from_existing_copies_commitment_and_sets_id_of_full_inner_node() {
+        let mut full_inner = FullInnerNode {
+            children: array::from_fn(|i| {
+                VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND)
+            }),
+            commitment: VerkleCommitment::default(),
+        };
+        full_inner.commitment.modify_child(2);
 
-        assert_eq!(node.commitment, VerkleCommitment::default());
+        let full_inner_node_id =
+            VerkleNodeId::from_idx_and_node_kind(100, VerkleNodeKind::Inner256);
 
-        for (i, value) in node.children.iter().enumerate() {
-            assert_eq!(value.index, i as u8);
-            assert_eq!(value.item, VerkleNodeId::default());
-        }
-    }
-
-    #[test]
-    fn from_existing_copies_children_and_commitment_correctly() {
-        let ID = VerkleNodeId::from_idx_and_node_kind(42, TEST_CHILD_NODE_KIND);
-        let mut commitment = VerkleCommitment::default();
-        commitment.modify_child(2);
-
-        // Case 1: Contains an index that fits at the corresponding slot in a SparseInnerNode<3>.
-        {
-            let children = [VerkleIdWithIndex { index: 2, item: ID }];
-            let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
-            assert_eq!(node.commitment, commitment);
-            // The child is put into the correct slot.
-            assert_eq!(node.children[0].index, 0);
-            assert_eq!(node.children[0].item, VerkleNodeId::default());
-            assert_eq!(node.children[1].index, 1);
-            assert_eq!(node.children[1].item, VerkleNodeId::default());
-            assert_eq!(node.children[2], children[0]);
-        }
-
-        // Case 2: Index does not have a corresponding slot in a SparseInnerNode<3>.
-        {
-            let children = [VerkleIdWithIndex {
-                index: 18,
-                item: ID,
-            }];
-            let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
-            // The child is put into the first available slot.
-            // Note that the search begins at slot 18 % 3, which happens to be 0.
-            assert_eq!(node.children[0], children[0]);
-        }
-
-        // Case 3: The first index does not fit, but the second one would have.
-        {
-            let children = [
+        let node = InnerDeltaNode::from_full_inner(&full_inner, full_inner_node_id);
+        assert_eq!(node.commitment, full_inner.commitment);
+        assert_eq!(node.full_inner_node_id, full_inner_node_id);
+        assert_eq!(node.children, full_inner.children);
+        assert_eq!(
+            node.children_delta,
+            array::from_fn(|i| {
                 VerkleIdWithIndex {
-                    index: 18,
-                    item: ID,
-                },
-                VerkleIdWithIndex { index: 0, item: ID },
-                VerkleIdWithIndex { index: 1, item: ID },
-            ];
-            let node = SparseInnerNode::<3>::from_existing(&children, &commitment).unwrap();
-            // Since the first slot is taken by index 18, index 0 and 1 get shifted back by one.
-            assert_eq!(node.children[0], children[0]);
-            assert_eq!(node.children[1], children[1]);
-            assert_eq!(node.children[2], children[2]);
-        }
-
-        // Case 4: There are more children that can fit into a SparseInnerNode<2>, but some of them
-        // are the default ID and can be skipped.
-        {
-            let children = [
-                VerkleIdWithIndex {
-                    index: 20,
-                    item: ID,
-                },
-                VerkleIdWithIndex {
-                    index: 0,
+                    index: i as u8,
                     item: VerkleNodeId::default(),
-                },
-                VerkleIdWithIndex { index: 1, item: ID },
-            ];
-            let node = SparseInnerNode::<2>::from_existing(&children, &commitment).unwrap();
-            assert_eq!(node.children[0], children[0]);
-            assert_eq!(node.children[1], children[2]);
-        }
-    }
-
-    #[test]
-    fn from_existing_returns_error_if_too_many_non_default_children_are_provided() {
-        let ID = VerkleNodeId::from_idx_and_node_kind(42, TEST_CHILD_NODE_KIND);
-        let children = [
-            VerkleIdWithIndex { index: 0, item: ID },
-            VerkleIdWithIndex { index: 1, item: ID },
-            VerkleIdWithIndex { index: 2, item: ID },
-        ];
-        let commitment = VerkleCommitment::default();
-        let result = SparseInnerNode::<2>::from_existing(&children, &commitment);
-
-        assert!(matches!(
-            result.map_err(BTError::into_inner),
-            Err(Error::CorruptedState(e)) if e.contains("too many non-default IDs to fit into sparse inner of size 2")));
+                }
+            })
+        );
     }
 
     #[test]
     fn get_commitment_input_returns_children() {
-        let node = make_inner::<16>();
+        let mut full_inner_node = FullInnerNode::default();
+        full_inner_node.children[77] =
+            VerkleNodeId::from_idx_and_node_kind(888, TEST_CHILD_NODE_KIND);
+        full_inner_node.children[99] =
+            VerkleNodeId::from_idx_and_node_kind(999, TEST_CHILD_NODE_KIND);
+
+        let full_inner_node_id = VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256);
+
+        let mut node = InnerDeltaNode::from_full_inner(&full_inner_node, full_inner_node_id);
+        // Override one previously 0 child
+        node.children_delta[3] = VerkleIdWithIndex {
+            index: 33,
+            item: VerkleNodeId::from_idx_and_node_kind(333, TEST_CHILD_NODE_KIND),
+        };
+        // Override one previously non-0 child
+        node.children_delta[7] = VerkleIdWithIndex {
+            index: 77,
+            item: VerkleNodeId::from_idx_and_node_kind(777, TEST_CHILD_NODE_KIND),
+        };
+
         let mut expected_children = [VerkleNodeId::default(); 256];
-        for VerkleIdWithIndex { index, item } in &node.children {
-            expected_children[*index as usize] = *item;
-        }
+        expected_children[33] = VerkleNodeId::from_idx_and_node_kind(333, TEST_CHILD_NODE_KIND);
+        expected_children[77] = VerkleNodeId::from_idx_and_node_kind(777, TEST_CHILD_NODE_KIND);
+        expected_children[99] = VerkleNodeId::from_idx_and_node_kind(999, TEST_CHILD_NODE_KIND);
+
         let result = node.get_commitment_input().unwrap();
         assert_eq!(result, VerkleCommitmentInput::Inner(expected_children));
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn lookup_returns_id_of_child_at_key_index(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
-        // Lookup an index that exists
+    #[test]
+    fn lookup_returns_id_of_child_at_key_index() {
+        let mut node = make_inner_with_empty_delta();
+        // Lookup an index that is not in the delta
         let key = Key::from_index_values(1, &[(1, 2)]);
         let result = node.lookup(&key, 1).unwrap();
         assert_eq!(
@@ -348,21 +326,16 @@ mod tests {
             ))
         );
 
-        // Lookup an index that exists but is empty
-        node.access_slot(2).item = VerkleNodeId::default();
+        // Lookup an index that is in the delta
+        let id = VerkleNodeId::from_idx_and_node_kind(2, VerkleNodeKind::Inner15);
+        node.children_delta[2].item = id;
         let result = node.lookup(&key, 1).unwrap();
-        assert_eq!(result, LookupResult::Node(VerkleNodeId::default()));
-
-        // Lookup an index that does not exist
-        let key = Key::from_index_values(1, &[(1, 250)]);
-        let result = node.lookup(&key, 1).unwrap();
-        assert_eq!(result, LookupResult::Node(VerkleNodeId::default()));
+        assert_eq!(result, LookupResult::Node(id));
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn next_store_action_with_available_slot_is_descend(
-        #[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn next_store_action_with_available_slot_is_descend() {
+        let node = make_inner_with_empty_delta();
         let key = Key::from_index_values(1, &[(1, 2)]);
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
         let result = node
@@ -375,16 +348,20 @@ mod tests {
         assert_eq!(
             result,
             StoreAction::Descend(vec![DescendAction {
+                updates,
                 id: VerkleNodeId::from_idx_and_node_kind(2, TEST_CHILD_NODE_KIND),
-                updates
             }])
         );
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn next_store_action_with_no_available_slot_is_handle_transform(
-        #[case] node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn next_store_action_with_no_available_slot_is_handle_transform() {
+        let mut node = make_inner_with_empty_delta();
+        node.children_delta = array::from_fn(|i| VerkleIdWithIndex {
+            index: i as u8,
+            item: VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND),
+        });
+
         let key = Key::from_index_values(1, &[(1, 250)]);
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(key, Value::default())]);
         let result = node
@@ -401,14 +378,14 @@ mod tests {
                         .next_store_action(updates.clone(), 1, VerkleNodeId::default())
                         .unwrap(),
                     StoreAction::Descend(vec![DescendAction {
-                        id: VerkleNodeId::default(),
-                        updates
+                        id: VerkleNodeId::from_idx_and_node_kind(250, TEST_CHILD_NODE_KIND),
+                        updates,
                     }])
                 );
                 // It contains all previous values
                 assert_eq!(
                     bigger_inner.get_commitment_input().unwrap(),
-                    node.get_commitment_input()
+                    node.get_commitment_input().unwrap()
                 );
                 // The commitment is copied over
                 assert_eq!(bigger_inner.get_commitment(), node.get_commitment());
@@ -417,10 +394,9 @@ mod tests {
         }
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn replace_child_sets_child_id_at_key_index(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn replace_child_sets_child_id_at_key_index() {
+        let mut node = make_inner_with_empty_delta();
         // Existing index
         let key = Key::from_index_values(1, &[(1, 2)]);
         let new_id = VerkleNodeId::from_idx_and_node_kind(999, TEST_CHILD_NODE_KIND);
@@ -429,7 +405,7 @@ mod tests {
         assert_eq!(result, LookupResult::Node(new_id));
 
         // Non-existing index but with available slot
-        node.access_slot(1).item = VerkleNodeId::default(); // Free up slot 1
+        node.children_delta[1].item = VerkleNodeId::default(); // Free up slot at index 1
         let key = Key::from_index_values(1, &[(1, 250)]);
         let new_id = VerkleNodeId::from_idx_and_node_kind(1000, TEST_CHILD_NODE_KIND);
         node.replace_child(&key, 1, new_id).unwrap();
@@ -437,10 +413,13 @@ mod tests {
         assert_eq!(result, LookupResult::Node(new_id));
     }
 
-    #[rstest_reuse::apply(different_inner_sizes)]
-    fn replace_child_returns_error_if_no_slot_available(
-        #[case] mut node: Box<dyn VerkleManagedTrieNode<VerkleNodeId>>,
-    ) {
+    #[test]
+    fn replace_child_returns_error_if_no_slot_available() {
+        let mut node = make_inner_with_empty_delta();
+        node.children_delta = array::from_fn(|i| VerkleIdWithIndex {
+            index: i as u8,
+            item: VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND),
+        });
         let key = Key::from_index_values(1, &[(1, 250)]);
         let new_id = VerkleNodeId::from_idx_and_node_kind(1000, TEST_CHILD_NODE_KIND);
         let result = node.replace_child(&key, 1, new_id);
@@ -452,7 +431,7 @@ mod tests {
 
     #[test]
     fn commitment_can_be_set_and_retrieved() {
-        let mut node = SparseInnerNode::<3>::default();
+        let mut node = make_inner_with_empty_delta();
         assert_eq!(node.get_commitment(), VerkleCommitment::default());
 
         let mut new_commitment = VerkleCommitment::default();
@@ -460,16 +439,5 @@ mod tests {
 
         node.set_commitment(new_commitment).unwrap();
         assert_eq!(node.get_commitment(), new_commitment);
-    }
-
-    impl<const N: usize> NodeAccess<VerkleNodeId> for SparseInnerNode<N> {
-        /// Returns a reference to the specified slot (modulo N).
-        fn access_slot(&mut self, slot: usize) -> &mut VerkleIdWithIndex {
-            &mut self.children[slot % N]
-        }
-
-        fn get_commitment_input(&self) -> VerkleCommitmentInput {
-            self.get_commitment_input().unwrap()
-        }
     }
 }

@@ -147,8 +147,8 @@ where
 
     fn get(&self, id: Self::Id) -> $crate::error::BTResult<Self::Item, $crate::storage::Error> {
         let idx = $crate::types::TreeId::to_index(id);
-        match $crate::types::ToNodeKind::to_node_kind(&id).ok_or($crate::storage::Error::InvalidId)? {
-            ${paste $tname Kind}::Empty => Ok(Self::Item::Empty(${paste Empty $tname}{})),
+        let mut n = match $crate::types::ToNodeKind::to_node_kind(&id).ok_or($crate::storage::Error::InvalidId)? {
+            ${paste $tname Kind}::Empty => Ok::<_, $crate::storage::Error>(Self::Item::Empty(${paste Empty $tname}{})),
             $(
                 ${if not(approx_equal($vname, Empty)) {
                     ${paste $tname Kind}::$vname => {
@@ -157,7 +157,17 @@ where
                     }
                 }}
             )
-        }
+        }?;
+        ${if approx_equal($tname, VerkleNode) {
+            if let VerkleNode::InnerDelta(n) = &mut n {
+                if let VerkleNode::Inner256(i) = self.get(n.full_inner_node_id)? {
+                    n.children = i.children;
+                } else {
+                    panic!("InnerDelta node's full inner node id does not point to an Inner256 node");
+                }
+            }
+        }}
+        Ok(n)
     }
 
     fn reserve(&self, node: &Self::Item) -> Self::Id {

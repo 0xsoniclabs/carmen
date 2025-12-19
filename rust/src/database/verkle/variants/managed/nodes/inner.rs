@@ -16,7 +16,7 @@ use crate::{
         verkle::{
             KeyedUpdateBatch,
             variants::managed::{
-                VerkleNode,
+                InnerDeltaNode, VerkleNode,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
@@ -96,6 +96,23 @@ impl ManagedTrieNode for FullInnerNode {
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
         self.commitment = commitment;
         Ok(())
+    }
+}
+
+impl From<InnerDeltaNode> for FullInnerNode {
+    fn from(delta_node: InnerDeltaNode) -> Self {
+        FullInnerNode {
+            children: {
+                let mut children = delta_node.children;
+                for VerkleIdWithIndex { index, item } in delta_node.children_delta {
+                    if item != VerkleNodeId::default() {
+                        children[index as usize] = item;
+                    }
+                }
+                children
+            },
+            commitment: delta_node.commitment,
+        }
     }
 }
 
