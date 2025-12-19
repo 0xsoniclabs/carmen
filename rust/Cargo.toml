@@ -38,6 +38,10 @@ name = "carmen_state"
 harness = false
 
 [[bench]]
+name = "keccak_vs_pedersen"
+harness = false
+
+[[bench]]
 name = "pedersen_commitment"
 harness = false
 
