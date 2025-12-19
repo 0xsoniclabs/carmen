@@ -118,7 +118,17 @@ plt.ylabel("Operation Count")
 plt.grid(True)
 plt.show()
 
-plt.figure(figsize=(12, 6))
+# For each NodeKind, stacked bar chart of operation count for by operation type
+df_node_op_count = df.groupby(["NodeKind", "Op"]).size().unstack(fill_value=0)
+df_node_op_count.plot(kind="bar", stacked=True)
+plt.title("Operation count by node kind")
+plt.xlabel("Node Kind")
+plt.ylabel("Operation Count")
+plt.grid(True)
+plt.show()
+
+# %% Zoomed in plots (excluding last interval)
+
 df_no_total = df_total_ops.drop(columns=["Operation Count"])
 df_no_total = df_no_total.iloc[:-1]
 operation_types = df_no_total.columns.drop("Time Interval")
@@ -136,14 +146,3 @@ plt.xlabel(f"Time ({TIME_RESOLUTION.name()})")
 plt.ylabel("Operation Count")
 plt.grid(True)
 plt.show()
-
-# Using df, for each NodeType, print a stacked bar chart of operation count by operation type
-df_node_op_count = df.groupby(["NodeType", "Op"]).size().unstack(fill_value=0)
-df_node_op_count.plot(kind="bar", stacked=True)
-plt.title("Operation count by node type")
-plt.xlabel("Node Type")
-plt.ylabel("Operation Count")
-plt.grid(True)
-plt.show()
-
-# %%

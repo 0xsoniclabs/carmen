@@ -70,7 +70,7 @@ impl StorageOperationWithMetadata {
 pub struct StorageOperationLogger<S: Storage> {
     storage: S,
     operations: Arc<Mutex<Vec<StorageOperationWithMetadata>>>,
-    first_op_timestamp: std::time::Instant,
+    start_timestamp: std::time::Instant,
     _worker: StorageOperationLoggerWorker,
 }
 
@@ -82,7 +82,7 @@ impl<S: Storage> StorageOperationLogger<S> {
         Ok(Self {
             storage,
             operations,
-            first_op_timestamp: std::time::Instant::now(),
+            start_timestamp: std::time::Instant::now(),
             _worker,
         })
     }
@@ -96,7 +96,7 @@ impl<S: Storage> StorageOperationLogger<S> {
         operations.push(StorageOperationWithMetadata {
             op,
             // Safe to unwrap as we set it above if None
-            timestamp: std::time::Instant::now().duration_since(self.first_op_timestamp),
+            timestamp: std::time::Instant::now().duration_since(self.start_timestamp),
             // NOTE: we could return an error here, however some storage operations (e.g.
             // `Storage::reserve`) cannot fail, therefore we would need to unwrap there.
             // However, corrupted ids should not happen in practice and this should only be used for
@@ -224,13 +224,8 @@ impl StorageOperationLoggerWorker {
         operations: &Mutex<Vec<StorageOperationWithMetadata>>,
         file: &Mutex<std::fs::File>,
     ) -> BTResult<(), storage::Error> {
-        let mut file = file.lock().unwrap();
-        let mut operations = std::mem::take(&mut *operations.lock().unwrap())
-            .into_iter()
-            .collect::<Vec<_>>();
-        operations.sort_unstable_by(|a, b| a.timestamp.cmp(&b.timestamp));
-
-        Ok(file.write_all(
+        let operations = std::mem::take(&mut *operations.lock().unwrap());
+        Ok(file.lock().unwrap().write_all(
             operations
                 .iter()
                 .flat_map(|entry| entry.as_csv_line().as_bytes().to_owned())
