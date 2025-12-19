@@ -232,11 +232,11 @@ pub fn update_commitments(
 
                     if !vc.initialized {
                         vc.commitment = Commitment::new(&scalars);
-                        vc.initialized = true;
                     }
                 }
             }
 
+            vc.initialized = true;
             vc.dirty = false;
             vc.changed_indices.fill(0);
             lock.set_commitment(vc)?;
