@@ -12,6 +12,7 @@ use std::{
     borrow::Cow,
     cmp::Ordering,
     ops::{Deref, Range},
+    sync::atomic::AtomicU64,
 };
 
 use rayon::iter::{
@@ -146,21 +147,84 @@ impl Deref for KeyedUpdateBatch<'_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyUpdate;
 
+static CREATED: AtomicU64 = AtomicU64::new(0);
+static BALANCE: AtomicU64 = AtomicU64::new(0);
+static NONCE: AtomicU64 = AtomicU64::new(0);
+static CODE: AtomicU64 = AtomicU64::new(0);
+static CODE_CHUNKS: AtomicU64 = AtomicU64::new(0);
+static SLOTS: AtomicU64 = AtomicU64::new(0);
+static HIT_CREATED: AtomicU64 = AtomicU64::new(0);
+static HIT_BALANCE: AtomicU64 = AtomicU64::new(0);
+static HIT_NONCE: AtomicU64 = AtomicU64::new(0);
+static HIT_CODE: AtomicU64 = AtomicU64::new(0);
+static HIT_CODE_CHUNKS: AtomicU64 = AtomicU64::new(0);
+static HIT_SLOTS: AtomicU64 = AtomicU64::new(0);
+
 impl KeyedUpdateBatch<'static> {
     pub fn try_from_with_embedding(
         update: &Update<'_>,
         embedding: &VerkleTrieEmbedding,
+        block: u64,
     ) -> Result<Self, EmptyUpdate> {
+        CREATED.fetch_add(
+            update.created_accounts.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        BALANCE.fetch_add(
+            update.balances.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        NONCE.fetch_add(
+            update.nonces.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        CODE.fetch_add(
+            update.codes.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        CODE_CHUNKS.fetch_add(
+            update
+                .codes
+                .iter()
+                .map(|c| c.code.len() / 31)
+                .sum::<usize>() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        SLOTS.fetch_add(
+            update.slots.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        if block.is_multiple_of(100_000) {
+            println!(
+                "created_accounts={}\nbalances={}\nnonces={}\ncode={}\ncode_chunks={}\nslots={}\ncreated_accounts={}\nbalances={}\nnonces={}\ncode={}\ncode_chunks={}\nslots={}",
+                CREATED.load(std::sync::atomic::Ordering::Relaxed),
+                BALANCE.load(std::sync::atomic::Ordering::Relaxed),
+                NONCE.load(std::sync::atomic::Ordering::Relaxed),
+                CODE.load(std::sync::atomic::Ordering::Relaxed),
+                CODE_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
+                SLOTS.load(std::sync::atomic::Ordering::Relaxed),
+                HIT_CREATED.load(std::sync::atomic::Ordering::Relaxed),
+                HIT_BALANCE.load(std::sync::atomic::Ordering::Relaxed),
+                HIT_NONCE.load(std::sync::atomic::Ordering::Relaxed),
+                HIT_CODE.load(std::sync::atomic::Ordering::Relaxed),
+                HIT_CODE_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
+                HIT_SLOTS.load(std::sync::atomic::Ordering::Relaxed),
+            );
+        }
         let basic_data_fn = |addr| {
             // This is just to set the used bit.
             // Because the mask is all zeros, we don't overwrite any data, so we also don't
             // have to account for nonce, balance or code length updates here.
             embedding
                 .try_get_basic_data_key(&addr)
-                .map(|key| KeyedUpdate::PartialSlot {
-                    key,
-                    value: [0u8; 32],
-                    mask: mask_for_range(0..0),
+                .map(|key| {
+                    HIT_CREATED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    KeyedUpdate::PartialSlot {
+                        key,
+                        value: [0u8; 32],
+                        mask: mask_for_range(0..0),
+                    }
                 })
                 .ok_or(addr)
         };
@@ -202,10 +266,13 @@ impl KeyedUpdateBatch<'static> {
         let balance_fn = |balance_update: BalanceUpdate| {
             embedding
                 .try_get_basic_data_key(&balance_update.addr)
-                .map(|key| KeyedUpdate::PartialSlot {
-                    key,
-                    value: balance_update.balance,
-                    mask: mask_for_range(16..32),
+                .map(|key| {
+                    HIT_BALANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    KeyedUpdate::PartialSlot {
+                        key,
+                        value: balance_update.balance,
+                        mask: mask_for_range(16..32),
+                    }
                 })
                 .ok_or(balance_update)
         };
@@ -216,6 +283,7 @@ impl KeyedUpdateBatch<'static> {
             embedding
                 .try_get_basic_data_key(&nonce_update.addr)
                 .map(|key| {
+                    HIT_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let mut value = [0u8; 32];
                     value[8..16].copy_from_slice(&nonce_update.nonce);
                     KeyedUpdate::PartialSlot {
@@ -237,10 +305,14 @@ impl KeyedUpdateBatch<'static> {
             code_len[4..8].copy_from_slice(&(code_update.code.len() as u32).to_be_bytes());
             embedding
                 .try_get_basic_data_key(&code_update.addr)
-                .map(|key| KeyedUpdate::PartialSlot {
-                    key,
-                    value: code_len,
-                    mask: mask_for_range(4..8),
+                .map(|key| {
+                    HIT_CODE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    KeyedUpdate::PartialSlot {
+                        key,
+                        value: code_len,
+                        mask: mask_for_range(4..8),
+                    }
                 })
                 .ok_or(code_update)
         }
@@ -280,9 +352,12 @@ impl KeyedUpdateBatch<'static> {
             embedding: &VerkleTrieEmbedding,
         ) -> Result<impl Iterator<Item = KeyedUpdate>, CodeUpdate<'a>> {
             let code = code::split_code(code_update.code);
+            let code_len = code.len();
             embedding
                 .try_get_code_chunk_key(&code_update.addr, 0)
                 .map(|_| {
+                    HIT_CODE_CHUNKS
+                        .fetch_add(code_len as u64 / 31, std::sync::atomic::Ordering::Relaxed);
                     code.into_iter()
                         .enumerate()
                         .map(move |(i, chunk)| KeyedUpdate::FullSlot {
@@ -303,9 +378,12 @@ impl KeyedUpdateBatch<'static> {
         let slot_fn = |slot_update: SlotUpdate| {
             embedding
                 .try_get_storage_key(&slot_update.addr, &slot_update.key)
-                .map(|key| KeyedUpdate::FullSlot {
-                    key,
-                    value: slot_update.value,
+                .map(|key| {
+                    HIT_SLOTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    KeyedUpdate::FullSlot {
+                        key,
+                        value: slot_update.value,
+                    }
                 })
                 .ok_or(slot_update)
         };
@@ -404,27 +482,22 @@ impl KeyedUpdateBatch<'static> {
             .chain(slots_par.map(slot_fn))
             .par_bridge()
             .collect::<Vec<_>>();
-        let basic_data = basic_data.into_iter().filter_map(Result::ok);
-        let empty_code_hashes = empty_code_hashes
-            .into_iter()
-            .filter_map(Result::ok)
-            .flatten();
-        let balances = balances.into_iter().filter_map(Result::ok);
-        let nonces = nonces.into_iter().filter_map(Result::ok);
-        let code_lens = code_lens.into_iter().filter_map(Result::ok);
-        let code_hashes = code_hashes.into_iter().filter_map(Result::ok);
-        let code_chunks = code_chunks.into_iter().filter_map(Result::ok).flatten();
-        let slots = slots.into_iter().filter_map(Result::ok);
-        updates.extend(basic_data);
-        updates.extend(empty_code_hashes);
-        updates.extend(balances);
-        updates.extend(nonces);
-        updates.extend(code_lens);
-        updates.extend(code_hashes);
-        updates.extend(code_chunks);
-        updates.extend(slots);
+        updates.extend(basic_data.into_iter().filter_map(Result::ok));
+        updates.extend(
+            empty_code_hashes
+                .into_iter()
+                .filter_map(Result::ok)
+                .flatten(),
+        );
+        updates.extend(balances.into_iter().filter_map(Result::ok));
+        updates.extend(nonces.into_iter().filter_map(Result::ok));
+        updates.extend(code_lens.into_iter().filter_map(Result::ok));
+        updates.extend(code_hashes.into_iter().filter_map(Result::ok));
+        updates.extend(code_chunks.into_iter().filter_map(Result::ok).flatten());
+        updates.extend(slots.into_iter().filter_map(Result::ok));
 
         updates.sort();
+        // updates.sort_unstable();
         if updates.is_empty() {
             return Err(EmptyUpdate);
         }
