@@ -19,7 +19,7 @@ use crate::{
             KeyedUpdateBatch,
             variants::managed::{
                 FullInnerNode, VerkleNode,
-                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                 },
@@ -49,7 +49,7 @@ pub struct InnerDeltaNode {
 struct OnDiskInnerDeltaNode {
     pub children_delta: [VerkleIdWithIndex; InnerDeltaNode::DELTA_SIZE],
     pub full_inner_node_id: VerkleNodeId,
-    pub commitment: VerkleCommitment,
+    pub commitment: OnDiskVerkleCommitment,
 }
 
 // This still needs to load the full inner node to reconstruct.
@@ -59,7 +59,7 @@ impl From<OnDiskInnerDeltaNode> for InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: delta_node.children_delta,
             full_inner_node_id: delta_node.full_inner_node_id,
-            commitment: delta_node.commitment,
+            commitment: VerkleCommitment::from(delta_node.commitment),
         }
     }
 }
@@ -69,7 +69,7 @@ impl From<&InnerDeltaNode> for OnDiskInnerDeltaNode {
         OnDiskInnerDeltaNode {
             children_delta: node.children_delta,
             full_inner_node_id: node.full_inner_node_id,
-            commitment: node.commitment,
+            commitment: OnDiskVerkleCommitment::from(&node.commitment),
         }
     }
 }
