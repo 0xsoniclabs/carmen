@@ -227,7 +227,7 @@ impl KeyedUpdateBatch<'static> {
                 value: *value,
             });
         }
-        updates.sort();
+        updates.sort_unstable();
         if updates.is_empty() {
             return Err(EmptyUpdate);
         }
