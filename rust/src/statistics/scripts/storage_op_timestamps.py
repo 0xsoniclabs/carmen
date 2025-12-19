@@ -110,6 +110,8 @@ sns.lineplot(
     hue="Op",
     marker="o",
 )
+# Use a logarithmic scale for y-axis
+plt.yscale("log")
 plt.title(
     f"Operation count by operation type over time (grouped by {GROUPING_TIME_INTERVAL_US / TIME_RESOLUTION.as_microseconds()} {TIME_RESOLUTION.name()})"
 )

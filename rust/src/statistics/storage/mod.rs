@@ -95,7 +95,6 @@ impl<S: Storage> StorageOperationLogger<S> {
         let mut operations = self.operations.lock().unwrap();
         operations.push(StorageOperationWithMetadata {
             op,
-            // Safe to unwrap as we set it above if None
             timestamp: std::time::Instant::now().duration_since(self.start_timestamp),
             // NOTE: we could return an error here, however some storage operations (e.g.
             // `Storage::reserve`) cannot fail, therefore we would need to unwrap there.
@@ -530,9 +529,7 @@ mod tests {
                     type Id = TestNodeId;
                     type Item = T;
 
-                    fn open(path: &std::path::Path, mode: DbMode) -> BTResult<Self, Error>
-                    where
-                        Self: Sized;
+                    fn open(path: &std::path::Path, mode: DbMode) -> BTResult<Self, Error>;
 
                     fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 
