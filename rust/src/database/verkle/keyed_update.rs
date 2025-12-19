@@ -231,7 +231,7 @@ impl KeyedUpdateBatch<'static> {
         if updates.is_empty() {
             return Err(EmptyUpdate);
         }
-        if updates.len() > 100 {
+        if updates.len() > 100_000 {
             updates.par_sort_unstable();
         } else {
             updates.sort_unstable();
