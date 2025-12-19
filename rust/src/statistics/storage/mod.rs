@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{collections::HashSet, fmt, fs::File, io::Write, path::Path};
+use std::{fmt, fs::File, io::Write, path::Path};
 
 use crate::{
     error::BTResult,
@@ -41,7 +41,7 @@ impl std::fmt::Display for StorageOperation {
     }
 }
 
-/// A storage operation with associated metadata for logging purposes.k
+/// A storage operation with associated metadata for logging purposes.
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct StorageOperationWithMetadata {
     op: StorageOperation,
@@ -54,7 +54,7 @@ impl StorageOperationWithMetadata {
     /// Format the operation with metadata as a CSV line.
     fn as_csv_line(&self) -> String {
         format!(
-            "{},{},{},{}",
+            "{},{},{},{}\n",
             self.op,
             self.timestamp.as_micros(),
             &self.node_kind,
@@ -69,39 +69,34 @@ impl StorageOperationWithMetadata {
 /// A background worker periodically flushes the collected operations to disk.
 pub struct StorageOperationLogger<S: Storage> {
     storage: S,
-    operations: Arc<Mutex<HashSet<StorageOperationWithMetadata>>>,
-    first_op_timestamp: Mutex<Option<std::time::Instant>>,
+    operations: Arc<Mutex<Vec<StorageOperationWithMetadata>>>,
+    first_op_timestamp: std::time::Instant,
     _worker: StorageOperationLoggerWorker,
 }
 
 impl<S: Storage> StorageOperationLogger<S> {
-    /// Creates a new storage statistics wrapper around the given storage.
+    /// Creates a new storage operation logger that wraps the given storage.
     pub fn try_new(storage: S, path: &Path) -> BTResult<Self, storage::Error> {
-        let operations = Arc::new(Mutex::new(HashSet::new()));
+        let operations = Arc::new(Mutex::new(Vec::new()));
         let _worker = StorageOperationLoggerWorker::new(operations.clone(), path)?;
         Ok(Self {
             storage,
             operations,
-            first_op_timestamp: Mutex::new(None),
+            first_op_timestamp: std::time::Instant::now(),
             _worker,
         })
     }
 
     /// Log a storage operation with associated metadata.
-    fn add<T: TreeId>(&self, op: StorageOperation, id: T)
+    fn log<T: TreeId>(&self, op: StorageOperation, id: T)
     where
         <T as ToNodeKind>::Target: fmt::Debug,
     {
         let mut operations = self.operations.lock().unwrap();
-        let mut first_op_timestamp = self.first_op_timestamp.lock().unwrap();
-        let time = std::time::Instant::now();
-        if (*first_op_timestamp).is_none() {
-            *first_op_timestamp = Some(time);
-        }
-        operations.insert(StorageOperationWithMetadata {
+        operations.push(StorageOperationWithMetadata {
             op,
             // Safe to unwrap as we set it above if None
-            timestamp: time.duration_since(first_op_timestamp.unwrap()),
+            timestamp: std::time::Instant::now().duration_since(self.first_op_timestamp),
             // NOTE: we could return an error here, however some storage operations (e.g.
             // `Storage::reserve`) cannot fail, therefore we would need to unwrap there.
             // However, corrupted ids should not happen in practice and this should only be used for
@@ -127,23 +122,23 @@ where
     }
 
     fn get(&self, id: Self::Id) -> BTResult<Self::Item, crate::storage::Error> {
-        self.add(StorageOperation::Get, id);
+        self.log(StorageOperation::Get, id);
         self.storage.get(id)
     }
 
     fn reserve(&self, item: &Self::Item) -> Self::Id {
         let id = self.storage.reserve(item);
-        self.add(StorageOperation::Reserve, id);
+        self.log(StorageOperation::Reserve, id);
         id
     }
 
     fn set(&self, id: Self::Id, item: &Self::Item) -> BTResult<(), crate::storage::Error> {
-        self.add(StorageOperation::Set, id);
+        self.log(StorageOperation::Set, id);
         self.storage.set(id, item)
     }
 
     fn delete(&self, id: Self::Id) -> BTResult<(), crate::storage::Error> {
-        self.add(StorageOperation::Delete, id);
+        self.log(StorageOperation::Delete, id);
         self.storage.delete(id)
     }
 
@@ -187,7 +182,7 @@ where
 /// Worker that periodically flushes the collected storage operations to disk.
 pub struct StorageOperationLoggerWorker {
     stop_signal: Arc<AtomicBool>,
-    has_worker_finished: Arc<AtomicBool>,
+    worker_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl StorageOperationLoggerWorker {
@@ -195,17 +190,17 @@ impl StorageOperationLoggerWorker {
 
     /// Construct a new worker and runs it in background.
     fn new(
-        operations: Arc<Mutex<HashSet<StorageOperationWithMetadata>>>,
+        operations: Arc<Mutex<Vec<StorageOperationWithMetadata>>>,
         path: &Path,
     ) -> BTResult<Self, storage::Error> {
         let file = Mutex::new(File::create(path.join(Self::OPERATION_LOG_FILE))?);
         file.lock()
             .unwrap()
-            .write_all("Op,Timestamp,NodeType,Offset\n".as_bytes())?;
+            .write_all("Op,Timestamp,NodeKind,Offset\n".as_bytes())?;
 
         let stop_signal = Arc::new(AtomicBool::new(false));
         let has_worker_finished = Arc::new(AtomicBool::new(false));
-        {
+        let worker_handle = {
             let stop_signal = stop_signal.clone();
             let has_worker_finished = has_worker_finished.clone();
             thread::spawn(move || {
@@ -215,41 +210,33 @@ impl StorageOperationLoggerWorker {
                 }
                 Self::flush(&operations, &file).unwrap(); // Final flush on stop
                 has_worker_finished.store(true, Ordering::Relaxed);
-            });
+            })
         };
 
         Ok(Self {
             stop_signal,
-            has_worker_finished,
+            worker_handle: Some(worker_handle),
         })
     }
 
     /// Writes the collected operations to disk and clears the in-memory buffer.
     fn flush(
-        operations: &Mutex<HashSet<StorageOperationWithMetadata>>,
+        operations: &Mutex<Vec<StorageOperationWithMetadata>>,
         file: &Mutex<std::fs::File>,
     ) -> BTResult<(), storage::Error> {
-        const BUFFER_SIZE: usize = 4096;
-
         let mut file = file.lock().unwrap();
         let mut operations = std::mem::take(&mut *operations.lock().unwrap())
             .into_iter()
             .collect::<Vec<_>>();
         operations.sort_unstable_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
-        let mut entries_to_remove: Vec<u8> = Vec::with_capacity(operations.len());
-        for entry in operations {
-            entries_to_remove.extend_from_slice(entry.as_csv_line().as_bytes());
-            entries_to_remove.push(b'\n');
-            if entries_to_remove.len() >= BUFFER_SIZE {
-                file.write_all(&entries_to_remove)?;
-                entries_to_remove.clear();
-            }
-        }
-        if !entries_to_remove.is_empty() {
-            file.write_all(&entries_to_remove)?;
-        }
-        Ok(())
+        Ok(file.write_all(
+            operations
+                .iter()
+                .flat_map(|entry| entry.as_csv_line().as_bytes().to_owned())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )?)
     }
 }
 
@@ -257,9 +244,10 @@ impl Drop for StorageOperationLoggerWorker {
     fn drop(&mut self) {
         // Stops the background worker and writes the total operations executed to disk.
         self.stop_signal.store(true, Ordering::Relaxed);
-        while !self.has_worker_finished.load(Ordering::Relaxed) {
-            thread::sleep(std::time::Duration::from_millis(100));
-        }
+        let worker_handle = self.worker_handle.take().unwrap();
+        worker_handle
+            .join()
+            .expect("Failed to join storage operation logger worker thread");
     }
 }
 
@@ -272,6 +260,7 @@ mod tests {
     use super::*;
     use crate::{
         statistics::storage::tests::mock::MockStorage,
+        sync::is_finished,
         utils::{
             test_dir::{Permissions, TestDir},
             test_nodes::TestNodeId,
@@ -282,19 +271,12 @@ mod tests {
     fn storage_operation_logger_try_new_starts_worker_and_creates_file() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let storage: MockStorage<()> = MockStorage::new();
-        let storage_stats = StorageOperationLogger::try_new(storage, test_dir.path()).unwrap();
-
+        let _storage_stats = StorageOperationLogger::try_new(storage, test_dir.path()).unwrap();
         assert!(
             test_dir
                 .path()
                 .join(StorageOperationLoggerWorker::OPERATION_LOG_FILE)
                 .exists()
-        );
-        assert!(
-            !storage_stats
-                ._worker
-                .has_worker_finished
-                .load(Ordering::Relaxed)
         );
     }
 
@@ -321,7 +303,7 @@ mod tests {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let storage: MockStorage<()> = MockStorage::new();
         let storage_stats = StorageOperationLogger::try_new(storage, test_dir.path()).unwrap();
-        storage_stats.add(op, 42);
+        storage_stats.log(op, 42);
         assert_eq!(storage_stats.operations.lock().unwrap().len(), 1);
         let entry = storage_stats
             .operations
@@ -361,11 +343,7 @@ mod tests {
             let _ = storage_stats.delete(i);
         }
 
-        let has_finished = storage_stats._worker.has_worker_finished.clone();
         drop(storage_stats);
-        while !has_finished.load(Ordering::Relaxed) {
-            thread::sleep(std::time::Duration::from_millis(100));
-        }
 
         let content = std::fs::read_to_string(
             test_dir
@@ -457,7 +435,7 @@ mod tests {
     #[test]
     fn storage_operation_logger_worker_new_initializes_correctly_and_creates_file() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let operations = Arc::new(Mutex::new(HashSet::new()));
+        let operations = Arc::new(Mutex::new(Vec::new()));
         let worker = StorageOperationLoggerWorker::new(operations, test_dir.path())
             .expect("Failed to create worker");
 
@@ -467,13 +445,13 @@ mod tests {
                 .join(StorageOperationLoggerWorker::OPERATION_LOG_FILE)
                 .exists()
         );
-        assert!(!worker.has_worker_finished.load(Ordering::Relaxed));
+        assert!(!is_finished(worker.worker_handle.as_ref().unwrap()));
     }
 
     #[test]
     fn storage_operation_logger_worker_flush_writes_and_clears_buffer() {
         let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let mut operations = HashSet::new();
+        let mut operations = Vec::new();
         let file_path = test_dir.path().join("test_flush.csv");
         let file = Mutex::new(std::fs::File::create(&file_path).unwrap());
         file.lock()
@@ -482,19 +460,19 @@ mod tests {
             .unwrap();
 
         // Add some entries
-        operations.insert(StorageOperationWithMetadata {
+        operations.push(StorageOperationWithMetadata {
             op: StorageOperation::Get,
             timestamp: std::time::Duration::from_micros(1000),
             node_kind: "Inner".to_string(),
             index: 1,
         });
-        operations.insert(StorageOperationWithMetadata {
+        operations.push(StorageOperationWithMetadata {
             op: StorageOperation::Set,
             timestamp: std::time::Duration::from_micros(2000),
             node_kind: "Inner".to_string(),
             index: 2,
         });
-        operations.insert(StorageOperationWithMetadata {
+        operations.push(StorageOperationWithMetadata {
             op: StorageOperation::Delete,
             timestamp: std::time::Duration::from_micros(3000),
             node_kind: "Leaf".to_string(),
@@ -515,18 +493,17 @@ mod tests {
     }
 
     #[test]
-    fn storage_operation_logger_worker_stops_worker_thread_on_drop() {
-        let test_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let operations = Arc::new(Mutex::new(HashSet::new()));
-        let worker =
-            StorageOperationLoggerWorker::new(operations.clone(), test_dir.path()).unwrap();
+    #[should_panic(expected = "Failed to join storage operation logger worker thread")]
+    fn storage_operation_logger_worker_panics_if_worker_thread_fails_to_join() {
+        let worker = StorageOperationLoggerWorker {
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            worker_handle: Some(thread::spawn(|| {
+                panic!("Simulated worker thread failure");
+            })),
+        };
 
-        let has_worker_finished = worker.has_worker_finished.clone();
-        assert!(!has_worker_finished.load(Ordering::Relaxed));
-
-        drop(worker); // Execute drop logic
-
-        assert!(has_worker_finished.load(Ordering::Relaxed));
+        // Dropping the storage_stats should panic when trying to join the failed thread
+        drop(worker);
     }
 
     #[allow(clippy::disallowed_types)]
