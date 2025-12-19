@@ -471,6 +471,30 @@ mod tests {
     }
 
     #[rstest_reuse::apply(different_leaf_sizes)]
+    fn next_store_action_with_non_matching_stem_returns_parent_large_enough_for_all_updates(
+        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
+    ) {
+        let updates = KeyedUpdateBatch::from_key_value_pairs(
+            &(1..=255)
+                .map(|i| (Key::from_index_values(i, &[]), Value::default()))
+                .collect::<Vec<_>>(),
+        );
+        let result = node
+            .next_store_action(updates.clone(), 1, VerkleNodeId::default())
+            .unwrap();
+        match result {
+            StoreAction::HandleReparent(inner) => {
+                // This new inner node is big enough to hold all leaves that will be created
+                assert!(matches!(
+                    inner.next_store_action(updates, 1, VerkleNodeId::default()),
+                    Ok(StoreAction::Descend(_))
+                ));
+            }
+            _ => panic!("expected HandleReparent"),
+        }
+    }
+
+    #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_matching_stems_is_store_if_enough_usable_slots_exists(
         #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
