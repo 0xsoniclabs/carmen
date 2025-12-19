@@ -380,7 +380,7 @@ impl KeyedUpdateBatch<'static> {
 
         let code_chunks_fn = |CodeUpdate { addr, code }: CodeUpdate| {
             code::split_code(code)
-                .into_par_iter()
+                .into_iter()
                 .enumerate()
                 .map(move |(i, chunk)| KeyedUpdate::FullSlot {
                     key: embedding.get_code_chunk_key(&addr, i as u32),
@@ -394,24 +394,15 @@ impl KeyedUpdateBatch<'static> {
         };
 
         let mut updates = basic_data_par
-            .par_bridge()
             .map(basic_data_fn)
-            .chain(
-                empty_code_hashes_par
-                    .par_bridge()
-                    .flat_map(empty_code_hash_fn),
-            )
-            .chain(balances_par.par_bridge().map(balance_fn))
-            .chain(nonces_par.par_bridge().map(nonce_fn))
-            .chain(code_lens_par.par_bridge().map(code_len_fn))
-            .chain(code_hashes_par.par_bridge().map(code_hash_fn))
-            .chain(
-                code_chunks_par
-                    .par_bridge()
-                    .cloned()
-                    .flat_map(code_chunks_fn),
-            )
-            .chain(slots_par.par_bridge().map(slot_fn))
+            .chain(empty_code_hashes_par.flat_map(empty_code_hash_fn))
+            .chain(balances_par.map(balance_fn))
+            .chain(nonces_par.map(nonce_fn))
+            .chain(code_lens_par.map(code_len_fn))
+            .chain(code_hashes_par.map(code_hash_fn))
+            .chain(code_chunks_par.cloned().flat_map(code_chunks_fn))
+            .chain(slots_par.map(slot_fn))
+            .par_bridge()
             .collect::<Vec<_>>();
         let basic_data = basic_data.into_iter().filter_map(Result::ok);
         let empty_code_hashes = empty_code_hashes
