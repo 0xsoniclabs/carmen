@@ -78,6 +78,9 @@ tracy-client = { version = "0.18.2", default-features = false }
 # CLI
 clap = { version = "4.5.53", features = ["derive"] }
 
+# parallelism
+rayon = "1.11.0"
+
 [build-dependencies]
 # FFI
 bindgen = "0.72.0"
