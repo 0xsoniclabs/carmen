@@ -30,6 +30,8 @@ struct DescendUpdates<'a, T, ID> {
     node: Option<RwLockWriteGuard<'a, T>>,
     /// ID of the current node.
     node_id: ID,
+    /// Whether this node was created during the current store operation.
+    is_new: bool,
     /// Updates to apply to this node.
     updates: KeyedUpdateBatch<'a>,
 }
@@ -49,9 +51,10 @@ pub fn store<T>(
     updates: &KeyedUpdateBatch,
     manager: &impl NodeManager<Id = T::Id, Node = T>,
     update_log: &TrieUpdateLog<T::Id>,
+    is_archive: bool,
 ) -> BTResult<(), Error>
 where
-    T: UnionManagedTrieNode + HasEmptyNode,
+    T: UnionManagedTrieNode + HasEmptyNode + Clone,
     T::Id: Copy + Eq + std::hash::Hash + std::fmt::Debug + HasEmptyId,
 {
     let _span = tracy_client::span!("push updates through all levels");
@@ -63,6 +66,7 @@ where
         parent_index: None,
         node: Some(manager.get_write_access(**root_id.as_ref().unwrap())?),
         node_id: **root_id.as_ref().unwrap(),
+        is_new: false,
         updates,
     }];
 
@@ -91,6 +95,29 @@ where
                 current_node_update.node_id,
             )? {
                 StoreAction::Store(stores) => {
+                    // Clone the node if we are in archive mode and the node is not new and not the
+                    // empty node.
+                    if is_archive
+                        && !current_node_update.is_new
+                        && !current_node_update.node_id.is_empty_id()
+                    {
+                        current_node_update.node_id = manager.add((*current_node).clone())?;
+                        current_node_update.node =
+                            Some(manager.get_write_access(current_node_update.node_id)?);
+                        if let Some(index) = current_node_update.parent_index {
+                            parent_node_updates[index]
+                                .node
+                                .as_mut()
+                                .unwrap()
+                                .replace_child(
+                                    current_node_update.updates.first_key(),
+                                    depth - 1,
+                                    current_node_update.node_id,
+                                )?;
+                        } else {
+                            **root_id.as_mut().unwrap() = current_node_update.node_id;
+                        }
+                    }
                     let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
@@ -110,6 +137,29 @@ where
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
+                    // Clone the node if we are in archive mode and the node is not new and not the
+                    // empty node.
+                    if is_archive
+                        && !current_node_update.is_new
+                        && !current_node_update.node_id.is_empty_id()
+                    {
+                        current_node_update.node_id = manager.add((*current_node).clone())?;
+                        current_node_update.node =
+                            Some(manager.get_write_access(current_node_update.node_id)?);
+                        if let Some(index) = current_node_update.parent_index {
+                            parent_node_updates[index]
+                                .node
+                                .as_mut()
+                                .unwrap()
+                                .replace_child(
+                                    current_node_update.updates.first_key(),
+                                    depth - 1,
+                                    current_node_update.node_id,
+                                )?;
+                        } else {
+                            **root_id.as_mut().unwrap() = current_node_update.node_id;
+                        }
+                    }
                     let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
@@ -127,6 +177,7 @@ where
                             } else {
                                 Some(manager.get_write_access(id)?)
                             },
+                            is_new: false,
                             node_id: id,
                             updates,
                         });
@@ -160,9 +211,12 @@ where
                     };
                     let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
+                    current_node_update.is_new = true;
 
-                    manager.delete(old_id)?;
-                    update_log.delete(depth as usize, old_id);
+                    if !is_archive {
+                        manager.delete(old_id)?;
+                        update_log.delete(depth as usize, old_id);
+                    }
 
                     // No need to log the update here, we are visiting the node again next
                     // iteration.
@@ -194,6 +248,7 @@ where
                     };
                     let old_id = current_node_update.node_id;
                     current_node_update.node_id = new_id;
+                    current_node_update.is_new = true;
 
                     update_log.move_down(depth as usize, old_id);
 
@@ -245,41 +300,66 @@ mod tests {
         (manager, log, root_id, root_id_lock)
     }
 
-    /// Helper function for descending into a child node.
+    /// Helper function which sets up expectations for a descent as next store action and the update
+    /// of the commitment for all children that are descended into.
     fn descend_into(
-        manager: &RcNodeManager,
-        parent_id: Id,
-        grandparent_id: Option<Id>,
+        manager: &Arc<RcNodeManager>,
+        mut node_id: Id,
+        parent_id: Option<Id>,
         descent_actions: Vec<DescendAction<'static, Id>>,
         updates: &KeyedUpdateBatch<'static>,
         depth: u8,
-    ) {
+        is_archive: bool,
+    ) -> Id {
         manager.expect(
-            parent_id,
+            node_id,
             RcNodeExpectation::NextStoreAction {
                 updates: updates.clone(),
                 depth,
-                self_id: parent_id,
+                self_id: node_id,
                 result: StoreAction::Descend(descent_actions.clone()),
             },
         );
+        if is_archive {
+            let new_node = manager.make();
+            let new_node_id = new_node.id();
+            manager.expect(
+                node_id,
+                RcNodeExpectation::Clone {
+                    new_id: new_node_id,
+                },
+            );
+            manager.expect_add(new_node);
+            manager.expect_write_access(new_node_id, vec![node_id]);
+            if let Some(parent_id) = parent_id {
+                manager.expect(
+                    parent_id,
+                    RcNodeExpectation::ReplaceChild {
+                        key: *updates.first_key(),
+                        depth: depth - 1,
+                        new: new_node_id,
+                    },
+                );
+            }
+            node_id = new_node_id;
+        }
         manager.expect(
-            parent_id,
+            node_id,
             RcNodeExpectation::GetCommitment {
                 result: TestNodeCommitment::default(),
             },
         );
-        let mut locked = if let Some(grandparent_id) = grandparent_id {
-            vec![parent_id, grandparent_id]
+        let mut locked = if let Some(parent_id) = parent_id {
+            vec![node_id, parent_id]
         } else {
-            vec![parent_id]
+            vec![node_id]
         };
         for DescendAction { id, .. } in descent_actions {
             manager.expect_write_access(id, locked.clone());
             locked.push(id);
         }
         manager.expect(
-            parent_id,
+            node_id,
             RcNodeExpectation::SetCommitment {
                 commitment: TestNodeCommitment::expected(updates.iter().map(|keyed_update| {
                     (
@@ -289,15 +369,22 @@ mod tests {
                 })),
             },
         );
+        node_id
     }
 
-    /// Helper function for completing a store operation on the given node.
+    /// Helper function which sets up expectations for a store as next store action and the update
+    /// of the commitment for all stored keys.
+    #[allow(clippy::too_many_arguments)]
     fn complete_store(
-        manager: &RcNodeManager,
-        node_id: <RcNodeManager as NodeManager>::Id,
+        manager: &Arc<RcNodeManager>,
+        parent_id: Option<Id>,
+        mut node_id: <RcNodeManager as NodeManager>::Id,
+        is_new: bool,
+        locked_ids: &[Id],
         updates: &KeyedUpdateBatch<'static>,
         depth: u8,
-    ) {
+        is_archive: bool,
+    ) -> Id {
         manager.expect(
             node_id,
             RcNodeExpectation::NextStoreAction {
@@ -307,6 +394,31 @@ mod tests {
                 result: StoreAction::Store(updates.clone()),
             },
         );
+        if is_archive && !is_new {
+            let new_node = manager.make();
+            let new_node_id = new_node.id();
+            manager.expect(
+                node_id,
+                RcNodeExpectation::Clone {
+                    new_id: new_node_id,
+                },
+            );
+            manager.expect_add(new_node);
+            let mut locked_ids = locked_ids.to_vec();
+            locked_ids.push(node_id);
+            manager.expect_write_access(new_node_id, locked_ids);
+            if let Some(parent_id) = parent_id {
+                manager.expect(
+                    parent_id,
+                    RcNodeExpectation::ReplaceChild {
+                        key: *updates.first_key(),
+                        depth: depth - 1,
+                        new: new_node_id,
+                    },
+                );
+            }
+            node_id = new_node_id;
+        }
         manager.expect(
             node_id,
             RcNodeExpectation::GetCommitment {
@@ -333,17 +445,24 @@ mod tests {
                 ),
             },
         );
+        node_id
     }
 
-    #[test]
-    fn store_sets_value_and_marks_node_and_commitment_and_log_as_dirty() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
+    #[rstest_reuse::template]
+    #[rstest::rstest]
+    #[case::live(false)]
+    #[case::archive(true)]
+    fn is_archive(#[case] is_archive: bool) {}
+
+    #[rstest_reuse::apply(is_archive)]
+    fn store_sets_value_and_marks_node_and_commitment_and_log_as_dirty(#[case] is_archive: bool) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -356,6 +475,19 @@ mod tests {
                     result: StoreAction::Store(updates.clone()),
                 },
             );
+            if is_archive {
+                let new_root = manager.make();
+                let new_root_id = new_root.id();
+                manager.expect(
+                    root_id,
+                    RcNodeExpectation::Clone {
+                        new_id: new_root_id,
+                    },
+                );
+                manager.expect_add(new_root);
+                manager.expect_write_access(new_root_id, vec![root_id]);
+                root_id = new_root_id;
+            }
             manager.expect(
                 root_id,
                 RcNodeExpectation::GetCommitment {
@@ -386,20 +518,20 @@ mod tests {
         });
     }
 
-    #[test]
-    fn descending_marks_node_and_commitment_and_log_as_dirty() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
-        let child_id = manager.insert(manager.make());
+    #[rstest_reuse::apply(is_archive)]
+    fn descending_marks_node_and_commitment_and_log_as_dirty(#[case] is_archive: bool) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
+        let mut child_id = manager.insert(manager.make());
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
-            descend_into(
+            root_id = descend_into(
                 &manager,
                 root_id,
                 None,
@@ -409,9 +541,19 @@ mod tests {
                 }],
                 &updates,
                 0,
+                is_archive,
             );
 
-            complete_store(&manager, child_id, &updates, 1);
+            child_id = complete_store(
+                &manager,
+                Some(root_id),
+                child_id,
+                false,
+                &[root_id],
+                &updates,
+                1,
+                is_archive,
+            );
             manager.wait_for_unlock(root_id);
 
             // While we did not store anything in the root directly, it should be marked dirty.
@@ -421,21 +563,21 @@ mod tests {
         });
     }
 
-    #[test]
-    fn descending_one_level_deep_releases_lock_on_root_id() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
-        let child_id = manager.insert(manager.make());
+    #[rstest_reuse::apply(is_archive)]
+    fn descending_one_level_deep_releases_lock_on_root_id(#[case] is_archive: bool) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
+        let mut child_id = manager.insert(manager.make());
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
             assert!(root_id_lock.try_read().is_err());
-            descend_into(
+            root_id = descend_into(
                 &manager,
                 root_id,
                 None,
@@ -445,29 +587,39 @@ mod tests {
                 }],
                 &updates,
                 0,
+                is_archive,
             );
             let _guard = spin_until_some(
                 || root_id_lock.try_read().ok(),
                 "timed out waiting for root_id to be unlocked",
             );
-            complete_store(&manager, child_id, &updates, 1);
+            child_id = complete_store(
+                &manager,
+                Some(root_id),
+                child_id,
+                false,
+                &[root_id],
+                &updates,
+                1,
+                is_archive,
+            );
         });
     }
 
-    #[test]
-    fn transform_adds_new_node_and_deletes_old_one_and_updates_parent() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
+    #[rstest_reuse::apply(is_archive)]
+    fn transform_adds_new_node_and_deletes_old_one_and_updates_parent(#[case] is_archive: bool) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
         let child_id = manager.insert(manager.make());
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
-            descend_into(
+            root_id = descend_into(
                 &manager,
                 root_id,
                 None,
@@ -477,17 +629,18 @@ mod tests {
                 }],
                 &updates,
                 0,
+                is_archive,
             );
 
             let new_child = manager.make();
-            let new_child_id = new_child.id();
+            let mut new_child_id = new_child.id();
             manager.expect(
                 child_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 1,
                     self_id: child_id,
-                    result: StoreAction::HandleTransform(new_child.clone()),
+                    result: StoreAction::HandleTransform(new_child.clone_non_rc()),
                 },
             );
 
@@ -504,9 +657,20 @@ mod tests {
             manager.expect_write_access(new_child_id, vec![root_id, child_id]);
             // At this point the lock on the old child should be released
             manager.wait_for_unlock(child_id);
-            manager.expect_delete(child_id);
+            if !is_archive {
+                manager.expect_delete(child_id);
+            }
 
-            complete_store(&manager, new_child_id, &updates, 1);
+            new_child_id = complete_store(
+                &manager,
+                Some(root_id),
+                new_child_id,
+                true,
+                &[root_id],
+                &updates,
+                1,
+                is_archive,
+            );
             manager.wait_for_unlock(new_child_id);
 
             // The old child should be deleted from the log
@@ -516,36 +680,47 @@ mod tests {
         });
     }
 
-    #[test]
-    fn transform_on_root_updates_root_id() {
+    #[rstest_reuse::apply(is_archive)]
+    fn transform_on_root_updates_root_id(#[case] is_archive: bool) {
         let (manager, log, root_id, root_id_lock) = boilerplate();
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
             let new_root = manager.make();
-            let new_root_id = new_root.id();
+            let mut new_root_id = new_root.id();
             manager.expect(
                 root_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 0,
                     self_id: root_id,
-                    result: StoreAction::HandleTransform(new_root.clone()),
+                    result: StoreAction::HandleTransform(new_root.clone_non_rc()),
                 },
             );
 
             manager.expect_add(new_root);
             manager.expect_write_access(new_root_id, vec![root_id]);
             manager.wait_for_unlock(root_id);
-            manager.expect_delete(root_id);
+            if !is_archive {
+                manager.expect_delete(root_id);
+            }
 
-            complete_store(&manager, new_root_id, &updates, 0);
+            new_root_id = complete_store(
+                &manager,
+                None,
+                new_root_id,
+                true,
+                &[root_id],
+                &updates,
+                0,
+                is_archive,
+            );
             manager.wait_for_unlock(new_root_id);
 
             // The root id should be updated to the new id
@@ -554,21 +729,23 @@ mod tests {
         });
     }
 
-    #[test]
-    fn reparent_adds_new_node_and_updates_parent_without_marking_original_child_as_dirty() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
+    #[rstest_reuse::apply(is_archive)]
+    fn reparent_adds_new_node_and_updates_parent_without_marking_original_child_as_dirty(
+        #[case] is_archive: bool,
+    ) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
         let child_id = manager.insert(manager.make());
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
             assert!(!manager.is_dirty(child_id));
-            descend_into(
+            root_id = descend_into(
                 &manager,
                 root_id,
                 None,
@@ -578,17 +755,18 @@ mod tests {
                 }],
                 &updates,
                 0,
+                is_archive,
             );
 
             let new_parent_node = manager.make();
-            let new_parent_id = new_parent_node.id();
+            let mut new_parent_id = new_parent_node.id();
             manager.expect(
                 child_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 1,
                     self_id: child_id,
-                    result: StoreAction::HandleReparent(new_parent_node.clone()),
+                    result: StoreAction::HandleReparent(new_parent_node.clone_non_rc()),
                 },
             );
 
@@ -606,7 +784,16 @@ mod tests {
             // At this point the lock on the original child should be released
             manager.wait_for_unlock(child_id);
 
-            complete_store(&manager, new_parent_id, &updates, 1);
+            new_parent_id = complete_store(
+                &manager,
+                Some(root_id),
+                new_parent_id,
+                true,
+                &[root_id],
+                &updates,
+                1,
+                is_archive,
+            );
             manager.wait_for_unlock(new_parent_id);
 
             // The original child should not be marked as dirty
@@ -618,27 +805,27 @@ mod tests {
         });
     }
 
-    #[test]
-    fn reparenting_root_updates_root_id() {
+    #[rstest_reuse::apply(is_archive)]
+    fn reparenting_root_updates_root_id(#[case] is_archive: bool) {
         let (manager, log, root_id, root_id_lock) = boilerplate();
 
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
             let new_root = manager.make();
-            let new_root_id = new_root.id();
+            let mut new_root_id = new_root.id();
             manager.expect(
                 root_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 0,
                     self_id: root_id,
-                    result: StoreAction::HandleReparent(new_root.clone()),
+                    result: StoreAction::HandleReparent(new_root.clone_non_rc()),
                 },
             );
 
@@ -646,7 +833,16 @@ mod tests {
             manager.expect_write_access(new_root_id, vec![root_id]);
             manager.wait_for_unlock(root_id);
 
-            complete_store(&manager, new_root_id, &updates, 0);
+            new_root_id = complete_store(
+                &manager,
+                Some(root_id),
+                new_root_id,
+                true,
+                &[root_id],
+                &updates,
+                0,
+                is_archive,
+            );
             manager.wait_for_unlock(new_root_id);
 
             // The root id should be updated to the new id
@@ -655,9 +851,9 @@ mod tests {
         });
     }
 
-    #[test]
-    fn store_applies_storeaction_store_immediately() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
+    #[rstest_reuse::apply(is_archive)]
+    fn store_applies_storeaction_store_immediately(#[case] is_archive: bool) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
 
         let key1 = [1; 32];
         let key2 = [2; 32];
@@ -665,7 +861,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
@@ -678,6 +874,19 @@ mod tests {
                     result: StoreAction::Store(updates.clone()),
                 },
             );
+            if is_archive {
+                let new_root = manager.make();
+                let new_root_id = new_root.id();
+                manager.expect(
+                    root_id,
+                    RcNodeExpectation::Clone {
+                        new_id: new_root_id,
+                    },
+                );
+                manager.expect_add(new_root);
+                manager.expect_write_access(new_root_id, vec![root_id]);
+                root_id = new_root_id;
+            }
             manager.expect(
                 root_id,
                 RcNodeExpectation::GetCommitment {
@@ -721,11 +930,13 @@ mod tests {
         });
     }
 
-    #[test]
-    fn store_handles_storeaction_descend_by_processing_it_in_the_next_level() {
-        let (manager, log, root_id, root_id_lock) = boilerplate();
-        let child1_id = manager.insert(manager.make());
-        let child2_id = manager.insert(manager.make());
+    #[rstest_reuse::apply(is_archive)]
+    fn store_handles_storeaction_descend_by_processing_it_in_the_next_level(
+        #[case] is_archive: bool,
+    ) {
+        let (manager, log, mut root_id, root_id_lock) = boilerplate();
+        let mut child1_id = manager.insert(manager.make());
+        let mut child2_id = manager.insert(manager.make());
 
         let key1 = [1; 32];
         let key2 = [2; 32];
@@ -735,11 +946,11 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
-            descend_into(
+            root_id = descend_into(
                 &manager,
                 root_id,
                 None,
@@ -755,16 +966,37 @@ mod tests {
                 ],
                 &updates,
                 0,
+                is_archive,
             );
 
-            complete_store(&manager, child1_id, &sub_update1, 1);
-            complete_store(&manager, child2_id, &sub_update2, 1);
+            child1_id = complete_store(
+                &manager,
+                Some(root_id),
+                child1_id,
+                false,
+                &[root_id, child2_id],
+                &sub_update1,
+                1,
+                is_archive,
+            );
+            child2_id = complete_store(
+                &manager,
+                Some(root_id),
+                child2_id,
+                false,
+                &[root_id, child1_id],
+                &sub_update2,
+                1,
+                is_archive,
+            );
             manager.wait_for_unlock(root_id);
         });
     }
 
-    #[test]
-    fn store_applies_storeaction_transform_immediately_and_then_processes_transformed_node() {
+    #[rstest_reuse::apply(is_archive)]
+    fn store_applies_storeaction_transform_immediately_and_then_processes_transformed_node(
+        #[case] is_archive: bool,
+    ) {
         let (manager, log, root_id, root_id_lock) = boilerplate();
 
         let key1 = [1; 32];
@@ -773,32 +1005,45 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
             let transformed_node = manager.make();
-            let transformed_node_id = transformed_node.id();
+            let mut transformed_node_id = transformed_node.id();
             manager.expect(
                 root_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 0,
                     self_id: root_id,
-                    result: StoreAction::HandleTransform(transformed_node.clone()),
+                    result: StoreAction::HandleTransform(transformed_node.clone_non_rc()),
                 },
             );
             manager.expect_add(transformed_node);
             manager.expect_write_access(transformed_node_id, vec![root_id]);
             manager.wait_for_unlock(root_id);
-            manager.expect_delete(root_id);
-            complete_store(&manager, transformed_node_id, &updates, 0);
+            if !is_archive {
+                manager.expect_delete(root_id);
+            }
+            transformed_node_id = complete_store(
+                &manager,
+                Some(root_id),
+                transformed_node_id,
+                true,
+                &[root_id],
+                &updates,
+                0,
+                is_archive,
+            );
             manager.wait_for_unlock(transformed_node_id);
         });
     }
 
-    #[test]
-    fn store_applies_storeaction_reparent_and_processes_new_parent_node_next() {
+    #[rstest_reuse::apply(is_archive)]
+    fn store_applies_storeaction_reparent_and_processes_new_parent_node_next(
+        #[case] is_archive: bool,
+    ) {
         let (manager, log, root_id, root_id_lock) = boilerplate();
         let key1 = [1; 32];
         let key2 = [2; 32];
@@ -806,25 +1051,34 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 let root_id_guard = root_id_lock.write().unwrap();
-                store(root_id_guard, &updates, &*manager, &log).unwrap();
+                store(root_id_guard, &updates, &*manager, &log, is_archive).unwrap();
             });
 
             manager.expect_write_access(root_id, vec![]);
             let new_parent_node = manager.make();
-            let new_parent_node_id = new_parent_node.id();
+            let mut new_parent_node_id = new_parent_node.id();
             manager.expect(
                 root_id,
                 RcNodeExpectation::NextStoreAction {
                     updates: updates.clone(),
                     depth: 0,
                     self_id: root_id,
-                    result: StoreAction::HandleReparent(new_parent_node.clone()),
+                    result: StoreAction::HandleReparent(new_parent_node.clone_non_rc()),
                 },
             );
             manager.expect_add(new_parent_node);
             manager.expect_write_access(new_parent_node_id, vec![root_id]);
             manager.wait_for_unlock(root_id);
-            complete_store(&manager, new_parent_node_id, &updates, 0);
+            new_parent_node_id = complete_store(
+                &manager,
+                Some(root_id),
+                new_parent_node_id,
+                true,
+                &[root_id],
+                &updates,
+                0,
+                is_archive,
+            );
             manager.wait_for_unlock(new_parent_node_id);
         });
     }
