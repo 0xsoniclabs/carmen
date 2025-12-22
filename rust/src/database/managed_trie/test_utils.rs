@@ -149,17 +149,49 @@ pub enum RcNodeExpectation {
     SetCommitment {
         commitment: TestNodeCommitment,
     },
+    Clone {
+        new_id: Id,
+    },
 }
 
 /// A "remote-controlled" [`ManagedTrieNode`] implementation for testing purposes.
 /// The behavior of the node can be controlled from another thread through the [`RcNodeManager`],
 /// by setting up expectations on the operations being called and specifying the results to return.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct RcNode {
     // The node stores its own id for easier debugging
     id: Id,
     // To make this type default constructible, we wrap the Arc in an Option
     channel: Option<Arc<RcChannel<RcNodeExpectation>>>,
+    // A reference back to the manager that created this node.
+    // To make this type default constructible, we wrap the Arc in an Option
+    manager: Option<Arc<RcNodeManager>>,
+}
+
+impl Clone for RcNode {
+    /// Clones the node by receiving a `Clone` expectation from the channel.
+    /// The id of the new node is taken from the expectation, and the channel is
+    /// retrieved from the manager's list of channels.
+    fn clone(&self) -> Self {
+        match self.channel.as_ref().unwrap().receive("clone") {
+            RcNodeExpectation::Clone { new_id } => {
+                let manager = self.manager.as_ref().expect("manager to be set");
+                let channel = manager
+                    .node_channels
+                    .lock()
+                    .unwrap()
+                    .get(new_id as usize)
+                    .expect("node to be created using make() before clone() is called")
+                    .clone();
+                Self {
+                    id: new_id,
+                    channel: Some(channel),
+                    manager: self.manager.clone(),
+                }
+            }
+            e => panic!("expected call to {e:?} on {self:?}, but clone was called instead"),
+        }
+    }
 }
 
 impl HasEmptyNode for RcNode {
@@ -175,6 +207,15 @@ impl HasEmptyNode for RcNode {
 impl RcNode {
     pub fn id(&self) -> Id {
         self.id
+    }
+
+    /// Clones the node without going through the channel. This is a 1:1 copy with the same ID.
+    pub fn clone_non_rc(&self) -> Self {
+        Self {
+            id: self.id,
+            channel: self.channel.clone(),
+            manager: self.manager.clone(),
+        }
     }
 }
 
@@ -368,7 +409,7 @@ impl RcNodeManager {
     }
 
     /// Creates a new `RcNode` but does not register it with the manager.
-    pub fn make(&self) -> RcNode {
+    pub fn make(self: &Arc<Self>) -> RcNode {
         let id = self
             .next_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -377,6 +418,7 @@ impl RcNodeManager {
         RcNode {
             id,
             channel: Some(channel),
+            manager: Some(Arc::clone(self)),
         }
     }
 
