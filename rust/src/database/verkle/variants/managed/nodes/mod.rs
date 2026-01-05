@@ -33,7 +33,7 @@ use crate::{
     node_manager::NodeManager,
     statistics::node_count::NodeCountVisitor,
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
+    types::{HasDeltaVariant, HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
 };
 
 pub mod empty;
@@ -166,6 +166,28 @@ impl VerkleNode {
             }
         }
         Ok(())
+    }
+}
+
+impl HasDeltaVariant for VerkleNode {
+    type Id = VerkleNodeId;
+
+    fn needs_full(&self) -> Option<Self::Id> {
+        if let VerkleNode::InnerDelta(n) = self {
+            Some(n.full_inner_node_id)
+        } else {
+            None
+        }
+    }
+
+    fn copy_from_full(&mut self, full: &Self) {
+        if let VerkleNode::InnerDelta(n) = self {
+            if let VerkleNode::Inner256(i) = full {
+                n.children = i.children;
+            } else {
+                panic!("expected the full node variant");
+            }
+        }
     }
 }
 

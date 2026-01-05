@@ -23,7 +23,7 @@ use crate::{
     },
     storage::{Checkpointable, RootIdProvider, Storage},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    types::{HasEmptyId, HasEmptyNode},
+    types::{HasDeltaVariant, HasEmptyId, HasEmptyNode},
 };
 
 /// A wrapper which dereferences to `N` and additionally stores its dirty status,
@@ -171,7 +171,7 @@ impl<S> NodeManager for CachedNodeManager<S>
 where
     S: Storage + 'static,
     S::Id: Eq + Hash + Copy + HasEmptyId,
-    S::Item: Default + HasEmptyNode,
+    S::Item: Default + HasEmptyNode + HasDeltaVariant<Id = S::Id>,
 {
     type Id = S::Id;
     type Node = S::Item;
@@ -203,7 +203,11 @@ where
         }
 
         let lock = self.nodes.get_read_access_or_insert(id, || {
-            let node = self.storage.storage.get(id)?;
+            let mut node = self.storage.storage.get(id)?;
+            if let Some(full_id) = node.needs_full() {
+                let full = self.get_read_access(full_id)?;
+                node.copy_from_full(&**full);
+            }
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: false,
@@ -224,7 +228,11 @@ where
         }
 
         let lock = self.nodes.get_write_access_or_insert(id, || {
-            let node = self.storage.storage.get(id)?;
+            let mut node = self.storage.storage.get(id)?;
+            if let Some(full_id) = node.needs_full() {
+                let full = self.get_read_access(full_id)?;
+                node.copy_from_full(&**full);
+            }
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: false,

@@ -159,15 +159,6 @@ where
                 }}
             )
         }?;
-        ${if approx_equal($tname, VerkleNode) {
-            if let VerkleNode::InnerDelta(n) = &mut node {
-                if let VerkleNode::Inner256(i) = self.get(n.full_inner_node_id)? {
-                    n.children = i.children;
-                } else {
-                    panic!("InnerDelta node's full inner node id does not point to an Inner256 node");
-                }
-            }
-        }}
         Ok(node)
     }
 
