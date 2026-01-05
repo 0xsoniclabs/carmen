@@ -215,6 +215,8 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
 				require.NoError(t, state.Close(), "failed to close state")
 			}()
 
+			block_number := uint64(0)
+
 			// this method creates multiple codes of increasing size,
 			// assigns them to different accounts, and then verifies
 			// that the codes can be retrieved correctly along with
@@ -242,7 +244,8 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
 					code = append(code, byte(i))
 				}
 
-				require.NoError(t, state.Apply(0, update), "failed to apply update")
+				require.NoError(t, state.Apply(block_number, update), "failed to apply update")
+				block_number++
 
 				// check hash consistency
 				hash, err := state.GetHash()
