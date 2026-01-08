@@ -20,8 +20,12 @@ fn commitment_benchmark(c: &mut Criterion) {
 
     let mut g = c.benchmark_group("keccak_vs_pedersen/single_value");
     g.bench_function(BenchmarkId::from_parameter("pedersen"), |b| {
-        let mut scalars = vec![Scalar::zero(); 64];
-        scalars[63] = random;
+        // NOTE: The size of the scalars vector *should* have minimal impact on performance.
+        // However, the current implementation of the MSM algorithm in crate-crypto/banderwagon is
+        // quite sub-optimal, in that it spends significant time on zero values.
+        // See https://github.com/0xsoniclabs/sonic-admin/issues/576
+        let mut scalars = vec![Scalar::zero(); 256];
+        scalars[127] = random;
         b.iter(|| {
             std::hint::black_box(Commitment::new(&scalars));
         });
