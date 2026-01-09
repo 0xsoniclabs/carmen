@@ -45,11 +45,12 @@ pub fn linear_scan_stats(db_path: &Path) -> NodeCountsByKindStatistic {
         node_variants.sort();
         expected_node_variants.sort();
         if node_variants != expected_node_variants {
-            panic!(
+            eprintln!(
                 "Unexpected node variants in DB path:\n\
                 found    {node_variants:?}\n\
                 expected {expected_node_variants:?}"
             );
+            std::process::exit(1);
         }
 
         let inner = [

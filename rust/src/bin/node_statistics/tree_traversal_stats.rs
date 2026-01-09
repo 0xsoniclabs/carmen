@@ -42,6 +42,10 @@ type VerkleStorageManager = VerkleNodeFileStorageManager<
 
 /// Perform tree traversal based statistics collection on the Carmen DB located at `db_path`.
 pub fn tree_traversal_stats(db_path: &Path) -> NodeCountsByLevelAndKind {
+    if !db_path.ends_with("live") {
+        eprintln!("The tree traversal stats only work with live DBs");
+        std::process::exit(1);
+    }
     let storage = VerkleStorageManager::open(db_path, DbMode::ReadOnly)
         .map_err(|e| {
             eprintln!("error: could not open database at the specified path: {e}");
