@@ -74,7 +74,6 @@ pub struct VerkleTrieCarmenState<T: VerkleTrie> {
 }
 
 impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
-    #[allow(clippy::new_without_default)]
     pub fn new_live() -> Self {
         Self {
             trie: SimpleInMemoryVerkleTrie::new(),
@@ -108,7 +107,10 @@ where
             StateMode::Live | StateMode::EvolvingArchive => manager.highest_block_number()?,
             StateMode::Archive(block) => Some(block),
         };
-        let trie = ManagedVerkleTrie::try_new(manager, block)?;
+        let trie = match block {
+            Some(block) => ManagedVerkleTrie::try_from_block_height(manager, block)?,
+            None => ManagedVerkleTrie::try_new(manager)?,
+        };
         let block_height = match state_mode {
             StateMode::Live => BlockHeight::Live,
             StateMode::Archive(block) => BlockHeight::Archive(block),
@@ -192,7 +194,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
             BlockHeight::Live => 0, // For the liveDB we always pass block height 0
             BlockHeight::Archive(_) => {
                 return Err(Error::UnsupportedOperation(
-                    "apply_block_updates is not supported on archive states".into(),
+                    "apply_block_update is not supported on archive states".into(),
                 )
                 .into());
             }
@@ -200,12 +202,12 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
                 match height {
                     Some(height) => {
                         if block != *height + 1 {
-                            return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
+                            return Err(Error::UnsupportedOperation("apply_block_update called on a block that was already updated or with an update that is not for the next block".into()).into());
                         }
                     }
                     None => {
                         if block != 0 {
-                            return Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()).into());
+                            return Err(Error::UnsupportedOperation("apply_block_update called on a block that was already updated or with an update that is not for the next block".into()).into());
                         }
                     }
                 }
@@ -272,7 +274,7 @@ mod tests {
         assert_eq!(
             result.map_err(BTError::into_inner),
             Err(Error::UnsupportedOperation(
-                "apply_block_updates is not supported on archive states".into()
+                "apply_block_update is not supported on archive states".into()
             ))
         );
     }
@@ -288,7 +290,7 @@ mod tests {
         let result = state.apply_block_update(1, Update::default());
         assert_eq!(
             result.map_err(BTError::into_inner),
-            Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()))
+            Err(Error::UnsupportedOperation("apply_block_update called on a block that was already updated or with an update that is not for the next block".into()))
         );
 
         let result = state.apply_block_update(0, Update::default());
@@ -297,12 +299,12 @@ mod tests {
         let result = state.apply_block_update(0, Update::default());
         assert_eq!(
             result.map_err(BTError::into_inner),
-            Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()))
+            Err(Error::UnsupportedOperation("apply_block_update called on a block that was already updated or with an update that is not for the next block".into()))
         );
         let result = state.apply_block_update(2, Update::default());
         assert_eq!(
             result.map_err(BTError::into_inner),
-            Err(Error::UnsupportedOperation("apply_block_updates called on a block that was already updated or with an update that is not for the next block".into()))
+            Err(Error::UnsupportedOperation("apply_block_update called on a block that was already updated or with an update that is not for the next block".into()))
         );
 
         let result = state.apply_block_update(1, Update::default());

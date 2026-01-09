@@ -59,8 +59,8 @@ mod tests {
     #[rstest::rstest]
     #[case::simple_in_memory(Box::new(SimpleInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>, false)]
     #[case::crate_crypto_in_memory(Box::new(CrateCryptoInMemoryVerkleTrie::new()) as Box<dyn VerkleTrie>, false)]
-    #[case::managed_live(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100)), None).unwrap()) as Box<dyn VerkleTrie>, false)]
-    #[case::managed_archive(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(10000)), None).unwrap()) as Box<dyn VerkleTrie>, true)]
+    #[case::managed_live(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(100))).unwrap()) as Box<dyn VerkleTrie>, false)]
+    #[case::managed_archive(Box::new(ManagedVerkleTrie::<InMemoryNodeManager::<VerkleNodeId, VerkleNode>>::try_new(Arc::new(InMemoryNodeManager::new(10000))).unwrap()) as Box<dyn VerkleTrie>, true)]
     fn all_trie_impls(#[case] trie: Box<dyn VerkleTrie>, #[case] is_archive: bool) {}
 
     #[rstest_reuse::apply(all_trie_impls)]

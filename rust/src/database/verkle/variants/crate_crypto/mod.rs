@@ -50,10 +50,12 @@ impl VerkleTrie for CrateCryptoInMemoryVerkleTrie {
         updates: &KeyedUpdateBatch,
         is_archive: bool,
     ) -> BTResult<(), crate::error::Error> {
-        assert!(
-            !is_archive,
-            "Archive mode is not supported for `rust-crate-crypto-memory`"
-        );
+        if is_archive {
+            return Err(Error::UnsupportedImplementation(
+                "CrateCrytpoInMemoryVerkleTrie does not support archive mode".to_owned(),
+            )
+            .into());
+        }
         let mut trie = self.trie.write().unwrap();
         for update in updates.iter() {
             match update {

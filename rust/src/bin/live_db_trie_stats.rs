@@ -106,7 +106,7 @@ fn main() {
     // inner scope.
     {
         let managed_trie =
-            database::ManagedVerkleTrie::<_>::try_new(manager.clone(), Some(0)).unwrap();
+            database::ManagedVerkleTrie::<_>::try_from_block_height(manager.clone(), 0).unwrap();
         let mut count_visitor = NodeCountVisitor::default();
         managed_trie.accept(&mut count_visitor).unwrap();
         count_visitor.node_count.print(&mut formatters).unwrap();

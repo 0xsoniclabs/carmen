@@ -52,10 +52,12 @@ impl VerkleTrie for SimpleInMemoryVerkleTrie {
     }
 
     fn store(&self, updates: &KeyedUpdateBatch, is_archive: bool) -> BTResult<(), Error> {
-        assert!(
-            !is_archive,
-            "Archive mode is not supported for `rust-memory`"
-        );
+        if is_archive {
+            return Err(Error::UnsupportedImplementation(
+                "SimpleInMemoryVerkleTrie does not support archive mode".to_owned(),
+            )
+            .into());
+        }
         let mut root_lock = self.root.lock().unwrap();
         let root = std::mem::replace(&mut *root_lock, Node::Empty);
         *root_lock = root.store(updates.borrowed(), 0);
