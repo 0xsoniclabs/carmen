@@ -32,6 +32,26 @@ const PRINT_INTERVAL: u64 = 1000000;
 /// Perform linear scan based statistics collection on the Carmen DB located at `db_path`.
 pub fn linear_scan_stats(db_path: &Path) -> NodeCountsByKindStatistic {
     thread::scope(|s| {
+        let mut node_variants: Vec<_> = db_path
+            .read_dir()
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        let mut expected_node_variants = [
+            "inner9", "inner15", "inner21", "inner256", "leaf1", "leaf2", "leaf5", "leaf18",
+            "leaf146", "leaf256",
+        ];
+        node_variants.sort();
+        expected_node_variants.sort();
+        if node_variants != expected_node_variants {
+            panic!(
+                "Unexpected node variants in DB path:\n\
+                found    {node_variants:?}\n\
+                expected {expected_node_variants:?}"
+            );
+        }
+
         let inner = [
             s.spawn(|| analyze_sparse_inner::<9>(&db_path.join("inner9"))),
             s.spawn(|| analyze_sparse_inner::<15>(&db_path.join("inner15"))),
@@ -139,6 +159,7 @@ fn analyze_node<N>(path: &Path, count_fn: impl Fn(&N) -> usize) -> [usize; 257]
 where
     N: DiskRepresentable + Send + Sync,
 {
+    // Total number of nodes analyzed, across all `N`s.
     static COUNT: AtomicU64 = AtomicU64::new(0);
 
     let metadata = NodeFileStorageMetadata::read_or_init(
