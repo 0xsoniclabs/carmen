@@ -11,7 +11,7 @@
 use std::{mem::MaybeUninit, sync::Arc};
 
 use crate::{
-    CarmenState,
+    CarmenState, IsArchive,
     database::verkle::{
         KeyedUpdateBatch, ManagedVerkleTrie,
         embedding::{VerkleTrieEmbedding, code},
@@ -121,6 +121,12 @@ where
             embedding: VerkleTrieEmbedding::new(),
             block_height: Mutex::new(block_height),
         })
+    }
+}
+
+impl<T: VerkleTrie> IsArchive for VerkleTrieCarmenState<T> {
+    fn is_archive(&self) -> bool {
+        self.block_height.lock().unwrap().is_archive()
     }
 }
 

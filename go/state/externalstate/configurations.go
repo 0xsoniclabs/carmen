@@ -26,17 +26,17 @@ const (
 )
 
 func init() {
-	supportedArchives := []state.ArchiveType{
+	factories := map[state.Configuration]state.StateFactory{}
+
+	// Add all configuration options supported by the C++ implementation.
+	supportedCppArchives := []state.ArchiveType{
 		state.NoArchive,
 		state.LevelDbArchive,
 		state.SqliteArchive,
 	}
 
-	factories := map[state.Configuration]state.StateFactory{}
-
-	// Register all configuration options supported by the C++ implementation.
 	for schema := state.Schema(1); schema <= state.Schema(3); schema++ {
-		for _, archive := range supportedArchives {
+		for _, archive := range supportedCppArchives {
 			factories[state.Configuration{
 				Variant: VariantCppMemory,
 				Schema:  schema,
@@ -55,6 +55,7 @@ func init() {
 		}
 	}
 
+	// Add all configuration options supported by the Rust implementation.
 	factories[state.Configuration{
 		Variant: VariantRustMemory,
 		Schema:  6,
@@ -71,6 +72,12 @@ func init() {
 		Variant: VariantRustFile,
 		Schema:  6,
 		Archive: state.NoArchive,
+	}] = newRustFileBasedState
+
+	factories[state.Configuration{
+		Variant: VariantRustFile,
+		Schema:  6,
+		Archive: "file",
 	}] = newRustFileBasedState
 
 	// Register all experimental configurations.
