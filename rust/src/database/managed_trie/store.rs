@@ -82,42 +82,49 @@ where
         span.emit_value(depth as u64);
         let mut i = 0;
         while let Some(current_node_update) = current_node_updates.get_mut(i) {
-            let current_node: &T = current_node_update
+            let next_store_action = current_node_update
                 .node
                 .as_ref()
                 .map(|guard| &***guard)
-                .unwrap_or(&empty_node);
-            match current_node.next_store_action(
-                // The `updates` passed into store were converted to a Cow::Borrowed so all split
-                // updates are also borrowed which means the clone is cheap.
-                current_node_update.updates.clone(),
-                depth,
-                current_node_update.node_id,
-            )? {
-                StoreAction::Store(stores) => {
-                    // Clone the node if we are in archive mode and the node is not new and not the
-                    // empty node.
-                    if is_archive
-                        && !current_node_update.is_new
-                        && !current_node_update.node_id.is_empty_id()
-                    {
-                        current_node_update.node_id = manager.add((*current_node).clone())?;
-                        current_node_update.node =
-                            Some(manager.get_write_access(current_node_update.node_id)?);
-                        if let Some(index) = current_node_update.parent_index {
-                            parent_node_updates[index]
-                                .node
-                                .as_mut()
-                                .unwrap()
-                                .replace_child(
-                                    current_node_update.updates.first_key(),
-                                    depth - 1,
-                                    current_node_update.node_id,
-                                )?;
-                        } else {
-                            **root_id.as_mut().unwrap() = current_node_update.node_id;
-                        }
+                .unwrap_or(&empty_node)
+                .next_store_action(
+                    // The `updates` passed into store were converted to a Cow::Borrowed so all
+                    // split updates are also borrowed which means the clone is
+                    // cheap.
+                    current_node_update.updates.clone(),
+                    depth,
+                    current_node_update.node_id,
+                )?;
+            // Clones the node if we are in archive mode and the node is not new and not the
+            // empty node.
+            let mut clone_if_archive = || -> BTResult<(), Error> {
+                if is_archive
+                    && !current_node_update.is_new
+                    && !current_node_update.node_id.is_empty_id()
+                {
+                    current_node_update.node_id =
+                        manager.add((*current_node_update.node.as_ref().unwrap()).clone())?;
+                    current_node_update.node =
+                        Some(manager.get_write_access(current_node_update.node_id)?);
+                    if let Some(index) = current_node_update.parent_index {
+                        parent_node_updates[index]
+                            .node
+                            .as_mut()
+                            .unwrap()
+                            .replace_child(
+                                current_node_update.updates.first_key(),
+                                depth - 1,
+                                current_node_update.node_id,
+                            )?;
+                    } else {
+                        **root_id.as_mut().unwrap() = current_node_update.node_id;
                     }
+                }
+                Ok(())
+            };
+            match next_store_action {
+                StoreAction::Store(stores) => {
+                    clone_if_archive()?;
                     let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
@@ -137,29 +144,7 @@ where
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
-                    // Clone the node if we are in archive mode and the node is not new and not the
-                    // empty node.
-                    if is_archive
-                        && !current_node_update.is_new
-                        && !current_node_update.node_id.is_empty_id()
-                    {
-                        current_node_update.node_id = manager.add((*current_node).clone())?;
-                        current_node_update.node =
-                            Some(manager.get_write_access(current_node_update.node_id)?);
-                        if let Some(index) = current_node_update.parent_index {
-                            parent_node_updates[index]
-                                .node
-                                .as_mut()
-                                .unwrap()
-                                .replace_child(
-                                    current_node_update.updates.first_key(),
-                                    depth - 1,
-                                    current_node_update.node_id,
-                                )?;
-                        } else {
-                            **root_id.as_mut().unwrap() = current_node_update.node_id;
-                        }
-                    }
+                    clone_if_archive()?;
                     let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
