@@ -140,7 +140,7 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     #[allow(clippy::needless_lifetimes)]
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
-        if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(update, &self.embedding) {
+        if let Ok(update) = KeyedUpdateBatch::try_from_with_embedding(&update, &self.embedding) {
             self.trie.store(&update)?;
         }
 
