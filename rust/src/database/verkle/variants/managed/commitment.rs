@@ -200,11 +200,11 @@ pub fn update_commitments(
 
                     if vc.initialized == 0 {
                         vc.commitment = Commitment::new(&scalars);
-                        vc.initialized = 1;
                     }
                 }
             }
 
+            vc.initialized = 1;
             vc.dirty = 0;
             vc.changed_indices.fill(0);
             lock.set_commitment(vc)?;
@@ -385,6 +385,7 @@ mod tests {
             let leaf_node_commitment = manager.get_read_access(leaf_id).unwrap().get_commitment();
             assert_eq!(leaf_node_commitment.commitment, expected_leaf_commitment);
             assert!(!leaf_node_commitment.is_dirty());
+            assert_eq!(leaf_node_commitment.initialized, 1);
             assert!(leaf_node_commitment.changed_indices.iter().all(|&b| b == 0));
         }
 
@@ -392,6 +393,7 @@ mod tests {
             let inner_node_commitment = manager.get_read_access(inner_id).unwrap().get_commitment();
             assert_eq!(inner_node_commitment.commitment, expected_inner_commitment);
             assert!(!inner_node_commitment.is_dirty());
+            assert_eq!(inner_node_commitment.initialized, 1);
             assert!(
                 inner_node_commitment
                     .changed_indices
@@ -404,6 +406,7 @@ mod tests {
             let root_node_commitment = manager.get_read_access(root_id).unwrap().get_commitment();
             assert_eq!(root_node_commitment.commitment, expected_root_commitment);
             assert!(!root_node_commitment.is_dirty());
+            assert_eq!(root_node_commitment.initialized, 1);
             assert!(root_node_commitment.changed_indices.iter().all(|&b| b == 0));
         }
 
