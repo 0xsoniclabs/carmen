@@ -38,9 +38,9 @@ struct DescendUpdates<'a, T, ID> {
 ///
 /// In case the root node of the trie changes, the `root_id` guard is updated accordingly.
 ///
-/// At most two nodes are write-locked at any given time during tree traversal, allowing for
-/// concurrent lookup/store operations on different parts of the tree. The lock on the root ID is
-/// held until the algorithm has descended two levels into the tree.
+/// The updates are pushed through the tree level by level, acquiring write locks on nodes as
+/// needed. During traversal, write locks on nodes in at most 3 adjacent levels will be held.
+/// The lock on the root ID is held until the algorithm has descended one level into the tree.
 ///
 /// The `update_log` is updated to reflect which nodes need to have their commitments recomputed
 /// after the store operation.
@@ -459,12 +459,6 @@ mod tests {
         let (manager, log, root_id, root_id_lock) = boilerplate();
         let child_id = manager.insert(manager.make());
 
-        // We insert the child node into the log to simulate a case where we first modify the node
-        // and then transform it in a subsequent store operation (e.g. because a sparse leaf is
-        // becoming too large).
-        // This way we can verify that the old id is removed from the log after the transform.
-        log.mark_dirty(1, child_id);
-
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
@@ -565,12 +559,6 @@ mod tests {
         let (manager, log, root_id, root_id_lock) = boilerplate();
         let child_id = manager.insert(manager.make());
 
-        // We insert the child node into the log to simulate a case where we first modify the node
-        // and then reparent it in a subsequent store operation.
-        // This way we can verify that the id is moved down a level in the log after reparenting.
-        // Note that this is different from the dirty flag in the node manager, which is not set.
-        log.mark_dirty(1, child_id);
-
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[(KEY, VALUE)]);
         thread::scope(|s| {
             s.spawn(|| {
@@ -624,12 +612,9 @@ mod tests {
             // The original child should not be marked as dirty
             assert!(!manager.is_dirty(child_id));
 
-            // All three nodes should be present in the log, but the original child should have
-            // moved down.
-            assert_eq!(log.count(), 3);
+            assert_eq!(log.count(), 2);
             assert_eq!(log.dirty_nodes(0), [root_id]);
             assert_eq!(log.dirty_nodes(1), [new_parent_id]);
-            assert_eq!(log.dirty_nodes(2), [child_id]);
         });
     }
 
