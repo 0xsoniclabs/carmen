@@ -99,8 +99,8 @@ where
             // empty node.
             let mut clone_if_archive = || -> BTResult<(), Error> {
                 if is_archive
-                    && !current_node_update.is_new
                     && !current_node_update.node_id.is_empty_id()
+                    && !current_node_update.is_new
                 {
                     current_node_update.node_id =
                         manager.add((*current_node_update.node.as_ref().unwrap()).clone())?;
