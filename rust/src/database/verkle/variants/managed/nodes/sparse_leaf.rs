@@ -135,10 +135,11 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
                 })
                 .sum::<usize>()
                 + 1;
+            let dirty_index = self.commitment.is_dirty().then_some(index);
             let inner = make_smallest_inner_node_for(
                 slots,
                 &[self_child],
-                &VerkleCommitment::from_existing(&self.commitment),
+                &VerkleCommitment::from_existing(&self.commitment, dirty_index),
             )?;
             return Ok(StoreAction::HandleReparent(inner));
         }
@@ -464,7 +465,33 @@ mod tests {
                     VerkleIdWithIndex::get_slot_for(&inner.children, STEM[divergence_at]).unwrap();
                 assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
+                assert_ne!(inner.get_commitment(), VerkleCommitment::default());
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
+            }
+            _ => panic!("expected HandleReparent with inner node"),
+        }
+    }
+
+    #[rstest_reuse::apply(different_leaf_sizes)]
+    fn sparse_leaf_with_dirty_commitment_is_marked_as_changed_in_new_parent(
+        #[case] mut node: Box<dyn VerkleManagedTrieNode<Value>>,
+        #[values(true, false)] leaf_is_dirty: bool,
+    ) {
+        let mut commitment = VerkleCommitment::default();
+        if leaf_is_dirty {
+            commitment.store(123, Value::from_index_values(99, &[]));
+            node.set_commitment(commitment).unwrap();
+        }
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[([99; 32], Value::default())]);
+        match node
+            .next_store_action(updates, 0, VerkleNodeId::default())
+            .unwrap()
+        {
+            StoreAction::HandleReparent(VerkleNode::Inner9(inner)) => {
+                assert_eq!(
+                    inner.get_commitment().index_changed(STEM[0] as usize),
+                    leaf_is_dirty
+                );
             }
             _ => panic!("expected HandleReparent with inner node"),
         }

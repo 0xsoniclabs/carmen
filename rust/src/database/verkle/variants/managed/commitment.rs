@@ -69,9 +69,14 @@ impl VerkleCommitment {
     /// however copies the existing commitment value. This allows to compute the delta between
     /// the commitment that used to be stored at this position, and the new commitment after
     /// it has been initialized.
-    pub fn from_existing(existing: &VerkleCommitment) -> Self {
+    pub fn from_existing(existing: &VerkleCommitment, dirty_index: Option<u8>) -> Self {
+        let mut changed_indices = [0u8; 256 / 8];
+        if let Some(index) = dirty_index {
+            changed_indices[index as usize / 8] |= 1 << (index as usize % 8);
+        }
         VerkleCommitment {
             commitment: existing.commitment,
+            changed_indices,
             ..Default::default()
         }
     }
@@ -82,6 +87,10 @@ impl VerkleCommitment {
 
     pub fn is_dirty(&self) -> bool {
         self.dirty != 0
+    }
+
+    pub fn index_changed(&self, index: usize) -> bool {
+        self.changed_indices[index / 8] & (1 << (index % 8)) != 0
     }
 }
 
@@ -109,7 +118,7 @@ impl TrieCommitment for VerkleCommitment {
     fn store(&mut self, index: usize, prev: Value) {
         // Since we want to compute the difference to the previously committed value,
         // we only set it the first time a new value is stored at this index.
-        if self.changed_indices[index / 8] & (1 << (index % 8)) == 0 {
+        if !self.index_changed(index) {
             self.changed_indices[index / 8] |= 1 << (index % 8);
             self.committed_values[index] = prev;
             self.dirty = 1;
@@ -185,7 +194,7 @@ pub fn update_commitments(
                             continue;
                         }
 
-                        if vc.changed_indices[i / 8] & (1 << (i % 8)) == 0 {
+                        if !vc.index_changed(i) {
                             continue;
                         }
 
@@ -230,7 +239,7 @@ mod tests {
     };
 
     #[test]
-    fn verkle_commitment_from_existing_copies_commitment() {
+    fn verkle_commitment_from_existing_copies_commitment_and_sets_changed_index() {
         let original = VerkleCommitment {
             commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
             committed_used_indices: [1u8; 256 / 8],
@@ -241,7 +250,8 @@ mod tests {
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
         };
-        let new = VerkleCommitment::from_existing(&original);
+
+        let new = VerkleCommitment::from_existing(&original, None);
         assert_eq!(new.commitment, original.commitment);
         assert_eq!(new.committed_used_indices, [0u8; 256 / 8]);
         assert_eq!(new.initialized, 0);
@@ -250,6 +260,12 @@ mod tests {
         assert_eq!(new.c1, Commitment::default());
         assert_eq!(new.c2, Commitment::default());
         assert_eq!(new.committed_values, [Value::default(); 256]);
+
+        let new = VerkleCommitment::from_existing(&original, Some(10));
+        assert_eq!(
+            new.changed_indices,
+            <[u8; 256 / 8]>::from_index_values(0, &[(1, 0b00000100)])
+        );
     }
 
     #[test]

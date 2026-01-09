@@ -89,10 +89,11 @@ impl ManagedTrieNode for FullLeafNode {
                 })
                 .sum::<usize>()
                 + 1;
+            let dirty_index = self.commitment.is_dirty().then_some(index);
             let inner = make_smallest_inner_node_for(
                 slots,
                 &[self_child],
-                &VerkleCommitment::from_existing(&self.commitment),
+                &VerkleCommitment::from_existing(&self.commitment, dirty_index),
             )?;
             return Ok(StoreAction::HandleReparent(inner));
         }
@@ -212,6 +213,7 @@ mod tests {
         commitment.store(123, Value::from_index_values(99, &[]));
         let node = FullLeafNode {
             stem: <[u8; 31]>::from_index_values(1, &[(divergence_at, 56)]),
+            commitment,
             ..Default::default()
         };
         let key = Key::from_index_values(1, &[(divergence_at, 97)]);
@@ -226,7 +228,37 @@ mod tests {
                 let slot = VerkleIdWithIndex::get_slot_for(&inner.children, 56).unwrap();
                 assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
+                assert_ne!(inner.get_commitment(), VerkleCommitment::default());
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
+            }
+            _ => panic!("expected HandleReparent with inner node"),
+        }
+    }
+
+    #[rstest::rstest]
+    fn leaf_with_dirty_commitment_is_marked_as_changed_in_new_parent(
+        #[values(true, false)] leaf_is_dirty: bool,
+    ) {
+        let mut commitment = VerkleCommitment::default();
+        if leaf_is_dirty {
+            commitment.store(123, Value::from_index_values(99, &[]));
+        }
+        let stem = [42; 31];
+        let node = FullLeafNode {
+            stem,
+            commitment,
+            ..Default::default()
+        };
+        let updates = KeyedUpdateBatch::from_key_value_pairs(&[([99; 32], Value::default())]);
+        match node
+            .next_store_action(updates, 0, VerkleNodeId::default())
+            .unwrap()
+        {
+            StoreAction::HandleReparent(VerkleNode::Inner9(inner)) => {
+                assert_eq!(
+                    inner.get_commitment().index_changed(stem[0] as usize),
+                    leaf_is_dirty
+                );
             }
             _ => panic!("expected HandleReparent with inner node"),
         }
