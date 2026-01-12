@@ -8,7 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use std::borrow::Cow;
+
+use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
     database::{
@@ -17,7 +19,7 @@ use crate::{
             KeyedUpdate,
             variants::managed::{
                 KeyedUpdateBatch, VerkleNode, VerkleNodeId,
-                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
                 nodes::{VerkleIdWithIndex, make_smallest_inner_node_for},
             },
         },
@@ -25,13 +27,13 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
-    types::{Key, Value},
+    types::{DiskRepresentable, Key, Value},
 };
 
 /// A leaf node with 256 children in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct FullLeafNode {
     pub stem: [u8; 31],
@@ -53,6 +55,50 @@ impl Default for FullLeafNode {
             values: [Value::default(); 256],
             commitment: VerkleCommitment::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Immutable, FromBytes, IntoBytes, Unaligned)]
+#[repr(C)]
+pub struct OnDiskFullLeafNode {
+    pub stem: [u8; 31],
+    pub values: [Value; 256],
+    pub commitment: OnDiskVerkleCommitment,
+}
+
+impl From<&FullLeafNode> for OnDiskFullLeafNode {
+    fn from(node: &FullLeafNode) -> Self {
+        OnDiskFullLeafNode {
+            stem: node.stem,
+            values: node.values,
+            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+        }
+    }
+}
+
+impl From<OnDiskFullLeafNode> for FullLeafNode {
+    fn from(node: OnDiskFullLeafNode) -> Self {
+        FullLeafNode {
+            stem: node.stem,
+            values: node.values,
+            commitment: VerkleCommitment::from(node.commitment),
+        }
+    }
+}
+
+impl DiskRepresentable for FullLeafNode {
+    fn from_disk_repr<E>(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        OnDiskFullLeafNode::from_disk_repr(read_into_buffer).map(Into::into)
+    }
+
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Owned(OnDiskFullLeafNode::from(self).to_disk_repr().into_owned())
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<OnDiskFullLeafNode>()
     }
 }
 
@@ -164,6 +210,28 @@ mod tests {
         assert_eq!(node.stem, [0; 31]);
         assert_eq!(node.values, [Value::default(); 256]);
         assert_eq!(node.commitment, VerkleCommitment::default());
+    }
+
+    #[test]
+    fn can_be_converted_to_and_from_on_disk_representation() {
+        let original_node = FullLeafNode {
+            values: array::from_fn(|i| Value::from_index_values(i as u8, &[])),
+            stem: <[u8; 31]>::from_index_values(5, &[]),
+            commitment: {
+                // We deliberately only create a default commitment, since this type does
+                // not preserve all of its fields when converting to/from on-disk representation.
+                let mut commitment = VerkleCommitment::default();
+                commitment.test_only_mark_as_initialized();
+                commitment
+            },
+        };
+        let disk_repr = original_node.to_disk_repr();
+        let deserialized_node = FullLeafNode::from_disk_repr::<()>(|buf| {
+            buf.copy_from_slice(&disk_repr);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(original_node, deserialized_node);
     }
 
     #[test]

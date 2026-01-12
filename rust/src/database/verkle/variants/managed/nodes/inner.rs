@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::borrow::Cow;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -17,7 +19,7 @@ use crate::{
             KeyedUpdateBatch,
             variants::managed::{
                 VerkleNode,
-                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                 },
@@ -27,13 +29,13 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
-    types::{Key, ToNodeKind, TreeId},
+    types::{DiskRepresentable, Key, ToNodeKind, TreeId},
 };
 
 /// An inner node in a managed Verkle trie.
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
-#[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct FullInnerNode {
     pub children: [VerkleNodeId; 256],
@@ -53,6 +55,50 @@ impl Default for FullInnerNode {
             children: [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256],
             commitment: VerkleCommitment::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Immutable, FromBytes, IntoBytes, Unaligned)]
+#[repr(C)]
+pub struct OnDiskFullInnerNode {
+    pub children: [VerkleNodeId; 256],
+    pub commitment: OnDiskVerkleCommitment,
+}
+
+impl From<&FullInnerNode> for OnDiskFullInnerNode {
+    fn from(node: &FullInnerNode) -> Self {
+        OnDiskFullInnerNode {
+            children: node.children,
+            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+        }
+    }
+}
+
+impl From<OnDiskFullInnerNode> for FullInnerNode {
+    fn from(node: OnDiskFullInnerNode) -> Self {
+        FullInnerNode {
+            children: node.children,
+            commitment: VerkleCommitment::from(node.commitment),
+        }
+    }
+}
+
+impl DiskRepresentable for FullInnerNode {
+    fn from_disk_repr<E>(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        OnDiskFullInnerNode::from_disk_repr(read_into_buffer).map(Into::into)
+    }
+
+    fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
+        Cow::Owned(OnDiskFullInnerNode::from(self).to_disk_repr().into_owned())
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<OnDiskFullInnerNode>()
     }
 }
 
@@ -151,6 +197,29 @@ mod tests {
             node.children,
             [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256]
         );
+    }
+
+    #[test]
+    fn can_be_converted_to_and_from_on_disk_representation() {
+        let original_node = FullInnerNode {
+            children: array::from_fn(|i| {
+                VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256)
+            }),
+            commitment: {
+                // We deliberately only create a default commitment, since this type does
+                // not preserve all of its fields when converting to/from on-disk representation.
+                let mut commitment = VerkleCommitment::default();
+                commitment.test_only_mark_as_initialized();
+                commitment
+            },
+        };
+        let disk_repr = original_node.to_disk_repr();
+        let deserialized_node = FullInnerNode::from_disk_repr::<()>(|buf| {
+            buf.copy_from_slice(&disk_repr);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(original_node, deserialized_node);
     }
 
     #[test]
