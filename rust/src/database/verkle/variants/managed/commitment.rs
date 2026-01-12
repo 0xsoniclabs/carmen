@@ -296,6 +296,9 @@ pub struct VerkleLeafCommitment {
     // TODO: This could be avoided by recomputing leaf commitments directly after storing values.
     // https://github.com/0xsoniclabs/sonic-admin/issues/542
     committed_values: [Value; 256],
+
+    /// The commitment has been restored from disk and needs to be recomputed.
+    restored: bool,
 }
 
 impl VerkleLeafCommitment {
@@ -325,6 +328,7 @@ impl Default for VerkleLeafCommitment {
             status: CommitmentStatus::Uninitialized,
             c1: Commitment::default(),
             c2: Commitment::default(),
+            restored: false,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
         }
@@ -354,11 +358,6 @@ impl TrieCommitment for VerkleLeafCommitment {
 pub struct OnDiskVerkleLeafCommitment {
     commitment: [u8; 32],
     committed_used_indices: [u8; 256 / 8],
-    // TODO: Instead of storing these, consider doing a full commitment recomputation
-    // after loading a leaf from disk.
-    // See https://github.com/0xsoniclabs/sonic-admin/issues/373
-    c1: [u8; 32],
-    c2: [u8; 32],
 }
 
 impl From<OnDiskVerkleLeafCommitment> for VerkleLeafCommitment {
@@ -366,9 +365,10 @@ impl From<OnDiskVerkleLeafCommitment> for VerkleLeafCommitment {
         VerkleLeafCommitment {
             commitment: Commitment::try_from_bytes(odvc.commitment).unwrap(), // FIXME Unwrap
             committed_used_indices: odvc.committed_used_indices,
-            c1: Commitment::try_from_bytes(odvc.c1).unwrap(), // FIXME Unwrap
-            c2: Commitment::try_from_bytes(odvc.c2).unwrap(), // FIXME Unwrap
             status: CommitmentStatus::Clean,
+            c1: Commitment::default(),
+            c2: Commitment::default(),
+            restored: true,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
         }
@@ -382,8 +382,6 @@ impl From<&VerkleLeafCommitment> for OnDiskVerkleLeafCommitment {
         OnDiskVerkleLeafCommitment {
             commitment: value.commitment.compress(),
             committed_used_indices: value.committed_used_indices,
-            c1: value.c1.compress(),
-            c2: value.c2.compress(),
         }
     }
 }
@@ -429,6 +427,26 @@ pub fn update_commitments(
                 VerkleCommitmentInput::Leaf(values, stem) => {
                     let _span = tracy_client::span!("leaf node");
                     let vc = vc.as_leaf()?;
+
+                    // If this commitment was just restored from disk, C1 and C2 are default
+                    // initialized and we need to do a full recomputation over all values.
+                    // TODO: Move this logic into VerkleCommitment? But we don't want to do it after
+                    // every restore (only if we are going to update)
+                    if vc.restored {
+                        vc.commitment = Commitment::default();
+                        // Reset committed values to default, since we want to compute the delta
+                        // against zero.
+                        vc.committed_values = [Value::default(); 256];
+
+                        // Mark all previously committed indices as changed, since we need to
+                        // commit to them again regardless of their value (could be zero).
+                        // vc.changed_indices = vc.committed_used_indices;
+                        for (i, indices) in vc.changed_indices.iter_mut().enumerate() {
+                            *indices |= vc.committed_used_indices[i];
+                        }
+                        vc.committed_used_indices.fill(0);
+                        vc.restored = false;
+                    }
 
                     compute_leaf_node_commitment(
                         vc.changed_indices,
@@ -510,6 +528,7 @@ mod tests {
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
+            restored: false,
         };
 
         let new = VerkleInnerCommitment::from_leaf(&original, None);
@@ -765,6 +784,7 @@ mod tests {
             c1: Commitment::new(&[Scalar::from(7)]),
             c2: Commitment::new(&[Scalar::from(11)]),
             committed_values: [[7u8; 32]; 256],
+            restored: false,
         };
         let on_disk_commitment: OnDiskVerkleLeafCommitment = (&original).into();
         let disk_repr = on_disk_commitment.to_disk_repr();
@@ -781,9 +801,10 @@ mod tests {
             VerkleLeafCommitment {
                 commitment: original.commitment,
                 committed_used_indices: original.committed_used_indices,
-                c1: original.c1,
-                c2: original.c2,
+                // c1: original.c1,
+                // c2: original.c2,
                 status: CommitmentStatus::Clean,
+                restored: true,
                 // The remaining fields are not preserved on disk
                 ..Default::default()
             }

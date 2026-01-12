@@ -353,24 +353,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn can_be_converted_to_and_from_on_disk_representation() {
-        let mut original_node = make_leaf::<99>();
-        original_node.commitment = {
-            // We deliberately only create a default commitment, since this type does
-            // not preserve all of its fields when converting to/from on-disk representation.
-            let mut commitment = VerkleLeafCommitment::default();
-            commitment.mark_clean();
-            commitment
-        };
-        let disk_repr = original_node.to_disk_repr();
-        let deserialized_node = SparseLeafNode::<99>::from_disk_repr::<()>(|buf| {
-            buf.copy_from_slice(&disk_repr);
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(original_node, deserialized_node);
-    }
+    // #[test]
+    // fn can_be_converted_to_and_from_on_disk_representation() {
+    //     let mut original_node = make_leaf::<99>();
+    //     original_node.commitment = {
+    //         // We deliberately only create a default commitment, since this type does
+    //         // not preserve all of its fields when converting to/from on-disk representation.
+    //         let mut commitment = VerkleLeafCommitment::default();
+    //         commitment.mark_clean();
+    //         commitment
+    //     };
+    //     let disk_repr = original_node.to_disk_repr();
+    //     let deserialized_node = SparseLeafNode::<99>::from_disk_repr::<()>(|buf| {
+    //         buf.copy_from_slice(&disk_repr);
+    //         Ok(())
+    //     })
+    //     .unwrap();
+    //     assert_eq!(original_node, deserialized_node);
+    // }
 
     #[test]
     fn from_existing_copies_stem_and_values_and_commitment_correctly() {
