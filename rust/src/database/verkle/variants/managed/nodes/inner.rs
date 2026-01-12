@@ -86,10 +86,7 @@ impl From<OnDiskFullInnerNode> for FullInnerNode {
 impl DiskRepresentable for FullInnerNode {
     fn from_disk_repr<E>(
         read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E>
-    where
-        Self: Sized,
-    {
+    ) -> Result<Self, E> {
         OnDiskFullInnerNode::from_disk_repr(read_into_buffer).map(Into::into)
     }
 

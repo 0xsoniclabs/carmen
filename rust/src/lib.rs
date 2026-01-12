@@ -407,7 +407,7 @@ mod tests {
             .unwrap();
 
         // Need to compute commitment so we are allowed to flush to disk
-        let _ = db.get_live_state().unwrap().get_hash();
+        db.get_live_state().unwrap().get_hash().unwrap();
 
         db.close().unwrap();
 
