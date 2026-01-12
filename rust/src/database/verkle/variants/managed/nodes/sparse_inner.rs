@@ -291,7 +291,7 @@ mod tests {
             // We deliberately only create a default commitment, since this type does
             // not preserve all of its fields when converting to/from on-disk representation.
             let mut commitment = VerkleCommitment::default();
-            commitment.test_only_mark_as_initialized();
+            commitment.test_only_mark_as_clean();
             commitment
         };
         let disk_repr = original_node.to_disk_repr();

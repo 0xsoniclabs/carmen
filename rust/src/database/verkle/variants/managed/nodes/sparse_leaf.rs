@@ -357,7 +357,7 @@ mod tests {
             // We deliberately only create a default commitment, since this type does
             // not preserve all of its fields when converting to/from on-disk representation.
             let mut commitment = VerkleCommitment::default();
-            commitment.test_only_mark_as_initialized();
+            commitment.test_only_mark_as_clean();
             commitment
         };
         let disk_repr = original_node.to_disk_repr();
@@ -546,10 +546,10 @@ mod tests {
         #[values(true, false)] leaf_is_dirty: bool,
     ) {
         let mut commitment = VerkleCommitment::default();
-        if leaf_is_dirty {
-            commitment.store(123, Value::from_index_values(99, &[]));
-            node.set_commitment(commitment).unwrap();
+        if !leaf_is_dirty {
+            commitment.test_only_mark_as_clean();
         }
+        node.set_commitment(commitment).unwrap();
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[([99; 32], Value::default())]);
         match node
             .next_store_action(updates, 0, VerkleNodeId::default())
