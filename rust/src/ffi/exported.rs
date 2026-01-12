@@ -337,8 +337,7 @@ unsafe extern "C" fn Carmen_Rust_ReleaseState(state: *mut c_void) -> bindings::R
 }
 
 /// Retrieves the last block number of the blockchain and writes it into `out_block`. If there are
-/// no blocks yet, -1 is written. If this method is called on a database without an archive state,
-/// the semantics are undefined. The implementation may write an arbitrary value or return an error.
+/// no blocks yet, -1 is written.
 ///
 /// # Safety
 /// - `db` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn

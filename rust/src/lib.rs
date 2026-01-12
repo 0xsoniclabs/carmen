@@ -146,9 +146,7 @@ pub trait CarmenDb: Send + Sync {
     /// provided state.
     fn get_archive_state(&self, block: u64) -> BTResult<Box<dyn CarmenState>, Error>;
 
-    /// Retrieves the last block number of the blockchain. If this method is called on a database
-    /// without an archive state, the semantics are undefined. The implementation may write an
-    /// arbitrary value or return an error.
+    /// Retrieves the last block number of the blockchain.
     fn get_archive_block_height(&self) -> BTResult<Option<u64>, Error>;
 
     /// Returns a summary of the used memory.
@@ -346,6 +344,12 @@ where
     }
 
     fn get_archive_block_height(&self) -> BTResult<Option<u64>, Error> {
+        if !self.live_state.is_archive() {
+            return Err(Error::UnsupportedOperation(
+                "get_archive_block_height is not supported for live only databases".to_string(),
+            )
+            .into());
+        }
         Ok(self.manager.highest_block_number()?)
     }
 
@@ -404,7 +408,7 @@ mod tests {
 
         db.close().unwrap();
 
-        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
         let live = db.get_live_state().unwrap();
         for address_idx in 0..2 * 256 {
             for key_idx in key_indices_offset..=key_indices_offset + address_idx {
@@ -466,7 +470,7 @@ mod tests {
     #[test]
     fn carmen_s6_file_based_db_checkpoint_returns_error() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
 
         let result = db.checkpoint();
         assert_eq!(
@@ -481,7 +485,7 @@ mod tests {
     #[test]
     fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
         let _live_state = db.get_live_state().unwrap();
 
         let result = db.close();
@@ -491,6 +495,20 @@ mod tests {
                 Error::CorruptedState("node manager reference count is not 1 on close".to_owned())
                     .into()
             )
+        );
+    }
+
+    #[test]
+    fn carmen_s6_file_based_db_get_archive_block_height_fails_in_live_only_mode() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
+        let result = db.get_archive_block_height();
+        assert_eq!(
+            result,
+            Err(Error::UnsupportedOperation(
+                "get_archive_block_height is not supported for live only databases".to_string(),
+            )
+            .into())
         );
     }
 }
