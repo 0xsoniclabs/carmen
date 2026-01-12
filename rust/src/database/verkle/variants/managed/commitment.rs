@@ -69,6 +69,18 @@ impl VerkleCommitment {
     /// however copies the existing commitment value. This allows to compute the delta between
     /// the commitment that used to be stored at this position, and the new commitment after
     /// it has been initialized.
+    ///
+    /// The concrete use case for this is reparenting a leaf node due to a stem mismatch when
+    /// inserting a value: A new inner node is created and the existing leaf is attached as
+    /// one of its children. The inner node's commitment is initialized from the existing leaf's
+    /// commitment, such that the original parent (now grandparent) of the leaf can correctly
+    /// update its commitment by computing the delta between the commitment of the leaf and
+    /// the commitment of the new inner node.
+    ///
+    /// The `dirty_index` parameter can be used to indicate that the reparented leaf node currently
+    /// has a dirty commitment. The index is expected to reflect the position where the leaf node
+    /// (= the only child) is attached. If set, the corresponding index in the new commitment's
+    /// `changed_indices` bitfield is marked as changed.
     pub fn from_existing(existing: &VerkleCommitment, dirty_index: Option<u8>) -> Self {
         let mut changed_indices = [0u8; 256 / 8];
         if let Some(index) = dirty_index {
