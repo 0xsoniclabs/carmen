@@ -36,7 +36,7 @@ use crate::{
     node_manager::NodeManager,
     statistics::node_count::NodeCountVisitor,
     storage::file::derive_deftly_template_FileStorageManager,
-    types::{HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
+    types::{HasDeltaVariant, HasEmptyNode, Key, NodeSize, ToNodeKind, Value},
 };
 
 pub mod empty;
@@ -172,6 +172,28 @@ impl VerkleNode {
     }
 }
 
+impl HasDeltaVariant for VerkleNode {
+    type Id = VerkleNodeId;
+
+    fn needs_full(&self) -> Option<Self::Id> {
+        if let VerkleNode::InnerDelta(n) = self {
+            Some(n.full_inner_node_id)
+        } else {
+            None
+        }
+    }
+
+    fn copy_from_full(&mut self, full: &Self) {
+        if let VerkleNode::InnerDelta(n) = self {
+            if let VerkleNode::Inner256(i) = full {
+                n.children = i.children;
+            } else {
+                panic!("expected the full node variant");
+            }
+        }
+    }
+}
+
 impl NodeVisitor<VerkleNode> for NodeCountVisitor {
     fn visit(&mut self, node: &VerkleNode, level: u64) -> BTResult<(), Error> {
         match node {
@@ -239,7 +261,33 @@ impl Default for VerkleNode {
     }
 }
 
-impl UnionManagedTrieNode for VerkleNode {}
+impl UnionManagedTrieNode for VerkleNode {
+    fn copy_on_write(&self, id: Self::Id, changed_children_indices: Vec<u8>) -> Self {
+        // Note: This method is only called in archive mode, so using the delta node is fine.
+        match self {
+            VerkleNode::Inner256(n) => {
+                if changed_children_indices.len() <= InnerDeltaNode::DELTA_SIZE {
+                    VerkleNode::InnerDelta(Box::new(InnerDeltaNode::from_full_inner(n, id)))
+                } else {
+                    VerkleNode::Inner256(n.clone())
+                }
+            }
+            VerkleNode::InnerDelta(n) => {
+                let enough_slots = ItemWithIndex::required_slot_count_for(
+                    &n.children_delta,
+                    changed_children_indices.into_iter(),
+                )
+                .is_none();
+                if enough_slots {
+                    VerkleNode::InnerDelta(n.clone())
+                } else {
+                    VerkleNode::Inner256(Box::new(FullInnerNode::from((**n).clone())))
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+}
 
 impl ManagedTrieNode for VerkleNode {
     type Union = VerkleNode;
@@ -883,6 +931,148 @@ mod tests {
         let slots =
             ItemWithIndex::required_slot_count_for(&items, [100, 101, 102, 103].into_iter());
         assert_eq!(slots, Some(6)); // 2 existing + 1 reused + 3 new
+    }
+
+    #[test]
+    fn needs_full_returns_id_of_full_node_if_is_delta_node() {
+        let full_inner_node_id = VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256);
+        let inner_delta = InnerDeltaNode {
+            children: [VerkleNodeId::default(); 256],
+            children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
+            full_inner_node_id,
+            commitment: VerkleCommitment::default(),
+        };
+        let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
+        assert_eq!(verkle_node.needs_full(), Some(full_inner_node_id));
+    }
+
+    #[test]
+    fn copy_from_full_copies_children_from_full_node_into_delta_node() {
+        let inner_children =
+            [VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner256); 256];
+        let full_node = VerkleNode::Inner256(Box::new(FullInnerNode {
+            children: inner_children,
+            commitment: VerkleCommitment::default(),
+        }));
+        let mut delta_node = VerkleNode::InnerDelta(Box::new(InnerDeltaNode {
+            children: [VerkleNodeId::default(); 256],
+            children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
+            full_inner_node_id: VerkleNodeId::default(),
+            commitment: VerkleCommitment::default(),
+        }));
+
+        delta_node.copy_from_full(&full_node);
+        assert!(matches!(delta_node, VerkleNode::InnerDelta(n) if n.children == inner_children));
+    }
+
+    #[test]
+    #[should_panic]
+    fn copy_from_full_panics_if_provided_node_is_not_a_full_node() {
+        let full_node = VerkleNode::Inner15(Box::new(Inner15VerkleNode {
+            children: [ItemWithIndex::default(); 15],
+            commitment: VerkleCommitment::default(),
+        }));
+        let mut delta_node = VerkleNode::InnerDelta(Box::new(InnerDeltaNode {
+            children: [VerkleNodeId::default(); 256],
+            children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
+            full_inner_node_id: VerkleNodeId::default(),
+            commitment: VerkleCommitment::default(),
+        }));
+
+        delta_node.copy_from_full(&full_node);
+    }
+
+    #[test]
+    fn copy_on_write_transforms_between_full_inner_and_inner_delta_depending_on_available_slots() {
+        const DELTA_SIZE: usize = InnerDeltaNode::DELTA_SIZE;
+
+        // full inner to full inner if more changes than delta size
+        for num_changed in [DELTA_SIZE + 1, DELTA_SIZE + 2] {
+            let full_inner = FullInnerNode::default();
+            let verkle_node = VerkleNode::Inner256(Box::new(full_inner));
+            let changed_children: Vec<u8> = (0..num_changed as u8).collect();
+            let cow_node = verkle_node.copy_on_write(
+                VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner256),
+                changed_children,
+            );
+            assert!(matches!(cow_node, VerkleNode::Inner256(_)));
+        }
+
+        // full inner to inner delta if less or equal changes than delta size
+        for num_changed in [0, 1, DELTA_SIZE - 1, DELTA_SIZE] {
+            let full_inner = FullInnerNode::default();
+            let verkle_node = VerkleNode::Inner256(Box::new(full_inner));
+            let changed_children: Vec<u8> = (0..num_changed as u8).collect();
+            let cow_node = verkle_node.copy_on_write(
+                VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner256),
+                changed_children,
+            );
+            assert!(matches!(cow_node, VerkleNode::InnerDelta(_)));
+        }
+
+        // inner delta to inner delta if enough slots
+        for (used_slots, new_slots) in [
+            (0, 0),
+            (1, DELTA_SIZE - 1),
+            (DELTA_SIZE - 1, 1),
+            (0, DELTA_SIZE),
+            (DELTA_SIZE, 0),
+            (DELTA_SIZE / 2, DELTA_SIZE / 2),
+        ] {
+            let mut children_delta = [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE];
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..used_slots {
+                children_delta[i] = ItemWithIndex {
+                    index: i as u8,
+                    item: VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256),
+                };
+            }
+            let inner_delta = InnerDeltaNode {
+                children: [VerkleNodeId::default(); 256],
+                children_delta,
+                full_inner_node_id: VerkleNodeId::default(),
+                commitment: VerkleCommitment::default(),
+            };
+            let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
+            let changed_children: Vec<u8> =
+                (used_slots as u8..(used_slots + new_slots) as u8).collect();
+            let cow_node = verkle_node.copy_on_write(
+                VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::InnerDelta),
+                changed_children,
+            );
+            assert!(matches!(cow_node, VerkleNode::InnerDelta(_)));
+        }
+
+        // inner delta to full inner if not enough slots
+        for (used_slots, new_slots) in [
+            (0, DELTA_SIZE + 1),
+            (1, DELTA_SIZE),
+            (DELTA_SIZE, 1),
+            (DELTA_SIZE / 2 + 1, DELTA_SIZE / 2 + 1),
+        ] {
+            let mut children_delta = [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE];
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..used_slots {
+                children_delta[i] = ItemWithIndex {
+                    index: i as u8,
+                    item: VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256),
+                };
+            }
+            let inner_delta = InnerDeltaNode {
+                children: [VerkleNodeId::default(); 256],
+                children_delta,
+                full_inner_node_id: VerkleNodeId::default(),
+                commitment: VerkleCommitment::default(),
+            };
+            let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
+            let changed_children: Vec<u8> =
+                (used_slots as u8..(used_slots + new_slots) as u8).collect();
+            let cow_node = verkle_node.copy_on_write(
+                VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::InnerDelta),
+                changed_children,
+            );
+            assert!(matches!(cow_node, VerkleNode::Inner256(_)));
+        }
     }
 
     /// A supertrait combining [`ManagedTrieNode`] and [`NodeAccess`] for use in rstest tests.

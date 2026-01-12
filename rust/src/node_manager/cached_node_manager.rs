@@ -23,7 +23,7 @@ use crate::{
     },
     storage::{Checkpointable, RootIdProvider, Storage},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    types::{HasEmptyId, HasEmptyNode},
+    types::{HasDeltaVariant, HasEmptyId, HasEmptyNode},
 };
 
 /// A wrapper which dereferences to `N` and additionally stores its dirty status,
@@ -171,7 +171,7 @@ impl<S> NodeManager for CachedNodeManager<S>
 where
     S: Storage + 'static,
     S::Id: Eq + Hash + Copy + HasEmptyId,
-    S::Item: Default + HasEmptyNode,
+    S::Item: Default + HasEmptyNode + HasDeltaVariant<Id = S::Id>,
 {
     type Id = S::Id;
     type Node = S::Item;
@@ -203,7 +203,11 @@ where
         }
 
         let lock = self.nodes.get_read_access_or_insert(id, || {
-            let node = self.storage.storage.get(id)?;
+            let mut node = self.storage.storage.get(id)?;
+            if let Some(full_id) = node.needs_full() {
+                let full = self.get_read_access(full_id)?;
+                node.copy_from_full(&**full);
+            }
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: false,
@@ -224,7 +228,11 @@ where
         }
 
         let lock = self.nodes.get_write_access_or_insert(id, || {
-            let node = self.storage.storage.get(id)?;
+            let mut node = self.storage.storage.get(id)?;
+            if let Some(full_id) = node.needs_full() {
+                let full = self.get_read_access(full_id)?;
+                node.copy_from_full(&**full);
+            }
             Ok(NodeWithMetadata {
                 node,
                 is_dirty: false,
@@ -293,7 +301,7 @@ mod tests {
     use std::path::Path;
 
     use mockall::{
-        mock,
+        Sequence, mock,
         predicate::{always, eq},
     };
 
@@ -302,7 +310,7 @@ mod tests {
         error::BTError,
         storage,
         types::tree_id::TreeId,
-        utils::test_nodes::{TestNode, TestNodeId},
+        utils::test_nodes::{DELTA_TEST_NODE, FULL_TEST_NODE_ID, TestNode, TestNodeId},
     };
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
@@ -380,6 +388,31 @@ mod tests {
         let manager = CachedNodeManager::new(10, storage, pin_nothing);
         let entry = get_method(&manager, id).unwrap();
         assert!(entry == expected_entry);
+    }
+
+    #[rstest_reuse::apply(get_method)]
+    fn cached_node_manager_get_methods_return_existing_delta_node_from_storage_and_full_node_from_cache_if_not_in_cache(
+        #[case] get_method: GetMethod,
+    ) {
+        let id = 0;
+        let mut storage = MockCachedNodeManagerStorage::new();
+        let mut sequence = Sequence::new();
+        storage
+            .expect_get()
+            .times(1)
+            .with(eq(id))
+            .returning(move |_| Ok(DELTA_TEST_NODE))
+            .in_sequence(&mut sequence);
+        storage
+            .expect_get()
+            .times(1)
+            .with(eq(FULL_TEST_NODE_ID))
+            .returning(move |_| Ok(0))
+            .in_sequence(&mut sequence);
+
+        let manager = CachedNodeManager::new(10, storage, pin_nothing);
+        let entry = get_method(&manager, id).unwrap();
+        assert!(entry == DELTA_TEST_NODE);
     }
 
     #[rstest_reuse::apply(get_method)]
