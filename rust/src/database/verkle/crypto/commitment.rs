@@ -13,25 +13,15 @@ use std::{ops::Add, sync::LazyLock};
 use ark_ff::{BigInteger, PrimeField};
 use banderwagon::{Element, Fr};
 use ipa_multipoint::committer::Committer;
-use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::database::verkle::crypto::{Scalar, window_signed_committer::WindowSignedCommitter};
 
 /// A vector commitment to a sequence of 256 scalar values, using the Pedersen commitment scheme
 /// on the Banderwagon curve.
-///
-/// Commitments can be de-/serialized from/to bytes using zerocopy.
-/// Note that not all byte arrays correspond to valid commitments, i.e., points in the Banderwagon
-/// prime subgroup. Performing any operations on invalid commitments will produce indeterminate
-/// results (garbage in, garbage out).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct Commitment {
-    // We store a byte representation to allow for easy serialization using zerocopy.
-    // TODO: Store `Element` directly once we have separate on-disk representations.
-    // TODO: Consider using compressed 32-byte on-disk representation to save space.
-    // https://github.com/0xsoniclabs/sonic-admin/issues/373
-    point_bytes: [u8; 64],
+    element: Element,
 }
 
 // Creating the committer is very expensive (in the order of seconds!), so we cache it.
@@ -47,11 +37,18 @@ impl Commitment {
         // Note: The compiler should be able to eliminate this allocation, because `Fr::from` is a
         // no-op. If this is not the case and performance critical, Scalar could be marked
         // `#[repr(transparent)]` and then `iter-map-collect` and be replaced by a `transmute`.
-        let point =
+        let element =
             COMMITTER.commit_lagrange(&values.iter().map(|v| Fr::from(*v)).collect::<Vec<Fr>>());
-        Commitment {
-            point_bytes: point.to_bytes_uncompressed(),
-        }
+        Commitment { element }
+    }
+
+    /// Reconstructs a commitment from its uncompressed 64-byte representation.
+    /// Note that not all byte sequences correspond to valid commitments, i.e., points in the
+    /// Banderwagon prime subgroup. Performing any operations on invalid commitments will
+    /// produce indeterminate results (garbage in, garbage out).
+    pub fn from_bytes(bytes: [u8; 64]) -> Self {
+        let element = Element::from_bytes_unchecked_uncompressed(bytes);
+        Commitment { element }
     }
 
     /// Updates the commitment by changing the value at the given index.
@@ -59,21 +56,21 @@ impl Commitment {
         let _span = tracy_client::span!("Commitment::update");
         let delta = Fr::from(new_value) - Fr::from(old_value);
         let delta_commitment = COMMITTER.scalar_mul(delta, index as usize);
-        self.point_bytes = (self.as_element() + delta_commitment).to_bytes_uncompressed();
+        self.element += delta_commitment;
     }
 
     /// Maps the commitment point to the Banderwagon scalar field,
     /// allowing it to be used as input to other commitments.
     pub fn to_scalar(self) -> Scalar {
         let _span = tracy_client::span!("Commitment::to_scalar");
-        Scalar::from(self.as_element().map_to_scalar_field())
+        Scalar::from(self.element.map_to_scalar_field())
     }
 
     /// Returns a hash corresponding to the commitment.
     /// Used for computing keys during Verkle trie state embedding.
     pub fn hash(&self) -> [u8; 32] {
         let _span = tracy_client::span!("Commitment::hash");
-        let scalar = self.as_element().map_to_scalar_field();
+        let scalar = self.element.map_to_scalar_field();
         scalar
             .into_bigint()
             .to_bytes_le()
@@ -84,11 +81,12 @@ impl Commitment {
     /// Returns a compressed 32-byte representation of the commitment.
     /// Used as the state root commitment in Verkle tries.
     pub fn compress(&self) -> [u8; 32] {
-        self.as_element().to_bytes()
+        self.element.to_bytes()
     }
 
-    fn as_element(&self) -> Element {
-        Element::from_bytes_unchecked_uncompressed(self.point_bytes)
+    /// Returns the uncompressed 64-byte representation of the commitment.
+    pub fn to_bytes(&self) -> [u8; 64] {
+        self.element.to_bytes_uncompressed()
     }
 }
 
@@ -96,31 +94,28 @@ impl Add<Self> for Commitment {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let sum_point = self.as_element() + rhs.as_element();
         Commitment {
-            point_bytes: sum_point.to_bytes_uncompressed(),
+            element: self.element + rhs.element,
         }
     }
 }
 
 impl From<Element> for Commitment {
     fn from(element: Element) -> Self {
-        Commitment {
-            point_bytes: element.to_bytes_uncompressed(),
-        }
+        Commitment { element }
     }
 }
 
 impl From<&Commitment> for Element {
     fn from(commitment: &Commitment) -> Self {
-        commitment.as_element()
+        commitment.element
     }
 }
 
 impl Default for Commitment {
     fn default() -> Self {
         Commitment {
-            point_bytes: Element::zero().to_bytes_uncompressed(),
+            element: Element::zero(),
         }
     }
 }
@@ -226,18 +221,18 @@ mod slow_tests {
         let values = vec![Scalar::from(12)];
         let commitment = Commitment::new(&values);
         let compressed = commitment.compress();
-        assert_eq!(compressed, commitment.as_element().to_bytes());
+        assert_eq!(compressed, commitment.element.to_bytes());
     }
 
     #[test]
     fn can_be_serialized_to_and_from_bytes() {
         let c1 = Commitment::new(&vec![Scalar::from(42); 256]);
         let c2 = Commitment::new(&vec![Scalar::from(33); 256]);
-        let c1_bytes = c1.as_bytes();
-        let c2_bytes = c2.as_bytes();
+        let c1_bytes = c1.to_bytes();
+        let c2_bytes = c2.to_bytes();
         assert_ne!(c1_bytes, c2_bytes);
-        let c1_from_bytes = Commitment::read_from_bytes(c1_bytes).unwrap();
-        let c2_from_bytes = Commitment::read_from_bytes(c2_bytes).unwrap();
+        let c1_from_bytes = Commitment::from_bytes(c1_bytes);
+        let c2_from_bytes = Commitment::from_bytes(c2_bytes);
         assert_eq!(c1, c1_from_bytes);
         assert_eq!(c2, c2_from_bytes);
     }
@@ -250,11 +245,10 @@ mod slow_tests {
         let compressed = Element::from_bytes_unchecked_uncompressed(random_bytes).to_bytes();
         assert!(Element::from_bytes(&compressed).is_none());
 
-        let mut c = Commitment::read_from_bytes(&random_bytes).unwrap();
+        let mut c = Commitment::from_bytes(random_bytes);
 
         // These calls should not panic
         c.update(0, Scalar::from(0), Scalar::from(1));
-        let _ = c.as_element();
         let _ = c.to_scalar();
         let _ = c.hash();
         let _ = c.compress();

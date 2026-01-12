@@ -158,22 +158,24 @@ impl TrieCommitment for VerkleCommitment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
 #[repr(C)]
 pub struct OnDiskVerkleCommitment {
-    commitment: Commitment,
+    // TODO: Consider using compressed 32-byte on-disk representation to save space.
+    // https://github.com/0xsoniclabs/sonic-admin/issues/373
+    commitment: [u8; 64],
     committed_used_indices: [u8; 256 / 8],
     // TODO: Instead of storing these, consider doing a full commitment recomputation
     // after loading a leaf from disk.
     // See https://github.com/0xsoniclabs/sonic-admin/issues/373
-    c1: Commitment,
-    c2: Commitment,
+    c1: [u8; 64],
+    c2: [u8; 64],
 }
 
 impl From<OnDiskVerkleCommitment> for VerkleCommitment {
     fn from(odvc: OnDiskVerkleCommitment) -> Self {
         VerkleCommitment {
-            commitment: odvc.commitment,
+            commitment: Commitment::from_bytes(odvc.commitment),
             committed_used_indices: odvc.committed_used_indices,
-            c1: odvc.c1,
-            c2: odvc.c2,
+            c1: Commitment::from_bytes(odvc.c1),
+            c2: Commitment::from_bytes(odvc.c2),
             status: CommitmentStatus::Clean,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
@@ -186,10 +188,10 @@ impl From<&VerkleCommitment> for OnDiskVerkleCommitment {
         assert_eq!(value.status, CommitmentStatus::Clean);
 
         OnDiskVerkleCommitment {
-            commitment: value.commitment,
+            commitment: value.commitment.to_bytes(),
             committed_used_indices: value.committed_used_indices,
-            c1: value.c1,
-            c2: value.c2,
+            c1: value.c1.to_bytes(),
+            c2: value.c2.to_bytes(),
         }
     }
 }
