@@ -22,8 +22,8 @@ use crate::{
                 VerkleNodeId,
                 commitment::{VerkleCommitment, VerkleCommitmentInput},
                 nodes::{
-                    empty::EmptyNode, inner::FullInnerNode, leaf::FullLeafNode,
-                    sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
+                    empty::EmptyNode, inner::FullInnerNode, inner_delta::InnerDeltaNode,
+                    leaf::FullLeafNode, sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
                 },
             },
         },
@@ -59,6 +59,7 @@ pub enum VerkleNode {
     Inner15(Box<Inner15VerkleNode>),
     Inner21(Box<Inner21VerkleNode>),
     Inner256(Box<Inner256VerkleNode>),
+    InnerDelta(Box<InnerDeltaVerkleNode>),
     Leaf1(Box<Leaf1VerkleNode>),
     Leaf2(Box<Leaf2VerkleNode>),
     Leaf5(Box<Leaf5VerkleNode>),
@@ -73,6 +74,7 @@ type Inner9VerkleNode = SparseInnerNode<9>;
 type Inner15VerkleNode = SparseInnerNode<15>;
 type Inner21VerkleNode = SparseInnerNode<21>;
 type Inner256VerkleNode = FullInnerNode;
+type InnerDeltaVerkleNode = InnerDeltaNode;
 type Leaf1VerkleNode = SparseLeafNode<1>;
 type Leaf2VerkleNode = SparseLeafNode<2>;
 type Leaf5VerkleNode = SparseLeafNode<5>;
@@ -115,6 +117,7 @@ impl VerkleNode {
             VerkleNode::Inner15(n) => n.get_commitment_input(),
             VerkleNode::Inner21(n) => n.get_commitment_input(),
             VerkleNode::Inner256(n) => n.get_commitment_input(),
+            VerkleNode::InnerDelta(n) => n.get_commitment_input(),
             VerkleNode::Leaf1(n) => n.get_commitment_input(),
             VerkleNode::Leaf2(n) => n.get_commitment_input(),
             VerkleNode::Leaf5(n) => n.get_commitment_input(),
@@ -131,6 +134,7 @@ impl VerkleNode {
             VerkleNode::Inner15(n) => Some(n.deref()),
             VerkleNode::Inner21(n) => Some(n.deref()),
             VerkleNode::Inner256(n) => Some(n.deref()),
+            VerkleNode::InnerDelta(n) => Some(n.deref()),
             _ => None,
         }
     }
@@ -173,6 +177,7 @@ impl NodeVisitor<VerkleNode> for NodeCountVisitor {
             VerkleNode::Inner15(n) => self.visit(n.deref(), level),
             VerkleNode::Inner21(n) => self.visit(n.deref(), level),
             VerkleNode::Inner256(n) => self.visit(n.deref(), level),
+            VerkleNode::InnerDelta(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf1(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf2(n) => self.visit(n.deref(), level),
             VerkleNode::Leaf5(n) => self.visit(n.deref(), level),
@@ -194,6 +199,7 @@ impl ToNodeKind for VerkleNode {
             VerkleNode::Inner15(_) => Some(VerkleNodeKind::Inner15),
             VerkleNode::Inner21(_) => Some(VerkleNodeKind::Inner21),
             VerkleNode::Inner256(_) => Some(VerkleNodeKind::Inner256),
+            VerkleNode::InnerDelta(_) => Some(VerkleNodeKind::InnerDelta),
             VerkleNode::Leaf1(_) => Some(VerkleNodeKind::Leaf1),
             VerkleNode::Leaf2(_) => Some(VerkleNodeKind::Leaf2),
             VerkleNode::Leaf5(_) => Some(VerkleNodeKind::Leaf5),
@@ -244,6 +250,7 @@ impl ManagedTrieNode for VerkleNode {
             VerkleNode::Inner15(n) => n.lookup(key, depth),
             VerkleNode::Inner21(n) => n.lookup(key, depth),
             VerkleNode::Inner256(n) => n.lookup(key, depth),
+            VerkleNode::InnerDelta(n) => n.lookup(key, depth),
             VerkleNode::Leaf1(n) => n.lookup(key, depth),
             VerkleNode::Leaf2(n) => n.lookup(key, depth),
             VerkleNode::Leaf5(n) => n.lookup(key, depth),
@@ -265,6 +272,7 @@ impl ManagedTrieNode for VerkleNode {
             VerkleNode::Inner15(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Inner21(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Inner256(n) => n.next_store_action(updates, depth, self_id),
+            VerkleNode::InnerDelta(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Leaf1(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Leaf2(n) => n.next_store_action(updates, depth, self_id),
             VerkleNode::Leaf5(n) => n.next_store_action(updates, depth, self_id),
@@ -281,6 +289,7 @@ impl ManagedTrieNode for VerkleNode {
             VerkleNode::Inner15(n) => n.replace_child(key, depth, new),
             VerkleNode::Inner21(n) => n.replace_child(key, depth, new),
             VerkleNode::Inner256(n) => n.replace_child(key, depth, new),
+            VerkleNode::InnerDelta(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf1(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf2(n) => n.replace_child(key, depth, new),
             VerkleNode::Leaf5(n) => n.replace_child(key, depth, new),
@@ -297,6 +306,7 @@ impl ManagedTrieNode for VerkleNode {
             VerkleNode::Inner15(n) => n.store(update),
             VerkleNode::Inner21(n) => n.store(update),
             VerkleNode::Inner256(n) => n.store(update),
+            VerkleNode::InnerDelta(n) => n.store(update),
             VerkleNode::Leaf1(n) => n.store(update),
             VerkleNode::Leaf2(n) => n.store(update),
             VerkleNode::Leaf5(n) => n.store(update),
@@ -313,6 +323,7 @@ impl ManagedTrieNode for VerkleNode {
             VerkleNode::Inner15(n) => n.get_commitment(),
             VerkleNode::Inner21(n) => n.get_commitment(),
             VerkleNode::Inner256(n) => n.get_commitment(),
+            VerkleNode::InnerDelta(n) => n.get_commitment(),
             VerkleNode::Leaf1(n) => n.get_commitment(),
             VerkleNode::Leaf2(n) => n.get_commitment(),
             VerkleNode::Leaf5(n) => n.get_commitment(),
@@ -329,6 +340,7 @@ impl ManagedTrieNode for VerkleNode {
             VerkleNode::Inner15(n) => n.set_commitment(cache),
             VerkleNode::Inner21(n) => n.set_commitment(cache),
             VerkleNode::Inner256(n) => n.set_commitment(cache),
+            VerkleNode::InnerDelta(n) => n.set_commitment(cache),
             VerkleNode::Leaf1(n) => n.set_commitment(cache),
             VerkleNode::Leaf2(n) => n.set_commitment(cache),
             VerkleNode::Leaf5(n) => n.set_commitment(cache),
@@ -349,6 +361,7 @@ pub enum VerkleNodeKind {
     Inner15,
     Inner21,
     Inner256,
+    InnerDelta,
     Leaf1,
     Leaf2,
     Leaf5,
@@ -375,6 +388,9 @@ impl NodeSize for VerkleNodeKind {
             }
             VerkleNodeKind::Inner256 => {
                 std::mem::size_of::<Box<FullInnerNode>>() + std::mem::size_of::<FullInnerNode>()
+            }
+            VerkleNodeKind::InnerDelta => {
+                std::mem::size_of::<Box<InnerDeltaNode>>() + std::mem::size_of::<InnerDeltaNode>()
             }
             VerkleNodeKind::Leaf1 => {
                 std::mem::size_of::<Box<SparseLeafNode<1>>>()
@@ -518,7 +534,8 @@ pub fn make_smallest_leaf_node_for(
         VerkleNodeKind::Inner9
         | VerkleNodeKind::Inner15
         | VerkleNodeKind::Inner21
-        | VerkleNodeKind::Inner256 => Err(Error::CorruptedState(
+        | VerkleNodeKind::Inner256
+        | VerkleNodeKind::InnerDelta => Err(Error::CorruptedState(
             "received non-leaf type in make_smallest_leaf_node_for".to_owned(),
         )
         .into()),
@@ -553,6 +570,10 @@ pub fn make_smallest_inner_node_for(
             }
             Ok(VerkleNode::Inner256(Box::new(new_inner)))
         }
+        VerkleNodeKind::InnerDelta => Err(Error::CorruptedState(
+            "InnerDelta is not a valid choice for make_smallest_inner_node_for".to_owned(),
+        )
+        .into()),
         VerkleNodeKind::Leaf1
         | VerkleNodeKind::Leaf2
         | VerkleNodeKind::Leaf5

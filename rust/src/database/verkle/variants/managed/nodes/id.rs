@@ -42,6 +42,8 @@ impl VerkleNodeId {
     const LEAF_NODE_146_PREFIX: u64 = 0x0000_9000_0000_0000;
     const LEAF_NODE_256_PREFIX: u64 = 0x0000_A000_0000_0000;
 
+    const INNER_DELTA_NODE_PREFIX: u64 = 0x0000_B000_0000_0000;
+
     const PREFIX_MASK: u64 = 0x0000_F000_0000_0000;
     const INDEX_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
 
@@ -74,6 +76,7 @@ impl ToNodeKind for VerkleNodeId {
             Self::INNER_NODE_15_PREFIX => Some(VerkleNodeKind::Inner15),
             Self::INNER_NODE_21_PREFIX => Some(VerkleNodeKind::Inner21),
             Self::INNER_NODE_256_PREFIX => Some(VerkleNodeKind::Inner256),
+            Self::INNER_DELTA_NODE_PREFIX => Some(VerkleNodeKind::InnerDelta),
             Self::LEAF_NODE_1_PREFIX => Some(VerkleNodeKind::Leaf1),
             Self::LEAF_NODE_2_PREFIX => Some(VerkleNodeKind::Leaf2),
             Self::LEAF_NODE_5_PREFIX => Some(VerkleNodeKind::Leaf5),
@@ -101,6 +104,7 @@ impl TreeId for VerkleNodeId {
             VerkleNodeKind::Inner15 => Self::INNER_NODE_15_PREFIX,
             VerkleNodeKind::Inner21 => Self::INNER_NODE_21_PREFIX,
             VerkleNodeKind::Inner256 => Self::INNER_NODE_256_PREFIX,
+            VerkleNodeKind::InnerDelta => Self::INNER_DELTA_NODE_PREFIX,
             VerkleNodeKind::Leaf1 => Self::LEAF_NODE_1_PREFIX,
             VerkleNodeKind::Leaf2 => Self::LEAF_NODE_2_PREFIX,
             VerkleNodeKind::Leaf5 => Self::LEAF_NODE_5_PREFIX,
@@ -162,6 +166,7 @@ mod tests {
             (VerkleNodeKind::Inner15, 0x0000_2000_0000_0000),
             (VerkleNodeKind::Inner21, 0x0000_3000_0000_0000),
             (VerkleNodeKind::Inner256, 0x0000_4000_0000_0000),
+            (VerkleNodeKind::InnerDelta, 0x0000_B000_0000_0000),
             (VerkleNodeKind::Leaf1, 0x0000_5000_0000_0000),
             (VerkleNodeKind::Leaf2, 0x0000_6000_0000_0000),
             (VerkleNodeKind::Leaf5, 0x0000_7000_0000_0000),
@@ -212,6 +217,10 @@ mod tests {
             (
                 VerkleNodeId([0x40, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Inner256),
+            ),
+            (
+                VerkleNodeId([0xB0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::InnerDelta),
             ),
             (
                 VerkleNodeId([0x50, 0x00, 0x00, 0x00, 0x00, 0x2a]),
@@ -283,6 +292,10 @@ mod tests {
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Inner256),
                 VerkleNodeKind::Inner256,
+            ),
+            (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::InnerDelta),
+                VerkleNodeKind::InnerDelta,
             ),
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf1),
