@@ -26,6 +26,7 @@ use crate::{
     types::{HasEmptyId, Value},
 };
 
+/// The status of the commitment, indicating if and how it needs to be recomputed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitmentStatus {
     /// The commitment has never been computed.
@@ -102,9 +103,9 @@ impl VerkleCommitment {
         self.commitment
     }
 
-    /// Returns true if the commitment is dirty and needs to be recomputed.
-    pub fn is_dirty(&self) -> bool {
-        self.status == CommitmentStatus::Dirty || self.status == CommitmentStatus::Uninitialized
+    /// Returns true if the commitment is up-to-date and does not need to be recomputed.
+    pub fn is_clean(&self) -> bool {
+        self.status == CommitmentStatus::Clean
     }
 
     pub fn index_changed(&self, index: usize) -> bool {
@@ -343,24 +344,24 @@ mod tests {
     }
 
     #[test]
-    fn verkle_commitment_is_dirty_returns_correct_value() {
+    fn verkle_commitment_is_clean_returns_correct_value() {
         let vc = VerkleCommitment {
             status: CommitmentStatus::Clean,
             ..Default::default()
         };
-        assert!(!vc.is_dirty());
+        assert!(vc.is_clean());
 
         let vc = VerkleCommitment {
             status: CommitmentStatus::Uninitialized,
             ..Default::default()
         };
-        assert!(vc.is_dirty());
+        assert!(!vc.is_clean());
 
         let vc = VerkleCommitment {
             status: CommitmentStatus::Dirty,
             ..Default::default()
         };
-        assert!(vc.is_dirty());
+        assert!(!vc.is_clean());
     }
 
     #[test]

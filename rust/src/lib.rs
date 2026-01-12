@@ -96,7 +96,7 @@ pub fn open_carmen_db(
             #[cfg(feature = "storage-statistics")]
             let storage = StorageOperationLogger::try_new(storage, Path::new("."))?;
 
-            let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
+            let is_pinned = |node: &VerkleNode| !node.get_commitment().is_clean();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));
@@ -108,7 +108,7 @@ pub fn open_carmen_db(
         (b"file", b"file") => {
             let archive_dir = directory.join("archive");
             let storage = VerkleStorage::open(&archive_dir, DbMode::ReadWrite)?;
-            let is_pinned = |node: &VerkleNode| node.get_commitment().is_dirty();
+            let is_pinned = |node: &VerkleNode| !node.get_commitment().is_clean();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
             let manager = Arc::new(CachedNodeManager::new(1_000_000, storage, is_pinned));

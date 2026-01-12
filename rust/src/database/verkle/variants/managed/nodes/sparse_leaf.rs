@@ -180,7 +180,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
                 })
                 .sum::<usize>()
                 + 1;
-            let dirty_index = self.commitment.is_dirty().then_some(index);
+            let dirty_index = (!self.commitment.is_clean()).then_some(index);
             let inner = make_smallest_inner_node_for(
                 slots,
                 &[self_child],
