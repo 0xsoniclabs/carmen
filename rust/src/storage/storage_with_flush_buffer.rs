@@ -8,6 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+#[allow(clippy::disallowed_types)]
 use std::{cmp, path::Path, sync::atomic::AtomicBool as StdAtomicBool, time::Duration};
 
 use dashmap::DashMap;
@@ -272,6 +273,7 @@ enum Op<N> {
 #[derive(Debug)]
 struct OpWithStatus<N> {
     op: Op<N>,
+    #[allow(clippy::disallowed_types)]
     in_progress: StdAtomicBool,
 }
 
@@ -280,6 +282,7 @@ impl<N> OpWithStatus<N> {
     fn new(op: Op<N>) -> Self {
         OpWithStatus {
             op,
+            #[allow(clippy::disallowed_types)]
             in_progress: StdAtomicBool::new(false),
         }
     }
