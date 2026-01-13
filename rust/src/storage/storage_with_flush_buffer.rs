@@ -799,7 +799,7 @@ mod tests {
 
                 storage_with_flush_buffer.flush_workers.shutdown().unwrap();
             },
-            100,
+            1000,
         );
     }
 
@@ -828,7 +828,7 @@ mod tests {
                 let mut node2 = node.clone();
                 node2.0 = [1; _];
 
-                // Update the `node` with `id` to `node2`, which adds a set op to the flush buffer.
+                // Update the node with `id` to `node2`, which adds a set op to the flush buffer.
                 // The actual write out happens asynchronously in the flush worker.
                 storage_with_flush_buffer.set(id, &node2).unwrap();
 
@@ -839,7 +839,58 @@ mod tests {
 
                 storage_with_flush_buffer.flush_workers.shutdown().unwrap();
             },
-            100,
+            1000,
+        );
+    }
+
+    #[test]
+    fn shuttletest_operations_dont_get_lost_when_inserted_while_old_operation_is_processed() {
+        run_shuttle_check(
+            || {
+                let testdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+                // Use an actual storage as mockall does not use shuttle sync primitives, which we
+                // need to ensure context switches between shuttle threads.
+                let storage = Arc::new(
+                    NodeFileStorage::<_, SeekFile>::open(&testdir, DbMode::ReadWrite).unwrap(),
+                );
+                let node = NonEmpty1TestNode::default();
+                let id = storage.reserve(&node);
+                storage.set(id, &node).unwrap();
+
+                let flush_buffer = Arc::new(DashMap::new());
+                let flush_workers = FlushWorkers::new(&flush_buffer, &storage);
+                let storage_with_flush_buffer = StorageWithFlushBuffer {
+                    flush_buffer,
+                    storage,
+                    flush_workers,
+                };
+
+                let mut node2 = node.clone();
+                node2.0 = [1; _];
+
+                // Update the node with `id` to `node2`, which adds a set op to the flush buffer.
+                // The actual write out happens asynchronously in the flush worker.
+                storage_with_flush_buffer.set(id, &node2).unwrap();
+
+                let mut node3 = node.clone();
+                node3.0 = [2; _];
+
+                // Update the node with `id` to `node3`, which adds a set op to the flush buffer.
+                // The actual write out happens asynchronously in the flush worker.
+                thread::yield_now();
+                storage_with_flush_buffer.set(id, &node3).unwrap();
+
+                // Either the first set op was still in the flush buffer when the second set op was
+                // inserted and then overwritten by it or first set op was processed and removed and
+                // the second set op was inserted after that.
+                // The second set op is then either still in the flush buffer or the node has been
+                // updated to `node3` in the underlying storage layer.
+                thread::yield_now();
+                assert_eq!(storage_with_flush_buffer.get(id), Ok(node3));
+
+                storage_with_flush_buffer.flush_workers.shutdown().unwrap();
+            },
+            1000,
         );
     }
 
