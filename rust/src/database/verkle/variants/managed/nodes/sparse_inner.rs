@@ -37,7 +37,6 @@ use crate::{
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
 pub struct SparseInnerNode<const N: usize> {
     pub children: [VerkleIdWithIndex; N],
     pub commitment: VerkleCommitment,

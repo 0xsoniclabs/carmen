@@ -36,7 +36,6 @@ use crate::{
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
 pub struct FullInnerNode {
     pub children: [VerkleNodeId; 256],
     pub commitment: VerkleCommitment,

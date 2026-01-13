@@ -29,7 +29,6 @@ use crate::{
 /// The commitment of a managed verkle trie node, together with metadata required to recompute
 /// it after the node has been modified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C)]
 pub struct VerkleCommitment {
     /// The commitment of the node, or of the node previously at this position in the trie.
     commitment: Commitment,

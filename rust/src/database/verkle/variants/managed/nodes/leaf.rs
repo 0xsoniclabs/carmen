@@ -34,7 +34,6 @@ use crate::{
 // NOTE: Changing the layout of this struct will break backwards compatibility of the
 // serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
 pub struct FullLeafNode {
     pub stem: [u8; 31],
     pub values: [Value; 256],
