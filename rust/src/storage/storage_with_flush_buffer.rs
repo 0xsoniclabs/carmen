@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 #[allow(clippy::disallowed_types)]
-use std::{cmp, path::Path, sync::atomic::AtomicBool as StdAtomicBool, time::Duration};
+use std::{cmp, path::Path, sync::atomic::AtomicU8 as StdAtomicU8, time::Duration};
 
 use dashmap::DashMap;
 
@@ -92,12 +92,37 @@ where
 
     fn set(&self, id: Self::Id, node: &Self::Item) -> BTResult<(), Error> {
         self.flush_buffer
-            .insert(id, OpWithStatus::new(Op::Set(node.clone())));
+            .entry(id)
+            .and_modify(|entry| {
+                entry.op = Op::Set(node.clone());
+                // Dirty stays Dirty, InProgress becomes InProgressDirty, InProgressDirty stays
+                // InProgressDirty
+                let _ = entry.status.compare_exchange(
+                    Status::InProgress as u8,
+                    Status::InProgressDirty as u8,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+            })
+            .or_insert(OpWithStatus::new(Op::Set(node.clone())));
         Ok(())
     }
 
     fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
-        self.flush_buffer.insert(id, OpWithStatus::new(Op::Delete));
+        self.flush_buffer
+            .entry(id)
+            .and_modify(|entry| {
+                entry.op = Op::Delete;
+                // Dirty stays Dirty, InProgress becomes InProgressDirty, InProgressDirty stays
+                // InProgressDirty
+                let _ = entry.status.compare_exchange(
+                    Status::InProgress as u8,
+                    Status::InProgressDirty as u8,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+            })
+            .or_insert(OpWithStatus::new(Op::Delete));
         Ok(())
     }
 
@@ -214,8 +239,13 @@ impl FlushWorkers {
                 .iter()
                 .find(|entry| {
                     entry
-                        .in_progress
-                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .status
+                        .compare_exchange(
+                            Status::Dirty as u8,
+                            Status::InProgress as u8,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        )
                         .is_ok()
                 })
                 .map(|entry| (*entry.key(), entry.value().op.clone()));
@@ -238,7 +268,21 @@ impl FlushWorkers {
                         storage.delete(id)?;
                     }
                 }
-                flush_buffer.remove(&id);
+                if flush_buffer
+                    .remove_if(&id, |_, entry| {
+                        entry.status.load(Ordering::SeqCst) == Status::InProgress as u8
+                    })
+                    .is_none()
+                {
+                    // The status was not InProgress, meaning it was set to InProgressDirty while we
+                    // were processing the operation. Now that we are done, we need to set it back
+                    // to Dirty so that it gets processed again.
+                    flush_buffer
+                        .get_mut(&id)
+                        .unwrap()
+                        .status
+                        .store(Status::Dirty as u8, Ordering::SeqCst);
+                }
                 sleep_time = min_sleep_time;
             } else {
                 // the buffer is currently empty
@@ -269,12 +313,26 @@ enum Op<N> {
     Delete,
 }
 
+/// The status of an operation in the flush buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum Status {
+    // The operation is in the flush buffer and has not yet been processed by a flush worker.
+    Dirty = 0,
+    // The operation is currently being processed by a flush worker and since the flush worker
+    // picked it up, it has not been modified.
+    InProgress = 1,
+    // The operation is currently being processed by a flush worker, but since the flush worker
+    // picked it up, it has been modified.
+    InProgressDirty = 2,
+}
+
 /// An operation in the flush buffer along with its in-progress status.
 #[derive(Debug)]
 struct OpWithStatus<N> {
     op: Op<N>,
     #[allow(clippy::disallowed_types)]
-    in_progress: StdAtomicBool,
+    status: StdAtomicU8,
 }
 
 impl<N> OpWithStatus<N> {
@@ -283,7 +341,7 @@ impl<N> OpWithStatus<N> {
         OpWithStatus {
             op,
             #[allow(clippy::disallowed_types)]
-            in_progress: StdAtomicBool::new(false),
+            status: StdAtomicU8::new(Status::Dirty as u8),
         }
     }
 }
