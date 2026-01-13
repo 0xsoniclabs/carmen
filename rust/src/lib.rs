@@ -316,6 +316,9 @@ where
     }
 
     fn close(self: Box<Self>) -> BTResult<(), Error> {
+        // Ensure that we have no dirty commitments before flushing to disk
+        self.live_state.get_hash()?;
+
         // Release live state first, since it holds a reference to the manager
         drop(self.live_state);
         let manager = Arc::into_inner(self.manager).ok_or_else(|| {
@@ -405,9 +408,6 @@ mod tests {
             .unwrap()
             .apply_block_update(0, update)
             .unwrap();
-
-        // Need to compute commitment so we are allowed to flush to disk
-        db.get_live_state().unwrap().get_hash().unwrap();
 
         db.close().unwrap();
 
