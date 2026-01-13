@@ -10,7 +10,7 @@
 
 use std::{cmp, path::Path, time::Duration};
 
-use crossbeam_skiplist::SkipMap;
+use dashmap::DashMap;
 
 use crate::{
     error::BTResult,
@@ -52,7 +52,7 @@ where
 impl<S> Storage for StorageWithFlushBuffer<S>
 where
     S: Storage + 'static,
-    S::Id: std::hash::Hash + cmp::Ord + Send + Sync,
+    S::Id: std::hash::Hash + Eq + Send + Sync,
     S::Item: Clone + Send + Sync,
 {
     type Id = S::Id;
@@ -60,7 +60,7 @@ where
 
     fn open(path: &Path, db_mode: DbMode) -> BTResult<Self, Error> {
         let storage = Arc::new(S::open(path, db_mode)?);
-        let flush_buffer = Arc::new(SkipMap::new());
+        let flush_buffer = Arc::new(DashMap::new());
         let workers = FlushWorkers::new(&flush_buffer, &storage);
         Ok(StorageWithFlushBuffer {
             flush_buffer,
@@ -173,7 +173,7 @@ impl FlushWorkers {
     fn new<S>(flush_buffer: &Arc<FlushBuffer<S::Id, S::Item>>, storage: &Arc<S>) -> Self
     where
         S: Storage + Send + Sync + 'static,
-        S::Id: Eq + std::hash::Hash + Send + Sync + cmp::Ord,
+        S::Id: Eq + std::hash::Hash + Send + Sync,
         S::Item: Clone + Send + Sync,
     {
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -200,18 +200,20 @@ impl FlushWorkers {
     ) -> BTResult<(), Error>
     where
         S: Storage,
-        S::Id: std::hash::Hash + Send + Sync + cmp::Ord + 'static,
-        S::Item: Clone + Send + Sync + 'static,
+        S::Id: Eq + std::hash::Hash + Send + Sync,
+        S::Item: Clone + Send + Sync,
     {
         let min_sleep_time = Duration::from_millis(10);
         let max_sleep_time = Duration::from_secs(1);
         let mut sleep_time = min_sleep_time;
 
         loop {
-            if let Some((id, op)) = flush_buffer
-                .pop_back()
-                .map(|entry| (*entry.key(), entry.value().clone()))
-            {
+            let item = flush_buffer
+                .iter()
+                .next()
+                .map(|entry| (*entry.key(), entry.value().clone()));
+
+            if let Some((id, op)) = item {
                 match op {
                     Op::Set(node) => {
                         storage.set(id, &node)?;
@@ -229,6 +231,7 @@ impl FlushWorkers {
                         storage.delete(id)?;
                     }
                 }
+                flush_buffer.remove(&id);
                 sleep_time = min_sleep_time;
             } else {
                 // the buffer is currently empty
@@ -250,7 +253,7 @@ impl FlushWorkers {
     }
 }
 
-type FlushBuffer<ID, N> = SkipMap<ID, Op<N>>;
+type FlushBuffer<ID, N> = DashMap<ID, Op<N>>;
 
 /// An element in the flush buffer that can either be a set operation or a delete operation.
 #[derive(Debug, Clone)]
@@ -337,7 +340,7 @@ mod tests {
     #[test]
     fn get_returns_copy_of_node_if_present_as_set_op() {
         let storage = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -359,7 +362,7 @@ mod tests {
     #[test]
     fn get_returns_not_found_error_if_id_is_present_as_delete_op() {
         let storage = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -389,7 +392,7 @@ mod tests {
         });
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -413,7 +416,7 @@ mod tests {
             .returning(move |_| id);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -432,7 +435,7 @@ mod tests {
         let node = TestNode::NonEmpty1(Box::default());
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -454,7 +457,7 @@ mod tests {
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(MockStorage::new()),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -477,7 +480,7 @@ mod tests {
         mock_storage.expect_close().times(1).returning(|| Ok(()));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -500,7 +503,7 @@ mod tests {
             .returning(|| Ok(1));
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -559,7 +562,7 @@ mod tests {
             .times(1);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -586,7 +589,7 @@ mod tests {
             .times(1);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -612,7 +615,7 @@ mod tests {
             .times(1);
 
         let storage_with_flush_buffer = StorageWithFlushBuffer {
-            flush_buffer: Arc::new(SkipMap::new()),
+            flush_buffer: Arc::new(DashMap::new()),
             storage: Arc::new(mock_storage),
             flush_workers: FlushWorkers {
                 workers: Vec::new(),
@@ -628,7 +631,7 @@ mod tests {
 
     #[test]
     fn flush_workers_new_spawns_threads() {
-        let flush_buffer = Arc::new(SkipMap::new());
+        let flush_buffer = Arc::new(DashMap::new());
         let storage = Arc::new(MockStorage::new());
 
         let workers = FlushWorkers::new(&flush_buffer, &storage);
@@ -640,7 +643,7 @@ mod tests {
 
     #[test]
     fn flush_workers_task_calls_underlying_storage_layer_and_removes_elements_once_processed() {
-        let flush_buffer = Arc::new(SkipMap::new());
+        let flush_buffer = Arc::new(DashMap::new());
         let shutdown = Arc::new(AtomicBool::new(false));
 
         let mut storage = MockStorage::new();
@@ -717,7 +720,7 @@ mod tests {
                 let id = storage.reserve(&node);
                 storage.set(id, &node).unwrap();
 
-                let flush_buffer = Arc::new(SkipMap::new());
+                let flush_buffer = Arc::new(DashMap::new());
                 let workers = FlushWorkers::new(&flush_buffer, &storage.clone());
                 // This should call delete only once, and panic if two workers delete the same ID
                 flush_buffer.insert(id, Op::Delete);
@@ -742,7 +745,7 @@ mod tests {
                 let id = storage.reserve(&node);
                 storage.set(id, &node).unwrap();
 
-                let flush_buffer = Arc::new(SkipMap::new());
+                let flush_buffer = Arc::new(DashMap::new());
                 let flush_workers = FlushWorkers::new(&flush_buffer, &storage);
                 let storage_with_flush_buffer = StorageWithFlushBuffer {
                     flush_buffer,
@@ -784,7 +787,7 @@ mod tests {
                 let id = storage.reserve(&node);
                 storage.set(id, &node).unwrap();
 
-                let flush_buffer = Arc::new(SkipMap::new());
+                let flush_buffer = Arc::new(DashMap::new());
                 let flush_workers = FlushWorkers::new(&flush_buffer, &storage);
                 let storage_with_flush_buffer = StorageWithFlushBuffer {
                     flush_buffer,
