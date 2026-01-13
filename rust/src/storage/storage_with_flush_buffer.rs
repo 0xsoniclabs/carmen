@@ -26,11 +26,9 @@ use crate::{
 /// A storage backend that uses a flush buffer to hold updates and deletions while they get
 /// written to the underlying storage layer in background threads.
 ///
-/// Upon deletion, the id is deleted in the underlying storage layer first and then removed from the
-/// flush buffer. In case it was deleted in the underlying storage layer and reassigned by a
-/// concurrent task before the flush worker deleted it from the flush buffer, the
-/// `StorageWithFlushBuffer:reserve` method also deletes the id from the flush buffer. This way it
-/// is guaranteed that a reassigned id is not found in the flush buffer.
+/// Both updates and deletions are held in the buffer until until processing is complete.
+/// This ensures that queries can still find the operation in the flush buffer while it is being
+/// processed.
 ///
 /// Queries always check the flush buffer first. If the id is found there and it is an update, a
 /// copy of the node is returned, but the node is kept in the flush buffer. This ensures that
@@ -44,9 +42,8 @@ pub struct StorageWithFlushBuffer<S>
 where
     S: Storage,
 {
-    // Arc for shared ownership with flush worker threads
-    flush_buffer: Arc<FlushBuffer<S::Id, S::Item>>,
-    storage: Arc<S>, // Arc for shared ownership with flush worker threads
+    flush_buffer: Arc<FlushBuffer<S::Id, S::Item>>, // Arc for shared ownership with flush workers
+    storage: Arc<S>,                                // Arc for shared ownership with flush workers
     flush_workers: FlushWorkers,
 }
 
@@ -129,14 +126,6 @@ where
     }
 
     fn close(self) -> BTResult<(), Error> {
-        // Busy loop until all flush workers are done.
-        // Because there are no concurrent operations, len() might only return a number that is
-        // higher that the actual number of items (in case an element of the flush buffer
-        // was removed by a flush worker while iterating over the shards). This is however not a
-        // problem because we will wait a little bit longer.
-        while !self.flush_buffer.is_empty() {
-            hint::spin_loop();
-        }
         self.flush_workers.shutdown()?;
         let storage = Arc::into_inner(self.storage).ok_or_else(|| {
             Error::Internal(
@@ -156,11 +145,16 @@ where
 {
     fn checkpoint(&self) -> BTResult<u64, Error> {
         // Busy loop until all flush workers are done.
-        // Because there are no concurrent operations, len() might only return a number that is
-        // higher that the actual number of items (in case an element of the flush buffer
-        // was removed by a flush worker while iterating over the shards). This is however not a
-        // problem because we will wait a little bit longer.
-        while !self.flush_buffer.is_empty() {}
+        // `is_empty` internally calls `len` which iterates over all shards and sums up their
+        // lengths. Because the shards are only locked one at a time, this number can be outdated as
+        // soon as a lock on a previous shared is released. But because there are no concurrent
+        // (insert) operations, `len()` can only return a number that is higher or equal to
+        // the actual number of items (in case an element of the flush buffer was removed by
+        // a flush worker while iterating over the shards) but not a number that is lower.
+        // This is not a problem because we will just wait a little bit longer.
+        while !self.flush_buffer.is_empty() {
+            hint::spin_loop();
+        }
         self.storage.checkpoint()
     }
 
@@ -237,6 +231,9 @@ impl FlushWorkers {
         let mut sleep_time = min_sleep_time;
 
         loop {
+            // Find an operation that is not already being processed, but leave it in the flush
+            // buffer until processing is complete. This ensures that queries can still
+            // find the operation in the flush buffer while it is being processed.
             let item = flush_buffer
                 .iter()
                 .find(|entry| {
@@ -253,22 +250,10 @@ impl FlushWorkers {
                 .map(|entry| (*entry.key(), entry.value().op.clone()));
 
             if let Some((id, op)) = item {
+                // Process the item.
                 match op {
-                    Op::Set(node) => {
-                        storage.set(id, &node)?;
-                    }
-                    Op::Delete => {
-                        // Delete the id in the underlying storage first, then remove it from the
-                        // flush buffer.
-                        // Once the id was deleted in the underlying storage layer, it may get
-                        // reused in a call to `reserve`.
-                        // For the case that the id was deleted in the storage layer and reassigned
-                        // by a concurrent task before the flush worker deleted it from the
-                        // flush buffer, `StorageWithFlushBuffer::reserve` also deletes the id
-                        // from the flush buffer. This way it is guaranteed, that a reassigned id
-                        // is not found in the flush buffer.
-                        storage.delete(id)?;
-                    }
+                    Op::Set(node) => storage.set(id, &node)?,
+                    Op::Delete => storage.delete(id)?,
                 }
                 if flush_buffer
                     .remove_if(&id, |_, entry| {
@@ -287,7 +272,7 @@ impl FlushWorkers {
                 }
                 sleep_time = min_sleep_time;
             } else {
-                // the buffer is currently empty
+                // There are no elements in the flush buffer that are not already being processed.
                 if shutdown.load(Ordering::SeqCst) {
                     return Ok(());
                 }
