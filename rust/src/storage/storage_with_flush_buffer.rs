@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{cmp, path::Path, time::Duration};
+use std::{cmp, path::Path, sync::atomic::AtomicBool as StdAtomicBool, time::Duration};
 
 use dashmap::DashMap;
 
@@ -71,7 +71,7 @@ where
 
     fn get(&self, id: Self::Id) -> BTResult<Self::Item, Error> {
         match self.flush_buffer.get(&id) {
-            Some(value) => match value.value() {
+            Some(value) => match &value.value().op {
                 Op::Set(node) => Ok(node.clone()),
                 Op::Delete => Err(Error::NotFound.into()),
             },
@@ -90,12 +90,13 @@ where
     }
 
     fn set(&self, id: Self::Id, node: &Self::Item) -> BTResult<(), Error> {
-        self.flush_buffer.insert(id, Op::Set(node.clone()));
+        self.flush_buffer
+            .insert(id, OpWithStatus::new(Op::Set(node.clone())));
         Ok(())
     }
 
     fn delete(&self, id: Self::Id) -> BTResult<(), Error> {
-        self.flush_buffer.insert(id, Op::Delete);
+        self.flush_buffer.insert(id, OpWithStatus::new(Op::Delete));
         Ok(())
     }
 
@@ -210,8 +211,13 @@ impl FlushWorkers {
         loop {
             let item = flush_buffer
                 .iter()
-                .next()
-                .map(|entry| (*entry.key(), entry.value().clone()));
+                .find(|entry| {
+                    entry
+                        .in_progress
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                })
+                .map(|entry| (*entry.key(), entry.value().op.clone()));
 
             if let Some((id, op)) = item {
                 match op {
@@ -253,13 +259,30 @@ impl FlushWorkers {
     }
 }
 
-type FlushBuffer<ID, N> = DashMap<ID, Op<N>>;
+type FlushBuffer<ID, N> = DashMap<ID, OpWithStatus<N>>;
 
 /// An element in the flush buffer that can either be a set operation or a delete operation.
 #[derive(Debug, Clone)]
 enum Op<N> {
     Set(N),
     Delete,
+}
+
+/// An operation in the flush buffer along with its in-progress status.
+#[derive(Debug)]
+struct OpWithStatus<N> {
+    op: Op<N>,
+    in_progress: StdAtomicBool,
+}
+
+impl<N> OpWithStatus<N> {
+    /// Creates a new `OpWithStatus` with the given operation and in-progress status set to false.
+    fn new(op: Op<N>) -> Self {
+        OpWithStatus {
+            op,
+            in_progress: StdAtomicBool::new(false),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -351,7 +374,9 @@ mod tests {
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
-        storage.flush_buffer.insert(id, Op::Set(node.clone()));
+        storage
+            .flush_buffer
+            .insert(id, OpWithStatus::new(Op::Set(node.clone())));
 
         let result = storage.get(id).unwrap();
         assert_eq!(result, node);
@@ -371,7 +396,9 @@ mod tests {
         };
 
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
-        storage.flush_buffer.insert(id, Op::Delete);
+        storage
+            .flush_buffer
+            .insert(id, OpWithStatus::new(Op::Delete));
 
         let result = storage.get(id);
         assert!(matches!(
@@ -448,7 +475,7 @@ mod tests {
         let entry = storage_with_flush_buffer.flush_buffer.get(&id);
         assert!(entry.is_some());
         let entry = entry.unwrap();
-        let value = entry.value();
+        let value = &entry.value().op;
         assert!(matches!(value, Op::Set(n) if n == &node));
     }
 
@@ -470,7 +497,7 @@ mod tests {
         let entry = storage_with_flush_buffer.flush_buffer.get(&id);
         assert!(entry.is_some());
         let entry = entry.unwrap();
-        let value = entry.value();
+        let value = &entry.value().op;
         assert!(matches!(value, Op::Delete));
     }
 
@@ -513,7 +540,7 @@ mod tests {
 
         storage_with_flush_buffer
             .flush_buffer
-            .insert(id, Op::Set(node.clone()));
+            .insert(id, OpWithStatus::new(Op::Set(node.clone())));
 
         let storage_with_flush_buffer = Arc::new(storage_with_flush_buffer);
 
@@ -661,13 +688,13 @@ mod tests {
         let id = TestNodeId::from_idx_and_node_kind(0, TestNodeKind::NonEmpty1);
         let node = TestNode::NonEmpty1(Box::default());
 
-        flush_buffer.insert(id, Op::Set(node.clone()));
+        flush_buffer.insert(id, OpWithStatus::new(Op::Set(node.clone())));
 
         // Allow the worker to process the set operation
         thread::sleep(Duration::from_millis(100));
         assert!(flush_buffer.is_empty());
 
-        flush_buffer.insert(id, Op::Delete);
+        flush_buffer.insert(id, OpWithStatus::new(Op::Delete));
 
         // Allow the worker to process the delete operation
         thread::sleep(Duration::from_millis(100));
@@ -723,7 +750,7 @@ mod tests {
                 let flush_buffer = Arc::new(DashMap::new());
                 let workers = FlushWorkers::new(&flush_buffer, &storage.clone());
                 // This should call delete only once, and panic if two workers delete the same ID
-                flush_buffer.insert(id, Op::Delete);
+                flush_buffer.insert(id, OpWithStatus::new(Op::Delete));
 
                 workers.shutdown().unwrap();
             },
@@ -769,7 +796,7 @@ mod tests {
 
                 storage_with_flush_buffer.flush_workers.shutdown().unwrap();
             },
-            1000,
+            100,
         );
     }
 
@@ -809,7 +836,7 @@ mod tests {
 
                 storage_with_flush_buffer.flush_workers.shutdown().unwrap();
             },
-            1000,
+            100,
         );
     }
 
