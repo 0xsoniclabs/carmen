@@ -711,11 +711,7 @@ mod tests {
                 // Use an actual storage as mockall does not use shuttle sync primitives, which we
                 // need to ensure context switches between shuttle threads.
                 let storage = Arc::new(
-                    NodeFileStorage::<NonEmpty1TestNode, SeekFile>::open(
-                        &testdir,
-                        DbMode::ReadWrite,
-                    )
-                    .unwrap(),
+                    NodeFileStorage::<_, SeekFile>::open(&testdir, DbMode::ReadWrite).unwrap(),
                 );
                 let node = NonEmpty1TestNode::default();
                 let id = storage.reserve(&node);
@@ -729,6 +725,88 @@ mod tests {
                 workers.shutdown().unwrap();
             },
             100,
+        );
+    }
+
+    #[test]
+    fn shuttletest_deleted_nodes_are_not_found_when_queried() {
+        run_shuttle_check(
+            || {
+                let testdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+                // Use an actual storage as mockall does not use shuttle sync primitives, which we
+                // need to ensure context switches between shuttle threads.
+                let storage = Arc::new(
+                    NodeFileStorage::<_, SeekFile>::open(&testdir, DbMode::ReadWrite).unwrap(),
+                );
+                let node = NonEmpty1TestNode::default();
+                let id = storage.reserve(&node);
+                storage.set(id, &node).unwrap();
+
+                let flush_buffer = Arc::new(SkipMap::new());
+                let flush_workers = FlushWorkers::new(&flush_buffer, &storage);
+                let storage_with_flush_buffer = StorageWithFlushBuffer {
+                    flush_buffer,
+                    storage,
+                    flush_workers,
+                };
+
+                // Delete the `node` with `id`, which adds a delete op to the flush buffer.
+                // The actual deleting happens asynchronously in the flush worker.
+                storage_with_flush_buffer.delete(id).unwrap();
+
+                // Either the delete op is still in the flush buffer or the node has been deleted in
+                // the underlying storage layer.
+                thread::yield_now();
+                assert_eq!(
+                    storage_with_flush_buffer
+                        .get(id)
+                        .map_err(BTError::into_inner),
+                    Err(Error::NotFound)
+                );
+
+                storage_with_flush_buffer.flush_workers.shutdown().unwrap();
+            },
+            1000,
+        );
+    }
+
+    #[test]
+    fn shuttletest_newest_set_is_seen_when_queried() {
+        run_shuttle_check(
+            || {
+                let testdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+                // Use an actual storage as mockall does not use shuttle sync primitives, which we
+                // need to ensure context switches between shuttle threads.
+                let storage = Arc::new(
+                    NodeFileStorage::<_, SeekFile>::open(&testdir, DbMode::ReadWrite).unwrap(),
+                );
+                let node = NonEmpty1TestNode::default();
+                let id = storage.reserve(&node);
+                storage.set(id, &node).unwrap();
+
+                let flush_buffer = Arc::new(SkipMap::new());
+                let flush_workers = FlushWorkers::new(&flush_buffer, &storage);
+                let storage_with_flush_buffer = StorageWithFlushBuffer {
+                    flush_buffer,
+                    storage,
+                    flush_workers,
+                };
+
+                let mut node2 = node.clone();
+                node2.0 = [1; _];
+
+                // Update the `node` with `id` to `node2`, which adds a set op to the flush buffer.
+                // The actual write out happens asynchronously in the flush worker.
+                storage_with_flush_buffer.set(id, &node2).unwrap();
+
+                // Either the set op is still in the flush buffer or the node has been updated in
+                // the underlying storage layer.
+                thread::yield_now();
+                assert_eq!(storage_with_flush_buffer.get(id), Ok(node2));
+
+                storage_with_flush_buffer.flush_workers.shutdown().unwrap();
+            },
+            1000,
         );
     }
 
