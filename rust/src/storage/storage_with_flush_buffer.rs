@@ -336,7 +336,7 @@ struct OpWithStatus<N> {
 }
 
 impl<N> OpWithStatus<N> {
-    /// Creates a new `OpWithStatus` with the given operation and in-progress status set to false.
+    /// Creates a new `OpWithStatus` with the given operation and in-progress status set to dirty.
     fn new(op: Op<N>) -> Self {
         OpWithStatus {
             op,
