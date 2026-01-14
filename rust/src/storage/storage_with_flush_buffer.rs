@@ -83,10 +83,12 @@ where
     fn reserve(&self, node: &Self::Item) -> Self::Id {
         let id = self.storage.reserve(node);
         // The id may have been deleted in the underlying storage layer and reassigned here, but not
-        // yet removed from the flush buffer (racing against flush workers). In this case, we remove
-        // it from the flush buffer to ensure that the id no longer returns an
-        // [`Error::NotFound`].
-        self.flush_buffer.remove(&id);
+        // yet removed from the flush buffer (racing against flush workers). In this case, which is
+        // very rare, spin until the flush worker removed the id from the flush buffer to ensure
+        // that a query for the id no longer returns an [`Error::NotFound`].
+        while self.flush_buffer.contains_key(&id) {
+            hint::spin_loop();
+        }
         id
     }
 
