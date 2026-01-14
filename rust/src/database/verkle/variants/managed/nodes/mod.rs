@@ -860,7 +860,7 @@ mod tests {
         assert_eq!(slots, Some(6)); // 2 existing + 1 reused + 3 new
     }
 
-    /// A supertrait combining [`ManagedTrieNode`] and [`NodeHelperTrait`] for use in rstest tests.
+    /// A supertrait combining [`ManagedTrieNode`] and [`NodeAccess`] for use in rstest tests.
     pub trait VerkleManagedTrieNode<T>:
         ManagedTrieNode<Union = VerkleNode, Id = VerkleNodeId, Commitment = VerkleCommitment>
         + NodeAccess<T>
@@ -877,6 +877,8 @@ mod tests {
         T: Clone + Copy + Default + PartialEq + Eq + FromBytes + IntoBytes + Immutable + Unaligned,
     {
         fn access_slot(&mut self, slot: usize) -> &mut ItemWithIndex<T>;
+
+        fn access_stem(&mut self) -> Option<&mut [u8; 31]>;
 
         fn get_commitment_input(&self) -> VerkleCommitmentInput;
     }

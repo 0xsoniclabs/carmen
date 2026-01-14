@@ -468,6 +468,10 @@ mod tests {
             &mut self.children[slot % N]
         }
 
+        fn access_stem(&mut self) -> Option<&mut [u8; 31]> {
+            None
+        }
+
         fn get_commitment_input(&self) -> VerkleCommitmentInput {
             self.get_commitment_input().unwrap()
         }

@@ -173,6 +173,7 @@ where
                     i += 1;
                 }
                 StoreAction::HandleTransform(new_node) => {
+                    assert!(!current_node_update.is_new);
                     let new_id = manager.add(new_node).unwrap();
                     if let Some(index) = current_node_update.parent_index {
                         parent_node_updates[index]

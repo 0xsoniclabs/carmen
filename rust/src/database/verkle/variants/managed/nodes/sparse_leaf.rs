@@ -130,8 +130,8 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             };
             let slots = updates
                 .split(depth)
-                .map(|updates| {
-                    (self.stem[..depth as usize] != updates.first_key()[..depth as usize]) as usize
+                .map(|batch| {
+                    (self.stem[depth as usize] != batch.first_key()[depth as usize]) as usize
                 })
                 .sum::<usize>()
                 + 1;
@@ -247,6 +247,10 @@ mod tests {
         /// Returns a reference to the specified slot (modulo N).
         fn access_slot(&mut self, slot: usize) -> &mut ValueWithIndex {
             &mut self.values[slot % N]
+        }
+
+        fn access_stem(&mut self) -> Option<&mut [u8; 31]> {
+            Some(&mut self.stem)
         }
 
         fn get_commitment_input(&self) -> VerkleCommitmentInput {
@@ -499,18 +503,44 @@ mod tests {
 
     #[rstest_reuse::apply(different_leaf_sizes)]
     fn next_store_action_with_non_matching_stem_returns_parent_large_enough_for_all_updates(
-        #[case] node: Box<dyn VerkleManagedTrieNode<Value>>,
+        #[case] mut node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
+        let depth = 1;
+
+        // The updates has 9 batches that diverge at depth 1, but one of them has the same index as
+        // the leaf's stem, so an inner node with at least 9 slots is needed
+        *node.access_stem().unwrap() = [0; _];
         let updates = KeyedUpdateBatch::from_key_value_pairs(
-            &(1..=255)
-                .map(|i| (Key::from_index_values(i, &[]), Value::default()))
+            &(0..9)
+                .map(|i| (Key::from_index_values(0, &[(depth, i)]), Value::default()))
                 .collect::<Vec<_>>(),
         );
+
         let result = node
-            .next_store_action(updates.clone(), 1, VerkleNodeId::default())
+            .next_store_action(updates.clone(), depth as u8, VerkleNodeId::default())
             .unwrap();
         match result {
             StoreAction::HandleReparent(inner) => {
+                assert!(matches!(inner, VerkleNode::Inner9(_)));
+                // This new inner node is big enough to hold all leaves that will be created
+                assert!(matches!(
+                    inner.next_store_action(updates.clone(), 1, VerkleNodeId::default()),
+                    Ok(StoreAction::Descend(_))
+                ));
+            }
+            _ => panic!("expected HandleReparent"),
+        }
+
+        // The updates has 9 batches that diverge at depth 1, but one of them all of them have a
+        // different index as the leaf's stem, so an inner node with at least 10 slots is needed
+        node.access_stem().unwrap()[depth] = 10;
+
+        let result = node
+            .next_store_action(updates.clone(), depth as u8, VerkleNodeId::default())
+            .unwrap();
+        match result {
+            StoreAction::HandleReparent(inner) => {
+                assert!(matches!(inner, VerkleNode::Inner15(_)));
                 // This new inner node is big enough to hold all leaves that will be created
                 assert!(matches!(
                     inner.next_store_action(updates, 1, VerkleNodeId::default()),
