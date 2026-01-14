@@ -268,7 +268,7 @@ mod tests {
     fn next_store_action_with_non_matching_stem_returns_parent_large_enough_for_all_updates() {
         let depth = 1;
 
-        // The updates has 9 batches that diverge at depth 1, but one of them has the same index as
+        // The update has 9 batches that diverge at depth 1, but one of them has the same key as
         // the leaf's stem, so an inner node with at least 9 slots is needed
         let mut node = FullLeafNode {
             stem: [0; 31],
@@ -295,8 +295,8 @@ mod tests {
             _ => panic!("expected HandleReparent"),
         }
 
-        // The updates has 9 batches that diverge at depth 1, but one of them all of them have a
-        // different index as the leaf's stem, so an inner node with at least 10 slots is needed
+        // The update has 9 batches that diverge at depth 1, but all of them have a different key
+        // than the leaf's stem, so an inner node with at least 10 slots is needed
         node.stem[depth] = 10;
 
         let result = node

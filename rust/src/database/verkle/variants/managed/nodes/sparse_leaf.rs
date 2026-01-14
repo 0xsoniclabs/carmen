@@ -507,7 +507,7 @@ mod tests {
     ) {
         let depth = 1;
 
-        // The updates has 9 batches that diverge at depth 1, but one of them has the same index as
+        // The update has 9 batches that diverge at depth 1, but one of them has the same key as
         // the leaf's stem, so an inner node with at least 9 slots is needed
         *node.access_stem().unwrap() = [0; _];
         let updates = KeyedUpdateBatch::from_key_value_pairs(
@@ -531,8 +531,8 @@ mod tests {
             _ => panic!("expected HandleReparent"),
         }
 
-        // The updates has 9 batches that diverge at depth 1, but one of them all of them have a
-        // different index as the leaf's stem, so an inner node with at least 10 slots is needed
+        // The update has 9 batches that diverge at depth 1, but all of them have a different key
+        // than the leaf's stem, so an inner node with at least 10 slots is needed
         node.access_stem().unwrap()[depth] = 10;
 
         let result = node
