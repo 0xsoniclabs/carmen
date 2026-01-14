@@ -136,6 +136,8 @@ impl TrieCommitment for VerkleCommitment {
     }
 }
 
+// NOTE: Changing the layout of this struct will break backwards compatibility of the
+// serialization format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
 #[repr(C)]
 pub struct OnDiskVerkleCommitment {

@@ -33,8 +33,6 @@ use crate::{
 };
 
 /// An inner node in a managed Verkle trie.
-// NOTE: Changing the layout of this struct will break backwards compatibility of the
-// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FullInnerNode {
     pub children: [VerkleNodeId; 256],
@@ -57,6 +55,8 @@ impl Default for FullInnerNode {
     }
 }
 
+// NOTE: Changing the layout of this struct will break backwards compatibility of the
+// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq, Immutable, FromBytes, IntoBytes, Unaligned)]
 #[repr(C)]
 pub struct OnDiskFullInnerNode {

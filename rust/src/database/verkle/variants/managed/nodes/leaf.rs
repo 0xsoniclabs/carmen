@@ -31,8 +31,6 @@ use crate::{
 };
 
 /// A leaf node with 256 children in a managed Verkle trie.
-// NOTE: Changing the layout of this struct will break backwards compatibility of the
-// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FullLeafNode {
     pub stem: [u8; 31],
@@ -57,6 +55,8 @@ impl Default for FullLeafNode {
     }
 }
 
+// NOTE: Changing the layout of this struct will break backwards compatibility of the
+// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq, Immutable, FromBytes, IntoBytes, Unaligned)]
 #[repr(C)]
 pub struct OnDiskFullLeafNode {

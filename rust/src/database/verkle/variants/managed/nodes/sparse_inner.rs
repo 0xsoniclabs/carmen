@@ -34,8 +34,6 @@ use crate::{
 };
 
 /// An inner node in a managed Verkle trie.
-// NOTE: Changing the layout of this struct will break backwards compatibility of the
-// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SparseInnerNode<const N: usize> {
     pub children: [VerkleIdWithIndex; N],
@@ -95,6 +93,8 @@ impl<const N: usize> Default for SparseInnerNode<N> {
     }
 }
 
+// NOTE: Changing the layout of this struct will break backwards compatibility of the
+// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct OnDiskSparseInnerNode<const N: usize> {

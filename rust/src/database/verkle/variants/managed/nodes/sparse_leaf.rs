@@ -34,8 +34,6 @@ use crate::{
 };
 
 /// A sparsely populated leaf node in a managed Verkle trie.
-// NOTE: Changing the layout of this struct will break backwards compatibility of the
-// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SparseLeafNode<const N: usize> {
     pub stem: [u8; 31],
@@ -99,6 +97,8 @@ impl<const N: usize> Default for SparseLeafNode<N> {
     }
 }
 
+// NOTE: Changing the layout of this struct will break backwards compatibility of the
+// serialization format.
 #[derive(Debug, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct OnDiskSparseLeafNode<const N: usize> {
