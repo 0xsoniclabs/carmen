@@ -149,6 +149,14 @@ impl KeyedUpdateBatch<'static> {
         update: Update<'_>,
         embedding: &VerkleTrieEmbedding,
     ) -> Result<Self, EmptyUpdate> {
+        if update.created_accounts.is_empty()
+            && update.balances.is_empty()
+            && update.nonces.is_empty()
+            && update.codes.is_empty()
+            && update.slots.is_empty()
+        {
+            return Err(EmptyUpdate);
+        }
         let mut updates = Vec::with_capacity(
             // in practice created_accounts also have other updates, so we don't count them here
             update.balances.len()
@@ -227,9 +235,6 @@ impl KeyedUpdateBatch<'static> {
                 key: embedding.get_storage_key(addr, key),
                 value: *value,
             });
-        }
-        if updates.is_empty() {
-            return Err(EmptyUpdate);
         }
         if updates.len() > 100_000 {
             updates.par_sort_unstable();
