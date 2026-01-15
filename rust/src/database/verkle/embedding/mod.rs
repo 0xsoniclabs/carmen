@@ -53,9 +53,17 @@ impl VerkleTrieEmbedding {
         self.get_trie_key(address, &U256::ZERO, 0)
     }
 
+    pub fn get_basic_data_trie_key<'a>(&self, address: &'a Address) -> (&'a Address, U256) {
+        (address, U256::ZERO)
+    }
+
     /// Returns the key of the code hash field for the given address.
     pub fn get_code_hash_key(&self, address: &Address) -> Key {
         self.get_trie_key(address, &U256::ZERO, 1)
+    }
+
+    pub fn get_code_hash_trie_key<'a>(&self, address: &'a Address) -> (&'a Address, U256) {
+        (address, U256::ZERO)
     }
 
     /// Returns the key of the code chunk with the given chunk number for the given address.
@@ -67,6 +75,19 @@ impl VerkleTrieEmbedding {
         let tree_index = chunk_offset.div(VERKLE_NODE_WIDTH);
         let sub_index = chunk_offset.rem(VERKLE_NODE_WIDTH);
         self.get_trie_key(address, &tree_index.into(), sub_index as u8)
+    }
+
+    pub fn get_code_chunk_trie_key<'a>(
+        &self,
+        address: &'a Address,
+        chunk_number: u32,
+    ) -> (&'a Address, U256) {
+        // Derived from
+        // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
+
+        let chunk_offset = chunk_number + CODE_OFFSET;
+        let tree_index = chunk_offset.div(VERKLE_NODE_WIDTH);
+        (address, tree_index.into())
     }
 
     /// Returns the storage key for the given address and storage key.
@@ -91,6 +112,24 @@ impl VerkleTrieEmbedding {
         self.get_trie_key(address, &tree_index, suffix)
     }
 
+    pub fn get_storage_trie_key<'a>(&self, address: &'a Address, key: &Key) -> (&'a Address, U256) {
+        // Derived from
+        // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203
+
+        let code_storage_delta = U256::from(CODE_OFFSET - HEADER_STORAGE_OFFSET);
+        let mut tree_index = U256::from_be_slice(key);
+
+        if tree_index < code_storage_delta {
+            tree_index += U256::from(HEADER_STORAGE_OFFSET);
+            tree_index = U256::ZERO;
+        } else {
+            tree_index >>= 8;
+            tree_index += U256::ONE << (248 - VERKLE_NODE_WIDTH_LOG2 as u32);
+        }
+
+        (address, tree_index)
+    }
+
     /// Retries the Verkle trie key for the given address, tree index, and sub index from a cache or
     /// computes it if it is not cached.
     ///
@@ -98,7 +137,7 @@ impl VerkleTrieEmbedding {
     ///   - `C = Commit([2+256*64, address_low, address_high, tree_index_low, tree_index_high])`
     ///   - `H = Hash(C)`
     ///   - `K = append(H[..31], subIndex)`
-    fn get_trie_key(&self, address: &Address, tree_index: &U256, sub_index: u8) -> Key {
+    pub fn get_trie_key(&self, address: &Address, tree_index: &U256, sub_index: u8) -> Key {
         fn compute_trie_key(address: &Address, tree_index: &U256, sub_index: u8) -> Key {
             // Inspired by https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L116
 

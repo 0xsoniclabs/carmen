@@ -11,11 +11,12 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
+    collections::HashSet,
     ops::{Deref, Range},
 };
 
 use rayon::{
-    iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelBridge, ParallelIterator},
+    iter::{IntoParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
 use sha3::{Digest, Keccak256};
@@ -160,8 +161,55 @@ impl KeyedUpdateBatch<'static> {
         {
             return Err(EmptyUpdate);
         }
+        let created_accounts = update.created_accounts.iter().flat_map(|addr| {
+            [
+                embedding.get_basic_data_trie_key(addr),
+                embedding.get_code_hash_trie_key(addr),
+            ]
+        });
 
-        let created_accounts_bit = update.created_accounts.into_par_iter().map(|addr| {
+        let balance_updates = update
+            .balances
+            .iter()
+            .map(|BalanceUpdate { addr, .. }| embedding.get_basic_data_trie_key(addr));
+
+        let nonce_updates = update
+            .nonces
+            .iter()
+            .map(|NonceUpdate { addr, .. }| embedding.get_basic_data_trie_key(addr));
+
+        let code_updates = update.codes.iter().flat_map(|CodeUpdate { addr, code }| {
+            [
+                embedding.get_basic_data_trie_key(addr),
+                embedding.get_code_hash_trie_key(addr),
+            ]
+            .into_iter()
+            .chain(
+                (0..code.len().div_ceil(31))
+                    .filter(|i| i.is_multiple_of(64))
+                    .map(|i| embedding.get_code_chunk_trie_key(addr, i as u32)),
+            )
+        });
+
+        let slot_updates = update
+            .slots
+            .iter()
+            .map(|SlotUpdate { addr, key, .. }| embedding.get_storage_trie_key(addr, key));
+
+        let unique_addr_tree_indices = created_accounts
+            .chain(balance_updates)
+            .chain(nonce_updates)
+            .chain(code_updates)
+            .chain(slot_updates)
+            .collect::<HashSet<_>>();
+
+        unique_addr_tree_indices
+            .into_par_iter()
+            .for_each(|(addr, tree_index)| {
+                embedding.get_trie_key(addr, &tree_index, 0);
+            });
+
+        let created_accounts_bit = update.created_accounts.iter().map(|addr| {
             // This is just to set the used bit.
             // Because the mask is all zeros, we don't overwrite any data, so we also don't
             // have to account for nonce, balance or code length updates here.
@@ -172,50 +220,45 @@ impl KeyedUpdateBatch<'static> {
             }
         });
 
-        let created_accounts_empty_code_hash =
-            update.created_accounts.into_par_iter().filter_map(|addr| {
-                // This is just to set the used bit.
-                // Because the mask is all zeros, we don't overwrite any data, so we also don't
-                // have to account for nonce, balance or code length updates here.
-                if !update.codes.iter().any(|c| c.addr == *addr) {
-                    // If there is no code update for this account, we have to set the code hash
-                    // to EMPTY_CODE_HASH to represent the creation of an account with no code.
-                    Some(KeyedUpdate::FullSlot {
-                        key: embedding.get_code_hash_key(addr),
-                        value: EMPTY_CODE_HASH,
-                    })
-                } else {
-                    // Otherwise, the code update will set the code hash, so we don't need to do
-                    // it here (and can't because then we would have duplicate updates to the
-                    // same key).
-                    None
-                }
+        let created_accounts_empty_code_hash = update.created_accounts.iter().filter_map(|addr| {
+            // This is just to set the used bit.
+            // Because the mask is all zeros, we don't overwrite any data, so we also don't
+            // have to account for nonce, balance or code length updates here.
+            if !update.codes.iter().any(|c| c.addr == *addr) {
+                // If there is no code update for this account, we have to set the code hash
+                // to EMPTY_CODE_HASH to represent the creation of an account with no code.
+                Some(KeyedUpdate::FullSlot {
+                    key: embedding.get_code_hash_key(addr),
+                    value: EMPTY_CODE_HASH,
+                })
+            } else {
+                // Otherwise, the code update will set the code hash, so we don't need to do
+                // it here (and can't because then we would have duplicate updates to the
+                // same key).
+                None
+            }
+        });
+
+        let balance_updates = update
+            .balances
+            .iter()
+            .map(|BalanceUpdate { addr, balance }| KeyedUpdate::PartialSlot {
+                key: embedding.get_basic_data_key(addr),
+                value: *balance,
+                mask: mask_for_range(16..32),
             });
 
-        let balance_updates =
-            update
-                .balances
-                .into_par_iter()
-                .map(|BalanceUpdate { addr, balance }| KeyedUpdate::PartialSlot {
-                    key: embedding.get_basic_data_key(addr),
-                    value: *balance,
-                    mask: mask_for_range(16..32),
-                });
+        let nonce_updates = update.nonces.iter().map(|NonceUpdate { addr, nonce }| {
+            let mut value = [0u8; 32];
+            value[8..16].copy_from_slice(nonce);
+            KeyedUpdate::PartialSlot {
+                key: embedding.get_basic_data_key(addr),
+                value,
+                mask: mask_for_range(8..16),
+            }
+        });
 
-        let nonce_updates = update
-            .nonces
-            .into_par_iter()
-            .map(|NonceUpdate { addr, nonce }| {
-                let mut value = [0u8; 32];
-                value[8..16].copy_from_slice(nonce);
-                KeyedUpdate::PartialSlot {
-                    key: embedding.get_basic_data_key(addr),
-                    value,
-                    mask: mask_for_range(8..16),
-                }
-            });
-
-        let code_updates_len = update.codes.par_iter().map(|CodeUpdate { addr, code }| {
+        let code_updates_len = update.codes.iter().map(|CodeUpdate { addr, code }| {
             let code_len = code.len() as u32;
             let mut value = [0u8; 32];
             value[4..8].copy_from_slice(&code_len.to_be_bytes());
@@ -227,7 +270,7 @@ impl KeyedUpdateBatch<'static> {
             }
         });
 
-        let code_updates_hash = update.codes.par_iter().map(|CodeUpdate { addr, code }| {
+        let code_updates_hash = update.codes.iter().map(|CodeUpdate { addr, code }| {
             let mut hasher = Keccak256::new();
             hasher.update(code);
             let code_hash = Hash::from(hasher.finalize());
@@ -238,28 +281,25 @@ impl KeyedUpdateBatch<'static> {
             }
         });
 
-        let code_updates_chunks = update
-            .codes
-            .par_iter()
-            .flat_map(|CodeUpdate { addr, code }| {
-                // Process on same worker
-                code::split_code(code)
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, chunk)| KeyedUpdate::FullSlot {
-                        key: embedding.get_code_chunk_key(addr, i as u32),
-                        value: chunk,
-                    })
-                    .par_bridge()
-            });
+        let code_updates_chunks = update.codes.iter().flat_map(|CodeUpdate { addr, code }| {
+            // Process on same worker
+            code::split_code(code)
+                .into_iter()
+                .enumerate()
+                .map(|(i, chunk)| KeyedUpdate::FullSlot {
+                    key: embedding.get_code_chunk_key(addr, i as u32),
+                    value: chunk,
+                })
+        });
 
-        let slot_updates = update
-            .slots
-            .into_par_iter()
-            .map(|SlotUpdate { addr, key, value }| KeyedUpdate::FullSlot {
-                key: embedding.get_storage_key(addr, key),
-                value: *value,
-            });
+        let slot_updates =
+            update
+                .slots
+                .iter()
+                .map(|SlotUpdate { addr, key, value }| KeyedUpdate::FullSlot {
+                    key: embedding.get_storage_key(addr, key),
+                    value: *value,
+                });
 
         let mut updates: Vec<_> = created_accounts_bit
             .chain(balance_updates)
