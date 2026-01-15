@@ -32,7 +32,11 @@ use crate::{
     types::{DiskRepresentable, Key, ToNodeKind},
 };
 
-/// An inner node in a managed Verkle trie.
+/// The inner delta node is a space-saving optimization for managed Verkle trie archives:
+/// Archives update tries non-destructively using copy-on-write. This results in the upper parts
+/// of a trie, which mostly consist of full inner nodes, to be copied frequently.
+/// Instead of copying all 256 children each time, delta nodes instead store a set of differences
+/// for specific indices, compared to some earlier full inner node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InnerDeltaNode {
     pub children: [VerkleNodeId; 256],
@@ -42,9 +46,13 @@ pub struct InnerDeltaNode {
 }
 
 impl InnerDeltaNode {
+    /// The number of child indices for which a delta can be stored.
+    /// This represents a tradeoff between how large the delta node itself is on disk,
+    /// versus how often a full inner node has to be introduced.
+    /// Preliminary benchmarking has shown 10 to be a good number.
     pub const DELTA_SIZE: usize = 10;
 
-    /// Creates a [`InnerDeltaNode`] from [`FullInnerNode`] and its id.
+    /// Creates a [`InnerDeltaNode`] from a [`FullInnerNode`] and its id.
     pub fn from_full_inner(inner_node: &FullInnerNode, inner_node_id: VerkleNodeId) -> Self {
         InnerDeltaNode {
             children: inner_node.children,
@@ -186,7 +194,7 @@ impl ManagedTrieNode for InnerDeltaNode {
                 Ok(())
             }
             _ => Err(Error::CorruptedState(
-                "no slot found for replacing child in sparse inner".to_owned(),
+                "no slot found for replacing child in inner delta node".to_owned(),
             )
             .into()),
         }
@@ -207,10 +215,19 @@ impl NodeVisitor<InnerDeltaNode> for NodeCountVisitor {
         self.count_node(
             level,
             "Inner",
-            node.children_delta
+            node.children
                 .iter()
-                .filter(|child| child.item.to_node_kind().unwrap() != VerkleNodeKind::Empty)
-                .count() as u64,
+                .filter(|child| child.to_node_kind().unwrap() != VerkleNodeKind::Empty)
+                .count() as u64
+                + node
+                    .children_delta
+                    .iter()
+                    .filter(|child| {
+                        child.item.to_node_kind().unwrap() != VerkleNodeKind::Empty
+                            && node.children[child.index as usize].to_node_kind().unwrap()
+                                == VerkleNodeKind::Empty
+                    })
+                    .count() as u64,
         );
         Ok(())
     }
@@ -424,7 +441,7 @@ mod tests {
         let result = node.replace_child(&key, 1, new_id);
         assert!(matches!(
             result.map_err(BTError::into_inner),
-            Err(Error::CorruptedState(e)) if e.contains("no slot found for replacing child in sparse inner")
+            Err(Error::CorruptedState(e)) if e.contains("no slot found for replacing child in inner delta node")
         ));
     }
 
