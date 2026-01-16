@@ -19,7 +19,10 @@ use crate::{
             KeyedUpdate,
             variants::managed::{
                 KeyedUpdateBatch, VerkleNode, VerkleNodeId,
-                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    OnDiskVerkleLeafCommitment, VerkleCommitment, VerkleCommitmentInput,
+                    VerkleInnerCommitment, VerkleLeafCommitment,
+                },
                 nodes::{VerkleIdWithIndex, make_smallest_inner_node_for},
             },
         },
@@ -35,7 +38,7 @@ use crate::{
 pub struct FullLeafNode {
     pub stem: [u8; 31],
     pub values: [Value; 256],
-    pub commitment: VerkleCommitment,
+    pub commitment: VerkleLeafCommitment,
 }
 
 impl FullLeafNode {
@@ -50,7 +53,7 @@ impl Default for FullLeafNode {
         FullLeafNode {
             stem: [0; 31],
             values: [Value::default(); 256],
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleLeafCommitment::default(),
         }
     }
 }
@@ -62,7 +65,7 @@ impl Default for FullLeafNode {
 pub struct OnDiskFullLeafNode {
     pub stem: [u8; 31],
     pub values: [Value; 256],
-    pub commitment: OnDiskVerkleCommitment,
+    pub commitment: OnDiskVerkleLeafCommitment,
 }
 
 impl From<&FullLeafNode> for OnDiskFullLeafNode {
@@ -70,7 +73,7 @@ impl From<&FullLeafNode> for OnDiskFullLeafNode {
         OnDiskFullLeafNode {
             stem: node.stem,
             values: node.values,
-            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+            commitment: OnDiskVerkleLeafCommitment::from(&node.commitment),
         }
     }
 }
@@ -80,7 +83,7 @@ impl From<OnDiskFullLeafNode> for FullLeafNode {
         FullLeafNode {
             stem: node.stem,
             values: node.values,
-            commitment: VerkleCommitment::from(node.commitment),
+            commitment: VerkleLeafCommitment::from(node.commitment),
         }
     }
 }
@@ -138,7 +141,7 @@ impl ManagedTrieNode for FullLeafNode {
             let inner = make_smallest_inner_node_for(
                 slots,
                 &[self_child],
-                &VerkleCommitment::from_existing(&self.commitment, dirty_index),
+                &VerkleInnerCommitment::from_leaf(&self.commitment, dirty_index),
             )?;
             return Ok(StoreAction::HandleReparent(inner));
         }
@@ -163,11 +166,11 @@ impl ManagedTrieNode for FullLeafNode {
     }
 
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        VerkleCommitment::Leaf(self.commitment)
     }
 
-    fn set_commitment(&mut self, cache: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = cache;
+    fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
+        self.commitment = commitment.into_leaf()?;
         Ok(())
     }
 }
@@ -208,7 +211,7 @@ mod tests {
         let node: FullLeafNode = FullLeafNode::default();
         assert_eq!(node.stem, [0; 31]);
         assert_eq!(node.values, [Value::default(); 256]);
-        assert_eq!(node.commitment, VerkleCommitment::default());
+        assert_eq!(node.commitment, VerkleLeafCommitment::default());
     }
 
     #[test]
@@ -219,8 +222,8 @@ mod tests {
             commitment: {
                 // We deliberately only create a default commitment, since this type does
                 // not preserve all of its fields when converting to/from on-disk representation.
-                let mut commitment = VerkleCommitment::default();
-                commitment.test_only_mark_as_clean();
+                let mut commitment = VerkleLeafCommitment::default();
+                commitment.mark_clean();
                 commitment
             },
         };
@@ -276,7 +279,7 @@ mod tests {
     #[test]
     fn next_store_action_with_non_matching_stem_is_reparent() {
         let divergence_at = 5;
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleLeafCommitment::default();
         commitment.store(123, Value::from_index_values(99, &[]));
         let node = FullLeafNode {
             stem: <[u8; 31]>::from_index_values(1, &[(divergence_at, 56)]),
@@ -295,7 +298,10 @@ mod tests {
                 let slot = VerkleIdWithIndex::get_slot_for(&inner.children, 56).unwrap();
                 assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
-                assert_ne!(inner.get_commitment(), VerkleCommitment::default());
+                assert_ne!(
+                    inner.get_commitment(),
+                    VerkleCommitment::Inner(VerkleInnerCommitment::default())
+                );
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }
             _ => panic!("expected HandleReparent with inner node"),
@@ -306,9 +312,9 @@ mod tests {
     fn leaf_with_dirty_commitment_is_marked_as_changed_in_new_parent(
         #[values(true, false)] leaf_is_dirty: bool,
     ) {
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleLeafCommitment::default();
         if !leaf_is_dirty {
-            commitment.test_only_mark_as_clean();
+            commitment.mark_clean();
         }
         let stem = [42; 31];
         let node = FullLeafNode {
@@ -434,9 +440,12 @@ mod tests {
     #[test]
     fn commitment_can_be_set_and_retrieved() {
         let mut node = FullLeafNode::default();
-        assert_eq!(node.get_commitment(), VerkleCommitment::default());
+        assert_eq!(
+            node.get_commitment(),
+            VerkleCommitment::Leaf(VerkleLeafCommitment::default())
+        );
 
-        let mut new_commitment = VerkleCommitment::default();
+        let mut new_commitment = VerkleCommitment::Leaf(VerkleLeafCommitment::default());
         new_commitment.store(5, Value::from_index_values(4, &[]));
 
         node.set_commitment(new_commitment).unwrap();

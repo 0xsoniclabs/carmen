@@ -19,7 +19,10 @@ use crate::{
             KeyedUpdateBatch,
             variants::managed::{
                 FullInnerNode, VerkleNode,
-                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    OnDiskVerkleInnerCommitment, VerkleCommitment, VerkleCommitmentInput,
+                    VerkleInnerCommitment,
+                },
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                 },
@@ -42,7 +45,7 @@ pub struct InnerDeltaNode {
     pub children: [VerkleNodeId; 256],
     pub children_delta: [VerkleIdWithIndex; Self::DELTA_SIZE],
     pub full_inner_node_id: VerkleNodeId,
-    pub commitment: VerkleCommitment,
+    pub commitment: VerkleInnerCommitment,
 }
 
 impl InnerDeltaNode {
@@ -85,7 +88,7 @@ impl InnerDeltaNode {
 struct OnDiskInnerDeltaNode {
     pub children_delta: [VerkleIdWithIndex; InnerDeltaNode::DELTA_SIZE],
     pub full_inner_node_id: VerkleNodeId,
-    pub commitment: OnDiskVerkleCommitment,
+    pub commitment: OnDiskVerkleInnerCommitment,
 }
 
 // This still needs to load the full inner node to reconstruct the `children`.
@@ -95,7 +98,7 @@ impl From<OnDiskInnerDeltaNode> for InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: delta_node.children_delta,
             full_inner_node_id: delta_node.full_inner_node_id,
-            commitment: VerkleCommitment::from(delta_node.commitment),
+            commitment: VerkleInnerCommitment::from(delta_node.commitment),
         }
     }
 }
@@ -105,7 +108,7 @@ impl From<&InnerDeltaNode> for OnDiskInnerDeltaNode {
         OnDiskInnerDeltaNode {
             children_delta: node.children_delta,
             full_inner_node_id: node.full_inner_node_id,
-            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+            commitment: OnDiskVerkleInnerCommitment::from(&node.commitment),
         }
     }
 }
@@ -201,11 +204,11 @@ impl ManagedTrieNode for InnerDeltaNode {
     }
 
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        VerkleCommitment::Inner(self.commitment)
     }
 
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = commitment;
+        self.commitment = commitment.into_inner()?;
         Ok(())
     }
 }
@@ -265,7 +268,7 @@ mod tests {
                 item: VerkleNodeId::default(),
             }),
             full_inner_node_id: VerkleNodeId::default(),
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }
     }
 
@@ -275,7 +278,7 @@ mod tests {
             children: array::from_fn(|i| {
                 VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND)
             }),
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         };
         full_inner.commitment.modify_child(2);
 
@@ -448,9 +451,12 @@ mod tests {
     #[test]
     fn commitment_can_be_set_and_retrieved() {
         let mut node = make_inner_with_empty_delta();
-        assert_eq!(node.get_commitment(), VerkleCommitment::default());
+        assert_eq!(
+            node.get_commitment(),
+            VerkleCommitment::Inner(VerkleInnerCommitment::default())
+        );
 
-        let mut new_commitment = VerkleCommitment::default();
+        let mut new_commitment = VerkleCommitment::Inner(VerkleInnerCommitment::default());
         new_commitment.modify_child(5);
 
         node.set_commitment(new_commitment).unwrap();

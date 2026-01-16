@@ -19,7 +19,10 @@ use crate::{
             KeyedUpdateBatch,
             variants::managed::{
                 InnerDeltaNode, VerkleNode,
-                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    OnDiskVerkleInnerCommitment, VerkleCommitment, VerkleCommitmentInput,
+                    VerkleInnerCommitment,
+                },
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                 },
@@ -36,7 +39,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FullInnerNode {
     pub children: [VerkleNodeId; 256],
-    pub commitment: VerkleCommitment,
+    pub commitment: VerkleInnerCommitment,
 }
 
 impl FullInnerNode {
@@ -50,7 +53,7 @@ impl Default for FullInnerNode {
     fn default() -> Self {
         FullInnerNode {
             children: [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256],
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }
     }
 }
@@ -61,14 +64,14 @@ impl Default for FullInnerNode {
 #[repr(C)]
 pub struct OnDiskFullInnerNode {
     pub children: [VerkleNodeId; 256],
-    pub commitment: OnDiskVerkleCommitment,
+    pub commitment: OnDiskVerkleInnerCommitment,
 }
 
 impl From<&FullInnerNode> for OnDiskFullInnerNode {
     fn from(node: &FullInnerNode) -> Self {
         OnDiskFullInnerNode {
             children: node.children,
-            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+            commitment: OnDiskVerkleInnerCommitment::from(&node.commitment),
         }
     }
 }
@@ -77,7 +80,7 @@ impl From<OnDiskFullInnerNode> for FullInnerNode {
     fn from(node: OnDiskFullInnerNode) -> Self {
         FullInnerNode {
             children: node.children,
-            commitment: VerkleCommitment::from(node.commitment),
+            commitment: VerkleInnerCommitment::from(node.commitment),
         }
     }
 }
@@ -132,11 +135,11 @@ impl ManagedTrieNode for FullInnerNode {
     }
 
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        VerkleCommitment::Inner(self.commitment)
     }
 
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = commitment;
+        self.commitment = commitment.into_inner()?;
         Ok(())
     }
 }
@@ -206,7 +209,7 @@ mod tests {
     #[test]
     fn inner_node_default_returns_inner_node_with_all_children_set_to_empty_node_id() {
         let node: FullInnerNode = FullInnerNode::default();
-        assert_eq!(node.commitment, VerkleCommitment::default());
+        assert_eq!(node.commitment, VerkleInnerCommitment::default());
         assert_eq!(
             node.children,
             [VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Empty); 256]
@@ -222,8 +225,8 @@ mod tests {
             commitment: {
                 // We deliberately only create a default commitment, since this type does
                 // not preserve all of its fields when converting to/from on-disk representation.
-                let mut commitment = VerkleCommitment::default();
-                commitment.test_only_mark_as_clean();
+                let mut commitment = VerkleInnerCommitment::default();
+                commitment.mark_clean();
                 commitment
             },
         };
@@ -326,9 +329,12 @@ mod tests {
     #[test]
     fn commitment_can_be_set_and_retrieved() {
         let mut node = FullInnerNode::default();
-        assert_eq!(node.get_commitment(), VerkleCommitment::default());
+        assert_eq!(
+            node.get_commitment(),
+            VerkleCommitment::Inner(VerkleInnerCommitment::default())
+        );
 
-        let mut new_commitment = VerkleCommitment::default();
+        let mut new_commitment = VerkleCommitment::Inner(VerkleInnerCommitment::default());
         new_commitment.modify_child(5);
 
         node.set_commitment(new_commitment).unwrap();
@@ -353,7 +359,7 @@ mod tests {
             item: VerkleNodeId::from_idx_and_node_kind(600, VerkleNodeKind::Leaf1),
         };
 
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleInnerCommitment::default();
         commitment.modify_child(10);
         commitment.modify_child(20);
 
