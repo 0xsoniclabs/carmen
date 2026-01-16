@@ -8,7 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use crate::types::{HasDeltaVariant, HasEmptyId, HasEmptyNode, ToNodeKind, TreeId};
+use crate::{
+    error::{BTResult, Error},
+    types::{HasDeltaVariant, HasEmptyId, HasEmptyNode, ToNodeKind, TreeId},
+};
 
 pub type TestNodeId = u32;
 pub type TestNode = i32;
@@ -75,5 +78,7 @@ impl HasDeltaVariant for TestNode {
         }
     }
 
-    fn copy_from_full(&mut self, _full: &Self) {}
+    fn copy_from_full(&mut self, _full: &Self) -> BTResult<(), Error> {
+        Ok(())
+    }
 }

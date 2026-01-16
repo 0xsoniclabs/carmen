@@ -18,7 +18,7 @@ use std::{
 };
 
 use carmen_rust::{
-    error::BTResult,
+    error::{BTResult, Error},
     node_manager::{
         NodeManager,
         cached_node_manager::CachedNodeManager,
@@ -72,7 +72,9 @@ impl HasDeltaVariant for BenchValue {
         None
     }
 
-    fn copy_from_full(&mut self, _full: &Self) {}
+    fn copy_from_full(&mut self, _full: &Self) -> BTResult<(), Error> {
+        Ok(())
+    }
 }
 
 /// A component that randomly pins items based on a given probability.

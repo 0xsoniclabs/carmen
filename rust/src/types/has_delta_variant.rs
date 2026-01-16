@@ -8,6 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use crate::error::{BTResult, Error};
+
 /// Trait for node types that have a delta variant.
 pub trait HasDeltaVariant {
     /// The ID type for this node type.
@@ -19,5 +21,5 @@ pub trait HasDeltaVariant {
     /// Copies all data that is part of the in-memory but not the on-disk representation of this
     /// delta node from a full node into this delta node.
     /// If this functions gets called from a non-delta node, it should do nothing.
-    fn copy_from_full(&mut self, full: &Self);
+    fn copy_from_full(&mut self, full: &Self) -> BTResult<(), Error>;
 }

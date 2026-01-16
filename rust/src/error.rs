@@ -35,6 +35,8 @@ pub enum Error {
     IllegalConcurrentOperation(String),
     #[error("corrupted state: {0}")]
     CorruptedState(String),
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 pub type BTResult<T, E> = Result<T, BTError<E>>;

@@ -180,14 +180,17 @@ impl HasDeltaVariant for VerkleNode {
         }
     }
 
-    fn copy_from_full(&mut self, full: &Self) {
+    fn copy_from_full(&mut self, full: &Self) -> BTResult<(), Error> {
         if let VerkleNode::InnerDelta(n) = self {
             if let VerkleNode::Inner256(i) = full {
                 n.children = i.children;
             } else {
-                panic!("expected the full node variant");
+                return Err(
+                    Error::Internal("copy_from_full called with non-full node".to_owned()).into(),
+                );
             }
         }
+        Ok(())
     }
 }
 
@@ -644,7 +647,7 @@ pub trait VerkleManagedInnerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::TreeId;
+    use crate::{error::BTError, types::TreeId};
 
     // NOTE: Tests for the accept method are in managed/mod.rs
 
@@ -958,13 +961,12 @@ mod tests {
             commitment: VerkleCommitment::default(),
         }));
 
-        delta_node.copy_from_full(&full_node);
+        delta_node.copy_from_full(&full_node).unwrap();
         assert!(matches!(delta_node, VerkleNode::InnerDelta(n) if n.children == inner_children));
     }
 
     #[test]
-    #[should_panic]
-    fn copy_from_full_panics_if_provided_node_is_not_a_full_node() {
+    fn copy_from_full_returns_error_if_provided_node_is_not_a_full_node() {
         let full_node = VerkleNode::Inner15(Box::new(Inner15VerkleNode {
             children: [ItemWithIndex::default(); 15],
             commitment: VerkleCommitment::default(),
@@ -976,7 +978,14 @@ mod tests {
             commitment: VerkleCommitment::default(),
         }));
 
-        delta_node.copy_from_full(&full_node);
+        assert_eq!(
+            delta_node
+                .copy_from_full(&full_node)
+                .map_err(BTError::into_inner),
+            Err(Error::Internal(
+                "copy_from_full called with non-full node".into()
+            ))
+        );
     }
 
     #[test]
