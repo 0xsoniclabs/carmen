@@ -20,7 +20,10 @@ use crate::{
             KeyedUpdate, KeyedUpdateBatch,
             variants::managed::{
                 VerkleNodeId,
-                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    VerkleCommitment, VerkleCommitmentInput, VerkleInnerCommitment,
+                    VerkleLeafCommitment,
+                },
                 nodes::{
                     empty::EmptyNode, inner::FullInnerNode, inner_delta::InnerDeltaNode,
                     leaf::FullLeafNode, sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
@@ -552,7 +555,7 @@ pub fn make_smallest_leaf_node_for(
     n: usize,
     stem: [u8; 31],
     values: &[ValueWithIndex],
-    commitment: &VerkleCommitment,
+    commitment: &VerkleLeafCommitment,
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_leaf_type_for(n) {
         VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),
@@ -598,7 +601,7 @@ pub fn make_smallest_leaf_node_for(
 pub fn make_smallest_inner_node_for(
     n: usize,
     children: &[VerkleIdWithIndex],
-    commitment: &VerkleCommitment,
+    commitment: &VerkleInnerCommitment,
 ) -> BTResult<VerkleNode, Error> {
     match VerkleNode::smallest_inner_type_for(n) {
         VerkleNodeKind::Empty => Ok(VerkleNode::Empty(EmptyNode)),

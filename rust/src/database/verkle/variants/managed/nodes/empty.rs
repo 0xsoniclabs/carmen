@@ -15,7 +15,10 @@ use crate::{
             KeyedUpdateBatch,
             variants::managed::{
                 FullInnerNode, VerkleNode, VerkleNodeId,
-                commitment::{VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    VerkleCommitment, VerkleCommitmentInput, VerkleInnerCommitment,
+                    VerkleLeafCommitment,
+                },
                 nodes::{make_smallest_inner_node_for, make_smallest_leaf_node_for},
             },
         },
@@ -74,7 +77,7 @@ impl ManagedTrieNode for EmptyNode {
                     updates.split(31).count(), // this counts the number of distinct keys
                     stem,
                     &[],
-                    &self.get_commitment(),
+                    &VerkleLeafCommitment::default(),
                 )?;
                 Ok(StoreAction::HandleTransform(new_leaf))
             } else {
@@ -82,7 +85,7 @@ impl ManagedTrieNode for EmptyNode {
                 let new_inner = make_smallest_inner_node_for(
                     updates.split(depth).count(),
                     &[],
-                    &self.get_commitment(),
+                    &VerkleInnerCommitment::default(),
                 )?;
                 Ok(StoreAction::HandleTransform(new_inner))
             }
@@ -90,7 +93,8 @@ impl ManagedTrieNode for EmptyNode {
     }
 
     fn get_commitment(&self) -> Self::Commitment {
-        VerkleCommitment::default()
+        // This could also be a leaf commitment - it doesn't matter
+        VerkleCommitment::Inner(VerkleInnerCommitment::default())
     }
 }
 
@@ -106,7 +110,9 @@ mod tests {
     use super::*;
     use crate::{
         database::verkle::{
-            KeyedUpdateBatch, test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind,
+            KeyedUpdateBatch,
+            test_utils::FromIndexValues,
+            variants::managed::{commitment::VerkleLeafCommitment, nodes::VerkleNodeKind},
         },
         error::BTError,
         types::TreeId,
@@ -227,7 +233,7 @@ mod tests {
                         smallest_leaf_size(),
                         [0; 31],
                         &[],
-                        &VerkleCommitment::default()
+                        &VerkleLeafCommitment::default(),
                     )
                     .unwrap(),
                 );
@@ -259,8 +265,13 @@ mod tests {
             StoreAction::HandleTransform(leaf) => {
                 assert_eq!(
                     leaf,
-                    make_smallest_leaf_node_for(256, [0; 31], &[], &VerkleCommitment::default())
-                        .unwrap(),
+                    make_smallest_leaf_node_for(
+                        256,
+                        [0; 31],
+                        &[],
+                        &VerkleLeafCommitment::default()
+                    )
+                    .unwrap(),
                 );
             }
             _ => panic!("expected HandleTransform to leaf node"),
@@ -271,15 +282,19 @@ mod tests {
     fn get_commitment_returns_default_commitment() {
         let node = EmptyNode;
         let commitment = node.get_commitment();
-        assert_eq!(commitment, VerkleCommitment::default());
+        assert_eq!(
+            commitment,
+            VerkleCommitment::Inner(VerkleInnerCommitment::default())
+        );
     }
 
     fn smallest_leaf_size() -> usize {
         let prev =
-            make_smallest_leaf_node_for(1, [0; 31], &[], &VerkleCommitment::default()).unwrap();
+            make_smallest_leaf_node_for(1, [0; 31], &[], &VerkleLeafCommitment::default()).unwrap();
         for i in 2..=256 {
             let leaf =
-                make_smallest_leaf_node_for(i, [0; 31], &[], &VerkleCommitment::default()).unwrap();
+                make_smallest_leaf_node_for(i, [0; 31], &[], &VerkleLeafCommitment::default())
+                    .unwrap();
             if prev != leaf {
                 return i - 1;
             }
