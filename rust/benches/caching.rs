@@ -18,14 +18,14 @@ use std::{
 };
 
 use carmen_rust::{
-    error::BTResult,
+    error::{BTResult, Error},
     node_manager::{
         NodeManager,
         cached_node_manager::CachedNodeManager,
         lock_cache::{EvictionHooks, LockCache},
     },
     storage::{self, DbMode, Storage},
-    types::{HasEmptyId, HasEmptyNode},
+    types::{HasDeltaVariant, HasEmptyId, HasEmptyNode},
 };
 use criterion::{BenchmarkId, criterion_group, criterion_main};
 use quick_cache::{Lifecycle, UnitWeighter};
@@ -62,6 +62,18 @@ impl HasEmptyNode for BenchValue {
 
     fn is_empty_node(&self) -> bool {
         self.0 == i64::MAX
+    }
+}
+
+impl HasDeltaVariant for BenchValue {
+    type Id = BenchId;
+
+    fn needs_full(&self) -> Option<Self::Id> {
+        None
+    }
+
+    fn copy_from_full(&mut self, _full: &Self) -> BTResult<(), Error> {
+        Ok(())
     }
 }
 

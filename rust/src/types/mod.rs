@@ -9,6 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 pub use disk_representable::DiskRepresentable;
+pub use has_delta_variant::HasDeltaVariant;
 pub use has_empty::{HasEmptyId, HasEmptyNode};
 pub use node_size::*;
 pub use to_node_kind::ToNodeKind;
@@ -16,6 +17,7 @@ pub use tree_id::TreeId;
 pub use update::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate, Update};
 
 mod disk_representable;
+mod has_delta_variant;
 mod has_empty;
 mod node_size;
 mod to_node_kind;

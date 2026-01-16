@@ -51,7 +51,14 @@ pub struct DescendAction<'a, ID> {
 }
 
 /// A helper trait to constrain a [`ManagedTrieNode`] to be its own union type.
-pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {}
+pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {
+    /// Creates a new node with the contents of `self`, but possibly of a different node kind. This
+    /// new node must be able to store all children of `self` and in addition all children at the
+    /// indices specified in `changed_children_indices`. It may refer to the current node using the
+    /// given `id`.
+    /// This method should only be called when in archive mode.
+    fn copy_on_write(&self, id: Self::Id, changed_children_indices: Vec<u8>) -> Self;
+}
 
 /// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)
 /// trie (Verkle, Binary, Merkle-Patricia, ...).

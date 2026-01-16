@@ -54,7 +54,7 @@ pub fn store<T>(
     is_archive: bool,
 ) -> BTResult<(), Error>
 where
-    T: UnionManagedTrieNode + HasEmptyNode + Clone,
+    T: UnionManagedTrieNode + HasEmptyNode,
     T::Id: Copy + Eq + std::hash::Hash + std::fmt::Debug + HasEmptyId,
 {
     let _span = tracy_client::span!("push updates through all levels");
@@ -95,15 +95,15 @@ where
                     depth,
                     current_node_update.node_id,
                 )?;
-            // Clones the node if we are in archive mode and the node is not new and not the
-            // empty node.
-            let mut clone_if_archive = || -> BTResult<(), Error> {
-                if is_archive
-                    && !current_node_update.node_id.is_empty_id()
-                    && !current_node_update.is_new
-                {
-                    current_node_update.node_id =
-                        manager.add((*current_node_update.node.as_ref().unwrap()).clone())?;
+            // Clones the node if the node is not new and not the empty node.
+            let mut copy_on_write_current_node = |changed_children_indices| -> BTResult<(), Error> {
+                if !current_node_update.node_id.is_empty_id() && !current_node_update.is_new {
+                    let cow_node = current_node_update
+                        .node
+                        .as_ref()
+                        .unwrap()
+                        .copy_on_write(current_node_update.node_id, changed_children_indices);
+                    current_node_update.node_id = manager.add(cow_node)?;
                     current_node_update.node =
                         Some(manager.get_write_access(current_node_update.node_id)?);
                     if let Some(index) = current_node_update.parent_index {
@@ -124,7 +124,10 @@ where
             };
             match next_store_action {
                 StoreAction::Store(stores) => {
-                    clone_if_archive()?;
+                    if is_archive {
+                        copy_on_write_current_node(Vec::new())?; // Note: Currently the number of changed children is only used when transforming and inner node, which is never the case when storing.
+                    }
+
                     let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
@@ -144,7 +147,14 @@ where
                     i += 1;
                 }
                 StoreAction::Descend(descent_actions) => {
-                    clone_if_archive()?;
+                    if is_archive {
+                        let changed_children_indices = descent_actions
+                            .iter()
+                            .map(|d| d.updates.first_key()[depth as usize])
+                            .collect();
+                        copy_on_write_current_node(changed_children_indices)?;
+                    }
+
                     let current_node_mut: &mut T = current_node_update
                         .node
                         .as_mut()
