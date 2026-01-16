@@ -19,7 +19,6 @@ use crate::database::verkle::crypto::{Scalar, window_signed_committer::WindowSig
 /// A vector commitment to a sequence of 256 scalar values, using the Pedersen commitment scheme
 /// on the Banderwagon curve.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C)]
 pub struct Commitment {
     element: Element,
 }
