@@ -406,7 +406,7 @@ pub enum VerkleCommitmentInput {
 /// - All nodes marked as dirty in the update log must exist in the node manager.
 /// - All nodes marked as dirty in the update log must have a dirty [`VerkleCommitment`].
 /// - For a dirty inner node on level `L`, all of its children in
-///   [`VerkleCommitment::changed_indices`] must be contained in the update log on level `L+1`.
+///   [`VerkleInnerCommitment::changed_indices`] must be contained in the update log on level `L+1`.
 ///
 /// After successful completion, the update log is cleared.
 pub fn update_commitments(
@@ -505,7 +505,7 @@ mod tests {
     };
 
     #[test]
-    fn verkle_inner_commitment_from_leaf() {
+    fn verkle_inner_commitment_from_leaf_copies_commitment_and_sets_changed_index() {
         let original = VerkleLeafCommitment {
             commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
             committed_used_indices: [1u8; 256 / 8],
