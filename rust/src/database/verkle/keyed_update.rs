@@ -14,7 +14,7 @@ use std::{
     ops::{Deref, Range},
 };
 
-use rayon::slice::ParallelSliceMut;
+use rayon::{self, slice::ParallelSliceMut};
 use sha3::{Digest, Keccak256};
 use verkle_trie::Key;
 
@@ -149,6 +149,18 @@ impl KeyedUpdateBatch<'static> {
         update: Update<'_>,
         embedding: &VerkleTrieEmbedding,
     ) -> Result<Self, EmptyUpdate> {
+        let span = tracy_client::span!("try_from_with_embedding");
+        let len = update.created_accounts.len()
+            + update.balances.len()
+            + update.nonces.len()
+            + update
+                .codes
+                .iter()
+                .map(|c| 2 + c.code.len().div_ceil(31))
+                .sum::<usize>()
+            + update.slots.len();
+        span.emit_value(len as u64);
+        let misses_before = embedding.cache_misses();
         if update.created_accounts.is_empty()
             && update.balances.is_empty()
             && update.nonces.is_empty()
@@ -236,6 +248,12 @@ impl KeyedUpdateBatch<'static> {
                 value: *value,
             });
         }
+
+        let misses_after = embedding.cache_misses();
+        span.emit_value(misses_after - misses_before);
+
+        drop(span);
+
         if updates.len() > 100_000 {
             updates.par_sort_unstable();
         } else {
@@ -289,6 +307,9 @@ fn mask_for_range(range: Range<usize>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
+    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
     use zerocopy::transmute;
 
     use super::*;
@@ -745,5 +766,180 @@ mod tests {
                 *key = new_key;
             }
         }
+    }
+
+    #[test]
+    fn bench() {
+        let d: [_; 240] = std::array::from_fn(|i| i as u8);
+
+        let embedding = VerkleTrieEmbedding::new();
+        embedding.get_basic_data_key(&[0; 20]);
+
+        let embedding = VerkleTrieEmbedding::new();
+        let span = tracy_client::span!("seq");
+        let start = Instant::now();
+        let r1: Vec<_> = d
+            .into_iter()
+            .map(|d| {
+                let mut addr = [0; 20];
+                addr[0] = d;
+                (
+                    std::thread::current().id().as_u64(),
+                    embedding.get_basic_data_key(&addr),
+                )
+            })
+            .collect();
+        println!("{:?}", start.elapsed());
+        drop(span);
+        println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        let embedding = VerkleTrieEmbedding::new();
+        let span = tracy_client::span!("par");
+        let start = Instant::now();
+        let r1: Vec<_> = d
+            .into_par_iter()
+            .map(|d| {
+                let mut addr = [0; 20];
+                addr[0] = d;
+                (
+                    std::thread::current().id().as_u64(),
+                    embedding.get_basic_data_key(&addr),
+                )
+            })
+            .collect();
+        println!("{:?}", start.elapsed());
+        drop(span);
+        println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        let embedding = VerkleTrieEmbedding::new();
+        let span = tracy_client::span!("par with_min_len 5");
+        let start = Instant::now();
+        let r1: Vec<_> = d
+            .into_par_iter()
+            .with_min_len(5)
+            .map(|d| {
+                let mut addr = [0; 20];
+                addr[0] = d;
+                (
+                    std::thread::current().id().as_u64(),
+                    embedding.get_basic_data_key(&addr),
+                )
+            })
+            .collect();
+        println!("{:?}", start.elapsed());
+        drop(span);
+        println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        let embedding = VerkleTrieEmbedding::new();
+        let span = tracy_client::span!("par with_min_len 15");
+        let start = Instant::now();
+        let r1: Vec<_> = d
+            .into_par_iter()
+            .with_min_len(15)
+            .map(|d| {
+                let mut addr = [0; 20];
+                addr[0] = d;
+                (
+                    std::thread::current().id().as_u64(),
+                    embedding.get_basic_data_key(&addr),
+                )
+            })
+            .collect();
+        println!("{:?}", start.elapsed());
+        drop(span);
+        println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        let embedding = VerkleTrieEmbedding::new();
+        let span = tracy_client::span!("par with_min_len 30");
+        let start = Instant::now();
+        let r1: Vec<_> = d
+            .into_par_iter()
+            .with_min_len(30)
+            .map(|d| {
+                let mut addr = [0; 20];
+                addr[0] = d;
+                (
+                    std::thread::current().id().as_u64(),
+                    embedding.get_basic_data_key(&addr),
+                )
+            })
+            .collect();
+        println!("{:?}", start.elapsed());
+        drop(span);
+        println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        // let embedding = VerkleTrieEmbedding::new();
+        // let start = Instant::now();
+        // let r1: Vec<_> = d
+        //     .into_par_iter()
+        //     .with_min_len(50)
+        //     .map(|d| {
+        //         let mut addr = [0; 20];
+        //         addr[0] = d;
+        //         (
+        //             std::thread::current().id().as_u64(),
+        //             embedding.get_basic_data_key(&addr),
+        //         )
+        //     })
+        //     .chain(d.into_par_iter().with_min_len(50).map(|d| {
+        //         let mut addr = [0; 20];
+        //         addr[0] = d;
+        //         (
+        //             std::thread::current().id().as_u64(),
+        //             embedding.get_basic_data_key(&addr),
+        //         )
+        //     }))
+        //     .collect();
+        // println!("{:?}", start.elapsed());
+        // println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        // let embedding = VerkleTrieEmbedding::new();
+        // let start = Instant::now();
+        // let r1: Vec<_> = d
+        //     .into_par_iter()
+        //     .map(|d| {
+        //         let mut addr = [0; 20];
+        //         addr[0] = d;
+        //         (
+        //             std::thread::current().id().as_u64(),
+        //             embedding.get_basic_data_key(&addr),
+        //         )
+        //     })
+        //     .chain(d.into_par_iter().map(|d| {
+        //         let mut addr = [0; 20];
+        //         addr[0] = d;
+        //         (
+        //             std::thread::current().id().as_u64(),
+        //             embedding.get_basic_data_key(&addr),
+        //         )
+        //     }))
+        //     .with_min_len(50)
+        //     .collect();
+        // println!("{:?}", start.elapsed());
+        // println!("{:?}", r1.into_iter().map(|(k, _)| k).collect::<Vec<_>>());
+
+        // let d = [0u8; 100];
+
+        // let start = Instant::now();
+        // let r1: Vec<_> = d.into_iter().map(|d| d + 1).collect();
+        // println!("{:?}", start.elapsed());
+        // println!("{r1:?}");
+
+        // let start = Instant::now();
+        // let r2: Vec<_> = d.into_par_iter().map(|d| d + 1).collect();
+        // println!("{:?}", start.elapsed());
+        // println!("{r2:?}");
+
+        // let d = [0u8; 10];
+
+        // let start = Instant::now();
+        // let r1: Vec<_> = d.into_iter().map(|d| d + 1).collect();
+        // println!("{:?}", start.elapsed());
+        // println!("{r1:?}");
+
+        // let start = Instant::now();
+        // let r2: Vec<_> = d.into_par_iter().map(|d| d + 1).collect();
+        // println!("{:?}", start.elapsed());
+        // println!("{r2:?}");
     }
 }

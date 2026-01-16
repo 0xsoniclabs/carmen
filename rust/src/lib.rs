@@ -1,4 +1,5 @@
 // Copyright (c) 2025 Sonic Operations Ltd
+
 //
 // Use of this software is governed by the Business Source License included
 // in the LICENSE file and at soniclabs.com/bsl11.
@@ -7,6 +8,7 @@
 //
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
+#![feature(thread_id_value)]
 #![cfg_attr(test, allow(non_snake_case))]
 #![cfg_attr(
     feature = "shuttle",

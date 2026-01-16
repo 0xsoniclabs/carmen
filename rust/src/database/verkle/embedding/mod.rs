@@ -13,6 +13,7 @@ pub mod code;
 use std::{
     convert::Infallible,
     ops::{Div, Rem},
+    sync::atomic::AtomicU64,
 };
 
 use crypto_bigint::U256;
@@ -31,6 +32,7 @@ const VERKLE_NODE_WIDTH_LOG2: u64 = 8;
 /// Embedding cache for the Verkle trie for basic account data, code, and storage keys.
 pub struct VerkleTrieEmbedding {
     cache: Cache<(Address, U256), Key>,
+    misses: AtomicU64,
 }
 
 impl Default for VerkleTrieEmbedding {
@@ -45,7 +47,12 @@ impl VerkleTrieEmbedding {
     pub fn new() -> Self {
         VerkleTrieEmbedding {
             cache: Cache::new(Self::CACHE_SIZE),
+            misses: AtomicU64::new(0),
         }
+    }
+
+    pub fn cache_misses(&self) -> u64 {
+        self.misses.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Returns the key of the basic data fields (nonce, balance, code size) for the given address.
@@ -125,6 +132,8 @@ impl VerkleTrieEmbedding {
         let mut result = self
             .cache
             .get_or_insert_with(&(*address, *tree_index), || {
+                self.misses
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 Ok::<_, Infallible>(compute_trie_key(address, tree_index, 0))
             })
             .unwrap(); // this cannot fail
