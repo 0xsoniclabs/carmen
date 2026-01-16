@@ -10,7 +10,10 @@
 
 pub mod code;
 
-use std::convert::Infallible;
+use std::{
+    convert::Infallible,
+    ops::{Div, Rem},
+};
 
 use crypto_bigint::U256;
 use quick_cache::sync::Cache;
@@ -20,9 +23,9 @@ use crate::{
     types::{Address, Key},
 };
 
-const HEADER_STORAGE_OFFSET: U256 = U256::from_u64(64);
-const CODE_OFFSET: U256 = U256::from_u64(128);
-const VERKLE_NODE_WIDTH: U256 = U256::from_u64(256);
+const HEADER_STORAGE_OFFSET: u32 = 64;
+const CODE_OFFSET: u32 = 128;
+const VERKLE_NODE_WIDTH: u32 = 256;
 const VERKLE_NODE_WIDTH_LOG2: u64 = 8;
 
 /// Embedding cache for the Verkle trie for basic account data, code, and storage keys.
@@ -60,11 +63,10 @@ impl VerkleTrieEmbedding {
         // Derived from
         // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L188
 
-        let chunk_offset = U256::from_u32(chunk_number) + CODE_OFFSET;
-        // Safe to unwrap because VERKLE_NODE_WIDTH is non-zero.
-        let (tree_index, sub_index) = chunk_offset.div_rem(&VERKLE_NODE_WIDTH.to_nz().unwrap());
-        let sub_index = sub_index.to_words()[0] as u8;
-        self.get_trie_key(address, &tree_index, sub_index)
+        let chunk_offset = chunk_number + CODE_OFFSET;
+        let tree_index = chunk_offset.div(VERKLE_NODE_WIDTH);
+        let sub_index = chunk_offset.rem(VERKLE_NODE_WIDTH);
+        self.get_trie_key(address, &tree_index.into(), sub_index as u8)
     }
 
     /// Returns the storage key for the given address and storage key.
@@ -72,12 +74,12 @@ impl VerkleTrieEmbedding {
         // Derived from
         // https://github.com/0xsoniclabs/go-ethereum/blob/e563918a84b4104e44935ddc6850f11738dcc3f5/trie/utils/verkle.go#L203
 
-        let code_storage_delta = CODE_OFFSET - HEADER_STORAGE_OFFSET;
+        let code_storage_delta = U256::from(CODE_OFFSET - HEADER_STORAGE_OFFSET);
         let mut tree_index = U256::from_be_slice(key);
         let suffix;
 
         if tree_index < code_storage_delta {
-            tree_index += HEADER_STORAGE_OFFSET;
+            tree_index += U256::from(HEADER_STORAGE_OFFSET);
             suffix = tree_index.to_le_bytes()[0];
             tree_index = U256::ZERO;
         } else {
