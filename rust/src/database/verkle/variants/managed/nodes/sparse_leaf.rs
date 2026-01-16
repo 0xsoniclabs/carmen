@@ -19,7 +19,10 @@ use crate::{
             KeyedUpdate, KeyedUpdateBatch,
             variants::managed::{
                 VerkleNode, VerkleNodeId,
-                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    OnDiskVerkleLeafCommitment, VerkleCommitment, VerkleCommitmentInput,
+                    VerkleInnerCommitment, VerkleLeafCommitment,
+                },
                 nodes::{
                     ValueWithIndex, VerkleIdWithIndex, make_smallest_inner_node_for,
                     make_smallest_leaf_node_for,
@@ -38,7 +41,7 @@ use crate::{
 pub struct SparseLeafNode<const N: usize> {
     pub stem: [u8; 31],
     pub values: [ValueWithIndex; N],
-    pub commitment: VerkleCommitment,
+    pub commitment: VerkleLeafCommitment,
 }
 
 impl<const N: usize> SparseLeafNode<N> {
@@ -47,7 +50,7 @@ impl<const N: usize> SparseLeafNode<N> {
     pub fn from_existing(
         stem: [u8; 31],
         values: &[ValueWithIndex],
-        commitment: &VerkleCommitment,
+        commitment: &VerkleLeafCommitment,
     ) -> BTResult<Self, Error> {
         let mut leaf = SparseLeafNode {
             stem,
@@ -92,7 +95,7 @@ impl<const N: usize> Default for SparseLeafNode<N> {
         SparseLeafNode {
             stem: [0; 31],
             values,
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleLeafCommitment::default(),
         }
     }
 }
@@ -104,7 +107,7 @@ impl<const N: usize> Default for SparseLeafNode<N> {
 pub struct OnDiskSparseLeafNode<const N: usize> {
     pub stem: [u8; 31],
     pub values: [ValueWithIndex; N],
-    pub commitment: OnDiskVerkleCommitment,
+    pub commitment: OnDiskVerkleLeafCommitment,
 }
 
 impl<const N: usize> From<OnDiskSparseLeafNode<N>> for SparseLeafNode<N> {
@@ -112,7 +115,7 @@ impl<const N: usize> From<OnDiskSparseLeafNode<N>> for SparseLeafNode<N> {
         SparseLeafNode {
             stem: on_disk.stem,
             values: on_disk.values,
-            commitment: VerkleCommitment::from(on_disk.commitment),
+            commitment: VerkleLeafCommitment::from(on_disk.commitment),
         }
     }
 }
@@ -122,7 +125,7 @@ impl<const N: usize> From<&SparseLeafNode<N>> for OnDiskSparseLeafNode<N> {
         OnDiskSparseLeafNode {
             stem: node.stem,
             values: node.values,
-            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+            commitment: OnDiskVerkleLeafCommitment::from(&node.commitment),
         }
     }
 }
@@ -184,7 +187,7 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             let inner = make_smallest_inner_node_for(
                 slots,
                 &[self_child],
-                &VerkleCommitment::from_existing(&self.commitment, dirty_index),
+                &VerkleInnerCommitment::from_leaf(&self.commitment, dirty_index),
             )?;
             return Ok(StoreAction::HandleReparent(inner));
         }
@@ -226,11 +229,11 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
     }
 
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        VerkleCommitment::Leaf(self.commitment)
     }
 
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = commitment;
+        self.commitment = commitment.into_leaf()?;
         Ok(())
     }
 }
@@ -342,7 +345,7 @@ mod tests {
         let node: SparseLeafNode<N> = SparseLeafNode::default();
 
         assert_eq!(node.stem, [0; 31]);
-        assert_eq!(node.commitment, VerkleCommitment::default());
+        assert_eq!(node.commitment, VerkleLeafCommitment::default());
 
         for (i, value) in node.values.iter().enumerate() {
             assert_eq!(value.index, i as u8);
@@ -356,8 +359,8 @@ mod tests {
         original_node.commitment = {
             // We deliberately only create a default commitment, since this type does
             // not preserve all of its fields when converting to/from on-disk representation.
-            let mut commitment = VerkleCommitment::default();
-            commitment.test_only_mark_as_clean();
+            let mut commitment = VerkleLeafCommitment::default();
+            commitment.mark_clean();
             commitment
         };
         let disk_repr = original_node.to_disk_repr();
@@ -371,7 +374,7 @@ mod tests {
 
     #[test]
     fn from_existing_copies_stem_and_values_and_commitment_correctly() {
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleLeafCommitment::default();
         commitment.store(2, VALUE_1);
 
         // Case 1: Contains an index that fits at the corresponding slot in a SparseLeaf<3>.
@@ -465,7 +468,7 @@ mod tests {
                 item: VALUE_1,
             },
         ];
-        let commitment = VerkleCommitment::default();
+        let commitment = VerkleLeafCommitment::default();
         let result = SparseLeafNode::<2>::from_existing(STEM, &values, &commitment);
         assert!(matches!(
             result.map_err(BTError::into_inner),
@@ -514,7 +517,7 @@ mod tests {
     fn next_store_action_with_non_matching_stems_is_reparent(
         #[case] mut node: Box<dyn VerkleManagedTrieNode<Value>>,
     ) {
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleCommitment::Leaf(VerkleLeafCommitment::default());
         commitment.store(123, VALUE_1);
         node.set_commitment(commitment).unwrap();
 
@@ -533,7 +536,10 @@ mod tests {
                     VerkleIdWithIndex::get_slot_for(&inner.children, STEM[divergence_at]).unwrap();
                 assert_eq!(inner.children[slot].item, self_id);
                 // Newly created inner node has commitment of the leaf.
-                assert_ne!(inner.get_commitment(), VerkleCommitment::default());
+                assert_ne!(
+                    inner.get_commitment(),
+                    VerkleCommitment::Leaf(VerkleLeafCommitment::default())
+                );
                 assert_eq!(inner.get_commitment().commitment(), commitment.commitment());
             }
             _ => panic!("expected HandleReparent with inner node"),
@@ -545,11 +551,12 @@ mod tests {
         #[case] mut node: Box<dyn VerkleManagedTrieNode<Value>>,
         #[values(true, false)] leaf_is_dirty: bool,
     ) {
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleLeafCommitment::default();
         if !leaf_is_dirty {
-            commitment.test_only_mark_as_clean();
+            commitment.mark_clean();
         }
-        node.set_commitment(commitment).unwrap();
+        node.set_commitment(VerkleCommitment::Leaf(commitment))
+            .unwrap();
         let updates = KeyedUpdateBatch::from_key_value_pairs(&[([99; 32], Value::default())]);
         match node
             .next_store_action(updates, 0, VerkleNodeId::default())
@@ -638,7 +645,7 @@ mod tests {
     ) {
         let mut node = node;
         node.access_slot(5).item = Value::default(); // one free slot
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleCommitment::Leaf(VerkleLeafCommitment::default());
         commitment.store(7, VALUE_1);
         node.set_commitment(commitment).unwrap();
 
@@ -721,9 +728,12 @@ mod tests {
     #[test]
     fn commitment_can_be_set_and_retrieved() {
         let mut node = SparseLeafNode::<7>::default();
-        assert_eq!(node.get_commitment(), VerkleCommitment::default());
+        assert_eq!(
+            node.get_commitment(),
+            VerkleCommitment::Leaf(VerkleLeafCommitment::default())
+        );
 
-        let mut new_commitment = VerkleCommitment::default();
+        let mut new_commitment = VerkleCommitment::Leaf(VerkleLeafCommitment::default());
         new_commitment.store(5, Value::from_index_values(4, &[]));
 
         node.set_commitment(new_commitment).unwrap();

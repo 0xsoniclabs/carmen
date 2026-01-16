@@ -19,7 +19,10 @@ use crate::{
             KeyedUpdateBatch,
             variants::managed::{
                 VerkleNode,
-                commitment::{OnDiskVerkleCommitment, VerkleCommitment, VerkleCommitmentInput},
+                commitment::{
+                    OnDiskVerkleInnerCommitment, VerkleCommitment, VerkleCommitmentInput,
+                    VerkleInnerCommitment,
+                },
                 nodes::{
                     VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
                     make_smallest_inner_node_for,
@@ -37,7 +40,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SparseInnerNode<const N: usize> {
     pub children: [VerkleIdWithIndex; N],
-    pub commitment: VerkleCommitment,
+    pub commitment: VerkleInnerCommitment,
 }
 
 impl<const N: usize> SparseInnerNode<N> {
@@ -45,7 +48,7 @@ impl<const N: usize> SparseInnerNode<N> {
     /// Returns an error if there are more than N non-default children.
     pub fn from_existing(
         children: &[VerkleIdWithIndex],
-        commitment: &VerkleCommitment,
+        commitment: &VerkleInnerCommitment,
     ) -> BTResult<Self, Error> {
         let mut inner = SparseInnerNode {
             commitment: *commitment,
@@ -88,7 +91,7 @@ impl<const N: usize> Default for SparseInnerNode<N> {
 
         SparseInnerNode {
             children,
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }
     }
 }
@@ -99,14 +102,14 @@ impl<const N: usize> Default for SparseInnerNode<N> {
 #[repr(C)]
 pub struct OnDiskSparseInnerNode<const N: usize> {
     pub children: [VerkleIdWithIndex; N],
-    pub commitment: OnDiskVerkleCommitment,
+    pub commitment: OnDiskVerkleInnerCommitment,
 }
 
 impl<const N: usize> From<OnDiskSparseInnerNode<N>> for SparseInnerNode<N> {
     fn from(on_disk: OnDiskSparseInnerNode<N>) -> Self {
         SparseInnerNode {
             children: on_disk.children,
-            commitment: VerkleCommitment::from(on_disk.commitment),
+            commitment: VerkleInnerCommitment::from(on_disk.commitment),
         }
     }
 }
@@ -115,7 +118,7 @@ impl<const N: usize> From<&SparseInnerNode<N>> for OnDiskSparseInnerNode<N> {
     fn from(node: &SparseInnerNode<N>) -> Self {
         OnDiskSparseInnerNode {
             children: node.children,
-            commitment: OnDiskVerkleCommitment::from(&node.commitment),
+            commitment: OnDiskVerkleInnerCommitment::from(&node.commitment),
         }
     }
 }
@@ -206,11 +209,11 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
     }
 
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        VerkleCommitment::Inner(self.commitment)
     }
 
     fn set_commitment(&mut self, commitment: Self::Commitment) -> BTResult<(), Error> {
-        self.commitment = commitment;
+        self.commitment = commitment.into_inner()?;
         Ok(())
     }
 }
@@ -260,7 +263,7 @@ mod tests {
                 index: i as u8,
                 item: VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND),
             }),
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }
     }
 
@@ -276,7 +279,7 @@ mod tests {
         const N: usize = 2;
         let node: SparseInnerNode<N> = SparseInnerNode::default();
 
-        assert_eq!(node.commitment, VerkleCommitment::default());
+        assert_eq!(node.commitment, VerkleInnerCommitment::default());
 
         for (i, value) in node.children.iter().enumerate() {
             assert_eq!(value.index, i as u8);
@@ -290,8 +293,8 @@ mod tests {
         original_node.commitment = {
             // We deliberately only create a default commitment, since this type does
             // not preserve all of its fields when converting to/from on-disk representation.
-            let mut commitment = VerkleCommitment::default();
-            commitment.test_only_mark_as_clean();
+            let mut commitment = VerkleInnerCommitment::default();
+            commitment.mark_clean();
             commitment
         };
         let disk_repr = original_node.to_disk_repr();
@@ -306,7 +309,7 @@ mod tests {
     #[test]
     fn from_existing_copies_children_and_commitment_correctly() {
         let ID = VerkleNodeId::from_idx_and_node_kind(42, TEST_CHILD_NODE_KIND);
-        let mut commitment = VerkleCommitment::default();
+        let mut commitment = VerkleInnerCommitment::default();
         commitment.modify_child(2);
 
         // Case 1: Contains an index that fits at the corresponding slot in a SparseInnerNode<3>.
@@ -379,7 +382,7 @@ mod tests {
             VerkleIdWithIndex { index: 1, item: ID },
             VerkleIdWithIndex { index: 2, item: ID },
         ];
-        let commitment = VerkleCommitment::default();
+        let commitment = VerkleInnerCommitment::default();
         let result = SparseInnerNode::<2>::from_existing(&children, &commitment);
 
         assert!(matches!(
@@ -518,9 +521,12 @@ mod tests {
     #[test]
     fn commitment_can_be_set_and_retrieved() {
         let mut node = SparseInnerNode::<3>::default();
-        assert_eq!(node.get_commitment(), VerkleCommitment::default());
+        assert_eq!(
+            node.get_commitment(),
+            VerkleCommitment::Inner(VerkleInnerCommitment::default())
+        );
 
-        let mut new_commitment = VerkleCommitment::default();
+        let mut new_commitment = VerkleCommitment::Inner(VerkleInnerCommitment::default());
         new_commitment.modify_child(5);
 
         node.set_commitment(new_commitment).unwrap();
