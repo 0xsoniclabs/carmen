@@ -85,11 +85,11 @@ Replaying the history can be used as a testing tool to verify the resulting stat
 For a history run using the Carmen Rust implementation, run in `bertha/block-db-go-bindings`:
 
 ```sh
-# Record state root hashes for S6 (Verkle Tries) using the Go in-memory variant
+# Record state root hashes for S6 (Verkle Tries) using the Geth reference implementation
 go run ./cmd/block-db replay \
     --json-genesis <path to genesis.json> \
     -db <path to blockdb> \
-    --db-schema 6 --db-variant go-memory \
+    --db-schema 6 --db-variant go-geth-memory \
     --overwrite-state-roots
 
 # Replay using the Carmen Rust implementation and verify state root hashes.
