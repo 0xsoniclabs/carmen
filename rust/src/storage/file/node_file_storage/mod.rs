@@ -88,10 +88,19 @@ where
 
         let metadata =
             NodeFileStorageMetadata::read_or_init(dir.join(Self::METADATA_FILE), db_mode)?;
-        if metadata.frozen_nodes > metadata.nodes
-            || metadata.frozen_reuse_indices > metadata.reuse_indices
-        {
-            return Err(Error::DatabaseCorruption.into());
+        if metadata.frozen_nodes > metadata.nodes {
+            return Err(Error::DatabaseCorruption(format!(
+                "frozen node count {} greater than total node count {}",
+                metadata.frozen_nodes, metadata.nodes
+            ))
+            .into());
+        }
+        if metadata.frozen_reuse_indices > metadata.reuse_indices {
+            return Err(Error::DatabaseCorruption(format!(
+                "frozen reuse index count {} greater than total reuse index count {}",
+                metadata.frozen_reuse_indices, metadata.reuse_indices
+            ))
+            .into());
         }
 
         let reuse_list_file = ReuseListFile::open(
@@ -103,13 +112,19 @@ where
             .frozen_indices()
             .any(|&idx| idx >= metadata.frozen_nodes)
         {
-            return Err(Error::DatabaseCorruption.into());
+            return Err(Error::DatabaseCorruption(
+                "frozen index greater than frozen node count".to_owned(),
+            )
+            .into());
         }
         if reuse_list_file
             .reusable_indices()
             .any(|&idx| idx < metadata.frozen_nodes || idx >= metadata.nodes)
         {
-            return Err(Error::DatabaseCorruption.into());
+            return Err(Error::DatabaseCorruption(
+                "reusable index in frozen or unassigned range".to_owned(),
+            )
+            .into());
         }
 
         let node_file = F::open(
@@ -118,8 +133,12 @@ where
             T::size(),
         )?;
         let len = node_file.len()?;
-        if len < metadata.nodes * T::size() as u64 {
-            return Err(Error::DatabaseCorruption.into());
+        let min_len = metadata.nodes * T::size() as u64;
+        if len < min_len {
+            return Err(Error::DatabaseCorruption(format!(
+                "node file too short: got {len}B, expected at least {min_len}B"
+            ))
+            .into());
         }
 
         Ok(Self {
@@ -405,20 +424,30 @@ mod tests {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 0, 1, 1, 0);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "frozen node count 1 greater than total node count 0".to_owned()
+                )
+            );
         }
         // frozen reuse indices count larger than total reuse indices count
         {
             let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
             write_metadata(&dir, 0, 1, 0, 0, 1);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "frozen reuse indices count greater than total reuse indices count".to_owned()
+                )
+            );
         }
         // node file size smaller than what metadata claims
         {
@@ -427,10 +456,15 @@ mod tests {
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "node file size smaller than what metadata claims".to_owned()
+                )
+            );
         }
         // reuse list file smaller than what metadata claims
         {
@@ -439,10 +473,15 @@ mod tests {
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "reuse list file smaller than what metadata claims".to_owned()
+                )
+            );
         }
         // frozen reuse indices larger than frozen node count
         {
@@ -451,10 +490,15 @@ mod tests {
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "frozen reuse indices count greater than total reuse indices count".to_owned()
+                )
+            );
         }
         // reusable reuse indices larger than node count
         {
@@ -463,10 +507,15 @@ mod tests {
             write_reuse_list(&dir, &[1]);
             write_nodes(&dir, &[[0; 32]]);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "reusable reuse indices larger than node count".to_owned()
+                )
+            );
         }
         // reusable reuse indices smaller or equal to frozen node count
         {
@@ -475,10 +524,15 @@ mod tests {
             write_reuse_list(&dir, &[0]);
             write_nodes(&dir, &[[0; 32]]);
 
-            assert!(matches!(
-                NodeFileStorage::open(&dir, db_mode).map_err(BTError::into_inner),
-                Err(Error::DatabaseCorruption)
-            ));
+            assert_eq!(
+                NodeFileStorage::open(&dir, db_mode)
+                    .map(|_| ())
+                    .unwrap_err()
+                    .into_inner(),
+                Error::DatabaseCorruption(
+                    "reusable reuse indices smaller or equal to frozen node count".to_owned()
+                )
+            );
         }
     }
 

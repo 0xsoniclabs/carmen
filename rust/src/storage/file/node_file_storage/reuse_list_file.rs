@@ -43,7 +43,10 @@ impl ReuseListFile {
     /// "frozen" and not available for reuse.
     pub fn open(path: impl AsRef<Path>, count: u64, frozen_count: u64) -> BTResult<Self, Error> {
         if frozen_count > count {
-            return Err(Error::DatabaseCorruption.into());
+            return Err(Error::DatabaseCorruption(
+                format!("frozen reuse index count {frozen_count} greater than total reuse index count {count}"),
+            )
+            .into());
         }
         let mut file_opts = OpenOptions::new();
         file_opts
@@ -54,7 +57,11 @@ impl ReuseListFile {
         let mut file = file_opts.open(path)?;
         let len = file.metadata()?.len();
         if len < count * size_of::<u64>() as u64 {
-            return Err(Error::DatabaseCorruption.into());
+            return Err(Error::DatabaseCorruption(format!(
+                "reuse index file too short: got {len}B, expected at least {}B",
+                count * size_of::<u64>() as u64
+            ))
+            .into());
         }
 
         let mut all_indices = vec![0u64; count as usize];
@@ -174,10 +181,12 @@ mod tests {
         let count = 1;
         let frozen_count = 2;
         let result = ReuseListFile::open(path, count, frozen_count);
-        assert!(matches!(
-            result.map_err(BTError::into_inner),
-            Err(Error::DatabaseCorruption)
-        ));
+        assert_eq!(
+            result.unwrap_err().into_inner(),
+            Error::DatabaseCorruption(
+                "frozen reuse index count 2 greater than total reuse index count 1".to_owned()
+            )
+        );
     }
     #[test]
     fn open_returns_error_for_invalid_file_size() {
@@ -190,10 +199,12 @@ mod tests {
         let count = 2;
         let frozen_count = 2;
         let result = ReuseListFile::open(path, count, frozen_count);
-        assert!(matches!(
-            result.map_err(BTError::into_inner),
-            Err(Error::DatabaseCorruption)
-        ));
+        assert_eq!(
+            result.unwrap_err().into_inner(),
+            Error::DatabaseCorruption(
+                "reuse index file shorter than expected: got 10B, expected at least 16B".to_owned()
+            )
+        );
     }
 
     #[test]

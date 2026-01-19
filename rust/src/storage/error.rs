@@ -23,8 +23,8 @@ pub enum Error {
     InvalidId,
     #[error("checkpoint creation failed")]
     Checkpoint,
-    #[error("database corrupted")]
-    DatabaseCorruption,
+    #[error("database corrupted: {0}")]
+    DatabaseCorruption(String),
     #[error("opening the database failed: the database was not properly closed")]
     DirtyOpen,
     #[error("operation not permitted in read-only mode")]
@@ -45,7 +45,7 @@ impl PartialEq for Error {
             | (Error::Checkpoint, Error::Checkpoint)
             | (Error::ReadOnly, Error::ReadOnly)
             | (Error::DirtyOpen, Error::DirtyOpen)
-            | (Error::DatabaseCorruption, Error::DatabaseCorruption) => true,
+            | (Error::DatabaseCorruption(_), Error::DatabaseCorruption(_)) => true,
             (Error::Internal(a), Error::Internal(b)) => a == b,
             (Error::Io(a), Error::Io(b)) => {
                 a.kind() == b.kind()
@@ -58,7 +58,7 @@ impl PartialEq for Error {
                 | Error::IdNodeVariantMismatch
                 | Error::InvalidId
                 | Error::Checkpoint
-                | Error::DatabaseCorruption
+                | Error::DatabaseCorruption(_)
                 | Error::DirtyOpen
                 | Error::ReadOnly
                 | Error::Io(_)
@@ -79,7 +79,7 @@ mod tests {
         let err2 = Error::NotFound;
         let err3 = Error::IdNodeVariantMismatch;
         let err4 = Error::InvalidId;
-        let err5 = Error::DatabaseCorruption;
+        let err5 = Error::DatabaseCorruption(String::new());
         assert_eq!(err1, err2);
         assert_ne!(err1, err3);
         assert_ne!(err1, err4);

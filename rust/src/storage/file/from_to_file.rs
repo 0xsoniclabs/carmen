@@ -26,14 +26,16 @@ pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
         let path = path.as_ref();
         let mut file = db_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
-        if len == 0 && db_mode.read_only() {
-            return Err(Error::DatabaseCorruption.into());
-        } else if len == 0 {
+        if len == 0 && !db_mode.read_only() {
             // File was just created
             fs::write(path, Self::default().as_bytes())?;
         } else if len != std::mem::size_of::<Self>() as u64 {
-            // File existed but has invalid content
-            return Err(Error::DatabaseCorruption.into());
+            // File exists but has invalid size.
+            return Err(Error::DatabaseCorruption(format!(
+                "invalid metadata file size: got {len}B, expected {}B",
+                std::mem::size_of::<Self>()
+            ))
+            .into());
         }
 
         let mut this = Self::default();
@@ -115,10 +117,12 @@ mod tests {
         fs::write(&path, [0u8; 10]).unwrap();
 
         let result = Dummy::read_or_init(path, db_mode);
-        assert!(matches!(
+        assert_eq!(
             result.map_err(BTError::into_inner),
-            Err(Error::DatabaseCorruption)
-        ));
+            Err(Error::DatabaseCorruption(
+                "invalid metadata file size: got 10B, expected 2B".to_owned()
+            ))
+        );
     }
 
     #[rstest_reuse::apply(all_db_modes)]

@@ -54,8 +54,12 @@ where
     ) -> BTResult<Self, Error> {
         let mut file = db_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
-        if len < frozen_count * size_of::<ID>() as u64 {
-            return Err(Error::DatabaseCorruption.into());
+        let frozen_len = frozen_count * size_of::<ID>() as u64;
+        if len < frozen_len {
+            return Err(Error::DatabaseCorruption(format!(
+                "root id file size {len}B is shorter than frozen length {frozen_len}B"
+            ))
+            .into());
         }
 
         let cache = Cache::new(Self::CACHE_SIZE);
@@ -171,10 +175,12 @@ mod tests {
 
         let frozen_count = 2;
         let result = RootIdsFile::open(path, frozen_count, db_mode);
-        assert!(matches!(
-            result.map_err(BTError::into_inner),
-            Err(Error::DatabaseCorruption)
-        ));
+        assert_eq!(
+            result.unwrap_err().into_inner(),
+            Error::DatabaseCorruption(
+                "root id file length 10B is shorter than frozen length 12B".to_owned()
+            )
+        );
     }
 
     #[test]
