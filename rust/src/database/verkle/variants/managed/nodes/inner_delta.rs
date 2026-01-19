@@ -32,6 +32,7 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
+    storage,
     types::{DiskRepresentable, Key, ToNodeKind},
 };
 
@@ -114,18 +115,16 @@ impl From<&InnerDeltaNode> for OnDiskInnerDeltaNode {
 }
 
 impl DiskRepresentable for InnerDeltaNode {
-    fn from_disk_repr<E>(
-        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E> {
+    const DISK_REPR_SIZE: usize = std::mem::size_of::<OnDiskInnerDeltaNode>();
+
+    fn from_disk_repr(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
+    ) -> BTResult<Self, storage::Error> {
         OnDiskInnerDeltaNode::from_disk_repr(read_into_buffer).map(Into::into)
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
         Cow::Owned(OnDiskInnerDeltaNode::from(self).to_disk_repr().into_owned())
-    }
-
-    fn size() -> usize {
-        std::mem::size_of::<OnDiskInnerDeltaNode>()
     }
 }
 

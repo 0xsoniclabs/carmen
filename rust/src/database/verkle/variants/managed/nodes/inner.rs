@@ -32,6 +32,7 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
+    storage,
     types::{DiskRepresentable, Key, ToNodeKind, TreeId},
 };
 
@@ -86,18 +87,16 @@ impl From<OnDiskFullInnerNode> for FullInnerNode {
 }
 
 impl DiskRepresentable for FullInnerNode {
-    fn from_disk_repr<E>(
-        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E> {
+    const DISK_REPR_SIZE: usize = std::mem::size_of::<OnDiskFullInnerNode>();
+
+    fn from_disk_repr(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
+    ) -> BTResult<Self, storage::Error> {
         OnDiskFullInnerNode::from_disk_repr(read_into_buffer).map(Into::into)
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
         Cow::Owned(OnDiskFullInnerNode::from(self).to_disk_repr().into_owned())
-    }
-
-    fn size() -> usize {
-        std::mem::size_of::<OnDiskFullInnerNode>()
     }
 }
 
@@ -231,7 +230,7 @@ mod tests {
             },
         };
         let disk_repr = original_node.to_disk_repr();
-        let deserialized_node = FullInnerNode::from_disk_repr::<()>(|buf| {
+        let deserialized_node = FullInnerNode::from_disk_repr(|buf| {
             buf.copy_from_slice(&disk_repr);
             Ok(())
         })

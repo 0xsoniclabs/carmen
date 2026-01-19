@@ -130,10 +130,10 @@ where
         let node_file = F::open(
             dir.join(Self::NODE_STORE_FILE).as_path(),
             db_mode.to_open_options(),
-            T::size(),
+            T::DISK_REPR_SIZE,
         )?;
         let len = node_file.len()?;
-        let min_len = metadata.nodes * T::size() as u64;
+        let min_len = metadata.nodes * T::DISK_REPR_SIZE as u64;
         if len < min_len {
             return Err(Error::DatabaseCorruption(format!(
                 "node file too short: got {len}B, expected at least {min_len}B"
@@ -159,14 +159,18 @@ where
     }
 
     fn get(&self, idx: Self::Id) -> BTResult<Self::Item, Error> {
-        let offset = idx * T::size() as u64;
+        let offset = idx * T::DISK_REPR_SIZE as u64;
         if idx >= self.next_idx.load(Ordering::Relaxed)
-            || self.node_file.len()? < offset + T::size() as u64
+            || self.node_file.len()? < offset + T::DISK_REPR_SIZE as u64
             || self.reuse_list_file.lock().unwrap().contains(idx)
         {
             return Err(Error::NotFound.into());
         }
-        let node = T::from_disk_repr(|buf| self.node_file.read_exact_at(buf, offset))?;
+        let node = T::from_disk_repr(|buf| {
+            self.node_file
+                .read_exact_at(buf, offset)
+                .map_err(Into::into)
+        })?;
         Ok(node)
     }
 
@@ -189,7 +193,7 @@ where
         } else if idx < self.frozen_nodes.load(Ordering::Relaxed) {
             return Err(Error::Frozen.into());
         }
-        let offset = idx * T::size() as u64;
+        let offset = idx * T::DISK_REPR_SIZE as u64;
         self.node_file
             .write_all_at(node.to_disk_repr().as_ref(), offset)?;
         Ok(())
@@ -220,8 +224,8 @@ where
         // reserved but not written out because of transformations. To make sure no existing
         // nodes are overwritten, we write at the current next_idx position.
         self.node_file.write_all_at(
-            &vec![0; T::size()],
-            self.next_idx.load(Ordering::Relaxed) * T::size() as u64,
+            &vec![0; T::DISK_REPR_SIZE],
+            self.next_idx.load(Ordering::Relaxed) * T::DISK_REPR_SIZE as u64,
         )?;
         self.node_file.flush()?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
@@ -263,8 +267,8 @@ where
         // reserved but not written out because of transformations. To make sure no existing
         // nodes are overwritten, we write at the current next_idx position.
         self.node_file.write_all_at(
-            &vec![0; T::size()],
-            self.next_idx.load(Ordering::Relaxed) * T::size() as u64,
+            &vec![0; T::DISK_REPR_SIZE],
+            self.next_idx.load(Ordering::Relaxed) * T::DISK_REPR_SIZE as u64,
         )?;
         self.node_file.flush()?;
         let mut reuse_list_file = self.reuse_list_file.lock().unwrap();

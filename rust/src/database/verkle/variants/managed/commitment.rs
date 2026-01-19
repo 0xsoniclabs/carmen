@@ -730,7 +730,7 @@ mod tests {
         let on_disk_commitment: OnDiskVerkleInnerCommitment = (&original).into();
         let disk_repr = on_disk_commitment.to_disk_repr();
         let deserialized: VerkleInnerCommitment =
-            OnDiskVerkleInnerCommitment::from_disk_repr::<()>(|buf| {
+            OnDiskVerkleInnerCommitment::from_disk_repr(|buf| {
                 buf.copy_from_slice(&disk_repr);
                 Ok(())
             })
@@ -773,7 +773,7 @@ mod tests {
         let on_disk_commitment: OnDiskVerkleLeafCommitment = (&original).into();
         let disk_repr = on_disk_commitment.to_disk_repr();
         let deserialized: VerkleLeafCommitment =
-            OnDiskVerkleLeafCommitment::from_disk_repr::<()>(|buf| {
+            OnDiskVerkleLeafCommitment::from_disk_repr(|buf| {
                 buf.copy_from_slice(&disk_repr);
                 Ok(())
             })

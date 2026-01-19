@@ -12,17 +12,22 @@ use std::{borrow::Cow, mem};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
+use crate::{error::BTResult, storage};
+
 /// A trait for types that can be represented as raw bytes on disk.
 /// The disk representation does not need to be the same as the in-memory representation.
 /// There is a blanket implementation for types implementing [`FromBytes`], [`IntoBytes`] and
 /// [`Immutable`].
 pub trait DiskRepresentable {
+    /// The size of the disk representation in bytes.
+    const DISK_REPR_SIZE: usize;
+
     /// Constructs the value from its disk representation. `read_into_buffer` is expected to fill
     /// the provided buffer with the raw bytes read from disk. It is up to the implementation to
     /// convert the buffer into the value.
-    fn from_disk_repr<E>(
-        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E>
+    fn from_disk_repr(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
+    ) -> BTResult<Self, storage::Error>
     where
         Self: Sized;
 
@@ -30,15 +35,14 @@ pub trait DiskRepresentable {
     /// depending on whether the disk representations is the same as the in-memory representation or
     /// needed to be serialized).
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]>;
-
-    /// Returns the size of the disk representation in bytes.
-    fn size() -> usize;
 }
 
 impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
-    fn from_disk_repr<E>(
-        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E> {
+    const DISK_REPR_SIZE: usize = mem::size_of::<T>();
+
+    fn from_disk_repr(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
+    ) -> BTResult<Self, storage::Error> {
         let mut value = T::new_zeroed();
         read_into_buffer(value.as_mut_bytes())?;
         Ok(value)
@@ -46,10 +50,6 @@ impl<T: FromBytes + IntoBytes + Immutable> DiskRepresentable for T {
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.as_bytes())
-    }
-
-    fn size() -> usize {
-        mem::size_of::<Self>()
     }
 }
 
@@ -65,7 +65,7 @@ mod tests {
      {
         let value = ZerocopyableType::from_disk_repr(|buf| {
             buf.fill(1u8);
-            Ok::<_, ()>(())
+            Ok(())
         })
         .unwrap();
 
@@ -81,6 +81,6 @@ mod tests {
 
     #[test]
     fn size_for_zerocopy_types_returns_size_of_type() {
-        assert_eq!(ZerocopyableType::size(), 32);
+        assert_eq!(ZerocopyableType::DISK_REPR_SIZE, 32);
     }
 }

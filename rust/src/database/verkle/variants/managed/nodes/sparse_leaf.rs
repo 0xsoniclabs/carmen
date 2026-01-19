@@ -33,6 +33,7 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
+    storage,
     types::{DiskRepresentable, Key, Value},
 };
 
@@ -131,18 +132,16 @@ impl<const N: usize> From<&SparseLeafNode<N>> for OnDiskSparseLeafNode<N> {
 }
 
 impl<const N: usize> DiskRepresentable for SparseLeafNode<N> {
-    fn from_disk_repr<E>(
-        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E> {
+    const DISK_REPR_SIZE: usize = std::mem::size_of::<OnDiskSparseLeafNode<N>>();
+
+    fn from_disk_repr(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
+    ) -> BTResult<Self, storage::Error> {
         OnDiskSparseLeafNode::<N>::from_disk_repr(read_into_buffer).map(Into::into)
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
         Cow::Owned(OnDiskSparseLeafNode::from(self).to_disk_repr().into_owned())
-    }
-
-    fn size() -> usize {
-        std::mem::size_of::<OnDiskSparseLeafNode<N>>()
     }
 }
 
@@ -364,7 +363,7 @@ mod tests {
             commitment
         };
         let disk_repr = original_node.to_disk_repr();
-        let deserialized_node = SparseLeafNode::<99>::from_disk_repr::<()>(|buf| {
+        let deserialized_node = SparseLeafNode::<99>::from_disk_repr(|buf| {
             buf.copy_from_slice(&disk_repr);
             Ok(())
         })

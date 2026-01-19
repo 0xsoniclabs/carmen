@@ -33,6 +33,7 @@ use crate::{
     },
     error::{BTResult, Error},
     statistics::node_count::NodeCountVisitor,
+    storage,
     types::{DiskRepresentable, Key, ToNodeKind},
 };
 
@@ -124,9 +125,11 @@ impl<const N: usize> From<&SparseInnerNode<N>> for OnDiskSparseInnerNode<N> {
 }
 
 impl<const N: usize> DiskRepresentable for SparseInnerNode<N> {
-    fn from_disk_repr<E>(
-        read_into_buffer: impl FnOnce(&mut [u8]) -> Result<(), E>,
-    ) -> Result<Self, E> {
+    const DISK_REPR_SIZE: usize = std::mem::size_of::<OnDiskSparseInnerNode<N>>();
+
+    fn from_disk_repr(
+        read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
+    ) -> BTResult<Self, storage::Error> {
         OnDiskSparseInnerNode::<N>::from_disk_repr(read_into_buffer).map(Into::into)
     }
 
@@ -136,10 +139,6 @@ impl<const N: usize> DiskRepresentable for SparseInnerNode<N> {
                 .to_disk_repr()
                 .into_owned(),
         )
-    }
-
-    fn size() -> usize {
-        std::mem::size_of::<OnDiskSparseInnerNode<N>>()
     }
 }
 
@@ -298,7 +297,7 @@ mod tests {
             commitment
         };
         let disk_repr = original_node.to_disk_repr();
-        let deserialized_node = SparseInnerNode::<99>::from_disk_repr::<()>(|buf| {
+        let deserialized_node = SparseInnerNode::<99>::from_disk_repr(|buf| {
             buf.copy_from_slice(&disk_repr);
             Ok(())
         })
