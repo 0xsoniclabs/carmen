@@ -238,7 +238,7 @@ impl TrieCommitment for VerkleInnerCommitment {
     }
 
     fn store(&mut self, _index: usize, _prev: Value) {
-        unimplemented!()
+        panic!("VerkleInnerCommitment does not support store")
     }
 }
 
@@ -335,7 +335,7 @@ impl Default for VerkleLeafCommitment {
 
 impl TrieCommitment for VerkleLeafCommitment {
     fn modify_child(&mut self, _index: usize) {
-        unimplemented!()
+        panic!("VerkleLeafCommitment does not support modify_child")
     }
 
     fn store(&mut self, index: usize, prev: Value) {
