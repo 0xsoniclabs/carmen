@@ -28,7 +28,7 @@ use crate::{
         },
         visitor::NodeVisitor,
     },
-    error::{BTResult, Error},
+    error::{BTError, BTResult, Error},
     statistics::node_count::NodeCountVisitor,
     storage,
     types::{DiskRepresentable, Key, Value},
@@ -69,6 +69,18 @@ pub struct OnDiskFullLeafNode {
     pub commitment: OnDiskVerkleLeafCommitment,
 }
 
+impl TryFrom<OnDiskFullLeafNode> for FullLeafNode {
+    type Error = BTError<Error>;
+
+    fn try_from(node: OnDiskFullLeafNode) -> Result<Self, Self::Error> {
+        Ok(FullLeafNode {
+            stem: node.stem,
+            values: node.values,
+            commitment: VerkleLeafCommitment::try_from(node.commitment)?,
+        })
+    }
+}
+
 impl From<&FullLeafNode> for OnDiskFullLeafNode {
     fn from(node: &FullLeafNode) -> Self {
         OnDiskFullLeafNode {
@@ -79,23 +91,16 @@ impl From<&FullLeafNode> for OnDiskFullLeafNode {
     }
 }
 
-impl From<OnDiskFullLeafNode> for FullLeafNode {
-    fn from(node: OnDiskFullLeafNode) -> Self {
-        FullLeafNode {
-            stem: node.stem,
-            values: node.values,
-            commitment: VerkleLeafCommitment::from(node.commitment),
-        }
-    }
-}
-
 impl DiskRepresentable for FullLeafNode {
     const DISK_REPR_SIZE: usize = std::mem::size_of::<OnDiskFullLeafNode>();
 
     fn from_disk_repr(
         read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
     ) -> BTResult<Self, storage::Error> {
-        OnDiskFullLeafNode::from_disk_repr(read_into_buffer).map(Into::into)
+        OnDiskFullLeafNode::from_disk_repr(read_into_buffer).and_then(|on_disk| {
+            FullLeafNode::try_from(on_disk)
+                .map_err(|e| storage::Error::DatabaseCorruption(e.to_string()).into())
+        })
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {

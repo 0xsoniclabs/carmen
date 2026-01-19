@@ -31,7 +31,7 @@ use crate::{
         },
         visitor::NodeVisitor,
     },
-    error::{BTResult, Error},
+    error::{BTError, BTResult, Error},
     statistics::node_count::NodeCountVisitor,
     storage,
     types::{DiskRepresentable, Key, Value},
@@ -111,13 +111,15 @@ pub struct OnDiskSparseLeafNode<const N: usize> {
     pub commitment: OnDiskVerkleLeafCommitment,
 }
 
-impl<const N: usize> From<OnDiskSparseLeafNode<N>> for SparseLeafNode<N> {
-    fn from(on_disk: OnDiskSparseLeafNode<N>) -> Self {
-        SparseLeafNode {
+impl<const N: usize> TryFrom<OnDiskSparseLeafNode<N>> for SparseLeafNode<N> {
+    type Error = BTError<Error>;
+
+    fn try_from(on_disk: OnDiskSparseLeafNode<N>) -> Result<Self, Self::Error> {
+        Ok(SparseLeafNode {
             stem: on_disk.stem,
             values: on_disk.values,
-            commitment: VerkleLeafCommitment::from(on_disk.commitment),
-        }
+            commitment: VerkleLeafCommitment::try_from(on_disk.commitment)?,
+        })
     }
 }
 
@@ -137,7 +139,10 @@ impl<const N: usize> DiskRepresentable for SparseLeafNode<N> {
     fn from_disk_repr(
         read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
     ) -> BTResult<Self, storage::Error> {
-        OnDiskSparseLeafNode::<N>::from_disk_repr(read_into_buffer).map(Into::into)
+        OnDiskSparseLeafNode::<N>::from_disk_repr(read_into_buffer).and_then(|on_disk| {
+            SparseLeafNode::<N>::try_from(on_disk)
+                .map_err(|e| storage::Error::DatabaseCorruption(e.to_string()).into())
+        })
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {

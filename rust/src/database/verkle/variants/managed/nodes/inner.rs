@@ -30,7 +30,7 @@ use crate::{
         },
         visitor::NodeVisitor,
     },
-    error::{BTResult, Error},
+    error::{BTError, BTResult, Error},
     statistics::node_count::NodeCountVisitor,
     storage,
     types::{DiskRepresentable, Key, ToNodeKind, TreeId},
@@ -68,20 +68,22 @@ pub struct OnDiskFullInnerNode {
     pub commitment: OnDiskVerkleInnerCommitment,
 }
 
+impl TryFrom<OnDiskFullInnerNode> for FullInnerNode {
+    type Error = BTError<Error>;
+
+    fn try_from(node: OnDiskFullInnerNode) -> Result<Self, Self::Error> {
+        Ok(FullInnerNode {
+            children: node.children,
+            commitment: VerkleInnerCommitment::try_from(node.commitment)?,
+        })
+    }
+}
+
 impl From<&FullInnerNode> for OnDiskFullInnerNode {
     fn from(node: &FullInnerNode) -> Self {
         OnDiskFullInnerNode {
             children: node.children,
             commitment: OnDiskVerkleInnerCommitment::from(&node.commitment),
-        }
-    }
-}
-
-impl From<OnDiskFullInnerNode> for FullInnerNode {
-    fn from(node: OnDiskFullInnerNode) -> Self {
-        FullInnerNode {
-            children: node.children,
-            commitment: VerkleInnerCommitment::from(node.commitment),
         }
     }
 }
@@ -92,7 +94,10 @@ impl DiskRepresentable for FullInnerNode {
     fn from_disk_repr(
         read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
     ) -> BTResult<Self, storage::Error> {
-        OnDiskFullInnerNode::from_disk_repr(read_into_buffer).map(Into::into)
+        OnDiskFullInnerNode::from_disk_repr(read_into_buffer).and_then(|on_disk| {
+            FullInnerNode::try_from(on_disk)
+                .map_err(|e| storage::Error::DatabaseCorruption(e.to_string()).into())
+        })
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {

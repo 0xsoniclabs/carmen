@@ -30,7 +30,7 @@ use crate::{
         },
         visitor::NodeVisitor,
     },
-    error::{BTResult, Error},
+    error::{BTError, BTResult, Error},
     statistics::node_count::NodeCountVisitor,
     storage,
     types::{DiskRepresentable, Key, ToNodeKind},
@@ -93,14 +93,16 @@ struct OnDiskInnerDeltaNode {
 }
 
 // This still needs to load the full inner node to reconstruct the `children`.
-impl From<OnDiskInnerDeltaNode> for InnerDeltaNode {
-    fn from(delta_node: OnDiskInnerDeltaNode) -> Self {
-        InnerDeltaNode {
+impl TryFrom<OnDiskInnerDeltaNode> for InnerDeltaNode {
+    type Error = BTError<Error>;
+
+    fn try_from(delta_node: OnDiskInnerDeltaNode) -> Result<Self, Self::Error> {
+        Ok(InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: delta_node.children_delta,
             full_inner_node_id: delta_node.full_inner_node_id,
-            commitment: VerkleInnerCommitment::from(delta_node.commitment),
-        }
+            commitment: VerkleInnerCommitment::try_from(delta_node.commitment)?,
+        })
     }
 }
 
@@ -120,7 +122,10 @@ impl DiskRepresentable for InnerDeltaNode {
     fn from_disk_repr(
         read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
     ) -> BTResult<Self, storage::Error> {
-        OnDiskInnerDeltaNode::from_disk_repr(read_into_buffer).map(Into::into)
+        OnDiskInnerDeltaNode::from_disk_repr(read_into_buffer).and_then(|on_disk| {
+            InnerDeltaNode::try_from(on_disk)
+                .map_err(|e| storage::Error::DatabaseCorruption(e.to_string()).into())
+        })
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {

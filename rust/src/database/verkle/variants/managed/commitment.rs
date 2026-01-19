@@ -21,7 +21,7 @@ use crate::{
             variants::managed::{VerkleNode, VerkleNodeId},
         },
     },
-    error::{BTResult, Error},
+    error::{BTError, BTResult, Error},
     node_manager::NodeManager,
     types::{HasEmptyId, Value},
 };
@@ -245,18 +245,18 @@ impl TrieCommitment for VerkleInnerCommitment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
 #[repr(C)]
 pub struct OnDiskVerkleInnerCommitment {
-    // TODO: Consider using compressed 32-byte on-disk representation to save space.
-    // https://github.com/0xsoniclabs/sonic-admin/issues/373
-    commitment: [u8; 64],
+    commitment: [u8; 32],
 }
 
-impl From<OnDiskVerkleInnerCommitment> for VerkleInnerCommitment {
-    fn from(odvc: OnDiskVerkleInnerCommitment) -> Self {
-        VerkleInnerCommitment {
-            commitment: Commitment::from_bytes(odvc.commitment),
+impl TryFrom<OnDiskVerkleInnerCommitment> for VerkleInnerCommitment {
+    type Error = BTError<Error>;
+
+    fn try_from(odvc: OnDiskVerkleInnerCommitment) -> Result<Self, Self::Error> {
+        Ok(VerkleInnerCommitment {
+            commitment: Commitment::try_from_bytes(odvc.commitment)?,
             status: CommitmentStatus::Clean,
             changed_indices: [0u8; 256 / 8],
-        }
+        })
     }
 }
 
@@ -265,7 +265,7 @@ impl From<&VerkleInnerCommitment> for OnDiskVerkleInnerCommitment {
         assert_eq!(value.status, CommitmentStatus::Clean);
 
         OnDiskVerkleInnerCommitment {
-            commitment: value.commitment.to_bytes(),
+            commitment: value.commitment.compress(),
         }
     }
 }
@@ -354,28 +354,28 @@ impl TrieCommitment for VerkleLeafCommitment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Unaligned, Immutable)]
 #[repr(C)]
 pub struct OnDiskVerkleLeafCommitment {
-    // TODO: Consider using compressed 32-byte on-disk representation to save space.
-    // https://github.com/0xsoniclabs/sonic-admin/issues/373
-    commitment: [u8; 64],
+    commitment: [u8; 32],
     committed_used_indices: [u8; 256 / 8],
     // TODO: Instead of storing these, consider doing a full commitment recomputation
     // after loading a leaf from disk.
     // See https://github.com/0xsoniclabs/sonic-admin/issues/373
-    c1: [u8; 64],
-    c2: [u8; 64],
+    c1: [u8; 32],
+    c2: [u8; 32],
 }
 
-impl From<OnDiskVerkleLeafCommitment> for VerkleLeafCommitment {
-    fn from(odvc: OnDiskVerkleLeafCommitment) -> Self {
-        VerkleLeafCommitment {
-            commitment: Commitment::from_bytes(odvc.commitment),
+impl TryFrom<OnDiskVerkleLeafCommitment> for VerkleLeafCommitment {
+    type Error = BTError<Error>;
+
+    fn try_from(odvc: OnDiskVerkleLeafCommitment) -> Result<Self, Self::Error> {
+        Ok(VerkleLeafCommitment {
+            commitment: Commitment::try_from_bytes(odvc.commitment)?,
             committed_used_indices: odvc.committed_used_indices,
-            c1: Commitment::from_bytes(odvc.c1),
-            c2: Commitment::from_bytes(odvc.c2),
+            c1: Commitment::try_from_bytes(odvc.c1)?,
+            c2: Commitment::try_from_bytes(odvc.c2)?,
             status: CommitmentStatus::Clean,
             committed_values: [Value::default(); 256],
             changed_indices: [0u8; 256 / 8],
-        }
+        })
     }
 }
 
@@ -384,10 +384,10 @@ impl From<&VerkleLeafCommitment> for OnDiskVerkleLeafCommitment {
         assert_eq!(value.status, CommitmentStatus::Clean);
 
         OnDiskVerkleLeafCommitment {
-            commitment: value.commitment.to_bytes(),
+            commitment: value.commitment.compress(),
             committed_used_indices: value.committed_used_indices,
-            c1: value.c1.to_bytes(),
-            c2: value.c2.to_bytes(),
+            c1: value.c1.compress(),
+            c2: value.c2.compress(),
         }
     }
 }
@@ -735,7 +735,8 @@ mod tests {
                 Ok(())
             })
             .unwrap()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert_eq!(
             deserialized,
@@ -745,6 +746,18 @@ mod tests {
                 changed_indices: [0u8; 256 / 8], // not preserved on disk
             }
         );
+    }
+
+    #[test]
+    fn converting_on_disk_verkle_inner_commitment_with_invalid_bytes_fails() {
+        let invalid = OnDiskVerkleInnerCommitment {
+            commitment: [0x01; 32],
+        };
+        let result: BTResult<VerkleInnerCommitment, Error> = invalid.try_into();
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::CorruptedState(_))
+        ));
     }
 
     #[test]
@@ -778,7 +791,8 @@ mod tests {
                 Ok(())
             })
             .unwrap()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert_eq!(
             deserialized,
@@ -792,6 +806,45 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn converting_on_disk_verkle_leaf_commitment_with_invalid_bytes_fails() {
+        let invalid_c = OnDiskVerkleLeafCommitment {
+            commitment: [0x01; 32],
+            committed_used_indices: [0u8; 256 / 8],
+            c1: [0x00; 32],
+            c2: [0x00; 32],
+        };
+        let result: BTResult<VerkleLeafCommitment, Error> = invalid_c.try_into();
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::CorruptedState(_))
+        ));
+
+        let invalid_c1 = OnDiskVerkleLeafCommitment {
+            commitment: [0x00; 32],
+            committed_used_indices: [0u8; 256 / 8],
+            c1: [0x01; 32],
+            c2: [0x00; 32],
+        };
+        let result: BTResult<VerkleLeafCommitment, Error> = invalid_c1.try_into();
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::CorruptedState(_))
+        ));
+
+        let invalid_c2 = OnDiskVerkleLeafCommitment {
+            commitment: [0x00; 32],
+            committed_used_indices: [0u8; 256 / 8],
+            c1: [0x00; 32],
+            c2: [0x01; 32],
+        };
+        let result: BTResult<VerkleLeafCommitment, Error> = invalid_c2.try_into();
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::CorruptedState(_))
+        ));
     }
 
     #[test]

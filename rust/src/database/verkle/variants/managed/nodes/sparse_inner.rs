@@ -31,7 +31,7 @@ use crate::{
         },
         visitor::NodeVisitor,
     },
-    error::{BTResult, Error},
+    error::{BTError, BTResult, Error},
     statistics::node_count::NodeCountVisitor,
     storage,
     types::{DiskRepresentable, Key, ToNodeKind},
@@ -106,12 +106,14 @@ pub struct OnDiskSparseInnerNode<const N: usize> {
     pub commitment: OnDiskVerkleInnerCommitment,
 }
 
-impl<const N: usize> From<OnDiskSparseInnerNode<N>> for SparseInnerNode<N> {
-    fn from(on_disk: OnDiskSparseInnerNode<N>) -> Self {
-        SparseInnerNode {
+impl<const N: usize> TryFrom<OnDiskSparseInnerNode<N>> for SparseInnerNode<N> {
+    type Error = BTError<Error>;
+
+    fn try_from(on_disk: OnDiskSparseInnerNode<N>) -> Result<Self, Self::Error> {
+        Ok(SparseInnerNode {
             children: on_disk.children,
-            commitment: VerkleInnerCommitment::from(on_disk.commitment),
-        }
+            commitment: VerkleInnerCommitment::try_from(on_disk.commitment)?,
+        })
     }
 }
 
@@ -130,7 +132,10 @@ impl<const N: usize> DiskRepresentable for SparseInnerNode<N> {
     fn from_disk_repr(
         read_into_buffer: impl FnOnce(&mut [u8]) -> BTResult<(), storage::Error>,
     ) -> BTResult<Self, storage::Error> {
-        OnDiskSparseInnerNode::<N>::from_disk_repr(read_into_buffer).map(Into::into)
+        OnDiskSparseInnerNode::<N>::from_disk_repr(read_into_buffer).and_then(|on_disk| {
+            SparseInnerNode::<N>::try_from(on_disk)
+                .map_err(|e| storage::Error::DatabaseCorruption(e.to_string()).into())
+        })
     }
 
     fn to_disk_repr(&'_ self) -> Cow<'_, [u8]> {
