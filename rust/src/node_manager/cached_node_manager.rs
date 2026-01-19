@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(get_method)]
-    fn cached_node_manager_get_methods_return_existing_delta_node_from_storage_and_full_node_from_cache_if_not_in_cache(
+    fn cached_node_manager_get_methods_load_full_node_from_cache_when_reading_delta_node_from_storage(
         #[case] get_method: GetMethod,
     ) {
         let id = 0;

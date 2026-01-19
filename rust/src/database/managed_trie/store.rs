@@ -125,7 +125,7 @@ where
             match next_store_action {
                 StoreAction::Store(stores) => {
                     if is_archive {
-                        copy_on_write_current_node(Vec::new())?; // Note: Currently the number of changed children is only used when transforming and inner node, which is never the case when storing.
+                        copy_on_write_current_node(Vec::new())?; // Note: Currently the number of changed children is only used when transforming an inner node, which is never the case when storing.
                     }
 
                     let current_node_mut: &mut T = current_node_update

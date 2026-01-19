@@ -15,7 +15,8 @@ pub trait HasDeltaVariant {
     /// The ID type for this node type.
     type Id;
 
-    /// Returns the ID the full node if it is required to initialize this node or `None` otherwise.
+    /// Returns the ID of the full node if it is required to initialize this node or `None`
+    /// otherwise.
     fn needs_full(&self) -> Option<Self::Id>;
 
     /// Copies all data that is part of the in-memory but not the on-disk representation of this
