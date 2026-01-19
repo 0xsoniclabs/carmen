@@ -67,6 +67,18 @@ impl<T, F> NodeFileStorage<T, F> {
     pub const PREPARED_METADATA_FILE: &'static str = "prepared_metadata.bin";
 }
 
+impl<T, F> NodeFileStorage<T, F>
+where
+    T: DiskRepresentable + Send + Sync,
+    F: FileBackend,
+{
+    pub fn get_size_stats(&self) -> (u64, u64) {
+        let node_count = self.next_idx.load(Ordering::SeqCst);
+        let reuse_count = self.reuse_list_file.lock().unwrap().count();
+        (node_count, reuse_count as u64)
+    }
+}
+
 impl<T, F> Storage for NodeFileStorage<T, F>
 where
     T: DiskRepresentable + Send + Sync,

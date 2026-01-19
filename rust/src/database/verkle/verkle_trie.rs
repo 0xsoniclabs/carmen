@@ -38,6 +38,8 @@ pub trait VerkleTrie: Send + Sync {
 
     /// Notifies the trie that all updates for the given block height have been applied.
     fn after_update(&self, block_height: u64) -> BTResult<(), Error>;
+
+    fn print_size_stats(&self) {}
 }
 
 #[cfg(test)]

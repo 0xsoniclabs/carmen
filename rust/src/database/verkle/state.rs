@@ -11,7 +11,7 @@
 use std::{mem::MaybeUninit, sync::Arc};
 
 use crate::{
-    CarmenState, IsArchive,
+    CarmenState, IsArchive, VerkleStorage,
     database::verkle::{
         KeyedUpdateBatch, ManagedVerkleTrie,
         embedding::{VerkleTrieEmbedding, code},
@@ -22,7 +22,7 @@ use crate::{
         verkle_trie::VerkleTrie,
     },
     error::{BTResult, Error},
-    node_manager::NodeManager,
+    node_manager::{NodeManager, cached_node_manager::CachedNodeManager},
     storage::RootIdProvider,
     sync::Mutex,
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
@@ -93,16 +93,13 @@ impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
     }
 }
 
-impl<M> VerkleTrieCarmenState<ManagedVerkleTrie<M>>
-where
-    M: NodeManager<Id = VerkleNodeId, Node = VerkleNode>
-        + RootIdProvider<Id = VerkleNodeId>
-        + Send
-        + Sync,
-{
+impl VerkleTrieCarmenState<ManagedVerkleTrie<CachedNodeManager<VerkleStorage>>> {
     /// Creates a new [`VerkleTrieCarmenState`] using a managed Verkle trie with the given node
     /// manager. Forwards any errors from [`ManagedVerkleTrie::try_new`].
-    pub fn try_new(manager: Arc<M>, state_mode: StateMode) -> BTResult<Self, Error> {
+    pub fn try_new(
+        manager: Arc<CachedNodeManager<VerkleStorage>>,
+        state_mode: StateMode,
+    ) -> BTResult<Self, Error> {
         let block = match state_mode {
             StateMode::Live | StateMode::EvolvingArchive => manager.highest_block_number()?,
             StateMode::Archive(block) => Some(block),
@@ -196,6 +193,9 @@ impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     fn apply_block_update<'u>(&self, block: u64, update: Update<'u>) -> BTResult<(), Error> {
         let _span = tracy_client::span!("VerkleTrieCarmenState::apply_block_update");
         let mut block_height = self.block_height.lock().unwrap();
+        if block.is_multiple_of(10_000) {
+            self.trie.print_size_stats();
+        }
         let block = match &mut *block_height {
             BlockHeight::Live => 0, // For the liveDB we always pass block height 0
             BlockHeight::Archive(_) => {

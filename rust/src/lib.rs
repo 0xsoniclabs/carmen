@@ -303,9 +303,8 @@ impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
     }
 }
 
-impl<S, LS> CarmenDb for CarmenS6FileBasedDb<S, LS>
+impl<LS> CarmenDb for CarmenS6FileBasedDb<VerkleStorage, LS>
 where
-    S: Storage<Id = VerkleNodeId, Item = VerkleNode> + RootIdProvider<Id = VerkleNodeId> + 'static,
     LS: CarmenState + IsArchive + 'static,
 {
     fn checkpoint(&self) -> BTResult<(), Error> {

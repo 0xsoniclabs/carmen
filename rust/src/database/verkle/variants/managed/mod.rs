@@ -17,6 +17,7 @@ pub use nodes::{
 };
 
 use crate::{
+    VerkleStorage,
     database::{
         managed_trie::{self, ManagedTrieNode, TrieUpdateLog},
         verkle::{
@@ -26,7 +27,7 @@ use crate::{
         visitor::{AcceptVisitor, NodeVisitor},
     },
     error::{BTResult, Error},
-    node_manager::NodeManager,
+    node_manager::{NodeManager, cached_node_manager::CachedNodeManager},
     storage::RootIdProvider,
     sync::{Arc, RwLock},
     types::{Key, Value},
@@ -86,13 +87,7 @@ impl<M: NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync> AcceptV
     }
 }
 
-impl<M> VerkleTrie for ManagedVerkleTrie<M>
-where
-    M: NodeManager<Id = VerkleNodeId, Node = VerkleNode>
-        + RootIdProvider<Id = VerkleNodeId>
-        + Send
-        + Sync,
-{
+impl VerkleTrie for ManagedVerkleTrie<CachedNodeManager<VerkleStorage>> {
     fn lookup(&self, key: &Key) -> BTResult<Value, Error> {
         managed_trie::lookup(*self.root.read().unwrap(), key, &*self.manager)
     }
@@ -105,6 +100,10 @@ where
             &self.update_log,
             is_archive,
         )
+    }
+
+    fn print_size_stats(&self) {
+        self.manager.print_size_stats();
     }
 
     fn commit(&self) -> BTResult<Commitment, Error> {

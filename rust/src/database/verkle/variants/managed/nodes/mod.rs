@@ -14,6 +14,7 @@ use derive_deftly::Deftly;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
+    VerkleStorageManager,
     database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction, UnionManagedTrieNode},
         verkle::{
@@ -49,6 +50,38 @@ pub mod sparse_leaf;
 
 #[cfg(test)]
 pub use tests::{NodeAccess, VerkleManagedTrieNode};
+
+impl VerkleStorageManager {
+    pub fn print_size_stats(&self) {
+        let (total_inner9, reuse_inner9) = self.inner9.get_size_stats();
+        let (total_inner15, reuse_inner15) = self.inner15.get_size_stats();
+        let (total_inner21, reuse_inner21) = self.inner21.get_size_stats();
+        let (total_inner256, reuse_inner256) = self.inner256.get_size_stats();
+        let (total_inner_delta, reuse_inner_delta) = self.inner_delta.get_size_stats();
+        let (total_leaf1, reuse_leaf1) = self.leaf1.get_size_stats();
+        let (total_leaf2, reuse_leaf2) = self.leaf2.get_size_stats();
+        let (total_leaf5, reuse_leaf5) = self.leaf5.get_size_stats();
+        let (total_leaf18, reuse_leaf18) = self.leaf18.get_size_stats();
+        let (total_leaf146, reuse_leaf146) = self.leaf146.get_size_stats();
+        let (total_leaf256, reuse_leaf256) = self.leaf256.get_size_stats();
+
+        eprintln!(
+            "{{\
+            \"Inner9\": {{\"total\": {total_inner9}, \"reuse\": {reuse_inner9}}},\
+            \"Inner15\": {{\"total\": {total_inner15}, \"reuse\": {reuse_inner15}}},\
+            \"Inner21\": {{\"total\": {total_inner21}, \"reuse\": {reuse_inner21}}},\
+            \"Inner256\": {{\"total\": {total_inner256}, \"reuse\": {reuse_inner256}}},\
+            \"InnerDelta\": {{\"total\": {total_inner_delta}, \"reuse\": {reuse_inner_delta}}},\
+            \"Leaf1\": {{\"total\": {total_leaf1}, \"reuse\": {reuse_leaf1}}},\
+            \"Leaf2\": {{\"total\": {total_leaf2}, \"reuse\": {reuse_leaf2}}},\
+            \"Leaf5\": {{\"total\": {total_leaf5}, \"reuse\": {reuse_leaf5}}},\
+            \"Leaf18\": {{\"total\": {total_leaf18}, \"reuse\": {reuse_leaf18}}},\
+            \"Leaf146\": {{\"total\": {total_leaf146}, \"reuse\": {reuse_leaf146}}},\
+            \"Leaf256\": {{\"total\": {total_leaf256}, \"reuse\": {reuse_leaf256}}}\
+            }}",
+        );
+    }
+}
 
 /// A node in a managed Verkle trie.
 //

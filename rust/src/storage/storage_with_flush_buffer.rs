@@ -14,6 +14,7 @@ use std::{cmp, path::Path, sync::atomic::AtomicU8 as StdAtomicU8, time::Duration
 use dashmap::DashMap;
 
 use crate::{
+    VerkleStorageManager,
     error::BTResult,
     storage::{Checkpointable, DbMode, Error, RootIdProvider, Storage},
     sync::{
@@ -134,6 +135,12 @@ where
         })?;
         storage.close()?;
         Ok(())
+    }
+}
+
+impl StorageWithFlushBuffer<VerkleStorageManager> {
+    pub fn print_size_stats(&self) {
+        self.storage.print_size_stats();
     }
 }
 

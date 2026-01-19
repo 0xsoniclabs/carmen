@@ -16,6 +16,7 @@ use std::{
 };
 
 use crate::{
+    VerkleStorage,
     error::{BTResult, Error},
     node_manager::{
         NodeManager,
@@ -100,6 +101,12 @@ where
     // Every read/write access to an empty node ID returns this instance.
     empty_node: RwLock<NodeWithMetadata<S::Item>>,
     empty_id: S::Id,
+}
+
+impl CachedNodeManager<VerkleStorage> {
+    pub fn print_size_stats(&self) {
+        self.storage.print_size_stats();
+    }
 }
 
 impl<S> CachedNodeManager<S>
