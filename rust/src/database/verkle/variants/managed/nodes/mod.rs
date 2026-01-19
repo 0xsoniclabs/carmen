@@ -943,7 +943,7 @@ mod tests {
             children: [VerkleNodeId::default(); 256],
             children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
             full_inner_node_id,
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         };
         let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
         assert_eq!(verkle_node.needs_full(), Some(full_inner_node_id));
@@ -955,13 +955,13 @@ mod tests {
             [VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Inner256); 256];
         let full_node = VerkleNode::Inner256(Box::new(FullInnerNode {
             children: inner_children,
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }));
         let mut delta_node = VerkleNode::InnerDelta(Box::new(InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
             full_inner_node_id: VerkleNodeId::default(),
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }));
 
         delta_node.copy_from_full(&full_node).unwrap();
@@ -972,13 +972,13 @@ mod tests {
     fn copy_from_full_returns_error_if_provided_node_is_not_a_full_node() {
         let full_node = VerkleNode::Inner15(Box::new(Inner15VerkleNode {
             children: [ItemWithIndex::default(); 15],
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }));
         let mut delta_node = VerkleNode::InnerDelta(Box::new(InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
             full_inner_node_id: VerkleNodeId::default(),
-            commitment: VerkleCommitment::default(),
+            commitment: VerkleInnerCommitment::default(),
         }));
 
         assert_eq!(
@@ -1040,7 +1040,7 @@ mod tests {
                 children: [VerkleNodeId::default(); 256],
                 children_delta,
                 full_inner_node_id: VerkleNodeId::default(),
-                commitment: VerkleCommitment::default(),
+                commitment: VerkleInnerCommitment::default(),
             };
             let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
             let changed_children: Vec<u8> =
@@ -1071,7 +1071,7 @@ mod tests {
                 children: [VerkleNodeId::default(); 256],
                 children_delta,
                 full_inner_node_id: VerkleNodeId::default(),
-                commitment: VerkleCommitment::default(),
+                commitment: VerkleInnerCommitment::default(),
             };
             let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
             let changed_children: Vec<u8> =
