@@ -257,7 +257,7 @@ mod tests {
             verkle::{test_utils::FromIndexValues, variants::managed::nodes::VerkleNodeKind},
         },
         error::BTError,
-        types::{TreeId, Value},
+        types::{HasEmptyId, TreeId, Value},
     };
 
     const TEST_CHILD_NODE_KIND: VerkleNodeKind = VerkleNodeKind::Inner9;
@@ -274,6 +274,36 @@ mod tests {
             full_inner_node_id: VerkleNodeId::default(),
             commitment: VerkleInnerCommitment::default(),
         }
+    }
+
+    #[test]
+    fn can_be_converted_to_and_from_on_disk_representation() {
+        let original_node = InnerDeltaNode {
+            // Set children to empty since they are not preserved in on-disk representation
+            children: [VerkleNodeId::empty_id(); 256],
+            children_delta: array::from_fn(|i| VerkleIdWithIndex {
+                index: i as u8,
+                item: VerkleNodeId::from_idx_and_node_kind(
+                    i as u64 + 1000,
+                    VerkleNodeKind::Inner15,
+                ),
+            }),
+            full_inner_node_id: VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256),
+            commitment: {
+                // We deliberately only create a default commitment, since this type does
+                // not preserve all of its fields when converting to/from on-disk representation.
+                let mut commitment = VerkleInnerCommitment::default();
+                commitment.mark_clean();
+                commitment
+            },
+        };
+        let disk_repr = original_node.to_disk_repr();
+        let deserialized_node = InnerDeltaNode::from_disk_repr(|buf| {
+            buf.copy_from_slice(&disk_repr);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(original_node, deserialized_node);
     }
 
     #[test]
