@@ -232,11 +232,12 @@ mod tests {
             },
         };
         let disk_repr = original_node.to_disk_repr();
-        let deserialized_node = FullLeafNode::from_disk_repr(|buf| {
+        let mut deserialized_node = FullLeafNode::from_disk_repr(|buf| {
             buf.copy_from_slice(&disk_repr);
             Ok(())
         })
         .unwrap();
+        deserialized_node.commitment.test_only_unset_restored();
         assert_eq!(original_node, deserialized_node);
     }
 
