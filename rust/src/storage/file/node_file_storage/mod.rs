@@ -203,14 +203,13 @@ where
         if self.db_mode.read_only() {
             return Err(Error::ReadOnly.into());
         }
-        if idx >= self.next_idx.load(Ordering::Relaxed)
-            || self.reuse_list_file.lock().unwrap().contains(idx)
-        {
+        let mut reuse_list_file = self.reuse_list_file.lock().unwrap();
+        if idx >= self.next_idx.load(Ordering::Relaxed) || reuse_list_file.contains(idx) {
             Err(Error::NotFound.into())
         } else if idx < self.frozen_nodes.load(Ordering::Relaxed) {
             Err(Error::Frozen.into())
         } else {
-            self.reuse_list_file.lock().unwrap().push(idx);
+            reuse_list_file.push(idx);
             Ok(())
         }
     }
