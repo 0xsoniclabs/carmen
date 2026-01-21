@@ -597,8 +597,10 @@ mod tests {
 
         let storage = NodeFileStorage::open(&dir, db_mode).unwrap();
 
-        assert_eq!(storage.reserve(&[0; 32]), 2); // last index in reuse list
-        assert_eq!(storage.reserve(&[0; 32]), 3); // next index in reuse list
+        let reserved1 = storage.reserve(&[0; 32]);
+        assert!(matches!(reserved1, 2 | 3)); // index in reuse list
+        let reserved2 = storage.reserve(&[0; 32]);
+        assert!(matches!(reserved2, 2 | 3) && reserved2 != reserved1); // other index in reuse list
         assert_eq!(storage.reserve(&[0; 32]), 4); // new index
     }
 
@@ -725,8 +727,10 @@ mod tests {
         storage.delete(0).unwrap();
         storage.delete(1).unwrap();
         let mut reuse_list_file = storage.reuse_list_file.lock().unwrap();
-        assert_eq!(reuse_list_file.pop(), Some(1));
-        assert_eq!(reuse_list_file.pop(), Some(0));
+        let pop1 = reuse_list_file.pop();
+        assert!(matches!(pop1, Some(0 | 1)));
+        let pop2 = reuse_list_file.pop();
+        assert!(matches!(pop2, Some(0 | 1) if pop2 != pop1));
         assert_eq!(reuse_list_file.pop(), None);
     }
 

@@ -30,11 +30,9 @@ pub struct ReuseListFile {
     // And because they are frozen, they don't need to be written back to the file.
     frozen_indices: HashSet<u64>,
     /// A cache for temporarily frozen indices that may be unfrozen or permanently frozen later.
-    temp_frozen_indices: Vec<u64>,
+    temp_frozen_indices: HashSet<u64>,
     /// A cache holding all non-frozen indices.
-    // There will typically be only a few non-frozen indices, so using a Vec simplifies write-back
-    // without a big overhead for lookups.
-    reusable_indices: Vec<u64>,
+    reusable_indices: HashSet<u64>,
 }
 
 impl ReuseListFile {
@@ -67,19 +65,21 @@ impl ReuseListFile {
         let mut all_indices = vec![0u64; count as usize];
         file.read_exact(all_indices.as_mut_bytes())?;
         let reusable_indices = all_indices.split_off(frozen_count as usize);
-        let frozen_indices = all_indices.into_iter().collect();
+        let reusable_indices = HashSet::from_iter(reusable_indices);
+        let frozen_indices = HashSet::from_iter(all_indices);
 
         Ok(Self {
             file,
             frozen_indices,
-            temp_frozen_indices: Vec::new(),
+            temp_frozen_indices: HashSet::new(),
             reusable_indices,
         })
     }
 
     /// Writes all unfrozen indices to disk.
     pub fn write_to_disk(&mut self) -> BTResult<(), Error> {
-        let data = self.reusable_indices.as_bytes();
+        let data: Vec<_> = self.reusable_indices.iter().copied().collect();
+        let data = data.as_bytes();
         let old_size = (self.frozen_indices.len() * size_of::<u64>()) as u64;
 
         self.file.seek(SeekFrom::Start(old_size))?;
@@ -92,18 +92,19 @@ impl ReuseListFile {
     /// Temporarily freezes all unfrozen indices, in a way that they can be unfrozen again
     /// using [`Self::unfreeze_temp`] or be permanently frozen using [`Self::freeze_permanently`].
     pub fn freeze_temporarily(&mut self) {
-        self.temp_frozen_indices.append(&mut self.reusable_indices);
+        self.temp_frozen_indices
+            .extend(self.reusable_indices.drain());
     }
 
     /// Permanently freezes all temporarily frozen indices.
     pub fn freeze_permanently(&mut self) {
-        self.frozen_indices
-            .extend(self.temp_frozen_indices.drain(..));
+        self.frozen_indices.extend(self.temp_frozen_indices.drain());
     }
 
     /// Unfreezes all temporarily frozen indices, making them available for reuse again.
     pub fn unfreeze_temp(&mut self) {
-        self.reusable_indices.append(&mut self.temp_frozen_indices);
+        self.reusable_indices
+            .extend(self.temp_frozen_indices.drain());
     }
 
     /// Returns the number of all indices.
@@ -118,12 +119,16 @@ impl ReuseListFile {
 
     /// Pops a non-frozen index, if any are available.
     pub fn pop(&mut self) -> Option<u64> {
-        self.reusable_indices.pop()
+        let idx = self.reusable_indices.iter().next().copied();
+        if let Some(idx) = idx {
+            self.reusable_indices.remove(&idx);
+        }
+        idx
     }
 
     /// Pushes an index to the cache.
     pub fn push(&mut self, idx: u64) {
-        self.reusable_indices.push(idx);
+        self.reusable_indices.insert(idx);
     }
 
     /// Returns an iterator over all reusable indices.
@@ -168,9 +173,9 @@ mod tests {
         let frozen_count = 2;
         let count = 3;
         let reuse_list_file = ReuseListFile::open(path, count, frozen_count).unwrap();
-        assert_eq!(reuse_list_file.frozen_indices, [0, 1].into_iter().collect());
+        assert_eq!(reuse_list_file.frozen_indices, HashSet::from([0, 1]));
         assert!(reuse_list_file.temp_frozen_indices.is_empty());
-        assert_eq!(reuse_list_file.reusable_indices, [2]);
+        assert_eq!(reuse_list_file.reusable_indices, HashSet::from([2]));
     }
 
     #[test]
@@ -226,9 +231,9 @@ mod tests {
 
         let mut reuse_list_file = ReuseListFile {
             file: File::create(&path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![],
-            reusable_indices: vec![2, 3],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([]),
+            reusable_indices: HashSet::from([2, 3]),
         };
         reuse_list_file
             .file
@@ -238,7 +243,13 @@ mod tests {
         reuse_list_file.write_to_disk().unwrap();
 
         let read_indices = fs::read(&path).unwrap();
-        assert_eq!(read_indices, [0u64, 1, 2, 3].as_bytes());
+        assert_eq!(
+            read_indices
+                .chunks_exact(8)
+                .map(|c| u64::from_ne_bytes(c.try_into().unwrap()))
+                .collect::<HashSet<_>>(),
+            HashSet::from([0u64, 1, 2, 3])
+        );
     }
 
     #[test]
@@ -250,9 +261,9 @@ mod tests {
 
         let mut reuse_list_file = ReuseListFile {
             file: File::open(&path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: [0, 1].into_iter().collect(),
+            temp_frozen_indices: [2, 3].into_iter().collect(),
+            reusable_indices: [4, 5].into_iter().collect(),
         };
 
         let result = reuse_list_file.write_to_disk(); // file is opened read-only
@@ -269,18 +280,18 @@ mod tests {
 
         let mut reuse_list_file = ReuseListFile {
             file: File::create(&path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
         reuse_list_file.freeze_temporarily();
 
+        assert_eq!(reuse_list_file.frozen_indices, HashSet::from([0, 1]));
         assert_eq!(
-            reuse_list_file.frozen_indices,
-            [0u64, 1].into_iter().collect()
+            reuse_list_file.temp_frozen_indices,
+            HashSet::from([2, 3, 4, 5])
         );
-        assert_eq!(reuse_list_file.temp_frozen_indices, [2, 3, 4, 5]);
         assert!(reuse_list_file.reusable_indices.is_empty());
     }
 
@@ -291,17 +302,14 @@ mod tests {
 
         let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
         reuse_list_file.freeze_permanently();
 
-        assert_eq!(
-            reuse_list_file.frozen_indices,
-            [0, 1, 2, 3].into_iter().collect()
-        );
+        assert_eq!(reuse_list_file.frozen_indices, HashSet::from([0, 1, 2, 3]));
         assert!(reuse_list_file.temp_frozen_indices.is_empty());
     }
 
@@ -312,16 +320,19 @@ mod tests {
 
         let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
         reuse_list_file.unfreeze_temp();
 
-        assert_eq!(reuse_list_file.frozen_indices, [0, 1].into_iter().collect());
+        assert_eq!(reuse_list_file.frozen_indices, HashSet::from([0, 1]));
         assert!(reuse_list_file.temp_frozen_indices.is_empty());
-        assert_eq!(reuse_list_file.reusable_indices, [4, 5, 2, 3]);
+        assert_eq!(
+            reuse_list_file.reusable_indices,
+            HashSet::from([4, 5, 2, 3])
+        );
     }
 
     #[test]
@@ -331,9 +342,9 @@ mod tests {
 
         let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0].into_iter().collect(),
-            temp_frozen_indices: vec![1, 2],
-            reusable_indices: vec![3, 4, 5],
+            frozen_indices: HashSet::from([0]),
+            temp_frozen_indices: HashSet::from([1, 2]),
+            reusable_indices: HashSet::from([3, 4, 5]),
         };
 
         assert_eq!(reuse_list_file.count(), 1 + 2 + 3);
@@ -345,9 +356,9 @@ mod tests {
 
         let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0].into_iter().collect(),
-            temp_frozen_indices: vec![1, 2],
-            reusable_indices: vec![3, 4, 5],
+            frozen_indices: HashSet::from([0]),
+            temp_frozen_indices: HashSet::from([1, 2]),
+            reusable_indices: HashSet::from([3, 4, 5]),
         };
 
         assert_eq!(reuse_list_file.frozen_count(), 1 + 2);
@@ -360,15 +371,20 @@ mod tests {
 
         let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
-        assert_eq!(reuse_list_file.pop(), Some(5));
-        assert_eq!(reuse_list_file.reusable_indices, [4]);
+        let pop1 = reuse_list_file.pop();
+        assert!(matches!(pop1, Some(4 | 5)));
+        assert!(
+            reuse_list_file.reusable_indices == HashSet::from([4])
+                || reuse_list_file.reusable_indices == HashSet::from([5])
+        );
 
-        assert_eq!(reuse_list_file.pop(), Some(4));
+        let pop2 = reuse_list_file.pop();
+        assert!(matches!(pop2, Some(4 | 5) if pop2 != pop1));
         assert!(reuse_list_file.reusable_indices.is_empty());
 
         assert_eq!(reuse_list_file.pop(), None);
@@ -383,14 +399,17 @@ mod tests {
         let mut reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
             frozen_indices: HashSet::new(),
-            temp_frozen_indices: Vec::new(),
-            reusable_indices: vec![1, 2],
+            temp_frozen_indices: HashSet::new(),
+            reusable_indices: HashSet::from([1, 2]),
         };
 
         reuse_list_file.push(3);
-        assert_eq!(reuse_list_file.reusable_indices, vec![1, 2, 3]);
+        assert_eq!(reuse_list_file.reusable_indices, HashSet::from([1, 2, 3]));
         reuse_list_file.push(4);
-        assert_eq!(reuse_list_file.reusable_indices, vec![1, 2, 3, 4]);
+        assert_eq!(
+            reuse_list_file.reusable_indices,
+            HashSet::from([1, 2, 3, 4])
+        );
     }
 
     #[test]
@@ -400,9 +419,9 @@ mod tests {
 
         let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
         let mut all_indices: Vec<_> = reuse_list_file.reusable_indices().copied().collect();
@@ -417,14 +436,15 @@ mod tests {
 
         let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
-        let mut all_indices: Vec<_> = reuse_list_file.frozen_indices().copied().collect();
-        all_indices.sort();
-        assert_eq!(all_indices, [0, 1, 2, 3,]);
+        assert_eq!(
+            HashSet::from_iter(reuse_list_file.frozen_indices().copied()),
+            HashSet::from([0, 1, 2, 3]),
+        );
     }
 
     #[test]
@@ -434,9 +454,9 @@ mod tests {
 
         let reuse_list_file = ReuseListFile {
             file: File::create(path).unwrap(),
-            frozen_indices: vec![0, 1].into_iter().collect(),
-            temp_frozen_indices: vec![2, 3],
-            reusable_indices: vec![4, 5],
+            frozen_indices: HashSet::from([0, 1]),
+            temp_frozen_indices: HashSet::from([2, 3]),
+            reusable_indices: HashSet::from([4, 5]),
         };
 
         for idx in 0..6 {
