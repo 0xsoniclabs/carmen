@@ -289,13 +289,9 @@ mod tests {
                 ),
             }),
             full_inner_node_id: VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256),
-            commitment: {
-                // We deliberately only create a default commitment, since this type does
-                // not preserve all of its fields when converting to/from on-disk representation.
-                let mut commitment = VerkleInnerCommitment::default();
-                commitment.mark_clean();
-                commitment
-            },
+            // We deliberately only create a default commitment, since this type does
+            // not preserve all of its fields when converting to/from on-disk representation.
+            commitment: VerkleInnerCommitment::default(),
         };
         let disk_repr = original_node.to_disk_repr();
         let deserialized_node = InnerDeltaNode::from_disk_repr(|buf| {

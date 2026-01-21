@@ -223,21 +223,16 @@ mod tests {
         let original_node = FullLeafNode {
             values: array::from_fn(|i| Value::from_index_values(i as u8, &[])),
             stem: <[u8; 31]>::from_index_values(5, &[]),
-            commitment: {
-                // We deliberately only create a default commitment, since this type does
-                // not preserve all of its fields when converting to/from on-disk representation.
-                let mut commitment = VerkleLeafCommitment::default();
-                commitment.mark_clean();
-                commitment
-            },
+            // We deliberately only create a default commitment, since this type does
+            // not preserve all of its fields when converting to/from on-disk representation.
+            commitment: VerkleLeafCommitment::default(),
         };
         let disk_repr = original_node.to_disk_repr();
-        let mut deserialized_node = FullLeafNode::from_disk_repr(|buf| {
+        let deserialized_node = FullLeafNode::from_disk_repr(|buf| {
             buf.copy_from_slice(&disk_repr);
             Ok(())
         })
         .unwrap();
-        deserialized_node.commitment.test_only_unset_restored();
         assert_eq!(original_node, deserialized_node);
     }
 
@@ -318,8 +313,8 @@ mod tests {
         #[values(true, false)] leaf_is_dirty: bool,
     ) {
         let mut commitment = VerkleLeafCommitment::default();
-        if !leaf_is_dirty {
-            commitment.mark_clean();
+        if leaf_is_dirty {
+            commitment.store(5, [0u8; 32]); // Arbitrary
         }
         let stem = [42; 31];
         let node = FullLeafNode {

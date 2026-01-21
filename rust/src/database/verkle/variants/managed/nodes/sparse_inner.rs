@@ -294,13 +294,9 @@ mod tests {
     #[test]
     fn can_be_converted_to_and_from_on_disk_representation() {
         let mut original_node = make_inner::<99>();
-        original_node.commitment = {
-            // We deliberately only create a default commitment, since this type does
-            // not preserve all of its fields when converting to/from on-disk representation.
-            let mut commitment = VerkleInnerCommitment::default();
-            commitment.mark_clean();
-            commitment
-        };
+        // We deliberately only create a default commitment, since this type does
+        // not preserve all of its fields when converting to/from on-disk representation.
+        original_node.commitment = VerkleInnerCommitment::default();
         let disk_repr = original_node.to_disk_repr();
         let deserialized_node = SparseInnerNode::<99>::from_disk_repr(|buf| {
             buf.copy_from_slice(&disk_repr);

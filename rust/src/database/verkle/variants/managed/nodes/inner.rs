@@ -226,13 +226,9 @@ mod tests {
             children: array::from_fn(|i| {
                 VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256)
             }),
-            commitment: {
-                // We deliberately only create a default commitment, since this type does
-                // not preserve all of its fields when converting to/from on-disk representation.
-                let mut commitment = VerkleInnerCommitment::default();
-                commitment.mark_clean();
-                commitment
-            },
+            // We deliberately only create a default commitment, since this type does
+            // not preserve all of its fields when converting to/from on-disk representation.
+            commitment: VerkleInnerCommitment::default(),
         };
         let disk_repr = original_node.to_disk_repr();
         let deserialized_node = FullInnerNode::from_disk_repr(|buf| {
