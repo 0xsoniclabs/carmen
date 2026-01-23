@@ -37,7 +37,7 @@ def parse_data(filename):
     return data
 
 def plot_data(data):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, [ax_total_reuse, ax_used] = plt.subplots(2, 1, figsize=(24, 12))
 
     colormap = plt.get_cmap('tab20')
     node_keys = list(data.keys())
@@ -47,29 +47,44 @@ def plot_data(data):
 
         y_total = data[node]['total']
         y_reuse = data[node]['reuse']
+        y_used = [t - r for t, r in zip(y_total, y_reuse)]
 
         x_block_heights = [x / 100 for x in range(len(y_total))]
 
-        ax.plot(x_block_heights, y_total,
+        ax_total_reuse.plot(x_block_heights, y_total,
                 color=color,
                 linestyle='-',
                 linewidth=1.5,
                 label=f'{node} (Total)')
 
-        ax.plot(x_block_heights, y_reuse,
+        ax_total_reuse.plot(x_block_heights, y_reuse,
                 color=color,
                 linestyle=':',
                 linewidth=2.5,
                 label=f'{node} (Reuse)')
 
-    ax.set_xlabel('Block Height in 1M')
-    ax.set_xlim(left=0, right=len(data[node_keys[0]]['total']) / 100)
-    ax.set_ylabel('Count (Log Scale)')
-    ax.set_yscale('log')
-    ax.set_title('Node Counts vs Reuse Over Time')
-    ax.grid(True, which="both", ls="-", alpha=0.2)
+        ax_used.plot(x_block_heights, y_used,
+                color=color,
+                linestyle='-',
+                linewidth=1.5,
+                label=f'{node}')
 
-    ax.legend(bbox_to_anchor=(1.01, 1), borderaxespad=0.)
+    ax_total_reuse.set_xlabel('Block Height in 1M')
+    ax_total_reuse.set_xlim(left=0, right=len(data[node_keys[0]]['total']) / 100)
+    ax_total_reuse.set_ylim(bottom=100)
+    ax_total_reuse.set_ylabel('Count')
+    ax_total_reuse.set_yscale('log')
+    ax_total_reuse.set_title('Total Node Count vs Reuse')
+    ax_total_reuse.grid(True, which="both", ls="-", alpha=0.2)
+    ax_total_reuse.legend(loc='upper left', bbox_to_anchor=(1.01, 1), borderaxespad=0.)
+
+    ax_used.set_xlabel('Block Height in 1M')
+    ax_used.set_xlim(left=0, right=len(data[node_keys[0]]['total']) / 100)
+    ax_used.set_ylabel('Count')
+    ax_used.set_yscale('log')
+    ax_used.set_title('Used Node Count')
+    ax_used.grid(True, which="both", ls="-", alpha=0.2)
+    ax_used.legend(loc='upper left', bbox_to_anchor=(1.01, 1), borderaxespad=0.)
 
     plt.tight_layout()
     plt.show()
