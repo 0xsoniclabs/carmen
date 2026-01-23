@@ -373,8 +373,16 @@ mod tests {
     use super::*;
     use crate::utils::test_dir::{Permissions, TestDir};
 
-    #[test]
-    fn file_based_verkle_trie_implementation_supports_closing_and_reopening() {
+    #[rstest_reuse::template]
+    #[rstest::rstest]
+    #[case::live(b"none")]
+    #[case::archive(b"file")]
+    fn db_mode(#[case] archive_impl: &[u8]) {}
+
+    #[rstest_reuse::apply(db_mode)]
+    fn file_based_verkle_trie_implementation_supports_closing_and_reopening(
+        #[case] archive_impl: &[u8],
+    ) {
         // This test writes to 512 leaf nodes. In two leaf nodes only one slot gets set, in two leaf
         // nodes two slots get set and so on.
         // This makes sure that no matter the variants of sparse leaf nodes that are used for
@@ -385,7 +393,7 @@ mod tests {
         let key_indices_offset: u16 = 256;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", dir.path()).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, dir.path()).unwrap();
 
         let mut slot_updates = Vec::new();
         for address_idx in 0..256 * 2 {
@@ -412,7 +420,7 @@ mod tests {
 
         db.close().unwrap();
 
-        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, &dir).unwrap();
         let live = db.get_live_state().unwrap();
         for address_idx in 0..2 * 256 {
             for key_idx in key_indices_offset..=key_indices_offset + address_idx {
@@ -471,10 +479,10 @@ mod tests {
         assert_eq!(archive_state.get_balance(&addr).unwrap(), balance2);
     }
 
-    #[test]
-    fn carmen_s6_file_based_db_checkpoint_returns_error() {
+    #[rstest_reuse::apply(db_mode)]
+    fn carmen_s6_file_based_db_checkpoint_returns_error(#[case] archive_impl: &[u8]) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, &dir).unwrap();
 
         let result = db.checkpoint();
         assert_eq!(
@@ -486,10 +494,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one() {
+    #[rstest_reuse::apply(db_mode)]
+    fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one(
+        #[case] archive_impl: &[u8],
+    ) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, &dir).unwrap();
         let _live_state = db.get_live_state().unwrap();
 
         let result = db.close();
