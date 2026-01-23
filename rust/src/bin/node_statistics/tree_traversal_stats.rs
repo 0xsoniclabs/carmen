@@ -14,8 +14,8 @@ use carmen_rust::{
     database::{
         self,
         verkle::variants::managed::{
-            FullInnerNode, FullLeafNode, InnerDeltaNode, SparseInnerNode, SparseLeafNode,
-            VerkleNode, VerkleNodeFileStorageManager,
+            FullInnerNode, FullLeafNode, InnerDeltaNode, LeafDeltaNode, SparseInnerNode,
+            SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
         },
         visitor::AcceptVisitor,
     },
@@ -39,6 +39,7 @@ type VerkleStorageManager = VerkleNodeFileStorageManager<
     NodeFileStorage<SparseLeafNode<18>, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<146>, NoSeekFile>,
     NodeFileStorage<FullLeafNode, NoSeekFile>,
+    NodeFileStorage<LeafDeltaNode, NoSeekFile>,
 >;
 
 /// Perform tree traversal based statistics collection on the Carmen DB located at `db_path`.

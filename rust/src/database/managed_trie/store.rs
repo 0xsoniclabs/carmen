@@ -96,13 +96,13 @@ where
                     current_node_update.node_id,
                 )?;
             // Clones the node if the node is not new and not the empty node.
-            let mut copy_on_write_current_node = |changed_children_indices| -> BTResult<(), Error> {
+            let mut copy_on_write_current_node = |changed_indices| -> BTResult<(), Error> {
                 if !current_node_update.node_id.is_empty_id() && !current_node_update.is_new {
                     let cow_node = current_node_update
                         .node
                         .as_ref()
                         .unwrap()
-                        .copy_on_write(current_node_update.node_id, changed_children_indices);
+                        .copy_on_write(current_node_update.node_id, changed_indices)?;
                     current_node_update.node_id = manager.add(cow_node)?;
                     current_node_update.node =
                         Some(manager.get_write_access(current_node_update.node_id)?);
@@ -125,7 +125,12 @@ where
             match next_store_action {
                 StoreAction::Store(stores) => {
                     if is_archive {
-                        copy_on_write_current_node(Vec::new())?; // Note: Currently the number of changed children is only used when transforming an inner node, which is never the case when storing.
+                        let changed_indices = stores
+                            .clone()
+                            .split(31)
+                            .map(|u| u.first_key()[31])
+                            .collect();
+                        copy_on_write_current_node(changed_indices)?;
                     }
 
                     let current_node_mut: &mut T = current_node_update
@@ -148,11 +153,11 @@ where
                 }
                 StoreAction::Descend(descent_actions) => {
                     if is_archive {
-                        let changed_children_indices = descent_actions
+                        let changed_indices = descent_actions
                             .iter()
                             .map(|d| d.updates.first_key()[depth as usize])
                             .collect();
-                        copy_on_write_current_node(changed_children_indices)?;
+                        copy_on_write_current_node(changed_indices)?;
                     }
 
                     let current_node_mut: &mut T = current_node_update

@@ -43,6 +43,7 @@ impl VerkleNodeId {
     const LEAF_NODE_256_PREFIX: u64 = 0x0000_A000_0000_0000;
 
     const INNER_DELTA_NODE_PREFIX: u64 = 0x0000_B000_0000_0000;
+    const LEAF_DELTA_NODE_PREFIX: u64 = 0x0000_C000_0000_0000;
 
     const PREFIX_MASK: u64 = 0x0000_F000_0000_0000;
     const INDEX_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
@@ -83,6 +84,7 @@ impl ToNodeKind for VerkleNodeId {
             Self::LEAF_NODE_18_PREFIX => Some(VerkleNodeKind::Leaf18),
             Self::LEAF_NODE_146_PREFIX => Some(VerkleNodeKind::Leaf146),
             Self::LEAF_NODE_256_PREFIX => Some(VerkleNodeKind::Leaf256),
+            Self::LEAF_DELTA_NODE_PREFIX => Some(VerkleNodeKind::LeafDelta),
             // There are only two ways to create a NodeId:
             // - Using `from_idx_and_node_type` with guarantees that the prefix is valid.
             // - Deserializing from a file which may hold invalid prefixes in case the data was
@@ -111,6 +113,7 @@ impl TreeId for VerkleNodeId {
             VerkleNodeKind::Leaf18 => Self::LEAF_NODE_18_PREFIX,
             VerkleNodeKind::Leaf146 => Self::LEAF_NODE_146_PREFIX,
             VerkleNodeKind::Leaf256 => Self::LEAF_NODE_256_PREFIX,
+            VerkleNodeKind::LeafDelta => Self::LEAF_DELTA_NODE_PREFIX,
         };
         VerkleNodeId::from_u64(idx | prefix)
     }
@@ -173,6 +176,7 @@ mod tests {
             (VerkleNodeKind::Leaf18, 0x0000_8000_0000_0000),
             (VerkleNodeKind::Leaf146, 0x0000_9000_0000_0000),
             (VerkleNodeKind::Leaf256, 0x0000_A000_0000_0000),
+            (VerkleNodeKind::LeafDelta, 0x0000_C000_0000_0000),
         ];
 
         for (node_type, prefix) in cases {
@@ -245,6 +249,10 @@ mod tests {
             (
                 VerkleNodeId([0xA0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
                 Some(VerkleNodeKind::Leaf256),
+            ),
+            (
+                VerkleNodeId([0xC0, 0x00, 0x00, 0x00, 0x00, 0x2a]),
+                Some(VerkleNodeKind::LeafDelta),
             ),
         ];
         for (node_id, node_type) in cases {
@@ -324,6 +332,10 @@ mod tests {
             (
                 VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::Leaf256),
                 VerkleNodeKind::Leaf256,
+            ),
+            (
+                VerkleNodeId::from_idx_and_node_kind(0, VerkleNodeKind::LeafDelta),
+                VerkleNodeKind::LeafDelta,
             ),
         ];
         for (node_id, node_type) in cases {

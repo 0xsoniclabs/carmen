@@ -57,7 +57,13 @@ pub trait UnionManagedTrieNode: ManagedTrieNode<Union = Self> {
     /// indices specified in `changed_children_indices`. It may refer to the current node using the
     /// given `id`.
     /// This method should only be called when in archive mode.
-    fn copy_on_write(&self, id: Self::Id, changed_children_indices: Vec<u8>) -> Self;
+    fn copy_on_write(
+        &self,
+        id: Self::Id,
+        changed_children_indices: Vec<u8>,
+    ) -> BTResult<Self, Error>
+    where
+        Self: Sized;
 }
 
 /// A generic interface for working with nodes in a managed (ID-based, as opposed to pointer-based)

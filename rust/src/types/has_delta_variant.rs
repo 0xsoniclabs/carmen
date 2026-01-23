@@ -22,5 +22,5 @@ pub trait HasDeltaVariant {
     /// Copies all data that is part of the in-memory but not the on-disk representation of this
     /// delta node from a full node into this delta node.
     /// If this functions gets called from a non-delta node, it should do nothing.
-    fn copy_from_full(&mut self, full: &Self) -> BTResult<(), Error>;
+    fn copy_from_base(&mut self, full: &Self) -> BTResult<(), Error>;
 }

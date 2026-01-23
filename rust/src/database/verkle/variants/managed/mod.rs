@@ -12,8 +12,8 @@
 pub use nodes::VerkleNodeFileStorageManager;
 pub use nodes::{
     VerkleNode, empty::EmptyNode, id::VerkleNodeId, inner::FullInnerNode,
-    inner_delta::InnerDeltaNode, leaf::FullLeafNode, sparse_inner::SparseInnerNode,
-    sparse_leaf::SparseLeafNode,
+    inner_delta::InnerDeltaNode, leaf::FullLeafNode, leaf_delta::LeafDeltaNode,
+    sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
 };
 
 use crate::{

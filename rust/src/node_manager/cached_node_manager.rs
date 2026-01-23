@@ -206,7 +206,7 @@ where
             let mut node = self.storage.storage.get(id)?;
             if let Some(full_id) = node.needs_full() {
                 let full = self.get_read_access(full_id)?;
-                node.copy_from_full(&**full)?;
+                node.copy_from_base(&**full)?;
             }
             Ok(NodeWithMetadata {
                 node,
@@ -231,7 +231,7 @@ where
             let mut node = self.storage.storage.get(id)?;
             if let Some(full_id) = node.needs_full() {
                 let full = self.get_read_access(full_id)?;
-                node.copy_from_full(&**full)?;
+                node.copy_from_base(&**full)?;
             }
             Ok(NodeWithMetadata {
                 node,

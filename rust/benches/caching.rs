@@ -72,7 +72,7 @@ impl HasDeltaVariant for BenchValue {
         None
     }
 
-    fn copy_from_full(&mut self, _full: &Self) -> BTResult<(), Error> {
+    fn copy_from_base(&mut self, _full: &Self) -> BTResult<(), Error> {
         Ok(())
     }
 }

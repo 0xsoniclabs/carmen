@@ -24,8 +24,8 @@ use crate::{
         verkle::{
             StateMode,
             variants::managed::{
-                FullInnerNode, FullLeafNode, InnerDeltaNode, SparseInnerNode, SparseLeafNode,
-                VerkleNode, VerkleNodeFileStorageManager, VerkleNodeId,
+                FullInnerNode, FullLeafNode, InnerDeltaNode, LeafDeltaNode, SparseInnerNode,
+                SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager, VerkleNodeId,
             },
         },
     },
@@ -62,6 +62,7 @@ type VerkleStorageManager = VerkleNodeFileStorageManager<
     NodeFileStorage<SparseLeafNode<18>, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<146>, NoSeekFile>,
     NodeFileStorage<FullLeafNode, NoSeekFile>,
+    NodeFileStorage<LeafDeltaNode, NoSeekFile>,
 >;
 
 type VerkleStorage = StorageWithFlushBuffer<VerkleStorageManager>;

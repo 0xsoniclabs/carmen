@@ -349,8 +349,8 @@ impl ManagedTrieNode for RcNode {
 }
 
 impl UnionManagedTrieNode for RcNode {
-    fn copy_on_write(&self, _id: Self::Id, _changed_children: Vec<u8>) -> Self {
-        self.clone()
+    fn copy_on_write(&self, _id: Self::Id, _changed_children: Vec<u8>) -> BTResult<Self, Error> {
+        Ok(self.clone())
     }
 }
 
