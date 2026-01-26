@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 sns.set_theme(style="whitegrid")
 
-CSV_PATH = "../../../carmen_stats_node_counts_by_kind.csv"
+CSV_PATH = "rust/carmen_stats_node_counts_by_kind.csv"
 
 
 def load_and_prepare_data(csv_path):
@@ -82,7 +82,14 @@ def set_plot_params():
 # %%  --- Main analysis and plotting ---
 
 set_plot_params()
-df, total_df = load_and_prepare_data(CSV_PATH)
+
+is_interactive = 'IPython' in sys.modules
+if not is_interactive and len(sys.argv) > 1:
+    path = sys.argv[1]
+else:
+    path = CSV_PATH
+
+df, total_df = load_and_prepare_data(path)
 
 
 # Pie: All node kinds, excluding "Empty"

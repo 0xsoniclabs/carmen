@@ -31,7 +31,7 @@ class TimeResolution:
             raise ValueError(f"Unsupported time resolution: {self._resolution_name}")
 
 
-CSV_PATH = "../../../carmen_storage_op_with_timestamp.csv"
+CSV_PATH = "rust/carmen_storage_op_with_timestamp.csv"
 
 TIME_RESOLUTION = TimeResolution("seconds")
 GROUPING_TIME_INTERVAL_US = 10 * TIME_RESOLUTION.as_microseconds()
@@ -75,7 +75,13 @@ def count_op_by_time_interval(df, time_interval_us: int):
     return df_grouped
 
 
-df = load_data(CSV_PATH)
+is_interactive = 'IPython' in sys.modules
+if not is_interactive and len(sys.argv) > 1:
+    path = sys.argv[1]
+else:
+    path = CSV_PATH
+
+df = load_data(path)
 df_total_ops = count_op_by_time_interval(df, GROUPING_TIME_INTERVAL_US)
 
 # Convert interval time to the specified time resolution for plotting

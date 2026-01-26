@@ -8,7 +8,7 @@ import seaborn as sns
 import pulp
 from sortedcontainers import SortedDict, SortedSet
 
-CSV_PATH = "../../../carmen_stats_node_counts_by_kind.csv"
+CSV_PATH = "rust/carmen_stats_node_counts_by_kind.csv"
 
 # NOTE: These sizes are based on the current implementation of the trie nodes in Carmen and needs to be manually updated if the implementation changes.
 
@@ -93,14 +93,10 @@ def load_statistics(csv_path):
     # Remove all empty nodes
     df = df[df["Node Kind"] != "Empty"]
     # Group by `Node Kind` and calculate the prefix sum of `Count` within each group
-    grouped_df = (
-        df.groupby("Node Kind")
-        .apply(lambda x: x.assign(PrefixSum=x["Count"].cumsum()))
-        .reset_index(drop=True)
-    )
+    df['PrefixSum'] = df.groupby("Node Kind")["Count"].transform('cumsum')
     # Collect the node info into a nested dictionary
     node_info = dict()
-    for node_kind, group in grouped_df.groupby("Node Kind"):
+    for node_kind, group in df.groupby("Node Kind"):
         node_info[node_kind] = {
             # Total number of nodes of this kind
             "total_count": group["Count"].sum(),
@@ -479,8 +475,13 @@ def min_storage_size(node_info: dict, node_sizes: dict, node_type: str):
 
 # %% Compute the best variants and write results to file
 
-node_info = load_statistics(CSV_PATH)
+is_interactive = 'IPython' in sys.modules
+if not is_interactive and len(sys.argv) > 1:
+    path = sys.argv[1]
+else:
+    path = CSV_PATH
 
+node_info = load_statistics(path)
 with open("node_optimization_results.txt", "w") as writer:
     print_size_constants(writer)
     # Best variants for Inner and Leaf nodes
