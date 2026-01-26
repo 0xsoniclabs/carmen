@@ -107,6 +107,7 @@ where
             dir.join(Self::REUSE_LIST_FILE),
             metadata.reuse_indices,
             metadata.frozen_reuse_indices,
+            db_mode,
         )?;
         if reuse_list_file
             .frozen_indices()

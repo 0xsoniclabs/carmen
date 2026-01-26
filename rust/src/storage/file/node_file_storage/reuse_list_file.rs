@@ -10,14 +10,17 @@
 
 use std::{
     collections::HashSet,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
 };
 
 use zerocopy::IntoBytes;
 
-use crate::{error::BTResult, storage::Error};
+use crate::{
+    error::BTResult,
+    storage::{DbMode, Error},
+};
 
 /// A wrapper around a file storing reuse list indices, which caches the indices in memory for
 /// faster access.
@@ -41,20 +44,19 @@ impl ReuseListFile {
     /// Opens the file at `path` and reads `count` indices from it. If the file does not exist, it
     /// is created. The `frozen_count` parameter specifies how many indices should be considered
     /// "frozen" and not available for reuse.
-    pub fn open(path: impl AsRef<Path>, count: u64, frozen_count: u64) -> BTResult<Self, Error> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        count: u64,
+        frozen_count: u64,
+        db_mode: DbMode,
+    ) -> BTResult<Self, Error> {
         if frozen_count > count {
             return Err(Error::DatabaseCorruption(
                 format!("frozen reuse index count {frozen_count} greater than total reuse index count {count}"),
             )
             .into());
         }
-        let mut file_opts = OpenOptions::new();
-        file_opts
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true);
-        let mut file = file_opts.open(path)?;
+        let mut file = db_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
         if len < count * size_of::<u64>() as u64 {
             return Err(Error::DatabaseCorruption(format!(
@@ -152,11 +154,12 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
+        storage::tests::all_db_modes,
         utils::test_dir::{Permissions, TestDir},
     };
 
-    #[test]
-    fn open_reads_count_number_of_indices_from_file() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_reads_count_number_of_indices_from_file(#[case] db_mode: DbMode) {
         use super::ReuseListFile;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
@@ -167,20 +170,20 @@ mod tests {
 
         let frozen_count = 2;
         let count = 3;
-        let reuse_list_file = ReuseListFile::open(path, count, frozen_count).unwrap();
+        let reuse_list_file = ReuseListFile::open(path, count, frozen_count, db_mode).unwrap();
         assert_eq!(reuse_list_file.frozen_indices, [0, 1].into_iter().collect());
         assert!(reuse_list_file.temp_frozen_indices.is_empty());
         assert_eq!(reuse_list_file.reusable_indices, [2]);
     }
 
-    #[test]
-    fn open_returns_error_when_frozen_count_larger_than_count() {
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_returns_error_when_frozen_count_larger_than_count(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
         let count = 1;
         let frozen_count = 2;
-        let result = ReuseListFile::open(path, count, frozen_count);
+        let result = ReuseListFile::open(path, count, frozen_count, db_mode);
         assert_eq!(
             result.unwrap_err().into_inner(),
             Error::DatabaseCorruption(
@@ -188,8 +191,9 @@ mod tests {
             )
         );
     }
-    #[test]
-    fn open_returns_error_for_invalid_file_size() {
+
+    #[rstest_reuse::apply(all_db_modes)]
+    fn open_returns_error_for_invalid_file_size(#[case] db_mode: DbMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
@@ -198,7 +202,7 @@ mod tests {
 
         let count = 2;
         let frozen_count = 2;
-        let result = ReuseListFile::open(path, count, frozen_count);
+        let result = ReuseListFile::open(path, count, frozen_count, db_mode);
         assert_eq!(
             result.unwrap_err().into_inner(),
             Error::DatabaseCorruption(
@@ -212,7 +216,19 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.join("reuse_list");
 
-        let result = ReuseListFile::open(path, 0, 0);
+        let result = ReuseListFile::open(path, 0, 0, DbMode::ReadWrite);
+        assert!(matches!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Io(_))
+        ));
+    }
+
+    #[test]
+    fn open_fails_if_file_does_not_exist_in_read_only_mode() {
+        let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
+        let path = dir.join("reuse_list");
+
+        let result = ReuseListFile::open(path, 0, 0, DbMode::ReadOnly);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))
