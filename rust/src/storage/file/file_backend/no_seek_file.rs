@@ -60,7 +60,7 @@ impl FileBackend for NoSeekFile {
         chunk_size: usize,
     ) -> BTResult<Self, std::io::Error> {
         let file = options.open(path)?;
-        file.try_lock()?;
+        // file.try_lock()?;
         Ok(Self {
             file,
             locks: Box::new(array::from_fn(|_| RwLock::new(()))),
