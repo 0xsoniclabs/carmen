@@ -1,0 +1,123 @@
++ trap 'git apply --reverse enable-carmen.patch &> /dev/null' EXIT
+++ pwd
++ CARMEN_RUST_DIR=/home/psalz/bertha/block-db-go-bindings/../../carmen/rust
+++ pwd
++ BLOCK_DB_GO_BINDINGS_DIR=/home/psalz/bertha/block-db-go-bindings
++ cd /home/psalz/bertha/block-db-go-bindings/../../carmen/rust
++ cargo build --release
+    Finished `release` profile [optimized] target(s) in 0.12s
++ cd /home/psalz/bertha/block-db-go-bindings
++ git apply --reverse --check enable-carmen.patch
++ git apply enable-carmen.patch
++ go run /home/psalz/carmen/rust/../../bertha/block-db-go-bindings/cmd/block-db/main.go replay --db /var/data/common/blockdbs/sonic-51220/.blockdb --json-genesis /home/psalz/carmen/rust/../../bertha/sonic.json -e 1000000 --schema 6 --variant go-geth-memory --use-pipeline=false
+[32mINFO [0m[11-26|17:07:44.294] Loading genesis file                     [32mfile[0m=/home/psalz/carmen/rust/../../bertha/sonic.json
+[32mINFO [0m[11-26|17:07:44.294] Creating state database                  [32mdirectory[0m=
+[33mWARN [0m[11-26|17:07:44.294] State database will be deleted after replay (use --keep-db to keep it)
+[32mINFO [0m[11-26|17:07:44.366] Starting replay from genesis
+[32mINFO [0m[11-26|17:07:44.939] Loaded state                             [32mchain_id[0m=146 [32mroot_hash[0m=18975c..bb2b78
+[32mINFO [0m[11-26|17:07:44.939] Opening block database                   [32mdirectory[0m=/var/data/common/blockdbs/sonic-51220/.blockdb
+[32mINFO [0m[11-26|17:07:46.098] Using simple replay loop
+[32mINFO [0m[11-26|17:07:47.294] "Processing block 10000 from 2024-12-02 02:15:57 @ t= 0:00:01, 1041.82 txs/s, 126.33 MGas/s, 76113.12x realtime"
+[32mINFO [0m[11-26|17:07:48.457] "Processing block 20000 from 2024-12-02 10:24:19 @ t= 0:00:02, 1337.60 txs/s, 111.97 MGas/s, 25189.27x realtime"
+[32mINFO [0m[11-26|17:07:49.543] "Processing block 30000 from 2024-12-02 18:29:42 @ t= 0:00:03, 1377.63 txs/s, 121.49 MGas/s, 26800.82x realtime"
+[32mINFO [0m[11-26|17:07:50.722] "Processing block 40000 from 2024-12-03 02:38:30 @ t= 0:00:04, 1322.80 txs/s, 110.55 MGas/s, 24884.56x realtime"
+[32mINFO [0m[11-26|17:07:52.197] "Processing block 50000 from 2024-12-03 10:48:52 @ t= 0:00:06, 1091.22 txs/s, 135.57 MGas/s, 19941.55x realtime"
+[32mINFO [0m[11-26|17:07:53.503] "Processing block 60000 from 2024-12-03 19:00:07 @ t= 0:00:07, 1215.76 txs/s, 144.67 MGas/s, 22580.04x realtime"
+[32mINFO [0m[11-26|17:07:54.620] "Processing block 70000 from 2024-12-04 03:07:27 @ t= 0:00:08, 1394.77 txs/s, 118.75 MGas/s, 26176.64x realtime"
+[32mINFO [0m[11-26|17:07:55.933] "Processing block 80000 from 2024-12-04 11:06:10 @ t= 0:00:09, 1619.25 txs/s, 123.95 MGas/s, 21866.33x realtime"
+[32mINFO [0m[11-26|17:07:57.338] "Processing block 90000 from 2024-12-04 18:55:18 @ t= 0:00:11, 1594.63 txs/s, 120.38 MGas/s, 20038.20x realtime"
+[32mINFO [0m[11-26|17:07:58.689] "Processing block 100000 from 2024-12-05 02:56:44 @ t= 0:00:12, 1685.84 txs/s, 129.36 MGas/s, 21377.13x realtime"
+[32mINFO [0m[11-26|17:08:00.085] "Processing block 110000 from 2024-12-05 10:56:40 @ t= 0:00:13, 1585.05 txs/s, 133.45 MGas/s, 20634.32x realtime"
+[32mINFO [0m[11-26|17:08:01.703] "Processing block 120000 from 2024-12-05 18:45:41 @ t= 0:00:15, 1368.21 txs/s, 124.12 MGas/s, 17390.59x realtime"
+[32mINFO [0m[11-26|17:08:03.122] "Processing block 130000 from 2024-12-06 02:41:25 @ t= 0:00:17, 1590.94 txs/s, 126.78 MGas/s, 20111.51x realtime"
+[32mINFO [0m[11-26|17:08:04.932] "Processing block 140000 from 2024-12-06 10:32:06 @ t= 0:00:18, 1360.23 txs/s, 138.74 MGas/s, 15609.16x realtime"
+[32mINFO [0m[11-26|17:08:09.404] "Processing block 150000 from 2024-12-06 17:43:00 @ t= 0:00:23, 924.15 txs/s, 139.19 MGas/s, 5781.05x realtime"
+[32mINFO [0m[11-26|17:08:10.833] "Processing block 160000 from 2024-12-07 01:36:49 @ t= 0:00:24, 1527.33 txs/s, 121.25 MGas/s, 19890.24x realtime"
+[32mINFO [0m[11-26|17:08:12.250] "Processing block 170000 from 2024-12-07 09:36:09 @ t= 0:00:26, 1527.09 txs/s, 123.50 MGas/s, 20304.71x realtime"
+[32mINFO [0m[11-26|17:08:13.674] "Processing block 180000 from 2024-12-07 17:25:21 @ t= 0:00:27, 1479.96 txs/s, 125.51 MGas/s, 19764.58x realtime"
+[32mINFO [0m[11-26|17:08:15.145] "Processing block 190000 from 2024-12-08 01:14:36 @ t= 0:00:29, 1435.45 txs/s, 121.69 MGas/s, 19135.98x realtime"
+[32mINFO [0m[11-26|17:08:17.071] "Processing block 200000 from 2024-12-08 09:02:33 @ t= 0:00:30, 1122.92 txs/s, 148.37 MGas/s, 14582.93x realtime"
+[32mINFO [0m[11-26|17:08:18.852] "Processing block 210000 from 2024-12-08 16:50:33 @ t= 0:00:32, 1230.17 txs/s, 136.05 MGas/s, 15765.94x realtime"
+[32mINFO [0m[11-26|17:08:20.621] "Processing block 220000 from 2024-12-09 00:39:07 @ t= 0:00:34, 1226.81 txs/s, 147.89 MGas/s, 15886.98x realtime"
+[32mINFO [0m[11-26|17:08:21.981] "Processing block 230000 from 2024-12-09 08:29:27 @ t= 0:00:35, 1502.65 txs/s, 121.04 MGas/s, 20745.92x realtime"
+[32mINFO [0m[11-26|17:08:23.993] "Processing block 240000 from 2024-12-09 16:14:41 @ t= 0:00:37, 1161.21 txs/s, 176.82 MGas/s, 13875.82x realtime"
+[32mINFO [0m[11-26|17:08:26.506] "Processing block 250000 from 2024-12-09 23:55:47 @ t= 0:00:40, 1122.23 txs/s, 197.65 MGas/s, 11009.78x realtime"
+[32mINFO [0m[11-26|17:08:28.939] "Processing block 260000 from 2024-12-10 07:38:49 @ t= 0:00:42, 1095.00 txs/s, 217.20 MGas/s, 11419.36x realtime"
+[32mINFO [0m[11-26|17:08:30.930] "Processing block 270000 from 2024-12-10 15:21:58 @ t= 0:00:44, 1287.53 txs/s, 165.20 MGas/s, 13954.47x realtime"
+[32mINFO [0m[11-26|17:08:36.163] "Processing block 280000 from 2024-12-10 22:37:01 @ t= 0:00:50, 763.61 txs/s, 225.76 MGas/s, 4988.08x realtime"
+[32mINFO [0m[11-26|17:08:38.247] "Processing block 290000 from 2024-12-11 06:24:21 @ t= 0:00:52, 993.38 txs/s, 143.86 MGas/s, 13456.24x realtime"
+[32mINFO [0m[11-26|17:08:40.414] "Processing block 300000 from 2024-12-11 14:09:49 @ t= 0:00:54, 969.67 txs/s, 148.38 MGas/s, 12889.55x realtime"
+[32mINFO [0m[11-26|17:08:42.562] "Processing block 310000 from 2024-12-11 21:50:23 @ t= 0:00:56, 1165.91 txs/s, 143.85 MGas/s, 12866.89x realtime"
+[32mINFO [0m[11-26|17:08:47.891] "Processing block 320000 from 2024-12-12 04:29:18 @ t= 0:01:01, 2757.80 txs/s, 96.63 MGas/s, 4490.95x realtime"
+[32mINFO [0m[11-26|17:08:52.141] "Processing block 330000 from 2024-12-12 11:05:04 @ t= 0:01:06, 1380.93 txs/s, 112.96 MGas/s, 5588.21x realtime"
+[32mINFO [0m[11-26|17:08:57.330] "Processing block 340000 from 2024-12-12 16:32:55 @ t= 0:01:11, 1908.69 txs/s, 103.89 MGas/s, 3790.59x realtime"
+[32mINFO [0m[11-26|17:08:59.998] "Processing block 350000 from 2024-12-13 00:05:33 @ t= 0:01:13, 1177.09 txs/s, 154.85 MGas/s, 10177.42x realtime"
+[32mINFO [0m[11-26|17:09:01.837] "Processing block 360000 from 2024-12-13 07:49:29 @ t= 0:01:15, 1442.11 txs/s, 136.63 MGas/s, 15136.68x realtime"
+[32mINFO [0m[11-26|17:09:04.077] "Processing block 370000 from 2024-12-13 15:27:03 @ t= 0:01:17, 1336.32 txs/s, 150.55 MGas/s, 12257.67x realtime"
+[32mINFO [0m[11-26|17:09:07.600] "Processing block 380000 from 2024-12-13 22:47:12 @ t= 0:01:21, 1087.50 txs/s, 150.04 MGas/s, 7496.71x realtime"
+[32mINFO [0m[11-26|17:09:10.431] "Processing block 390000 from 2024-12-14 06:11:26 @ t= 0:01:24, 1426.73 txs/s, 124.17 MGas/s, 9415.20x realtime"
+[32mINFO [0m[11-26|17:09:15.457] "Processing block 400000 from 2024-12-14 12:07:21 @ t= 0:01:29, 1291.12 txs/s, 127.79 MGas/s, 4249.02x realtime"
+[32mINFO [0m[11-26|17:09:19.846] "Processing block 410000 from 2024-12-14 18:45:54 @ t= 0:01:33, 1182.40 txs/s, 142.48 MGas/s, 5447.93x realtime"
+[32mINFO [0m[11-26|17:09:26.140] "Processing block 420000 from 2024-12-15 00:42:14 @ t= 0:01:40, 1057.15 txs/s, 139.25 MGas/s, 3396.72x realtime"
+[32mINFO [0m[11-26|17:09:34.072] "Processing block 430000 from 2024-12-15 05:34:23 @ t= 0:01:47, 1078.17 txs/s, 128.56 MGas/s, 2209.93x realtime"
+[32mINFO [0m[11-26|17:09:37.156] "Processing block 440000 from 2024-12-15 13:00:36 @ t= 0:01:51, 1164.27 txs/s, 151.64 MGas/s, 8682.76x realtime"
+[32mINFO [0m[11-26|17:09:44.401] "Processing block 450000 from 2024-12-15 18:48:22 @ t= 0:01:58, 1017.54 txs/s, 143.42 MGas/s, 2880.08x realtime"
+[32mINFO [0m[11-26|17:09:51.980] "Processing block 460000 from 2024-12-16 00:15:54 @ t= 0:02:05, 1034.59 txs/s, 134.83 MGas/s, 2593.01x realtime"
+[32mINFO [0m[11-26|17:09:55.647] "Processing block 470000 from 2024-12-16 07:28:32 @ t= 0:02:09, 1170.91 txs/s, 143.77 MGas/s, 7078.34x realtime"
+[32mINFO [0m[11-26|17:10:01.456] "Processing block 480000 from 2024-12-16 14:03:38 @ t= 0:02:15, 1031.12 txs/s, 169.79 MGas/s, 4080.75x realtime"
+[32mINFO [0m[11-26|17:10:09.164] "Processing block 490000 from 2024-12-16 19:54:12 @ t= 0:02:23, 911.83 txs/s, 184.54 MGas/s, 2729.01x realtime"
+[32mINFO [0m[11-26|17:10:15.429] "Processing block 500000 from 2024-12-17 01:45:36 @ t= 0:02:29, 1109.29 txs/s, 269.42 MGas/s, 3365.21x realtime"
+[32mINFO [0m[11-26|17:10:18.530] "Processing block 510000 from 2024-12-17 09:10:38 @ t= 0:02:32, 1226.53 txs/s, 139.43 MGas/s, 8609.57x realtime"
+[32mINFO [0m[11-26|17:10:21.887] "Processing block 520000 from 2024-12-17 16:32:46 @ t= 0:02:35, 1135.03 txs/s, 145.38 MGas/s, 7902.94x realtime"
+[32mINFO [0m[11-26|17:10:25.294] "Processing block 530000 from 2024-12-17 23:53:54 @ t= 0:02:39, 1113.87 txs/s, 155.60 MGas/s, 7768.61x realtime"
+[32mINFO [0m[11-26|17:10:29.037] "Processing block 540000 from 2024-12-18 06:52:19 @ t= 0:02:42, 1200.99 txs/s, 149.23 MGas/s, 6707.64x realtime"
+[32mINFO [0m[11-26|17:10:41.975] "Processing block 550000 from 2024-12-18 12:20:30 @ t= 0:02:55, 1232.36 txs/s, 217.62 MGas/s, 1521.98x realtime"
+[32mINFO [0m[11-26|17:11:02.142] "Processing block 560000 from 2024-12-18 15:05:32 @ t= 0:03:16, 1237.21 txs/s, 290.39 MGas/s, 490.98x realtime"
+[32mINFO [0m[11-26|17:11:31.694] "Processing block 570000 from 2024-12-18 16:03:14 @ t= 0:03:45, 999.95 txs/s, 201.47 MGas/s, 117.15x realtime"
+[32mINFO [0m[11-26|17:12:04.350] "Processing block 580000 from 2024-12-18 17:01:10 @ t= 0:04:18, 1040.72 txs/s, 237.12 MGas/s, 106.44x realtime"
+[32mINFO [0m[11-26|17:12:35.718] "Processing block 590000 from 2024-12-18 18:03:07 @ t= 0:04:49, 872.41 txs/s, 208.25 MGas/s, 118.49x realtime"
+[32mINFO [0m[11-26|17:13:06.474] "Processing block 600000 from 2024-12-18 19:10:51 @ t= 0:05:20, 814.53 txs/s, 218.11 MGas/s, 132.14x realtime"
+[32mINFO [0m[11-26|17:13:36.376] "Processing block 610000 from 2024-12-18 20:40:57 @ t= 0:05:50, 685.39 txs/s, 237.12 MGas/s, 180.79x realtime"
+[32mINFO [0m[11-26|17:14:02.209] "Processing block 620000 from 2024-12-18 22:19:49 @ t= 0:06:16, 855.59 txs/s, 225.18 MGas/s, 229.63x realtime"
+[32mINFO [0m[11-26|17:14:19.137] "Processing block 630000 from 2024-12-18 23:51:56 @ t= 0:06:33, 1139.48 txs/s, 186.44 MGas/s, 326.48x realtime"
+[32mINFO [0m[11-26|17:14:38.617] "Processing block 640000 from 2024-12-19 01:48:28 @ t= 0:06:52, 1162.10 txs/s, 220.47 MGas/s, 358.94x realtime"
+[32mINFO [0m[11-26|17:14:56.587] "Processing block 650000 from 2024-12-19 03:57:40 @ t= 0:07:10, 1058.93 txs/s, 191.14 MGas/s, 431.39x realtime"
+[32mINFO [0m[11-26|17:15:13.447] "Processing block 660000 from 2024-12-19 06:22:35 @ t= 0:07:27, 945.38 txs/s, 199.94 MGas/s, 515.72x realtime"
+[32mINFO [0m[11-26|17:15:36.768] "Processing block 670000 from 2024-12-19 08:37:17 @ t= 0:07:50, 928.17 txs/s, 199.54 MGas/s, 346.55x realtime"
+[32mINFO [0m[11-26|17:15:51.651] "Processing block 680000 from 2024-12-19 11:07:15 @ t= 0:08:05, 1097.93 txs/s, 183.16 MGas/s, 604.60x realtime"
+[32mINFO [0m[11-26|17:16:07.294] "Processing block 690000 from 2024-12-19 13:05:52 @ t= 0:08:21, 998.14 txs/s, 171.31 MGas/s, 454.96x realtime"
+[32mINFO [0m[11-26|17:16:23.675] "Processing block 700000 from 2024-12-19 14:50:17 @ t= 0:08:37, 1044.14 txs/s, 172.09 MGas/s, 382.46x realtime"
+[32mINFO [0m[11-26|17:16:53.733] "Processing block 710000 from 2024-12-19 15:58:36 @ t= 0:09:07, 1268.94 txs/s, 178.20 MGas/s, 136.37x realtime"
+[32mINFO [0m[11-26|17:17:18.479] "Processing block 720000 from 2024-12-19 16:58:45 @ t= 0:09:32, 1271.56 txs/s, 176.75 MGas/s, 145.84x realtime"
+[32mINFO [0m[11-26|17:17:40.429] "Processing block 730000 from 2024-12-19 18:00:03 @ t= 0:09:54, 1200.80 txs/s, 164.22 MGas/s, 167.57x realtime"
+[32mINFO [0m[11-26|17:18:01.642] "Processing block 740000 from 2024-12-19 19:12:46 @ t= 0:10:15, 1037.01 txs/s, 177.72 MGas/s, 205.68x realtime"
+[32mINFO [0m[11-26|17:18:46.628] "Processing block 750000 from 2024-12-19 20:29:37 @ t= 0:11:00, 1135.47 txs/s, 226.31 MGas/s, 102.50x realtime"
+[32mINFO [0m[11-26|17:19:04.477] "Processing block 760000 from 2024-12-19 21:55:34 @ t= 0:11:18, 1118.27 txs/s, 171.78 MGas/s, 288.94x realtime"
+[32mINFO [0m[11-26|17:19:21.806] "Processing block 770000 from 2024-12-19 23:45:38 @ t= 0:11:35, 1132.37 txs/s, 199.41 MGas/s, 381.09x realtime"
+[32mINFO [0m[11-26|17:19:37.950] "Processing block 780000 from 2024-12-20 01:33:10 @ t= 0:11:51, 1101.19 txs/s, 175.36 MGas/s, 399.64x realtime"
+[32mINFO [0m[11-26|17:19:55.231] "Processing block 790000 from 2024-12-20 02:57:50 @ t= 0:12:09, 1272.84 txs/s, 161.03 MGas/s, 293.96x realtime"
+[32mINFO [0m[11-26|17:20:15.074] "Processing block 800000 from 2024-12-20 04:14:35 @ t= 0:12:28, 1276.65 txs/s, 166.18 MGas/s, 232.08x realtime"
+[32mINFO [0m[11-26|17:20:33.251] "Processing block 810000 from 2024-12-20 05:52:21 @ t= 0:12:47, 990.45 txs/s, 168.80 MGas/s, 322.70x realtime"
+[32mINFO [0m[11-26|17:20:47.684] "Processing block 820000 from 2024-12-20 07:20:12 @ t= 0:13:01, 1284.29 txs/s, 152.11 MGas/s, 365.21x realtime"
+[32mINFO [0m[11-26|17:21:03.254] "Processing block 830000 from 2024-12-20 08:34:44 @ t= 0:13:17, 1304.05 txs/s, 147.53 MGas/s, 287.22x realtime"
+[32mINFO [0m[11-26|17:21:17.093] "Processing block 840000 from 2024-12-20 09:39:29 @ t= 0:13:30, 1612.89 txs/s, 124.41 MGas/s, 280.73x realtime"
+[32mINFO [0m[11-26|17:21:30.896] "Processing block 850000 from 2024-12-20 10:56:12 @ t= 0:13:44, 1560.44 txs/s, 138.29 MGas/s, 333.48x realtime"
+[32mINFO [0m[11-26|17:21:59.842] "Processing block 860000 from 2024-12-20 12:10:12 @ t= 0:14:13, 1236.61 txs/s, 204.20 MGas/s, 153.39x realtime"
+[32mINFO [0m[11-26|17:22:19.079] "Processing block 870000 from 2024-12-20 13:25:37 @ t= 0:14:32, 1248.34 txs/s, 168.31 MGas/s, 235.23x realtime"
+[32mINFO [0m[11-26|17:22:37.371] "Processing block 880000 from 2024-12-20 14:29:06 @ t= 0:14:51, 1385.59 txs/s, 153.87 MGas/s, 208.23x realtime"
+[32mINFO [0m[11-26|17:22:53.825] "Processing block 890000 from 2024-12-20 15:41:23 @ t= 0:15:07, 1556.10 txs/s, 168.81 MGas/s, 263.58x realtime"
+[32mINFO [0m[11-26|17:23:08.744] "Processing block 900000 from 2024-12-20 16:59:12 @ t= 0:15:22, 1491.82 txs/s, 189.77 MGas/s, 312.96x realtime"
+[32mINFO [0m[11-26|17:23:28.533] "Processing block 910000 from 2024-12-20 18:32:13 @ t= 0:15:42, 1431.09 txs/s, 290.60 MGas/s, 282.01x realtime"
+[32mINFO [0m[11-26|17:23:45.467] "Processing block 920000 from 2024-12-20 20:35:19 @ t= 0:15:59, 1265.21 txs/s, 245.72 MGas/s, 436.17x realtime"
+[32mINFO [0m[11-26|17:24:09.284] "Processing block 930000 from 2024-12-20 22:12:50 @ t= 0:16:23, 1540.92 txs/s, 274.44 MGas/s, 245.67x realtime"
+[32mINFO [0m[11-26|17:24:33.133] "Processing block 940000 from 2024-12-20 23:44:47 @ t= 0:16:47, 985.25 txs/s, 201.17 MGas/s, 231.32x realtime"
+[32mINFO [0m[11-26|17:24:59.733] "Processing block 950000 from 2024-12-21 00:51:33 @ t= 0:17:13, 1113.70 txs/s, 248.07 MGas/s, 150.60x realtime"
+[32mINFO [0m[11-26|17:25:25.815] "Processing block 960000 from 2024-12-21 01:55:13 @ t= 0:17:39, 1326.93 txs/s, 220.02 MGas/s, 146.46x realtime"
+[32mINFO [0m[11-26|17:25:51.078] "Processing block 970000 from 2024-12-21 02:56:57 @ t= 0:18:04, 1671.11 txs/s, 222.62 MGas/s, 146.62x realtime"
+[32mINFO [0m[11-26|17:26:11.091] "Processing block 980000 from 2024-12-21 04:14:08 @ t= 0:18:24, 1259.27 txs/s, 194.74 MGas/s, 231.40x realtime"
+[32mINFO [0m[11-26|17:26:37.596] "Processing block 990000 from 2024-12-21 06:12:38 @ t= 0:18:51, 2090.03 txs/s, 160.79 MGas/s, 268.25x realtime"
+[32mINFO [0m[11-26|17:26:54.790] "Processing block 1000000 from 2024-12-21 08:32:43 @ t= 0:19:08, 1327.10 txs/s, 224.26 MGas/s, 488.82x realtime"
+[32mINFO [0m[11-26|17:26:54.790] Replay finished in 19m8.691789292s, processed 1376011 txs (1197.89 Tx/s), used 0.223 TGas (193.78 MGas/s), 1527.97x realtime
+[32mINFO [0m[11-26|17:26:54.910] Closing state database                   [32mdirectory[0m=/tmp/replay_chain_state_1887248444
+[32mINFO [0m[11-26|17:26:54.910] Removing state database directory        [32mdirectory[0m=/tmp/replay_chain_state_1887248444
++ git apply --reverse enable-carmen.patch
