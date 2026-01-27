@@ -10,7 +10,10 @@
 
 use std::{
     path::Path,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     thread,
 };
 
@@ -26,6 +29,7 @@ use carmen_rust::{
     },
     types::{DiskRepresentable, HasEmptyId},
 };
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 const PRINT_INTERVAL: u64 = 1000000;
 
@@ -156,7 +160,7 @@ fn analyze_sparse_leaf<const N: usize>(path: &Path) -> [usize; 257] {
 /// Analyzes nodes of type `N` at the given path, using the provided `count_fn` to determine the
 /// number of filled slots in each node. Returns an array where the index is the number of filled
 /// slots and the value is the count of nodes with that many filled slots.
-fn analyze_node<N>(path: &Path, count_fn: impl Fn(&N) -> usize) -> [usize; 257]
+fn analyze_node<N>(path: &Path, count_fn: impl Fn(&N) -> usize + Sync + Send) -> [usize; 257]
 where
     N: DiskRepresentable + Send + Sync,
 {
@@ -170,20 +174,22 @@ where
     .unwrap();
     let nodes = metadata.nodes;
 
-    let mut sizes = [0; 257];
+    let sizes = Arc::new(Mutex::new([0; 257]));
     let s = NodeFileStorage::<N, NoSeekFile>::open(path, DbMode::ReadOnly).unwrap();
-    for idx in 0..nodes {
-        let node = match s.get(idx).map_err(BTError::into_inner) {
-            Ok(n) => n,
-            Err(Error::NotFound) => continue, // this index is reusable
-            Err(e) => panic!("{e}"),
-        };
-        let filled_slots = count_fn(&node);
-        sizes[filled_slots] += 1;
-        let count = COUNT.fetch_add(1, Ordering::Relaxed);
-        if count.is_multiple_of(PRINT_INTERVAL) {
-            eprintln!("analyzed {count} nodes");
-        }
-    }
-    sizes
+    (0..nodes)
+        .into_par_iter()
+        .for_each_with(sizes.clone(), |sizes, idx| {
+            let node = match s.get(idx).map_err(BTError::into_inner) {
+                Ok(n) => n,
+                Err(Error::NotFound) => return, // this index is reusable
+                Err(e) => panic!("{e}"),
+            };
+            let filled_slots = count_fn(&node);
+            sizes.lock().unwrap()[filled_slots] += 1;
+            let count = COUNT.fetch_add(1, Ordering::Relaxed);
+            if count.is_multiple_of(PRINT_INTERVAL) {
+                eprintln!("analyzed {count} nodes");
+            }
+        });
+    Arc::try_unwrap(sizes).unwrap().into_inner().unwrap()
 }
