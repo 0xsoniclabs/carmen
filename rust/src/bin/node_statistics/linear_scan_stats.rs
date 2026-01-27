@@ -10,14 +10,17 @@
 
 use std::{
     path::Path,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     thread,
 };
 
 use carmen_rust::{
     database::verkle::variants::managed::{
-        FullInnerNode, FullLeafNode, InnerDeltaNode, LeafDeltaNode, SparseInnerNode,
-        SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager,
+        FullInnerNode, FullLeafNode, InnerDeltaNode, SparseInnerNode, SparseLeafNode, VerkleNode,
+        VerkleNodeFileStorageManager,
     },
     error::BTError,
     node_manager::{NodeManager, cached_node_manager::CachedNodeManager},
@@ -28,6 +31,7 @@ use carmen_rust::{
     },
     types::{DiskRepresentable, HasDeltaVariant, HasEmptyId},
 };
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 // Number of analyzed nodes, across all `N`s.
 static PROCESSED: AtomicU64 = AtomicU64::new(0);
@@ -46,7 +50,6 @@ type VerkleStorageManager = VerkleNodeFileStorageManager<
     NodeFileStorage<SparseLeafNode<18>, NoSeekFile>,
     NodeFileStorage<SparseLeafNode<146>, NoSeekFile>,
     NodeFileStorage<FullLeafNode, NoSeekFile>,
-    NodeFileStorage<LeafDeltaNode, NoSeekFile>,
 >;
 
 /// Perform linear scan based statistics collection on the Carmen DB located at `db_path`.
@@ -79,7 +82,6 @@ pub fn linear_scan_stats(db_path: &Path) -> NodeCountsByKindStatistic {
         "leaf18",
         "leaf146",
         "leaf256",
-        "leaf_delta",
     ];
     node_variants.sort();
     expected_node_variants.sort();
@@ -109,7 +111,6 @@ pub fn linear_scan_stats(db_path: &Path) -> NodeCountsByKindStatistic {
             s.spawn(|| analyze_sparse_leaf::<18>(&db_path.join("leaf18"))),
             s.spawn(|| analyze_sparse_leaf::<146>(&db_path.join("leaf146"))),
             s.spawn(|| analyze_full_leaf(&db_path.join("leaf256"))),
-            s.spawn(|| analyze_leaf_delta(&db_path.join("leaf_delta"))),
         ];
 
         let progress = s.spawn(|| print_progress(&stop));
@@ -224,31 +225,10 @@ fn analyze_sparse_leaf<const N: usize>(path: &Path) -> [usize; 257] {
     })
 }
 
-/// Analyze leaf delta nodes at the given path, returning an array where the index is the number
-/// of filled value slots and the value is the count of nodes with that many filled slots.
-fn analyze_leaf_delta(path: &Path) -> [usize; 257] {
-    analyze_delta_node::<LeafDeltaNode>(
-        path,
-        |node| {
-            node.values.iter().filter(|c| **c != [0; 32]).count()
-                + node
-                    .values_delta
-                    .iter()
-                    .filter(|c| c.item.is_some() && node.values[c.index as usize] == [0; 32])
-                    .count()
-        },
-        |n| VerkleNode::LeafDelta(Box::new(n)),
-        |v| match v {
-            VerkleNode::LeafDelta(n) => *n,
-            _ => panic!("expected LeafDelta"),
-        },
-    )
-}
-
 /// Analyzes nodes of type `N` at the given path, using the provided `count_fn` to determine the
 /// number of filled slots in each node. Returns an array where the index is the number of filled
 /// slots and the value is the count of nodes with that many filled slots.
-fn analyze_node<N>(path: &Path, count_fn: impl Fn(&N) -> usize) -> [usize; 257]
+fn analyze_node<N>(path: &Path, count_fn: impl Fn(&N) -> usize + Send + Sync) -> [usize; 257]
 where
     N: DiskRepresentable + Send + Sync,
 {
@@ -261,19 +241,21 @@ where
 
     TOTAL.fetch_add(nodes, Ordering::Relaxed);
 
-    let mut sizes = [0; 257];
+    let mut sizes = Arc::new(Mutex::new([0; 257]));
     let s = NodeFileStorage::<N, NoSeekFile>::open(path, DbMode::ReadOnly).unwrap();
-    for idx in 0..nodes {
-        let node = match s.get(idx).map_err(BTError::into_inner) {
-            Ok(n) => n,
-            Err(Error::NotFound) => continue, // this index is reusable
-            Err(e) => panic!("{e}"),
-        };
-        let filled_slots = count_fn(&node);
-        sizes[filled_slots] += 1;
-        PROCESSED.fetch_add(1, Ordering::Relaxed);
-    }
-    sizes
+    (0..nodes)
+        .into_par_iter()
+        .for_each_with(sizes.clone(), |sizes, idx| {
+            let node = match s.get(idx).map_err(BTError::into_inner) {
+                Ok(n) => n,
+                Err(Error::NotFound) => return, // this index is reusable
+                Err(e) => panic!("{e}"),
+            };
+            let filled_slots = count_fn(&node);
+            sizes.lock().unwrap()[filled_slots] += 1;
+            PROCESSED.fetch_add(1, Ordering::Relaxed);
+        });
+    Arc::try_unwrap(sizes).unwrap().into_inner().unwrap()
 }
 
 /// Analyzes nodes of type `N` at the given path, using the provided `count_fn` to determine the
@@ -313,7 +295,7 @@ where
         let mut wrapped = wrap_fn(node);
         if let Some(full_id) = wrapped.needs_full() {
             let base_node = m.get_read_access(full_id).unwrap();
-            wrapped.copy_from_base(&base_node).unwrap();
+            wrapped.copy_from_full(&base_node).unwrap();
         }
         let filled_slots = count_fn(&unwrap_fn(wrapped));
         sizes[filled_slots] += 1;
