@@ -16,9 +16,10 @@ use std::{
 };
 
 use carmen_rust::{
+    VerkleStorageManager,
     database::verkle::variants::managed::{
         FullInnerNode, FullLeafNode, InnerDeltaNode, LeafDeltaNode, SparseInnerNode,
-        SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager, VerkleNodeId, VerkleNodeKind,
+        SparseLeafNode, VerkleNode, VerkleNodeId, VerkleNodeKind,
     },
     error::BTError,
     statistics::node_count::{NodeCountBySize, NodeCountsByKindStatistic},
@@ -33,21 +34,6 @@ use carmen_rust::{
 static PROCESSED: AtomicU64 = AtomicU64::new(0);
 // Total number of nodes, across all `N`s.
 static TOTAL: AtomicU64 = AtomicU64::new(0);
-
-type VerkleStorageManager = VerkleNodeFileStorageManager<
-    NodeFileStorage<SparseInnerNode<9>, NoSeekFile>,
-    NodeFileStorage<SparseInnerNode<15>, NoSeekFile>,
-    NodeFileStorage<SparseInnerNode<21>, NoSeekFile>,
-    NodeFileStorage<FullInnerNode, NoSeekFile>,
-    NodeFileStorage<InnerDeltaNode, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<1>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<2>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<5>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<18>, NoSeekFile>,
-    NodeFileStorage<SparseLeafNode<146>, NoSeekFile>,
-    NodeFileStorage<FullLeafNode, NoSeekFile>,
-    NodeFileStorage<LeafDeltaNode, NoSeekFile>,
->;
 
 /// Perform linear scan based statistics collection on the Carmen DB located at `db_path`.
 pub fn linear_scan_stats(db_path: &Path) -> NodeCountsByKindStatistic {
