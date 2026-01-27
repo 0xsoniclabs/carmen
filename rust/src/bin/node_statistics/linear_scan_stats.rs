@@ -235,28 +235,52 @@ where
         DbOpenMode::ReadOnly,
     )
     .unwrap();
-    let nodes = metadata.nodes;
+    let nodes = metadata.nodes as usize;
 
-    TOTAL.fetch_add(nodes, Ordering::Relaxed);
+    TOTAL.fetch_add(nodes as u64, Ordering::Relaxed);
 
-    let mut sizes = [0; 257];
-    for idx in 0..nodes {
-        let mut node = match m
-            .get(VerkleNodeId::from_idx_and_node_kind(idx, node_kind))
-            .map_err(BTError::into_inner)
-        {
-            Ok(n) => n,
-            Err(Error::NotFound) => continue, // this index is reusable
-            Err(e) => panic!("{e}"),
-        };
-        if let Some(full_id) = node.needs_delta_base() {
-            let base_node = m.get(full_id).unwrap();
-            node.copy_from_delta_base(&base_node).unwrap();
+    // This uses all available parallelism for each node type. Since most node types are processed
+    // fairly quickly, this ensures that the few remaining node types are processed in parallel as
+    // well.
+    let num_workers = thread::available_parallelism().unwrap().get();
+    let chunk_size = nodes.div_ceil(num_workers);
+    let mut sizes = [0usize; 257];
+
+    thread::scope(|s| {
+        let mut handles = Vec::with_capacity(num_workers);
+        for worker in 0..num_workers {
+            let start = worker * chunk_size;
+            let end = ((worker + 1) * chunk_size).min(nodes);
+            handles.push(s.spawn(move || {
+                let mut local_sizes = [0usize; 257];
+                for idx in start..end {
+                    let mut node = match m
+                        .get(VerkleNodeId::from_idx_and_node_kind(idx as u64, node_kind))
+                        .map_err(BTError::into_inner)
+                    {
+                        Ok(n) => n,
+                        Err(Error::NotFound) => continue, // this index is reusable
+                        Err(e) => panic!("{e}"),
+                    };
+                    if let Some(full_id) = node.needs_delta_base() {
+                        let base_node = m.get(full_id).unwrap();
+                        node.copy_from_delta_base(&base_node).unwrap();
+                    }
+                    let filled_slots = count_used_slots(&node);
+                    local_sizes[filled_slots] += 1;
+                    PROCESSED.fetch_add(1, Ordering::Relaxed);
+                }
+                local_sizes
+            }));
         }
-        let filled_slots = count_used_slots(&node);
-        sizes[filled_slots] += 1;
-        PROCESSED.fetch_add(1, Ordering::Relaxed);
-    }
+        for handle in handles {
+            let res = handle.join().unwrap();
+            for i in 0..=256 {
+                sizes[i] += res[i];
+            }
+        }
+    });
+
     sizes
 }
 
