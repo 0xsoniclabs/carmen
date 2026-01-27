@@ -174,7 +174,7 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
                 .map(|u| u.first_key()[depth as usize]),
         );
 
-        if let Some(slots) = slots {
+        if slots > N {
             Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
                 slots,
                 &self.children,

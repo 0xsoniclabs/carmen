@@ -141,10 +141,11 @@ impl ManagedTrieNode for InnerDeltaNode {
     fn lookup(&self, key: &Key, depth: u8) -> BTResult<LookupResult<Self::Id>, Error> {
         let slot = VerkleIdWithIndex::get_slot_for(&self.children_delta, key[depth as usize]);
         if let Some(slot) = slot
-            && self.children_delta[slot].index == key[depth as usize]
-            && self.children_delta[slot].item != VerkleNodeId::default()
+            && let slot_item = self.children_delta[slot]
+            && slot_item.index == key[depth as usize]
+            && slot_item.item != VerkleNodeId::default()
         {
-            Ok(LookupResult::Node(self.children_delta[slot].item))
+            Ok(LookupResult::Node(slot_item.item))
         } else {
             Ok(LookupResult::Node(
                 self.children[key[depth as usize] as usize],
@@ -166,7 +167,7 @@ impl ManagedTrieNode for InnerDeltaNode {
                 .map(|u| u.first_key()[depth as usize]),
         );
 
-        if slots.is_some() {
+        if slots > Self::DELTA_SIZE {
             Ok(StoreAction::HandleTransform(VerkleNode::Inner256(
                 Box::new(FullInnerNode::from(self.clone())),
             )))

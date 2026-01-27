@@ -23,7 +23,10 @@ use crate::{
                     OnDiskVerkleLeafCommitment, VerkleCommitment, VerkleCommitmentInput,
                     VerkleInnerCommitment, VerkleLeafCommitment,
                 },
-                nodes::{VerkleIdWithIndex, make_smallest_inner_node_for},
+                nodes::{
+                    ItemWithIndex, VerkleIdWithIndex, leaf_delta::LeafDeltaNode,
+                    make_smallest_inner_node_for,
+                },
             },
         },
         visitor::NodeVisitor,
@@ -78,6 +81,24 @@ impl TryFrom<OnDiskFullLeafNode> for FullLeafNode {
             values: node.values,
             commitment: VerkleLeafCommitment::try_from(node.commitment)?,
         })
+    }
+}
+
+impl From<LeafDeltaNode> for FullLeafNode {
+    fn from(node: LeafDeltaNode) -> Self {
+        FullLeafNode {
+            stem: node.stem,
+            values: {
+                let mut values = node.values;
+                for ItemWithIndex { index, item } in node.values_delta {
+                    if let Some(item) = item {
+                        values[index as usize] = item;
+                    }
+                }
+                values
+            },
+            commitment: node.commitment,
+        }
     }
 }
 
@@ -234,6 +255,41 @@ mod tests {
         })
         .unwrap();
         assert_eq!(original_node, deserialized_node);
+    }
+
+    #[test]
+    fn from_leaf_delta_node_copies_stem_and_commitment_and_base_values_and_applies_delta_on_top() {
+        // Create a delta node with non-default values for stem, values, values_delta, and
+        // commitment.
+        let mut delta_node = LeafDeltaNode {
+            stem: [1; 31],
+            values: [[0; 32]; 256],
+            values_delta: array::from_fn(|i| ItemWithIndex {
+                index: i as u8,
+                item: None,
+            }),
+            commitment: VerkleLeafCommitment::default(),
+            base_node_id: VerkleNodeId::default(),
+        };
+        delta_node.values[5] = [5; 32];
+        delta_node.values[6] = [5; 32];
+        delta_node.values_delta[2] = ItemWithIndex {
+            index: 6,
+            item: Some([6; 32]),
+        };
+        delta_node.commitment.store(5, [5; 32]);
+
+        let node = FullLeafNode::from(delta_node.clone());
+        assert_eq!(node.stem, delta_node.stem);
+        assert_eq!(node.commitment, delta_node.commitment);
+        for i in 0..256 {
+            let expected_value = match i {
+                5 => [5; 32],
+                6 => [6; 32],
+                _ => [0; 32],
+            };
+            assert_eq!(node.values[i], expected_value);
+        }
     }
 
     #[test]

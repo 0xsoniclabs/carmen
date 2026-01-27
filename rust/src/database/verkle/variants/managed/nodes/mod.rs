@@ -44,6 +44,7 @@ pub mod id;
 pub mod inner;
 pub mod inner_delta;
 pub mod leaf;
+pub mod leaf_delta;
 pub mod sparse_inner;
 pub mod sparse_leaf;
 
@@ -279,8 +280,7 @@ impl UnionManagedTrieNode for VerkleNode {
                 let enough_slots = ItemWithIndex::required_slot_count_for(
                     &n.children_delta,
                     changed_children_indices.into_iter(),
-                )
-                .is_none();
+                ) <= InnerDeltaNode::DELTA_SIZE;
                 if enough_slots {
                     VerkleNode::InnerDelta(n.clone())
                 } else {
@@ -524,12 +524,11 @@ where
         empty_slot
     }
 
-    /// Returns the number of slots that would be required to store the given items or None if they
-    /// already fit.
+    /// Returns the number of slots that are required to store the given items.
     fn required_slot_count_for<const N: usize>(
         items: &[ItemWithIndex<T>; N],
         indices: impl Iterator<Item = u8>,
-    ) -> Option<usize> {
+    ) -> usize {
         let empty_slots = items.iter().filter(|iwi| iwi.item == T::default()).count();
         let mut new_slots = 0;
         for index in indices {
@@ -541,11 +540,7 @@ where
             }
             new_slots += 1;
         }
-        if new_slots <= empty_slots {
-            None
-        } else {
-            Some(N - empty_slots + new_slots)
-        }
+        N - empty_slots + new_slots
     }
 }
 
@@ -904,8 +899,7 @@ mod tests {
     }
 
     #[test]
-    fn item_with_index_required_slot_count_for_returns_number_of_required_slots_or_none_if_items_fit()
-     {
+    fn item_with_index_required_slot_count_for_returns_number_of_required_slots() {
         let mut items = [ItemWithIndex::default(); 5];
         items[1] = ItemWithIndex {
             index: 1,
@@ -923,17 +917,17 @@ mod tests {
 
         // Enough empty slots for all new indices
         let slots = ItemWithIndex::required_slot_count_for(&items, [100, 101, 102].into_iter());
-        assert_eq!(slots, None);
+        assert_eq!(slots, 5);
 
         // Enough empty slots and slots which get overwritten
         let slots =
             ItemWithIndex::required_slot_count_for(&items, [100, 101, 102, 10, 1].into_iter());
-        assert_eq!(slots, None);
+        assert_eq!(slots, 5);
 
         // Not enough empty slots
         let slots =
             ItemWithIndex::required_slot_count_for(&items, [100, 101, 102, 103].into_iter());
-        assert_eq!(slots, Some(6)); // 2 existing + 1 reused + 3 new
+        assert_eq!(slots, 6); // 2 existing + 1 reused + 3 new
     }
 
     #[test]

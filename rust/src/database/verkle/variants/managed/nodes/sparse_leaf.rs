@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::borrow::Cow;
+use std::{array, borrow::Cow};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
@@ -24,8 +24,8 @@ use crate::{
                     VerkleInnerCommitment, VerkleLeafCommitment,
                 },
                 nodes::{
-                    ValueWithIndex, VerkleIdWithIndex, make_smallest_inner_node_for,
-                    make_smallest_leaf_node_for,
+                    ItemWithIndex, ValueWithIndex, VerkleIdWithIndex, leaf_delta::LeafDeltaNode,
+                    make_smallest_inner_node_for, make_smallest_leaf_node_for,
                 },
             },
         },
@@ -123,6 +123,39 @@ impl<const N: usize> TryFrom<OnDiskSparseLeafNode<N>> for SparseLeafNode<N> {
     }
 }
 
+impl<const N: usize> TryFrom<LeafDeltaNode> for SparseLeafNode<N> {
+    type Error = BTError<Error>;
+
+    fn try_from(delta_node: LeafDeltaNode) -> Result<Self, Self::Error> {
+        Ok(SparseLeafNode {
+            stem: delta_node.stem,
+            values: {
+                let mut values = array::from_fn(|i| ValueWithIndex {
+                    index: i as u8,
+                    item: Value::default(),
+                });
+                for (i, item) in delta_node.values.into_iter().enumerate() {
+                    if item != Value::default() {
+                        let slot = ValueWithIndex::get_slot_for(&values, i as u8).ok_or(Error::Internal("LeafDeltaNode to SparseLeafNode conversion failed because there are not enough slots available.".into()))?;
+                        values[slot] = ValueWithIndex {
+                            index: i as u8,
+                            item,
+                        };
+                    }
+                }
+                for ItemWithIndex { index, item } in delta_node.values_delta {
+                    if let Some(item) = item {
+                        let slot = ValueWithIndex::get_slot_for(&values, index).ok_or(Error::Internal("LeafDeltaNode to SparseLeafNode conversion failed because there are not enough slots available.".into()))?;
+                        values[slot] = ValueWithIndex { index, item };
+                    }
+                }
+                values
+            },
+            commitment: delta_node.commitment,
+        })
+    }
+}
+
 impl<const N: usize> From<&SparseLeafNode<N>> for OnDiskSparseLeafNode<N> {
     fn from(node: &SparseLeafNode<N>) -> Self {
         OnDiskSparseLeafNode {
@@ -196,10 +229,11 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
             return Ok(StoreAction::HandleReparent(inner));
         }
 
-        if let Some(slots) = ValueWithIndex::required_slot_count_for(
+        let slots = ValueWithIndex::required_slot_count_for(
             &self.values,
             updates.clone().split(31).map(|u| u.first_key()[31]),
-        ) {
+        );
+        if slots > N {
             // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
             return Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
                 slots,
@@ -474,6 +508,75 @@ mod tests {
             result.map_err(BTError::into_inner),
             Err(Error::CorruptedState(e)) if e.contains("too many non-zero values to fit into sparse leaf of size 2")
         ));
+    }
+
+    #[test]
+    fn try_from_leaf_delta_node_copies_stem_and_commitment_and_base_values_and_applies_delta_on_top()
+     {
+        // Create a delta node with non-default values for stem, values, values_delta, and
+        // commitment.
+        let mut delta_node = LeafDeltaNode {
+            stem: [1; 31],
+            values: [[0; 32]; 256],
+            values_delta: array::from_fn(|i| ItemWithIndex {
+                index: i as u8,
+                item: None,
+            }),
+            commitment: VerkleLeafCommitment::default(),
+            base_node_id: VerkleNodeId::default(),
+        };
+        delta_node.values[5] = [5; 32];
+        delta_node.values[6] = [5; 32];
+        delta_node.values_delta[2] = ItemWithIndex {
+            index: 6,
+            item: Some([6; 32]),
+        };
+        delta_node.commitment.store(5, [5; 32]);
+
+        let node = SparseLeafNode::<9>::try_from(delta_node.clone()).unwrap();
+        assert_eq!(node.stem, delta_node.stem);
+        assert_eq!(node.commitment, delta_node.commitment);
+        for i in 0..256 {
+            let expected_value = match i {
+                5 => [5; 32],
+                6 => [6; 32],
+                _ => [0; 32],
+            };
+            let slot = ItemWithIndex::get_slot_for(&node.values, i as u8).unwrap();
+            assert_eq!(node.values[slot].item, expected_value);
+        }
+    }
+
+    #[test]
+    fn try_from_leaf_delta_node_returns_error_if_values_don_not_fit() {
+        // Create a delta node with non-default values for stem, values, values_delta, and
+        // commitment.
+        let mut delta_node = LeafDeltaNode {
+            stem: [1; 31],
+            values: [[0; 32]; 256],
+            values_delta: array::from_fn(|i| ItemWithIndex {
+                index: i as u8,
+                item: None,
+            }),
+            commitment: VerkleLeafCommitment::default(),
+            base_node_id: VerkleNodeId::default(),
+        };
+        delta_node.values[5] = [5; 32];
+        delta_node.values[6] = [5; 32];
+        delta_node.values_delta[2] = ItemWithIndex {
+            index: 6,
+            item: Some([6; 32]),
+        };
+        delta_node.values_delta[3] = ItemWithIndex {
+            index: 7,
+            item: Some([7; 32]),
+        };
+
+        let result = SparseLeafNode::<2>::try_from(delta_node.clone());
+        assert_eq!(
+            result.map_err(BTError::into_inner),
+            Err(Error::Internal("LeafDeltaNode to SparseLeafNode conversion failed because there are not enough slots available.".into()))
+        );
     }
 
     #[test]
