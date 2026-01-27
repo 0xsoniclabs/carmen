@@ -37,11 +37,17 @@ use crate::{
     types::{DiskRepresentable, Key, Value},
 };
 
-/// A sparsely populated leaf node in a managed Verkle trie.
+/// The leaf delta node is a space-saving optimization for managed Verkle trie archives:
+/// Archives update tries non-destructively using copy-on-write.
+/// Instead of copying all children each time, delta nodes instead store a set of differences
+/// for specific indices, compared to some earlier base leaf node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeafDeltaNode {
     pub stem: [u8; 31],
     pub values: [Value; 256],
+    // We can not use `Value::default()` to indicate an unused slot because a value could be
+    // non-default in the base and then be updated to default in the delta. Therefore we need an
+    // explicit `Option`.
     pub values_delta: [ItemWithIndex<Option<Value>>; Self::DELTA_SIZE],
     pub base_node_id: VerkleNodeId,
     pub commitment: VerkleLeafCommitment,
@@ -50,8 +56,7 @@ pub struct LeafDeltaNode {
 impl LeafDeltaNode {
     /// The number of values for which a delta can be stored.
     /// This represents a tradeoff between how large the delta node itself is on disk,
-    /// versus how often a full leaf node has to be introduced.
-    /// Preliminary benchmarking has shown 10 to be a good number.
+    /// versus how often a base leaf node has to be introduced.
     pub const DELTA_SIZE: usize = 10;
 
     pub fn from_full_leaf(base_node: &FullLeafNode, base_node_id: VerkleNodeId) -> Self {
@@ -250,7 +255,7 @@ impl ManagedTrieNode for LeafDeltaNode {
             )?));
         }
 
-        // All updates fit into this sparse leaf.
+        // All updates fit into this leaf delta node.
         Ok(StoreAction::Store(updates))
     }
 
@@ -264,7 +269,9 @@ impl ManagedTrieNode for LeafDeltaNode {
         }
 
         let slot = ItemWithIndex::get_slot_for(&self.values_delta, key[31]).ok_or(
-            Error::CorruptedState("no available slot for storing value in sparse leaf".to_owned()),
+            Error::CorruptedState(
+                "no available slot for storing value in leaf delta node".to_owned(),
+            ),
         )?;
         let prev_value = self.values_delta[slot]
             .item
@@ -324,7 +331,7 @@ mod tests {
         types::{TreeId, Value},
     };
 
-    /// A random stem used by nodes created through [`make_leaf_with_empty_delta`].
+    /// A random stem used by nodes created through [`make_empty_leaf_delta`].
     const STEM: [u8; 31] = [
         199, 138, 41, 113, 63, 133, 10, 244, 221, 149, 172, 110, 253, 27, 18, 76, 151, 202, 22, 80,
         37, 162, 130, 217, 143, 28, 241, 137, 212, 77, 126,
@@ -370,21 +377,21 @@ mod tests {
     }
 
     #[test]
-    fn from_full_leaf_copies_stem_and_values_and_commitment_and_sets_id_of_inner_node() {
-        let mut full_leaf = FullLeafNode {
+    fn from_full_leaf_copies_stem_and_values_and_commitment_and_sets_id_of_base_node() {
+        let mut base_leaf = FullLeafNode {
             stem: STEM,
             values: [Value::default(); 256],
             commitment: VerkleLeafCommitment::default(),
         };
-        full_leaf.values[2] = [1; 32];
-        full_leaf.commitment.store(1, [1; 32]);
+        base_leaf.values[2] = [1; 32];
+        base_leaf.commitment.store(1, [1; 32]);
 
         let full_leaf_id = VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Leaf256);
 
-        let node = LeafDeltaNode::from_full_leaf(&full_leaf, full_leaf_id);
-        assert_eq!(node.stem, full_leaf.stem);
-        assert_eq!(node.commitment, full_leaf.commitment);
-        assert_eq!(node.values, full_leaf.values);
+        let node = LeafDeltaNode::from_full_leaf(&base_leaf, full_leaf_id);
+        assert_eq!(node.stem, base_leaf.stem);
+        assert_eq!(node.commitment, base_leaf.commitment);
+        assert_eq!(node.values, base_leaf.values);
         assert_eq!(node.base_node_id, full_leaf_id);
         assert_eq!(
             node.values_delta,
@@ -396,8 +403,8 @@ mod tests {
     }
 
     #[test]
-    fn from_sparse_leaf_copies_stem_and_values_and_commitment_and_sets_id_of_inner_node() {
-        let mut full_leaf = SparseLeafNode::<9> {
+    fn from_sparse_leaf_copies_stem_and_values_and_commitment_and_sets_id_of_base_node() {
+        let mut base_leaf = SparseLeafNode::<9> {
             stem: STEM,
             values: array::from_fn(|i| ItemWithIndex {
                 index: i as u8,
@@ -405,17 +412,17 @@ mod tests {
             }),
             commitment: VerkleLeafCommitment::default(),
         };
-        full_leaf.commitment.store(255, [1; 32]);
-        full_leaf.values[0] = ItemWithIndex {
+        base_leaf.commitment.store(255, [1; 32]);
+        base_leaf.values[0] = ItemWithIndex {
             index: 255,
             item: [1; 32],
         };
 
         let full_leaf_id = VerkleNodeId::from_idx_and_node_kind(1, VerkleNodeKind::Leaf256);
 
-        let node = LeafDeltaNode::from_sparse_leaf(&full_leaf, full_leaf_id);
-        assert_eq!(node.stem, full_leaf.stem);
-        assert_eq!(node.commitment, full_leaf.commitment);
+        let node = LeafDeltaNode::from_sparse_leaf(&base_leaf, full_leaf_id);
+        assert_eq!(node.stem, base_leaf.stem);
+        assert_eq!(node.commitment, base_leaf.commitment);
         assert_eq!(node.values[255], [1; 32]);
         assert_eq!(node.values[..255], [Value::default(); 255]);
         assert_eq!(node.base_node_id, full_leaf_id);
@@ -713,7 +720,7 @@ mod tests {
         let result = node.store(&update);
         assert!(matches!(
             result.map_err(BTError::into_inner),
-            Err(Error::CorruptedState(e)) if e.contains("no available slot for storing value in sparse leaf")
+            Err(Error::CorruptedState(e)) if e.contains("no available slot for storing value in leaf delta node")
         ));
     }
 
