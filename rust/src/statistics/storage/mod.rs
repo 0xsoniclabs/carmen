@@ -12,7 +12,7 @@ use std::{fmt, fs::File, io::Write, path::Path};
 
 use crate::{
     error::BTResult,
-    storage::{self, Checkpointable, DbMode, RootIdProvider, Storage},
+    storage::{self, Checkpointable, DbOpenMode, RootIdProvider, Storage},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -115,7 +115,7 @@ where
 
     type Item = S::Item;
 
-    fn open(path: &std::path::Path, mode: DbMode) -> BTResult<Self, crate::storage::Error> {
+    fn open(path: &std::path::Path, mode: DbOpenMode) -> BTResult<Self, crate::storage::Error> {
         let storage = S::open(path, mode)?;
         Self::try_new(storage, path)
     }
@@ -284,7 +284,7 @@ mod tests {
             .returning(|_, _| Ok(MockStorage::new()));
 
         let _storage_stats =
-            StorageOperationLogger::<MockStorage<()>>::open(test_dir.path(), DbMode::ReadWrite)
+            StorageOperationLogger::<MockStorage<()>>::open(test_dir.path(), DbOpenMode::ReadWrite)
                 .unwrap();
     }
 
@@ -503,7 +503,7 @@ mod tests {
     #[allow(clippy::disallowed_types)]
     mod mock {
         use super::*;
-        use crate::storage::{DbMode, Error};
+        use crate::storage::{DbOpenMode, Error};
 
         mock! {
 
@@ -529,7 +529,7 @@ mod tests {
                     type Id = TestNodeId;
                     type Item = T;
 
-                    fn open(path: &std::path::Path, mode: DbMode) -> BTResult<Self, Error>;
+                    fn open(path: &std::path::Path, mode: DbOpenMode) -> BTResult<Self, Error>;
 
                     fn get(&self, id: <Self as Storage>::Id) -> BTResult<<Self as Storage>::Item, Error>;
 

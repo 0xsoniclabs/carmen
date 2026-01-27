@@ -19,7 +19,7 @@ use zerocopy::IntoBytes;
 
 use crate::{
     error::BTResult,
-    storage::{DbMode, Error},
+    storage::{DbOpenMode, Error},
 };
 
 /// A wrapper around a file storing reuse list indices, which caches the indices in memory for
@@ -48,7 +48,7 @@ impl ReuseListFile {
         path: impl AsRef<Path>,
         count: u64,
         frozen_count: u64,
-        db_mode: DbMode,
+        db_open_mode: DbOpenMode,
     ) -> BTResult<Self, Error> {
         if frozen_count > count {
             return Err(Error::DatabaseCorruption(
@@ -56,7 +56,7 @@ impl ReuseListFile {
             )
             .into());
         }
-        let mut file = db_mode.to_open_options().open(path)?;
+        let mut file = db_open_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
         if len < count * size_of::<u64>() as u64 {
             return Err(Error::DatabaseCorruption(format!(
@@ -154,12 +154,12 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
-        storage::tests::all_db_modes,
+        storage::tests::db_open_mode,
         utils::test_dir::{Permissions, TestDir},
     };
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn open_reads_count_number_of_indices_from_file(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn open_reads_count_number_of_indices_from_file(#[case] db_open_mode: DbOpenMode) {
         use super::ReuseListFile;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
@@ -170,20 +170,23 @@ mod tests {
 
         let frozen_count = 2;
         let count = 3;
-        let reuse_list_file = ReuseListFile::open(path, count, frozen_count, db_mode).unwrap();
+        let reuse_list_file =
+            ReuseListFile::open(path, count, frozen_count, db_open_mode).unwrap();
         assert_eq!(reuse_list_file.frozen_indices, [0, 1].into_iter().collect());
         assert!(reuse_list_file.temp_frozen_indices.is_empty());
         assert_eq!(reuse_list_file.reusable_indices, [2]);
     }
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn open_returns_error_when_frozen_count_larger_than_count(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn open_returns_error_when_frozen_count_larger_than_count(
+        #[case] db_open_mode: DbOpenMode,
+    ) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
         let count = 1;
         let frozen_count = 2;
-        let result = ReuseListFile::open(path, count, frozen_count, db_mode);
+        let result = ReuseListFile::open(path, count, frozen_count, db_open_mode);
         assert_eq!(
             result.unwrap_err().into_inner(),
             Error::DatabaseCorruption(
@@ -192,8 +195,8 @@ mod tests {
         );
     }
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn open_returns_error_for_invalid_file_size(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn open_returns_error_for_invalid_file_size(#[case] db_open_mode: DbOpenMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
@@ -202,7 +205,7 @@ mod tests {
 
         let count = 2;
         let frozen_count = 2;
-        let result = ReuseListFile::open(path, count, frozen_count, db_mode);
+        let result = ReuseListFile::open(path, count, frozen_count, db_open_mode);
         assert_eq!(
             result.unwrap_err().into_inner(),
             Error::DatabaseCorruption(
@@ -216,7 +219,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.join("reuse_list");
 
-        let result = ReuseListFile::open(path, 0, 0, DbMode::ReadWrite);
+        let result = ReuseListFile::open(path, 0, 0, DbOpenMode::ReadWrite);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))
@@ -228,7 +231,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
-        let result = ReuseListFile::open(path, 0, 0, DbMode::ReadOnly);
+        let result = ReuseListFile::open(path, 0, 0, DbOpenMode::ReadOnly);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))

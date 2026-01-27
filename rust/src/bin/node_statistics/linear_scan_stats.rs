@@ -21,7 +21,7 @@ use carmen_rust::{
     error::BTError,
     statistics::node_count::{NodeCountBySize, NodeCountsByKindStatistic},
     storage::{
-        DbMode, Error, Storage,
+        DbOpenMode, Error, Storage,
         file::{FromToFile, NoSeekFile, NodeFileStorage, NodeFileStorageMetadata},
     },
     types::{DiskRepresentable, HasEmptyId},
@@ -165,13 +165,13 @@ where
 
     let metadata = NodeFileStorageMetadata::read_or_init(
         path.join(NodeFileStorage::<N, NoSeekFile>::METADATA_FILE),
-        DbMode::ReadOnly,
+        DbOpenMode::ReadOnly,
     )
     .unwrap();
     let nodes = metadata.nodes;
 
     let mut sizes = [0; 257];
-    let s = NodeFileStorage::<N, NoSeekFile>::open(path, DbMode::ReadOnly).unwrap();
+    let s = NodeFileStorage::<N, NoSeekFile>::open(path, DbOpenMode::ReadOnly).unwrap();
     for idx in 0..nodes {
         let node = match s.get(idx).map_err(BTError::into_inner) {
             Ok(n) => n,

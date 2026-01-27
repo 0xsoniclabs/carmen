@@ -22,7 +22,7 @@ use carmen_rust::{
     node_manager::cached_node_manager::CachedNodeManager,
     statistics::node_count::{NodeCountVisitor, NodeCountsByLevelAndKind},
     storage::{
-        DbMode, Storage,
+        DbOpenMode, Storage,
         file::{NoSeekFile, NodeFileStorage},
     },
 };
@@ -47,7 +47,7 @@ pub fn tree_traversal_stats(db_path: &Path) -> NodeCountsByLevelAndKind {
         eprintln!("The tree traversal stats only work with live DBs");
         std::process::exit(1);
     }
-    let storage = VerkleStorageManager::open(db_path, DbMode::ReadOnly)
+    let storage = VerkleStorageManager::open(db_path, DbOpenMode::ReadOnly)
         .map_err(|e| {
             eprintln!("error: could not open database at the specified path: {e}");
             std::process::exit(1);

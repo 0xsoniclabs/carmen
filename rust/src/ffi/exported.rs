@@ -19,6 +19,7 @@ use crate::{
     CarmenDb, CarmenState,
     ffi::bindings,
     open_carmen_db,
+    storage::DbOpenMode,
     types::{Address, Hash, Key, U256, Update, Value},
 };
 
@@ -106,6 +107,9 @@ unsafe extern "C" fn Carmen_Rust_OpenDatabase(
         live_impl,
         archive_impl,
         Path::new(OsStr::from_bytes(directory)),
+        //TODO: This could be configurable from Go.
+        // https://github.com/0xsoniclabs/sonic-admin/issues/591
+        DbOpenMode::ReadWrite,
     );
     match db {
         Ok(db) => {

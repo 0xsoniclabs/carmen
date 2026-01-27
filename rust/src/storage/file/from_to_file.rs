@@ -14,19 +14,19 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::{
     error::BTResult,
-    storage::{DbMode, Error},
+    storage::{DbOpenMode, Error},
 };
 
 /// An extension trait for types that can be read from and written to files as byte slices.
 pub trait FromToFile: Sized + Default + FromBytes + IntoBytes + Immutable {
     /// Creates a new instance by reading from the file at the given path.
-    /// If the file does not exist and the `db_mode` has write access, it is created and initialized
-    /// with the default value.
-    fn read_or_init(path: impl AsRef<Path>, db_mode: DbMode) -> BTResult<Self, Error> {
+    /// If the file does not exist and the `db_open_mode` has write access, it is created and
+    /// initialized with the default value.
+    fn read_or_init(path: impl AsRef<Path>, db_open_mode: DbOpenMode) -> BTResult<Self, Error> {
         let path = path.as_ref();
-        let mut file = db_mode.to_open_options().open(path)?;
+        let mut file = db_open_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
-        if len == 0 && !db_mode.read_only() {
+        if len == 0 && !db_open_mode.read_only() {
             // File was just created
             fs::write(path, Self::default().as_bytes())?;
         } else if len != std::mem::size_of::<Self>() as u64 {
@@ -60,7 +60,7 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
-        storage::all_db_modes,
+        storage::tests::db_open_mode,
         utils::test_dir::{Permissions, TestDir},
     };
 
@@ -73,8 +73,8 @@ mod tests {
 
     impl FromToFile for Dummy {}
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn read_or_init_reads_data_from_file(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn read_or_init_reads_data_from_file(#[case] db_open_mode: DbOpenMode) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 
@@ -84,16 +84,16 @@ mod tests {
         let data = [a, b];
         fs::write(path.as_path(), data.as_bytes()).unwrap();
 
-        let data = Dummy::read_or_init(path, db_mode).unwrap();
+        let data = Dummy::read_or_init(path, db_open_mode).unwrap();
         assert_eq!(data, Dummy { a, b });
     }
 
     #[test]
-    fn read_or_init_returns_default_data_if_file_does_not_exist_if_db_mode_has_write_access() {
+    fn read_or_init_returns_default_data_if_file_does_not_exist_if_db_open_mode_has_write_access() {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 
-        let data = Dummy::read_or_init(path, DbMode::ReadWrite).unwrap();
+        let data = Dummy::read_or_init(path, DbOpenMode::ReadWrite).unwrap();
         assert_eq!(data, Dummy::default());
     }
 
@@ -102,21 +102,21 @@ mod tests {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 
-        let result = Dummy::read_or_init(path, DbMode::ReadOnly);
+        let result = Dummy::read_or_init(path, DbOpenMode::ReadOnly);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))
         ));
     }
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn read_or_init_returns_error_for_invalid_file_size(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn read_or_init_returns_error_for_invalid_file_size(#[case] db_open_mode: DbOpenMode) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 
         fs::write(&path, [0u8; 10]).unwrap();
 
-        let result = Dummy::read_or_init(path, db_mode);
+        let result = Dummy::read_or_init(path, db_open_mode);
         assert_eq!(
             result.map_err(BTError::into_inner),
             Err(Error::DatabaseCorruption(
@@ -125,15 +125,15 @@ mod tests {
         );
     }
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn read_or_init_fails_if_file_cannot_be_read(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn read_or_init_fails_if_file_cannot_be_read(#[case] db_open_mode: DbOpenMode) {
         let tempdir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = tempdir.join("data");
 
         fs::write(&path, []).unwrap();
         tempdir.set_permissions(Permissions::WriteOnly).unwrap();
 
-        let result = Dummy::read_or_init(&path, db_mode);
+        let result = Dummy::read_or_init(&path, db_open_mode);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))
@@ -169,13 +169,13 @@ mod tests {
         ));
     }
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn read_returns_what_write_wrote(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn read_returns_what_write_wrote(#[case] db_open_mode: DbOpenMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("data");
 
         let data = Dummy { a: 1, b: 2 };
         data.write(&path).unwrap();
-        assert_eq!(Dummy::read_or_init(&path, db_mode).unwrap(), data);
+        assert_eq!(Dummy::read_or_init(&path, db_open_mode).unwrap(), data);
     }
 }

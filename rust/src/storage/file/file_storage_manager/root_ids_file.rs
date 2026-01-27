@@ -20,7 +20,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use crate::{
     error::BTResult,
-    storage::{DbMode, Error},
+    storage::{DbOpenMode, Error},
     sync::{
         Mutex,
         atomic::{AtomicU64, Ordering},
@@ -50,9 +50,9 @@ where
     pub fn open(
         path: impl AsRef<Path>,
         frozen_count: u64,
-        db_mode: DbMode,
+        db_open_mode: DbOpenMode,
     ) -> BTResult<Self, Error> {
-        let mut file = db_mode.to_open_options().open(path)?;
+        let mut file = db_open_mode.to_open_options().open(path)?;
         let len = file.metadata()?.len();
         let frozen_len = frozen_count * size_of::<ID>() as u64;
         if len < frozen_len {
@@ -138,15 +138,15 @@ mod tests {
     use super::*;
     use crate::{
         error::BTError,
-        storage::all_db_modes,
+        storage::db_open_mode,
         utils::test_dir::{Permissions, TestDir},
     };
 
     type Id = [u8; 6];
     type RootIdsFile = super::RootIdsFile<Id>;
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn open_reads_frozen_part_of_file(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn open_reads_frozen_part_of_file(#[case] db_open_mode: DbOpenMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("root_ids");
 
@@ -154,7 +154,7 @@ mod tests {
         fs::write(path.as_path(), ids.as_bytes()).unwrap();
 
         let frozen_count = 2;
-        let root_ids_file = RootIdsFile::open(path, frozen_count, db_mode).unwrap();
+        let root_ids_file = RootIdsFile::open(path, frozen_count, db_open_mode).unwrap();
         assert_eq!(root_ids_file.id_count.load(Ordering::Relaxed), frozen_count);
         assert_eq!(root_ids_file.cache.len(), frozen_count as usize);
         let mut cached_ids = root_ids_file
@@ -166,15 +166,15 @@ mod tests {
         assert_eq!(cached_ids, &ids[..frozen_count as usize]);
     }
 
-    #[rstest_reuse::apply(all_db_modes)]
-    fn open_returns_error_for_invalid_file_size(#[case] db_mode: DbMode) {
+    #[rstest_reuse::apply(db_open_mode)]
+    fn open_returns_error_for_invalid_file_size(#[case] db_open_mode: DbOpenMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("root_ids");
 
         fs::write(path.as_path(), [0; 10]).unwrap();
 
         let frozen_count = 2;
-        let result = RootIdsFile::open(path, frozen_count, db_mode);
+        let result = RootIdsFile::open(path, frozen_count, db_open_mode);
         assert_eq!(
             result.unwrap_err().into_inner(),
             Error::DatabaseCorruption(
@@ -188,7 +188,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let path = dir.join("root_ids");
 
-        let result = RootIdsFile::open(path, 0, DbMode::ReadWrite);
+        let result = RootIdsFile::open(path, 0, DbOpenMode::ReadWrite);
         assert!(matches!(
             result.map_err(BTError::into_inner),
             Err(Error::Io(_))

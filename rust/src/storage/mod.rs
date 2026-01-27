@@ -18,24 +18,24 @@ mod error;
 pub mod file;
 pub mod storage_with_flush_buffer;
 #[cfg(test)]
-use tests::all_db_modes;
+use tests::db_open_mode;
 
 /// The mode in which the database can be opened.
 #[derive(Debug, Clone, Copy)]
-pub enum DbMode {
+pub enum DbOpenMode {
     ReadOnly,
     ReadWrite,
 }
 
-impl DbMode {
+impl DbOpenMode {
     /// Returns if the database mode allows write access.
     pub fn has_write_access(&self) -> bool {
-        matches!(self, DbMode::ReadWrite)
+        matches!(self, DbOpenMode::ReadWrite)
     }
 
     /// Returns if the database mode is read-only.
     pub fn read_only(&self) -> bool {
-        matches!(self, DbMode::ReadOnly)
+        matches!(self, DbOpenMode::ReadOnly)
     }
 
     /// Converts the database mode to the corresponding [`std::fs::OpenOptions`] instance for
@@ -45,10 +45,20 @@ impl DbMode {
     pub fn to_open_options(&self) -> OpenOptions {
         let mut options = OpenOptions::new();
         match self {
-            DbMode::ReadOnly => options.create(false).truncate(false).read(true),
-            DbMode::ReadWrite => options.create(true).truncate(false).read(true).write(true),
+            DbOpenMode::ReadOnly => options.create(false).truncate(false).read(true),
+            DbOpenMode::ReadWrite => options.create(true).truncate(false).read(true).write(true),
         };
         options
+    }
+
+    /// Converts the database mode to the corresponding [`crate::utils::test_dir::Permissions`]
+    /// instance for setting file permissions.
+    #[cfg(test)]
+    pub fn to_permissions(&self) -> crate::utils::test_dir::Permissions {
+        match self {
+            DbOpenMode::ReadOnly => crate::utils::test_dir::Permissions::ReadOnly,
+            DbOpenMode::ReadWrite => crate::utils::test_dir::Permissions::ReadWrite,
+        }
     }
 }
 
@@ -65,7 +75,7 @@ pub trait Storage: Send + Sync {
     /// last committed checkpoint.
     /// Depending on the implementation, the path is required to be a directory or a
     /// file.
-    fn open(path: &Path, db_mode: DbMode) -> BTResult<Self, Error>
+    fn open(path: &Path, db_open_mode: DbOpenMode) -> BTResult<Self, Error>
     where
         Self: Sized;
 
@@ -157,17 +167,17 @@ mod tests {
     use crate::utils::test_dir::{Permissions, TestDir};
 
     #[test]
-    fn db_mode_to_open_options_returns_correct_options() {
+    fn db_open_mode_to_open_options_returns_correct_options() {
         let tmp_dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let non_existing_file = tmp_dir.path().join("non_existing_file");
         let existing_file = tmp_dir.path().join("existing_file");
         std::fs::write(&existing_file, b"").unwrap();
 
-        let read_options = DbMode::ReadOnly.to_open_options();
+        let read_options = DbOpenMode::ReadOnly.to_open_options();
         assert!(read_options.open(&non_existing_file).is_err());
         assert!(read_options.open(&existing_file).is_ok());
 
-        let read_write_options = DbMode::ReadWrite.to_open_options();
+        let read_write_options = DbOpenMode::ReadWrite.to_open_options();
         assert!(read_write_options.open(&non_existing_file).is_ok());
         // File is created if it does not exist with ReadWrite mode
         assert!(std::fs::exists(non_existing_file).unwrap());
@@ -176,7 +186,7 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::read(DbMode::ReadOnly)]
-    #[case::read_write(DbMode::ReadWrite)]
-    pub fn all_db_modes(#[case] db_mode: DbMode) {}
+    #[case::read(DbOpenMode::ReadOnly)]
+    #[case::read_write(DbOpenMode::ReadWrite)]
+    pub fn db_open_mode(#[case] db_open_mode: DbOpenMode) {}
 }

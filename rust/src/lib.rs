@@ -32,7 +32,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::cached_node_manager::CachedNodeManager,
     storage::{
-        DbMode, RootIdProvider, Storage,
+        DbOpenMode, RootIdProvider, Storage,
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
@@ -75,6 +75,7 @@ pub fn open_carmen_db(
     live_impl: &[u8],
     archive_impl: &[u8],
     directory: &Path,
+    db_open_mode: DbOpenMode,
 ) -> BTResult<Box<dyn CarmenDb>, Error> {
     if schema != 6 {
         return Err(Error::UnsupportedSchema(schema).into());
@@ -93,7 +94,7 @@ pub fn open_carmen_db(
         }
         (b"file", b"none"| b"") => {
             let live_dir = directory.join("live");
-            let storage = VerkleStorage::open(&live_dir, DbMode::ReadWrite)?;
+            let storage = VerkleStorage::open(&live_dir, db_open_mode)?;
             #[cfg(feature = "storage-statistics")]
             let storage = StorageOperationLogger::try_new(storage, Path::new("."))?;
 
@@ -108,7 +109,7 @@ pub fn open_carmen_db(
         }
         (b"file", b"file") => {
             let archive_dir = directory.join("archive");
-            let storage = VerkleStorage::open(&archive_dir, DbMode::ReadWrite)?;
+            let storage = VerkleStorage::open(&archive_dir, db_open_mode)?;
             let is_pinned = |node: &VerkleNode| !node.get_commitment().is_clean();
             // TODO: The cache size is arbitrary, base this on a configurable memory limit instead
             // https://github.com/0xsoniclabs/sonic-admin/issues/382
@@ -375,13 +376,16 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::live(b"none")]
-    #[case::archive(b"file")]
-    fn db_mode(#[case] archive_impl: &[u8]) {}
+    #[case::live_read_only(b"none", DbOpenMode::ReadOnly)]
+    #[case::archive_read_only(b"file", DbOpenMode::ReadOnly)]
+    #[case::live_read_write(b"none", DbOpenMode::ReadWrite)]
+    #[case::archive_read_write(b"file", DbOpenMode::ReadWrite)]
+    fn archive_impl_and_open_mode(#[case] archive_impl: &[u8], #[case] db_open_mode: DbOpenMode) {}
 
-    #[rstest_reuse::apply(db_mode)]
+    #[rstest_reuse::apply(archive_impl_and_open_mode)]
     fn file_based_verkle_trie_implementation_supports_closing_and_reopening(
         #[case] archive_impl: &[u8],
+        #[case] db_open_mode: DbOpenMode,
     ) {
         // This test writes to 512 leaf nodes. In two leaf nodes only one slot gets set, in two leaf
         // nodes two slots get set and so on.
@@ -393,7 +397,8 @@ mod tests {
         let key_indices_offset: u16 = 256;
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", archive_impl, dir.path()).unwrap();
+        let db =
+            open_carmen_db(6, b"file", archive_impl, dir.path(), DbOpenMode::ReadWrite).unwrap();
 
         let mut slot_updates = Vec::new();
         for address_idx in 0..256 * 2 {
@@ -420,7 +425,8 @@ mod tests {
 
         db.close().unwrap();
 
-        let db = open_carmen_db(6, b"file", archive_impl, &dir).unwrap();
+        dir.set_permissions(db_open_mode.to_permissions()).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, &dir, db_open_mode).unwrap();
         let live = db.get_live_state().unwrap();
         for address_idx in 0..2 * 256 {
             for key_idx in key_indices_offset..=key_indices_offset + address_idx {
@@ -442,7 +448,7 @@ mod tests {
         let balance2 = transmute!([[0u8; 16], [3; 16]]);
 
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"file", &dir).unwrap();
+        let db = open_carmen_db(6, b"file", b"file", &dir, DbOpenMode::ReadWrite).unwrap();
         let live_state = db.get_live_state().unwrap();
 
         live_state
@@ -479,10 +485,13 @@ mod tests {
         assert_eq!(archive_state.get_balance(&addr).unwrap(), balance2);
     }
 
-    #[rstest_reuse::apply(db_mode)]
-    fn carmen_s6_file_based_db_checkpoint_returns_error(#[case] archive_impl: &[u8]) {
+    #[rstest_reuse::apply(archive_impl_and_open_mode)]
+    fn carmen_s6_file_based_db_checkpoint_returns_error(
+        #[case] archive_impl: &[u8],
+        #[case] db_open_mode: DbOpenMode,
+    ) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", archive_impl, &dir).unwrap();
+        let db = create_carmen_db_and_open(6, b"file", archive_impl, &dir, db_open_mode).unwrap();
 
         let result = db.checkpoint();
         assert_eq!(
@@ -494,12 +503,13 @@ mod tests {
         );
     }
 
-    #[rstest_reuse::apply(db_mode)]
+    #[rstest_reuse::apply(archive_impl_and_open_mode)]
     fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one(
         #[case] archive_impl: &[u8],
+        #[case] db_open_mode: DbOpenMode,
     ) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", archive_impl, &dir).unwrap();
+        let db = create_carmen_db_and_open(6, b"file", archive_impl, &dir, db_open_mode).unwrap();
         let _live_state = db.get_live_state().unwrap();
 
         let result = db.close();
@@ -512,10 +522,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn carmen_s6_file_based_db_get_archive_block_height_fails_in_live_only_mode() {
+    #[rstest::rstest]
+    fn carmen_s6_file_based_db_get_archive_block_height_fails_in_live_only_mode(
+        #[values(DbOpenMode::ReadOnly, DbOpenMode::ReadWrite)] db_open_mode: DbOpenMode,
+    ) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = open_carmen_db(6, b"file", b"none", &dir).unwrap();
+        let db = create_carmen_db_and_open(6, b"file", b"none", &dir, db_open_mode).unwrap();
         let result = db.get_archive_block_height();
         assert_eq!(
             result,
@@ -524,5 +536,29 @@ mod tests {
             )
             .into())
         );
+    }
+
+    /// Helper function to initialize an empty DB and then re-open it in the specified
+    /// `db_open_mode`. The db directory permissions are adjusted accordingly.
+    fn create_carmen_db_and_open(
+        schema: u8,
+        live_impl: &[u8],
+        archive_impl: &[u8],
+        directory: &TestDir,
+        db_open_mode: DbOpenMode,
+    ) -> BTResult<Box<dyn CarmenDb>, Error> {
+        let db = open_carmen_db(
+            schema,
+            live_impl,
+            archive_impl,
+            directory,
+            DbOpenMode::ReadWrite,
+        )
+        .unwrap();
+        db.close().unwrap();
+        directory
+            .set_permissions(db_open_mode.to_permissions())
+            .unwrap();
+        open_carmen_db(schema, live_impl, archive_impl, directory, db_open_mode)
     }
 }
