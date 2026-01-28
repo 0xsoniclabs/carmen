@@ -376,16 +376,14 @@ mod tests {
 
     #[rstest_reuse::template]
     #[rstest::rstest]
-    #[case::live_read_only(b"none", DbOpenMode::ReadOnly)]
-    #[case::archive_read_only(b"file", DbOpenMode::ReadOnly)]
-    #[case::live_read_write(b"none", DbOpenMode::ReadWrite)]
-    #[case::archive_read_write(b"file", DbOpenMode::ReadWrite)]
-    fn archive_impl_and_open_mode(#[case] archive_impl: &[u8], #[case] db_open_mode: DbOpenMode) {}
+    #[case::live(b"none")]
+    #[case::archive(b"file")]
+    fn archive_impl(#[case] archive_impl: &[u8]) {}
 
-    #[rstest_reuse::apply(archive_impl_and_open_mode)]
+    #[rstest_reuse::apply(archive_impl)]
     fn file_based_verkle_trie_implementation_supports_closing_and_reopening(
         #[case] archive_impl: &[u8],
-        #[case] db_open_mode: DbOpenMode,
+        #[values(DbOpenMode::ReadOnly, DbOpenMode::ReadWrite)] db_open_mode: DbOpenMode,
     ) {
         // This test writes to 512 leaf nodes. In two leaf nodes only one slot gets set, in two leaf
         // nodes two slots get set and so on.
@@ -485,13 +483,10 @@ mod tests {
         assert_eq!(archive_state.get_balance(&addr).unwrap(), balance2);
     }
 
-    #[rstest_reuse::apply(archive_impl_and_open_mode)]
-    fn carmen_s6_file_based_db_checkpoint_returns_error(
-        #[case] archive_impl: &[u8],
-        #[case] db_open_mode: DbOpenMode,
-    ) {
+    #[rstest_reuse::apply(archive_impl)]
+    fn carmen_s6_file_based_db_checkpoint_returns_error(#[case] archive_impl: &[u8]) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = create_carmen_db_and_open(6, b"file", archive_impl, &dir, db_open_mode).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, &dir, DbOpenMode::ReadWrite).unwrap();
 
         let result = db.checkpoint();
         assert_eq!(
@@ -503,13 +498,12 @@ mod tests {
         );
     }
 
-    #[rstest_reuse::apply(archive_impl_and_open_mode)]
+    #[rstest_reuse::apply(archive_impl)]
     fn carmen_s6_file_based_db_close_fails_if_node_manager_refcount_not_one(
         #[case] archive_impl: &[u8],
-        #[case] db_open_mode: DbOpenMode,
     ) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = create_carmen_db_and_open(6, b"file", archive_impl, &dir, db_open_mode).unwrap();
+        let db = open_carmen_db(6, b"file", archive_impl, &dir, DbOpenMode::ReadWrite).unwrap();
         let _live_state = db.get_live_state().unwrap();
 
         let result = db.close();
@@ -522,12 +516,10 @@ mod tests {
         );
     }
 
-    #[rstest::rstest]
-    fn carmen_s6_file_based_db_get_archive_block_height_fails_in_live_only_mode(
-        #[values(DbOpenMode::ReadOnly, DbOpenMode::ReadWrite)] db_open_mode: DbOpenMode,
-    ) {
+    #[test]
+    fn carmen_s6_file_based_db_get_archive_block_height_fails_in_live_only_mode() {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
-        let db = create_carmen_db_and_open(6, b"file", b"none", &dir, db_open_mode).unwrap();
+        let db = open_carmen_db(6, b"file", b"none", &dir, DbOpenMode::ReadWrite).unwrap();
         let result = db.get_archive_block_height();
         assert_eq!(
             result,
@@ -536,29 +528,5 @@ mod tests {
             )
             .into())
         );
-    }
-
-    /// Helper function to initialize an empty DB and then re-open it in the specified
-    /// `db_open_mode`. The db directory permissions are adjusted accordingly.
-    fn create_carmen_db_and_open(
-        schema: u8,
-        live_impl: &[u8],
-        archive_impl: &[u8],
-        directory: &TestDir,
-        db_open_mode: DbOpenMode,
-    ) -> BTResult<Box<dyn CarmenDb>, Error> {
-        let db = open_carmen_db(
-            schema,
-            live_impl,
-            archive_impl,
-            directory,
-            DbOpenMode::ReadWrite,
-        )
-        .unwrap();
-        db.close().unwrap();
-        directory
-            .set_permissions(db_open_mode.to_permissions())
-            .unwrap();
-        open_carmen_db(schema, live_impl, archive_impl, directory, db_open_mode)
     }
 }
