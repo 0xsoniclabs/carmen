@@ -204,9 +204,9 @@ where
 
         let lock = self.nodes.get_read_access_or_insert(id, || {
             let mut node = self.storage.storage.get(id)?;
-            if let Some(full_id) = node.needs_delta_base() {
-                let full = self.get_read_access(full_id)?;
-                node.copy_from_delta_base(&**full)?;
+            if let Some(base_id) = node.needs_delta_base() {
+                let base = self.get_read_access(base_id)?;
+                node.copy_from_delta_base(&**base)?;
             }
             Ok(NodeWithMetadata {
                 node,
@@ -229,9 +229,9 @@ where
 
         let lock = self.nodes.get_write_access_or_insert(id, || {
             let mut node = self.storage.storage.get(id)?;
-            if let Some(full_id) = node.needs_delta_base() {
-                let full = self.get_read_access(full_id)?;
-                node.copy_from_delta_base(&**full)?;
+            if let Some(base_id) = node.needs_delta_base() {
+                let base = self.get_read_access(base_id)?;
+                node.copy_from_delta_base(&**base)?;
             }
             Ok(NodeWithMetadata {
                 node,
@@ -310,7 +310,7 @@ mod tests {
         error::BTError,
         storage,
         types::tree_id::TreeId,
-        utils::test_nodes::{DELTA_TEST_NODE, FULL_TEST_NODE_ID, TestNode, TestNodeId},
+        utils::test_nodes::{BASE_TEST_NODE_ID, DELTA_TEST_NODE, TestNode, TestNodeId},
     };
 
     /// Helper function to return a [`storage::Error::NotFound`] wrapped in an [`Error`]
@@ -406,7 +406,7 @@ mod tests {
         storage
             .expect_get()
             .times(1)
-            .with(eq(FULL_TEST_NODE_ID))
+            .with(eq(BASE_TEST_NODE_ID))
             .returning(move |_| Ok(0))
             .in_sequence(&mut sequence);
 

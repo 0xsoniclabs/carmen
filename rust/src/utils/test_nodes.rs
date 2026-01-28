@@ -19,7 +19,7 @@ pub type TestNode = i32;
 pub const EMPTY_TEST_NODE: TestNode = i32::MAX;
 pub const EMPTY_TEST_NODE_ID: TestNodeId = u32::MAX;
 pub const DELTA_TEST_NODE: TestNode = i32::MAX - 1;
-pub const FULL_TEST_NODE_ID: TestNodeId = u32::MAX - 2;
+pub const BASE_TEST_NODE_ID: TestNodeId = u32::MAX - 2;
 
 impl ToNodeKind for TestNodeId {
     type Target = ();
@@ -72,13 +72,13 @@ impl HasDeltaVariant for TestNode {
 
     fn needs_delta_base(&self) -> Option<Self::Id> {
         if *self == DELTA_TEST_NODE {
-            Some(FULL_TEST_NODE_ID)
+            Some(BASE_TEST_NODE_ID)
         } else {
             None
         }
     }
 
-    fn copy_from_delta_base(&mut self, _full: &Self) -> BTResult<(), Error> {
+    fn copy_from_delta_base(&mut self, _base: &Self) -> BTResult<(), Error> {
         Ok(())
     }
 }
