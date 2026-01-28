@@ -1059,7 +1059,7 @@ mod tests {
                 .copy_from_delta_base(&full_node)
                 .map_err(BTError::into_inner),
             Err(Error::Internal(
-                "copy_from_full called with non-full node".into()
+                "copy_from_delta_base called with unsupported node".into()
             ))
         );
     }
