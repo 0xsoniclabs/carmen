@@ -314,6 +314,12 @@ impl VerkleLeafCommitment {
         self.changed_indices.fill(0);
     }
 
+    /// Prepares the commitment for a full recomputation by putting all fields into a state as if
+    /// the commitment had never been computed before. Notably, all `committed_used_indices` are
+    /// converted to changed indices.
+    ///
+    /// This method is required to be called once before the commitment is recomputed after having
+    /// been restored from disk.
     fn prepare_recompute(&mut self) {
         assert_eq!(self.status, CommitmentStatus::RequiresRecompute);
 
@@ -516,11 +522,13 @@ pub fn update_commitments_sequential(
     Ok(())
 }
 
-fn update_commitment_thread(
+/// Updates the commitment of a node by recursively updating the commitments of its dirty children
+/// in parallel and then aggregating the returned deltas.
+fn update_commitments_concurrent_recursive_impl(
     mut node: RwLockWriteGuard<'_, impl DerefMut<Target = VerkleNode>>,
-    index_in_parent: usize,
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
-    parent_is_initialized: bool,
+    index_in_parent: usize,
+    parent_requires_recompute: bool,
 ) -> Result<Commitment, BTError<Error>> {
     let mut vc = node.get_commitment();
     assert!(!vc.is_clean());
@@ -553,20 +561,17 @@ fn update_commitment_thread(
 
             let child_sum = (0..children.len())
                 .filter(|i| {
-                    // Only keep children that have either been changed, or if this node is not yet
-                    // initialized, keep all that are not empty.
-                    !(vc.status != CommitmentStatus::RequiresRecompute
-                        && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
-                        || children[*i].is_empty_id())
+                    // Only keep children that have either been changed, or if this node requires a
+                    // full recompute, keep all that are not empty.
+                    vc.index_changed(*i)
+                        || vc.status == CommitmentStatus::RequiresRecompute
+                            && !children[*i].is_empty_id()
                 })
                 .collect::<Vec<_>>()
                 .par_iter()
                 .map(|i| {
                     let i = *i;
-                    // TODO: Can we get rid of one of the checks here?
-                    if vc.status == CommitmentStatus::RequiresRecompute
-                        && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
-                    {
+                    if !vc.index_changed(i) {
                         let mut delta = Commitment::default();
                         delta.update(
                             i as u8,
@@ -581,11 +586,11 @@ fn update_commitment_thread(
                     }
 
                     let child_node = manager.get_write_access(children[i])?;
-                    update_commitment_thread(
+                    update_commitments_concurrent_recursive_impl(
                         child_node,
-                        i,
                         manager,
-                        vc.status != CommitmentStatus::RequiresRecompute,
+                        i,
+                        vc.status == CommitmentStatus::RequiresRecompute,
                     )
                 })
                 .reduce(
@@ -605,16 +610,16 @@ fn update_commitment_thread(
     }
 
     let mut delta_commitment = Commitment::default();
-    if parent_is_initialized {
+    if parent_requires_recompute {
         delta_commitment.update(
             index_in_parent as u8,
-            node.get_commitment().commitment().to_scalar(),
+            Scalar::zero(),
             vc.commitment().to_scalar(),
         );
     } else {
         delta_commitment.update(
             index_in_parent as u8,
-            Scalar::zero(),
+            node.get_commitment().commitment().to_scalar(),
             vc.commitment().to_scalar(),
         );
     }
@@ -624,7 +629,13 @@ fn update_commitment_thread(
     Ok(delta_commitment)
 }
 
-/// TODO Docstring
+/// Recomputes the commitments of all dirty nodes by concurrently traversing downwards from the
+/// given root node.
+///
+/// The update log is used to delegate to [`update_commitments_sequential`] when the number of dirty
+/// nodes is small.
+///
+/// After successful completion, the update log is cleared.
 pub fn update_commitments_concurrent_recursive(
     root_id: VerkleNodeId,
     log: &TrieUpdateLog<VerkleNodeId>,
@@ -643,7 +654,7 @@ pub fn update_commitments_concurrent_recursive(
     let _span = tracy_client::span!("update_commitments_concurrent_recursive");
 
     let root = manager.get_write_access(root_id)?;
-    update_commitment_thread(root, 0, manager, false)?;
+    update_commitments_concurrent_recursive_impl(root, manager, 0, false)?;
 
     log.clear();
     Ok(())
@@ -936,6 +947,28 @@ mod tests {
         assert_eq!(vc.committed_used_indices, [0u8; 256 / 8]);
         assert_eq!(vc.status, CommitmentStatus::Clean);
         assert_eq!(vc.changed_indices, [0u8; 256 / 8]);
+        assert_eq!(vc.c1, Commitment::default());
+        assert_eq!(vc.c2, Commitment::default());
+        assert_eq!(vc.committed_values, [Value::default(); 256]);
+    }
+
+    #[test]
+    fn verkle_leaf_commitment_prepare_recompute_sets_fields_correctly() {
+        let mut vc = VerkleLeafCommitment {
+            commitment: Commitment::new(&[Scalar::from(42), Scalar::from(33)]),
+            committed_used_indices: [0b11110000; 256 / 8],
+            status: CommitmentStatus::RequiresRecompute,
+            changed_indices: [0b00001111; 256 / 8],
+            c1: Commitment::default(),
+            c2: Commitment::default(),
+            committed_values: [[7u8; 32]; 256],
+        };
+        vc.prepare_recompute();
+
+        assert_eq!(vc.commitment, Commitment::default());
+        assert_eq!(vc.committed_used_indices, [0u8; 256 / 8]);
+        assert_eq!(vc.status, CommitmentStatus::RequiresRecompute);
+        assert_eq!(vc.changed_indices, [0b11111111; 256 / 8]); // union of previous changed and committed_used
         assert_eq!(vc.c1, Commitment::default());
         assert_eq!(vc.c2, Commitment::default());
         assert_eq!(vc.committed_values, [Value::default(); 256]);
