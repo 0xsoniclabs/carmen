@@ -294,65 +294,65 @@ impl Default for VerkleNode {
 
 impl UnionManagedTrieNode for VerkleNode {
     fn copy_on_write(&self, id: Self::Id, changed_indices: Vec<u8>) -> BTResult<Self, Error> {
-        // Note: This method is only called in archive mode, so using the delta node is fine.
-        match self {
-            VerkleNode::Inner256(n) => {
-                if changed_indices.len() <= InnerDeltaNode::DELTA_SIZE {
-                    Ok(VerkleNode::InnerDelta(Box::new(
-                        InnerDeltaNode::from_full_inner(n, id),
-                    )))
-                } else {
-                    Ok(VerkleNode::Inner256(n.clone()))
-                }
-            }
-            VerkleNode::InnerDelta(n) => {
-                let enough_slots = ItemWithIndex::required_slot_count_for(
-                    &n.children_delta,
-                    changed_indices.into_iter(),
-                ) <= InnerDeltaNode::DELTA_SIZE;
-                if enough_slots {
-                    Ok(VerkleNode::InnerDelta(n.clone()))
-                } else {
-                    Ok(VerkleNode::Inner256(Box::new(FullInnerNode::from(
-                        (**n).clone(),
-                    ))))
-                }
-            }
-            VerkleNode::Leaf256(n) => {
-                if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
-                    Ok(VerkleNode::LeafDelta(Box::new(
-                        LeafDeltaNode::from_full_leaf(n, id),
-                    )))
-                } else {
-                    Ok(VerkleNode::Leaf256(n.clone()))
-                }
-            }
-            VerkleNode::Leaf146(n) => {
-                if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
-                    Ok(VerkleNode::LeafDelta(Box::new(
-                        LeafDeltaNode::from_sparse_leaf(n, id),
-                    )))
-                } else {
-                    Ok(VerkleNode::Leaf146(n.clone()))
-                }
-            }
-            VerkleNode::LeafDelta(n) => {
-                const DELTA_PLUS_ONE: usize = LeafDeltaNode::DELTA_SIZE + 1;
-                match ItemWithIndex::required_slot_count_for(
-                    &n.values_delta,
-                    changed_indices.into_iter(),
-                ) {
-                    ..=LeafDeltaNode::DELTA_SIZE => Ok(VerkleNode::LeafDelta(n.clone())),
-                    DELTA_PLUS_ONE..=146 => Ok(VerkleNode::Leaf146(Box::new(
-                        SparseLeafNode::try_from((**n).clone())?,
-                    ))),
-                    _ => Ok(VerkleNode::Leaf256(Box::new(FullLeafNode::from(
-                        (**n).clone(),
-                    )))),
-                }
-            }
-            _ => Ok(self.clone()),
-        }
+        // // Note: This method is only called in archive mode, so using the delta node is fine.
+        // match self {
+        //     VerkleNode::Inner256(n) => {
+        //         if changed_indices.len() <= InnerDeltaNode::DELTA_SIZE {
+        //             Ok(VerkleNode::InnerDelta(Box::new(
+        //                 InnerDeltaNode::from_full_inner(n, id),
+        //             )))
+        //         } else {
+        //             Ok(VerkleNode::Inner256(n.clone()))
+        //         }
+        //     }
+        //     VerkleNode::InnerDelta(n) => {
+        //         let enough_slots = ItemWithIndex::required_slot_count_for(
+        //             &n.children_delta,
+        //             changed_indices.into_iter(),
+        //         ) <= InnerDeltaNode::DELTA_SIZE;
+        //         if enough_slots {
+        //             Ok(VerkleNode::InnerDelta(n.clone()))
+        //         } else {
+        //             Ok(VerkleNode::Inner256(Box::new(FullInnerNode::from(
+        //                 (**n).clone(),
+        //             ))))
+        //         }
+        //     }
+        //     VerkleNode::Leaf256(n) => {
+        //         if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
+        //             Ok(VerkleNode::LeafDelta(Box::new(
+        //                 LeafDeltaNode::from_full_leaf(n, id),
+        //             )))
+        //         } else {
+        //             Ok(VerkleNode::Leaf256(n.clone()))
+        //         }
+        //     }
+        //     VerkleNode::Leaf146(n) => {
+        //         if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
+        //             Ok(VerkleNode::LeafDelta(Box::new(
+        //                 LeafDeltaNode::from_sparse_leaf(n, id),
+        //             )))
+        //         } else {
+        //             Ok(VerkleNode::Leaf146(n.clone()))
+        //         }
+        //     }
+        //     VerkleNode::LeafDelta(n) => {
+        //         const DELTA_PLUS_ONE: usize = LeafDeltaNode::DELTA_SIZE + 1;
+        //         match ItemWithIndex::required_slot_count_for(
+        //             &n.values_delta,
+        //             changed_indices.into_iter(),
+        //         ) {
+        //             ..=LeafDeltaNode::DELTA_SIZE => Ok(VerkleNode::LeafDelta(n.clone())),
+        //             DELTA_PLUS_ONE..=146 => Ok(VerkleNode::Leaf146(Box::new(
+        //                 SparseLeafNode::try_from((**n).clone())?,
+        //             ))),
+        //             _ => Ok(VerkleNode::Leaf256(Box::new(FullLeafNode::from(
+        //                 (**n).clone(),
+        //             )))),
+        //         }
+        //     }
+        Ok(self.clone())
+        // }
     }
 }
 
