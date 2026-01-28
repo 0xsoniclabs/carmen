@@ -27,7 +27,8 @@ VALUE_SIZE = 32
 VALUE_INDEX_SIZE = 1
 STEM_SIZE = 31
 LEAF_NODE_CHILDREN = 256
-FULL_LEAF_NODE_SIZE = COMMITMENT_SIZE + LEAF_NODE_CHILDREN * VALUE_SIZE + STEM_SIZE
+USED_BITS = 256 / 8
+FULL_LEAF_NODE_SIZE = COMMITMENT_SIZE + LEAF_NODE_CHILDREN * VALUE_SIZE + STEM_SIZE + USED_BITS
 
 
 def print_size_constants(writer):
@@ -49,7 +50,7 @@ def print_size_constants(writer):
 
 def sparse_leaf_node_size(num_children: int) -> int:
     """Return the size of a sparse leaf node with the given number of children."""
-    return COMMITMENT_SIZE + num_children * (VALUE_SIZE + VALUE_INDEX_SIZE) + STEM_SIZE
+    return COMMITMENT_SIZE + num_children * (VALUE_SIZE + VALUE_INDEX_SIZE) + STEM_SIZE + USED_BITS
 
 
 # Precompute leaf node sizes for all possible children counts

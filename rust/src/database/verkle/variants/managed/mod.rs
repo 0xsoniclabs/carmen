@@ -11,7 +11,7 @@
 #[allow(unused)]
 pub use nodes::VerkleNodeFileStorageManager;
 pub use nodes::{
-    VerkleNode, empty::EmptyNode, id::VerkleNodeId, inner::FullInnerNode,
+    VerkleNode, VerkleNodeKind, empty::EmptyNode, id::VerkleNodeId, inner::FullInnerNode,
     inner_delta::InnerDeltaNode, leaf::FullLeafNode, leaf_delta::LeafDeltaNode,
     sparse_inner::SparseInnerNode, sparse_leaf::SparseLeafNode,
 };

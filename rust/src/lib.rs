@@ -50,7 +50,7 @@ pub mod sync;
 pub mod types;
 mod utils;
 
-type VerkleStorageManager = VerkleNodeFileStorageManager<
+pub type VerkleStorageManager = VerkleNodeFileStorageManager<
     NodeFileStorage<SparseInnerNode<9>, NoSeekFile>,
     NodeFileStorage<SparseInnerNode<15>, NoSeekFile>,
     NodeFileStorage<SparseInnerNode<21>, NoSeekFile>,

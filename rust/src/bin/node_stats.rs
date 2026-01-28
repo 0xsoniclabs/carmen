@@ -69,7 +69,7 @@ struct Args {
     node_lookup: NodeLookup,
 
     /// Output format(s) to use
-    #[arg(short, long, value_enum, num_args = 1.., default_value = "pretty")]
+    #[arg(short, long, value_enum, num_args = 1.., required = true)]
     format: Vec<Format>,
 }
 
