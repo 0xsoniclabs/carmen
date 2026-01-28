@@ -30,9 +30,9 @@ use carmen_rust::{
     types::{DiskRepresentable, HasDeltaVariant, HasEmptyId, TreeId},
 };
 
-// Number of analyzed nodes, across all `N`s.
+// Number of analyzed nodes, across all node kinds.
 static PROCESSED: AtomicU64 = AtomicU64::new(0);
-// Total number of nodes, across all `N`s.
+// Total number of nodes, across all node kinds.
 static TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// Perform linear scan based statistics collection on the Carmen DB located at `db_path`.
