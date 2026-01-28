@@ -517,20 +517,18 @@ pub fn update_commitments_sequential(
 }
 
 fn update_commitment_thread(
-    dbg_recursion_level: usize,
     mut node: RwLockWriteGuard<'_, impl DerefMut<Target = VerkleNode>>,
     index_in_parent: usize,
-    delta_commitment: &mut Commitment,
     manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
     parent_is_initialized: bool,
-) {
+) -> Result<Commitment, BTError<Error>> {
     let mut vc = node.get_commitment();
     assert!(!vc.is_clean());
 
-    match node.get_commitment_input().unwrap() {
+    match node.get_commitment_input()? {
         VerkleCommitmentInput::Leaf(values, stem) => {
             let _span = tracy_client::span!("update leaf");
-            let vc = vc.as_leaf().unwrap(); // FIXME Unwrap
+            let vc = vc.as_leaf()?;
 
             // If this commitment was just restored from disk, C1 and C2 are default
             // initialized and we need to do a full recomputation over all values.
@@ -550,9 +548,8 @@ fn update_commitment_thread(
             );
         }
         VerkleCommitmentInput::Inner(children) => {
-            // eprintln!("{}its an inner", "  ".repeat(dbg_recursion_level));
             let _span = tracy_client::span!("update inner");
-            let vc = vc.as_inner().unwrap(); // FIXME Unwrap
+            let vc = vc.as_inner()?;
 
             let child_sum = (0..children.len())
                 .filter(|i| {
@@ -566,39 +563,38 @@ fn update_commitment_thread(
                 .par_iter()
                 .map(|i| {
                     let i = *i;
-                    let mut delta_i = Commitment::default();
                     // TODO: Can we get rid of one of the checks here?
                     if vc.status == CommitmentStatus::RequiresRecompute
                         && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
                     {
-                        delta_i.update(
+                        let mut delta = Commitment::default();
+                        delta.update(
                             i as u8,
                             Scalar::zero(),
                             manager
-                                .get_read_access(children[i])
-                                .unwrap()
+                                .get_read_access(children[i])?
                                 .get_commitment()
                                 .commitment()
                                 .to_scalar(),
                         );
-                        return delta_i;
+                        return Ok(delta);
                     }
 
-                    // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
-                    let child_node = manager.get_write_access(children[i]).unwrap();
+                    let child_node = manager.get_write_access(children[i])?;
                     update_commitment_thread(
-                        dbg_recursion_level + 1,
                         child_node,
                         i,
-                        &mut delta_i,
                         manager,
                         vc.status != CommitmentStatus::RequiresRecompute,
-                    );
-                    delta_i
+                    )
                 })
-                .reduce(Commitment::default, |acc, delta_commitment| {
-                    acc + delta_commitment
-                });
+                .reduce(
+                    || Ok(Commitment::default()),
+                    |acc, delta_commitment| match acc {
+                        Err(e) => Err(e),
+                        Ok(acc) => Ok(acc + delta_commitment?),
+                    },
+                )?;
 
             if vc.status == CommitmentStatus::RequiresRecompute {
                 vc.commitment = child_sum;
@@ -608,6 +604,7 @@ fn update_commitment_thread(
         }
     }
 
+    let mut delta_commitment = Commitment::default();
     if parent_is_initialized {
         delta_commitment.update(
             index_in_parent as u8,
@@ -622,13 +619,9 @@ fn update_commitment_thread(
         );
     }
 
-    // eprintln!(
-    //     "{}setting delta to {:?}",
-    //     "  ".repeat(dbg_recursion_level),
-    //     delta
-    // );
     vc.mark_clean();
-    node.set_commitment(vc).unwrap();
+    node.set_commitment(vc)?;
+    Ok(delta_commitment)
 }
 
 /// TODO Docstring
@@ -649,9 +642,8 @@ pub fn update_commitments_concurrent_recursive(
 
     let _span = tracy_client::span!("update_commitments_concurrent_recursive");
 
-    let mut delta_commitment = Commitment::default();
     let root = manager.get_write_access(root_id)?;
-    update_commitment_thread(0, root, 0, &mut delta_commitment, manager, false);
+    update_commitment_thread(root, 0, manager, false)?;
 
     log.clear();
     Ok(())
