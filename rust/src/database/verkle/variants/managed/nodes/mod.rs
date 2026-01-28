@@ -318,39 +318,39 @@ impl UnionManagedTrieNode for VerkleNode {
                     ))))
                 }
             }
-            VerkleNode::Leaf256(n) => {
-                if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
-                    Ok(VerkleNode::LeafDelta(Box::new(
-                        LeafDeltaNode::from_full_leaf(n, id),
-                    )))
-                } else {
-                    Ok(VerkleNode::Leaf256(n.clone()))
-                }
-            }
-            VerkleNode::Leaf146(n) => {
-                if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
-                    Ok(VerkleNode::LeafDelta(Box::new(
-                        LeafDeltaNode::from_sparse_leaf(n, id),
-                    )))
-                } else {
-                    Ok(VerkleNode::Leaf146(n.clone()))
-                }
-            }
-            VerkleNode::LeafDelta(n) => {
-                const DELTA_PLUS_ONE: usize = LeafDeltaNode::DELTA_SIZE + 1;
-                match ItemWithIndex::required_slot_count_for(
-                    &n.values_delta,
-                    changed_indices.into_iter(),
-                ) {
-                    ..=LeafDeltaNode::DELTA_SIZE => Ok(VerkleNode::LeafDelta(n.clone())),
-                    DELTA_PLUS_ONE..=146 => Ok(VerkleNode::Leaf146(Box::new(
-                        SparseLeafNode::try_from((**n).clone())?,
-                    ))),
-                    _ => Ok(VerkleNode::Leaf256(Box::new(FullLeafNode::from(
-                        (**n).clone(),
-                    )))),
-                }
-            }
+            // VerkleNode::Leaf256(n) => {
+            //     if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
+            //         Ok(VerkleNode::LeafDelta(Box::new(
+            //             LeafDeltaNode::from_full_leaf(n, id),
+            //         )))
+            //     } else {
+            //         Ok(VerkleNode::Leaf256(n.clone()))
+            //     }
+            // }
+            // VerkleNode::Leaf146(n) => {
+            //     if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
+            //         Ok(VerkleNode::LeafDelta(Box::new(
+            //             LeafDeltaNode::from_sparse_leaf(n, id),
+            //         )))
+            //     } else {
+            //         Ok(VerkleNode::Leaf146(n.clone()))
+            //     }
+            // }
+            // VerkleNode::LeafDelta(n) => {
+            //     const DELTA_PLUS_ONE: usize = LeafDeltaNode::DELTA_SIZE + 1;
+            //     match ItemWithIndex::required_slot_count_for(
+            //         &n.values_delta,
+            //         changed_indices.into_iter(),
+            //     ) {
+            //         ..=LeafDeltaNode::DELTA_SIZE => Ok(VerkleNode::LeafDelta(n.clone())),
+            //         DELTA_PLUS_ONE..=146 => Ok(VerkleNode::Leaf146(Box::new(
+            //             SparseLeafNode::try_from((**n).clone())?,
+            //         ))),
+            //         _ => Ok(VerkleNode::Leaf256(Box::new(FullLeafNode::from(
+            //             (**n).clone(),
+            //         )))),
+            //     }
+            // }
             _ => Ok(self.clone()),
         }
     }
