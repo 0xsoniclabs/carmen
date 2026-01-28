@@ -471,8 +471,7 @@ mod tests {
         let dir = TestDir::try_new(Permissions::ReadOnly).unwrap();
         let non_existing_dir = dir.join("non_existing_dir");
         assert!(matches!(
-            FileStorageManager::open(&non_existing_dir, db_open_mode)
-                .map_err(BTError::into_inner),
+            FileStorageManager::open(&non_existing_dir, db_open_mode).map_err(BTError::into_inner),
             Err(Error::Io(_))
         ));
     }

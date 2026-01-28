@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn open_creates_new_directory_and_files_for_non_existing_path_if_db_open_mode_has_write_access()
-     {
+    {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("non_existing_dir");
         let path = path.as_path();
@@ -542,9 +542,7 @@ mod tests {
     }
 
     #[rstest_reuse::apply(db_open_mode)]
-    fn get_reads_data_when_index_in_bounds_and_not_in_reuse_list(
-        #[case] db_open_mode: DbOpenMode,
-    ) {
+    fn get_reads_data_when_index_in_bounds_and_not_in_reuse_list(#[case] db_open_mode: DbOpenMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
 
         write_metadata(&dir, 0, 3, 0, 1, 0);

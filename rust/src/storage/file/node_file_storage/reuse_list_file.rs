@@ -170,17 +170,14 @@ mod tests {
 
         let frozen_count = 2;
         let count = 3;
-        let reuse_list_file =
-            ReuseListFile::open(path, count, frozen_count, db_open_mode).unwrap();
+        let reuse_list_file = ReuseListFile::open(path, count, frozen_count, db_open_mode).unwrap();
         assert_eq!(reuse_list_file.frozen_indices, [0, 1].into_iter().collect());
         assert!(reuse_list_file.temp_frozen_indices.is_empty());
         assert_eq!(reuse_list_file.reusable_indices, [2]);
     }
 
     #[rstest_reuse::apply(db_open_mode)]
-    fn open_returns_error_when_frozen_count_larger_than_count(
-        #[case] db_open_mode: DbOpenMode,
-    ) {
+    fn open_returns_error_when_frozen_count_larger_than_count(#[case] db_open_mode: DbOpenMode) {
         let dir = TestDir::try_new(Permissions::ReadWrite).unwrap();
         let path = dir.join("reuse_list");
 
