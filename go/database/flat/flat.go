@@ -386,6 +386,13 @@ func (s *State) GetArchiveBlockHeight() (height uint64, empty bool, err error) {
 	return s.backend.GetArchiveBlockHeight()
 }
 
+func (s *State) RootHash(block uint64) (common.Hash, error) {
+	if s.backend == nil {
+		return common.Hash{}, state.NoArchiveError
+	}
+	return s.backend.RootHash(block)
+}
+
 func (s *State) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	if s.backend == nil {
 		return nil, state.NoArchiveError

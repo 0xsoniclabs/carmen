@@ -5,6 +5,7 @@
 //
 //	mockgen -source state.go -destination state_mock.go -package state
 //
+
 // Package state is a generated GoMock package.
 package state
 
@@ -25,6 +26,7 @@ import (
 type MockState struct {
 	ctrl     *gomock.Controller
 	recorder *MockStateMockRecorder
+	isgomock struct{}
 }
 
 // MockStateMockRecorder is the mock recorder for MockState.
@@ -329,10 +331,26 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockState)(nil).HasEmptyStorage), addr)
 }
 
+// RootHash mocks base method.
+func (m *MockState) RootHash(blockNum uint64) (common.Hash, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RootHash", blockNum)
+	ret0, _ := ret[0].(common.Hash)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RootHash indicates an expected call of RootHash.
+func (mr *MockStateMockRecorder) RootHash(blockNum any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RootHash", reflect.TypeOf((*MockState)(nil).RootHash), blockNum)
+}
+
 // MockLiveDB is a mock of LiveDB interface.
 type MockLiveDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockLiveDBMockRecorder
+	isgomock struct{}
 }
 
 // MockLiveDBMockRecorder is the mock recorder for MockLiveDB.

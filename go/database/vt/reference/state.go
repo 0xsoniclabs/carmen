@@ -205,6 +205,10 @@ func (s *State) GetArchiveBlockHeight() (height uint64, empty bool, err error) {
 	return 0, true, state.NoArchiveError
 }
 
+func (s *State) RootHash(block uint64) (common.Hash, error) {
+	return common.Hash{}, state.NoArchiveError
+}
+
 func (s *State) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	return nil, fmt.Errorf("witness proof not supported yet")
 }

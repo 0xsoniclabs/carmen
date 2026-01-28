@@ -221,6 +221,18 @@ func (s *ArchiveState) GetArchiveState(block uint64) (state.State, error) {
 	}, s.archiveError
 }
 
+func (s *ArchiveState) RootHash(block uint64) (common.Hash, error) {
+	if err := s.archiveError; err != nil {
+		return common.Hash{}, err
+	}
+
+	hash, err := s.archive.GetHash(block)
+	if err != nil {
+		s.archiveError = errors.Join(s.archiveError, err)
+	}
+	return hash, s.archiveError
+}
+
 func (s *ArchiveState) GetArchiveBlockHeight() (uint64, bool, error) {
 	if err := s.archiveError; err != nil {
 		return 0, false, err

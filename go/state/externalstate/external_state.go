@@ -545,6 +545,15 @@ func (s *ExternalState) GetArchiveBlockHeight() (uint64, bool, error) {
 	return uint64(blockHeight), false, nil
 }
 
+func (s *ExternalState) RootHash(block uint64) (common.Hash, error) {
+	archiveState, err := s.GetArchiveState(block)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	defer archiveState.Close()
+	return archiveState.GetHash()
+}
+
 func (s *ExternalState) Check() error {
 	// TODO: implement, see https://github.com/Fantom-foundation/Carmen/issues/313
 	return nil

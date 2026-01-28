@@ -201,6 +201,10 @@ func (s *verkleState) GetArchiveBlockHeight() (height uint64, empty bool, err er
 	return 0, true, state.NoArchiveError
 }
 
+func (s *verkleState) RootHash(block uint64) (common.Hash, error) {
+	return common.Hash{}, state.NoArchiveError
+}
+
 func (s *verkleState) CreateAccount(address common.Address) error {
 	account, err := s.verkle.GetAccount(ethcommon.Address(address))
 	if account != nil || err != nil {

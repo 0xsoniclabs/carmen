@@ -338,6 +338,21 @@ func (s *GoState) GetArchiveState(block uint64) (as state.State, err error) {
 	}, nil
 }
 
+func (s *GoState) RootHash(block uint64) (common.Hash, error) {
+	if s.archive == nil {
+		return common.Hash{}, state.NoArchiveError
+	}
+	if err := s.stateError; err != nil {
+		return common.Hash{}, err
+	}
+	root, err := s.archive.GetHash(block)
+	if err != nil {
+		s.stateError = errors.Join(s.stateError, errors.Join(fmt.Errorf("failed to get root hash for block %d from the archive", block), err))
+		return common.Hash{}, s.stateError
+	}
+	return root, nil
+}
+
 func (s *GoState) GetArchiveBlockHeight() (uint64, bool, error) {
 	if s.archive == nil {
 		return 0, false, state.NoArchiveError

@@ -100,6 +100,9 @@ type State interface {
 	// Export writes data from LiveDB into out.
 	// If successful, expected root hash is returned.
 	Export(ctx context.Context, out io.Writer) (common.Hash, error)
+
+	// RootHash provides the state root hash for the given block number.
+	RootHash(blockNum uint64) (common.Hash, error)
 }
 
 type LiveDB interface {

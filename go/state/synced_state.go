@@ -148,6 +148,12 @@ func (s *syncedState) GetArchiveBlockHeight() (uint64, bool, error) {
 	return s.state.GetArchiveBlockHeight()
 }
 
+func (s *syncedState) RootHash(block uint64) (common.Hash, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.RootHash(block)
+}
+
 func (s *syncedState) Check() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
