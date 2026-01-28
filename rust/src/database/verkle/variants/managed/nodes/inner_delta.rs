@@ -40,19 +40,19 @@ use crate::{
 /// Archives update tries non-destructively using copy-on-write. This results in the upper parts
 /// of a trie, which mostly consist of full inner nodes, to be copied frequently.
 /// Instead of copying all 256 children each time, delta nodes instead store a set of differences
-/// for specific indices, compared to some earlier full inner node.
+/// for specific indices, compared to some earlier base node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InnerDeltaNode {
     pub children: [VerkleNodeId; 256],
     pub children_delta: [VerkleIdWithIndex; Self::DELTA_SIZE],
-    pub full_inner_node_id: VerkleNodeId,
+    pub base_node_id: VerkleNodeId,
     pub commitment: VerkleInnerCommitment,
 }
 
 impl InnerDeltaNode {
     /// The number of child indices for which a delta can be stored.
     /// This represents a tradeoff between how large the delta node itself is on disk,
-    /// versus how often a full inner node has to be introduced.
+    /// versus how often a base node has to be introduced.
     /// Preliminary benchmarking has shown 10 to be a good number.
     pub const DELTA_SIZE: usize = 10;
 
@@ -64,7 +64,7 @@ impl InnerDeltaNode {
                 index: i as u8,
                 item: VerkleNodeId::default(),
             }),
-            full_inner_node_id: inner_node_id,
+            base_node_id: inner_node_id,
             commitment: inner_node.commitment,
         }
     }
@@ -88,11 +88,11 @@ impl InnerDeltaNode {
 #[repr(C)]
 struct OnDiskInnerDeltaNode {
     pub children_delta: [VerkleIdWithIndex; InnerDeltaNode::DELTA_SIZE],
-    pub full_inner_node_id: VerkleNodeId,
+    pub base_node_id: VerkleNodeId,
     pub commitment: OnDiskVerkleInnerCommitment,
 }
 
-// This still needs to load the full inner node to reconstruct the `children`.
+// This still needs to load the base node to reconstruct the `children`.
 impl TryFrom<OnDiskInnerDeltaNode> for InnerDeltaNode {
     type Error = BTError<Error>;
 
@@ -100,7 +100,7 @@ impl TryFrom<OnDiskInnerDeltaNode> for InnerDeltaNode {
         Ok(InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: delta_node.children_delta,
-            full_inner_node_id: delta_node.full_inner_node_id,
+            base_node_id: delta_node.base_node_id,
             commitment: VerkleInnerCommitment::try_from(delta_node.commitment)?,
         })
     }
@@ -110,7 +110,7 @@ impl From<&InnerDeltaNode> for OnDiskInnerDeltaNode {
     fn from(node: &InnerDeltaNode) -> Self {
         OnDiskInnerDeltaNode {
             children_delta: node.children_delta,
-            full_inner_node_id: node.full_inner_node_id,
+            base_node_id: node.base_node_id,
             commitment: OnDiskVerkleInnerCommitment::from(&node.commitment),
         }
     }
@@ -272,7 +272,7 @@ mod tests {
                 index: i as u8,
                 item: VerkleNodeId::default(),
             }),
-            full_inner_node_id: VerkleNodeId::default(),
+            base_node_id: VerkleNodeId::default(),
             commitment: VerkleInnerCommitment::default(),
         }
     }
@@ -289,7 +289,7 @@ mod tests {
                     VerkleNodeKind::Inner15,
                 ),
             }),
-            full_inner_node_id: VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256),
+            base_node_id: VerkleNodeId::from_idx_and_node_kind(42, VerkleNodeKind::Inner256),
             // We deliberately only create a default commitment, since this type does
             // not preserve all of its fields when converting to/from on-disk representation.
             commitment: VerkleInnerCommitment::default(),
@@ -318,7 +318,7 @@ mod tests {
 
         let node = InnerDeltaNode::from_full_inner(&full_inner, full_inner_node_id);
         assert_eq!(node.commitment, full_inner.commitment);
-        assert_eq!(node.full_inner_node_id, full_inner_node_id);
+        assert_eq!(node.base_node_id, full_inner_node_id);
         assert_eq!(node.children, full_inner.children);
         assert_eq!(
             node.children_delta,

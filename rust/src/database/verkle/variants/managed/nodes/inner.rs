@@ -367,7 +367,7 @@ mod tests {
             children: old_children,
             children_delta,
             commitment,
-            full_inner_node_id: VerkleNodeId::default(),
+            base_node_id: VerkleNodeId::default(),
         };
 
         let full_inner_node = FullInnerNode::from(delta_node);

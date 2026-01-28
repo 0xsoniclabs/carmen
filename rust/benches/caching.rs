@@ -68,11 +68,11 @@ impl HasEmptyNode for BenchValue {
 impl HasDeltaVariant for BenchValue {
     type Id = BenchId;
 
-    fn needs_full(&self) -> Option<Self::Id> {
+    fn needs_delta_base(&self) -> Option<Self::Id> {
         None
     }
 
-    fn copy_from_base(&mut self, _full: &Self) -> BTResult<(), Error> {
+    fn copy_from_delta_base(&mut self, _full: &Self) -> BTResult<(), Error> {
         Ok(())
     }
 }

@@ -15,12 +15,11 @@ pub trait HasDeltaVariant {
     /// The ID type for this node type.
     type Id;
 
-    /// Returns the ID of the full node if it is required to initialize this node or `None`
-    /// otherwise.
-    fn needs_full(&self) -> Option<Self::Id>;
+    /// Returns the ID of the base node if it is required to initialize this node or `None`.
+    fn needs_delta_base(&self) -> Option<Self::Id>;
 
     /// Copies all data that is part of the in-memory but not the on-disk representation of this
-    /// delta node from a full node into this delta node.
+    /// delta node from a base node into this delta node.
     /// If this functions gets called from a non-delta node, it should do nothing.
-    fn copy_from_base(&mut self, full: &Self) -> BTResult<(), Error>;
+    fn copy_from_delta_base(&mut self, base: &Self) -> BTResult<(), Error>;
 }

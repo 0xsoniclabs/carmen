@@ -70,7 +70,7 @@ impl HasEmptyNode for TestNode {
 impl HasDeltaVariant for TestNode {
     type Id = TestNodeId;
 
-    fn needs_full(&self) -> Option<Self::Id> {
+    fn needs_delta_base(&self) -> Option<Self::Id> {
         if *self == DELTA_TEST_NODE {
             Some(FULL_TEST_NODE_ID)
         } else {
@@ -78,7 +78,7 @@ impl HasDeltaVariant for TestNode {
         }
     }
 
-    fn copy_from_base(&mut self, _full: &Self) -> BTResult<(), Error> {
+    fn copy_from_delta_base(&mut self, _full: &Self) -> BTResult<(), Error> {
         Ok(())
     }
 }

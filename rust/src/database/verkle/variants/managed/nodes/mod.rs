@@ -181,15 +181,15 @@ impl VerkleNode {
 impl HasDeltaVariant for VerkleNode {
     type Id = VerkleNodeId;
 
-    fn needs_full(&self) -> Option<Self::Id> {
+    fn needs_delta_base(&self) -> Option<Self::Id> {
         match self {
-            VerkleNode::InnerDelta(n) => Some(n.full_inner_node_id),
+            VerkleNode::InnerDelta(n) => Some(n.base_node_id),
             VerkleNode::LeafDelta(n) => Some(n.base_node_id),
             _ => None,
         }
     }
 
-    fn copy_from_base(&mut self, base: &Self) -> BTResult<(), Error> {
+    fn copy_from_delta_base(&mut self, base: &Self) -> BTResult<(), Error> {
         match self {
             VerkleNode::LeafDelta(n) => match base {
                 VerkleNode::Leaf256(f) => n.values = f.values,
@@ -202,7 +202,7 @@ impl HasDeltaVariant for VerkleNode {
                 }
                 _ => {
                     return Err(Error::Internal(
-                        "copy_from_full called with non-full node".to_owned(),
+                        "copy_from_delta_base called with unsupported node".to_owned(),
                     )
                     .into());
                 }
@@ -212,7 +212,7 @@ impl HasDeltaVariant for VerkleNode {
                     n.children = i.children;
                 } else {
                     return Err(Error::Internal(
-                        "copy_from_full called with non-full node".to_owned(),
+                        "copy_from_delta_base called with unsupported node".to_owned(),
                     )
                     .into());
                 }
@@ -1015,11 +1015,11 @@ mod tests {
         let inner_delta = InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
-            full_inner_node_id,
+            base_node_id: full_inner_node_id,
             commitment: VerkleInnerCommitment::default(),
         };
         let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
-        assert_eq!(verkle_node.needs_full(), Some(full_inner_node_id));
+        assert_eq!(verkle_node.needs_delta_base(), Some(full_inner_node_id));
     }
 
     #[test]
@@ -1033,11 +1033,11 @@ mod tests {
         let mut delta_node = VerkleNode::InnerDelta(Box::new(InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
-            full_inner_node_id: VerkleNodeId::default(),
+            base_node_id: VerkleNodeId::default(),
             commitment: VerkleInnerCommitment::default(),
         }));
 
-        delta_node.copy_from_base(&full_node).unwrap();
+        delta_node.copy_from_delta_base(&full_node).unwrap();
         assert!(matches!(delta_node, VerkleNode::InnerDelta(n) if n.children == inner_children));
     }
 
@@ -1050,13 +1050,13 @@ mod tests {
         let mut delta_node = VerkleNode::InnerDelta(Box::new(InnerDeltaNode {
             children: [VerkleNodeId::default(); 256],
             children_delta: [ItemWithIndex::default(); InnerDeltaNode::DELTA_SIZE],
-            full_inner_node_id: VerkleNodeId::default(),
+            base_node_id: VerkleNodeId::default(),
             commitment: VerkleInnerCommitment::default(),
         }));
 
         assert_eq!(
             delta_node
-                .copy_from_base(&full_node)
+                .copy_from_delta_base(&full_node)
                 .map_err(BTError::into_inner),
             Err(Error::Internal(
                 "copy_from_full called with non-full node".into()
@@ -1116,7 +1116,7 @@ mod tests {
             let inner_delta = InnerDeltaNode {
                 children: [VerkleNodeId::default(); 256],
                 children_delta,
-                full_inner_node_id: VerkleNodeId::default(),
+                base_node_id: VerkleNodeId::default(),
                 commitment: VerkleInnerCommitment::default(),
             };
             let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));
@@ -1149,7 +1149,7 @@ mod tests {
             let inner_delta = InnerDeltaNode {
                 children: [VerkleNodeId::default(); 256],
                 children_delta,
-                full_inner_node_id: VerkleNodeId::default(),
+                base_node_id: VerkleNodeId::default(),
                 commitment: VerkleInnerCommitment::default(),
             };
             let verkle_node = VerkleNode::InnerDelta(Box::new(inner_delta));

@@ -204,9 +204,9 @@ where
 
         let lock = self.nodes.get_read_access_or_insert(id, || {
             let mut node = self.storage.storage.get(id)?;
-            if let Some(full_id) = node.needs_full() {
+            if let Some(full_id) = node.needs_delta_base() {
                 let full = self.get_read_access(full_id)?;
-                node.copy_from_base(&**full)?;
+                node.copy_from_delta_base(&**full)?;
             }
             Ok(NodeWithMetadata {
                 node,
@@ -229,9 +229,9 @@ where
 
         let lock = self.nodes.get_write_access_or_insert(id, || {
             let mut node = self.storage.storage.get(id)?;
-            if let Some(full_id) = node.needs_full() {
+            if let Some(full_id) = node.needs_delta_base() {
                 let full = self.get_read_access(full_id)?;
-                node.copy_from_base(&**full)?;
+                node.copy_from_delta_base(&**full)?;
             }
             Ok(NodeWithMetadata {
                 node,
