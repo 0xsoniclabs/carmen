@@ -296,28 +296,28 @@ impl UnionManagedTrieNode for VerkleNode {
     fn copy_on_write(&self, id: Self::Id, changed_indices: Vec<u8>) -> BTResult<Self, Error> {
         // Note: This method is only called in archive mode, so using the delta node is fine.
         match self {
-            VerkleNode::Inner256(n) => {
-                if changed_indices.len() <= InnerDeltaNode::DELTA_SIZE {
-                    Ok(VerkleNode::InnerDelta(Box::new(
-                        InnerDeltaNode::from_full_inner(n, id),
-                    )))
-                } else {
-                    Ok(VerkleNode::Inner256(n.clone()))
-                }
-            }
-            VerkleNode::InnerDelta(n) => {
-                let enough_slots = ItemWithIndex::required_slot_count_for(
-                    &n.children_delta,
-                    changed_indices.into_iter(),
-                ) <= InnerDeltaNode::DELTA_SIZE;
-                if enough_slots {
-                    Ok(VerkleNode::InnerDelta(n.clone()))
-                } else {
-                    Ok(VerkleNode::Inner256(Box::new(FullInnerNode::from(
-                        (**n).clone(),
-                    ))))
-                }
-            }
+            // VerkleNode::Inner256(n) => {
+            //     if changed_indices.len() <= InnerDeltaNode::DELTA_SIZE {
+            //         Ok(VerkleNode::InnerDelta(Box::new(
+            //             InnerDeltaNode::from_full_inner(n, id),
+            //         )))
+            //     } else {
+            //         Ok(VerkleNode::Inner256(n.clone()))
+            //     }
+            // }
+            // VerkleNode::InnerDelta(n) => {
+            //     let enough_slots = ItemWithIndex::required_slot_count_for(
+            //         &n.children_delta,
+            //         changed_indices.into_iter(),
+            //     ) <= InnerDeltaNode::DELTA_SIZE;
+            //     if enough_slots {
+            //         Ok(VerkleNode::InnerDelta(n.clone()))
+            //     } else {
+            //         Ok(VerkleNode::Inner256(Box::new(FullInnerNode::from(
+            //             (**n).clone(),
+            //         ))))
+            //     }
+            // }
             VerkleNode::Leaf256(n) => {
                 if changed_indices.len() <= LeafDeltaNode::DELTA_SIZE {
                     Ok(VerkleNode::LeafDelta(Box::new(
