@@ -8,8 +8,9 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::DerefMut};
 
+use rayon::prelude::*;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
@@ -23,6 +24,7 @@ use crate::{
     },
     error::{BTError, BTResult, Error},
     node_manager::NodeManager,
+    sync::RwLockWriteGuard,
     types::{HasEmptyId, Value},
 };
 
@@ -311,6 +313,26 @@ impl VerkleLeafCommitment {
         self.status = CommitmentStatus::Clean;
         self.changed_indices.fill(0);
     }
+
+    fn prepare_recompute(&mut self) {
+        assert_eq!(self.status, CommitmentStatus::RequiresRecompute);
+
+        // `compute_leaf_node_commitment` bases its decision on whether to do a
+        // full computation or point-wise updates on whether the existing
+        // commitment is default or not.
+        self.commitment = Commitment::default();
+
+        // Reset committed values to default, since we want to compute the delta
+        // against zero.
+        self.committed_values = [Value::default(); 256];
+
+        // Mark all previously committed indices as changed, since we need to
+        // commit to them again regardless of their value (could be zero).
+        for (i, indices) in self.changed_indices.iter_mut().enumerate() {
+            *indices |= self.committed_used_indices[i];
+        }
+        self.committed_used_indices.fill(0);
+    }
 }
 
 impl Default for VerkleLeafCommitment {
@@ -408,7 +430,7 @@ pub enum VerkleCommitmentInput {
 ///   [`VerkleInnerCommitment::changed_indices`] must be contained in the update log on level `L+1`.
 ///
 /// After successful completion, the update log is cleared.
-pub fn update_commitments(
+pub fn update_commitments_sequential(
     log: &TrieUpdateLog<VerkleNodeId>,
     manager: &impl NodeManager<Id = VerkleNodeId, Node = VerkleNode>,
 ) -> BTResult<(), Error> {
@@ -436,21 +458,7 @@ pub fn update_commitments(
                     // If this commitment was just restored from disk, C1 and C2 are default
                     // initialized and we need to do a full recomputation over all values.
                     if vc.status == CommitmentStatus::RequiresRecompute {
-                        // `compute_leaf_node_commitment` bases its decision on whether to do a
-                        // full computation or point-wise updates on whether the existing
-                        // commitment is default or not.
-                        vc.commitment = Commitment::default();
-
-                        // Reset committed values to default, since we want to compute the delta
-                        // against zero.
-                        vc.committed_values = [Value::default(); 256];
-
-                        // Mark all previously committed indices as changed, since we need to
-                        // commit to them again regardless of their value (could be zero).
-                        for (i, indices) in vc.changed_indices.iter_mut().enumerate() {
-                            *indices |= vc.committed_used_indices[i];
-                        }
-                        vc.committed_used_indices.fill(0);
+                        vc.prepare_recompute();
                     }
 
                     compute_leaf_node_commitment(
@@ -504,6 +512,147 @@ pub fn update_commitments(
             lock.set_commitment(vc)?;
         }
     }
+    log.clear();
+    Ok(())
+}
+
+fn update_commitment_thread(
+    dbg_recursion_level: usize,
+    mut node: RwLockWriteGuard<'_, impl DerefMut<Target = VerkleNode>>,
+    index_in_parent: usize,
+    delta_commitment: &mut Commitment,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+    parent_is_initialized: bool,
+) {
+    let mut vc = node.get_commitment();
+    assert!(!vc.is_clean());
+
+    match node.get_commitment_input().unwrap() {
+        VerkleCommitmentInput::Leaf(values, stem) => {
+            let _span = tracy_client::span!("update leaf");
+            let vc = vc.as_leaf().unwrap(); // FIXME Unwrap
+
+            // If this commitment was just restored from disk, C1 and C2 are default
+            // initialized and we need to do a full recomputation over all values.
+            if vc.status == CommitmentStatus::RequiresRecompute {
+                vc.prepare_recompute();
+            }
+
+            compute_leaf_node_commitment(
+                vc.changed_indices,
+                &vc.committed_values,
+                &values,
+                &stem,
+                &mut vc.committed_used_indices,
+                &mut vc.c1,
+                &mut vc.c2,
+                &mut vc.commitment,
+            );
+        }
+        VerkleCommitmentInput::Inner(children) => {
+            // eprintln!("{}its an inner", "  ".repeat(dbg_recursion_level));
+            let _span = tracy_client::span!("update inner");
+            let vc = vc.as_inner().unwrap(); // FIXME Unwrap
+
+            let child_sum = (0..children.len())
+                .filter(|i| {
+                    // Only keep children that have either been changed, or if this node is not yet
+                    // initialized, keep all that are not empty.
+                    !(vc.status != CommitmentStatus::RequiresRecompute
+                        && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
+                        || children[*i].is_empty_id())
+                })
+                .collect::<Vec<_>>()
+                .par_iter()
+                .map(|i| {
+                    let i = *i;
+                    let mut delta_i = Commitment::default();
+                    // TODO: Can we get rid of one of the checks here?
+                    if vc.status == CommitmentStatus::RequiresRecompute
+                        && vc.changed_indices[i / 8] & (1 << (i % 8)) == 0
+                    {
+                        delta_i.update(
+                            i as u8,
+                            Scalar::zero(),
+                            manager
+                                .get_read_access(children[i])
+                                .unwrap()
+                                .get_commitment()
+                                .commitment()
+                                .to_scalar(),
+                        );
+                        return delta_i;
+                    }
+
+                    // eprintln!("{}processing child {}", "  ".repeat(dbg_recursion_level), i);
+                    let child_node = manager.get_write_access(children[i]).unwrap();
+                    update_commitment_thread(
+                        dbg_recursion_level + 1,
+                        child_node,
+                        i,
+                        &mut delta_i,
+                        manager,
+                        vc.status != CommitmentStatus::RequiresRecompute,
+                    );
+                    delta_i
+                })
+                .reduce(Commitment::default, |acc, delta_commitment| {
+                    acc + delta_commitment
+                });
+
+            if vc.status == CommitmentStatus::RequiresRecompute {
+                vc.commitment = child_sum;
+            } else {
+                vc.commitment = vc.commitment + child_sum;
+            }
+        }
+    }
+
+    if parent_is_initialized {
+        delta_commitment.update(
+            index_in_parent as u8,
+            node.get_commitment().commitment().to_scalar(),
+            vc.commitment().to_scalar(),
+        );
+    } else {
+        delta_commitment.update(
+            index_in_parent as u8,
+            Scalar::zero(),
+            vc.commitment().to_scalar(),
+        );
+    }
+
+    // eprintln!(
+    //     "{}setting delta to {:?}",
+    //     "  ".repeat(dbg_recursion_level),
+    //     delta
+    // );
+    vc.mark_clean();
+    node.set_commitment(vc).unwrap();
+}
+
+/// TODO Docstring
+pub fn update_commitments_concurrent_recursive(
+    root_id: VerkleNodeId,
+    log: &TrieUpdateLog<VerkleNodeId>,
+    manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+) -> BTResult<(), Error> {
+    if log.count() == 0 {
+        return Ok(());
+    }
+
+    // Don't delegate to sequential implementation in tests
+    #[cfg(not(test))]
+    if log.count() <= 8 {
+        return update_commitments_sequential(log, manager);
+    }
+
+    let _span = tracy_client::span!("update_commitments_concurrent_recursive");
+
+    let mut delta_commitment = Commitment::default();
+    let root = manager.get_write_access(root_id)?;
+    update_commitment_thread(0, root, 0, &mut delta_commitment, manager, false);
+
     log.clear();
     Ok(())
 }
@@ -846,8 +995,26 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn update_commitments_processes_dirty_nodes_from_leaves_to_root() {
+    fn update_commitments_sequential_adapter(
+        _root_id: VerkleNodeId,
+        log: &TrieUpdateLog<VerkleNodeId>,
+        manager: &(impl NodeManager<Id = VerkleNodeId, Node = VerkleNode> + Send + Sync),
+    ) -> BTResult<(), Error> {
+        update_commitments_sequential(log, manager)
+    }
+
+    type UpdateFn<NM> = fn(VerkleNodeId, &TrieUpdateLog<VerkleNodeId>, &NM) -> BTResult<(), Error>;
+
+    #[rstest_reuse::template]
+    #[rstest::rstest]
+    #[case::sequential(update_commitments_sequential_adapter)]
+    #[case::concurrent_recursive(update_commitments_concurrent_recursive)]
+    fn all_update_fns(#[case] update_fn: UpdateFn) {}
+
+    #[rstest_reuse::apply(all_update_fns)]
+    fn update_commitments_processes_dirty_nodes_from_leaves_to_root(
+        #[case] update_fn: UpdateFn<InMemoryNodeManager<VerkleNodeId, VerkleNode>>,
+    ) {
         let manager = InMemoryNodeManager::<VerkleNodeId, VerkleNode>::new(10);
         let log = TrieUpdateLog::<VerkleNodeId>::new();
 
@@ -918,7 +1085,7 @@ mod tests {
         log.mark_dirty(0, root_id);
 
         // Run commitment update
-        update_commitments(&log, &manager).unwrap();
+        update_fn(root_id, &log, &manager).unwrap();
 
         {
             let leaf_node_commitment = manager
@@ -964,8 +1131,10 @@ mod tests {
         assert_eq!(log.count(), 0);
     }
 
-    #[test]
-    fn update_commitments_correctly_handles_leaf_commitments_restored_from_disk() {
+    #[rstest_reuse::apply(all_update_fns)]
+    fn update_commitments_correctly_handles_leaf_commitments_restored_from_disk(
+        #[case] update_fn: UpdateFn<InMemoryNodeManager<VerkleNodeId, VerkleNode>>,
+    ) {
         let stem = <[u8; 31]>::from_index_values(33, &[(0, 7), (1, 4)]);
 
         let set_value = |node: &mut FullLeafNode, index: u8, value: u8| {
@@ -1039,7 +1208,8 @@ mod tests {
             .add(VerkleNode::Leaf256(Box::new(restored_leaf)))
             .unwrap();
         log.mark_dirty(0, leaf_id);
-        update_commitments(&log, &manager).unwrap();
+
+        update_fn(leaf_id, &log, &manager).unwrap();
 
         let leaf_node_commitment = manager
             .get_read_access(leaf_id)
