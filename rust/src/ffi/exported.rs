@@ -154,13 +154,12 @@ unsafe extern "C" fn Carmen_Rust_Flush(db: *mut c_void) -> bindings::Result {
     // - `db.inner` is a valid pointer to a `dyn CarmenDb` (precondition)
     // - `db.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
     // - `db.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let _db = unsafe { db.inner_to_ref_scoped(&token) };
+    let db = unsafe { db.inner_to_ref_scoped(&token) };
     // TODO: call checkpoint once the semantics on the Go side have been changed
-    // match db.checkpoint() {
-    //     Ok(_) => bindings::Result_kResult_Success,
-    //     Err(err) => err.into(),
-    // }
-    bindings::Result_kResult_Success
+    match db.checkpoint() {
+        Ok(_) => bindings::Result_kResult_Success,
+        Err(err) => err.into(),
+    }
 }
 
 /// Closes this database, releasing all resources and causing its destruction.

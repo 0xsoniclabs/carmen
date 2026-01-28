@@ -32,7 +32,7 @@ use crate::{
     error::{BTResult, Error},
     node_manager::cached_node_manager::CachedNodeManager,
     storage::{
-        DbOpenMode, RootIdProvider, Storage,
+        Checkpointable, DbOpenMode, RootIdProvider, Storage,
         file::{NoSeekFile, NodeFileStorage},
         storage_with_flush_buffer::StorageWithFlushBuffer,
     },
@@ -307,15 +307,21 @@ impl<S: Storage, LS: CarmenState> CarmenS6FileBasedDb<S, LS> {
 
 impl<S, LS> CarmenDb for CarmenS6FileBasedDb<S, LS>
 where
-    S: Storage<Id = VerkleNodeId, Item = VerkleNode> + RootIdProvider<Id = VerkleNodeId> + 'static,
+    S: Storage<Id = VerkleNodeId, Item = VerkleNode>
+        + RootIdProvider<Id = VerkleNodeId>
+        + Checkpointable
+        + 'static,
     LS: CarmenState + IsArchive + 'static,
 {
     fn checkpoint(&self) -> BTResult<(), Error> {
-        // TODO: Support checkpoints for archive
-        Err(
-            Error::UnsupportedOperation("cannot create checkpoint for live state".to_owned())
-                .into(),
-        )
+        if self.live_state.is_archive() {
+            self.manager.checkpoint().map_err(Into::into).map(|_num| ())
+        } else {
+            Err(Error::UnsupportedOperation(
+                "cannot create checkpoint for archive state".to_owned(),
+            )
+            .into())
+        }
     }
 
     fn close(self: Box<Self>) -> BTResult<(), Error> {
