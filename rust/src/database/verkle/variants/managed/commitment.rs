@@ -593,6 +593,13 @@ fn update_commitments_concurrent_recursive_impl(
                         vc.status == CommitmentStatus::RequiresRecompute,
                     )
                 })
+                .fold(
+                    || Ok::<Commitment, BTError<Error>>(Commitment::default()),
+                    |acc, delta_commitment| match acc {
+                        Err(e) => Err(e),
+                        Ok(acc) => Ok(acc + delta_commitment?),
+                    },
+                )
                 .reduce(
                     || Ok(Commitment::default()),
                     |acc, delta_commitment| match acc {
