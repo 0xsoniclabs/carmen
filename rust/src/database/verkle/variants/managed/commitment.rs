@@ -535,7 +535,7 @@ fn update_commitments_concurrent_recursive_impl(
 
     match node.get_commitment_input()? {
         VerkleCommitmentInput::Leaf(values, stem) => {
-            let _span = tracy_client::span!("update leaf");
+            let _span = tracy_client::span!("leaf node");
             let vc = vc.as_leaf()?;
 
             // If this commitment was just restored from disk, C1 and C2 are default
@@ -556,7 +556,7 @@ fn update_commitments_concurrent_recursive_impl(
             );
         }
         VerkleCommitmentInput::Inner(children) => {
-            let _span = tracy_client::span!("update inner");
+            let _span = tracy_client::span!("inner node");
             let vc = vc.as_inner()?;
 
             let child_sum = (0..children.len())
@@ -599,28 +599,24 @@ fn update_commitments_concurrent_recursive_impl(
                     },
                 )?;
 
-            if vc.status == CommitmentStatus::RequiresRecompute {
-                vc.commitment = child_sum;
+            vc.commitment = if vc.status == CommitmentStatus::RequiresRecompute {
+                child_sum
             } else {
-                vc.commitment = vc.commitment + child_sum;
-            }
+                vc.commitment + child_sum
+            };
         }
     }
 
     let mut delta_commitment = Commitment::default();
-    if parent_requires_recompute {
-        delta_commitment.update(
-            index_in_parent as u8,
-            Scalar::zero(),
-            vc.commitment().to_scalar(),
-        );
-    } else {
-        delta_commitment.update(
-            index_in_parent as u8,
-            node.get_commitment().commitment().to_scalar(),
-            vc.commitment().to_scalar(),
-        );
-    }
+    delta_commitment.update(
+        index_in_parent as u8,
+        if parent_requires_recompute {
+            Scalar::zero()
+        } else {
+            node.get_commitment().commitment().to_scalar()
+        },
+        vc.commitment().to_scalar(),
+    );
 
     vc.mark_clean();
     node.set_commitment(vc)?;
