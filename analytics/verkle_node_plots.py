@@ -2,6 +2,7 @@
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+# import sys
 
 sns.set_theme(style="whitegrid")
 
@@ -83,7 +84,7 @@ def set_plot_params():
 
 set_plot_params()
 
-is_interactive = 'IPython' in sys.modules
+is_interactive = "IPython" in sys.modules
 if not is_interactive and len(sys.argv) > 1:
     path = sys.argv[1]
 else:

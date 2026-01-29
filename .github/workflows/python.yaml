@@ -1,0 +1,38 @@
+name: Python
+
+permissions:
+  contents: read
+  checks: write
+
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+    - ".github/workflows/python.yaml"
+    - "analytics/**"
+  pull_request:
+    branches: [ "**" ]
+    paths:
+    - ".github/workflows/python.yaml"
+    - "analytics/**"
+  
+defaults:
+  run:
+    working-directory: analytics
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+    - name: set up Python
+      uses: actions/setup-python@v4
+    - name: install ruff
+      run: pip install ruff
+    - name: ruff check
+      run: ruff check .
