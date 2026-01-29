@@ -24,8 +24,7 @@ use crate::{
                     VerkleInnerCommitment, VerkleLeafCommitment,
                 },
                 nodes::{
-                    ItemWithIndex, VerkleIdWithIndex, leaf_delta::LeafDeltaNode,
-                    make_smallest_inner_node_for,
+                    VerkleIdWithIndex, leaf_delta::LeafDeltaNode, make_smallest_inner_node_for,
                 },
             },
         },
@@ -88,15 +87,7 @@ impl From<LeafDeltaNode> for FullLeafNode {
     fn from(node: LeafDeltaNode) -> Self {
         FullLeafNode {
             stem: node.stem,
-            values: {
-                let mut values = node.values;
-                for ItemWithIndex { index, item } in node.values_delta {
-                    if let Some(item) = item {
-                        values[index as usize] = item;
-                    }
-                }
-                values
-            },
+            values: node.get_values(),
             commitment: node.commitment,
         }
     }
@@ -223,8 +214,9 @@ mod tests {
         database::{
             managed_trie::TrieCommitment,
             verkle::{
-                KeyedUpdateBatch, test_utils::FromIndexValues,
-                variants::managed::nodes::VerkleNodeKind,
+                KeyedUpdateBatch,
+                test_utils::FromIndexValues,
+                variants::managed::nodes::{ItemWithIndex, VerkleNodeKind},
             },
         },
         error::BTError,
@@ -264,10 +256,7 @@ mod tests {
         let mut delta_node = LeafDeltaNode {
             stem: [1; 31],
             values: [[0; 32]; 256],
-            values_delta: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            }),
+            values_delta: ItemWithIndex::default_array(),
             commitment: VerkleLeafCommitment::default(),
             base_node_id: VerkleNodeId::default(),
         };

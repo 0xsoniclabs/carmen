@@ -63,10 +63,7 @@ impl LeafDeltaNode {
         LeafDeltaNode {
             stem: base_node.stem,
             values: base_node.values,
-            values_delta: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            }),
+            values_delta: ItemWithIndex::default_array(),
             base_node_id,
             commitment: base_node.commitment,
         }
@@ -85,10 +82,7 @@ impl LeafDeltaNode {
                 }
                 values
             },
-            values_delta: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            }),
+            values_delta: ItemWithIndex::default_array(),
             base_node_id,
             commitment: base_node.commitment,
         }
@@ -97,13 +91,18 @@ impl LeafDeltaNode {
     /// Returns the values and stem of this leaf node as commitment input.
     // TODO: This should not have to pass 256 values: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
+        Ok(VerkleCommitmentInput::Leaf(self.get_values(), self.stem))
+    }
+
+    /// Reconstructs the full set of values by applying the delta to the base values.
+    pub fn get_values(&self) -> [Value; 256] {
         let mut values = self.values;
         for ItemWithIndex { index, item: value } in &self.values_delta {
             if let Some(value) = value {
                 values[*index as usize] = *value;
             }
         }
-        Ok(VerkleCommitmentInput::Leaf(values, self.stem))
+        values
     }
 }
 
@@ -342,10 +341,7 @@ mod tests {
         LeafDeltaNode {
             stem: STEM,
             values: [Value::default(); 256],
-            values_delta: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            }),
+            values_delta: ItemWithIndex::default_array(),
             base_node_id: VerkleNodeId::default(),
             commitment: VerkleLeafCommitment::default(),
         }
@@ -393,23 +389,14 @@ mod tests {
         assert_eq!(node.commitment, base_leaf.commitment);
         assert_eq!(node.values, base_leaf.values);
         assert_eq!(node.base_node_id, full_leaf_id);
-        assert_eq!(
-            node.values_delta,
-            array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            })
-        );
+        assert_eq!(node.values_delta, ItemWithIndex::default_array(),);
     }
 
     #[test]
     fn from_sparse_leaf_copies_stem_and_values_and_commitment_and_sets_id_of_base_node() {
         let mut base_leaf = SparseLeafNode::<9> {
             stem: STEM,
-            values: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: Value::default(),
-            }),
+            values: ItemWithIndex::default_array(),
             commitment: VerkleLeafCommitment::default(),
         };
         base_leaf.commitment.store(255, [1; 32]);
@@ -426,13 +413,7 @@ mod tests {
         assert_eq!(node.values[255], [1; 32]);
         assert_eq!(node.values[..255], [Value::default(); 255]);
         assert_eq!(node.base_node_id, full_leaf_id);
-        assert_eq!(
-            node.values_delta,
-            array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            })
-        );
+        assert_eq!(node.values_delta, ItemWithIndex::default_array(),);
     }
 
     #[test]
@@ -453,6 +434,27 @@ mod tests {
             result,
             VerkleCommitmentInput::Leaf(expected_values, node.stem)
         );
+    }
+
+    #[test]
+    fn get_values_returns_delta_applied_on_top_of_base_values() {
+        let mut node = make_empty_leaf_delta();
+        node.values[5] = [5; 32];
+        node.values[6] = [5; 32];
+        node.values_delta[0] = ItemWithIndex {
+            index: 6,
+            item: Some([6; 32]),
+        };
+        node.values_delta[1] = ItemWithIndex {
+            index: 7,
+            item: Some([7; 32]),
+        };
+
+        let mut expected_values = [Value::default(); 256];
+        expected_values[5] = [5; 32];
+        expected_values[6] = [6; 32];
+        expected_values[7] = [7; 32];
+        assert_eq!(node.get_values(), expected_values);
     }
 
     #[test]

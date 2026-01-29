@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{array, borrow::Cow};
+use std::borrow::Cow;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
@@ -130,10 +130,7 @@ impl<const N: usize> TryFrom<LeafDeltaNode> for SparseLeafNode<N> {
         Ok(SparseLeafNode {
             stem: delta_node.stem,
             values: {
-                let mut values = array::from_fn(|i| ValueWithIndex {
-                    index: i as u8,
-                    item: Value::default(),
-                });
+                let mut values = ItemWithIndex::default_array();
                 for (i, item) in delta_node.values.into_iter().enumerate() {
                     if item != Value::default() {
                         let slot = ValueWithIndex::get_slot_for(&values, i as u8).ok_or(Error::Internal("LeafDeltaNode to SparseLeafNode conversion failed because there are not enough slots available.".into()))?;
@@ -518,10 +515,7 @@ mod tests {
         let mut delta_node = LeafDeltaNode {
             stem: [1; 31],
             values: [[0; 32]; 256],
-            values_delta: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            }),
+            values_delta: ItemWithIndex::default_array(),
             commitment: VerkleLeafCommitment::default(),
             base_node_id: VerkleNodeId::default(),
         };
@@ -554,10 +548,7 @@ mod tests {
         let mut delta_node = LeafDeltaNode {
             stem: [1; 31],
             values: [[0; 32]; 256],
-            values_delta: array::from_fn(|i| ItemWithIndex {
-                index: i as u8,
-                item: None,
-            }),
+            values_delta: ItemWithIndex::default_array(),
             commitment: VerkleLeafCommitment::default(),
             base_node_id: VerkleNodeId::default(),
         };

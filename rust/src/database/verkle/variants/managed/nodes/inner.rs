@@ -151,15 +151,7 @@ impl ManagedTrieNode for FullInnerNode {
 impl From<InnerDeltaNode> for FullInnerNode {
     fn from(delta_node: InnerDeltaNode) -> Self {
         FullInnerNode {
-            children: {
-                let mut children = delta_node.children;
-                for VerkleIdWithIndex { index, item } in delta_node.children_delta {
-                    if item != VerkleNodeId::default() {
-                        children[index as usize] = item;
-                    }
-                }
-                children
-            },
+            children: delta_node.get_children(),
             commitment: delta_node.commitment,
         }
     }
@@ -346,10 +338,7 @@ mod tests {
         let old_children = array::from_fn(|i| {
             VerkleNodeId::from_idx_and_node_kind(i as u64, VerkleNodeKind::Inner256)
         });
-        let mut children_delta = array::from_fn(|i| ItemWithIndex {
-            index: i as u8,
-            item: VerkleNodeId::default(),
-        });
+        let mut children_delta = VerkleIdWithIndex::default_array();
         children_delta[1] = ItemWithIndex {
             index: 2,
             item: VerkleNodeId::from_idx_and_node_kind(500, VerkleNodeKind::Leaf1),

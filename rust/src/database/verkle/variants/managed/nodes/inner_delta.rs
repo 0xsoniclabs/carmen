@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{array, borrow::Cow};
+use std::borrow::Cow;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
@@ -60,10 +60,7 @@ impl InnerDeltaNode {
     pub fn from_full_inner(inner_node: &FullInnerNode, inner_node_id: VerkleNodeId) -> Self {
         InnerDeltaNode {
             children: inner_node.children,
-            children_delta: array::from_fn(|i| VerkleIdWithIndex {
-                index: i as u8,
-                item: VerkleNodeId::default(),
-            }),
+            children_delta: VerkleIdWithIndex::default_array(),
             base_node_id: inner_node_id,
             commitment: inner_node.commitment,
         }
@@ -72,13 +69,18 @@ impl InnerDeltaNode {
     /// Returns the children of this inner node as commitment input.
     // TODO: This should not have to pass 256 IDs: https://github.com/0xsoniclabs/sonic-admin/issues/384
     pub fn get_commitment_input(&self) -> BTResult<VerkleCommitmentInput, Error> {
+        Ok(VerkleCommitmentInput::Inner(self.get_children()))
+    }
+
+    /// Reconstructs the full set of children by applying the delta to the base children.
+    pub fn get_children(&self) -> [VerkleNodeId; 256] {
         let mut children = self.children;
         for VerkleIdWithIndex { index, item } in self.children_delta {
             if item != VerkleNodeId::default() {
                 children[index as usize] = item;
             }
         }
-        Ok(VerkleCommitmentInput::Inner(children))
+        children
     }
 }
 
@@ -268,10 +270,7 @@ mod tests {
             children: array::from_fn(|i| {
                 VerkleNodeId::from_idx_and_node_kind(i as u64, TEST_CHILD_NODE_KIND)
             }),
-            children_delta: array::from_fn(|i| VerkleIdWithIndex {
-                index: i as u8,
-                item: VerkleNodeId::default(),
-            }),
+            children_delta: VerkleIdWithIndex::default_array(),
             base_node_id: VerkleNodeId::default(),
             commitment: VerkleInnerCommitment::default(),
         }
@@ -320,15 +319,7 @@ mod tests {
         assert_eq!(node.commitment, full_inner.commitment);
         assert_eq!(node.base_node_id, full_inner_node_id);
         assert_eq!(node.children, full_inner.children);
-        assert_eq!(
-            node.children_delta,
-            array::from_fn(|i| {
-                VerkleIdWithIndex {
-                    index: i as u8,
-                    item: VerkleNodeId::default(),
-                }
-            })
-        );
+        assert_eq!(node.children_delta, VerkleIdWithIndex::default_array(),);
     }
 
     #[test]
@@ -360,6 +351,32 @@ mod tests {
 
         let result = node.get_commitment_input().unwrap();
         assert_eq!(result, VerkleCommitmentInput::Inner(expected_children));
+    }
+
+    #[test]
+    fn get_children_returns_delta_applied_on_top_of_base_children() {
+        let mut node = InnerDeltaNode {
+            children: [VerkleNodeId::default(); 256],
+            children_delta: VerkleIdWithIndex::default_array(),
+            base_node_id: VerkleNodeId::default(),
+            commitment: VerkleInnerCommitment::default(),
+        };
+        node.children[5] = VerkleNodeId::from_idx_and_node_kind(5, TEST_CHILD_NODE_KIND);
+        node.children[6] = VerkleNodeId::from_idx_and_node_kind(5, TEST_CHILD_NODE_KIND);
+        node.children_delta[0] = VerkleIdWithIndex {
+            index: 6,
+            item: VerkleNodeId::from_idx_and_node_kind(6, TEST_CHILD_NODE_KIND),
+        };
+        node.children_delta[1] = VerkleIdWithIndex {
+            index: 7,
+            item: VerkleNodeId::from_idx_and_node_kind(7, TEST_CHILD_NODE_KIND),
+        };
+
+        let mut expected_children = [VerkleNodeId::default(); 256];
+        expected_children[5] = VerkleNodeId::from_idx_and_node_kind(5, TEST_CHILD_NODE_KIND);
+        expected_children[6] = VerkleNodeId::from_idx_and_node_kind(6, TEST_CHILD_NODE_KIND);
+        expected_children[7] = VerkleNodeId::from_idx_and_node_kind(7, TEST_CHILD_NODE_KIND);
+        assert_eq!(node.get_children(), expected_children);
     }
 
     #[test]

@@ -574,6 +574,15 @@ impl<T> ItemWithIndex<T>
 where
     T: Default + PartialEq,
 {
+    /// Creates an array of `N` default-initialized `ItemWithIndex<T>` items, with indexes from `0`
+    /// to `N-1`.
+    fn default_array<const N: usize>() -> [ItemWithIndex<T>; N] {
+        std::array::from_fn(|i| ItemWithIndex {
+            index: i as u8,
+            item: T::default(),
+        })
+    }
+
     /// Returns a slot in `items` for storing an item with the given index, or `None` if no such
     /// slot exists. A slot is suitable if it either already holds the given index, or if it is
     /// empty (i.e., holds the default item).
@@ -949,6 +958,15 @@ mod tests {
                 .get(&256),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn item_with_index_default_array_creates_array_of_default_initialized_items_and_unique_ids() {
+        let items: [ItemWithIndex<u8>; 5] = ItemWithIndex::default_array();
+        for (i, item) in items.iter().enumerate() {
+            assert_eq!(item.index, i as u8);
+            assert_eq!(item.item, u8::default());
+        }
     }
 
     #[test]
