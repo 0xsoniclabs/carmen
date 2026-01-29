@@ -16,9 +16,9 @@ def parse_db_size(log_file_path):
     block_numbers = []
     live_sizes = []
     archive_sizes = []
-    pattern = r'Processing block (\d+).*?, [\d.]+ txs/s, [\d.]+ MGas/s, [\d.]+x realtime, live DB size: ([\d.]+) ([GM])iB, archive DB size: ([\d.]+) [GM]iB'
+    pattern = r"Processing block (\d+).*?, [\d.]+ txs/s, [\d.]+ MGas/s, [\d.]+x realtime, live DB size: ([\d.]+) ([GM])iB, archive DB size: ([\d.]+) [GM]iB"
 
-    with open(log_file_path, 'r', encoding='utf-8') as f:
+    with open(log_file_path, "r", encoding="utf-8") as f:
         for line in f:
             match = re.search(pattern, line)
             if match:
@@ -28,7 +28,7 @@ def parse_db_size(log_file_path):
                 archive_size = float(match.group(4))
 
                 # NOTE: Earlier versions of Bertha logged in MiB instead of GiB, normalize to GiB
-                if unit == 'M':
+                if unit == "M":
                     live_size /= 1024
                     archive_size /= 1024
 
@@ -36,11 +36,11 @@ def parse_db_size(log_file_path):
                 live_sizes.append(live_size)
                 archive_sizes.append(archive_size)
 
-    print(f'Parsed {len(block_numbers)} log entries.')
+    print(f"Parsed {len(block_numbers)} log entries.")
     return block_numbers, live_sizes, archive_sizes
 
 
-is_interactive = 'IPython' in sys.modules
+is_interactive = "IPython" in sys.modules
 if not is_interactive and len(sys.argv) > 1:
     path = sys.argv[1]
 else:
@@ -51,24 +51,26 @@ db_sizes = parse_db_size(path)
 # %% Plot live versus archive DB sizes over time
 
 plt.figure(figsize=(10, 5))
-plt.plot(db_sizes[0], db_sizes[1], label='Live DB')
-plt.plot(db_sizes[0], db_sizes[2], label='Archive DB')
-plt.xlabel('Block Number')
-plt.ylabel('DB Size [GiB]')
-plt.title('S5 DB Size Growth - Full History Run (55M Blocks)')
+plt.plot(db_sizes[0], db_sizes[1], label="Live DB")
+plt.plot(db_sizes[0], db_sizes[2], label="Archive DB")
+plt.xlabel("Block Number")
+plt.ylabel("DB Size [GiB]")
+plt.title("S5 DB Size Growth - Full History Run (55M Blocks)")
 plt.grid(True)
 plt.legend()
 plt.show()
 
 # %% Compute growth rates and associated statistics
 
-live_growth_rates = [db_sizes[1][i] - db_sizes[1][i - 1]
-                     for i in range(1, len(db_sizes[1]))]
-archive_growth_rates = [db_sizes[2][i] - db_sizes[2][i - 1]
-                        for i in range(1, len(db_sizes[2]))]
+live_growth_rates = [
+    db_sizes[1][i] - db_sizes[1][i - 1] for i in range(1, len(db_sizes[1]))
+]
+archive_growth_rates = [
+    db_sizes[2][i] - db_sizes[2][i - 1] for i in range(1, len(db_sizes[2]))
+]
 
 # We assume logs every 10K blocks in messages / labels below
-assert (db_sizes[0][1] - db_sizes[0][0] == 10000)
+assert db_sizes[0][1] - db_sizes[0][0] == 10000
 
 
 def print_statistics(block_indices, growth_rates, db_type):
@@ -78,7 +80,8 @@ def print_statistics(block_indices, growth_rates, db_type):
     p95_growth = sorted(growth_rates)[int(0.95 * len(growth_rates))]
 
     print(
-        f"{db_type} DB growth rate (GiB / 10K blocks):\n\tMean={mean_growth:.3f}\n\tMedian={median_growth:.3f}\n\tMax={max_growth:.3f}\n\tP95={p95_growth:.3f}")
+        f"{db_type} DB growth rate (GiB / 10K blocks):\n\tMean={mean_growth:.3f}\n\tMedian={median_growth:.3f}\n\tMax={max_growth:.3f}\n\tP95={p95_growth:.3f}"
+    )
 
     # Print outliers outside of fence*IQR
     fence = 5
@@ -87,12 +90,16 @@ def print_statistics(block_indices, growth_rates, db_type):
     iqr = q3 - q1
     lower_bound = q1 - fence * iqr
     upper_bound = q3 + fence * iqr
-    outliers = [(i, gr) for i, gr in enumerate(growth_rates) if gr <
-                lower_bound or gr > upper_bound]
+    outliers = [
+        (i, gr)
+        for i, gr in enumerate(growth_rates)
+        if gr < lower_bound or gr > upper_bound
+    ]
     print(f"{len(outliers)} Outliers (outside {fence}*IQR):")
     for i, outlier in outliers:
         print(
-            f"\t\tBlocks: {block_indices[i]}-{block_indices[i]+10000}, Growth Rate: {outlier:.3f} GiB / 10K blocks")
+            f"\t\tBlocks: {block_indices[i]}-{block_indices[i] + 10000}, Growth Rate: {outlier:.3f} GiB / 10K blocks"
+        )
 
 
 print_statistics(db_sizes[0], live_growth_rates, "Live")
@@ -102,33 +109,30 @@ print_statistics(db_sizes[0], archive_growth_rates, "Archive")
 
 fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
-axs[0].plot(db_sizes[0], db_sizes[1], label='Live DB')
-axs[0].set_ylabel('DB Size [GiB]')
-axs[0].set_title(
-    'S5 DB Size Growth - Full History Run (55M Blocks) - Live Only')
+axs[0].plot(db_sizes[0], db_sizes[1], label="Live DB")
+axs[0].set_ylabel("DB Size [GiB]")
+axs[0].set_title("S5 DB Size Growth - Full History Run (55M Blocks) - Live Only")
 axs[0].grid(True)
 
-axs[1].plot(db_sizes[0][1:], live_growth_rates, label='Live DB')
-axs[1].set_xlabel('Block Number')
-axs[1].set_ylabel('GiB / 10K Blocks')
-axs[1].set_title(
-    'S5 DB Size Growth Rate - Full History Run (55M Blocks) - Live Only')
+axs[1].plot(db_sizes[0][1:], live_growth_rates, label="Live DB")
+axs[1].set_xlabel("Block Number")
+axs[1].set_ylabel("GiB / 10K Blocks")
+axs[1].set_title("S5 DB Size Growth Rate - Full History Run (55M Blocks) - Live Only")
 axs[1].grid(True)
 
 fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
-axs[0].plot(db_sizes[0], db_sizes[2], label='Archive DB', color='orange')
-axs[0].set_ylabel('DB Size [GiB]')
-axs[0].set_title(
-    'S5 DB Size Growth - Full History Run (55M Blocks) - Archive Only')
+axs[0].plot(db_sizes[0], db_sizes[2], label="Archive DB", color="orange")
+axs[0].set_ylabel("DB Size [GiB]")
+axs[0].set_title("S5 DB Size Growth - Full History Run (55M Blocks) - Archive Only")
 axs[0].grid(True)
 
-axs[1].plot(db_sizes[0][1:], archive_growth_rates,
-            label='Archive DB', color='orange')
-axs[1].set_xlabel('Block Number')
-axs[1].set_ylabel('GiB / 10K Blocks')
+axs[1].plot(db_sizes[0][1:], archive_growth_rates, label="Archive DB", color="orange")
+axs[1].set_xlabel("Block Number")
+axs[1].set_ylabel("GiB / 10K Blocks")
 axs[1].set_title(
-    'S5 DB Size Growth Rate - Full History Run (55M Blocks) - Archive Only')
+    "S5 DB Size Growth Rate - Full History Run (55M Blocks) - Archive Only"
+)
 axs[1].grid(True)
 
 # %% Plot empirical CDFs of growth rates
@@ -140,10 +144,9 @@ def plot_empirical_cdf(data, title):
     y_values = [(i + 1) / n for i in range(n)]
 
     plt.figure(figsize=(10, 5))
-    plt.plot([x * 1024 for x in sorted_data],
-             y_values, marker='.', linestyle='none')
-    plt.xlabel('MiB / 10K Blocks')
-    plt.ylabel('Empirical CDF')
+    plt.plot([x * 1024 for x in sorted_data], y_values, marker=".", linestyle="none")
+    plt.xlabel("MiB / 10K Blocks")
+    plt.ylabel("Empirical CDF")
     plt.title(title)
     plt.grid(True)
 
@@ -151,17 +154,38 @@ def plot_empirical_cdf(data, title):
     max_value = sorted_data[-1] * 1024
     p95_value = sorted_data[int(0.95 * n)] * 1024
 
-    plt.axvline(x=median_value, color='red')
-    plt.axvline(x=max_value, color='red')
-    plt.axvline(x=p95_value, color='red')
+    plt.axvline(x=median_value, color="red")
+    plt.axvline(x=max_value, color="red")
+    plt.axvline(x=p95_value, color="red")
     text_transform = offset_copy(
-        plt.gca().transData, fig=plt.gcf(), x=10, y=0, units='points')
-    plt.text(median_value, 0.3, f'Median={round(median_value)}',
-             rotation=90, transform=text_transform, color='red')
-    plt.text(max_value, 0.3, f'Max={round(max_value)}', rotation=90,
-             verticalalignment='top', transform=text_transform, color='red')
-    plt.text(p95_value, 0.6, f'P95={round(p95_value)}', rotation=90,
-             verticalalignment='top', transform=text_transform, color='red')
+        plt.gca().transData, fig=plt.gcf(), x=10, y=0, units="points"
+    )
+    plt.text(
+        median_value,
+        0.3,
+        f"Median={round(median_value)}",
+        rotation=90,
+        transform=text_transform,
+        color="red",
+    )
+    plt.text(
+        max_value,
+        0.3,
+        f"Max={round(max_value)}",
+        rotation=90,
+        verticalalignment="top",
+        transform=text_transform,
+        color="red",
+    )
+    plt.text(
+        p95_value,
+        0.6,
+        f"P95={round(p95_value)}",
+        rotation=90,
+        verticalalignment="top",
+        transform=text_transform,
+        color="red",
+    )
 
     plt.show()
 
@@ -171,8 +195,9 @@ def plot_empirical_cdf_broken_axis(data, break_at, outlier_region, title):
     n = len(sorted_data)
     y_values = [(i + 1) / n for i in range(n)]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(
-        10, 5), sharey=True, width_ratios=[4, 1])
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(10, 5), sharey=True, width_ratios=[4, 1]
+    )
     fig.subplots_adjust(wspace=0.03)
 
     ax1.set_xlim(0, break_at * 1024)
@@ -183,28 +208,49 @@ def plot_empirical_cdf_broken_axis(data, break_at, outlier_region, title):
     p95_value = sorted_data[int(0.95 * n)] * 1024
 
     for ax in [ax1, ax2]:
-        ax.plot([x * 1024 for x in sorted_data],
-                y_values, marker='.', linestyle='none')
+        ax.plot([x * 1024 for x in sorted_data], y_values, marker=".", linestyle="none")
 
-        ax.axvline(x=median_value, color='red')
-        ax.axvline(x=max_value, color='red')
-        ax.axvline(x=p95_value, color='red')
+        ax.axvline(x=median_value, color="red")
+        ax.axvline(x=max_value, color="red")
+        ax.axvline(x=p95_value, color="red")
 
         text_transform = offset_copy(
-            ax.transData, fig=ax.figure, x=5, y=0, units='points')
+            ax.transData, fig=ax.figure, x=5, y=0, units="points"
+        )
 
-        ax.text(median_value, 0.3, f'Median={round(median_value)}',
-                rotation=90, transform=text_transform, color='red', clip_on=True)
-        ax.text(max_value, 0.3, f'Max={round(max_value)}', rotation=90,
-                transform=text_transform, color='red', clip_on=True)
-        ax.text(p95_value, 0.6, f'P95={round(p95_value)}', rotation=90,
-                transform=text_transform, color='red', clip_on=True)
+        ax.text(
+            median_value,
+            0.3,
+            f"Median={round(median_value)}",
+            rotation=90,
+            transform=text_transform,
+            color="red",
+            clip_on=True,
+        )
+        ax.text(
+            max_value,
+            0.3,
+            f"Max={round(max_value)}",
+            rotation=90,
+            transform=text_transform,
+            color="red",
+            clip_on=True,
+        )
+        ax.text(
+            p95_value,
+            0.6,
+            f"P95={round(p95_value)}",
+            rotation=90,
+            transform=text_transform,
+            color="red",
+            clip_on=True,
+        )
 
         ax.grid(True)
 
     fig.subplots_adjust(left=0.075, top=0.92)
-    fig.supylabel('Empirical CDF', fontsize=10)
-    fig.supxlabel('MiB / 10K Blocks', fontsize=10)
+    fig.supylabel("Empirical CDF", fontsize=10)
+    fig.supxlabel("MiB / 10K Blocks", fontsize=10)
     fig.suptitle(title)
 
     ax1.spines.right.set_visible(False)
@@ -216,18 +262,31 @@ def plot_empirical_cdf_broken_axis(data, break_at, outlier_region, title):
 
     # draw broken axes indicators
     d = 1.5  # proportion of vertical to horizontal extent of the slanted line
-    kwargs = dict(marker=[(-1, -d), (1, d)], markersize=12,
-                  linestyle="none", color='k', mec='k', mew=1, clip_on=False)
+    kwargs = dict(
+        marker=[(-1, -d), (1, d)],
+        markersize=12,
+        linestyle="none",
+        color="k",
+        mec="k",
+        mew=1,
+        clip_on=False,
+    )
     ax1.plot([1, 1], [1, 0], transform=ax1.transAxes, **kwargs)
     ax2.plot([0, 0], [1, 0], transform=ax2.transAxes, **kwargs)
 
 
 # plot_empirical_cdf(live_slope, 'Empirical CDF of S5 Live DB Growth Rates - Full History Run (55M Blocks)')
 plot_empirical_cdf(
-    archive_growth_rates, 'Empirical CDF of S5 Archive DB Growth Rates - Full History Run (55M Blocks)')
+    archive_growth_rates,
+    "Empirical CDF of S5 Archive DB Growth Rates - Full History Run (55M Blocks)",
+)
 
-plot_empirical_cdf_broken_axis(live_growth_rates, 0.08, (0.4, 0.55),
-                               'Empirical CDF of S5 Live DB Growth Rates - Full History Run (55M Blocks)')
+plot_empirical_cdf_broken_axis(
+    live_growth_rates,
+    0.08,
+    (0.4, 0.55),
+    "Empirical CDF of S5 Live DB Growth Rates - Full History Run (55M Blocks)",
+)
 # plot_empirical_cdf_broken_axis(archive_slope, 0.7, (0.8, 1), 'Empirical CDF of S5 Archive DB Growth Rates - Full History Run (55M Blocks)')
 
 # %%
