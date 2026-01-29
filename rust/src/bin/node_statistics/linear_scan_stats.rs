@@ -285,18 +285,53 @@ fn count_used_slots(node: &VerkleNode) -> usize {
                     .filter(|c| !c.item.is_empty_id() && n.children[c.index as usize].is_empty_id())
                     .count()
         }
-        VerkleNode::Leaf1(n) => n.values.iter().filter(|c| c.item != [0; 32]).count(),
-        VerkleNode::Leaf2(n) => n.values.iter().filter(|c| c.item != [0; 32]).count(),
-        VerkleNode::Leaf5(n) => n.values.iter().filter(|c| c.item != [0; 32]).count(),
-        VerkleNode::Leaf18(n) => n.values.iter().filter(|c| c.item != [0; 32]).count(),
-        VerkleNode::Leaf146(n) => n.values.iter().filter(|c| c.item != [0; 32]).count(),
-        VerkleNode::Leaf256(n) => n.values.iter().filter(|c| **c != [0; 32]).count(),
+        VerkleNode::Leaf1(n) => n
+            .commitment
+            .committed_used_indices
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum(),
+        VerkleNode::Leaf2(n) => n
+            .commitment
+            .committed_used_indices
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum(),
+        VerkleNode::Leaf5(n) => n
+            .commitment
+            .committed_used_indices
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum(),
+        VerkleNode::Leaf18(n) => n
+            .commitment
+            .committed_used_indices
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum(),
+        VerkleNode::Leaf146(n) => n
+            .commitment
+            .committed_used_indices
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum(),
+        VerkleNode::Leaf256(n) => n
+            .commitment
+            .committed_used_indices
+            .iter()
+            .map(|b| b.count_ones() as usize)
+            .sum(),
         VerkleNode::LeafDelta(n) => {
-            n.values.iter().filter(|c| **c != [0; 32]).count()
-                + n.values_delta
-                    .iter()
-                    .filter(|c| c.item.is_some() && n.values[c.index as usize] == [0; 32])
-                    .count()
+            n.commitment
+                .committed_used_indices
+                .iter()
+                .map(|b| b.count_ones() as usize)
+                .sum()
+            // (n.values.iter().filter(|c| **c != [0; 32]).count() as isize
+            //     + n.values_delta .iter() .map(|c| { c.item.is_some_and(|v| v != [0; 32]) as isize
+            //                 - (n.values[c.index as usize] != [0; 32]) as isize
+            //         })
+            //         .sum::<isize>()) as usize
         }
     }
 }

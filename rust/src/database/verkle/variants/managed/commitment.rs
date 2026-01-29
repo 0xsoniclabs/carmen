@@ -278,7 +278,7 @@ pub struct VerkleLeafCommitment {
 
     /// A bitfield indicating which indices have been used before.
     /// This allows to distinguish between empty indices and indices that have been set to zero.
-    committed_used_indices: [u8; 256 / 8],
+    pub committed_used_indices: [u8; 256 / 8],
 
     /// The status of the commitment, indicating if and how it needs to be recomputed.
     status: CommitmentStatus,
