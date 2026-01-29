@@ -247,7 +247,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        database::verkle::{test_utils::FromIndexValues, verkle_trie::MockVerkleTrie},
+        database::verkle::{
+            crypto::Commitment, test_utils::FromIndexValues, verkle_trie::MockVerkleTrie,
+        },
         error::BTError,
         node_manager::in_memory_node_manager::InMemoryNodeManager,
         types::{BalanceUpdate, CodeUpdate, NonceUpdate, SlotUpdate},
@@ -859,6 +861,9 @@ mod tests {
             .with(eq(block_height))
             .times(1)
             .returning(|_| Ok(()));
+        trie.expect_commit()
+            .times(1)
+            .returning(|| Ok(Commitment::default()));
         let state = VerkleTrieCarmenState {
             trie,
             embedding: VerkleTrieEmbedding::new(),
