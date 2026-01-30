@@ -12,13 +12,11 @@ package geth
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
@@ -35,12 +33,6 @@ func initTestedState() map[string]func(param state.Parameters, t *testing.T) sta
 		"memory": func(param state.Parameters, t *testing.T) state.State {
 			st, err := NewState(param)
 			require.NoError(t, err, "failed to create state")
-			addClosing(st, t)
-			return st
-		},
-		"memory source": func(param state.Parameters, t *testing.T) state.State {
-			st, err := NewStateWithSource(param, newMemorySource())
-			require.NoError(t, err, "failed to create memory state")
 			addClosing(st, t)
 			return st
 		},
@@ -416,72 +408,27 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 	require.Equal(common.ToNonce(1), nonce)
 }
 
-func TestState_Error_from_Apply(t *testing.T) {
-	injectedErr := fmt.Errorf("injected error")
-	source := &errorInjectingNodeSource{parentSource: newMemorySource(), injectError: injectedErr, threshold: 1000}
-	st, err := NewStateWithSource(state.Parameters{}, source)
-	require.NoError(t, err, "failed to create state")
+func TestState_CanHoldValues(t *testing.T) {
+	require := require.New(t)
+	state, err := NewState(state.Parameters{})
+	require.NoError(err)
 
-	update := common.Update{
-		CreatedAccounts: []common.Address{{1}},
-		Nonces: []common.NonceUpdate{
-			{Account: common.Address{1}, Nonce: common.ToNonce(1)},
-		},
+	for i := range uint64(256) {
+		require.NoError(state.Apply(i, common.Update{
+			CreatedAccounts: []common.Address{{byte(i)}},
+			Balances: []common.BalanceUpdate{
+				{Account: common.Address{byte(i)}, Balance: amount.New(i)},
+			},
+		}))
 	}
 
-	err = st.Apply(0, update)
-	require.NoError(t, err, "failed to apply update")
+	require.NoError(state.Flush())
 
-	for i := 0; i < source.count; i++ {
-		source := &errorInjectingNodeSource{parentSource: newMemorySource(), injectError: injectedErr, threshold: i}
-		st, err := NewStateWithSource(state.Parameters{}, source)
-		require.NoError(t, err, "failed to create state")
-
-		err = st.Apply(0, update)
-		require.ErrorIs(t, err, injectedErr, "expected injected error at count %d", i)
-	}
-}
-
-// errorInjectingNodeSource is a NodeSource that injects an error after a certain number of calls.
-// It is used to test error handling in the state.
-// It wraps another NodeSource and delegates calls to it until the threshold is reached.
-// After the threshold is reached, it returns the injected error for all subsequent calls.
-type errorInjectingNodeSource struct {
-	parentSource NodeSource
-	injectError  error
-	threshold    int
-	count        int
-}
-
-func (s *errorInjectingNodeSource) Node(owner ethcommon.Hash, path []byte, hash ethcommon.Hash) ([]byte, error) {
-	if s.count >= s.threshold {
-		return nil, s.injectError
+	for i := range uint64(256) {
+		balance, err := state.GetBalance(common.Address{byte(i)})
+		require.NoError(err)
+		require.Equal(amount.New(i), balance, "unexpected balance for account %x", common.Address{byte(i)})
 	}
 
-	s.count++
-	return s.parentSource.Node(owner, path, hash)
-}
-
-func (s *errorInjectingNodeSource) set(path []byte, value []byte) error {
-	if s.count >= s.threshold {
-		return s.injectError
-	}
-	s.count++
-	return s.parentSource.set(path, value)
-}
-
-func (s *errorInjectingNodeSource) Flush() error {
-	if s.count >= s.threshold {
-		return s.injectError
-	}
-	s.count++
-	return s.parentSource.Flush()
-}
-
-func (s *errorInjectingNodeSource) Close() error {
-	if s.count >= s.threshold {
-		return s.injectError
-	}
-	s.count++
-	return s.parentSource.Close()
+	require.NoError(state.Close())
 }
