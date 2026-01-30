@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{mem::MaybeUninit, sync::Arc};
+use std::{mem::MaybeUninit, path::Path, sync::Arc};
 
 use crate::{
     CarmenState, IsArchive,
@@ -84,12 +84,16 @@ impl VerkleTrieCarmenState<SimpleInMemoryVerkleTrie> {
 }
 
 impl VerkleTrieCarmenState<CrateCryptoInMemoryVerkleTrie> {
-    pub fn new_live() -> Self {
+    pub fn new_live(path: impl AsRef<Path>) -> Self {
         Self {
-            trie: CrateCryptoInMemoryVerkleTrie::new(),
+            trie: CrateCryptoInMemoryVerkleTrie::new(path),
             embedding: VerkleTrieEmbedding::new(),
             block_height: Mutex::new(BlockHeight::Live),
         }
+    }
+
+    pub fn flush(&self) {
+        self.trie.flush().unwrap();
     }
 }
 

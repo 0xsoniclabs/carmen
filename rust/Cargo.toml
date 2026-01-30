@@ -64,10 +64,13 @@ thiserror = "2.0.12"
 
 # verkle trie
 ark-ff = "0.4.2"
-banderwagon = { git = "https://github.com/psalz/rust-verkle.git", rev = "c2016b7" }
+banderwagon = { git = "https://github.com/LorenzSchueler/rust-verkle", rev = "9e1c31f" }
 crypto-bigint = "0.6.1"
-ipa-multipoint = { git = "https://github.com/psalz/rust-verkle.git", rev = "c2016b7" }
-verkle-trie = { git = "https://github.com/psalz/rust-verkle.git", rev = "c2016b7" }
+ipa-multipoint = { git = "https://github.com/LorenzSchueler/rust-verkle", rev = "9e1c31f" }
+verkle-trie = { git = "https://github.com/LorenzSchueler/rust-verkle", rev = "9e1c31f" }
+verkle-db = { git = "https://github.com/LorenzSchueler/rust-verkle", rev = "9e1c31f", features = [
+    "rocks_db",
+] }
 sha3 = "0.10.8"
 
 # macro helpers

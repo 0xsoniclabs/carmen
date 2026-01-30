@@ -8,8 +8,11 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+use std::path::Path;
+
 use ipa_multipoint::committer::DefaultCommitter;
-use verkle_trie::{DefaultConfig, Trie, TrieTrait, database::memory_db::MemoryDb};
+use verkle_db::{BareMetalDiskDb, RocksDb};
+use verkle_trie::{DefaultConfig, Trie, TrieTrait, database::VerkleDb};
 
 use crate::{
     database::verkle::{
@@ -26,17 +29,19 @@ use crate::{
 ///
 /// This implementation is not meant for production use and has no concurrency support.
 pub struct CrateCryptoInMemoryVerkleTrie {
-    trie: RwLock<Trie<MemoryDb, DefaultCommitter>>,
+    trie: RwLock<Trie<VerkleDb<RocksDb>, DefaultCommitter>>,
 }
 
 impl CrateCryptoInMemoryVerkleTrie {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        let db = MemoryDb::new();
-        let config = DefaultConfig::new(db);
+    pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
-            trie: RwLock::new(Trie::new(config)),
+            trie: RwLock::new(Trie::new(DefaultConfig::new(VerkleDb::from_path(path)))),
         }
+    }
+    pub fn flush(&self) -> BTResult<(), Error> {
+        self.trie.write().unwrap().flush_database();
+        Ok(())
     }
 }
 
@@ -52,7 +57,7 @@ impl VerkleTrie for CrateCryptoInMemoryVerkleTrie {
     ) -> BTResult<(), crate::error::Error> {
         if is_archive {
             return Err(Error::UnsupportedImplementation(
-                "CrateCrytpoInMemoryVerkleTrie does not support archive mode".to_owned(),
+                "CrateCryptoInMemoryVerkleTrie does not support archive mode".to_owned(),
             )
             .into());
         }

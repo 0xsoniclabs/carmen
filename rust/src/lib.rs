@@ -83,15 +83,16 @@ pub fn open_carmen_db(
     }
 
     match (live_impl, archive_impl) {
-        (b"memory", b"none" | b"") => {
-            Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
-                database::SimpleInMemoryVerkleTrie,
-            >::new_live())))
-        }
+        // (b"memory", b"none" | b"") => {
+        //     Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
+        //         database::SimpleInMemoryVerkleTrie,
+        //     >::new_live())))
+        // }
         (b"crate-crypto-memory", b"none" | b"") => {
+            let live_dir = directory.join("live");
             Ok(Box::new(CarmenS6InMemoryDb::new(VerkleTrieCarmenState::<
                 database::CrateCryptoInMemoryVerkleTrie,
-            >::new_live())))
+            >::new_live(live_dir))))
         }
         (b"file", b"none"| b"") => {
             let live_dir = directory.join("live");
@@ -255,14 +256,16 @@ impl<LS: CarmenState> CarmenS6InMemoryDb<LS> {
     }
 }
 
-impl<LS: CarmenState + 'static> CarmenDb for CarmenS6InMemoryDb<LS> {
+impl CarmenDb
+    for CarmenS6InMemoryDb<VerkleTrieCarmenState<database::CrateCryptoInMemoryVerkleTrie>>
+{
     fn checkpoint(&self) -> BTResult<(), Error> {
         // No-op for in-memory state
         Ok(())
     }
 
     fn close(self: Box<Self>) -> BTResult<(), Error> {
-        // No-op for in-memory state
+        self.live_state.flush();
         Ok(())
     }
 
