@@ -252,6 +252,48 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 	return nil
 }
 
+func handleArchiveUpdate(archive archive.Archive, update archiveUpdate) error {
+	// If there is no update, the state is asking for a flush signal.
+
+	// Otherwise, process the update.
+	// time.Sleep(1 * time.Second) // slight delay to allow batching of updates
+	issue := archive.Add(update.block, *update.update, update.updateHints)
+	if issue != nil {
+		return issue
+	}
+	if update.updateHints != nil {
+		update.updateHints.Release()
+	}
+
+	return nil
+}
+
+func (s *GoState) ApplySync(block uint64, update common.Update) error {
+	fmt.Printf("Applying block %d sync\n", block)
+	if err := s.stateError; err != nil {
+		return err
+	}
+	// time.Sleep(1 * time.Second) // slight delay to allow batching of updates
+	// Apply the changes to the LiveDB.
+	archiveUpdateHints, err := s.live.Apply(block, &update)
+	if err != nil {
+		s.stateError = errors.Join(s.stateError, err)
+		return s.stateError
+	}
+
+	if s.archive != nil {
+		// Send the update to the writer to be processed asynchronously.
+		err := handleArchiveUpdate(s.archive, archiveUpdate{block, &update, archiveUpdateHints})
+		if err != nil {
+			s.stateError = errors.Join(s.stateError, err)
+			return s.stateError
+		}
+	} else if archiveUpdateHints != nil {
+		archiveUpdateHints.Release()
+	}
+	return nil
+}
+
 // GetMemoryFootprint provides sizes of individual components of the state in the memory
 func (s *GoState) GetMemoryFootprint() *common.MemoryFootprint {
 	mf := common.NewMemoryFootprint(0)

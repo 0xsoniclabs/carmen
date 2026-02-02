@@ -117,6 +117,7 @@ type StateDB interface {
 
 	BeginBlock()
 	EndBlock(number uint64)
+	EndBlockSync(number uint64)
 
 	BeginEpoch()
 	EndEpoch(number uint64)
@@ -1198,6 +1199,17 @@ func (s *stateDB) BeginBlock() {
 }
 
 func (s *stateDB) EndBlock(block uint64) {
+	s.endBlockInternal(block, s.state.Apply)
+}
+
+func (s *stateDB) EndBlockSync(block uint64) {
+	s.endBlockInternal(block, s.state.ApplySync)
+}
+
+func (s *stateDB) endBlockInternal(
+	block uint64,
+	apply func(block uint64, update common.Update) error,
+) {
 	if !s.canApplyChanges {
 		err := fmt.Errorf("unable to process EndBlock event in StateDB without permission to apply changes")
 		s.trackErrors(err)
@@ -1288,7 +1300,7 @@ func (s *stateDB) EndBlock(block uint64) {
 	}
 
 	// Send the update to the state.
-	if err := s.state.Apply(block, update); err != nil {
+	if err := apply(block, update); err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
 		return
 	}

@@ -249,6 +249,10 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	return nil
 }
 
+func (s *verkleState) ApplySync(block uint64, update common.Update) error {
+	return s.Apply(block, update)
+}
+
 //
 //		Witness Proof features -- not supported at the moment
 //

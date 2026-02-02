@@ -456,6 +456,10 @@ func (s *ExternalState) Apply(block uint64, update common.Update) error {
 	return nil
 }
 
+func (s *ExternalState) ApplySync(block uint64, update common.Update) error {
+	return s.Apply(block, update)
+}
+
 func (s *ExternalState) Flush() error {
 	result := s.bindings.Flush(s.database)
 	if result != C.kResult_Success {

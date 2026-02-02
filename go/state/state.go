@@ -56,6 +56,8 @@ type State interface {
 	// Apply applies the provided updates to the state content.
 	Apply(block uint64, update common.Update) error
 
+	ApplySync(block uint64, update common.Update) error
+
 	// GetHash hashes the state.
 	// Deprecated: use GetCommitment instead.
 	GetHash() (common.Hash, error)

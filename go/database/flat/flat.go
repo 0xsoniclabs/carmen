@@ -263,6 +263,13 @@ func (s *State) Apply(block uint64, data common.Update) error {
 	return nil
 }
 
+func (s *State) ApplySync(block uint64, data common.Update) error {
+	if err := s.Apply(block, data); err != nil {
+		return err
+	}
+	return s.sync()
+}
+
 func (s *State) GetHash() (common.Hash, error) {
 	return s.GetCommitment().Await().Get()
 }

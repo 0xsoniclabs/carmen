@@ -60,6 +60,20 @@ func (mr *MockStateMockRecorder) Apply(block, update any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Apply", reflect.TypeOf((*MockState)(nil).Apply), block, update)
 }
 
+// ApplySync mocks base method.
+func (m *MockState) ApplySync(block uint64, update common.Update) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ApplySync", block, update)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ApplySync indicates an expected call of ApplySync.
+func (mr *MockStateMockRecorder) ApplySync(block, update any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApplySync", reflect.TypeOf((*MockState)(nil).ApplySync), block, update)
+}
+
 // Check mocks base method.
 func (m *MockState) Check() error {
 	m.ctrl.T.Helper()
