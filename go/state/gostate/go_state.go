@@ -77,6 +77,9 @@ func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) st
 					if issue != nil {
 						err <- issue
 					}
+					if update.done != nil {
+						close(update.done)
+					}
 					if update.updateHints != nil {
 						update.updateHints.Release()
 					}
@@ -99,6 +102,7 @@ type archiveUpdate = struct {
 	block       uint64
 	update      *common.Update  // nil to signal a flush
 	updateHints common.Releaser // an optional field for passing update hints from the LiveDB to the Archive
+	done        chan<- struct{}
 }
 
 func (s *GoState) Exists(address common.Address) (bool, error) {
@@ -216,6 +220,14 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 }
 
 func (s *GoState) Apply(block uint64, update common.Update) error {
+	return s.internalApply(block, update, false)
+}
+
+func (s *GoState) ApplySync(block uint64, update common.Update) error {
+	return s.internalApply(block, update, true)
+}
+
+func (s *GoState) internalApply(block uint64, update common.Update, waitForSync bool) error {
 	if err := s.stateError; err != nil {
 		return err
 	}
@@ -228,8 +240,16 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 	}
 
 	if s.archive != nil {
+		var doneChan chan struct{}
+		if waitForSync {
+			doneChan = make(chan struct{})
+		}
 		// Send the update to the writer to be processed asynchronously.
-		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints}
+		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints, doneChan}
+		if waitForSync {
+			// Wait until the update is fully processed.
+			<-doneChan
+		}
 
 		// Drain potential errors, but do not wait for them.
 		done := false
@@ -247,33 +267,6 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 			return err
 		}
 	} else if archiveUpdateHints != nil {
-		archiveUpdateHints.Release()
-	}
-	return nil
-}
-
-func (s *GoState) ApplySync(block uint64, update common.Update) error {
-	fmt.Printf("Applying block %d sync\n", block)
-	if err := s.stateError; err != nil {
-		return err
-	}
-	// time.Sleep(1 * time.Second) // slight delay to allow batching of updates
-	// Apply the changes to the LiveDB.
-	archiveUpdateHints, err := s.live.Apply(block, &update)
-	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
-		return s.stateError
-	}
-
-	if s.archive != nil {
-		// Send the update to the writer to be processed asynchronously.
-		err := s.archive.Add(block, update, archiveUpdateHints)
-		if err != nil {
-			s.stateError = errors.Join(s.stateError, err)
-			return s.stateError
-		}
-	}
-	if archiveUpdateHints != nil {
 		archiveUpdateHints.Release()
 	}
 	return nil

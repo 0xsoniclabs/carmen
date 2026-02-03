@@ -757,7 +757,8 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		update := common.Update{
 			CreatedAccounts: []common.Address{{0xA}},
-			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+			Balances: []common.BalanceUpdate{
+				{Account: common.Address{0xA}, Balance: amount.New(10)}},
 		}
 		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
@@ -776,17 +777,32 @@ func TestState_ApplySync_AddsUpdateToArchive(t *testing.T) {
 
 	db := newGoState(liveDB, archiveDB, []func(){})
 
-	update := common.Update{
+	asyncUpdate := common.Update{
 		CreatedAccounts: []common.Address{{0xA}},
 		Balances: []common.BalanceUpdate{{
 			Account: common.Address{0xA},
 			Balance: amount.New(10)}},
 	}
 
-	liveDB.EXPECT().Apply(uint64(1), &update).Return(nil, nil)
-	archiveDB.EXPECT().Add(uint64(1), update, nil).Return(nil)
+	liveDB.EXPECT().Apply(uint64(1), &asyncUpdate).Return(nil, nil).Times(200)
+	archiveDB.EXPECT().Add(uint64(1), asyncUpdate, nil).Return(nil).Times(200)
 
-	if err := db.ApplySync(1, update); err != nil {
+	syncUpdate := asyncUpdate
+	syncUpdate.CreatedAccounts = append(syncUpdate.CreatedAccounts, common.Address{0xB})
+
+	// expectations for the synchronous update
+	liveDB.EXPECT().Apply(uint64(1), &syncUpdate).Return(nil, nil)
+	archiveDB.EXPECT().Add(uint64(1), syncUpdate, nil).Return(nil)
+
+	// send enough asynchronous updates to saturate the pipeline
+	for range 200 {
+		if err := db.Apply(1, asyncUpdate); err != nil {
+			t.Errorf("Apply should succeed: %v", err)
+		}
+	}
+
+	// send one synchronous update that should wait for all previous to finish
+	if err := db.ApplySync(1, syncUpdate); err != nil {
 		t.Errorf("ApplySync should succeed: %v", err)
 	}
 }

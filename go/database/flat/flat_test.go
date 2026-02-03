@@ -462,18 +462,38 @@ func TestState_ApplySync_AddsUpdateToArchiveAndSyncs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
 
+	// make an update
+	address := common.Address{0x01}
 	block := uint64(33)
 	update := common.Update{
 		Nonces: []common.NonceUpdate{
-			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
+			{Account: address, Nonce: common.Nonce{42}},
 		},
 	}
-	backend.EXPECT().Apply(block, update).Return(nil)
+	backend.EXPECT().Apply(block, update).Return(nil).Times(200)
+
+	// make a different update
+	differentUpdate := update
+	differentUpdate.Nonces[0].Nonce = common.Nonce{43}
+	backend.EXPECT().Apply(block, differentUpdate).Return(nil)
 
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(err)
-	err = flatState.ApplySync(block, update)
+
+	// asynchronous apply to generate a load to ensure that processing all changes
+	// asynchronously would take longer than the rest of the test.
+	for range 200 {
+		err = flatState.Apply(block, update)
+		require.NoError(err)
+	}
+
+	// synchronous apply
+	err = flatState.ApplySync(block, differentUpdate)
 	require.NoError(err)
+	got, err := flatState.GetNonce(address)
+	require.NoError(err)
+	require.Equal(common.Nonce{43}, got)
+
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
