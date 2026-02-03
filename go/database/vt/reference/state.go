@@ -172,6 +172,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 }
 
 func (s *State) ApplySync(block uint64, update common.Update) error {
+	// Apply is already synchronous
 	return s.Apply(block, update)
 }
 

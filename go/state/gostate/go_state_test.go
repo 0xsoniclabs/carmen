@@ -769,6 +769,28 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	}
 }
 
+func TestState_ApplySync_AddsUpdateToArchive(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	db := newGoState(liveDB, archiveDB, []func(){})
+
+	update := common.Update{
+		CreatedAccounts: []common.Address{{0xA}},
+		Balances: []common.BalanceUpdate{{
+			Account: common.Address{0xA},
+			Balance: amount.New(10)}},
+	}
+
+	liveDB.EXPECT().Apply(uint64(1), &update).Return(nil, nil)
+	archiveDB.EXPECT().Add(uint64(1), update, nil).Return(nil)
+
+	if err := db.ApplySync(1, update); err != nil {
+		t.Errorf("ApplySync should succeed: %v", err)
+	}
+}
+
 func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 	addr := common.Address{0xA}
 	key := common.Key{0xB}

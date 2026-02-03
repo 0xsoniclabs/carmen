@@ -457,6 +457,25 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	require.NoError(t, flatState.Close())
 }
 
+func TestState_ApplySync_AddsUpdateToArchiveAndSyncs(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+
+	block := uint64(33)
+	update := common.Update{
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
+		},
+	}
+	backend.EXPECT().Apply(block, update).Return(nil)
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(err)
+	err = flatState.ApplySync(block, update)
+	require.NoError(err)
+}
+
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)

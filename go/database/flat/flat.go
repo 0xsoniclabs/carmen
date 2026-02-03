@@ -267,6 +267,7 @@ func (s *State) ApplySync(block uint64, data common.Update) error {
 	if err := s.Apply(block, data); err != nil {
 		return err
 	}
+	s.commands <- command{} // sync command
 	return s.sync()
 }
 

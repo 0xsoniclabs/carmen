@@ -457,6 +457,7 @@ func (s *ExternalState) Apply(block uint64, update common.Update) error {
 }
 
 func (s *ExternalState) ApplySync(block uint64, update common.Update) error {
+	// Apply is already synchronous
 	return s.Apply(block, update)
 }
 

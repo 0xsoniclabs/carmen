@@ -250,6 +250,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 }
 
 func (s *verkleState) ApplySync(block uint64, update common.Update) error {
+	// update.ApplyTo is already synchronous
 	return s.Apply(block, update)
 }
 
