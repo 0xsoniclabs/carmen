@@ -69,6 +69,9 @@ type State struct {
 	done     <-chan struct{} // < when background work is done
 
 	issues issueCollector // < issues identified by background worker
+
+	// testingPing is a testing only channel for signaling between the background worker and the test code.
+	testingPing chan testingPingOrigin
 }
 
 // account holds the flat representation of an account's data.
@@ -102,9 +105,17 @@ type update struct {
 	data  common.Update
 }
 
+func NewState(path string, backend state.State) (state.State, error) {
+	newState, err := _newState(path, backend, nil)
+	if err != nil {
+		return nil, err
+	}
+	return state.WrapIntoSyncedState(newState), nil
+}
+
 // NewState creates a new flat State instance that wraps the provided backend state.
 // The resulting state is wrapped into a synced state for thread-safe access.
-func NewState(path string, backend state.State) (state.State, error) {
+func _newState(path string, backend state.State, testingApplyDone chan testingPingOrigin) (*State, error) {
 	// Unwrap the backend from any synced state to avoid double synchronization.
 	// The flat state will handle synchronization itself.
 	if backend != nil {
@@ -114,11 +125,12 @@ func NewState(path string, backend state.State) (state.State, error) {
 	file := filepath.Join(path, "live", "flat.db")
 
 	res := &State{
-		accounts: make(map[common.Address]account),
-		storage:  make(map[slotKey]common.Value),
-		codes:    make(map[common.Hash][]byte),
-		file:     file,
-		backend:  backend,
+		accounts:    make(map[common.Address]account),
+		storage:     make(map[slotKey]common.Value),
+		codes:       make(map[common.Hash][]byte),
+		file:        file,
+		backend:     backend,
+		testingPing: testingApplyDone,
 	}
 
 	// Load existing state from disk if available.
@@ -144,7 +156,7 @@ func NewState(path string, backend state.State) (state.State, error) {
 	}
 
 	if backend == nil {
-		return state.WrapIntoSyncedState(res), nil
+		return res, nil
 	}
 
 	commands := make(chan command, 1024)
@@ -153,12 +165,12 @@ func NewState(path string, backend state.State) (state.State, error) {
 
 	go func() {
 		defer close(done)
-		processCommands(backend, commands, syncs, &res.issues)
+		processCommands(backend, commands, syncs, &res.issues, testingApplyDone)
 	}()
 	res.commands = commands
 	res.syncs = syncs
 	res.done = done
-	return state.WrapIntoSyncedState(res), nil
+	return res, nil
 }
 
 // WrapFactory wraps an existing state factory to produce flat State instances.
@@ -210,6 +222,25 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *State) Apply(block uint64, data common.Update) error {
+	err := s._apply(block, data)
+	if s.testingPing != nil {
+		s.testingPing <- fromApply
+	}
+	return err
+}
+
+func (s *State) ApplySync(block uint64, data common.Update) error {
+	if err := s._apply(block, data); err != nil {
+		return err
+	}
+	err := s.sync()
+	if s.testingPing != nil {
+		s.testingPing <- fromApply
+	}
+	return err
+}
+
+func (s *State) _apply(block uint64, data common.Update) error {
 
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
@@ -283,12 +314,16 @@ func processCommands(
 	commands <-chan command,
 	syncs chan<- struct{},
 	issues *issueCollector,
+	testingApplyDone chan testingPingOrigin,
 ) {
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
 			issues.HandleIssue(backend.Apply(command.update.block, command.update.data))
 			zone.End()
+			if testingApplyDone != nil {
+				testingApplyDone <- fromUpdate
+			}
 		} else if command.commit != nil {
 			zone := tracy.ZoneBegin("State.Commit")
 			result := backend.GetCommitment().Await()
@@ -632,3 +667,12 @@ func (s *State) load(r io.Reader) error {
 	}
 	return nil
 }
+
+// testingPingOrigin testing only types and variables for signaling between the background worker
+// and the test code.
+type testingPingOrigin int8
+
+var (
+	fromUpdate testingPingOrigin = 0
+	fromApply  testingPingOrigin = 1
+)

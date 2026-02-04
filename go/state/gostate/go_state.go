@@ -41,9 +41,24 @@ type GoState struct {
 	archiveWriterFlushDone <-chan bool
 	archiveWriterDone      <-chan bool
 	archiveWriterError     <-chan error
+
+	// testingPing testing only channel
+	testingPing chan testingPingOrigin
 }
 
+// testingPingOrigin is an enum used for testing to identify the source of a ping on the testingDone channel.
+type testingPingOrigin int8
+
+var (
+	fromUpdate testingPingOrigin = 0
+	fromApply  testingPingOrigin = 1
+)
+
 func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) state.State {
+	return state.WrapIntoSyncedState(_newGoState(live, archive, cleanup))
+}
+
+func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *GoState {
 
 	res := &GoState{
 		live:    live,
@@ -77,6 +92,13 @@ func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) st
 					if issue != nil {
 						err <- issue
 					}
+					if res.testingPing != nil {
+						// signal that the update was processed,
+						res.testingPing <- fromUpdate
+					}
+					if update.sync != nil {
+						close(update.sync)
+					}
 					if update.updateHints != nil {
 						update.updateHints.Release()
 					}
@@ -90,7 +112,7 @@ func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) st
 		res.archiveWriterError = err
 	}
 
-	return state.WrapIntoSyncedState(res)
+	return res
 }
 
 var emptyCodeHash = common.GetHash(sha3.NewLegacyKeccak256(), []byte{})
@@ -99,6 +121,7 @@ type archiveUpdate = struct {
 	block       uint64
 	update      *common.Update  // nil to signal a flush
 	updateHints common.Releaser // an optional field for passing update hints from the LiveDB to the Archive
+	sync        chan struct{}   // whether to signal when done
 }
 
 func (s *GoState) Exists(address common.Address) (bool, error) {
@@ -216,6 +239,14 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 }
 
 func (s *GoState) Apply(block uint64, update common.Update) error {
+	return s.internalApply(block, update, false)
+}
+
+func (s *GoState) ApplySync(block uint64, update common.Update) error {
+	return s.internalApply(block, update, true)
+}
+
+func (s *GoState) internalApply(block uint64, update common.Update, waitForSync bool) error {
 	if err := s.stateError; err != nil {
 		return err
 	}
@@ -228,8 +259,21 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 	}
 
 	if s.archive != nil {
+
+		if s.archiveWriter == nil {
+			return state.NoArchiveError
+		}
+
+		var doneSync chan struct{}
+		if waitForSync {
+			doneSync = make(chan struct{})
+		}
 		// Send the update to the writer to be processed asynchronously.
-		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints}
+		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints, doneSync}
+		if waitForSync {
+			// Wait until the update is fully processed.
+			<-doneSync
+		}
 
 		// Drain potential errors, but do not wait for them.
 		done := false
@@ -248,6 +292,9 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 		}
 	} else if archiveUpdateHints != nil {
 		archiveUpdateHints.Release()
+	}
+	if s.testingPing != nil {
+		s.testingPing <- fromApply
 	}
 	return nil
 }

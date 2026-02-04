@@ -108,6 +108,12 @@ func (s *syncedState) Apply(block uint64, update common.Update) error {
 	return s.state.Apply(block, update)
 }
 
+func (s *syncedState) ApplySync(block uint64, update common.Update) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.ApplySync(block, update)
+}
+
 func (s *syncedState) GetHash() (common.Hash, error) {
 	return s.GetCommitment().Await().Get()
 }

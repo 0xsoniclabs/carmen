@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
@@ -767,6 +768,126 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 			t.Errorf("each operation should fail: %v", err)
 		}
 	}
+}
+
+func TestState_Apply_DoesNotWaitForArchiveWriteToFinish(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ uint64, _ common.Update, _ error) error {
+			// simulate some delay in archive write
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		},
+	)
+
+	liveDB.EXPECT().Flush().AnyTimes()
+	liveDB.EXPECT().Close().AnyTimes()
+	archiveDB.EXPECT().Flush().AnyTimes()
+	archiveDB.EXPECT().Close().AnyTimes()
+
+	state := _newGoState(liveDB, archiveDB, nil)
+	state.testingPing = make(chan testingPingOrigin, 2)
+	err := state.Apply(1, common.Update{})
+	require.NoError(t, err)
+
+	if from := <-state.testingPing; from != fromApply {
+		t.Errorf("Apply should not wait until archive write is done")
+	}
+
+	// close forces a flush of pending archive writes
+	require.NoError(t, state.Close())
+}
+
+func TestState_ApplySync_WaitsUntilWriteHasFinished(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any())
+
+	state := _newGoState(liveDB, archiveDB, nil)
+	state.testingPing = make(chan testingPingOrigin, 2)
+	err := state.ApplySync(1, common.Update{})
+	require.NoError(t, err)
+
+	if from := <-state.testingPing; from != fromUpdate {
+		t.Errorf("ApplySync should not complete until archive write is done")
+	}
+}
+
+func TestState_Apply_AsyncAndSyncApplies_RespectOrder(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	makeUpdate := func(i uint64) common.Update {
+		return common.Update{
+			CreatedAccounts: []common.Address{{byte(i)}},
+		}
+	}
+	update1 := makeUpdate(1)
+	update2 := makeUpdate(2)
+	update3 := makeUpdate(3)
+	update4 := makeUpdate(4)
+	update5 := makeUpdate(5)
+
+	gomock.InOrder(
+		liveDB.EXPECT().Apply(uint64(1), &update1).Return(nil, nil),
+		liveDB.EXPECT().Apply(uint64(2), &update2).Return(nil, nil),
+		liveDB.EXPECT().Apply(uint64(3), &update3).Return(nil, nil),
+		liveDB.EXPECT().Apply(uint64(4), &update4).Return(nil, nil),
+		liveDB.EXPECT().Apply(uint64(5), &update5).Return(nil, nil),
+	)
+
+	gomock.InOrder(
+		archiveDB.EXPECT().Add(uint64(1), update1, nil).Return(nil),
+		archiveDB.EXPECT().Add(uint64(2), update2, nil).Return(nil),
+		archiveDB.EXPECT().Add(uint64(3), update3, nil).Return(nil),
+		archiveDB.EXPECT().Add(uint64(4), update4, nil).Return(nil),
+		archiveDB.EXPECT().Add(uint64(5), update5, nil).Return(nil),
+	)
+
+	state := newGoState(liveDB, archiveDB, nil)
+	err := state.Apply(1, update1)
+	require.NoError(err)
+	err = state.ApplySync(2, update2)
+	require.NoError(err)
+	err = state.Apply(3, update3)
+	require.NoError(err)
+	err = state.Apply(4, update4)
+	require.NoError(err)
+	err = state.ApplySync(5, update5)
+	require.NoError(err)
+}
+
+func TestState_Apply_AfterClose_ReturnsError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+	noArchiveError := state.NoArchiveError
+
+	liveDB.EXPECT().Apply(uint64(1), &common.Update{}).Return(nil, nil).Times(2)
+	liveDB.EXPECT().Flush()
+	liveDB.EXPECT().Close().Return(nil)
+	archiveDB.EXPECT().Flush()
+	archiveDB.EXPECT().Close().Return(nil)
+
+	state := newGoState(liveDB, archiveDB, nil)
+	require.NoError(t, state.Close())
+
+	err := state.ApplySync(1, common.Update{})
+	require.ErrorIs(t, err, noArchiveError,
+		"ApplySync should return error when applying changes after close")
+
+	err = state.Apply(1, common.Update{})
+	require.ErrorIs(t, err, noArchiveError,
+		"Apply should return error when applying changes after close")
 }
 
 func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
