@@ -105,6 +105,8 @@ type update struct {
 	data  common.Update
 }
 
+// NewState creates a new flat State instance that wraps the provided backend state.
+// The resulting state is wrapped into a synced state for thread-safe access.
 func NewState(path string, backend state.State) (state.State, error) {
 	newState, err := _newState(path, backend, nil)
 	if err != nil {
@@ -113,8 +115,6 @@ func NewState(path string, backend state.State) (state.State, error) {
 	return state.WrapIntoSyncedState(newState), nil
 }
 
-// NewState creates a new flat State instance that wraps the provided backend state.
-// The resulting state is wrapped into a synced state for thread-safe access.
 func _newState(path string, backend state.State, testingApplyDone chan testingPingOrigin) (*State, error) {
 	// Unwrap the backend from any synced state to avoid double synchronization.
 	// The flat state will handle synchronization itself.

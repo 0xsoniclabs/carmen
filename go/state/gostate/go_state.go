@@ -46,7 +46,7 @@ type GoState struct {
 	testingPing chan testingPingOrigin
 }
 
-// testingPingOrigin is an enum used for testing to identify the source of a ping on the testingDone channel.
+// testingPingOrigin is an enum used for testing to identify the source of a ping on the testingPing channel.
 type testingPingOrigin int8
 
 var (
@@ -93,7 +93,7 @@ func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *
 						err <- issue
 					}
 					if res.testingPing != nil {
-						// signal that the update was processed,
+						// signal that the update was processed
 						res.testingPing <- fromUpdate
 					}
 					if update.sync != nil {
@@ -121,7 +121,7 @@ type archiveUpdate = struct {
 	block       uint64
 	update      *common.Update  // nil to signal a flush
 	updateHints common.Releaser // an optional field for passing update hints from the LiveDB to the Archive
-	sync        chan struct{}   // whether to signal when done
+	sync        chan struct{}   // an optional channel which gets closed when the update was processed
 }
 
 func (s *GoState) Exists(address common.Address) (bool, error) {
