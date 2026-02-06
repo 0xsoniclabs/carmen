@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -455,6 +456,74 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	err = flatState.Apply(block, update)
 	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
+}
+
+func TestState_Apply_DoesNotWaitForBackendWriteToFinish(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+
+	// make an update
+	address := common.Address{0x01}
+	block := uint64(33)
+	update := common.Update{
+		Nonces: []common.NonceUpdate{
+			{Account: address, Nonce: common.Nonce{42}},
+		},
+	}
+
+	backend.EXPECT().Apply(block, update).DoAndReturn(
+		func(_ uint64, _ common.Update) error {
+			// Simulate some work before signaling
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		},
+	)
+	backend.EXPECT().Close()
+
+	testingPing := make(chan testingPingOrigin, 2)
+	flatState, err := _newState(t.TempDir(), backend, testingPing)
+	require.NoError(err)
+
+	err = flatState.Apply(block, update)
+	require.NoError(err)
+	require.Equal(fromApply, <-testingPing, "expected apply done ping")
+
+	// close blocks until all commands are processed
+	err = flatState.Close()
+	require.NoError(err)
+}
+
+func TestState_ApplySync_WaitsForBackendToFinishApply(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+
+	// make an update
+	address := common.Address{0x01}
+	block := uint64(33)
+	update := common.Update{
+		Nonces: []common.NonceUpdate{
+			{Account: address, Nonce: common.Nonce{42}},
+		},
+	}
+
+	backend.EXPECT().Apply(block, update).DoAndReturn(
+		func(_ uint64, _ common.Update) error {
+			// Simulate some work before signaling
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		},
+	)
+
+	testingPing := make(chan testingPingOrigin, 2)
+	flatState, err := _newState(t.TempDir(), backend, testingPing)
+	require.NoError(err)
+
+	err = flatState.ApplySync(block, update)
+	require.NoError(err)
+
+	require.Equal(fromUpdate, <-testingPing, "expected synced apply done ping")
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {

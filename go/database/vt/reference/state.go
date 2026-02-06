@@ -171,6 +171,11 @@ func (s *State) Apply(block uint64, update common.Update) error {
 	return nil
 }
 
+func (s *State) ApplySync(block uint64, update common.Update) error {
+	// Apply is already synchronous
+	return s.Apply(block, update)
+}
+
 func (s *State) GetHash() (common.Hash, error) {
 	return s.GetCommitment().Await().Get()
 }

@@ -141,6 +141,10 @@ func (s *ArchiveState) Apply(block uint64, update common.Update) error {
 	panic("ArchiveState does not support Apply operation")
 }
 
+func (s *ArchiveState) ApplySync(block uint64, update common.Update) error {
+	panic("ArchiveState does not support ApplySync operation")
+}
+
 func (s *ArchiveState) GetHash() (common.Hash, error) {
 	return s.GetCommitment().Await().Get()
 }
