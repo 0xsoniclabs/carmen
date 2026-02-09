@@ -10,7 +10,7 @@
 
 module github.com/0xsoniclabs/carmen/go
 
-go 1.24.2
+go 1.25.0
 
 require (
 	github.com/0xsoniclabs/tracy v0.0.0-20251027125423-00a5ab7968fb
