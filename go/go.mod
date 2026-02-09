@@ -10,7 +10,7 @@
 
 module github.com/0xsoniclabs/carmen/go
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a
