@@ -672,7 +672,7 @@ func (s *State) load(r io.Reader) error {
 // and the test code.
 type testingPingOrigin int8
 
-var (
-	fromUpdate testingPingOrigin = 0
-	fromApply  testingPingOrigin = 1
+const (
+	fromUpdate testingPingOrigin = iota
+	fromApply
 )

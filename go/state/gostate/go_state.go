@@ -49,9 +49,9 @@ type GoState struct {
 // testingPingOrigin is an enum used for testing to identify the source of a ping on the testingPing channel.
 type testingPingOrigin int8
 
-var (
-	fromUpdate testingPingOrigin = 0
-	fromApply  testingPingOrigin = 1
+const (
+	fromUpdate testingPingOrigin = iota
+	fromApply
 )
 
 func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) state.State {
