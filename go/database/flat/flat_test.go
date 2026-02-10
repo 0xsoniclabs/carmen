@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -455,6 +456,82 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	err = flatState.Apply(block, update)
 	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
+}
+
+func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		backend := state.NewMockState(ctrl)
+
+		started := false
+		release := make(chan struct{})
+		backendApplyDone := make(chan error)
+
+		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_, _ any) (<-chan error, error) {
+				started = true
+				<-release
+				return backendApplyDone, nil
+			},
+		)
+
+		backend.EXPECT().Close()
+
+		state, err := _newState(t.TempDir(), backend)
+		require.NoError(t, err)
+
+		applyDone, err := state._apply(1, common.Update{})
+		require.NoError(t, err)
+		require.NotNil(t, applyDone)
+
+		// Wait until the update blocks in the backend update.
+		synctest.Wait()
+		require.True(t, started)
+		select {
+		case <-applyDone:
+			t.Errorf("ApplyDone finished before backend update was released")
+		default:
+			// success
+		}
+
+		// Release the backend update and wait for the applyDone to finish.
+		close(release)
+		synctest.Wait()
+
+		select {
+		case <-applyDone:
+			// success
+		default:
+			t.Errorf("ApplyDone did not finish after backend update was released")
+		}
+
+		require.NoError(t, state.Close())
+	})
+}
+
+func TestState_Apply_NoCommands_ReturnsNilChannel(t *testing.T) {
+	flatState, err := _newState(t.TempDir(), nil)
+	require.NoError(t, err)
+	applyDone, err := flatState._apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Nil(t, applyDone)
+}
+
+func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	issue := errors.New("backend apply failed")
+
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(issue)
+
+	flatState, err := _newState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	applyDone, err := flatState._apply(1, common.Update{})
+
+	require.NoError(t, err)
+	require.NotNil(t, applyDone)
+	require.ErrorIs(t, <-applyDone, issue)
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
