@@ -109,7 +109,7 @@ type archiveUpdate = struct {
 	block       uint64
 	update      *common.Update  // nil to signal a flush
 	updateHints common.Releaser // an optional field for passing update hints from the LiveDB to the Archive
-	done        chan<- error    // an optional channel for the archive to signal when the update was processed, used for testing
+	done        chan<- error    // an optional channel for the archive to signal when the update was processed
 }
 
 func (s *GoState) Exists(address common.Address) (bool, error) {
