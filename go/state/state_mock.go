@@ -45,11 +45,12 @@ func (m *MockState) EXPECT() *MockStateMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockState) Apply(block uint64, update common.Update) error {
+func (m *MockState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(<-chan error)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Apply indicates an expected call of Apply.

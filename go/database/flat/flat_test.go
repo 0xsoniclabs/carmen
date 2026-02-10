@@ -18,6 +18,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -154,12 +156,13 @@ func TestState_StateCanBeClosedAndReopened(t *testing.T) {
 	stateA, err := NewState(dir, nil)
 	require.NoError(err)
 
-	require.NoError(stateA.Apply(0, common.Update{
+	_, err = stateA.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{
 			{Account: common.Address{1}, Nonce: common.Nonce{2}},
 			{Account: common.Address{3}, Nonce: common.Nonce{4}},
 		},
-	}))
+	})
+	require.NoError(err)
 
 	require.NoError(stateA.Close())
 
@@ -341,7 +344,8 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		commands: commands,
 	}
 
-	require.NoError(state.Apply(1, update))
+	_, err := state.Apply(1, update)
+	require.NoError(err)
 
 	// The update is send to the commands channel.
 	command := <-commands
@@ -403,14 +407,16 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 
 	require.False(state.Exists(address))
 
-	require.NoError(state.Apply(1, common.Update{
+	_, err = state.Apply(1, common.Update{
 		CreatedAccounts: []common.Address{address},
-	}))
+	})
+	require.NoError(err)
 	require.True(state.Exists(address))
 
-	require.NoError(state.Apply(2, common.Update{
+	_, err = state.Apply(2, common.Update{
 		DeletedAccounts: []common.Address{address},
-	}))
+	})
+	require.NoError(err)
 
 	require.False(state.Exists(address))
 	require.NoError(state.Close())
@@ -435,7 +441,7 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
 
-	err = flatState.Apply(block, update)
+	_, err = flatState.Apply(block, update)
 	require.NoError(t, err)
 
 	require.NoError(t, flatState.Close())
@@ -452,9 +458,54 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), nil)
 	require.NoError(t, err)
 
-	err = flatState.Apply(block, update)
+	_, err = flatState.Apply(block, update)
 	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
+}
+
+func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		backend := state.NewMockState(ctrl)
+
+		started := false
+		release := make(chan struct{})
+		backendApplyDone := make(chan error)
+
+		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_, _ any) (<-chan error, error) {
+				started = true
+				<-release
+				return backendApplyDone, nil
+			},
+		)
+
+		backend.EXPECT().Close()
+
+		state, err := NewState(t.TempDir(), backend)
+		require.NoError(t, err)
+
+		applyDone, err := state.Apply(1, common.Update{})
+		require.NoError(t, err)
+		require.NotNil(t, applyDone)
+
+		// Wait until the update blocks in the archive update.
+		synctest.Wait()
+		require.True(t, started)
+
+		// Release the archive update and wait for the ApplySync to finish.
+		close(release)
+		close(backendApplyDone)
+
+		select {
+		case <-applyDone:
+			// success
+		case <-time.After(1 * time.Second):
+			t.Errorf("ApplySync did not finish after archive update was released")
+		}
+
+		require.NoError(t, state.Close())
+	})
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {

@@ -100,6 +100,7 @@ type command struct {
 type update struct {
 	block uint64
 	data  common.Update
+	done  chan error // optional channel to signal completion of the update processing
 }
 
 // NewState creates a new flat State instance that wraps the provided backend state.
@@ -209,7 +210,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *State) Apply(block uint64, data common.Update) error {
+func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
@@ -251,16 +252,19 @@ func (s *State) Apply(block uint64, data common.Update) error {
 		s.codes[hash] = update.Code
 	}
 
+	var done chan error
 	// Update the backend in the background (if present).
 	if s.commands != nil {
+		done = make(chan error, 2)
 		s.commands <- command{
 			update: &update{
 				block: block,
 				data:  data,
+				done:  done,
 			},
 		}
 	}
-	return nil
+	return done, nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
@@ -287,8 +291,11 @@ func processCommands(
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
-			issues.HandleIssue(backend.Apply(command.update.block, command.update.data))
+			done, err := backend.Apply(command.update.block, command.update.data)
+			issues.HandleIssue(err)
 			zone.End()
+			command.update.done <- <-done
+			close(command.update.done)
 		} else if command.commit != nil {
 			zone := tracy.ZoneBegin("State.Commit")
 			result := backend.GetCommitment().Await()

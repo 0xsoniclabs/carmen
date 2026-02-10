@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -4653,6 +4655,37 @@ func TestStateDB_getErrors_ReturnsAClonedList(t *testing.T) {
 	issue2 := errors.New("issue 2")
 	issues[0] = issue2
 	require.Equal([]error{issue1}, db.errors)
+}
+
+func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mock := NewMockState(ctrl)
+		db := CreateStateDBUsing(mock)
+
+		applyDoneChan := make(chan error)
+
+		mock.EXPECT().Check().AnyTimes()
+		mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
+			func(_ uint64, update common.Update) (<-chan error, error) {
+				// write twice, once for live once for archive
+				return applyDoneChan, nil
+			})
+
+		done := db.EndBlock(1)
+		go func() {
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("unexpected error from EndBlock: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Errorf("timeout waiting for EndBlock to complete")
+			}
+		}()
+		applyDoneChan <- nil
+
+	})
 }
 
 type sameEffectAs struct {

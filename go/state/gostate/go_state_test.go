@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
@@ -131,7 +133,7 @@ func TestBasicOperations(t *testing.T) {
 			defer state.Close()
 
 			// fill-in values
-			err = state.Apply(12, common.Update{
+			_, err = state.Apply(12, common.Update{
 				CreatedAccounts: []common.Address{address1},
 				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
 				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
@@ -170,7 +172,7 @@ func TestBasicOperations(t *testing.T) {
 			}
 
 			// delete account
-			err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
+			_, err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
 			if err != nil {
 				t.Errorf("Error: %s", err)
 			}
@@ -206,7 +208,7 @@ func TestDeletingAccounts(t *testing.T) {
 				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
 				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			}
-			if err := state.Apply(1, update); err != nil {
+			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -219,7 +221,7 @@ func TestDeletingAccounts(t *testing.T) {
 			update = common.Update{
 				DeletedAccounts: []common.Address{address1},
 			}
-			if err := state.Apply(2, update); err != nil {
+			if _, err := state.Apply(2, update); err != nil {
 				t.Errorf("failed to apply update: %v", err)
 			}
 			if val, err := state.Exists(address1); err != nil || val != false {
@@ -261,7 +263,7 @@ func TestMoreInserts(t *testing.T) {
 				},
 			}
 
-			if err := state.Apply(1, update); err != nil {
+			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -304,7 +306,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 				Codes:           []common.CodeUpdate{{Account: address1, Code: code1}},
 				Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 			}
-			if err := state.Apply(1, update); err != nil {
+			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -329,7 +331,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 			}
 
 			// re-creating the account preserves everything but the state.
-			if err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+			if _, err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 				t.Errorf("failed to recreate account: %v", err)
 			}
 
@@ -699,7 +701,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 
 	// the same result many times
 	for i := 0; i < 10; i++ {
-		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
+		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("operation should fail: %v", err)
 		}
 		if err := db.Check(); !errors.Is(err, injectedErr) {
@@ -759,7 +761,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 			CreatedAccounts: []common.Address{{0xA}},
 			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 		}
-		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
+		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
 		}
 
@@ -767,6 +769,53 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 			t.Errorf("each operation should fail: %v", err)
 		}
 	}
+}
+
+func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		liveDB := state.NewMockLiveDB(ctrl)
+		archiveDB := archive.NewMockArchive(ctrl)
+
+		started := false
+		release := make(chan struct{})
+
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_, _, _ any) error {
+				started = true
+				<-release
+				return nil
+			},
+		)
+
+		liveDB.EXPECT().Flush().AnyTimes()
+		liveDB.EXPECT().Close().AnyTimes()
+		archiveDB.EXPECT().Flush().AnyTimes()
+		archiveDB.EXPECT().Close().AnyTimes()
+
+		state := newGoState(liveDB, archiveDB, nil)
+
+		archiveWriteDone, err := state.Apply(1, common.Update{})
+		require.NoError(t, err)
+		require.NotNil(t, archiveWriteDone)
+
+		// Wait until the update blocks in the archive update.
+		synctest.Wait()
+		require.True(t, started)
+
+		// Release the archive update and wait for the ApplySync to finish.
+		close(release)
+		synctest.Wait()
+		select {
+		case <-archiveWriteDone:
+			// success
+		case <-time.After(1 * time.Second):
+			t.Errorf("ApplySync did not finish after archive update was released")
+		}
+
+		require.NoError(t, state.Close())
+	})
 }
 
 func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
@@ -931,7 +980,7 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 		},
 	}
 
-	if err := st.Apply(1, update); err != nil {
+	if _, err := st.Apply(1, update); err != nil {
 		t.Errorf("failed to apply update: %v", err)
 	}
 
