@@ -804,7 +804,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 		synctest.Wait()
 		require.True(t, started)
 
-		// Release the archive update and wait for the ApplySync to finish.
+		// Release the archive update and wait for the archiveWriteDone to finish.
 		close(release)
 		synctest.Wait()
 		select {
