@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/index"
@@ -767,6 +769,53 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 			t.Errorf("each operation should fail: %v", err)
 		}
 	}
+}
+
+func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		liveDB := state.NewMockLiveDB(ctrl)
+		archiveDB := archive.NewMockArchive(ctrl)
+
+		started := false
+		release := make(chan struct{})
+
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_, _, _ any) error {
+				started = true
+				<-release
+				return nil
+			},
+		)
+
+		liveDB.EXPECT().Flush().AnyTimes()
+		liveDB.EXPECT().Close().AnyTimes()
+		archiveDB.EXPECT().Flush().AnyTimes()
+		archiveDB.EXPECT().Close().AnyTimes()
+
+		state := _newGoState(liveDB, archiveDB, nil)
+
+		archiveWriteDone, err := state._apply(1, common.Update{})
+		require.NoError(t, err)
+		require.NotNil(t, archiveWriteDone)
+
+		// Wait until the update blocks in the archive update.
+		synctest.Wait()
+		require.True(t, started)
+
+		// Release the archive update and wait for the ApplySync to finish.
+		close(release)
+		synctest.Wait()
+		select {
+		case <-archiveWriteDone:
+			// success
+		case <-time.After(1 * time.Second):
+			t.Errorf("ApplySync did not finish after archive update was released")
+		}
+
+		require.NoError(t, state.Close())
+	})
 }
 
 func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
