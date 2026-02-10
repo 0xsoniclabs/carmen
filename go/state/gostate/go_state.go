@@ -252,7 +252,8 @@ func (s *GoState) _apply(block uint64, update common.Update) (<-chan error, erro
 
 	var archiveWriteDone chan error
 	if s.archive != nil {
-		archiveWriteDone = make(chan error)
+		// make the channel with len 2 in case there is an error to  report.
+		archiveWriteDone = make(chan error, 2)
 		// Send the update to the writer to be processed asynchronously.
 		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints, archiveWriteDone}
 
