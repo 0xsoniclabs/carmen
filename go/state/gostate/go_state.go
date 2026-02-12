@@ -82,9 +82,6 @@ func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *
 						err <- issue
 					}
 					if update.done != nil {
-						if issue != nil {
-							update.done <- issue
-						}
 						close(update.done)
 					}
 					if update.updateHints != nil {
@@ -109,7 +106,7 @@ type archiveUpdate = struct {
 	block       uint64
 	update      *common.Update  // nil to signal a flush
 	updateHints common.Releaser // an optional field for passing update hints from the LiveDB to the Archive
-	done        chan<- error    // an optional channel for the archive to signal when the update was processed
+	done        chan<- struct{} // an optional channel for the archive to signal when the update was processed
 }
 
 func (s *GoState) Exists(address common.Address) (bool, error) {
@@ -237,8 +234,7 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the archive, if there is such.
 // The channel may be nil if there are no asynchronous operations to be performed.
-// If the asynchronous operations fail, the error is returned through the channel.
-func (s *GoState) _apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *GoState) _apply(block uint64, update common.Update) (<-chan struct{}, error) {
 	if err := s.stateError; err != nil {
 		return nil, err
 	}
@@ -250,9 +246,9 @@ func (s *GoState) _apply(block uint64, update common.Update) (<-chan error, erro
 		return nil, s.stateError
 	}
 
-	var archiveWriteDone chan error
+	var archiveWriteDone chan struct{}
 	if s.archive != nil {
-		archiveWriteDone = make(chan error, 1)
+		archiveWriteDone = make(chan struct{}, 1)
 		// Send the update to the writer to be processed asynchronously.
 		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints, archiveWriteDone}
 

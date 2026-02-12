@@ -836,26 +836,6 @@ func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
 	require.Nil(t, archiveWriteDone)
 }
 
-func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	liveDB := state.NewMockLiveDB(ctrl)
-	archiveDB := archive.NewMockArchive(ctrl)
-
-	injectedErr := fmt.Errorf("injectedError")
-
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
-	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr)
-
-	db := _newGoState(liveDB, archiveDB, []func(){})
-
-	archiveWriteDone, err := db._apply(1, common.Update{})
-	require.NoError(t, err)
-	require.NotNil(t, archiveWriteDone)
-
-	err = <-archiveWriteDone
-	require.ErrorIs(t, err, injectedErr)
-}
-
 func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 	addr := common.Address{0xA}
 	key := common.Key{0xB}
