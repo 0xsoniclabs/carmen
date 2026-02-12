@@ -231,12 +231,13 @@ func (s *GoState) Apply(block uint64, update common.Update) error {
 	return err
 }
 
-// _apply is an internal method, which implements apply and optionally
-// returns a channel for synchronization.
+// _apply is an internal method, which implements apply and returns a channel
+// for synchronization.
 //
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the archive, if there is such.
 // The channel may be nil if there are no asynchronous operations to be performed.
+// If the asynchronous operations fail, the error is returned through the channel.
 func (s *GoState) _apply(block uint64, update common.Update) (<-chan error, error) {
 	if err := s.stateError; err != nil {
 		return nil, err
