@@ -509,7 +509,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 	})
 }
 
-func TestState_Apply_NoCommands_ReturnsNilChannel(t *testing.T) {
+func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
 	flatState, err := _newState(t.TempDir(), nil)
 	require.NoError(t, err)
 	applyDone, err := flatState._apply(1, common.Update{})
