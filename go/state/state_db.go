@@ -930,19 +930,25 @@ func (s *stateDB) GetTransientState(addr common.Address, key common.Key) common.
 }
 
 func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value common.Value) {
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("failing to get transaction context in SetTransientState: %w", err))
+		return
+	}
+
 	sid := slotId{addr, key}
-	currentValue, _ := s.transientStorage.Get(sid)
+	currentValue, _ := txContext.transientStorage.Get(sid)
 	if currentValue == value {
 		return
 	}
 
 	// Save previous value for rollbacks
 	oldValue := currentValue
-	s.undo = append(s.undo, func() {
-		s.transientStorage.Put(sid, oldValue)
+	txContext.AddUndo(func() {
+		txContext.transientStorage.Put(sid, oldValue)
 	})
 
-	s.transientStorage.Put(sid, value)
+	txContext.transientStorage.Put(sid, value)
 }
 
 func (s *stateDB) HasEmptyStorage(addr common.Address) bool {
@@ -989,10 +995,16 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 }
 
 func (s *stateDB) SetCode(addr common.Address, code []byte) {
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("failing to get transaction context in SetCode: %w", err))
+		return
+	}
+
 	s.createAccountIfNotExists(addr)
 	s.setCodeInternal(addr, code)
 	if len(code) == 0 {
-		s.emptyCandidates = append(s.emptyCandidates, addr)
+		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
 	}
 }
 
@@ -1069,81 +1081,133 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 }
 
 func (s *stateDB) AddRefund(amount uint64) {
-	old := s.refund
-	s.refund += amount
-	s.undo = append(s.undo, func() {
-		s.refund = old
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return
+	}
+
+	old := txContext.refund
+	txContext.refund += amount
+	txContext.AddUndo(func() {
+		txContext.refund = old
 	})
 }
 func (s *stateDB) SubRefund(amount uint64) {
-	if amount > s.refund {
-		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
 		return
 	}
-	old := s.refund
-	s.refund -= amount
-	s.undo = append(s.undo, func() {
-		s.refund = old
+	if amount > txContext.refund {
+		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, txContext.refund))
+		return
+	}
+	old := txContext.refund
+	txContext.refund -= amount
+	txContext.AddUndo(func() {
+		txContext.refund = old
 	})
 }
 
 func (s *stateDB) GetRefund() uint64 {
-	return s.refund
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return 0
+	}
+	return txContext.refund
 }
 
 func (s *stateDB) AddLog(log *common.Log) {
-	size := len(s.logs)
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return
+	}
+	size := len(txContext.logs)
 	log.Index = s.logsInBlock
-	s.logs = append(s.logs, log)
+	txContext.logs = append(txContext.logs, log)
 	s.logsInBlock++
-	s.undo = append(s.undo, func() {
-		s.logs = s.logs[0:size]
+	txContext.AddUndo(func() {
+		txContext.logs = txContext.logs[0:size]
 		s.logsInBlock--
 	})
 }
 
 func (s *stateDB) GetLogs() []*common.Log {
-	return s.logs
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return nil
+	}
+	return txContext.logs
 }
 
 func (s *stateDB) ClearAccessList() {
-	if len(s.accessedAddresses) > 0 {
-		s.accessedAddresses = make(map[common.Address]bool)
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return
 	}
-	if s.accessedSlots.Size() > 0 {
-		s.accessedSlots.Clear()
+	if len(txContext.accessedAddresses) > 0 {
+		txContext.accessedAddresses = make(map[common.Address]bool)
+	}
+	if txContext.accessedSlots.Size() > 0 {
+		txContext.accessedSlots.Clear()
 	}
 }
 
 func (s *stateDB) AddAddressToAccessList(addr common.Address) {
-	_, found := s.accessedAddresses[addr]
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return
+	}
+	_, found := txContext.accessedAddresses[addr]
 	if !found {
-		s.accessedAddresses[addr] = true
-		s.undo = append(s.undo, func() {
-			delete(s.accessedAddresses, addr)
+		txContext.accessedAddresses[addr] = true
+		txContext.AddUndo(func() {
+			delete(txContext.accessedAddresses, addr)
 		})
 	}
 }
 
 func (s *stateDB) AddSlotToAccessList(addr common.Address, key common.Key) {
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return
+	}
 	s.AddAddressToAccessList(addr)
 	sid := slotId{addr, key}
-	_, found := s.accessedSlots.Get(sid)
+	_, found := txContext.accessedSlots.Get(sid)
 	if !found {
-		s.accessedSlots.Put(sid, true)
-		s.undo = append(s.undo, func() {
-			s.accessedSlots.Remove(sid)
+		txContext.accessedSlots.Put(sid, true)
+		txContext.AddUndo(func() {
+			txContext.accessedSlots.Remove(sid)
 		})
 	}
 }
 
 func (s *stateDB) IsAddressInAccessList(addr common.Address) bool {
-	_, found := s.accessedAddresses[addr]
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return false
+	}
+	_, found := txContext.accessedAddresses[addr]
 	return found
 }
 
 func (s *stateDB) IsSlotInAccessList(addr common.Address, key common.Key) (addressPresent bool, slotPresent bool) {
-	_, found := s.accessedSlots.Get(slotId{addr, key})
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return false, false // TODO: Is this correct?
+	}
+
+	_, found := txContext.accessedSlots.Get(slotId{addr, key})
 	if found {
 		return true, true
 	}
@@ -1203,11 +1267,10 @@ func (s *stateDB) EndTransaction() {
 		value.committed, value.committedKnown = value.current, true
 	}
 
-	s.emptyCandidates = append(s.emptyCandidates, txContext.emptyCandidates...)
 	// EIP-161: At the end of the transaction, any account touched by the execution of that transaction
 	// which is now empty SHALL instead become non-existent (i.e. deleted).
 	// NOTE: This will be removed when the txContext is gonna be merged
-	for _, addr := range s.emptyCandidates {
+	for _, addr := range txContext.emptyCandidates {
 		if s.Empty(addr) {
 			txContext.accountsToDelete = append(txContext.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
@@ -1224,8 +1287,8 @@ func (s *stateDB) EndTransaction() {
 	}
 
 	// Delete accounts scheduled for deletion - by suicide or because they are empty.
-	if len(s.accountsToDelete) > 0 {
-		for _, addr := range s.accountsToDelete {
+	if len(txContext.accountsToDelete) > 0 {
+		for _, addr := range txContext.accountsToDelete {
 			// Transition accounts marked by suicide to be deleted.
 			if s.HasSuicided(addr) {
 				s.setAccountState(addr, accountNonExisting)
@@ -1485,6 +1548,7 @@ func (s *stateDB) StartBulkLoad(block uint64) BulkLoad {
 	return &bulkLoad{s, common.Update{}, block, nil}
 }
 
+// TODO: TO BE CHECKED
 func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	const addressSize = 20
 	const keySize = 32
@@ -1510,22 +1574,27 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	}
 	mf.AddChild("codes", common.NewMemoryFootprint(sum))
 
+	txContext, err := s.txContextList.Current()
+	if err != nil {
+		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+		return mf
+	}
 	var boolean bool
 	const boolSize = unsafe.Sizeof(boolean)
-	mf.AddChild("accessedAddresses", common.NewMemoryFootprint(uintptr(len(s.accessedAddresses))*(addressSize+boolSize)))
-	mf.AddChild("accessedSlots", common.NewMemoryFootprint(uintptr(s.accessedSlots.Size())*(slotIdSize+boolSize)))
+	mf.AddChild("accessedAddresses", common.NewMemoryFootprint(uintptr(len(txContext.accessedAddresses))*(addressSize+boolSize)))
+	mf.AddChild("accessedSlots", common.NewMemoryFootprint(uintptr(txContext.accessedSlots.Size())*(slotIdSize+boolSize)))
 	mf.AddChild("writtenSlots", common.NewMemoryFootprint(uintptr(len(s.writtenSlots))*(boolSize+unsafe.Sizeof(&slotValue{}))))
 	mf.AddChild("storedDataCache", s.storedDataCache.GetMemoryFootprint(0))
 	mf.AddChild("reincarnation", common.NewMemoryFootprint(uintptr(len(s.reincarnation))*(addressSize+unsafe.Sizeof(uint64(0)))))
-	mf.AddChild("emptyCandidates", common.NewMemoryFootprint(uintptr(len(s.emptyCandidates))*(addressSize)))
+	mf.AddChild("emptyCandidates", common.NewMemoryFootprint(uintptr(len(txContext.emptyCandidates))*(addressSize)))
 
-	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(s.transientStorage.Size())*(slotIdSize+valueSize)))
-	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(s.accountsToDelete))*(addressSize)))
+	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(txContext.transientStorage.Size())*(slotIdSize+valueSize)))
+	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(txContext.accountsToDelete))*(addressSize)))
 	mf.AddChild("clearedAccounts", common.NewMemoryFootprint(uintptr(len(s.clearedAccounts))*(addressSize+unsafe.Sizeof(accountClearingState(0)))))
-	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(s.createdContracts))*(addressSize)))
+	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(txContext.createdContracts))*(addressSize)))
 
 	var logSize uintptr
-	for _, log := range s.logs {
+	for _, log := range txContext.logs {
 		logSize += unsafe.Sizeof(log) + uintptr(len(log.Topics))*hashSize + uintptr(len(log.Data))
 	}
 	mf.AddChild("logs", common.NewMemoryFootprint(logSize))
@@ -1552,13 +1621,7 @@ func (s *stateDB) GetArchiveBlockHeight() (uint64, bool, error) {
 }
 
 func (s *stateDB) resetTransactionContext() {
-	s.refund = 0
-	s.ClearAccessList()
-	s.transientStorage.Clear()
-	s.undo = s.undo[0:0]
-	s.emptyCandidates = s.emptyCandidates[0:0]
-	s.logs = s.logs[0:0]
-	s.createdContracts = make(map[common.Address]struct{})
+	// No-op
 }
 
 func (s *stateDB) ResetBlockContext() {
@@ -1595,6 +1658,10 @@ func (s *stateDB) resetState(state State) {
 	s.errors = s.errors[0:0]
 	s.errorsMutex.Unlock()
 	s.state = state
+}
+
+func (s *stateDB) CurrentTxContext() (*txContext, error) {
+	return s.txContextList.Current()
 }
 
 func (s *stateDB) trackErrors(err error) {

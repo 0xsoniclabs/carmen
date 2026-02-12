@@ -5,6 +5,7 @@
 //
 //	mockgen -source state.go -destination state_mocks.go -package mpt
 //
+
 // Package mpt is a generated GoMock package.
 package mpt
 
@@ -21,6 +22,7 @@ import (
 type MockDatabase struct {
 	ctrl     *gomock.Controller
 	recorder *MockDatabaseMockRecorder
+	isgomock struct{}
 }
 
 // MockDatabaseMockRecorder is the mock recorder for MockDatabase.
@@ -496,6 +498,7 @@ func (mr *MockDatabaseMockRecorder) updateHashesFor(ref any) *gomock.Call {
 type MockLiveState struct {
 	ctrl     *gomock.Controller
 	recorder *MockLiveStateMockRecorder
+	isgomock struct{}
 }
 
 // MockLiveStateMockRecorder is the mock recorder for MockLiveState.

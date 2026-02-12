@@ -5,6 +5,7 @@
 //
 //	mockgen -source state.go -destination state_mock.go -package state
 //
+
 // Package state is a generated GoMock package.
 package state
 
@@ -25,6 +26,7 @@ import (
 type MockState struct {
 	ctrl     *gomock.Controller
 	recorder *MockStateMockRecorder
+	isgomock struct{}
 }
 
 // MockStateMockRecorder is the mock recorder for MockState.
@@ -333,6 +335,7 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 type MockLiveDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockLiveDBMockRecorder
+	isgomock struct{}
 }
 
 // MockLiveDBMockRecorder is the mock recorder for MockLiveDB.
