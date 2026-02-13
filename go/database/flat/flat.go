@@ -100,11 +100,20 @@ type command struct {
 type update struct {
 	block uint64
 	data  common.Update
+	done  chan error // done is closed when the update has been processed by the background worker.
 }
 
 // NewState creates a new flat State instance that wraps the provided backend state.
 // The resulting state is wrapped into a synced state for thread-safe access.
 func NewState(path string, backend state.State) (state.State, error) {
+	res, err := _newState(path, backend)
+	if err != nil {
+		return nil, err
+	}
+	return state.WrapIntoSyncedState(res), nil
+}
+
+func _newState(path string, backend state.State) (*State, error) {
 	// Unwrap the backend from any synced state to avoid double synchronization.
 	// The flat state will handle synchronization itself.
 	if backend != nil {
@@ -144,7 +153,7 @@ func NewState(path string, backend state.State) (state.State, error) {
 	}
 
 	if backend == nil {
-		return state.WrapIntoSyncedState(res), nil
+		return res, nil
 	}
 
 	commands := make(chan command, 1024)
@@ -158,7 +167,7 @@ func NewState(path string, backend state.State) (state.State, error) {
 	res.commands = commands
 	res.syncs = syncs
 	res.done = done
-	return state.WrapIntoSyncedState(res), nil
+	return res, nil
 }
 
 // WrapFactory wraps an existing state factory to produce flat State instances.
@@ -210,7 +219,17 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *State) Apply(block uint64, data common.Update) error {
+	_, err := s._apply(block, data)
+	return err
+}
 
+// _apply is an internal method, which implements apply and optionally
+// returns a channel for synchronization.
+//
+// The channel signals the completion of any spawned asynchronous operations
+// like the update of the backend.
+// The channel will be nil if the backend state is nil.
+func (s *State) _apply(block uint64, data common.Update) (<-chan error, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
 
@@ -251,16 +270,19 @@ func (s *State) Apply(block uint64, data common.Update) error {
 		s.codes[hash] = update.Code
 	}
 
+	var done chan error
 	// Update the backend in the background (if present).
 	if s.commands != nil {
+		done = make(chan error, 1)
 		s.commands <- command{
 			update: &update{
 				block: block,
 				data:  data,
+				done:  done,
 			},
 		}
 	}
-	return nil
+	return done, nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
@@ -287,7 +309,14 @@ func processCommands(
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
-			issues.HandleIssue(backend.Apply(command.update.block, command.update.data))
+			// TODO: once the State interface is expanded to return a channel,
+			// 		 forward the backend channel to the update channel.
+			err := backend.Apply(command.update.block, command.update.data)
+			issues.HandleIssue(err)
+			if err != nil {
+				command.update.done <- err
+			}
+			close(command.update.done)
 			zone.End()
 		} else if command.commit != nil {
 			zone := tracy.ZoneBegin("State.Commit")
