@@ -106,14 +106,6 @@ type update struct {
 // NewState creates a new flat State instance that wraps the provided backend state.
 // The resulting state is wrapped into a synced state for thread-safe access.
 func NewState(path string, backend state.State) (state.State, error) {
-	res, err := _newState(path, backend)
-	if err != nil {
-		return nil, err
-	}
-	return state.WrapIntoSyncedState(res), nil
-}
-
-func _newState(path string, backend state.State) (*State, error) {
 	// Unwrap the backend from any synced state to avoid double synchronization.
 	// The flat state will handle synchronization itself.
 	if backend != nil {
@@ -153,7 +145,7 @@ func _newState(path string, backend state.State) (*State, error) {
 	}
 
 	if backend == nil {
-		return res, nil
+		return state.WrapIntoSyncedState(res), nil
 	}
 
 	commands := make(chan command, 1024)
@@ -167,7 +159,7 @@ func _newState(path string, backend state.State) (*State, error) {
 	res.commands = commands
 	res.syncs = syncs
 	res.done = done
-	return res, nil
+	return state.WrapIntoSyncedState(res), nil
 }
 
 // WrapFactory wraps an existing state factory to produce flat State instances.
@@ -218,18 +210,13 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *State) Apply(block uint64, data common.Update) error {
-	_, err := s._apply(block, data)
-	return err
-}
-
 // _apply is an internal method, which implements apply and optionally
 // returns a channel for synchronization.
 //
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the backend.
 // The channel will be nil if the backend state is nil.
-func (s *State) _apply(block uint64, data common.Update) (<-chan error, error) {
+func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
 
