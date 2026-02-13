@@ -137,7 +137,7 @@ func (s *ArchiveState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return empty, s.archiveError
 }
 
-func (s *ArchiveState) Apply(block uint64, update common.Update) error {
+func (s *ArchiveState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	panic("ArchiveState does not support Apply operation")
 }
 
