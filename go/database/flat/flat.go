@@ -296,12 +296,13 @@ func processCommands(
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
-			// TODO: once the State interface is expanded to return a channel,
-			// 		 forward the backend channel to the update channel.
-			err := backend.Apply(command.update.block, command.update.data)
+			backendChan, err := backend.Apply(command.update.block, command.update.data)
 			issues.HandleIssue(err)
 			if err != nil {
 				command.update.done <- err
+			}
+			if backendChan != nil {
+				command.update.done <- <-backendChan
 			}
 			close(command.update.done)
 			zone.End()
