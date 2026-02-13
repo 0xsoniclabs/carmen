@@ -228,6 +228,7 @@ func (s *State) Apply(block uint64, data common.Update) error {
 //
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the backend.
+// The channel will be nil if the backend state is nil.
 func (s *State) _apply(block uint64, data common.Update) (<-chan error, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
