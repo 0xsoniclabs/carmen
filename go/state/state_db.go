@@ -1288,7 +1288,7 @@ func (s *stateDB) EndBlock(block uint64) {
 	}
 
 	// Send the update to the state.
-	if err := s.state.Apply(block, update); err != nil {
+	if _, err := s.state.Apply(block, update); err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
 		return
 	}
@@ -1506,7 +1506,7 @@ func (l *bulkLoad) apply() {
 		l.errs = append(l.errs, err)
 		return
 	}
-	err := l.db.state.Apply(l.block, l.update)
+	_, err := l.db.state.Apply(l.block, l.update)
 	l.update = common.Update{}
 	if err != nil {
 		l.errs = append(l.errs, err)
