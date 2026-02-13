@@ -132,7 +132,7 @@ func TestBasicOperations(t *testing.T) {
 			defer state.Close()
 
 			// fill-in values
-			err = state.Apply(12, common.Update{
+			_, err = state.Apply(12, common.Update{
 				CreatedAccounts: []common.Address{address1},
 				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
 				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
@@ -171,7 +171,7 @@ func TestBasicOperations(t *testing.T) {
 			}
 
 			// delete account
-			err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
+			_, err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
 			if err != nil {
 				t.Errorf("Error: %s", err)
 			}
@@ -207,7 +207,7 @@ func TestDeletingAccounts(t *testing.T) {
 				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
 				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			}
-			if err := state.Apply(1, update); err != nil {
+			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -220,7 +220,7 @@ func TestDeletingAccounts(t *testing.T) {
 			update = common.Update{
 				DeletedAccounts: []common.Address{address1},
 			}
-			if err := state.Apply(2, update); err != nil {
+			if _, err := state.Apply(2, update); err != nil {
 				t.Errorf("failed to apply update: %v", err)
 			}
 			if val, err := state.Exists(address1); err != nil || val != false {
@@ -262,7 +262,7 @@ func TestMoreInserts(t *testing.T) {
 				},
 			}
 
-			if err := state.Apply(1, update); err != nil {
+			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -305,7 +305,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 				Codes:           []common.CodeUpdate{{Account: address1, Code: code1}},
 				Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 			}
-			if err := state.Apply(1, update); err != nil {
+			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -330,7 +330,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 			}
 
 			// re-creating the account preserves everything but the state.
-			if err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+			if _, err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 				t.Errorf("failed to recreate account: %v", err)
 			}
 
@@ -700,7 +700,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 
 	// the same result many times
 	for i := 0; i < 10; i++ {
-		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
+		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("operation should fail: %v", err)
 		}
 		if err := db.Check(); !errors.Is(err, injectedErr) {
@@ -760,7 +760,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 			CreatedAccounts: []common.Address{{0xA}},
 			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 		}
-		if err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
+		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
 		}
 
@@ -793,9 +793,9 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 		archiveDB.EXPECT().Flush().AnyTimes()
 		archiveDB.EXPECT().Close().AnyTimes()
 
-		state := _newGoState(liveDB, archiveDB, nil)
+		state := newGoState(liveDB, archiveDB, nil)
 
-		archiveWriteDone, err := state._apply(1, common.Update{})
+		archiveWriteDone, err := state.Apply(1, common.Update{})
 		require.NoError(t, err)
 		require.NotNil(t, archiveWriteDone)
 
@@ -829,9 +829,9 @@ func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
 
 	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	db := _newGoState(liveDB, nil, []func(){})
+	db := newGoState(liveDB, nil, []func(){})
 
-	archiveWriteDone, err := db._apply(1, common.Update{})
+	archiveWriteDone, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.Nil(t, archiveWriteDone)
 }
@@ -846,9 +846,9 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
 	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr)
 
-	db := _newGoState(liveDB, archiveDB, []func(){})
+	db := newGoState(liveDB, archiveDB, []func(){})
 
-	archiveWriteDone, err := db._apply(1, common.Update{})
+	archiveWriteDone, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.NotNil(t, archiveWriteDone)
 
@@ -869,12 +869,12 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil)
 	archiveDB.EXPECT().Add(uint64(2), gomock.Any(), gomock.Any()).Return(secondErr)
 
-	db := _newGoState(liveDB, archiveDB, []func(){})
+	db := newGoState(liveDB, archiveDB, []func(){})
 
-	_, err := db._apply(1, common.Update{})
+	_, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
 
-	archiveWriteDone, err := db._apply(2, common.Update{})
+	archiveWriteDone, err := db.Apply(2, common.Update{})
 	require.NoError(t, err)
 	err = <-archiveWriteDone
 	require.ErrorIs(t, err, firstErr)
@@ -1044,7 +1044,7 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 		},
 	}
 
-	if err := st.Apply(1, update); err != nil {
+	if _, err := st.Apply(1, update); err != nil {
 		t.Errorf("failed to apply update: %v", err)
 	}
 
