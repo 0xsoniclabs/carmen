@@ -13,7 +13,6 @@ package geth
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
@@ -27,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-ethereum/triedb/database"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
@@ -38,27 +36,12 @@ import (
 // This state is experimental, stores data in-memory only,
 // and not intended for production use.
 func NewState(params state.Parameters) (state.State, error) {
-	return newState(params, nil)
+	return newState(params)
 }
 
-// NewStateWithSource creates a new verkle state where the whole trie
-// is persisted to the provided NodeSource.
-// It uses the Verkle Trie from the Ethereum Geth implementation.
-// This state is experimental, stores data in-memory only,
-// and not intended for production use.
-func NewStateWithSource(params state.Parameters, nodeSource NodeSource) (state.State, error) {
-	source := singleNodeReader{source: nodeSource}
-	vs, err := newState(params, source)
-	if err != nil {
-		return nil, err
-	}
-
-	return &persistentVerkleState{*vs, source}, nil
-}
-
-func newState(_ state.Parameters, source database.NodeDatabase) (*verkleState, error) {
+func newState(_ state.Parameters) (*verkleState, error) {
 	pointCache := utils.NewPointCache(4096)
-	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, source, pointCache)
+	vt, err := trie.NewVerkleTrie(ethcommon.Hash{}, nil, pointCache)
 	if err != nil {
 		return nil, err
 	}
@@ -287,48 +270,4 @@ func (s *verkleState) getAccount(address common.Address) (*types.StateAccount, e
 	}
 
 	return account, nil
-}
-
-// persistentVerkleState is a verkleState that persists changes to a singleNodeReader source.
-// It adapts to the VerkleTrie implementation from the Ethereum Geth library.
-// This is a reference implementation to compare with the original Geth.
-type persistentVerkleState struct {
-	verkleState
-	source singleNodeReader
-}
-
-func (s *persistentVerkleState) Apply(block uint64, update common.Update) error {
-	if err := update.ApplyTo(s); err != nil {
-		return err
-	}
-
-	rootHash, nodeSet := s.verkle.Commit(false)
-	var errs []error
-	for path, node := range nodeSet.Nodes {
-		errs = append(errs, s.source.getSource().set([]byte(path), node.Blob))
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return err
-	}
-
-	// recreate the verkle trie to flush the in-memory nodes
-	vt, err := trie.NewVerkleTrie(rootHash, s.source, s.pointCache)
-	if err != nil {
-		return err
-	}
-	s.verkle = vt
-
-	return nil
-}
-
-func (s *persistentVerkleState) Flush() error {
-	return s.source.getSource().Flush()
-}
-
-func (s *persistentVerkleState) Close() error {
-	return errors.Join(
-		s.Flush(),
-		s.source.getSource().Close(),
-	)
 }
