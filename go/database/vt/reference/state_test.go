@@ -77,12 +77,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require.Equal(common.ToNonce(0), nonce)
 
 	// Set a nonce
-	require.NoError(state.Apply(0, common.Update{
+	_, err = state.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{{
 			Account: address,
 			Nonce:   common.ToNonce(42),
 		}},
-	}))
+	})
+	require.NoError(err)
 
 	// Retrieve the nonce again
 	nonce, err = state.GetNonce(address)
@@ -90,12 +91,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require.Equal(common.ToNonce(42), nonce)
 
 	// Set another nonce
-	require.NoError(state.Apply(0, common.Update{
+	_, err = state.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{{
 			Account: address,
 			Nonce:   common.ToNonce(123),
 		}},
-	}))
+	})
+	require.NoError(err)
 
 	// Retrieve the updated nonce
 	nonce, err = state.GetNonce(address)
@@ -116,12 +118,13 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 	require.Equal(amount.New(0), balance)
 
 	// Set a balance
-	require.NoError(state.Apply(0, common.Update{
+	_, err = state.Apply(0, common.Update{
 		Balances: []common.BalanceUpdate{{
 			Account: address,
 			Balance: amount.New(42),
 		}},
-	}))
+	})
+	require.NoError(err)
 
 	// Retrieve the balance again
 	balance, err = state.GetBalance(address)
@@ -129,12 +132,13 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 	require.Equal(amount.New(42), balance)
 
 	// Set another balance
-	require.NoError(state.Apply(0, common.Update{
+	_, err = state.Apply(0, common.Update{
 		Balances: []common.BalanceUpdate{{
 			Account: address,
 			Balance: amount.New(123),
 		}},
-	}))
+	})
+	require.NoError(err)
 
 	// Retrieve the updated balance
 	balance, err = state.GetBalance(address)
@@ -162,12 +166,13 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	for name, code := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Set a code.
-			require.NoError(state.Apply(0, common.Update{
+			_, err = state.Apply(0, common.Update{
 				Codes: []common.CodeUpdate{{
 					Account: address,
 					Code:    bytes.Clone(code),
 				}},
-			}))
+			})
+			require.NoError(err)
 
 			// Retrieve the code size.
 			length, err = state.GetCodeSize(address)
@@ -207,12 +212,13 @@ func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 		code := random[:i]
 
 		// Set a code.
-		require.NoError(state.Apply(0, common.Update{
+		_, err := state.Apply(0, common.Update{
 			Codes: []common.CodeUpdate{{
 				Account: address,
 				Code:    bytes.Clone(code),
 			}},
-		}))
+		})
+		require.NoError(err)
 
 		// Retrieve the code size.
 		length, err := state.GetCodeSize(address)
@@ -245,13 +251,14 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 	require.Equal(common.Value{}, value)
 
 	// Set a value
-	require.NoError(state.Apply(0, common.Update{
+	_, err = state.Apply(0, common.Update{
 		Slots: []common.SlotUpdate{{
 			Account: address,
 			Key:     key,
 			Value:   common.Value{1, 2, 3},
 		}},
-	}))
+	})
+	require.NoError(err)
 
 	// Retrieve the value again
 	value, err = state.GetStorage(address, key)
@@ -259,13 +266,14 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 	require.Equal(common.Value{1, 2, 3}, value)
 
 	// Set another value
-	require.NoError(state.Apply(0, common.Update{
+	_, err = state.Apply(0, common.Update{
 		Slots: []common.SlotUpdate{{
 			Account: address,
 			Key:     key,
 			Value:   common.Value{3, 2, 1},
 		}},
-	}))
+	})
+	require.NoError(err)
 
 	// Retrieve the updated value
 	value, err = state.GetStorage(address, key)
@@ -476,14 +484,17 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	}
 
 	state := newState()
-	require.NoError(state.Apply(0, update))
+	_, err := state.Apply(0, update)
+	require.NoError(err)
 
 	hash, err := state.GetCommitment().Await().Get()
 	require.NoError(err)
 
 	reference, err := newRefState()
 	require.NoError(err)
-	require.NoError(reference.Apply(0, update))
+	_, err = reference.Apply(0, update)
+	require.NoError(err)
+
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -503,7 +514,8 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 	}
 
 	state := newState()
-	require.NoError(state.Apply(0, update))
+	_, err := state.Apply(0, update)
+	require.NoError(err)
 
 	codeHash, err := state.GetCodeHash(addr1)
 	require.NoError(err)
@@ -514,7 +526,8 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 
 	reference, err := newRefState()
 	require.NoError(err)
-	require.NoError(reference.Apply(0, update))
+	_, err = reference.Apply(0, update)
+	require.NoError(err)
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -534,7 +547,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 	}
 
 	state := newState()
-	require.NoError(state.Apply(0, update))
+	_, err := state.Apply(0, update)
+	require.NoError(err)
 
 	codeHash, err := state.GetCodeHash(addr1)
 	require.NoError(err)
@@ -545,7 +559,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 
 	reference, err := newRefState()
 	require.NoError(err)
-	require.NoError(reference.Apply(0, update))
+	_, err = reference.Apply(0, update)
+	require.NoError(err)
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -556,7 +571,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 		CreatedAccounts: []common.Address{addr1},
 	}
 
-	require.NoError(state.Apply(0, update2))
+	_, err = state.Apply(0, update2)
+	require.NoError(err)
 
 	codeHash, err = state.GetCodeHash(addr1)
 	require.NoError(err)
@@ -565,7 +581,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 	hash, err = state.GetCommitment().Await().Get()
 	require.NoError(err)
 
-	require.NoError(reference.Apply(0, update2))
+	_, err = reference.Apply(0, update2)
+	require.NoError(err)
 	want, err = reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -585,7 +602,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 	}
 
 	state := newState()
-	require.NoError(state.Apply(0, update))
+	_, err := state.Apply(0, update)
+	require.NoError(err)
 
 	balance, err := state.GetBalance(addr1)
 	require.NoError(err)
@@ -596,7 +614,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 
 	reference, err := newRefState()
 	require.NoError(err)
-	require.NoError(reference.Apply(0, update))
+	_, err = reference.Apply(0, update)
+	require.NoError(err)
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -607,7 +626,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 		CreatedAccounts: []common.Address{addr1},
 	}
 
-	require.NoError(state.Apply(0, update2))
+	_, err = state.Apply(0, update2)
+	require.NoError(err)
 
 	// The balance should remain the same
 	balance, err = state.GetBalance(addr1)
@@ -617,7 +637,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 	hash, err = state.GetCommitment().Await().Get()
 	require.NoError(err)
 
-	require.NoError(reference.Apply(0, update2))
+	_, err = reference.Apply(0, update2)
+	require.NoError(err)
 	want, err = reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -637,7 +658,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 	}
 
 	state := newState()
-	require.NoError(state.Apply(0, update))
+	_, err := state.Apply(0, update)
+	require.NoError(err)
 
 	nonce, err := state.GetNonce(addr1)
 	require.NoError(err)
@@ -648,7 +670,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 
 	reference, err := newRefState()
 	require.NoError(err)
-	require.NoError(reference.Apply(0, update))
+	_, err = reference.Apply(0, update)
+	require.NoError(err)
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -659,7 +682,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 		CreatedAccounts: []common.Address{addr1},
 	}
 
-	require.NoError(state.Apply(0, update2))
+	_, err = state.Apply(0, update2)
+	require.NoError(err)
 
 	// The nonce should remain the same
 	nonce, err = state.GetNonce(addr1)
@@ -669,7 +693,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 	hash, err = state.GetCommitment().Await().Get()
 	require.NoError(err)
 
-	require.NoError(reference.Apply(0, update2))
+	_, err = reference.Apply(0, update2)
+	require.NoError(err)
 	want, err = reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -694,7 +719,7 @@ func newRefState() (*refState, error) {
 	return &refState{trie: trie}, nil
 }
 
-func (s *refState) Apply(block uint64, update common.Update) error {
+func (s *refState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	accountStates := map[geth_common.Address]*types.StateAccount{}
 
 	getAccountState := func(addr geth_common.Address) *types.StateAccount {
@@ -751,7 +776,7 @@ func (s *refState) Apply(block uint64, update common.Update) error {
 		s.trie.UpdateStorage(addr, key[:], value[:])
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (s *refState) GetCommitment() future.Future[result.Result[common.Hash]] {

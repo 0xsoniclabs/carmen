@@ -266,7 +266,7 @@ func runBenchmarkState(
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++
 		}
-		if err := state.Apply(uint64(i), update); err != nil {
+		if _, err := state.Apply(uint64(i), update); err != nil {
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
 		}
 		// make sure hash/commit is computed

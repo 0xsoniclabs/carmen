@@ -54,7 +54,11 @@ type State interface {
 	HasEmptyStorage(addr common.Address) (bool, error)
 
 	// Apply applies the provided updates to the state content.
-	Apply(block uint64, update common.Update) error
+	// The channel signals the completion of any spawned asynchronous operations
+	// like the update of the archive, if there is such.
+	// The channel may be nil if there are no asynchronous operations to be performed.
+	// If the asynchronous operations fail, the error is returned through the channel.
+	Apply(block uint64, update common.Update) (<-chan error, error)
 
 	// GetHash hashes the state.
 	// Deprecated: use GetCommitment instead.

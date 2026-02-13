@@ -45,7 +45,8 @@ func TestState_CreateAccount_Hash_Matches(t *testing.T) {
 			update := common.Update{}
 			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 
-			require.NoError(t, state.Apply(0, update), "failed to apply update")
+			_, err = state.Apply(0, update)
+			require.NoError(t, err, "failed to apply update")
 
 			// check hash consistency
 			hash, err := state.GetHash()
@@ -79,7 +80,8 @@ func TestState_Insert_Single_Values_One_Account_One_Storage(t *testing.T) {
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(1)})
 			update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
 
-			require.NoError(t, state.Apply(0, update), "failed to apply update")
+			_, err = state.Apply(0, update)
+			require.NoError(t, err, "failed to apply update")
 
 			// check hash consistency
 			hash, err := state.GetHash()
@@ -127,7 +129,8 @@ func TestState_CreateAccounts_In_Blocks_Accounts_Updated(t *testing.T) {
 					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(uint64(i * j))})
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 				}
-				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
+				_, err = state.Apply(uint64(i), update)
+				require.NoError(t, err, "failed to apply block %d", i)
 
 				// check hash consistency
 				hash, err := state.GetHash()
@@ -178,7 +181,8 @@ func TestState_Storage_Can_Set_And_Receive(t *testing.T) {
 					update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
 				}
 			}
-			require.NoError(t, state.Apply(uint64(0), update), "failed to apply block")
+			_, err = state.Apply(uint64(0), update)
+			require.NoError(t, err, "failed to apply block")
 
 			// check hash consistency
 			hash, err := state.GetHash()
@@ -244,7 +248,8 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
 					code = append(code, byte(i))
 				}
 
-				require.NoError(t, state.Apply(block_number, update), "failed to apply update")
+				_, err = state.Apply(block_number, update)
+				require.NoError(t, err, "failed to apply update")
 				block_number++
 
 				// check hash consistency
@@ -303,7 +308,8 @@ func TestState_Storage_Leading_Zeros_HashesMatch(t *testing.T) {
 				require.NoError(t, state.Close(), "failed to close state")
 			}()
 
-			require.NoError(t, state.Apply(0, update))
+			_, err = state.Apply(0, update)
+			require.NoError(t, err, "failed to apply update")
 
 			hash, err := state.GetHash()
 			require.NoError(t, err)
@@ -450,10 +456,11 @@ func (s *comparingState) GetBalance(address common.Address) (amount.Amount, erro
 	})
 }
 
-func (s *comparingState) Apply(block uint64, update common.Update) error {
+func (s *comparingState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	s.t.Helper()
-	return s.action(func(state state.State) error {
-		return state.Apply(block, update)
+	return nil, s.action(func(state state.State) error {
+		_, err := state.Apply(block, update)
+		return err
 	})
 }
 

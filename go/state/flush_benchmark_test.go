@@ -11,9 +11,10 @@
 package state
 
 import (
+	"time"
+
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"time"
 
 	"testing"
 )
@@ -43,7 +44,7 @@ func BenchmarkFlushGoState(b *testing.B) {
 				byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i),
 			}, amount.New(n))
 		}
-		err := state.Apply(n, update)
+		_, err := state.Apply(n, update)
 		if err != nil {
 			b.Fatal(err)
 		}

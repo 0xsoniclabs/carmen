@@ -112,7 +112,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *State) Apply(block uint64, update common.Update) error {
+func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) {
 
 	// init potentially empty accounts with empty code hash,
 	for _, address := range update.CreatedAccounts {
@@ -168,7 +168,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {

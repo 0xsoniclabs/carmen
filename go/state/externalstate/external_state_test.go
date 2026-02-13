@@ -78,7 +78,7 @@ func TestReadUninitializedBalance(t *testing.T) {
 
 func TestWriteAndReadBalance(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		err := state.Apply(0, common.Update{
+		_, err := state.Apply(0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 		})
 		if err != nil {
@@ -108,7 +108,7 @@ func TestReadUninitializedNonce(t *testing.T) {
 
 func TestWriteAndReadNonce(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		err := state.Apply(0, common.Update{
+		_, err := state.Apply(0, common.Update{
 			Nonces: []common.NonceUpdate{{Account: address1, Nonce: nonce1}},
 		})
 		if err != nil {
@@ -138,7 +138,7 @@ func TestReadUninitializedSlot(t *testing.T) {
 
 func TestWriteAndReadSlot(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		err := state.Apply(0, common.Update{
+		_, err := state.Apply(0, common.Update{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 		})
 		if err != nil {
@@ -216,7 +216,7 @@ func getTestCodes() [][]byte {
 func TestSetAndGetCode(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		for i, code := range getTestCodes() {
-			err := state.Apply(uint64(i), common.Update{
+			_, err := state.Apply(uint64(i), common.Update{
 				Codes: []common.CodeUpdate{{Account: address1, Code: code}},
 			})
 			if err != nil {
@@ -243,7 +243,7 @@ func TestSetAndGetCode(t *testing.T) {
 func TestSetAndGetCodeHash(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		for i, code := range getTestCodes() {
-			err := state.Apply(uint64(i), common.Update{
+			_, err := state.Apply(uint64(i), common.Update{
 				Codes: []common.CodeUpdate{{Account: address1, Code: code}},
 			})
 			if err != nil {

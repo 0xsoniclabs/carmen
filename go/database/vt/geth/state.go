@@ -237,12 +237,9 @@ func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) 
 	return amount.NewFromUint256(account.Balance), nil
 }
 
-func (s *verkleState) Apply(block uint64, update common.Update) error {
-	if err := update.ApplyTo(s); err != nil {
-		return err
-	}
-
-	return nil
+func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
+	err := update.ApplyTo(s)
+	return nil, err
 }
 
 //
@@ -297,9 +294,9 @@ type persistentVerkleState struct {
 	source singleNodeReader
 }
 
-func (s *persistentVerkleState) Apply(block uint64, update common.Update) error {
+func (s *persistentVerkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	if err := update.ApplyTo(s); err != nil {
-		return err
+		return nil, err
 	}
 
 	rootHash, nodeSet := s.verkle.Commit(false)
@@ -309,17 +306,17 @@ func (s *persistentVerkleState) Apply(block uint64, update common.Update) error 
 	}
 
 	if err := errors.Join(errs...); err != nil {
-		return err
+		return nil, err
 	}
 
 	// recreate the verkle trie to flush the in-memory nodes
 	vt, err := trie.NewVerkleTrie(rootHash, s.source, s.pointCache)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	s.verkle = vt
 
-	return nil
+	return nil, nil
 }
 
 func (s *persistentVerkleState) Flush() error {

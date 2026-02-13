@@ -5,6 +5,7 @@
 //
 //	mockgen -source state.go -destination state_mock.go -package state
 //
+
 // Package state is a generated GoMock package.
 package state
 
@@ -25,6 +26,7 @@ import (
 type MockState struct {
 	ctrl     *gomock.Controller
 	recorder *MockStateMockRecorder
+	isgomock struct{}
 }
 
 // MockStateMockRecorder is the mock recorder for MockState.
@@ -45,11 +47,12 @@ func (m *MockState) EXPECT() *MockStateMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockState) Apply(block uint64, update common.Update) error {
+func (m *MockState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(<-chan error)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Apply indicates an expected call of Apply.
@@ -333,6 +336,7 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 type MockLiveDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockLiveDBMockRecorder
+	isgomock struct{}
 }
 
 // MockLiveDBMockRecorder is the mock recorder for MockLiveDB.

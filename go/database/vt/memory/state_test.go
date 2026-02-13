@@ -81,12 +81,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 			require.Equal(common.ToNonce(0), nonce)
 
 			// Set a nonce
-			require.NoError(state.Apply(0, common.Update{
+			_, err = state.Apply(0, common.Update{
 				Nonces: []common.NonceUpdate{{
 					Account: address,
 					Nonce:   common.ToNonce(42),
 				}},
-			}))
+			})
+			require.NoError(err)
 
 			// Retrieve the nonce again
 			nonce, err = state.GetNonce(address)
@@ -94,12 +95,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 			require.Equal(common.ToNonce(42), nonce)
 
 			// Set another nonce
-			require.NoError(state.Apply(0, common.Update{
+			_, err = state.Apply(0, common.Update{
 				Nonces: []common.NonceUpdate{{
 					Account: address,
 					Nonce:   common.ToNonce(123),
 				}},
-			}))
+			})
+			require.NoError(err)
 
 			// Retrieve the updated nonce
 			nonce, err = state.GetNonce(address)
@@ -150,14 +152,16 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 
 			state, err := NewState(params)
 			require.NoError(err)
-			require.NoError(state.Apply(0, update))
+			_, err = state.Apply(0, update)
+			require.NoError(err)
 
 			hash, err := state.GetCommitment().Await().Get()
 			require.NoError(err)
 
 			reference, err := reference.NewState(params)
 			require.NoError(err)
-			require.NoError(reference.Apply(0, update))
+			_, err = reference.Apply(0, update)
+			require.NoError(err)
 			want, err := reference.GetCommitment().Await().Get()
 			require.NoError(err)
 
