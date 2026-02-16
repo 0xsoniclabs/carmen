@@ -13,21 +13,32 @@ CSV_PATH = "../rust/carmen_stats_node_counts_by_kind.csv"
 
 # NOTE: These sizes are based on the current implementation of the trie nodes in Carmen and needs to be manually updated if the implementation changes.
 
-# Node size constants
+# --- Node size constants ---
+# The size of the commitment stored in both inner and leaf nodes
 COMMITMENT_SIZE = 32
 
-# Inner node constants
+# --- Inner node constants ---
+# The size of a node id stored in inner nodes
 ID_SIZE = 6
+# The size of the index for a node id stored in sparse inner nodes
 ID_INDEX_SIZE = 1
+# The number of children of a full inner node
 INNER_NODE_CHILDREN = 256
+# The size of a full inner node
 FULL_INNER_NODE_SIZE = COMMITMENT_SIZE + INNER_NODE_CHILDREN * ID_SIZE
 
-# Leaf node constants
+# --- Leaf node constants ---
+# The size of a value stored in leaf nodes
 VALUE_SIZE = 32
+# The size of the index for a value stored in sparse leaf nodes
 VALUE_INDEX_SIZE = 1
+# The size of the stem in leaf nodes
 STEM_SIZE = 31
+# The number of children of a full leaf node
 LEAF_NODE_CHILDREN = 256
+# The number of used bits in a leaf node
 USED_BITS = 256 / 8
+# The size of a full leaf node
 FULL_LEAF_NODE_SIZE = (
     COMMITMENT_SIZE + LEAF_NODE_CHILDREN * VALUE_SIZE + STEM_SIZE + USED_BITS
 )
@@ -73,11 +84,11 @@ def find_best_specializations(counts, sizes, num_specializations):
     Returns:
         best_specializations (list[int]): List of the number of children for the best specializations.
         min_cost (int): The minimum storage cost achieved with the best specializations.
-        costs (list): The dynamic programming table of costs for each range and number of specializations.
+        cost_table (list): The dynamic programming table of costs for each range and number of specializations.
     """
 
-    # costs[start][end][num_specializations](cost, levels_used)
-    costs = [
+    # cost_table[start][end][num_specializations](cost, levels_used)
+    cost_table = [
         [
             [(INT_MAX, []) for _ in range(num_specializations)]
             for _ in range(len(counts))
@@ -88,30 +99,30 @@ def find_best_specializations(counts, sizes, num_specializations):
         for start in range(end + 1):
             if start == 0:
                 cost = sizes[end] * sum(counts[start : end + 1])
-                costs[start][end][0] = (cost, [end])
+                cost_table[start][end][0] = (cost, [end])
             else:
                 for level in range(start):
                     for num_spec in range(num_specializations - 1):
-                        level_cost, levels_used = costs[level][start - 1][num_spec]
+                        level_cost, levels_used = cost_table[level][start - 1][num_spec]
                         if level_cost == INT_MAX:
                             continue
                         cost = level_cost + sizes[end] * sum(counts[start : end + 1])
-                        if cost < costs[start][end][num_spec + 1][0]:
-                            costs[start][end][num_spec + 1] = (
+                        if cost < cost_table[start][end][num_spec + 1][0]:
+                            cost_table[start][end][num_spec + 1] = (
                                 cost,
                                 levels_used + [end],
                             )
 
     min_cost, best_specializations = min(
         (
-            costs[start][len(counts) - 1][num_spec]
+            cost_table[start][len(counts) - 1][num_spec]
             for start in range(len(counts))
             for num_spec in range(num_specializations)
         ),
         key=lambda x: x[0],
         default=(INT_MAX, []),
     )
-    return best_specializations, min_cost, costs
+    return best_specializations, min_cost, cost_table
 
 
 def print_best_specializations(node_name, counts, sizes):
@@ -119,7 +130,7 @@ def print_best_specializations(node_name, counts, sizes):
 
     print(f"--- Node type: {node_name} ---")
     for num_specializations in range(1, MAX_SPECIALIZATIONS + 1):
-        best_specializations, min_cost, costs = find_best_specializations(
+        best_specializations, min_cost, cost_table = find_best_specializations(
             counts, sizes, num_specializations
         )
 
@@ -130,11 +141,11 @@ def print_best_specializations(node_name, counts, sizes):
             max_len = max(
                 [
                     len(str(entry).replace(str(INT_MAX), "INF"))
-                    for row in costs
+                    for row in cost_table
                     for entry in row
                 ]
             )
-            for start, row in enumerate(costs):
+            for start, row in enumerate(cost_table):
                 for end, col in enumerate(row):
                     if start > end:
                         entry = ""
