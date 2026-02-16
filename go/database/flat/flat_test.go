@@ -470,7 +470,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 
 		started := false
 		release := make(chan struct{})
-		backendApplyDone := make(chan error, 1)
+		backendApplyDone := make(chan error)
 
 		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_, _ any) (<-chan error, error) {
@@ -547,6 +547,9 @@ func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	got := <-applyDone
 	require.ErrorIs(t, got, issue)
 	require.ErrorIs(t, got, syncIssue)
+	errors := flatState.Check()
+	require.ErrorIs(t, errors, issue)
+	require.ErrorIs(t, errors, syncIssue)
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
