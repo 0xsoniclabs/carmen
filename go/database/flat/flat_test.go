@@ -470,7 +470,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 
 		started := false
 		release := make(chan struct{})
-		backendApplyDone := make(chan error)
+		backendApplyDone := make(chan error, 1)
 
 		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_, _ any) (<-chan error, error) {
@@ -490,6 +490,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 		require.NotNil(t, applyDone)
 
 		// Wait until the update blocks in the backend update.
+		close(backendApplyDone)
 		synctest.Wait()
 		require.True(t, started)
 		select {
