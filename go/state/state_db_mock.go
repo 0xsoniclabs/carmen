@@ -1165,6 +1165,18 @@ func (mr *MockStateDBMockRecorder) RevertToSnapshot(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertToSnapshot", reflect.TypeOf((*MockStateDB)(nil).RevertToSnapshot), arg0)
 }
 
+// RevertTransactions mocks base method.
+func (m *MockStateDB) RevertTransactions(number uint64) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RevertTransactions", number)
+}
+
+// RevertTransactions indicates an expected call of RevertTransactions.
+func (mr *MockStateDBMockRecorder) RevertTransactions(number any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertTransactions", reflect.TypeOf((*MockStateDB)(nil).RevertTransactions), number)
+}
+
 // SetCode mocks base method.
 func (m *MockStateDB) SetCode(arg0 common.Address, arg1 []byte) {
 	m.ctrl.T.Helper()
