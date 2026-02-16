@@ -165,10 +165,16 @@ def load_node_counts(csv_path):
     """
 
     df = pd.read_csv(csv_path)
-    inner_counts = [0] + list(df[df["Node Kind"] == "Inner"]["Count"])
-    leaf_counts = list(df[df["Node Kind"] == "Leaf"]["Count"])
-    assert len(inner_counts) == 257
-    assert len(leaf_counts) == 257
+    inner_counts = [0] * 257
+    leaf_counts = [0] * 257
+    for _, row in df[df["Node Kind"] == "Inner"].iterrows():
+        size = int(row["Node Size"])
+        count = int(row["Count"])
+        inner_counts[size] = count
+    for _, row in df[df["Node Kind"] == "Leaf"].iterrows():
+        size = int(row["Node Size"])
+        count = int(row["Count"])
+        leaf_counts[size] = count
     return inner_counts, leaf_counts
 
 
