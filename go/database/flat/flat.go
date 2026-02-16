@@ -210,7 +210,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-// _apply is an internal method, which implements apply and optionally
+// Apply is an internal method, which implements apply and optionally
 // returns a channel for synchronization.
 //
 // The channel signals the completion of any spawned asynchronous operations
@@ -300,11 +300,12 @@ func processCommands(
 			if backendChan != nil {
 				// wait for the backend sync channel and forward
 				// both errors into the update synch channel.
-				err = errors.Join(err, <-backendChan)
-				command.update.done <- err
+				if command.update.done != nil {
+					command.update.done <- errors.Join(err, <-backendChan)
+					close(command.update.done)
+				}
 			}
 			issues.HandleIssue(err)
-			close(command.update.done)
 			zone.End()
 		} else if command.commit != nil {
 			zone := tracy.ZoneBegin("State.Commit")
