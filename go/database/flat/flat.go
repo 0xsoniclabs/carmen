@@ -301,7 +301,8 @@ func processCommands(
 				// wait for the backend sync channel and forward
 				// both errors into the update synch channel.
 				if command.update.done != nil {
-					command.update.done <- errors.Join(err, <-backendChan)
+					err = errors.Join(err, <-backendChan)
+					command.update.done <- err
 					close(command.update.done)
 				}
 			}
