@@ -85,44 +85,50 @@ def find_best_specializations(counts, sizes, num_specializations):
         best_specializations (list[int]): List of the number of children for the best specializations.
         min_cost (int): The minimum storage cost achieved with the best specializations.
         cost_table (list): The dynamic programming table of costs for each range and number of specializations.
+        witness_table (list): The dynamic programming table of witness indices for each range and number of specializations.
     """
 
-    # cost_table[start][end][num_specializations](cost, levels_used)
+    # cost_table[start][end][num_specializations]
     cost_table = [
-        [
-            [(INT_MAX, []) for _ in range(num_specializations)]
-            for _ in range(len(counts))
-        ]
+        [[INT_MAX for _ in range(num_specializations)] for _ in range(len(counts))]
+        for _ in range(len(counts))
+    ]
+    # witness_table[start][end][num_specializations]
+    witness_table = [
+        [[[] for _ in range(num_specializations)] for _ in range(len(counts))]
         for _ in range(len(counts))
     ]
     for end in range(len(counts)):
         for start in range(end + 1):
             if start == 0:
                 cost = sizes[end] * sum(counts[start : end + 1])
-                cost_table[start][end][0] = (cost, [end])
+                cost_table[start][end][0] = cost
+                witness_table[start][end][0] = [end]
             else:
                 for level in range(start):
                     for num_spec in range(num_specializations - 1):
-                        level_cost, levels_used = cost_table[level][start - 1][num_spec]
-                        if level_cost == INT_MAX:
+                        cost = cost_table[level][start - 1][num_spec]
+                        witness = witness_table[level][start - 1][num_spec]
+                        if cost == INT_MAX:
                             continue
-                        cost = level_cost + sizes[end] * sum(counts[start : end + 1])
-                        if cost < cost_table[start][end][num_spec + 1][0]:
-                            cost_table[start][end][num_spec + 1] = (
-                                cost,
-                                levels_used + [end],
-                            )
+                        cost += sizes[end] * sum(counts[start : end + 1])
+                        if cost < cost_table[start][end][num_spec + 1]:
+                            cost_table[start][end][num_spec + 1] = cost
+                            witness_table[start][end][num_spec + 1] = witness + [end]
 
     min_cost, best_specializations = min(
         (
-            cost_table[start][len(counts) - 1][num_spec]
+            (
+                cost_table[start][len(counts) - 1][num_spec],
+                witness_table[start][len(counts) - 1][num_spec],
+            )
             for start in range(len(counts))
             for num_spec in range(num_specializations)
         ),
         key=lambda x: x[0],
         default=(INT_MAX, []),
     )
-    return best_specializations, min_cost, cost_table
+    return best_specializations, min_cost, cost_table, witness_table
 
 
 def print_best_specializations(node_name, counts, sizes):
@@ -130,7 +136,7 @@ def print_best_specializations(node_name, counts, sizes):
 
     print(f"--- Node type: {node_name} ---")
     for num_specializations in range(1, MAX_SPECIALIZATIONS + 1):
-        best_specializations, min_cost, cost_table = find_best_specializations(
+        best_specializations, min_cost, cost_table, witness_table = find_best_specializations(
             counts, sizes, num_specializations
         )
 
@@ -138,20 +144,26 @@ def print_best_specializations(node_name, counts, sizes):
         print(f"Min cost: {min_cost}")
         print(f"Specializations: {best_specializations}\n")
         if PRINT_TABLE:
-            max_len = max(
-                [
-                    len(str(entry).replace(str(INT_MAX), "INF"))
-                    for row in cost_table
-                    for entry in row
-                ]
-            )
-            for start, row in enumerate(cost_table):
-                for end, col in enumerate(row):
+            table = []
+            for start in range(len(cost_table)):
+                row = []
+                for end in range(len(cost_table[start])):
                     if start > end:
-                        entry = ""
-                    else:
-                        entry = str(col).replace(str(INT_MAX), "INF")
-                    print(entry.ljust(max_len + 1), end="")
+                        row.append("")
+                        continue
+                    entries = []
+                    for spec in range(num_specializations):
+                        cost = cost_table[start][end][spec]
+                        witness = witness_table[start][end][spec]
+                        cost_str = str(cost) if cost != INT_MAX else "INF"
+                        entry = f"{cost_str}:{witness}"
+                        entries.append(entry)
+                    row.append(", ".join(entries))
+                table.append(row)
+            max_len = max([len(cell) for row in table for cell in row])
+            for row in table:
+                for cell in row:
+                    print(cell.ljust(max_len + 3), end="")
                 print("")
 
 
