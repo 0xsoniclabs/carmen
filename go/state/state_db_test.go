@@ -4578,6 +4578,48 @@ func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing
 	}
 }
 
+func TestStateDB_revertTransactionsRevertToPreviousState(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	st := NewMockState(ctrl)
+
+	st.EXPECT().Exists(gomock.Any()).AnyTimes().Return(true, nil)
+	balance := amount.New(0)
+	allow_call := true
+	st.EXPECT().GetBalance(gomock.Any()).DoAndReturn(func(address common.Address) (amount.Amount, error) {
+		if !allow_call {
+			t.Errorf("unexpected call to GetBalance")
+		}
+		defer func() { balance = amount.Add(balance, amount.New(10)) }()
+		return balance, nil
+	}).AnyTimes()
+
+	statedb := CreateStateDBUsing(st)
+	targetAddress := common.Address{}
+
+	// Tx 1: Set balance to 10
+	statedb.BeginTransaction()
+	statedb.AddBalance(targetAddress, amount.New(10))
+	statedb.EndTransaction()
+	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
+
+	// Tx 2: Add 10 balance
+	statedb.BeginTransaction()
+	statedb.AddBalance(targetAddress, amount.New(10))
+	statedb.EndTransaction()
+	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(20))
+
+	// Tx 3: Add 10 balance
+	statedb.BeginTransaction()
+	statedb.AddBalance(targetAddress, amount.New(10))
+	statedb.EndTransaction()
+	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(30))
+
+	// Revert last two txs
+	allow_call = false
+	statedb.RevertTransactions(2)
+	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
+}
+
 func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 	const limit = 5
 	tests := map[string]struct {

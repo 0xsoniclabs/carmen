@@ -146,6 +146,9 @@ type StateDB interface {
 	GetMemoryFootprint() *common.MemoryFootprint
 
 	ResetBlockContext()
+
+	// RevertTransactions revert `number` in the current block which haven't been committed to the underlying state.
+	RevertTransactions(number uint64)
 }
 
 // NonCommittableStateDB is the public interface offered for views on states that can not
@@ -255,6 +258,8 @@ type stateDB struct {
 
 	// Mutex to protect access to the errors slice.
 	errorsMutex sync.Mutex
+
+	txUndoIndex []int
 }
 
 type accountLifeCycleState int
@@ -462,6 +467,7 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		createdContracts:  make(map[common.Address]struct{}),
 		emptyCandidates:   make([]common.Address, 0, 100),
 		canApplyChanges:   canApplyChanges,
+		txUndoIndex:       make([]int, 0, 100),
 	}
 }
 
@@ -1099,7 +1105,7 @@ func (s *stateDB) RevertToSnapshot(id int) {
 }
 
 func (s *stateDB) BeginTransaction() {
-	// Ignored
+	s.txUndoIndex = append(s.txUndoIndex, len(s.undo))
 }
 
 func (s *stateDB) EndTransaction() {
@@ -1162,6 +1168,16 @@ func (s *stateDB) EndTransaction() {
 	s.writtenSlots = map[*slotValue]bool{}
 	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
+}
+
+func (s *stateDB) RevertTransactions(number uint64) {
+	if number > uint64(len(s.txUndoIndex)) {
+		s.trackErrors(fmt.Errorf("cannot revert %d transactions, only %d transactions in the current block", number, len(s.txUndoIndex)))
+		return
+	}
+	num := s.txUndoIndex[len(s.txUndoIndex)-int(number)]
+	s.RevertToSnapshot(num)
+	s.txUndoIndex = s.txUndoIndex[0 : len(s.txUndoIndex)-int(number)]
 }
 
 func (s *stateDB) GetTransactionChanges() map[common.Address][]common.Key {
@@ -1417,7 +1433,6 @@ func (s *stateDB) resetTransactionContext() {
 	s.refund = 0
 	s.ClearAccessList()
 	s.transientStorage.Clear()
-	s.undo = s.undo[0:0]
 	s.emptyCandidates = s.emptyCandidates[0:0]
 	s.logs = s.logs[0:0]
 	s.createdContracts = make(map[common.Address]struct{})
@@ -1432,6 +1447,8 @@ func (s *stateDB) ResetBlockContext() {
 	s.codes = make(map[common.Address]*codeValue)
 	s.logsInBlock = 0
 	s.resetTransactionContext()
+	s.undo = s.undo[0:0]
+	s.txUndoIndex = s.txUndoIndex[0:0]
 	s.resetReincarnationWhenExceeds(10_000_000)
 }
 
