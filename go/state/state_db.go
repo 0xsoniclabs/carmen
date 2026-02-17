@@ -146,9 +146,6 @@ type StateDB interface {
 	GetMemoryFootprint() *common.MemoryFootprint
 
 	ResetBlockContext()
-
-	// RevertTransactions revert `number` in the current block which haven't been committed to the underlying state.
-	RevertTransactions(number uint64)
 }
 
 // NonCommittableStateDB is the public interface offered for views on states that can not
@@ -191,26 +188,51 @@ type stateDB struct {
 	// The underlying state data is read/written to.
 	state State
 
-	// A block local cache for account states to avoid double-fetches and support rollbacks.
+	// A transaction local cache for account states to avoid double-fetches and support rollbacks.
 	accounts map[common.Address]*accountState
 
-	// A block local cache of balances to avoid double-fetches and support rollbacks.
+	// A transaction local cache of balances to avoid double-fetches and support rollbacks.
 	balances map[common.Address]*balanceValue
 
-	// A block local cache of nonces to avoid double-fetches and support rollbacks.
+	// A transaction local cache of nonces to avoid double-fetches and support rollbacks.
 	nonces map[common.Address]*nonceValue
 
-	// A block local cache of storage values to avoid double-fetches and support rollbacks.
+	// A transaction local cache of storage values to avoid double-fetches and support rollbacks.
 	data *common.FastMap[slotId, *slotValue]
 
-	// A block local cache of contract codes and their properties.
+	// Transient storage is a temporary storage that gets deleted after each transaction.
+	transientStorage *common.FastMap[slotId, common.Value]
+
+	// A transaction local cache of contract codes and their properties.
 	codes map[common.Address]*codeValue
+
+	// A list of accounts to be deleted at the end of the transaction.
+	accountsToDelete []common.Address
 
 	// Tracks the clearing state of individual accounts.
 	clearedAccounts map[common.Address]accountClearingState
 
+	// A set of contracts created during the current transaction. This is used
+	// to mark eligible accounts to be self-destructed according to EIP-6780.
+	createdContracts map[common.Address]struct{}
+
+	// A list of operations undoing modifications applied on the inner state if a snapshot revert needs to be performed.
+	undo []func()
+
+	// The refund accumulated in the current transaction.
+	refund uint64
+
+	// The list of log messages recorded for the current transaction.
+	logs []*common.Log
+
 	// The amount of logs in the current block.
 	logsInBlock uint
+
+	// A set of accessed addresses in the current transaction.
+	accessedAddresses map[common.Address]bool
+
+	// A set of accessed slots in the current transaction.
+	accessedSlots *common.FastMap[slotId, bool]
 
 	// A set of slots with current value (possibly) different from the committed value - for needs of committing.
 	writtenSlots map[*slotValue]bool
@@ -222,6 +244,9 @@ type stateDB struct {
 	// the storedDataCache upon account deletion. The maintained values are internal information only.
 	reincarnation map[common.Address]uint64
 
+	// A list of addresses, which have possibly become empty in the transaction
+	emptyCandidates []common.Address
+
 	// True, if this state DB is allowed to apply changes to the underlying state, false otherwise.
 	canApplyChanges bool
 
@@ -230,9 +255,6 @@ type stateDB struct {
 
 	// Mutex to protect access to the errors slice.
 	errorsMutex sync.Mutex
-
-	// Bundle transaction changes
-	txContextList *txContextList
 }
 
 type accountLifeCycleState int
@@ -421,28 +443,29 @@ func CreateNonCommittableStateDBUsing(state State) NonCommittableStateDB {
 
 func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges bool) *stateDB {
 	return &stateDB{
-		state:           state,
-		accounts:        map[common.Address]*accountState{},
-		balances:        map[common.Address]*balanceValue{},
-		nonces:          map[common.Address]*nonceValue{},
-		data:            common.NewFastMap[slotId, *slotValue](slotHasher{}),
-		storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](storedDataCacheCapacity),
-		reincarnation:   map[common.Address]uint64{},
-		codes:           map[common.Address]*codeValue{},
-		writtenSlots:    map[*slotValue]bool{},
-		clearedAccounts: make(map[common.Address]accountClearingState),
-		canApplyChanges: canApplyChanges,
-		txContextList:   NewTxContextList(),
+		state:             state,
+		accounts:          map[common.Address]*accountState{},
+		balances:          map[common.Address]*balanceValue{},
+		nonces:            map[common.Address]*nonceValue{},
+		data:              common.NewFastMap[slotId, *slotValue](slotHasher{}),
+		transientStorage:  common.NewFastMap[slotId, common.Value](slotHasher{}),
+		storedDataCache:   common.NewLruCache[slotId, storedDataCacheValue](storedDataCacheCapacity),
+		reincarnation:     map[common.Address]uint64{},
+		codes:             map[common.Address]*codeValue{},
+		refund:            0,
+		accessedAddresses: map[common.Address]bool{},
+		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
+		writtenSlots:      map[*slotValue]bool{},
+		accountsToDelete:  make([]common.Address, 0, 100),
+		undo:              make([]func(), 0, 100),
+		clearedAccounts:   make(map[common.Address]accountClearingState),
+		createdContracts:  make(map[common.Address]struct{}),
+		emptyCandidates:   make([]common.Address, 0, 100),
+		canApplyChanges:   canApplyChanges,
 	}
 }
 
 func (s *stateDB) setAccountState(addr common.Address, state accountLifeCycleState) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
 	s.Exist(addr) // < make sure s.accounts[addr] is initialized
 	val, exists := s.accounts[addr]
 	// exists will be false when calling s.Exists() did not succeed
@@ -451,7 +474,7 @@ func (s *stateDB) setAccountState(addr common.Address, state accountLifeCycleSta
 	}
 	oldState := val.current
 	val.current = state
-	txContext.AddUndo(func() {
+	s.undo = append(s.undo, func() {
 		val.current = oldState
 	})
 }
@@ -477,12 +500,6 @@ func (s *stateDB) Exist(addr common.Address) bool {
 }
 
 func (s *stateDB) CreateAccount(addr common.Address) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in CreateAccount: %w", err))
-		return
-	}
-
 	s.setNonceInternal(addr, 0)
 	s.setCodeInternal(addr, []byte{})
 
@@ -490,7 +507,7 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	s.setAccountState(addr, accountExists)
 
 	// Created because touched - will be deleted at the end of the transaction if it stays empty
-	txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+	s.emptyCandidates = append(s.emptyCandidates, addr)
 
 	// Initialize the balance with 0, unless the account existed before.
 	// Thus, accounts previously marked as unknown (default) or deleted
@@ -506,7 +523,7 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 		if slot.addr == addr {
 			// Support rollback of account creation.
 			backup := *value
-			txContext.AddUndo(func() {
+			s.undo = append(s.undo, func() {
 				*value = backup
 			})
 
@@ -522,25 +539,19 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	// Mark account to be treated like if was already committed.
 	oldState := s.clearedAccounts[addr]
 	s.clearedAccounts[addr] = cleared
-	txContext.AddUndo(func() {
+	s.undo = append(s.undo, func() {
 		s.clearedAccounts[addr] = oldState
 	})
 }
 
 func (s *stateDB) CreateContract(addr common.Address) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in CreateAccount: %w", err))
-		return
-	}
-
-	if _, exists := txContext.createdContracts[addr]; exists {
+	if _, exists := s.createdContracts[addr]; exists {
 		return
 	}
 	s.createAccountIfNotExists(addr)
-	txContext.createdContracts[addr] = struct{}{}
-	txContext.AddUndo(func() {
-		delete(txContext.createdContracts, addr)
+	s.createdContracts[addr] = struct{}{}
+	s.undo = append(s.undo, func() {
+		delete(s.createdContracts, addr)
 	})
 }
 
@@ -564,12 +575,6 @@ func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
 // This clears the account balance.
 // The account still exist until the state is committed.
 func (s *stateDB) Suicide(addr common.Address) bool {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return false //TODO: Is this correct?
-	}
-
 	if !s.Exist(addr) {
 		return false
 	}
@@ -577,10 +582,10 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 	s.setAccountState(addr, accountSelfDestructed)
 
 	s.resetBalance(addr)
-	deleteListLength := len(txContext.accountsToDelete)
-	txContext.accountsToDelete = append(txContext.accountsToDelete, addr)
-	txContext.AddUndo(func() {
-		txContext.accountsToDelete = txContext.accountsToDelete[0:deleteListLength]
+	deleteListLength := len(s.accountsToDelete)
+	s.accountsToDelete = append(s.accountsToDelete, addr)
+	s.undo = append(s.undo, func() {
+		s.accountsToDelete = s.accountsToDelete[0:deleteListLength]
 	})
 
 	// Mark account for clearing to plan its removing on commit and
@@ -588,7 +593,7 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 	oldState := s.clearedAccounts[addr]
 	if oldState == noClearing {
 		s.clearedAccounts[addr] = pendingClearing
-		txContext.AddUndo(func() {
+		s.undo = append(s.undo, func() {
 			s.clearedAccounts[addr] = oldState
 		})
 	}
@@ -600,14 +605,8 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 // If called in the same transaction scope after CreateContract, works
 // the same as Suicide, otherwise has no effect.
 func (s *stateDB) SuicideNewContract(addr common.Address) bool {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return false
-	}
-
 	// If called in the same tx, behave as previously
-	if _, exists := txContext.createdContracts[addr]; exists {
+	if _, exists := s.createdContracts[addr]; exists {
 		return s.Suicide(addr)
 	}
 
@@ -650,16 +649,10 @@ func (s *stateDB) GetBalance(addr common.Address) amount.Amount {
 }
 
 func (s *stateDB) AddBalance(addr common.Address, diff amount.Amount) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
 	s.createAccountIfNotExists(addr)
 
 	if diff.IsZero() {
-		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+		s.emptyCandidates = append(s.emptyCandidates, addr)
 		return
 	}
 
@@ -672,22 +665,16 @@ func (s *stateDB) AddBalance(addr common.Address, diff amount.Amount) {
 	}
 
 	s.balances[addr].current = newValue
-	txContext.AddUndo(func() {
+	s.undo = append(s.undo, func() {
 		s.balances[addr].current = oldValue
 	})
 }
 
 func (s *stateDB) SubBalance(addr common.Address, diff amount.Amount) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
 	s.createAccountIfNotExists(addr)
 
 	if diff.IsZero() {
-		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+		s.emptyCandidates = append(s.emptyCandidates, addr)
 		return
 	}
 
@@ -700,26 +687,21 @@ func (s *stateDB) SubBalance(addr common.Address, diff amount.Amount) {
 	}
 
 	if newValue.IsZero() {
-		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+		s.emptyCandidates = append(s.emptyCandidates, addr)
 	}
 
 	s.balances[addr].current = newValue
-	txContext.AddUndo(func() {
+	s.undo = append(s.undo, func() {
 		s.balances[addr].current = oldValue
 	})
 }
 
 func (s *stateDB) resetBalance(addr common.Address) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
 	if val, exists := s.balances[addr]; exists {
 		if !val.current.IsZero() {
 			oldValue := val.current
 			val.current = amount.New()
-			txContext.AddUndo(func() {
+			s.undo = append(s.undo, func() {
 				val.current = oldValue
 			})
 		}
@@ -728,7 +710,7 @@ func (s *stateDB) resetBalance(addr common.Address) {
 			original: nil,
 			current:  amount.New(),
 		}
-		txContext.AddUndo(func() {
+		s.undo = append(s.undo, func() {
 			delete(s.balances, addr)
 		})
 	}
@@ -755,29 +737,18 @@ func (s *stateDB) GetNonce(addr common.Address) uint64 {
 }
 
 func (s *stateDB) SetNonce(addr common.Address, nonce uint64) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in SetNonce: %w", err))
-		return
-	}
 	s.setNonceInternal(addr, nonce)
 	if s.createAccountIfNotExists(addr) && nonce == 0 {
-		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+		s.emptyCandidates = append(s.emptyCandidates, addr)
 	}
 }
 
 func (s *stateDB) setNonceInternal(addr common.Address, nonce uint64) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
 	if val, exists := s.nonces[addr]; exists {
 		if val.current != nonce {
 			oldValue := val.current
 			val.current = nonce
-			txContext.AddUndo(func() {
+			s.undo = append(s.undo, func() {
 				val.current = oldValue
 			})
 		}
@@ -786,7 +757,7 @@ func (s *stateDB) setNonceInternal(addr common.Address, nonce uint64) {
 			original: nil,
 			current:  nonce,
 		}
-		txContext.AddUndo(func() {
+		s.undo = append(s.undo, func() {
 			delete(s.nonces, addr)
 		})
 	}
@@ -856,31 +827,25 @@ func (s *stateDB) GetState(addr common.Address, key common.Key) common.Value {
 }
 
 func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Value) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in SetState: %w", err))
-		return
-	}
-
 	if s.createAccountIfNotExists(addr) {
 		// The account was implicitly created and may have to be removed at the end of the block.
-		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+		s.emptyCandidates = append(s.emptyCandidates, addr)
 	}
 	sid := slotId{addr, key}
 	if entry, exists := s.data.Get(sid); exists {
 		if entry.current != value {
 			oldValue := entry.current
 			entry.current = value
-			s.writtenSlots[entry] = true // TODO: Why is this not reverted?
-			txContext.AddUndo(func() {
+			s.writtenSlots[entry] = true
+			s.undo = append(s.undo, func() {
 				entry.current = oldValue
 			})
 		}
 	} else {
 		entry = &slotValue{current: value}
 		s.data.Put(sid, entry)
-		s.writtenSlots[entry] = true // TODO: Same here. Why is this not reverted?
-		txContext.AddUndo(func() {
+		s.writtenSlots[entry] = true
+		s.undo = append(s.undo, func() {
 			entry, _ := s.data.Get(sid)
 			if entry.committedKnown {
 				entry.current = entry.committed
@@ -893,42 +858,30 @@ func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Val
 	oldState := s.clearedAccounts[addr]
 	if oldState == cleared {
 		s.clearedAccounts[addr] = clearedAndTainted
-		txContext.AddUndo(func() { s.clearedAccounts[addr] = oldState })
+		s.undo = append(s.undo, func() { s.clearedAccounts[addr] = oldState })
 	}
 }
 
 func (s *stateDB) GetTransientState(addr common.Address, key common.Key) common.Value {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in GetTransientState: %w", err))
-		return common.Value{} // TODO: Is this correct?
-	}
-
 	sid := slotId{addr, key}
-	val, _ := txContext.transientStorage.Get(sid)
+	val, _ := s.transientStorage.Get(sid)
 	return val
 }
 
 func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value common.Value) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in SetTransientState: %w", err))
-		return
-	}
-
 	sid := slotId{addr, key}
-	currentValue, _ := txContext.transientStorage.Get(sid)
+	currentValue, _ := s.transientStorage.Get(sid)
 	if currentValue == value {
 		return
 	}
 
 	// Save previous value for rollbacks
 	oldValue := currentValue
-	txContext.AddUndo(func() {
-		txContext.transientStorage.Put(sid, oldValue)
+	s.undo = append(s.undo, func() {
+		s.transientStorage.Put(sid, oldValue)
 	})
 
-	txContext.transientStorage.Put(sid, value)
+	s.transientStorage.Put(sid, value)
 }
 
 func (s *stateDB) HasEmptyStorage(addr common.Address) bool {
@@ -975,33 +928,21 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 }
 
 func (s *stateDB) SetCode(addr common.Address, code []byte) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in SetCode: %w", err))
-		return
-	}
-
 	s.createAccountIfNotExists(addr)
 	s.setCodeInternal(addr, code)
 	if len(code) == 0 {
-		txContext.emptyCandidates = append(txContext.emptyCandidates, addr)
+		s.emptyCandidates = append(s.emptyCandidates, addr)
 	}
 }
 
 func (s *stateDB) setCodeInternal(addr common.Address, code []byte) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
 	val, exists := s.codes[addr]
 	if !exists {
 		val = &codeValue{dirty: true}
 		val.code, val.codeValid = code, true
 		val.size, val.sizeValid = len(code), true
 		s.codes[addr] = val
-		txContext.AddUndo(func() {
+		s.undo = append(s.undo, func() {
 			delete(s.codes, addr)
 		})
 	} else {
@@ -1010,7 +951,7 @@ func (s *stateDB) setCodeInternal(addr common.Address, code []byte) {
 		val.size, val.sizeValid = len(code), true
 		val.hash = nil
 		val.dirty = true
-		txContext.AddUndo(func() {
+		s.undo = append(s.undo, func() {
 			*(s.codes[addr]) = old
 		})
 	}
@@ -1061,128 +1002,81 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 }
 
 func (s *stateDB) AddRefund(amount uint64) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
-	old := txContext.refund
-	txContext.refund += amount
-	txContext.AddUndo(func() {
-		txContext.refund = old
+	old := s.refund
+	s.refund += amount
+	s.undo = append(s.undo, func() {
+		s.refund = old
 	})
 }
 func (s *stateDB) SubRefund(amount uint64) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+	if amount > s.refund {
+		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
 		return
 	}
-	if amount > txContext.refund {
-		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, txContext.refund))
-		return
-	}
-	old := txContext.refund
-	txContext.refund -= amount
-	txContext.AddUndo(func() {
-		txContext.refund = old
+	old := s.refund
+	s.refund -= amount
+	s.undo = append(s.undo, func() {
+		s.refund = old
 	})
 }
 
 func (s *stateDB) GetRefund() uint64 {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return 0
-	}
-	return txContext.refund
+	return s.refund
 }
 
 func (s *stateDB) AddLog(log *common.Log) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-	size := len(txContext.logs)
+	size := len(s.logs)
 	log.Index = s.logsInBlock
-	txContext.logs = append(txContext.logs, log)
+	s.logs = append(s.logs, log)
 	s.logsInBlock++
-	txContext.AddUndo(func() {
-		txContext.logs = txContext.logs[0:size]
+	s.undo = append(s.undo, func() {
+		s.logs = s.logs[0:size]
 		s.logsInBlock--
 	})
 }
 
 func (s *stateDB) GetLogs() []*common.Log {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return nil
-	}
-	return txContext.logs
+	return s.logs
 }
 
 func (s *stateDB) ClearAccessList() {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
+	if len(s.accessedAddresses) > 0 {
+		s.accessedAddresses = make(map[common.Address]bool)
 	}
-	txContext.ClearAccessList()
+	if s.accessedSlots.Size() > 0 {
+		s.accessedSlots.Clear()
+	}
 }
 
 func (s *stateDB) AddAddressToAccessList(addr common.Address) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-	_, found := txContext.accessedAddresses[addr]
+	_, found := s.accessedAddresses[addr]
 	if !found {
-		txContext.accessedAddresses[addr] = true
-		txContext.AddUndo(func() {
-			delete(txContext.accessedAddresses, addr)
+		s.accessedAddresses[addr] = true
+		s.undo = append(s.undo, func() {
+			delete(s.accessedAddresses, addr)
 		})
 	}
 }
 
 func (s *stateDB) AddSlotToAccessList(addr common.Address, key common.Key) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
 	s.AddAddressToAccessList(addr)
 	sid := slotId{addr, key}
-	_, found := txContext.accessedSlots.Get(sid)
+	_, found := s.accessedSlots.Get(sid)
 	if !found {
-		txContext.accessedSlots.Put(sid, true)
-		txContext.AddUndo(func() {
-			txContext.accessedSlots.Remove(sid)
+		s.accessedSlots.Put(sid, true)
+		s.undo = append(s.undo, func() {
+			s.accessedSlots.Remove(sid)
 		})
 	}
 }
 
 func (s *stateDB) IsAddressInAccessList(addr common.Address) bool {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return false
-	}
-	_, found := txContext.accessedAddresses[addr]
+	_, found := s.accessedAddresses[addr]
 	return found
 }
 
 func (s *stateDB) IsSlotInAccessList(addr common.Address, key common.Key) (addressPresent bool, slotPresent bool) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return false, false // TODO: Is this correct?
-	}
-
-	_, found := txContext.accessedSlots.Get(slotId{addr, key})
+	_, found := s.accessedSlots.Get(slotId{addr, key})
 	if found {
 		return true, true
 	}
@@ -1190,53 +1084,25 @@ func (s *stateDB) IsSlotInAccessList(addr common.Address, key common.Key) (addre
 }
 
 func (s *stateDB) Snapshot() int {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return -1
-	}
-	return txContext.Snapshot()
+	return len(s.undo)
 }
 
 func (s *stateDB) RevertToSnapshot(id int) {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
+	if id < 0 || len(s.undo) < id {
+		s.trackErrors(fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(s.undo)))
 		return
 	}
-
-	err = txContext.RevertToSnapshot(id)
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to revert to snapshot %d: %w", id, err))
-	}
-}
-
-func (s *stateDB) RevertTransactions(number uint64) {
-	if number > s.txContextList.Size() {
-		s.trackErrors(fmt.Errorf("cannot revert %d transactions, only %d transactions in the current block", number, s.txContextList.Size()))
-		return
-	}
-	for i := uint64(0); i < number; i++ {
-		currentTx := s.txContextList.Pop()
-		err := currentTx.Revert()
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to revert transaction: %w", err))
-			break
-		}
+	for len(s.undo) > id {
+		s.undo[len(s.undo)-1]()
+		s.undo = s.undo[:len(s.undo)-1]
 	}
 }
 
 func (s *stateDB) BeginTransaction() {
-	s.txContextList.BeginTransaction()
+	// Ignored
 }
 
 func (s *stateDB) EndTransaction() {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return
-	}
-
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
 		value.committed, value.committedKnown = value.current, true
@@ -1244,46 +1110,28 @@ func (s *stateDB) EndTransaction() {
 
 	// EIP-161: At the end of the transaction, any account touched by the execution of that transaction
 	// which is now empty SHALL instead become non-existent (i.e. deleted).
-	// NOTE: This will be removed when the txContext is gonna be merged
-	for _, addr := range txContext.emptyCandidates {
+	for _, addr := range s.emptyCandidates {
 		if s.Empty(addr) {
-			txContext.accountsToDelete = append(txContext.accountsToDelete, addr)
+			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
-			oldState, found := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
-			txContext.AddUndo(func() {
-				if found { // Reset the state only if there was one
-					s.clearedAccounts[addr] = oldState
-				} else {
-					delete(s.clearedAccounts, addr)
-				}
-			})
 		}
 	}
 
 	// Delete accounts scheduled for deletion - by suicide or because they are empty.
-	if len(txContext.accountsToDelete) > 0 {
-		for _, addr := range txContext.accountsToDelete {
+	if len(s.accountsToDelete) > 0 {
+		for _, addr := range s.accountsToDelete {
 			// Transition accounts marked by suicide to be deleted.
 			if s.HasSuicided(addr) {
 				s.setAccountState(addr, accountNonExisting)
 				s.setCodeInternal(addr, []byte{})
-				oldState, found := s.clearedAccounts[addr]
 				s.clearedAccounts[addr] = pendingClearing
-				txContext.AddUndo(func() {
-					if found {
-						s.clearedAccounts[addr] = oldState
-					} else {
-						delete(s.clearedAccounts, addr)
-					}
-				})
 			}
 
 			// If the account was already cleared because it was recreated, we skip this part.
 			if state, found := s.clearedAccounts[addr]; found && (state == cleared || state == clearedAndTainted) {
 				continue
 			}
-
 			// Note: storage state is handled through the clearedAccount map
 			// the clearing of the data and storedDataCache at various phases
 			// of the block processing.
@@ -1295,38 +1143,24 @@ func (s *stateDB) EndTransaction() {
 			// Clear cached value states for the targeted account.
 			s.data.ForEach(func(slot slotId, value *slotValue) {
 				if slot.addr == addr {
-					oldValue := *value
-
 					// Clear cached values.
 					value.stored = common.Value{}
 					value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
-
-					txContext.AddUndo(func() {
-						*value = oldValue
-					})
 				}
 			})
 
 			// Signal to future fetches in this block that this account should be considered cleared.
-			oldState, found := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = cleared
-			txContext.AddUndo(func() {
-				if found {
-					s.clearedAccounts[addr] = oldState
-				} else {
-					delete(s.clearedAccounts, addr)
-				}
-			})
-
 		}
 
-		txContext.accountsToDelete = txContext.accountsToDelete[0:0]
+		s.accountsToDelete = s.accountsToDelete[0:0]
 	}
 
 	s.writtenSlots = map[*slotValue]bool{}
+	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
 }
 
@@ -1513,7 +1347,6 @@ func (s *stateDB) StartBulkLoad(block uint64) BulkLoad {
 	return &bulkLoad{s, common.Update{}, block, nil}
 }
 
-// TODO: TO BE CHECKED
 func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	const addressSize = 20
 	const keySize = 32
@@ -1539,27 +1372,22 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 	}
 	mf.AddChild("codes", common.NewMemoryFootprint(sum))
 
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("no transaction context available: %w", err))
-		return mf
-	}
 	var boolean bool
 	const boolSize = unsafe.Sizeof(boolean)
-	mf.AddChild("accessedAddresses", common.NewMemoryFootprint(uintptr(len(txContext.accessedAddresses))*(addressSize+boolSize)))
-	mf.AddChild("accessedSlots", common.NewMemoryFootprint(uintptr(txContext.accessedSlots.Size())*(slotIdSize+boolSize)))
+	mf.AddChild("accessedAddresses", common.NewMemoryFootprint(uintptr(len(s.accessedAddresses))*(addressSize+boolSize)))
+	mf.AddChild("accessedSlots", common.NewMemoryFootprint(uintptr(s.accessedSlots.Size())*(slotIdSize+boolSize)))
 	mf.AddChild("writtenSlots", common.NewMemoryFootprint(uintptr(len(s.writtenSlots))*(boolSize+unsafe.Sizeof(&slotValue{}))))
 	mf.AddChild("storedDataCache", s.storedDataCache.GetMemoryFootprint(0))
 	mf.AddChild("reincarnation", common.NewMemoryFootprint(uintptr(len(s.reincarnation))*(addressSize+unsafe.Sizeof(uint64(0)))))
-	mf.AddChild("emptyCandidates", common.NewMemoryFootprint(uintptr(len(txContext.emptyCandidates))*(addressSize)))
+	mf.AddChild("emptyCandidates", common.NewMemoryFootprint(uintptr(len(s.emptyCandidates))*(addressSize)))
 
-	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(txContext.transientStorage.Size())*(slotIdSize+valueSize)))
-	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(txContext.accountsToDelete))*(addressSize)))
+	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(s.transientStorage.Size())*(slotIdSize+valueSize)))
+	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(s.accountsToDelete))*(addressSize)))
 	mf.AddChild("clearedAccounts", common.NewMemoryFootprint(uintptr(len(s.clearedAccounts))*(addressSize+unsafe.Sizeof(accountClearingState(0)))))
-	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(txContext.createdContracts))*(addressSize)))
+	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(s.createdContracts))*(addressSize)))
 
 	var logSize uintptr
-	for _, log := range txContext.logs {
+	for _, log := range s.logs {
 		logSize += unsafe.Sizeof(log) + uintptr(len(log.Topics))*hashSize + uintptr(len(log.Data))
 	}
 	mf.AddChild("logs", common.NewMemoryFootprint(logSize))
@@ -1586,12 +1414,13 @@ func (s *stateDB) GetArchiveBlockHeight() (uint64, bool, error) {
 }
 
 func (s *stateDB) resetTransactionContext() {
-	txContext, err := s.txContextList.Current()
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failing to get transaction context in resetTransactionContext: %w", err))
-		return
-	}
-	txContext.clearTransactionContext()
+	s.refund = 0
+	s.ClearAccessList()
+	s.transientStorage.Clear()
+	s.undo = s.undo[0:0]
+	s.emptyCandidates = s.emptyCandidates[0:0]
+	s.logs = s.logs[0:0]
+	s.createdContracts = make(map[common.Address]struct{})
 }
 
 func (s *stateDB) ResetBlockContext() {
@@ -1604,7 +1433,6 @@ func (s *stateDB) ResetBlockContext() {
 	s.logsInBlock = 0
 	s.resetTransactionContext()
 	s.resetReincarnationWhenExceeds(10_000_000)
-	s.txContextList = NewTxContextList()
 }
 
 // resetReincarnationWhenExceeds limits the reincarnation map size
@@ -1628,10 +1456,6 @@ func (s *stateDB) resetState(state State) {
 	s.errors = s.errors[0:0]
 	s.errorsMutex.Unlock()
 	s.state = state
-}
-
-func (s *stateDB) CurrentTxContext() (*txContext, error) {
-	return s.txContextList.Current()
 }
 
 func (s *stateDB) trackErrors(err error) {
@@ -1748,141 +1572,4 @@ func (db *nonCommittableStateDB) Release() {
 		nonCommittableStateDbPool.Put(db.stateDB)
 		db.stateDB = nil
 	}
-}
-
-// txContext represents the changes applied during the execution of a transaction, which can be committed or reverted at the end of the transaction.
-type txContext struct {
-	// A set of contracts created during the current transaction. This is used
-	// to mark eligible accounts to be self-destructed according to EIP-6780.
-	createdContracts map[common.Address]struct{}
-
-	// The refund accumulated in the current transaction.
-	refund uint64
-
-	// The list of log messages recorded for the current transaction.
-	logs []*common.Log
-
-	// A set of accessed addresses in the current transaction.
-	accessedAddresses map[common.Address]bool
-
-	// A set of accessed slots in the current transaction.
-	accessedSlots *common.FastMap[slotId, bool]
-
-	// Transient storage is a temporary storage that gets deleted after each transaction.
-	transientStorage *common.FastMap[slotId, common.Value]
-
-	// A list of addresses, which have possibly become empty in the transaction
-	emptyCandidates []common.Address
-
-	// A list of accounts to be deleted at the end of the transaction.
-	accountsToDelete []common.Address
-
-	// A list of operations undoing modifications applied on the inner state if a snapshot revert needs to be performed.
-	undo []func()
-}
-
-func NewTxContext() *txContext {
-	return &txContext{
-		accountsToDelete:  make([]common.Address, 0, 100),
-		undo:              make([]func(), 0, 100),
-		createdContracts:  make(map[common.Address]struct{}),
-		emptyCandidates:   make([]common.Address, 0, 100),
-		refund:            0,
-		accessedAddresses: map[common.Address]bool{},
-		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
-		transientStorage:  common.NewFastMap[slotId, common.Value](slotHasher{}),
-	}
-}
-
-func (tc *txContext) AddUndo(closure func()) {
-	tc.undo = append(tc.undo, closure)
-}
-
-func (tc *txContext) Snapshot() int {
-	return len(tc.undo)
-}
-
-func (tc *txContext) RevertToSnapshot(id int) error {
-	if id < 0 || len(tc.undo) < id {
-		return fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(tc.undo))
-	}
-	for len(tc.undo) > id {
-		tc.undo[len(tc.undo)-1]()
-		tc.undo = tc.undo[:len(tc.undo)-1]
-	}
-	return nil
-}
-
-// Revert reverts all changes made by the current transaction.
-func (tc *txContext) Revert() error {
-	return tc.RevertToSnapshot(0)
-}
-
-// ClearAccessList clears the access list of the transaction context to save space.
-func (tc *txContext) ClearAccessList() {
-	if len(tc.accessedAddresses) > 0 {
-		tc.accessedAddresses = make(map[common.Address]bool)
-	}
-	if tc.accessedSlots.Size() > 0 {
-		tc.accessedSlots.Clear()
-	}
-}
-
-// clearTransactionContext clears up unneeded data in the transaction context at the end of a transaction to save space.
-func (tc *txContext) clearTransactionContext() {
-	tc.ClearAccessList()
-	tc.transientStorage.Clear()
-	tc.emptyCandidates = tc.emptyCandidates[0:0]
-	tc.logs = tc.logs[0:0]
-	tc.createdContracts = make(map[common.Address]struct{})
-}
-
-// txContextList manages the stack of transaction contexts during a block execution.
-type txContextList struct {
-	contexts []*txContext
-}
-
-func NewTxContextList() *txContextList {
-	return &txContextList{
-		contexts: make([]*txContext, 0),
-	}
-}
-
-// BeginTransaction starts a new transaction context and pushes it to the stack.
-func (tl *txContextList) BeginTransaction() {
-	tl.contexts = append(tl.contexts, NewTxContext())
-}
-
-// Current returns the current transaction context, which is the one on top of the stack. If there is no active transaction context, an error is returned.
-func (tl *txContextList) Current() (*txContext, error) {
-	if len(tl.contexts) == 0 {
-		return nil, fmt.Errorf("no active transaction context")
-	}
-	return tl.contexts[len(tl.contexts)-1], nil
-}
-
-// Pop removes the current transaction context from the stack and returns it. If there is no active transaction context, nil is returned.
-func (tl *txContextList) Pop() *txContext {
-	if len(tl.contexts) == 0 {
-		return nil
-	}
-	current := tl.contexts[len(tl.contexts)-1]
-	tl.contexts = tl.contexts[:len(tl.contexts)-1]
-	return current
-}
-
-// Iterator returns a channel to iterate over all txContext in the txContextList.
-func (tl *txContextList) Iterator() <-chan *txContext {
-	ch := make(chan *txContext)
-	go func() {
-		for _, ctx := range tl.contexts {
-			ch <- ctx
-		}
-		close(ch)
-	}()
-	return ch
-}
-
-func (tl *txContextList) Size() uint64 {
-	return uint64(len(tl.contexts))
 }
