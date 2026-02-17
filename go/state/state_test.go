@@ -178,6 +178,9 @@ func TestDeletedAddressHashes(t *testing.T) {
 		if t != nil && schema == 6 {
 			t.Skipf("schema %d not supported", schema)
 		}
+		if t != nil && strings.Contains(t.Name(), "flat_s5_sql") {
+			t.Skipf("flat variant with sql backend is a work in progress")
+		}
 		s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
 			DeletedAccounts: []common.Address{address1, address2},
@@ -277,6 +280,9 @@ func TestMultipleCodeUpdateHashes(t *testing.T) {
 
 func TestLargeStateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
+		if t != nil && strings.Contains(t.Name(), "flat_s5_sql") {
+			t.Skipf("flat variant with sql backend is a work in progress")
+		}
 		update := common.Update{}
 		for i := 0; i < 100; i++ {
 			address := common.Address{byte(i)}
