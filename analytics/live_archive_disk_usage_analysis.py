@@ -293,14 +293,12 @@ plot_empirical_cdf_broken_axis(
 
 # %%
 
-archive_delta_logs = dict(
-    {
-        "Baseline": "./data/archive-for-delta-size-baseline-5M-31503252cba7c5724ebaabc8051f18f43b6d34b7.log",
-        "Inner delta": "./data/archive-for-delta-size-inner-only-bfb4f86eeda2695b57a2305f1d0691e6c06c19fb.log",
-        "Leaf delta": "./data/archive-for-delta-size-leaf-only-7b45a1cbd651fa8cb3177a90adeb010ef5215cd3.log",
-        "Inner and leaf delta": "./data/archive-for-delta-size-inner-leaf-f5c99b82239cf4819c2ee8c48755ebeddfc55c3c.log",
-    }
-)
+archive_delta_logs = {
+    "Baseline": "./data/archive-for-delta-size-baseline-5M-31503252.log",
+    "Inner delta": "./data/archive-for-delta-size-inner-only-bfb4f86e.log",
+    "Leaf delta": "./data/archive-for-delta-size-leaf-only-7b45a1cb.log",
+    "Inner and leaf delta": "./data/archive-for-delta-size-inner-leaf-f5c99b82.log",
+}
 
 
 def parse_archive_delta_log(archive_delta_logs):
@@ -339,6 +337,8 @@ def plot_archive_delta_comparison(df):
     )
     plot.set_xlabel("Block Number")
     plot.set_ylabel("DB Size [GiB]")
+    plot.set_xlim(0, df["Block Number"].max())
+    plot.set_ylim(0)
     plt.show()
 
     plt.figure(figsize=(12, 6))
@@ -350,6 +350,8 @@ def plot_archive_delta_comparison(df):
     )
     plot.set_xlabel("Block Number")
     plot.set_ylabel("GiB / 10K Blocks")
+    plot.set_xlim(0, df["Block Number"].max())
+    plot.set_ylim(0)
     plt.show()
 
 
