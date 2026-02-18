@@ -233,6 +233,13 @@ func TestAccountDeleteCreate(t *testing.T) {
 				t.Fatalf("failed to add block 9; %s", err)
 			}
 
+			if err := a.Add(11, common.Update{
+				DeletedAccounts: []common.Address{addr1},
+				CreatedAccounts: []common.Address{addr1},
+			}, nil); err != nil {
+				t.Fatalf("failed to add block 11; %s", err)
+			}
+
 			if exists, err := a.Exists(1, addr1); err != nil || exists != true {
 				t.Errorf("unexpected existence status at block 1: %t; %v", exists, err)
 			}
@@ -241,6 +248,9 @@ func TestAccountDeleteCreate(t *testing.T) {
 			}
 			if exists, err := a.Exists(9, addr1); err != nil || exists != true {
 				t.Errorf("unexpected existence status at block 1: %t; %v", exists, err)
+			}
+			if exists, err := a.Exists(11, addr1); err != nil || exists != true {
+				t.Errorf("unexpected existence status at block 11: %t; %v", exists, err)
 			}
 
 			if value, err := a.GetStorage(1, addr1, common.Key{0x05}); err != nil || value != (common.Value{0x47}) {

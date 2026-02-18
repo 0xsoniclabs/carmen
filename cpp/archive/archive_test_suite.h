@@ -356,6 +356,28 @@ TYPED_TEST_P(ArchiveTest, AccountCanBeRecreatedWithoutDelete) {
   EXPECT_THAT(archive.Exists(4, addr), IsOkAndHolds(true));
 }
 
+TYPED_TEST_P(ArchiveTest, AccountCanBeRecreatedInSameBlock) {
+  TempDir dir;
+  ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
+
+  Address addr{0x01};
+
+  Update update1;
+  update1.Create(addr);
+  EXPECT_OK(archive.Add(1, update1));
+
+  Update update2;
+  update2.Delete(addr);
+  update2.Create(addr);
+  EXPECT_OK(archive.Add(3, update2));
+
+  EXPECT_THAT(archive.Exists(0, addr), IsOkAndHolds(false));
+  EXPECT_THAT(archive.Exists(1, addr), IsOkAndHolds(true));
+  EXPECT_THAT(archive.Exists(2, addr), IsOkAndHolds(true));
+  EXPECT_THAT(archive.Exists(3, addr), IsOkAndHolds(true));
+  EXPECT_THAT(archive.Exists(4, addr), IsOkAndHolds(true));
+}
+
 TYPED_TEST_P(ArchiveTest, DeletingAnAccountInvalidatesStorage) {
   TempDir dir;
   ASSERT_OK_AND_ASSIGN(auto archive, TypeParam::Open(dir));
@@ -841,7 +863,8 @@ REGISTER_TYPED_TEST_SUITE_P(
     AccountValidationCanHandleBlockZeroUpdate,
     AccountValidationCanHandleMultipleStateUpdates,
     AccountValidationPassesOnIncrementalUpdates,
-    AccountCanBeRecreatedWithoutDelete, AddingEmptyUpdateDoesNotChangeHash,
+    AccountCanBeRecreatedWithoutDelete, AccountCanBeRecreatedInSameBlock,
+    AddingEmptyUpdateDoesNotChangeHash,
     ArchiveCanBeVerifiedOnDifferentBlockHeights,
     ArchiveCanBeVerifiedForCustomBlockHeight,
     ArchiveHashIsHashOfAccountDiffHashesChain,

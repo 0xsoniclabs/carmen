@@ -122,8 +122,12 @@ class Archive {
     if (!add_value_stmt_) return absl::FailedPreconditionError("DB Closed");
     RETURN_IF_ERROR(db_.Run("BEGIN TRANSACTION"));
 
+    const auto& createdAccounts = update.GetCreatedAccounts();
     for (auto& addr : update.GetDeletedAccounts()) {
-      RETURN_IF_ERROR(delete_account_stmt_->Run(addr, block));
+      if (std::find(createdAccounts.begin(), createdAccounts.end(), addr) ==
+          createdAccounts.end()) {
+        RETURN_IF_ERROR(delete_account_stmt_->Run(addr, block));
+      }
     }
 
     for (auto& addr : update.GetCreatedAccounts()) {
