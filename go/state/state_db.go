@@ -477,12 +477,9 @@ func (s *stateDB) setAccountState(addr common.Address, state accountLifeCycleSta
 	}
 	oldState := val.current
 	val.current = state
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		val.current = oldState
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for setAccountState: %w", err))
-	}
 }
 
 func (s *stateDB) Exist(addr common.Address) bool {
@@ -529,12 +526,9 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 		if slot.addr == addr {
 			// Support rollback of account creation.
 			backup := *value
-			err := s.addUndo(func() {
+			s.addUndo(func() {
 				*value = backup
 			})
-			if err != nil {
-				s.trackErrors(fmt.Errorf("failed to add undo function for CreateAccount: %w", err))
-			}
 
 			// Clear cached values.
 			value.stored = common.Value{}
@@ -548,12 +542,9 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	// Mark account to be treated like if was already committed.
 	oldState := s.clearedAccounts[addr]
 	s.clearedAccounts[addr] = cleared
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.clearedAccounts[addr] = oldState
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for CreateAccount: %w", err))
-	}
 }
 
 func (s *stateDB) CreateContract(addr common.Address) {
@@ -562,12 +553,9 @@ func (s *stateDB) CreateContract(addr common.Address) {
 	}
 	s.createAccountIfNotExists(addr)
 	s.createdContracts[addr] = struct{}{}
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		delete(s.createdContracts, addr)
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for CreateContract: %w", err))
-	}
 }
 
 func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
@@ -599,24 +587,18 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 	s.resetBalance(addr)
 	deleteListLength := len(s.accountsToDelete)
 	s.accountsToDelete = append(s.accountsToDelete, addr)
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.accountsToDelete = s.accountsToDelete[0:deleteListLength]
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for Suicide: %w", err))
-	}
 
 	// Mark account for clearing to plan its removing on commit and
 	// to avoid fetching new data into the cache during the ongoing block.
 	oldState := s.clearedAccounts[addr]
 	if oldState == noClearing {
 		s.clearedAccounts[addr] = pendingClearing
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			s.clearedAccounts[addr] = oldState
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for Suicide: %w", err))
-		}
 	}
 
 	return true
@@ -686,12 +668,9 @@ func (s *stateDB) AddBalance(addr common.Address, diff amount.Amount) {
 	}
 
 	s.balances[addr].current = newValue
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.balances[addr].current = oldValue
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for AddBalance: %w", err))
-	}
 }
 
 func (s *stateDB) SubBalance(addr common.Address, diff amount.Amount) {
@@ -715,12 +694,9 @@ func (s *stateDB) SubBalance(addr common.Address, diff amount.Amount) {
 	}
 
 	s.balances[addr].current = newValue
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.balances[addr].current = oldValue
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for SubBalance: %w", err))
-	}
 }
 
 func (s *stateDB) resetBalance(addr common.Address) {
@@ -728,24 +704,18 @@ func (s *stateDB) resetBalance(addr common.Address) {
 		if !val.current.IsZero() {
 			oldValue := val.current
 			val.current = amount.New()
-			err := s.addUndo(func() {
+			s.addUndo(func() {
 				val.current = oldValue
 			})
-			if err != nil {
-				s.trackErrors(fmt.Errorf("failed to add undo function for resetBalance: %w", err))
-			}
 		}
 	} else {
 		s.balances[addr] = &balanceValue{
 			original: nil,
 			current:  amount.New(),
 		}
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			delete(s.balances, addr)
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for resetBalance: %w", err))
-		}
 	}
 }
 
@@ -781,24 +751,18 @@ func (s *stateDB) setNonceInternal(addr common.Address, nonce uint64) {
 		if val.current != nonce {
 			oldValue := val.current
 			val.current = nonce
-			err := s.addUndo(func() {
+			s.addUndo(func() {
 				val.current = oldValue
 			})
-			if err != nil {
-				s.trackErrors(fmt.Errorf("failed to add undo function for setNonceInternal: %w", err))
-			}
 		}
 	} else {
 		s.nonces[addr] = &nonceValue{
 			original: nil,
 			current:  nonce,
 		}
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			delete(s.nonces, addr)
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for setNonceInternal: %w", err))
-		}
 	}
 }
 
@@ -876,18 +840,15 @@ func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Val
 			oldValue := entry.current
 			entry.current = value
 			s.writtenSlots[entry] = true
-			err := s.addUndo(func() {
+			s.addUndo(func() {
 				entry.current = oldValue
 			})
-			if err != nil {
-				s.trackErrors(fmt.Errorf("failed to add undo function for SetState: %w", err))
-			}
 		}
 	} else {
 		entry = &slotValue{current: value}
 		s.data.Put(sid, entry)
 		s.writtenSlots[entry] = true
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			entry, _ := s.data.Get(sid)
 			if entry.committedKnown {
 				entry.current = entry.committed
@@ -896,17 +857,11 @@ func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Val
 			}
 			delete(s.writtenSlots, entry)
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for SetState: %w", err))
-		}
 	}
 	oldState := s.clearedAccounts[addr]
 	if oldState == cleared {
 		s.clearedAccounts[addr] = clearedAndTainted
-		err := s.addUndo(func() { s.clearedAccounts[addr] = oldState })
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for SetState: %w", err))
-		}
+		s.addUndo(func() { s.clearedAccounts[addr] = oldState })
 	}
 }
 
@@ -925,12 +880,9 @@ func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value c
 
 	// Save previous value for rollbacks
 	oldValue := currentValue
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.transientStorage.Put(sid, oldValue)
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for SetTransientState: %w", err))
-	}
 
 	s.transientStorage.Put(sid, value)
 }
@@ -993,24 +945,18 @@ func (s *stateDB) setCodeInternal(addr common.Address, code []byte) {
 		val.code, val.codeValid = code, true
 		val.size, val.sizeValid = len(code), true
 		s.codes[addr] = val
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			delete(s.codes, addr)
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for setCodeInternal: %w", err))
-		}
 	} else {
 		old := *val
 		val.code, val.codeValid = code, true
 		val.size, val.sizeValid = len(code), true
 		val.hash = nil
 		val.dirty = true
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			*(s.codes[addr]) = old
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for setCodeInternal: %w", err))
-		}
 	}
 }
 
@@ -1061,13 +1007,11 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 func (s *stateDB) AddRefund(amount uint64) {
 	old := s.refund
 	s.refund += amount
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.refund = old
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for AddRefund: %w", err))
-	}
 }
+
 func (s *stateDB) SubRefund(amount uint64) {
 	if amount > s.refund {
 		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
@@ -1075,12 +1019,9 @@ func (s *stateDB) SubRefund(amount uint64) {
 	}
 	old := s.refund
 	s.refund -= amount
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.refund = old
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for SubRefund: %w", err))
-	}
 }
 
 func (s *stateDB) GetRefund() uint64 {
@@ -1092,13 +1033,10 @@ func (s *stateDB) AddLog(log *common.Log) {
 	log.Index = s.logsInBlock
 	s.logs = append(s.logs, log)
 	s.logsInBlock++
-	err := s.addUndo(func() {
+	s.addUndo(func() {
 		s.logs = s.logs[0:size]
 		s.logsInBlock--
 	})
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to add undo function for AddLog: %w", err))
-	}
 }
 
 func (s *stateDB) GetLogs() []*common.Log {
@@ -1118,12 +1056,9 @@ func (s *stateDB) AddAddressToAccessList(addr common.Address) {
 	_, found := s.accessedAddresses[addr]
 	if !found {
 		s.accessedAddresses[addr] = true
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			delete(s.accessedAddresses, addr)
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for AddAddressToAccessList: %w", err))
-		}
 	}
 }
 
@@ -1133,12 +1068,9 @@ func (s *stateDB) AddSlotToAccessList(addr common.Address, key common.Key) {
 	_, found := s.accessedSlots.Get(sid)
 	if !found {
 		s.accessedSlots.Put(sid, true)
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			s.accessedSlots.Remove(sid)
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for AddSlotToAccessList: %w", err))
-		}
 	}
 }
 
@@ -1182,13 +1114,10 @@ func (s *stateDB) EndTransaction() {
 		oldValueCommitted := value.committed
 		oldValueCommittedKnown := value.committedKnown
 		value.committed, value.committedKnown = value.current, true
-		err := s.addUndo(func() {
+		s.addUndo(func() {
 			value.committed = oldValueCommitted
 			value.committedKnown = oldValueCommittedKnown
 		})
-		if err != nil {
-			s.trackErrors(fmt.Errorf("failed to add undo function for EndTransaction: %w", err))
-		}
 	}
 
 	// EIP-161: At the end of the transaction, any account touched by the execution of that transaction
@@ -1197,7 +1126,11 @@ func (s *stateDB) EndTransaction() {
 		if s.Empty(addr) {
 			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
+			oldState := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
+			s.addUndo(func() {
+				s.clearedAccounts[addr] = oldState
+			})
 		}
 	}
 
@@ -1234,30 +1167,33 @@ func (s *stateDB) EndTransaction() {
 					value.committedKnown = true
 					value.current = common.Value{}
 
-					err := s.addUndo(func() {
+					s.addUndo(func() {
 						*value = oldValue
 					})
-					if err != nil {
-						s.trackErrors(fmt.Errorf("failed to add undo function for account clearing: %w", err))
-					}
 				}
 			})
 
 			// Signal to future fetches in this block that this account should be considered cleared.
 			oldClearedAccountState := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = cleared
-			err := s.addUndo(func() {
+			s.addUndo(func() {
 				s.clearedAccounts[addr] = oldClearedAccountState
 			})
-			if err != nil {
-				s.trackErrors(fmt.Errorf("failed to add undo function for account clearing: %w", err))
-			}
 		}
 
+		oldAccountsToDelete := make([]common.Address, len(s.accountsToDelete))
+		copy(oldAccountsToDelete, s.accountsToDelete)
 		s.accountsToDelete = s.accountsToDelete[0:0]
+		s.addUndo(func() {
+			s.accountsToDelete = oldAccountsToDelete
+		})
 	}
 
+	oldWrittenSlots := s.writtenSlots // Pointers to data fields in written slots should still be valid at this point
 	s.writtenSlots = map[*slotValue]bool{}
+	s.addUndo(func() {
+		s.writtenSlots = oldWrittenSlots
+	})
 	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
 }
@@ -1523,12 +1459,12 @@ func (s *stateDB) GetArchiveBlockHeight() (uint64, bool, error) {
 }
 
 // addUndo adds the given undo function to the list of undo functions for the current transaction.
-func (s *stateDB) addUndo(undoFunc func()) error {
+func (s *stateDB) addUndo(undoFunc func()) {
 	if len(s.undo) == 0 {
-		return fmt.Errorf("cannot add undo function, no active transaction")
+		s.trackErrors(fmt.Errorf("cannot add undo function, no active transaction"))
+		return
 	}
 	s.undo[len(s.undo)-1] = append(s.undo[len(s.undo)-1], undoFunc)
-	return nil
 }
 
 func (s *stateDB) resetTransactionContext() {
