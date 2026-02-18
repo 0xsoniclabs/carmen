@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//var _ state.State = (*state)(nil)
+var _ state.State = (*verkleState)(nil)
 
 func TestState_ContentIsStoredPersistent(t *testing.T) {
 	modes := map[string]state.Parameters{
 		"path-based": {Archive: state.NoArchive},
-		"archive":    {Archive: state.LevelDbArchive}, // < does not matter
+		"archive":    {Archive: state.LevelDbArchive},
 	}
 
 	for name, params := range modes {
@@ -25,7 +25,11 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			s1, err := newState(params)
 			require.NoError(err)
 
-			require.NoError(s1.SetNonce(common.Address{1}, common.ToNonce(12)))
+			require.NoError(s1.Apply(1, common.Update{
+				Nonces: []common.NonceUpdate{
+					{Account: common.Address{1}, Nonce: common.ToNonce(12)},
+				},
+			}))
 
 			nonce, err := s1.GetNonce(common.Address{1})
 			require.NoError(err)

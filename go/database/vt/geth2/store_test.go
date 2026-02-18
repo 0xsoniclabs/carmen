@@ -6,72 +6,155 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var _ NodeStore = (*levelDbStore)(nil)
+func TestLevelDb_CanKeepDataPersistent(t *testing.T) {
+	tests := map[string]func(string) (*levelDbStore, error){
+		"live":    newLevelDbLiveStore,
+		"archive": newLevelDbArchiveStore,
+	}
 
-func TestLevelDbStore_CanKeepDataPersistent(t *testing.T) {
-	key1 := []byte("key1")
-	value1 := []byte("value1")
-	key2 := []byte("key2")
-	value2 := []byte("value2")
+	for name, factory := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
 
-	dir := t.TempDir()
+			key1 := []byte("key1")
+			value1 := []byte("value1")
+			key2 := []byte("key2")
+			value2 := []byte("value2")
 
-	store, err := newLevelDbStore(dir)
-	require.NoError(t, err)
+			dir := t.TempDir()
 
-	require.NoError(t, store.Set(key1, value1))
-	require.NoError(t, store.Set(key2, value2))
+			// --- first reincarnation ---
+			store, err := factory(dir)
+			require.NoError(err)
+			require.Zero(store.NextBlock())
 
-	err = store.Close()
-	require.NoError(t, err)
+			// First block.
+			require.NoError(store.AddBlock(
+				0, []Entry{
+					{Path: key1, Blob: value1},
+					{Path: key2, Blob: value2},
+				},
+			))
 
-	store2, err := newLevelDbStore(dir)
-	require.NoError(t, err)
+			require.EqualValues(1, store.NextBlock())
+			head := store.HeadState()
+			val, err := head.GetNode(key1)
+			require.NoError(err)
+			require.Equal(value1, val)
 
-	val, err := store2.Get(key1)
-	require.NoError(t, err)
-	require.Equal(t, value1, val)
+			val, err = head.GetNode(key2)
+			require.NoError(err)
+			require.Equal(value2, val)
 
-	val, err = store2.Get(key2)
-	require.NoError(t, err)
-	require.Equal(t, value2, val)
+			// Second block.
+			require.NoError(store.AddBlock(
+				1, []Entry{
+					{Path: key1, Blob: value2},
+					{Path: key2, Blob: value1},
+				},
+			))
 
-	require.NoError(t, store2.Close())
+			require.EqualValues(2, store.NextBlock())
+			head = store.HeadState()
+			val, err = head.GetNode(key1)
+			require.NoError(err)
+			require.Equal(value2, val)
+
+			val, err = head.GetNode(key2)
+			require.NoError(err)
+			require.Equal(value1, val)
+
+			require.NoError(store.Close())
+
+			// --- second reincarnation ---
+			store2, err := factory(dir)
+			require.NoError(err)
+			require.EqualValues(2, store2.NextBlock())
+
+			// Check head state.
+			val, err = store2.HeadState().GetNode(key1)
+			require.NoError(err)
+			require.Equal(value2, val)
+
+			val, err = store2.HeadState().GetNode(key2)
+			require.NoError(err)
+			require.Equal(value1, val)
+
+			require.NoError(store2.Close())
+		})
+	}
 }
 
-func TestLevelDbStore_ReturnsNotFoundForMissingKey(t *testing.T) {
-	store, err := newLevelDbStore(t.TempDir())
+func TestLiveDb_ReturnsErrorForHistoricState(t *testing.T) {
+	store, err := newLevelDbLiveStore(t.TempDir())
 	require.NoError(t, err)
-
-	_, err = store.Get([]byte("nonexistent"))
-	require.ErrorIs(t, err, ErrNotFound)
-
+	_, err = store.HistoricState(0)
+	require.ErrorIs(t, err, ErrNoArchive)
 	require.NoError(t, store.Close())
 }
 
-func TestMemoryDbStore_CanSetAndGet(t *testing.T) {
+func TestArchiveDb_TracksHistory(t *testing.T) {
 	require := require.New(t)
-	store := newMemoryDbStore()
+	store, err := newLevelDbArchiveStore(t.TempDir())
+	require.NoError(err)
 
 	key1 := []byte("key1")
-	value1 := []byte("value1")
 	key2 := []byte("key2")
+	value1 := []byte("value1")
 	value2 := []byte("value2")
 
-	require.NoError(store.Set(key1, value1))
-	require.NoError(store.Set(key2, value2))
-	val, err := store.Get(key1)
-	require.NoError(err)
-	require.Equal(value1, val)
+	// First block.
+	require.NoError(store.AddBlock(
+		0, []Entry{{Path: key1, Blob: value1}},
+	))
 
-	val, err = store.Get(key2)
-	require.NoError(err)
-	require.Equal(value2, val)
-}
+	// Second block is empty.
+	require.NoError(store.AddBlock(1, nil))
 
-func TestMemoryDbStore_ReturnsNotFoundForMissingKey(t *testing.T) {
-	store := newMemoryDbStore()
-	_, err := store.Get([]byte("nonexistent"))
-	require.ErrorIs(t, err, ErrNotFound)
-	require.NoError(t, store.Close())
+	// Third block updates key1 and adds key2.
+	require.NoError(store.AddBlock(
+		2, []Entry{
+			{Path: key1, Blob: value2},
+			{Path: key2, Blob: value2},
+		},
+	))
+
+	// Fourth block is empty.
+	require.NoError(store.AddBlock(3, nil))
+
+	tests := map[string]struct {
+		block uint64
+		key   []byte
+		value []byte
+	}{
+		"block 0, key1": {block: 0, key: key1, value: value1},
+		"block 0, key2": {block: 0, key: key2, value: nil},
+		"block 1, key1": {block: 1, key: key1, value: value1},
+		"block 1, key2": {block: 1, key: key2, value: nil},
+		"block 2, key1": {block: 2, key: key1, value: value2},
+		"block 2, key2": {block: 2, key: key2, value: value2},
+		"block 3, key1": {block: 3, key: key1, value: value2},
+		"block 3, key2": {block: 3, key: key2, value: value2},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			historicState, err := store.HistoricState(tc.block)
+			require.NoError(err)
+
+			val, err := historicState.GetNode(tc.key)
+			if tc.value == nil {
+				require.ErrorIs(err, ErrNotFound)
+				return
+			}
+			require.NoError(err)
+			require.Equal(tc.value, val)
+		})
+	}
+
+	// Can not request historic state for future block.
+	_, err = store.HistoricState(4)
+	require.ErrorContains(err, "requested block 4 is in the future")
+
+	require.NoError(store.Close())
 }
