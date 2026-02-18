@@ -57,7 +57,9 @@ plt.plot(db_sizes[0], db_sizes[1], label="Live DB")
 plt.plot(db_sizes[0], db_sizes[2], label="Archive DB")
 plt.xlabel("Block Number")
 plt.ylabel("DB Size [GiB]")
-plt.title("S5 DB Size Growth - Full History Run (55M Blocks)")
+plt.xlim(0, db_sizes[0][-1])
+plt.ylim(0)
+plt.title("S5 DB Size Growth - 55M Blocks Sonic Mainnet")
 plt.grid(True)
 plt.legend()
 plt.show()
@@ -113,28 +115,34 @@ fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
 axs[0].plot(db_sizes[0], db_sizes[1], label="Live DB")
 axs[0].set_ylabel("DB Size [GiB]")
-axs[0].set_title("S5 DB Size Growth - Full History Run (55M Blocks) - Live Only")
+axs[0].set_xlim(0, db_sizes[0][-1])
+axs[0].set_ylim(0)
+axs[0].set_title("S5 Live DB Size Growth - 55M Blocks Sonic Mainnet")
 axs[0].grid(True)
 
 axs[1].plot(db_sizes[0][1:], live_growth_rates, label="Live DB")
 axs[1].set_xlabel("Block Number")
 axs[1].set_ylabel("GiB / 10K Blocks")
-axs[1].set_title("S5 DB Size Growth Rate - Full History Run (55M Blocks) - Live Only")
+axs[1].set_xlim(0, db_sizes[0][-1])
+axs[1].set_ylim(0)
+axs[1].set_title("S5 Live DB Size Growth Rate - 55M Blocks Sonic Mainnet")
 axs[1].grid(True)
 
 fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
 axs[0].plot(db_sizes[0], db_sizes[2], label="Archive DB", color="orange")
 axs[0].set_ylabel("DB Size [GiB]")
-axs[0].set_title("S5 DB Size Growth - Full History Run (55M Blocks) - Archive Only")
+axs[0].set_xlim(0, db_sizes[0][-1])
+axs[0].set_ylim(0)
+axs[0].set_title("S5 Archive DB Size Growth - 55M Blocks Sonic Mainnet")
 axs[0].grid(True)
 
 axs[1].plot(db_sizes[0][1:], archive_growth_rates, label="Archive DB", color="orange")
 axs[1].set_xlabel("Block Number")
 axs[1].set_ylabel("GiB / 10K Blocks")
-axs[1].set_title(
-    "S5 DB Size Growth Rate - Full History Run (55M Blocks) - Archive Only"
-)
+axs[1].set_xlim(0, db_sizes[0][-1])
+axs[1].set_ylim(0)
+axs[1].set_title("S5 Archive DB Size Growth Rate - 55M Blocks Sonic Mainnet")
 axs[1].grid(True)
 
 # %% Plot empirical CDFs of growth rates
@@ -149,6 +157,8 @@ def plot_empirical_cdf(data, title):
     plt.plot([x * 1024 for x in sorted_data], y_values, marker=".", linestyle="none")
     plt.xlabel("MiB / 10K Blocks")
     plt.ylabel("Empirical CDF")
+    plt.xlim(0, max(data) * 1024)
+    plt.ylim(0)
     plt.title(title)
     plt.grid(True)
 
@@ -203,7 +213,9 @@ def plot_empirical_cdf_broken_axis(data, break_at, outlier_region, title):
     fig.subplots_adjust(wspace=0.03)
 
     ax1.set_xlim(0, break_at * 1024)
+    ax1.set_ylim(0)
     ax2.set_xlim(outlier_region[0] * 1024, outlier_region[1] * 1024)
+    ax2.set_ylim(0)
 
     median_value = sorted_data[n // 2] * 1024
     max_value = sorted_data[-1] * 1024
@@ -280,24 +292,24 @@ def plot_empirical_cdf_broken_axis(data, break_at, outlier_region, title):
 # plot_empirical_cdf(live_slope, 'Empirical CDF of S5 Live DB Growth Rates - Full History Run (55M Blocks)')
 plot_empirical_cdf(
     archive_growth_rates,
-    "Empirical CDF of S5 Archive DB Growth Rates - Full History Run (55M Blocks)",
+    "Empirical CDF of S5 Archive DB Growth Rates - 55M Blocks Sonic Mainnet",
 )
 
 plot_empirical_cdf_broken_axis(
     live_growth_rates,
     0.08,
     (0.4, 0.55),
-    "Empirical CDF of S5 Live DB Growth Rates - Full History Run (55M Blocks)",
+    "Empirical CDF of S5 Live DB Growth Rates - 55M Blocks Sonic Mainnet",
 )
-# plot_empirical_cdf_broken_axis(archive_slope, 0.7, (0.8, 1), 'Empirical CDF of S5 Archive DB Growth Rates - Full History Run (55M Blocks)')
+# plot_empirical_cdf_broken_axis(archive_slope, 0.7, (0.8, 1), 'Empirical CDF of S5 Archive DB Growth Rates - 55M Blocks Sonic Mainnet')
 
 # %%
 
 archive_delta_logs = {
-    "Baseline": "./data/archive-for-delta-size-baseline-5M-31503252.log",
-    "Inner delta": "./data/archive-for-delta-size-inner-only-bfb4f86e.log",
-    "Leaf delta": "./data/archive-for-delta-size-leaf-only-7b45a1cb.log",
-    "Inner and leaf delta": "./data/archive-for-delta-size-inner-leaf-f5c99b82.log",
+    "Baseline": "./data/rust-file-archive-for-delta-size-baseline-5M-31503252.log",
+    "Inner delta": "./data/rust-file-archive-for-delta-size-inner-only-5M-bfb4f86e.log",
+    "Leaf delta": "./data/rust-file-archive-for-delta-size-leaf-only-5M-7b45a1cb.log",
+    "Inner and leaf delta": "./data/rust-file-archive-for-delta-size-inner-leaf-5M-f5c99b82.log",
 }
 
 
@@ -339,6 +351,9 @@ def plot_archive_delta_comparison(df):
     plot.set_ylabel("DB Size [GiB]")
     plot.set_xlim(0, df["Block Number"].max())
     plot.set_ylim(0)
+    plot.set_title(
+        "S6 Archive DB Size Growth with different Delta Node Variants - 5M Blocks Sonic Mainnet"
+    )
     plt.show()
 
     plt.figure(figsize=(12, 6))
@@ -352,6 +367,9 @@ def plot_archive_delta_comparison(df):
     plot.set_ylabel("GiB / 10K Blocks")
     plot.set_xlim(0, df["Block Number"].max())
     plot.set_ylim(0)
+    plot.set_title(
+        "S6 Archive DB Size Growth Rate with different Delta Node Variants - 5M Blocks Sonic Mainnet"
+    )
     plt.show()
 
 

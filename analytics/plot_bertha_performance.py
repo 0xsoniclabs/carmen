@@ -38,6 +38,11 @@ def plot_mgas_comparison(mgas_with_labels, title):
         plt.plot(block_numbers, mgas_values, label=label)
     plt.xlabel("Block Number")
     plt.ylabel("MGas/s")
+    max_blocks = max(
+        [block for (block_numbers, _), _ in mgas_with_labels for block in block_numbers]
+    )
+    plt.xlim(0, max_blocks)
+    plt.ylim(0)
     plt.title(title)
     plt.grid(True)
     plt.legend()
@@ -47,16 +52,13 @@ def plot_mgas_comparison(mgas_with_labels, title):
 # %% Comparison between S5 and S6 performance
 
 
-data = []
-data.append(
+data = [
     (
         itemgetter(0, 1)(
             parse_performance_metrics("./data/nightly_bench_9b783b82_5_go-file.log")
         ),
         "go-file (S5)",
-    )
-)
-data.append(
+    ),
     (
         itemgetter(0, 1)(
             parse_performance_metrics(
@@ -64,17 +66,13 @@ data.append(
             )
         ),
         "go-file-flat (S5)",
-    )
-)
-data.append(
+    ),
     (
         itemgetter(0, 1)(
             parse_performance_metrics("./data/nightly_bench_50f881d9_6_rust-file.log")
         ),
         "rust-file (S6)",
-    )
-)
-data.append(
+    ),
     (
         itemgetter(0, 1)(
             parse_performance_metrics(
@@ -82,32 +80,53 @@ data.append(
             )
         ),
         "rust-file-flat (S6)",
-    )
-)
-plot_mgas_comparison(data, "S5 vs S6 - First 1M Blocks Sonic Mainnet")
+    ),
+]
+plot_mgas_comparison(data, "S5 vs S6 - 1M Blocks Sonic Mainnet")
 
 # %% Full history run S5 vs S6
 
 # Note that these were not obtained on the same machine, and the S5 run only goes up to 51M blocks
 
-data = []
-data.append(
+data = [
     (
         itemgetter(0, 1)(
             parse_performance_metrics("./data/2025_12_17_S5_51M_blocks.log")
         ),
         "go-file (S5)",
-    )
-)
-data.append(
+    ),
     (
         itemgetter(0, 1)(
             parse_performance_metrics("./data/2026_01_23_S6_55M_blocks.log")
         ),
         "rust-file (S6)",
-    )
-)
-plot_mgas_comparison(data, "S5 vs S6 - Full history run")
+    ),
+]
+plot_mgas_comparison(data, "S5 vs S6 - 55M Blocks Sonic Mainnet")
+
+# %% Full history run Live vs Archive
+
+# Note that these were not obtained on the same machine, and the S5 run only goes up to 51M blocks
+
+data = [
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/rust-file-live-for-gas-55M-main-056907.log"
+            )
+        ),
+        "LiveDb",
+    ),
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/rust-file-archive-for-gas-55M-main-056907.log"
+            )
+        ),
+        "ArchiveDb",
+    ),
+]
+plot_mgas_comparison(data, "LiveDb vs ArchiveDb - 55M Blocks Sonic Mainnet")
 
 # %% Plot realtime factor for S5 full history run (55M blocks)
 
@@ -119,40 +138,40 @@ plt.figure(figsize=(10, 5))
 plt.plot(block_numbers, rt_factors, label="Realtime Factor")
 plt.xlabel("Block Number")
 plt.ylabel("x Realtime")
-plt.title("S5 Realtime Factor - Archive Full History Run (55M Blocks)")
+plt.title("S5 Archive Realtime Factor - 55M Blocks Sonic Mainnet")
 plt.grid(True)
 plt.yscale("log")
+plt.xlim(0, max(block_numbers))
 plt.axhline(y=24, color="r", linestyle="--", label="24x Realtime")
 plt.legend()
 
 # %% Plot live, archive, and geth performance for S5 up to block 4050000
-data = []
-data.append(
-    (
-        itemgetter(0, 1)(
-            parse_performance_metrics("./data/live-for-gas-55M-main-056907.log")
-        ),
-        "Live (S6)",
-    )
-)
-data.append(
-    (
-        itemgetter(0, 1)(
-            parse_performance_metrics("./data/archive-for-gas-55M-main-056907.log")
-        ),
-        "Archive (S6)",
-    )
-)
-data.append(
+data = [
     (
         itemgetter(0, 1)(
             parse_performance_metrics(
-                "./data/live-for-mgas-4M-main-go-geth-memory-2eab53d5f4ec.log"
+                "./data/rust-file-live-for-gas-55M-main-056907.log"
+            )
+        ),
+        "Live (S6)",
+    ),
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/rust-file-archive-for-gas-55M-main-056907.log"
+            )
+        ),
+        "Archive (S6)",
+    ),
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/go-geth-memory-live-for-mgas-4M-main-2eab53d5.log"
             )
         ),
         "Geth Verkle (in-memory)",
-    )
-)
+    ),
+]
 
 for i in range(len(data)):
     block_numbers, mgas_values = data[i][0]
@@ -160,5 +179,5 @@ for i in range(len(data)):
 
 plot_mgas_comparison(
     data,
-    "Live vs Archive vs Geth Verkle (in-memory) - First 4M Blocks Sonic Mainnet",
+    "Live vs Archive vs Geth Verkle (in-memory) - 4M Blocks Sonic Mainnet",
 )
