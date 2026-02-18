@@ -222,8 +222,7 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	return future.Immediate(result.Ok(h))
 }
 
-// Apply is an internal method, which implements apply and returns a channel
-// for synchronization.
+// Apply applies the provided updates to the state content.
 //
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the archive, if there is such.

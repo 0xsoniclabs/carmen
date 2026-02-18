@@ -210,7 +210,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-// Apply is an internal method, which implements apply and optionally
+// Apply applies the provided updates to the state content.
 // returns a channel for synchronization.
 //
 // The channel signals the completion of any spawned asynchronous operations
