@@ -124,3 +124,41 @@ plt.grid(True)
 plt.yscale("log")
 plt.axhline(y=24, color="r", linestyle="--", label="24x Realtime")
 plt.legend()
+
+# %% Plot live, archive, and geth performance for S5 up to block 4050000
+data = []
+data.append(
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics("./data/live-for-gas-55M-main-056907.log")
+        ),
+        "Live (S6)",
+    )
+)
+data.append(
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics("./data/archive-for-gas-55M-main-056907.log")
+        ),
+        "Archive (S6)",
+    )
+)
+data.append(
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/live-for-mgas-4M-main-go-geth-memory-2eab53d5f4ec.log"
+            )
+        ),
+        "Geth Verkle (in-memory)",
+    )
+)
+
+for i in range(len(data)):
+    block_numbers, mgas_values = data[i][0]
+    data[i] = (block_numbers[:400], mgas_values[:400]), data[i][1]
+
+plot_mgas_comparison(
+    data,
+    "Live vs Archive vs Geth Verkle (in-memory) - First 4M Blocks Sonic Mainnet",
+)
