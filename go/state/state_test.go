@@ -94,7 +94,6 @@ func getAllSchemas() []state.Schema {
 
 func testEachConfiguration(t *testing.T, test func(t *testing.T, config *namedStateConfig, s state.State)) {
 	for _, config := range initStates() {
-		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			state, err := config.createState(t.TempDir())
@@ -105,7 +104,11 @@ func testEachConfiguration(t *testing.T, test func(t *testing.T, config *namedSt
 					t.Fatalf("failed to initialize state %s: %v", config.name(), err)
 				}
 			}
-			defer state.Close()
+			defer func() {
+				if err := state.Close(); err != nil {
+					t.Errorf("failed to close state %s: %v", config.name(), err)
+				}
+			}()
 
 			test(t, &config, state)
 		})
@@ -133,7 +136,9 @@ func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state
 			t.Fatalf("failed to get hash of reference state: %v", err)
 		}
 		want[s] = hash
-		ref.Close()
+		if err := ref.Close(); err != nil {
+			t.Errorf("failed to close reference state: %v", err)
+		}
 	}
 
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
