@@ -147,7 +147,7 @@ type StateDB interface {
 
 	ResetBlockContext()
 
-	// RevertTransactions revert `number` in the current block which haven't been committed to the underlying state.
+	// RevertTransactions revert `number` of transactions in the current block which haven't been committed to the underlying state.
 	RevertTransactions(number uint64)
 }
 
