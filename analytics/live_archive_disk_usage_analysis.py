@@ -4,6 +4,8 @@ from matplotlib.transforms import offset_copy
 import re
 import sys
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
 # The default CSV to load. When running non-interactively, this can be overridden by a command-line argument.
 # Note that the titles of plots below need to be adjusted accordingly if different data is used.
@@ -290,3 +292,68 @@ plot_empirical_cdf_broken_axis(
 # plot_empirical_cdf_broken_axis(archive_slope, 0.7, (0.8, 1), 'Empirical CDF of S5 Archive DB Growth Rates - Full History Run (55M Blocks)')
 
 # %%
+
+archive_delta_logs = {
+    "Baseline": "./data/archive-for-delta-size-baseline-5M-31503252.log",
+    "Inner delta": "./data/archive-for-delta-size-inner-only-bfb4f86e.log",
+    "Leaf delta": "./data/archive-for-delta-size-leaf-only-7b45a1cb.log",
+    "Inner and leaf delta": "./data/archive-for-delta-size-inner-leaf-f5c99b82.log",
+}
+
+
+def parse_archive_delta_log(archive_delta_logs):
+    """
+    Parse multiple Bertha log files corresponding to different delta node variants and combine the results into a single DataFrame. The DataFrame will have columns for the variant label, block number, archive DB size in GiB, and growth rate in GiB per 10K blocks.
+    """
+    df = pd.DataFrame(columns=["Variant", "Block Number", "DB Size [GiB]"])
+    for label, log_path in archive_delta_logs.items():
+        db_sizes = parse_db_size(log_path)
+        archive_growth_rates = [
+            db_sizes[2][i] - db_sizes[2][i - 1] for i in range(1, len(db_sizes[2]))
+        ]
+        temp_df = pd.DataFrame(
+            {
+                "Variant": [label] * len(db_sizes[0]),
+                "Block Number": db_sizes[0],
+                "DB Size [GiB]": db_sizes[2],
+                "Growth Rate": [0] + archive_growth_rates,
+            }
+        )
+        df = pd.concat([df, temp_df], ignore_index=True)
+    return df
+
+
+def plot_archive_delta_comparison(df):
+    """
+    Plot the archive DB size and growth rate over time for different delta node variants.
+    """
+    plt.figure(figsize=(12, 6))
+    sns.set_style("whitegrid")
+    plot = sns.lineplot(
+        data=df,
+        x="Block Number",
+        y="DB Size [GiB]",
+        hue="Variant",
+    )
+    plot.set_xlabel("Block Number")
+    plot.set_ylabel("DB Size [GiB]")
+    plot.set_xlim(0, df["Block Number"].max())
+    plot.set_ylim(0)
+    plt.show()
+
+    plt.figure(figsize=(12, 6))
+    plot = sns.lineplot(
+        data=df,
+        x="Block Number",
+        y="Growth Rate",
+        hue="Variant",
+    )
+    plot.set_xlabel("Block Number")
+    plot.set_ylabel("GiB / 10K Blocks")
+    plot.set_xlim(0, df["Block Number"].max())
+    plot.set_ylim(0)
+    plt.show()
+
+
+df = parse_archive_delta_log(archive_delta_logs)
+plot_archive_delta_comparison(df)
