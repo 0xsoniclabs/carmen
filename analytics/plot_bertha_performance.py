@@ -147,7 +147,7 @@ data.append(
     (
         itemgetter(0, 1)(
             parse_performance_metrics(
-                "./data/live-for-mgas-go-geth-memory-main-2eab53d5f4ec.log"
+                "./data/live-for-mgas-4M-main-go-geth-memory-2eab53d5f4ec.log"
             )
         ),
         "Geth Verkle (in-memory)",
@@ -156,7 +156,7 @@ data.append(
 
 for i in range(len(data)):
     block_numbers, mgas_values = data[i][0]
-    data[i] = (block_numbers[:405], mgas_values[:405]), data[i][1]
+    data[i] = (block_numbers[:400], mgas_values[:400]), data[i][1]
 
 plot_mgas_comparison(
     data,
