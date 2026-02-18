@@ -1166,7 +1166,7 @@ func (mr *MockStateDBMockRecorder) RevertToSnapshot(arg0 any) *gomock.Call {
 }
 
 // RevertTransactions mocks base method.
-func (m *MockStateDB) RevertTransactions(number uint64) {
+func (m *MockStateDB) RevertTransactions(number int) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "RevertTransactions", number)
 }
