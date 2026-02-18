@@ -445,6 +445,8 @@ func CreateNonCommittableStateDBUsing(state State) NonCommittableStateDB {
 }
 
 func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges bool) *stateDB {
+	undo := make([][]func(), 0, 100)
+	undo = append(undo, make([]func(), 0, 100))
 	return &stateDB{
 		state:             state,
 		accounts:          map[common.Address]*accountState{},
@@ -460,7 +462,7 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
 		writtenSlots:      map[*slotValue]bool{},
 		accountsToDelete:  make([]common.Address, 0, 100),
-		undo:              make([][]func(), 0, 100),
+		undo:              undo,
 		clearedAccounts:   make(map[common.Address]accountClearingState),
 		createdContracts:  make(map[common.Address]struct{}),
 		emptyCandidates:   make([]common.Address, 0, 100),
@@ -1235,6 +1237,7 @@ func (s *stateDB) EndTransaction() {
 	s.writtenSlots = map[*slotValue]bool{}
 	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
+	s.BeginTransaction() // Start a new transaction scope for the next transaction.
 }
 
 func (s *stateDB) RevertTransactions(num_tx int) {
@@ -1525,6 +1528,7 @@ func (s *stateDB) ResetBlockContext() {
 	s.resetTransactionContext()
 	s.undo = s.undo[0:0]
 	s.resetReincarnationWhenExceeds(10_000_000)
+	s.BeginTransaction() // Start the first transaction scope for the block.
 }
 
 // resetReincarnationWhenExceeds limits the reincarnation map size
