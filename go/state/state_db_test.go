@@ -4620,6 +4620,52 @@ func TestStateDB_revertTransactionsRevertToPreviousState(t *testing.T) {
 	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
 }
 
+func TestStateDB_RollbackOfTransactionsRestoresCommittedState(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	st := NewMockState(ctrl)
+
+	any := gomock.Any()
+	st.EXPECT().Exists(any).Return(true, nil).AnyTimes()
+	st.EXPECT().GetStorage(any, any).AnyTimes()
+	st.EXPECT().Check().AnyTimes()
+	st.EXPECT().Flush().AnyTimes()
+	st.EXPECT().Close()
+
+	state := CreateStateDBUsing(st)
+	defer func() {
+		require.NoError(state.Close())
+	}()
+
+	addr := common.Address{0x1}
+	key := common.Key{0x1}
+	val0 := common.Value{}
+	val1 := common.Value{0x1}
+	val2 := common.Value{0x2}
+
+	// Tx 1: updates a storage location
+	state.BeginTransaction()
+	require.Equal(val0, state.GetCommittedState(addr, key))
+	state.SetState(addr, key, val1)
+	require.Equal(val0, state.GetCommittedState(addr, key))
+	state.EndTransaction()
+
+	// Tx 2: updates the same storage location
+	state.BeginTransaction()
+	require.Equal(val1, state.GetCommittedState(addr, key))
+	state.SetState(addr, key, val2)
+	require.Equal(val1, state.GetCommittedState(addr, key))
+	state.EndTransaction()
+
+	// Revert last transaction
+	state.RevertTransactions(1)
+
+	// Now, the committed state should be the state as before Tx 2.
+	state.BeginTransaction()
+	require.Equal(val1, state.GetCommittedState(addr, key))
+	state.EndTransaction()
+}
+
 func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 	const limit = 5
 	tests := map[string]struct {

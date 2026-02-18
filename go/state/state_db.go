@@ -1179,7 +1179,16 @@ func (s *stateDB) BeginTransaction() {
 func (s *stateDB) EndTransaction() {
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
+		oldValueCommitted := value.committed
+		oldValueCommittedKnown := value.committedKnown
 		value.committed, value.committedKnown = value.current, true
+		err := s.addUndoToCurrentTransaction(func() {
+			value.committed = oldValueCommitted
+			value.committedKnown = oldValueCommittedKnown
+		})
+		if err != nil {
+			s.trackErrors(fmt.Errorf("failed to add undo function for EndTransaction: %w", err))
+		}
 	}
 
 	// EIP-161: At the end of the transaction, any account touched by the execution of that transaction
@@ -1217,17 +1226,32 @@ func (s *stateDB) EndTransaction() {
 			// Clear cached value states for the targeted account.
 			s.data.ForEach(func(slot slotId, value *slotValue) {
 				if slot.addr == addr {
+					oldValue := *value
 					// Clear cached values.
 					value.stored = common.Value{}
 					value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
+
+					err := s.addUndoToCurrentTransaction(func() {
+						*value = oldValue
+					})
+					if err != nil {
+						s.trackErrors(fmt.Errorf("failed to add undo function for account clearing: %w", err))
+					}
 				}
 			})
 
 			// Signal to future fetches in this block that this account should be considered cleared.
+			oldClearedAccountState := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = cleared
+			err := s.addUndoToCurrentTransaction(func() {
+				s.clearedAccounts[addr] = oldClearedAccountState
+			})
+			if err != nil {
+				s.trackErrors(fmt.Errorf("failed to add undo function for account clearing: %w", err))
+			}
 		}
 
 		s.accountsToDelete = s.accountsToDelete[0:0]
