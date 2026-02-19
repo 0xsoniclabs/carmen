@@ -352,7 +352,7 @@ def plot_archive_delta_comparison(df):
     plot.set_xlim(0, df["Block Number"].max())
     plot.set_ylim(0)
     plot.set_title(
-        "S6 Archive DB Size Growth with different Delta Node Variants - 5M Blocks Sonic Mainnet"
+        "S6 Archive DB Size Growth with Delta Node Variants - 5M Blocks Sonic Mainnet"
     )
     plt.show()
 
@@ -368,7 +368,7 @@ def plot_archive_delta_comparison(df):
     plot.set_xlim(0, df["Block Number"].max())
     plot.set_ylim(0)
     plot.set_title(
-        "S6 Archive DB Size Growth Rate with different Delta Node Variants - 5M Blocks Sonic Mainnet"
+        "S6 Archive DB Size Growth Rate with Delta Node Variants - 5M Blocks Sonic Mainnet"
     )
     plt.show()
 
