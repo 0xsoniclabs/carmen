@@ -53,9 +53,9 @@ func newState(
 	// Open the node store (e.g., LevelDB) in the required mode.
 	var store Store
 	if liveOnly {
-		store, err = newLevelDbLiveStore(filepath.Join(dataDir, "nodes"))
+		store, err = newLevelDbLiveStore(filepath.Join(dataDir, "live"))
 	} else {
-		store, err = newLevelDbArchiveStore(filepath.Join(dataDir, "nodes"))
+		store, err = newLevelDbArchiveStore(filepath.Join(dataDir, "live"))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to open node store: %w", err)
@@ -308,6 +308,9 @@ func (s *verkleState) Flush() error {
 }
 
 func (s *verkleState) Close() error {
+	if err := s.Flush(); err != nil {
+		return err
+	}
 	if s.store == nil {
 		return nil
 	}
@@ -317,7 +320,7 @@ func (s *verkleState) Close() error {
 }
 
 func (s *verkleState) GetMemoryFootprint() *common.MemoryFootprint {
-	panic("not implemented")
+	return common.NewMemoryFootprint(uintptr(1))
 }
 
 func (s *verkleState) GetArchiveState(block uint64) (state.State, error) {

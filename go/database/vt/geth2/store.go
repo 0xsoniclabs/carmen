@@ -166,12 +166,17 @@ func (s *levelDbStore) HeadState() NodeSource {
 }
 
 func (s *levelDbStore) AddBlock(block uint64, changes []Entry) error {
+
+	batch := new(leveldb.Batch)
 	for _, change := range changes {
 		key := s.keyFactory(block, change.Path)
-		if err := s.db.Put(key, change.Blob, &opt.WriteOptions{}); err != nil {
-			return err
-		}
+		batch.Put(key, change.Blob)
 	}
+	err := s.db.Write(batch, &opt.WriteOptions{})
+	if err != nil {
+		return err
+	}
+
 	s.nextBlock = block + 1
 	return storeNextBlockToDb(s.db, block+1)
 }
