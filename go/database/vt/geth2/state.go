@@ -44,7 +44,7 @@ func newState(
 	switch params.Archive {
 	case state.NoArchive:
 		liveOnly = true
-	case state.LevelDbArchive:
+	case state.LevelDbArchive, state.S5Archive:
 		liveOnly = false
 	default:
 		return nil, fmt.Errorf("unsupported archive mode: %v", params.Archive)
@@ -283,13 +283,37 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 		})
 	}
 
-	// Limit memory usage by pruning in-memory tree structure at a certain depth.
-	// The nodes will be reloaded from the store when needed.
-	s.root.(*verkle.InternalNode).FlushAtDepth(4, func(path []byte, node verkle.VerkleNode) {
-		// no-op callback, since all nodes are stored as deltas.
-	})
+	if err := s.store.AddBlock(block, changes); err != nil {
+		return nil, fmt.Errorf("failed to add block changes to store: %w", err)
+	}
 
-	return nil, s.store.AddBlock(block, changes)
+	// Reload root node, pruning the in-memory tree to the root.
+	// Note: flush is crashing, so we re-load the root only, discard the rest.
+	rootData, err := s.source.GetNode(nil)
+	if err != nil {
+		return nil, err
+	}
+	rootNode, err := verkle.ParseNode(rootData, 0)
+	if err != nil {
+		return nil, err
+	}
+	s.root = rootNode
+
+	/*
+		// Limit memory usage by pruning in-memory tree structure at a certain depth.
+		// The nodes will be reloaded from the store when needed.
+		s.root.(*verkle.InternalNode).Flush(func([]byte, verkle.VerkleNode) {
+			// no-op callback, since all nodes are stored as deltas.
+		})
+	*/
+	/*
+		s.root.(*verkle.InternalNode).FlushAtDepth(4, func(path []byte, node verkle.VerkleNode) {
+			// no-op callback, since all nodes are stored as deltas.
+		})
+	*/
+
+	return nil, nil
+	//return nil, s.store.AddBlock(block, changes)
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {

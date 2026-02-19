@@ -46,6 +46,11 @@ var configurations = map[state.Configuration]state.StateFactory{
 	{
 		Variant: "go-geth2-leveldb",
 		Schema:  6,
+		Archive: state.S5Archive,
+	}: vtgeth2.NewState,
+	{
+		Variant: "go-geth2-leveldb",
+		Schema:  6,
 		Archive: state.LevelDbArchive,
 	}: vtgeth2.NewState,
 	{
