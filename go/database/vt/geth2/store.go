@@ -23,6 +23,7 @@ const (
 type Store interface {
 	// NextBlock returns the block number of the next block to be added to the store.
 	NextBlock() uint64
+
 	// HeadState returns a NodeSource for the head state of the store (i.e., the
 	// state at the latest block).
 	HeadState() NodeSource
@@ -117,23 +118,23 @@ func newLevelDbArchiveStore(path string) (*levelDbStore, error) {
 
 // --- Implementations ---
 
-type KeyFactoryFn func(block uint64, path []byte) []byte
-type NodeFinderFn func(db *leveldb.DB, block uint64, path []byte) ([]byte, error)
+type keyFactoryFn func(block uint64, path []byte) []byte
+type nodeFinderFn func(db *leveldb.DB, block uint64, path []byte) ([]byte, error)
 
 // levelDbStore is a generic store implementation instantiated by factory
 // functions to realize different storage strategies (live vs archive).
 type levelDbStore struct {
 	db              *leveldb.DB
 	nextBlock       uint64
-	keyFactory      KeyFactoryFn
-	findNode        NodeFinderFn
+	keyFactory      keyFactoryFn
+	findNode        nodeFinderFn
 	supportsHistory bool
 }
 
 func newLevelDbStore(
 	path string,
-	keyFactory KeyFactoryFn,
-	findNode NodeFinderFn,
+	keyFactory keyFactoryFn,
+	findNode nodeFinderFn,
 	supportsHistory bool,
 ) (*levelDbStore, error) {
 	db, err := leveldb.OpenFile(path, nil)
@@ -161,7 +162,7 @@ func (s *levelDbStore) NextBlock() uint64 {
 }
 
 func (s *levelDbStore) HeadState() NodeSource {
-	return &levelDbNodeSource{db: s.db, block: s.nextBlock, find: s.findNode}
+	return &levelDbNodeSource{db: s.db, block: &s.nextBlock, find: s.findNode}
 }
 
 func (s *levelDbStore) AddBlock(block uint64, changes []Entry) error {
@@ -183,7 +184,7 @@ func (s *levelDbStore) HistoricState(block uint64) (NodeSource, error) {
 	if block >= s.nextBlock {
 		return nil, fmt.Errorf("requested block %d is in the future (next block: %d)", block, s.nextBlock)
 	}
-	return &levelDbNodeSource{db: s.db, block: block, find: s.findNode}, nil
+	return &levelDbNodeSource{db: s.db, block: &block, find: s.findNode}, nil
 }
 
 func (s *levelDbStore) Flush() error {
@@ -197,13 +198,14 @@ func (s *levelDbStore) Close() error {
 
 type levelDbNodeSource struct {
 	db    *leveldb.DB
-	block uint64
-	find  NodeFinderFn
+	block *uint64
+	find  nodeFinderFn
 }
 
 func (s *levelDbNodeSource) GetNode(path []byte) ([]byte, error) {
-	fmt.Printf("Getting node %x at block %d\n", path, s.block)
-	return s.find(s.db, s.block, path)
+	block := *s.block
+	fmt.Printf("Getting node %x at block %d\n", path, block)
+	return s.find(s.db, block, path)
 }
 
 func toArchivePath(block uint64, path []byte) []byte {

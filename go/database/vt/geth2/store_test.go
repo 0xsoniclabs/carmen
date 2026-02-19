@@ -158,3 +158,58 @@ func TestArchiveDb_TracksHistory(t *testing.T) {
 
 	require.NoError(store.Close())
 }
+
+func TestArchiveDb_HeadStateViewSticksToHead(t *testing.T) {
+	require := require.New(t)
+	store, err := newLevelDbArchiveStore(t.TempDir())
+	require.NoError(err)
+
+	key := []byte("key")
+	value1 := []byte("value1")
+	value2 := []byte("value2")
+
+	// Add first block.
+	require.NoError(store.AddBlock(0, []Entry{{Path: key, Blob: value1}}))
+
+	// Get head state and check value.
+	head := store.HeadState()
+	val, err := head.GetNode(key)
+	require.NoError(err)
+	require.Equal(value1, val)
+
+	// Add second block that updates the value.
+	require.NoError(store.AddBlock(1, []Entry{{Path: key, Blob: value2}}))
+
+	// Check head state again - it should have moved on to the new head and return the updated value.
+	val, err = head.GetNode(key)
+	require.NoError(err)
+	require.Equal(value2, val)
+}
+
+func TestArchiveDb_HistoricViewSticksToBlock(t *testing.T) {
+	require := require.New(t)
+	store, err := newLevelDbArchiveStore(t.TempDir())
+	require.NoError(err)
+
+	key := []byte("key")
+	value1 := []byte("value1")
+	value2 := []byte("value2")
+
+	// Add first block.
+	require.NoError(store.AddBlock(0, []Entry{{Path: key, Blob: value1}}))
+
+	// Get head state and check value.
+	historic, err := store.HistoricState(0)
+	require.NoError(err)
+	val, err := historic.GetNode(key)
+	require.NoError(err)
+	require.Equal(value1, val)
+
+	// Add second block that updates the value.
+	require.NoError(store.AddBlock(1, []Entry{{Path: key, Blob: value2}}))
+
+	// Check historic state again - it should still return the old value, as it should be a view on the state at block 0.
+	val, err = historic.GetNode(key)
+	require.NoError(err)
+	require.Equal(value1, val)
+}
