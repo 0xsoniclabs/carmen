@@ -164,7 +164,7 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 			return checkId(n.next)
 		case *BranchNode:
 			errs := []error{}
-			for i := 0; i < len(n.children); i++ {
+			for i := range n.children {
 				if err := checkId(n.children[i]); err != nil {
 					errs = append(errs, err)
 				}
@@ -596,7 +596,7 @@ func verifyHashesStoredWithParents[N any](
 			case *BranchNode:
 				{
 					errs := []error{}
-					for i := 0; i < len(n.children); i++ {
+					for i := range n.children {
 						if !n.isEmbedded(byte(i)) {
 							if err := checkNodeHash(n.children[i].Id(), n.hashes[i]); err != nil {
 								errs = append(errs, err)

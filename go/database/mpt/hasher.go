@@ -15,9 +15,10 @@ package mpt
 import (
 	"crypto/sha256"
 	"fmt"
-	"golang.org/x/crypto/sha3"
 	"reflect"
 	"sync"
+
+	"golang.org/x/crypto/sha3"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/immutable"
@@ -176,9 +177,10 @@ func (h directHasher) hash(
 	case *BranchNode:
 		// TODO [perf]: compute sub-tree hashes in parallel
 		if manager != nil {
-			for i, child := range node.children {
+			for i := range node.children {
+				child := &node.children[i]
 				if !child.Id().IsEmpty() && node.isChildHashDirty(byte(i)) {
-					hash, err := h.updateHashesInternal(&child, manager, path.Child(Nibble(i)), hashCollector)
+					hash, err := h.updateHashesInternal(child, manager, path.Child(Nibble(i)), hashCollector)
 					if err != nil {
 						return hash, err
 					}
@@ -189,7 +191,8 @@ func (h directHasher) hash(
 		}
 
 		hasher.Write([]byte{'B'})
-		for i, child := range node.children {
+		for i := range node.children {
+			child := &node.children[i]
 			if child.Id().IsEmpty() {
 				hasher.Write([]byte{'E'})
 			} else {
@@ -334,7 +337,7 @@ func (h ethHasher) updateHashesInternal(
 
 			switch node := node.(type) {
 			case *BranchNode:
-				for i := 0; i < len(node.children); i++ {
+				for i := range node.children {
 					if !node.children[i].Id().IsEmpty() && node.isChildHashDirty(byte(i)) {
 						tasks = append(tasks, task{node: &node.children[i], path: cur.path.Child(Nibble(i))})
 					}
@@ -432,7 +435,7 @@ func (h ethHasher) getHash(ref *NodeReference, source NodeSource) (common.Hash, 
 func updateChildrenHashes(manager NodeSource, node Node, embedded map[NodeId]bool) error {
 	switch cur := node.(type) {
 	case *BranchNode:
-		for i := 0; i < len(cur.children); i++ {
+		for i := range cur.children {
 			if !cur.children[i].Id().IsEmpty() && cur.isChildHashDirty(byte(i)) {
 				handle, e := manager.getViewAccess(&cur.children[i])
 				if e != nil {
@@ -541,7 +544,7 @@ func encodeBranchToRlp(
 	ptr := branchRlpStreamPool.Get().(*[]rlp.Item)
 	items := *ptr
 
-	for i := 0; i < len(children); i++ {
+	for i := range node.children {
 		child := &children[i]
 		if child.Id().IsEmpty() {
 			items[i] = rlp.String{}
@@ -830,8 +833,8 @@ func getLowerBoundForEncodedSizeBranch(node *BranchNode, limit int, nodes NodeSo
 	sum = emptySize // the 17th element.
 
 	// Sum up non-embedded hashes first (because they are cheap to compute).
-	for i := 0; i < len(node.children); i++ {
-		child := node.children[i]
+	for i := range node.children {
+		child := &node.children[i]
 		if child.Id().IsEmpty() {
 			sum += emptySize
 			continue
@@ -845,8 +848,8 @@ func getLowerBoundForEncodedSizeBranch(node *BranchNode, limit int, nodes NodeSo
 		return sum, nil
 	}
 
-	for i := 0; i < len(node.children); i++ {
-		child := node.children[i]
+	for i := range node.children {
+		child := &node.children[i]
 		if sum >= limit {
 			return limit, nil
 		}
@@ -854,7 +857,7 @@ func getLowerBoundForEncodedSizeBranch(node *BranchNode, limit int, nodes NodeSo
 			continue
 		}
 
-		node, err := nodes.getViewAccess(&child)
+		node, err := nodes.getViewAccess(child)
 		if err != nil {
 			return 0, err
 		}

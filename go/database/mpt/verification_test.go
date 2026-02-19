@@ -302,7 +302,8 @@ func TestVerification_BranchChildHashModificationIsDetected(t *testing.T) {
 		_, encoder, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/branches", encoder, func(node *BranchNode) {
-			for i, child := range node.children {
+			for i := range node.children {
+				child := &node.children[i]
 				if !child.Id().IsEmpty() {
 					node.hashes[i][4]++
 					break

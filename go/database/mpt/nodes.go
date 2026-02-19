@@ -558,12 +558,12 @@ func CheckForest(source NodeSource, roots []*NodeReference) error {
 			}
 		case *BranchNode:
 			for i := 0; i < 16; i++ {
-				child := cur.children[i]
+				child := &cur.children[i]
 				if !child.id.IsEmpty() {
 					path := make([]Nibble, len(context.path)+1)
 					copy(path, context.path)
 					path[len(context.path)] = Nibble(i)
-					if err = scheduleNode(&child, context.root, context.hasSeenAccount, path); err != nil {
+					if err = scheduleNode(child, context.root, context.hasSeenAccount, path); err != nil {
 						break
 					}
 				}
@@ -817,8 +817,8 @@ type BranchNode struct {
 	frozenChildren   uint16            // a bit mask marking frozen children; not persisted
 }
 
-func (n *BranchNode) GetChildren() [16]NodeReference {
-	return n.children
+func (n *BranchNode) GetChildren() *[16]NodeReference {
+	return &n.children
 }
 
 func (n *BranchNode) getNextNodeInBranch(
@@ -1041,13 +1041,14 @@ func (n *BranchNode) Release(manager NodeManager, thisRef *NodeReference, this s
 		return nil
 	}
 	n.nodeBase.Release()
-	for _, cur := range n.children {
+	for i := range n.children {
+		cur := &n.children[i]
 		if !cur.Id().IsEmpty() {
-			handle, err := manager.getWriteAccess(&cur)
+			handle, err := manager.getWriteAccess(cur)
 			if err != nil {
 				return err
 			}
-			err = handle.Get().Release(manager, &cur, handle)
+			err = handle.Get().Release(manager, cur, handle)
 			handle.Release()
 			if err != nil {
 				return err
@@ -1067,7 +1068,7 @@ func (n *BranchNode) Freeze(manager NodeManager, this shared.WriteHandle[Node]) 
 		return nil
 	}
 	n.nodeBase.MarkFrozen()
-	for i := 0; i < len(n.children); i++ {
+	for i := range n.children {
 		if n.children[i].Id().IsEmpty() || n.isChildFrozen(byte(i)) {
 			continue
 		}
@@ -1102,20 +1103,21 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 		errs = append(errs, fmt.Errorf("node %v is has clean hash but child hashes are dirty: %016b", thisRef.Id(), n.dirtyHashes))
 	}
 
-	for i, child := range n.children {
+	for i := range n.children {
+		child := &n.children[i]
 		if child.Id().IsEmpty() {
 			continue
 		}
 		numChildren++
 		if !n.isChildHashDirty(byte(i)) && !n.isEmbedded(byte(i)) {
-			want, err := source.getHashFor(&child)
+			want, err := source.getHashFor(child)
 			if err != nil {
 				errs = append(errs, err)
 			} else if got := n.hashes[i]; want != got {
 				errs = append(errs, fmt.Errorf("in node %v the hash for child %d is invalid\nwant: %v\ngot: %v", thisRef.Id(), i, want, got))
 			}
 		}
-		handle, err := source.getViewAccess(&child)
+		handle, err := source.getViewAccess(child)
 		if err != nil {
 			return err
 		}
@@ -1142,13 +1144,14 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 func (n *BranchNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReference, indent string) error {
 	errs := []error{}
 	fmt.Fprintf(out, "%sBranch (ID: %v, dirty: %t, frozen: %t, Dirty: %016b, Embedded: %016b, Frozen: %016b, Hash: %v, hashState: %v):\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.dirtyHashes, n.embeddedChildren, n.frozenChildren, formatHashForDump(n.hash), n.getHashStatus())
-	for i, child := range n.children {
+	for i := range n.children {
+		child := &n.children[i]
 		if child.Id().IsEmpty() {
 			continue
 		}
-		if handle, err := source.getViewAccess(&child); err == nil {
+		if handle, err := source.getViewAccess(child); err == nil {
 			defer handle.Release()
-			if err := handle.Get().Dump(out, source, &child, fmt.Sprintf("%s  %v ", indent, Nibble(i))); err != nil {
+			if err := handle.Get().Dump(out, source, child, fmt.Sprintf("%s  %v ", indent, Nibble(i))); err != nil {
 				errs = append(errs, err)
 			}
 		} else {
@@ -1159,22 +1162,23 @@ func (n *BranchNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReferen
 	return errors.Join(errs...)
 }
 
-func (b *BranchNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
-	switch visitor.Visit(b, NodeInfo{Id: thisRef.Id(), Depth: &depth}) {
+func (n *BranchNode) Visit(manager NodeManager, thisRef *NodeReference, depth int, mode AccessMode, visitor NodeVisitor) (bool, error) {
+	switch visitor.Visit(n, NodeInfo{Id: thisRef.Id(), Depth: &depth}) {
 	case VisitResponseAbort:
 		return true, nil
 	case VisitResponsePrune:
 		return false, nil
 	case VisitResponseContinue: /* keep going */
 	}
-	for _, child := range b.children {
+	for i := range n.children {
+		child := &n.children[i]
 		if child.Id().IsEmpty() {
 			continue
 		}
 
-		if handle, err := mode.Access(manager, &child); err == nil {
+		if handle, err := mode.Access(manager, child); err == nil {
 			defer handle.Release()
-			if abort, err := handle.Get().Visit(manager, &child, depth+1, mode, visitor); abort || err != nil {
+			if abort, err := handle.Get().Visit(manager, child, depth+1, mode, visitor); abort || err != nil {
 				return abort, err
 			}
 		} else {
