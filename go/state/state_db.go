@@ -116,7 +116,13 @@ type StateDB interface {
 	VmStateDB
 
 	BeginBlock()
-	EndBlock(number uint64)
+	// EndBlock commits pending changes into a block and triggers the asynchronous
+	// update of the Live and Archive DB.
+	// The channel signals the completion of any spawned asynchronous operations
+	// like the update of the archive, if there is such.
+	// The channel may be nil if there are no asynchronous operations to be performed.
+	// If the asynchronous operations fail, the error is returned through the channel.
+	EndBlock(number uint64) <-chan error
 
 	BeginEpoch()
 	EndEpoch(number uint64)
@@ -1197,16 +1203,18 @@ func (s *stateDB) BeginBlock() {
 	// ignored
 }
 
-func (s *stateDB) EndBlock(block uint64) {
+// EndBlock commits pending changes into a block and triggers the asynchronous
+// update of the Live and Archive DB.
+func (s *stateDB) EndBlock(block uint64) <-chan error {
 	if !s.canApplyChanges {
 		err := fmt.Errorf("unable to process EndBlock event in StateDB without permission to apply changes")
 		s.trackErrors(err)
-		return
+		return nil
 	}
 
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
-		return
+		return nil
 	}
 
 	update := common.Update{}
@@ -1284,17 +1292,21 @@ func (s *stateDB) EndBlock(block uint64) {
 
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
-		return
+		return nil
 	}
 
 	// Send the update to the state.
-	if _, err := s.state.Apply(block, update); err != nil {
+	archiveDoneChan, err := s.state.Apply(block, update)
+	if err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
-		return
+		// even if there is an error, we return the channel to allow
+		// the caller to wait for the archive update to finish.
+		return archiveDoneChan
 	}
 
 	// Reset internal state for next block
 	s.ResetBlockContext()
+	return archiveDoneChan
 }
 
 func (s *stateDB) BeginEpoch() {

@@ -4687,3 +4687,57 @@ func checkCode(t *testing.T, db VmStateDB, address common.Address, code []byte, 
 		t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
 	}
 }
+
+func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	applyDone := make(chan error)
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
+		func(_ uint64, _ common.Update) (<-chan error, error) {
+			return applyDone, nil
+		})
+
+	done := db.EndBlock(1)
+	if done == nil {
+		t.Errorf("unexpected nil channel")
+	}
+
+	// The done channel should not be closed.
+	select {
+	case <-done:
+		t.Errorf("returned channel unexpectedly closed")
+	default:
+		// success
+	}
+
+	// close the "internal" channel, simulating the state finishing the update.
+	close(applyDone)
+
+	// The done channel should be closed after the state update is released.
+	select {
+	case <-done:
+		// success
+	default:
+		t.Errorf("channel returned is not in sync with the state sync channel")
+	}
+}
+
+func TestStateDB_EndBlock_ReturnsNilChannel_WhenApplyReturnsError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	injectedError := fmt.Errorf("injected error")
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, injectedError)
+
+	done := db.EndBlock(1)
+	if done != nil {
+		t.Errorf("expected nil channel when Apply returns error, got non-nil")
+	}
+}
