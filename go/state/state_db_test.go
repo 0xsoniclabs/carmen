@@ -3592,7 +3592,7 @@ func TestStateDB_CollectsErrorsAndReportsThemDuringACheck(t *testing.T) {
 		"apply": {
 			setExpectations: func(state *MockState) {
 				state.EXPECT().Exists(address1).Return(true, nil)
-				state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(injectedError)
+				state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedError)
 			},
 			applyOperation: func(db StateDB) {
 				db.SetNonce(address1, 12)
@@ -3677,7 +3677,7 @@ func TestStateDB_NoApplyWhenErrorsHaveBeenEncountered(t *testing.T) {
 	issue := fmt.Errorf("injected issue")
 	state.EXPECT().GetNonce(address1).Return(common.Nonce{1}, nil)
 	state.EXPECT().GetNonce(address2).Return(common.Nonce{}, issue)
-	state.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil)
+	state.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil)
 
 	db.GetNonce(address1)
 	db.EndBlock(1)
@@ -3950,7 +3950,7 @@ func TestStateDB_BulkLoadApplyForwardsUpdateIssues(t *testing.T) {
 	injectedError := fmt.Errorf("injected error")
 	state.EXPECT().Apply(uint64(12), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(14)}},
-	}).Return(injectedError)
+	}).Return(nil, injectedError)
 
 	bulk := bulkLoad{
 		block: 12,
@@ -3977,7 +3977,7 @@ func TestStateDB_BulkLoadCloseReportsApplyIssues(t *testing.T) {
 	injectedError := fmt.Errorf("injected error")
 	state.EXPECT().Apply(uint64(12), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(14)}},
-	}).Return(injectedError)
+	}).Return(nil, injectedError)
 
 	bulk := bulkLoad{
 		block: 12,
@@ -4001,7 +4001,7 @@ func TestStateDB_BulkLoadCloseReportsFlushIssues(t *testing.T) {
 	state := NewMockState(ctrl)
 
 	injectedError := fmt.Errorf("injected error")
-	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
 	state.EXPECT().Flush().Return(injectedError)
 
 	bulk := bulkLoad{
@@ -4022,7 +4022,7 @@ func TestStateDB_BulkLoadCloseReportsHashingIssues(t *testing.T) {
 	state := NewMockState(ctrl)
 
 	injectedError := fmt.Errorf("injected error")
-	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
 	state.EXPECT().Flush().Return(nil)
 	state.EXPECT().GetHash().Return(common.Hash{}, injectedError)
 

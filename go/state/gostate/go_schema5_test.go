@@ -37,7 +37,7 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 			CreatedAccounts: []common.Address{{byte(block)}},
 			Balances:        []common.BalanceUpdate{{common.Address{byte(block)}, amount.New(100)}},
 		}
-		if err := db.Apply(block, update); err != nil {
+		if _, err := db.Apply(block, update); err != nil {
 			t.Fatalf("cannot add block: %v", err)
 		}
 	}
@@ -119,7 +119,7 @@ func TestCarmen_Empty_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 			CreatedAccounts: []common.Address{{byte(block)}},
 			Balances:        []common.BalanceUpdate{{common.Address{byte(block)}, amount.New(100)}},
 		}
-		if err := db.Apply(block, update); err != nil {
+		if _, err := db.Apply(block, update); err != nil {
 			t.Fatalf("cannot add block: %v", err)
 		}
 	}
