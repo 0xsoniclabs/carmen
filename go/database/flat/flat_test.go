@@ -155,12 +155,13 @@ func TestState_StateCanBeClosedAndReopened(t *testing.T) {
 	stateA, err := NewState(dir, nil)
 	require.NoError(err)
 
-	require.NoError(stateA.Apply(0, common.Update{
+	_, err = stateA.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{
 			{Account: common.Address{1}, Nonce: common.Nonce{2}},
 			{Account: common.Address{3}, Nonce: common.Nonce{4}},
 		},
-	}))
+	})
+	require.NoError(err)
 
 	require.NoError(stateA.Close())
 
@@ -342,7 +343,8 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		commands: commands,
 	}
 
-	require.NoError(state.Apply(1, update))
+	_, err := state.Apply(1, update)
+	require.NoError(err)
 
 	// The update is send to the commands channel.
 	command := <-commands
@@ -395,7 +397,7 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
-	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
 	backend.EXPECT().Close().Return(nil)
 
 	address := common.Address{0x01}
@@ -404,14 +406,17 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 
 	require.False(state.Exists(address))
 
-	require.NoError(state.Apply(1, common.Update{
+	_, err = state.Apply(1, common.Update{
 		CreatedAccounts: []common.Address{address},
-	}))
+	})
+	require.NoError(err)
+
 	require.True(state.Exists(address))
 
-	require.NoError(state.Apply(2, common.Update{
+	_, err = state.Apply(2, common.Update{
 		DeletedAccounts: []common.Address{address},
-	}))
+	})
+	require.NoError(err)
 
 	require.False(state.Exists(address))
 	require.NoError(state.Close())
@@ -436,7 +441,7 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
 
-	err = flatState.Apply(block, update)
+	_, err = flatState.Apply(block, update)
 	require.NoError(t, err)
 
 	require.NoError(t, flatState.Close())
@@ -453,7 +458,7 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), nil)
 	require.NoError(t, err)
 
-	err = flatState.Apply(block, update)
+	_, err = flatState.Apply(block, update)
 	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
 }
@@ -477,14 +482,15 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 
 		backend.EXPECT().Close()
 
-		state, err := _newState(t.TempDir(), backend)
+		state, err := NewState(t.TempDir(), backend)
 		require.NoError(t, err)
 
-		applyDone, err := state._apply(1, common.Update{})
+		applyDone, err := state.Apply(1, common.Update{})
 		require.NoError(t, err)
 		require.NotNil(t, applyDone)
 
 		// Wait until the update blocks in the backend update.
+		close(backendApplyDone)
 		synctest.Wait()
 		require.True(t, started)
 		select {
@@ -510,9 +516,9 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 }
 
 func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
-	flatState, err := _newState(t.TempDir(), nil)
+	flatState, err := NewState(t.TempDir(), nil)
 	require.NoError(t, err)
-	applyDone, err := flatState._apply(1, common.Update{})
+	applyDone, err := flatState.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.Nil(t, applyDone)
 }
@@ -521,17 +527,29 @@ func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
 	issue := errors.New("backend apply failed")
+	syncIssue := errors.New("sync channel issue")
+	backendSyncChann := make(chan error, 1)
+	backendSyncChann <- syncIssue
 
-	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(issue)
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_, _ any) (<-chan error, error) {
+			return backendSyncChann, issue
+		},
+	)
 
-	flatState, err := _newState(t.TempDir(), backend)
+	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
 
-	applyDone, err := flatState._apply(1, common.Update{})
-
+	applyDone, err := flatState.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.NotNil(t, applyDone)
-	require.ErrorIs(t, <-applyDone, issue)
+
+	got := <-applyDone
+	require.ErrorIs(t, got, issue)
+	require.ErrorIs(t, got, syncIssue)
+	errors := flatState.Check()
+	require.ErrorIs(t, errors, issue)
+	require.ErrorIs(t, errors, syncIssue)
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
