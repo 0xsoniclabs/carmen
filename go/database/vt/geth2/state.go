@@ -13,9 +13,10 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
+	"github.com/0xsoniclabs/carmen/go/database/vt/geth2/utils"
 	"github.com/0xsoniclabs/carmen/go/state"
+	geth_common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
 )
@@ -24,13 +25,17 @@ type verkleState struct {
 	root   verkle.VerkleNode
 	store  Store
 	source NodeSource
+
+	// cache for computing paths in the verkle trie.
+	cache *utils.PointCache
 }
 
-func newState(
+func NewState(
 	params state.Parameters,
 ) (_ *verkleState, err error) {
 	dataDir := params.Directory
 
+	// Determine the mode, live or archive.
 	var liveOnly bool
 	switch params.Archive {
 	case state.NoArchive:
@@ -41,7 +46,7 @@ func newState(
 		return nil, fmt.Errorf("unsupported archive mode: %v", params.Archive)
 	}
 
-	// Open the node store (e.g., LevelDB) for the given directory.
+	// Open the node store (e.g., LevelDB) in the required mode.
 	var store Store
 	if liveOnly {
 		store, err = newLevelDbLiveStore(filepath.Join(dataDir, "nodes"))
@@ -86,36 +91,48 @@ func _newStateWithSource(source NodeSource) (_ *verkleState, err error) {
 	return &verkleState{
 		root:   root,
 		source: source,
+		cache:  utils.NewPointCache(4096),
 	}, nil
 }
 
 // --- State interface implementation ---
 
 func (s *verkleState) Exists(address common.Address) (bool, error) {
-	panic("not implemented")
+	account, err := s.getAccountData(address)
+	if err != nil {
+		return false, err
+	}
+
+	return account.Nonce != 0 || account.Balance.Uint64() != 0, nil
 }
 
 func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) {
-	panic("not implemented")
+	account, err := s.getAccountData(address)
+	if err != nil {
+		return amount.Amount{}, err
+	}
+
+	return amount.NewFromUint256(&account.Balance), nil
 }
 
 func (s *verkleState) GetNonce(address common.Address) (common.Nonce, error) {
-
-	// TODO: replace with proper tree embedding
-	key := common.Keccak256ForAddress(address)
-	fmt.Printf("Getting nonce for address %v with key %x\n", address, key)
-	data, err := s.root.Get(key[:], s.readNode)
+	account, err := s.getAccountData(address)
 	if err != nil {
 		return common.Nonce{}, err
 	}
-	var nonce common.Nonce
-	copy(nonce[:], data)
-	return nonce, nil
 
+	return common.ToNonce(account.Nonce), nil
 }
 
 func (s *verkleState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
-	panic("not implemented")
+	value, err := s.getStorage(address, key[:])
+	if err != nil {
+		return common.Value{}, err
+	}
+
+	var commonValue common.Value
+	copy(commonValue[32-len(value):], value)
+	return commonValue, nil
 }
 
 func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
@@ -123,11 +140,20 @@ func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
 }
 
 func (s *verkleState) GetCodeSize(address common.Address) (int, error) {
-	panic("not implemented")
+	account, err := s.getAccountData(address)
+	if err != nil {
+		return 0, err
+	}
+	return account.CodeLength, nil
 }
 
 func (s *verkleState) GetCodeHash(address common.Address) (common.Hash, error) {
-	panic("not implemented")
+	account, err := s.getAccountData(address)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	return common.Hash(account.CodeHash), nil
 }
 
 func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
@@ -140,10 +166,84 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	// 				  Implement all state modifications
 	// ------------------------------------------------------------------
 
-	// TODO: do proper updates, including embedding.
+	// Aggregate changes to the account data.
+	modifiedAccounts := map[common.Address]*accountData{}
+	getAccountData := func(addr common.Address) (*accountData, error) {
+		if data, ok := modifiedAccounts[addr]; ok {
+			return data, nil
+		}
+		res, err := s.getAccountData(addr)
+		if err != nil {
+			return nil, err
+		}
+		modifiedAccounts[addr] = &res
+		return &res, nil
+	}
+
+	// Process deleted accounts.
+	if len(update.DeletedAccounts) > 0 {
+		return fmt.Errorf("not supported: verkle trie does not support deleting accounts")
+	}
+
+	// Process created accounts.
+	for _, newAccount := range update.CreatedAccounts {
+		data, err := getAccountData(newAccount)
+		if err != nil {
+			return err
+		}
+		data.Balance = *uint256.NewInt(0)
+		data.Nonce = 0
+		data.CodeHash = common.Hash(types.EmptyCodeHash[:])
+		data.CodeLength = 0
+	}
+
+	// update balances
+	for _, update := range update.Balances {
+		account, err := getAccountData(update.Account)
+		if err != nil {
+			return err
+		}
+		account.Balance = update.Balance.Uint256()
+	}
+
+	// update nonces
 	for _, update := range update.Nonces {
-		key := common.Keccak256ForAddress(update.Account)
-		s.root.Insert(key[:], update.Nonce[:], s.readNode)
+		account, err := getAccountData(update.Account)
+		if err != nil {
+			return err
+		}
+		account.Nonce = update.Nonce.ToUint64()
+	}
+
+	// Update codes.
+	for _, update := range update.Codes {
+		account, err := getAccountData(update.Account)
+		if err != nil {
+			return err
+		}
+
+		// update code len and code hash
+		codeHash := common.Keccak256(update.Code)
+		account.CodeHash = codeHash
+
+		// insert code into the trie
+		if err := s.updateContractCode(update.Account, codeHash, update.Code); err != nil {
+			return err
+		}
+	}
+
+	// Update storage slots.
+	for _, update := range update.Slots {
+		if err := s.updateStorage(update.Account, update.Key[:], update.Value[:]); err != nil {
+			return err
+		}
+	}
+
+	// Write back all modified accounts.
+	for addr, data := range modifiedAccounts {
+		if err := s.setAccountData(addr, *data); err != nil {
+			return err
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -163,8 +263,9 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 	// Limit memory usage by pruning in-memory tree structure at a certain depth.
 	// The nodes will be reloaded from the store when needed.
-	s.root.(*verkle.InternalNode).FlushAtDepth(3, func([]byte, verkle.VerkleNode) {
+	s.root.(*verkle.InternalNode).FlushAtDepth(4, func(path []byte, node verkle.VerkleNode) {
 		// no-op callback, since all nodes are stored as deltas.
+		fmt.Printf("Flushing node at %x\n", path)
 	})
 
 	return s.store.AddBlock(block, changes)
@@ -232,36 +333,61 @@ func (s *verkleState) Export(ctx context.Context, out io.Writer) (common.Hash, e
 
 func (s *verkleState) readNode(path []byte) ([]byte, error) {
 	fmt.Printf("Reading node %x\n", path)
-	if s.source == nil {
-		// In live mode, the source is nil, and we read directly from the
-		// store's head state.
-		return s.store.HeadState().GetNode(path)
-	}
-	// In archive mode, the source is initialized with a view on the node store
-	// at the requested block height.
 	return s.source.GetNode(path)
 }
 
-func (s *verkleState) getAccountOrEmptyState(address common.Address) (*types.StateAccount, error) {
-	account, err := s.getAccount(address)
+// accountData summarizes the metadata stored per account in the verkle trie.
+type accountData struct {
+	Nonce      uint64
+	Balance    uint256.Int
+	CodeHash   common.Hash
+	CodeLength int
+}
+
+func (s *verkleState) getAccountData(address common.Address) (accountData, error) {
+	account, codeLength, err := s.getAccount(address)
 	if err != nil {
-		return nil, err
+		return accountData{}, err
 	}
 	if account == nil {
-		account = types.NewEmptyStateAccount()
+		return accountData{
+			CodeHash: common.Hash(types.EmptyCodeHash),
+		}, nil
 	}
-	return account, nil
+	return accountData{
+		Nonce:      account.Nonce,
+		Balance:    *account.Balance,
+		CodeHash:   common.Hash(account.CodeHash),
+		CodeLength: codeLength,
+	}, nil
+}
+
+func (s *verkleState) setAccountData(address common.Address, data accountData) error {
+	account := &types.StateAccount{
+		Nonce:    data.Nonce,
+		Balance:  &data.Balance,
+		CodeHash: data.CodeHash[:],
+	}
+	return s.updateAccount(address, account, data.CodeLength)
 }
 
 // --- Ported from go-Ethereum, as this code got removed from the main branch --
+
+// The code below has been ported from the original Geth implementation of the
+// Verkle trie, as it got discontinued and removed from go-ethereum.
+// The code was taken from trie/verkle.go of the v1.16.8 version of go-ethereum
+// and only slightly adapted to fit into the local verkleState implementation.
+// The original code can be found here:
+// https://github.com/ethereum/go-ethereum/blob/v1.16.9/trie/verkle.go
 
 var (
 	errInvalidRootType = errors.New("invalid node type for root")
 )
 
-func (s *verkleState) getAccount(address common.Address) (*types.StateAccount, error) {
-	// TODO: reference source of this logic;
-
+// getAccount implements state.Trie, retrieving the account with the specified
+// account address. If the specified account is not in the verkle tree, nil will
+// be returned. If the tree is corrupted, an error will be returned.
+func (s *verkleState) getAccount(addr common.Address) (*types.StateAccount, int, error) {
 	var (
 		acc    = &types.StateAccount{}
 		values [][]byte
@@ -269,30 +395,30 @@ func (s *verkleState) getAccount(address common.Address) (*types.StateAccount, e
 	)
 	switch n := s.root.(type) {
 	case *verkle.InternalNode:
-		values, err = n.GetValuesAtStem(s.cache.GetStem(address[:]), s.readNode)
+		values, err = n.GetValuesAtStem(s.cache.GetStem(addr[:]), s.readNode)
 		if err != nil {
-			return nil, fmt.Errorf("GetAccount (%x) error: %v", address, err)
+			return nil, 0, fmt.Errorf("GetAccount (%x) error: %v", addr, err)
 		}
 	default:
-		return nil, errInvalidRootType
+		return nil, 0, errInvalidRootType
 	}
 	if values == nil {
-		return nil, nil
+		return nil, 0, nil
 	}
 	basicData := values[utils.BasicDataLeafKey]
 	acc.Nonce = binary.BigEndian.Uint64(basicData[utils.BasicDataNonceOffset:])
 	acc.Balance = new(uint256.Int).SetBytes(basicData[utils.BasicDataBalanceOffset : utils.BasicDataBalanceOffset+16])
 	acc.CodeHash = values[utils.CodeHashLeafKey]
 
+	codeLength := binary.BigEndian.Uint32(basicData[utils.BasicDataCodeSizeOffset-1:])
+
 	// TODO account.Root is leave as empty. How should we handle the legacy account?
-	return acc, nil
+	return acc, int(codeLength), nil
 }
 
-// UpdateAccount implements state.Trie, writing the provided account into the tree.
+// updateAccount implements state.Trie, writing the provided account into the tree.
 // If the tree is corrupted, an error will be returned.
-func (s *verkleState) UpdateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
-	// TODO: reference source of this logic;
-
+func (s *verkleState) updateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
 	var (
 		err       error
 		basicData [32]byte
@@ -322,5 +448,119 @@ func (s *verkleState) UpdateAccount(addr common.Address, acc *types.StateAccount
 		return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
 	}
 
+	return nil
+}
+
+// updateStorage implements state.Trie, writing the provided storage slot into
+// the tree. If the tree is corrupted, an error will be returned.
+func (s *verkleState) updateStorage(address common.Address, key, value []byte) error {
+	// Left padding the slot value to 32 bytes.
+	var v [32]byte
+	if len(value) >= 32 {
+		copy(v[:], value[:32])
+	} else {
+		copy(v[32-len(value):], value[:])
+	}
+	k := utils.StorageSlotKeyWithEvaluatedAddress(s.cache.Get(address[:]), key)
+	return s.root.Insert(k, v[:], s.readNode)
+}
+
+// getStorage implements state.Trie, retrieving the storage slot with the specified
+// account address and storage key. If the specified slot is not in the verkle tree,
+// nil will be returned. If the tree is corrupted, an error will be returned.
+func (s *verkleState) getStorage(addr common.Address, key []byte) ([]byte, error) {
+	k := utils.StorageSlotKeyWithEvaluatedAddress(s.cache.Get(addr[:]), key)
+	val, err := s.root.Get(k, s.readNode)
+	if err != nil {
+		return nil, err
+	}
+	return geth_common.TrimLeftZeroes(val), nil
+}
+
+// ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
+// are actual code, and 1 byte is the pushdata offset).
+type ChunkedCode []byte
+
+// Copy the values here so as to avoid an import cycle
+const (
+	PUSH1  = byte(0x60)
+	PUSH32 = byte(0x7f)
+)
+
+// ChunkifyCode generates the chunked version of an array representing EVM bytecode
+func ChunkifyCode(code []byte) ChunkedCode {
+	var (
+		chunkOffset = 0 // offset in the chunk
+		chunkCount  = len(code) / 31
+		codeOffset  = 0 // offset in the code
+	)
+	if len(code)%31 != 0 {
+		chunkCount++
+	}
+	chunks := make([]byte, chunkCount*32)
+	for i := 0; i < chunkCount; i++ {
+		// number of bytes to copy, 31 unless the end of the code has been reached.
+		end := 31 * (i + 1)
+		if len(code) < end {
+			end = len(code)
+		}
+		copy(chunks[i*32+1:], code[31*i:end]) // copy the code itself
+
+		// chunk offset = taken from the last chunk.
+		if chunkOffset > 31 {
+			// skip offset calculation if push data covers the whole chunk
+			chunks[i*32] = 31
+			chunkOffset = 1
+			continue
+		}
+		chunks[32*i] = byte(chunkOffset)
+		chunkOffset = 0
+
+		// Check each instruction and update the offset it should be 0 unless
+		// a PUSH-N overflows.
+		for ; codeOffset < end; codeOffset++ {
+			if code[codeOffset] >= PUSH1 && code[codeOffset] <= PUSH32 {
+				codeOffset += int(code[codeOffset] - PUSH1 + 1)
+				if codeOffset+1 >= 31*(i+1) {
+					codeOffset++
+					chunkOffset = codeOffset - 31*(i+1)
+					break
+				}
+			}
+		}
+	}
+	return chunks
+}
+
+// updateContractCode implements state.Trie, writing the provided contract code
+// into the trie.
+// Note that the code-size *must* be already saved by a previous UpdateAccount call.
+func (s *verkleState) updateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
+	var (
+		chunks = ChunkifyCode(code)
+		values [][]byte
+		key    []byte
+		err    error
+	)
+	for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+32, chunknr+1 {
+		groupOffset := (chunknr + 128) % 256
+		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
+			values = make([][]byte, verkle.NodeWidth)
+			key = utils.CodeChunkKeyWithEvaluatedAddress(s.cache.Get(addr[:]), uint256.NewInt(chunknr))
+		}
+		values[groupOffset] = chunks[i : i+32]
+
+		if groupOffset == 255 || len(chunks)-i <= 32 {
+			switch root := s.root.(type) {
+			case *verkle.InternalNode:
+				err = root.InsertValuesAtStem(key[:31], values, s.readNode)
+				if err != nil {
+					return fmt.Errorf("UpdateContractCode (addr=%x) error: %w", addr[:], err)
+				}
+			default:
+				return errInvalidRootType
+			}
+		}
+	}
 	return nil
 }

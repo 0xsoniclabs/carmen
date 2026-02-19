@@ -22,7 +22,7 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			dir := t.TempDir()
 
 			params.Directory = dir
-			s1, err := newState(params)
+			s1, err := NewState(params)
 			require.NoError(err)
 
 			require.NoError(s1.Apply(1, common.Update{
@@ -38,7 +38,7 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			require.NoError(s1.Close())
 
 			// Reopen
-			s2, err := newState(params)
+			s2, err := NewState(params)
 			require.NoError(err)
 
 			nonce, err = s2.GetNonce(common.Address{1})
