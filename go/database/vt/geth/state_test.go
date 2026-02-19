@@ -62,7 +62,8 @@ func TestState_CreateAccounts_Many_Updates_Success(t *testing.T) {
 					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 				}
-				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
+				_, err := state.Apply(uint64(i), update)
+				require.NoError(t, err, "failed to apply block %d", i)
 			}
 			for i := 0; i < numBlocks; i++ {
 				for j := 0; j < numInsertsPerBlock; j++ {
@@ -103,7 +104,8 @@ func TestState_Update_And_Get_Code_Success(t *testing.T) {
 				expectedCodes[i] = code
 				code = append(code, byte(i))
 			}
-			require.NoError(t, state.Apply(0, update), "failed to apply update")
+			_, err := state.Apply(0, update)
+			require.NoError(t, err, "failed to apply update")
 			for i := 0; i < numOfCodes; i++ {
 				addr := common.Address{byte(i), byte(i >> 8)}
 				code, err := state.GetCode(addr)
@@ -139,7 +141,8 @@ func TestState_Set_And_Get_Storage_Success(t *testing.T) {
 					})
 				}
 			}
-			require.NoError(t, state.Apply(0, update), "failed to apply")
+			_, err := state.Apply(0, update)
+			require.NoError(t, err, "failed to apply")
 			for i := 0; i < numOfAddresses; i++ {
 				addr := common.Address{byte(i), byte(i >> 8)}
 				for j := 0; j < numOfKeys; j++ {
@@ -166,7 +169,8 @@ func TestState_Set_And_Get_Storage_Success_Padded_Right(t *testing.T) {
 				Key:     key,
 				Value:   value,
 			})
-			require.NoError(t, state.Apply(0, update), "failed to apply")
+			_, err := state.Apply(0, update)
+			require.NoError(t, err, "failed to apply")
 			gotValue, err := state.GetStorage(addr, key)
 			require.NoError(t, err, "failed to get storage for account %x", addr)
 			require.Equal(t, value, gotValue, "unexpected storage value for account %x, key %x", addr, key)
@@ -220,7 +224,8 @@ func TestState_GetHash_Is_Updated_Each_Block(t *testing.T) {
 					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
 				}
-				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
+				_, err := state.Apply(uint64(i), update)
+				require.NoError(t, err, "failed to apply block %d", i)
 				hash, err := state.GetHash()
 				require.NoError(t, err, "failed to get hash for block %d", i)
 				require.NotEqual(t, prevHash, hash, "hash did not change")
@@ -256,7 +261,7 @@ func TestState_DeletedAccount_Unsupported(t *testing.T) {
 			st := stateInit(state.Parameters{}, t)
 			update := common.Update{}
 			update.DeletedAccounts = append(update.DeletedAccounts, common.Address{})
-			err := st.Apply(0, update)
+			_, err := st.Apply(0, update)
 			require.Error(t, err, "expected error when applying update with deleted accounts")
 		})
 	}
@@ -316,7 +321,8 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 		},
 	}
 
-	require.NoError(state.Apply(0, update))
+	_, err = state.Apply(0, update)
+	require.NoError(err)
 
 	codeHash, err := state.GetCodeHash(addr1)
 	require.NoError(err)
@@ -341,7 +347,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 		},
 	}
 
-	require.NoError(state.Apply(0, update))
+	_, err = state.Apply(0, update)
+	require.NoError(err)
 
 	codeHash, err := state.GetCodeHash(addr1)
 	require.NoError(err)
@@ -352,7 +359,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
 		CreatedAccounts: []common.Address{addr1},
 	}
 
-	require.NoError(state.Apply(0, update2))
+	_, err = state.Apply(0, update2)
+	require.NoError(err)
 
 	codeHash, err = state.GetCodeHash(addr1)
 	require.NoError(err)
@@ -376,7 +384,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 		},
 	}
 
-	require.NoError(state.Apply(0, update))
+	_, err = state.Apply(0, update)
+	require.NoError(err)
 
 	balance, err := state.GetBalance(addr1)
 	require.NoError(err)
@@ -387,7 +396,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
 		CreatedAccounts: []common.Address{addr1},
 	}
 
-	require.NoError(state.Apply(0, update2))
+	_, err = state.Apply(0, update2)
+	require.NoError(err)
 
 	// The balance should remain the same
 	balance, err = state.GetBalance(addr1)
@@ -413,7 +423,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 		},
 	}
 
-	require.NoError(state.Apply(0, update))
+	_, err = state.Apply(0, update)
+	require.NoError(err)
 
 	nonce, err := state.GetNonce(addr1)
 	require.NoError(err)
@@ -424,7 +435,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
 		CreatedAccounts: []common.Address{addr1},
 	}
 
-	require.NoError(state.Apply(0, update2))
+	_, err = state.Apply(0, update2)
+	require.NoError(err)
 
 	// The nonce should remain the same
 	nonce, err = state.GetNonce(addr1)
@@ -445,7 +457,7 @@ func TestState_Error_from_Apply(t *testing.T) {
 		},
 	}
 
-	err = st.Apply(0, update)
+	_, err = st.Apply(0, update)
 	require.NoError(t, err, "failed to apply update")
 
 	for i := 0; i < source.count; i++ {
@@ -453,7 +465,7 @@ func TestState_Error_from_Apply(t *testing.T) {
 		st, err := NewStateWithSource(state.Parameters{}, source)
 		require.NoError(t, err, "failed to create state")
 
-		err = st.Apply(0, update)
+		_, err = st.Apply(0, update)
 		require.ErrorIs(t, err, injectedErr, "expected injected error at count %d", i)
 	}
 }

@@ -43,10 +43,6 @@ type GoState struct {
 }
 
 func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) state.State {
-	return state.WrapIntoSyncedState(_newGoState(live, archive, cleanup))
-}
-
-func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *GoState {
 
 	res := &GoState{
 		live:    live,
@@ -99,7 +95,7 @@ func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *
 		res.archiveWriterError = err
 	}
 
-	return res
+	return state.WrapIntoSyncedState(res)
 }
 
 var emptyCodeHash = common.GetHash(sha3.NewLegacyKeccak256(), []byte{})
@@ -220,19 +216,13 @@ func (s *GoState) GetHash() (common.Hash, error) {
 	return h, s.stateError
 }
 
-func (s *GoState) Apply(block uint64, update common.Update) error {
-	_, err := s._apply(block, update)
-	return err
-}
-
-// _apply is an internal method, which implements apply and returns a channel
-// for synchronization.
+// Apply applies the provided updates to the state content.
 //
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the archive, if there is such.
 // The channel may be nil if there are no asynchronous operations to be performed.
 // If the asynchronous operations fail, the error is returned through the channel.
-func (s *GoState) _apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	if err := s.stateError; err != nil {
 		return nil, err
 	}
