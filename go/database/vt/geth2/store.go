@@ -168,7 +168,6 @@ func (s *levelDbStore) HeadState() NodeSource {
 func (s *levelDbStore) AddBlock(block uint64, changes []Entry) error {
 	for _, change := range changes {
 		key := s.keyFactory(block, change.Path)
-		fmt.Printf("Storing node %x at block %d\n", change.Path, block)
 		if err := s.db.Put(key, change.Blob, &opt.WriteOptions{}); err != nil {
 			return err
 		}
@@ -204,7 +203,6 @@ type levelDbNodeSource struct {
 
 func (s *levelDbNodeSource) GetNode(path []byte) ([]byte, error) {
 	block := *s.block
-	fmt.Printf("Getting node %x at block %d\n", path, block)
 	return s.find(s.db, block, path)
 }
 
