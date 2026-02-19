@@ -309,7 +309,8 @@ func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
 
 func (s *ExternalState) CreateAccount(address common.Address) error {
 	update := common.Update{}
-	return s.Apply(0, update)
+	_, err := s.Apply(0, update)
+	return err
 }
 
 func (s *ExternalState) Exists(address common.Address) (bool, error) {
@@ -324,7 +325,8 @@ func (s *ExternalState) Exists(address common.Address) (bool, error) {
 func (s *ExternalState) DeleteAccount(address common.Address) error {
 	update := common.Update{}
 	update.AppendDeleteAccount(address)
-	return s.Apply(0, update)
+	_, err := s.Apply(0, update)
+	return err
 }
 
 func (s *ExternalState) GetBalance(address common.Address) (amount.Amount, error) {
@@ -339,7 +341,8 @@ func (s *ExternalState) GetBalance(address common.Address) (amount.Amount, error
 func (s *ExternalState) SetBalance(address common.Address, balance amount.Amount) error {
 	update := common.Update{}
 	update.AppendBalanceUpdate(address, balance)
-	return s.Apply(0, update)
+	_, err := s.Apply(0, update)
+	return err
 }
 
 func (s *ExternalState) GetNonce(address common.Address) (common.Nonce, error) {
@@ -354,7 +357,8 @@ func (s *ExternalState) GetNonce(address common.Address) (common.Nonce, error) {
 func (s *ExternalState) SetNonce(address common.Address, nonce common.Nonce) error {
 	update := common.Update{}
 	update.AppendNonceUpdate(address, nonce)
-	return s.Apply(0, update)
+	_, err := s.Apply(0, update)
+	return err
 }
 
 func (s *ExternalState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
@@ -369,7 +373,8 @@ func (s *ExternalState) GetStorage(address common.Address, key common.Key) (comm
 func (s *ExternalState) SetStorage(address common.Address, key common.Key, value common.Value) error {
 	update := common.Update{}
 	update.AppendSlotUpdate(address, key, value)
-	return s.Apply(0, update)
+	_, err := s.Apply(0, update)
+	return err
 }
 
 func (s *ExternalState) GetCode(address common.Address) ([]byte, error) {
@@ -401,7 +406,8 @@ func (s *ExternalState) GetCode(address common.Address) ([]byte, error) {
 func (s *ExternalState) SetCode(address common.Address, code []byte) error {
 	update := common.Update{}
 	update.AppendCodeUpdate(address, code)
-	return s.Apply(0, update)
+	_, err := s.Apply(0, update)
+	return err
 }
 
 func (s *ExternalState) GetCodeHash(address common.Address) (common.Hash, error) {
@@ -431,24 +437,24 @@ func (s *ExternalState) GetHash() (common.Hash, error) {
 	return hash, nil
 }
 
-func (s *ExternalState) Apply(block uint64, update common.Update) error {
+func (s *ExternalState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	if update.IsEmpty() {
-		return nil
+		return nil, nil
 	}
 	if err := update.Normalize(); err != nil {
-		return err
+		return nil, err
 	}
 	data := update.ToBytes()
 	dataPtr := unsafe.Pointer(&data[0])
 	result := s.bindings.Apply(s.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
 	if result != C.kResult_Success {
-		return fmt.Errorf("failed to apply update at block %d (error code %v)", block, result)
+		return nil, fmt.Errorf("failed to apply update at block %d (error code %v)", block, result)
 	}
 	// Apply code changes to Go-sided code cache.
 	for _, change := range update.Codes {
 		s.codeCache.Set(change.Account, change.Code)
 	}
-	return nil
+	return nil, nil
 }
 
 func (s *ExternalState) Flush() error {

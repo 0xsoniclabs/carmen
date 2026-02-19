@@ -242,7 +242,7 @@ func TestRunBenchmarkState_ApplyError(t *testing.T) {
 	for i := 0; i <= methods; i++ {
 		state := state.NewMockState(ctrl)
 		state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), getError(i, 1)).AnyTimes()
-		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(getError(i, 2)).AnyTimes()
+		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, getError(i, 2)).AnyTimes()
 		state.EXPECT().GetHash().Return(common.Hash{}, getError(i, 3)).AnyTimes()
 
 		_, err := runBenchmarkState(state, "/tmp", benchmarkParams{
