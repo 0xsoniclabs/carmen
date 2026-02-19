@@ -26,6 +26,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
