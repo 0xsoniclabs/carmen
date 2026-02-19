@@ -89,7 +89,7 @@ def find_best_specializations(counts, sizes, num_specializations):
         witness_table (list): The dynamic programming table of witness indices for each range and number of specializations.
     """
 
-    count_cdf = list(accumulate(counts))
+    count_prefix_sum = list(accumulate(counts))
 
     # cost_table[start][end][num_specializations]
     cost_table = [
@@ -104,7 +104,7 @@ def find_best_specializations(counts, sizes, num_specializations):
     for end in range(len(counts)):
         for start in range(end + 1):
             if start == 0:
-                cost = sizes[end] * count_cdf[end]
+                cost = sizes[end] * count_prefix_sum[end]
                 cost_table[start][end][0] = cost
                 witness_table[start][end][0] = [end]
             else:
@@ -114,7 +114,7 @@ def find_best_specializations(counts, sizes, num_specializations):
                         witness = witness_table[level][start - 1][num_spec]
                         if cost == INT_MAX:
                             continue
-                        cost += sizes[end] * (count_cdf[end] - count_cdf[start - 1])
+                        cost += sizes[end] * (count_prefix_sum[end] - count_prefix_sum[start - 1])
                         if cost < cost_table[start][end][num_spec + 1]:
                             cost_table[start][end][num_spec + 1] = cost
                             witness_table[start][end][num_spec + 1] = witness + [end]
