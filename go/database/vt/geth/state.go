@@ -238,8 +238,7 @@ func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) 
 }
 
 func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
-	err := update.ApplyTo(s)
-	return nil, err
+	return nil, update.ApplyTo(s)
 }
 
 //

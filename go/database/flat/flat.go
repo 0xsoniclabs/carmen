@@ -297,14 +297,18 @@ func processCommands(
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
 			backendChan, err := backend.Apply(command.update.block, command.update.data)
-			if backendChan != nil {
-				// wait for the backend sync channel and forward
-				// both errors into the update synch channel.
-				if command.update.done != nil {
-					err = errors.Join(err, <-backendChan)
+			if command.update.done != nil {
+				// Do no block the command processing loop while waiting for the
+				// backend asynchronous update to complete.
+				go func() {
+					if backendChan != nil {
+						// wait for the backend sync channel and forward
+						// both errors into the update synch channel.
+						err = errors.Join(err, <-backendChan)
+					}
 					command.update.done <- err
 					close(command.update.done)
-				}
+				}()
 			}
 			issues.HandleIssue(err)
 			zone.End()
