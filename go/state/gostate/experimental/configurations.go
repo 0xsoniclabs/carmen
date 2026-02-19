@@ -13,6 +13,7 @@ package experimental
 import (
 	"github.com/0xsoniclabs/carmen/go/database/flat"
 	vtgeth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
+	vtgeth2 "github.com/0xsoniclabs/carmen/go/database/vt/geth2"
 	vtmemory "github.com/0xsoniclabs/carmen/go/database/vt/memory"
 	vtref "github.com/0xsoniclabs/carmen/go/database/vt/reference"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -37,6 +38,26 @@ var configurations = map[state.Configuration]state.StateFactory{
 		Schema:  6,
 		Archive: state.NoArchive,
 	}: flat.WrapFactory(vtgeth.NewState),
+	{
+		Variant: "go-geth2-leveldb",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: vtgeth2.NewState,
+	{
+		Variant: "go-geth2-leveldb",
+		Schema:  6,
+		Archive: state.LevelDbArchive,
+	}: vtgeth2.NewState,
+	{
+		Variant: "go-geth2-leveldb-flat",
+		Schema:  6,
+		Archive: state.NoArchive,
+	}: flat.WrapFactory(vtgeth2.NewState),
+	{
+		Variant: "go-geth2-leveldb-flat",
+		Schema:  6,
+		Archive: state.LevelDbArchive,
+	}: flat.WrapFactory(vtgeth2.NewState),
 	{
 		Variant: "go-memory",
 		Schema:  6,

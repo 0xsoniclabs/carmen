@@ -25,11 +25,12 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			s1, err := NewState(params)
 			require.NoError(err)
 
-			require.NoError(s1.Apply(1, common.Update{
+			_, err = s1.Apply(1, common.Update{
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{1}, Nonce: common.ToNonce(12)},
 				},
-			}))
+			})
+			require.NoError(err)
 
 			nonce, err := s1.GetNonce(common.Address{1})
 			require.NoError(err)
@@ -48,4 +49,60 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			require.NoError(s2.Close())
 		})
 	}
+}
+
+func TestState_CanStoreAndRecoverCodes(t *testing.T) {
+	require := require.New(t)
+
+	params := state.Parameters{
+		Directory: t.TempDir(),
+		Archive:   state.NoArchive,
+	}
+	s1, err := NewState(params)
+	require.NoError(err)
+
+	addr := common.Address{1}
+	code := make([]byte, 1<<16) // 64KB code
+	for i := range code {
+		code[i] = byte(i % 256)
+	}
+
+	_, err = s1.Apply(1, common.Update{
+		Codes: []common.CodeUpdate{
+			{Account: addr, Code: code},
+		},
+	})
+	require.NoError(err)
+
+	codeLength, err := s1.GetCodeSize(addr)
+	require.NoError(err)
+	require.Equal(len(code), codeLength)
+
+	codeHash, err := s1.GetCodeHash(addr)
+	require.NoError(err)
+	require.Equal(common.Keccak256(code), codeHash)
+
+	restored, err := s1.GetCode(addr)
+	require.NoError(err)
+	require.Equal(code, restored)
+
+	require.NoError(s1.Close())
+
+	// Reopen
+	s2, err := NewState(params)
+	require.NoError(err)
+
+	codeLength, err = s2.GetCodeSize(addr)
+	require.NoError(err)
+	require.Equal(len(code), codeLength)
+
+	codeHash, err = s2.GetCodeHash(addr)
+	require.NoError(err)
+	require.Equal(common.Keccak256(code), codeHash)
+
+	restored, err = s2.GetCode(addr)
+	require.NoError(err)
+	require.Equal(code, restored)
+
+	require.NoError(s2.Close())
 }

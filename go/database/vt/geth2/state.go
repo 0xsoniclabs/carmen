@@ -30,7 +30,11 @@ type verkleState struct {
 	cache *utils.PointCache
 }
 
-func NewState(
+func NewState(params state.Parameters) (state.State, error) {
+	return newState(params)
+}
+
+func newState(
 	params state.Parameters,
 ) (_ *verkleState, err error) {
 	dataDir := params.Directory
@@ -136,7 +140,28 @@ func (s *verkleState) GetStorage(address common.Address, key common.Key) (common
 }
 
 func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
-	panic("not implemented")
+	size, err := s.GetCodeSize(address)
+	if err != nil {
+		return nil, err
+	}
+	if size == 0 {
+		return nil, nil
+	}
+	code := make([]byte, size)
+
+	// Fetch code chunks from trie and stitch them together.
+	out := code
+	addressPoint := s.cache.Get(address[:])
+	for i := 0; len(out) > 0; i++ {
+		key := utils.CodeChunkKeyWithEvaluatedAddress(addressPoint, uint256.NewInt(uint64(i)))
+		value, err := s.root.Get(key, s.readNode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read code chunk %d for address %x: %w", i, address, err)
+		}
+		out = out[copy(out, value[1:]):]
+	}
+
+	return code, nil
 }
 
 func (s *verkleState) GetCodeSize(address common.Address) (int, error) {
@@ -160,11 +185,7 @@ func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *verkleState) Apply(block uint64, update common.Update) error {
-
-	// ------------------------------------------------------------------
-	// 				  Implement all state modifications
-	// ------------------------------------------------------------------
+func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
 
 	// Aggregate changes to the account data.
 	modifiedAccounts := map[common.Address]*accountData{}
@@ -182,14 +203,14 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 
 	// Process deleted accounts.
 	if len(update.DeletedAccounts) > 0 {
-		return fmt.Errorf("not supported: verkle trie does not support deleting accounts")
+		return nil, fmt.Errorf("not supported: verkle trie does not support deleting accounts")
 	}
 
 	// Process created accounts.
 	for _, newAccount := range update.CreatedAccounts {
 		data, err := getAccountData(newAccount)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		data.Balance = *uint256.NewInt(0)
 		data.Nonce = 0
@@ -201,7 +222,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	for _, update := range update.Balances {
 		account, err := getAccountData(update.Account)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		account.Balance = update.Balance.Uint256()
 	}
@@ -210,7 +231,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	for _, update := range update.Nonces {
 		account, err := getAccountData(update.Account)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		account.Nonce = update.Nonce.ToUint64()
 	}
@@ -219,30 +240,31 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	for _, update := range update.Codes {
 		account, err := getAccountData(update.Account)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// update code len and code hash
 		codeHash := common.Keccak256(update.Code)
 		account.CodeHash = codeHash
+		account.CodeLength = len(update.Code)
 
 		// insert code into the trie
 		if err := s.updateContractCode(update.Account, codeHash, update.Code); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Update storage slots.
 	for _, update := range update.Slots {
 		if err := s.updateStorage(update.Account, update.Key[:], update.Value[:]); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Write back all modified accounts.
 	for addr, data := range modifiedAccounts {
 		if err := s.setAccountData(addr, *data); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -251,7 +273,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	// Compute and commit all changes to the store.
 	nodes, err := s.root.(*verkle.InternalNode).BatchSerialize()
 	if err != nil {
-		return fmt.Errorf("failed to serialize nodes: %w", err)
+		return nil, fmt.Errorf("failed to serialize nodes: %w", err)
 	}
 	changes := make([]Entry, 0, len(nodes))
 	for _, node := range nodes {
@@ -265,10 +287,9 @@ func (s *verkleState) Apply(block uint64, update common.Update) error {
 	// The nodes will be reloaded from the store when needed.
 	s.root.(*verkle.InternalNode).FlushAtDepth(4, func(path []byte, node verkle.VerkleNode) {
 		// no-op callback, since all nodes are stored as deltas.
-		fmt.Printf("Flushing node at %x\n", path)
 	})
 
-	return s.store.AddBlock(block, changes)
+	return nil, s.store.AddBlock(block, changes)
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
@@ -318,7 +339,7 @@ func (s *verkleState) GetArchiveBlockHeight() (height uint64, empty bool, err er
 }
 
 func (s *verkleState) Check() error {
-	panic("not implemented")
+	return nil
 }
 
 func (s *verkleState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
@@ -332,7 +353,6 @@ func (s *verkleState) Export(ctx context.Context, out io.Writer) (common.Hash, e
 // --- utility functions ---
 
 func (s *verkleState) readNode(path []byte) ([]byte, error) {
-	fmt.Printf("Reading node %x\n", path)
 	return s.source.GetNode(path)
 }
 
