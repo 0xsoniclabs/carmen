@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -4685,5 +4686,129 @@ func checkCode(t *testing.T, db VmStateDB, address common.Address, code []byte, 
 	}
 	if got, want := db.GetCodeSize(address), len(code); got != want {
 		t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
+	}
+}
+
+func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mock := NewMockState(ctrl)
+		db := CreateStateDBUsing(mock)
+
+		applyDone := make(chan error)
+
+		mock.EXPECT().Check().AnyTimes()
+		mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
+			func(_ uint64, _ common.Update) (<-chan error, error) {
+				return applyDone, nil
+			})
+
+		done := db.EndBlock(1)
+		if done == nil {
+			t.Errorf("unexpected nil channel")
+		}
+
+		// The done channel should not be closed.
+		select {
+		case <-done:
+			t.Errorf("returned channel unexpectedly closed")
+		default:
+			// success
+		}
+
+		// close the "internal" channel, simulating the state finishing the update.
+		close(applyDone)
+		synctest.Wait()
+
+		// The done channel should be closed after the state update is released.
+		select {
+		case <-done:
+			// success
+		default:
+			t.Errorf("channel returned is not in sync with the state sync channel")
+		}
+	})
+}
+
+func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	injectedError := fmt.Errorf("injected error")
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, injectedError)
+
+	done := db.EndBlock(1)
+	if done != nil {
+		t.Errorf("expected nil channel when Apply returns error, got non-nil")
+	}
+
+	err := db.Check()
+	if !errors.Is(err, injectedError) {
+		t.Errorf("expected error %v to be tracked, got %v", injectedError, err)
+	}
+}
+
+func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker_WhenApplyReturnsChannelWithError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	injectedError := fmt.Errorf("injected error")
+	applyDone := make(chan error)
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
+		func(_ uint64, _ common.Update) (<-chan error, error) {
+			return applyDone, nil
+		})
+
+	done := db.EndBlock(1)
+	if done == nil {
+		t.Errorf("unexpected nil channel")
+	}
+
+	// close the "internal" channel with an error,
+	// simulating the state finishing the update with an error.
+	applyDone <- injectedError
+	close(applyDone)
+
+	err := db.Check()
+	if !errors.Is(err, injectedError) {
+		t.Errorf("expected error %v to be tracked, got %v", injectedError, err)
+	}
+}
+
+func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	injectedError1 := fmt.Errorf("injected error 1")
+	injectedError2 := fmt.Errorf("injected error 2")
+
+	applyDone := make(chan error)
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
+		func(_ uint64, _ common.Update) (<-chan error, error) {
+			return applyDone, injectedError1
+		})
+
+	done := db.EndBlock(1)
+	if done == nil {
+		t.Errorf("expected channel to not be nil")
+	}
+
+	// close the "internal" channel with an error,
+	// simulating the state finishing the update with an error.
+	applyDone <- injectedError2
+	close(applyDone)
+
+	err := db.Check()
+	if !errors.Is(err, injectedError1) || !errors.Is(err, injectedError2) {
+		t.Errorf("expected errors %v and %v to be tracked, got %v", injectedError1, injectedError2, err)
 	}
 }
