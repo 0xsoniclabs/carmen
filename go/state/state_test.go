@@ -24,6 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/0xsoniclabs/carmen/go/state/gostate"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
 
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
@@ -705,7 +706,7 @@ func TestLastArchiveBlock(t *testing.T) {
 
 			lastBlockHeight, empty, err := s.GetArchiveBlockHeight()
 			if err != nil {
-				t.Fatalf("failed to get the last available block height; %s", err)
+				t.Fatalf("failed to get the last available block height; %v", err)
 			}
 			if empty || lastBlockHeight != 1 {
 				t.Errorf("invalid last available block height %d (expected 1); empty: %t", lastBlockHeight, empty)
@@ -713,15 +714,17 @@ func TestLastArchiveBlock(t *testing.T) {
 
 			state2, err := s.GetArchiveState(lastBlockHeight)
 			if err != nil {
-				t.Fatalf("failed to get state at the last block in the archive; %s", err)
+				t.Fatalf("failed to get state at the last block in the archive; %v", err)
 			}
-			defer state2.Close()
+			defer func() {
+				require.NoError(t, state2.Close())
+			}()
 
 			if as, err := state2.Exists(address1); err != nil || as != true {
-				t.Errorf("invalid account state at the last block: %t, %s", as, err)
+				t.Errorf("invalid account state at the last block: %t, %v", as, err)
 			}
 			if as, err := state2.Exists(address2); err != nil || as != true {
-				t.Errorf("invalid account state at the last block: %t, %s", as, err)
+				t.Errorf("invalid account state at the last block: %t, %v", as, err)
 			}
 
 			_, err = s.GetArchiveState(lastBlockHeight + 1)

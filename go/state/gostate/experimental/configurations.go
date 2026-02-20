@@ -46,23 +46,8 @@ var configurations = map[state.Configuration]state.StateFactory{
 	{
 		Variant: "go-geth2-leveldb",
 		Schema:  6,
-		Archive: state.S5Archive,
-	}: vtgeth2.NewState,
-	{
-		Variant: "go-geth2-leveldb",
-		Schema:  6,
 		Archive: state.LevelDbArchive,
 	}: vtgeth2.NewState,
-	{
-		Variant: "go-geth2-leveldb-flat",
-		Schema:  6,
-		Archive: state.NoArchive,
-	}: flat.WrapFactory(vtgeth2.NewState),
-	{
-		Variant: "go-geth2-leveldb-flat",
-		Schema:  6,
-		Archive: state.LevelDbArchive,
-	}: flat.WrapFactory(vtgeth2.NewState),
 	{
 		Variant: "go-memory",
 		Schema:  6,

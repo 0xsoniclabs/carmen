@@ -116,12 +116,12 @@ func _newStateWithSource(source NodeSource) (_ *verkleState, err error) {
 // --- State interface implementation ---
 
 func (s *verkleState) Exists(address common.Address) (bool, error) {
-	account, err := s.getAccountData(address)
+	account, _, err := s.getAccount(address)
 	if err != nil {
 		return false, err
 	}
 
-	return account.Nonce != 0 || account.Balance.Uint64() != 0, nil
+	return account != nil, nil
 }
 
 func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) {
