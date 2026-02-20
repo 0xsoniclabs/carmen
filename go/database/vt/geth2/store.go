@@ -236,7 +236,13 @@ func areArchiveKeysForSamePath(key1, key2 []byte) bool {
 // --- Utilities ---
 
 var (
-	nextBlockKey = []byte{63: 0} // longer than any other key, to avoid collisions
+	nextBlockKey = func() []byte {
+		key := make([]byte, 64) // longer than any other key, to avoid collisions
+		for i := range key {
+			key[i] = 255
+		}
+		return key
+	}()
 )
 
 func loadNextBlockFromDb(db *leveldb.DB) (uint64, error) {

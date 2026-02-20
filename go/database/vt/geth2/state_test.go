@@ -25,7 +25,7 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			s1, err := NewState(params)
 			require.NoError(err)
 
-			_, err = s1.Apply(1, common.Update{
+			_, err = s1.Apply(0, common.Update{
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{1}, Nonce: common.ToNonce(12)},
 				},
