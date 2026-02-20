@@ -35,11 +35,13 @@ func TestConfigurations_ContainAllConfigurations(t *testing.T) {
 
 func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
 	for config, fact := range state.GetAllRegisteredStateFactories() {
-		config := config
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()
 			st, err := fact(state.Parameters{
 				Directory: t.TempDir(),
+				Variant:   config.Variant,
+				Schema:    config.Schema,
+				Archive:   config.Archive,
 			})
 			if err != nil {
 				t.Fatalf("failed to create state: %v", err)
