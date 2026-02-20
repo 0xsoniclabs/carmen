@@ -26,8 +26,11 @@ type verkleState struct {
 	store  Store
 	source NodeSource
 
-	// cache for computing paths in the verkle trie.
-	cache *utils.PointCache
+	// pointCache for computing paths in the verkle trie.
+	pointCache *utils.PointCache
+
+	// Resolving codes is relatively expensive, so we keep a cache of codes in memory.
+	codeCache map[common.Address][]byte
 }
 
 func NewState(params state.Parameters) (state.State, error) {
@@ -93,9 +96,10 @@ func _newStateWithSource(source NodeSource) (_ *verkleState, err error) {
 	}
 
 	return &verkleState{
-		root:   root,
-		source: source,
-		cache:  utils.NewPointCache(4096),
+		root:       root,
+		source:     source,
+		pointCache: utils.NewPointCache(4096),
+		codeCache:  make(map[common.Address][]byte),
 	}, nil
 }
 
@@ -140,6 +144,9 @@ func (s *verkleState) GetStorage(address common.Address, key common.Key) (common
 }
 
 func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
+	if code, ok := s.codeCache[address]; ok {
+		return code, nil
+	}
 	size, err := s.GetCodeSize(address)
 	if err != nil {
 		return nil, err
@@ -151,7 +158,7 @@ func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
 
 	// Fetch code chunks from trie and stitch them together.
 	out := code
-	addressPoint := s.cache.Get(address[:])
+	addressPoint := s.pointCache.Get(address[:])
 	for i := 0; len(out) > 0; i++ {
 		key := utils.CodeChunkKeyWithEvaluatedAddress(addressPoint, uint256.NewInt(uint64(i)))
 		value, err := s.root.Get(key, s.readNode)
@@ -161,6 +168,7 @@ func (s *verkleState) GetCode(address common.Address) ([]byte, error) {
 		out = out[copy(out, value[1:]):]
 	}
 
+	s.codeCache[address] = code
 	return code, nil
 }
 
@@ -252,6 +260,8 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 		if err := s.updateContractCode(update.Account, codeHash, update.Code); err != nil {
 			return nil, err
 		}
+
+		s.codeCache[update.Account] = update.Code
 	}
 
 	// Update storage slots.
@@ -442,7 +452,7 @@ func (s *verkleState) getAccount(addr common.Address) (*types.StateAccount, int,
 	)
 	switch n := s.root.(type) {
 	case *verkle.InternalNode:
-		values, err = n.GetValuesAtStem(s.cache.GetStem(addr[:]), s.readNode)
+		values, err = n.GetValuesAtStem(s.pointCache.GetStem(addr[:]), s.readNode)
 		if err != nil {
 			return nil, 0, fmt.Errorf("GetAccount (%x) error: %v", addr, err)
 		}
@@ -470,7 +480,7 @@ func (s *verkleState) updateAccount(addr common.Address, acc *types.StateAccount
 		err       error
 		basicData [32]byte
 		values    = make([][]byte, verkle.NodeWidth)
-		stem      = s.cache.GetStem(addr[:])
+		stem      = s.pointCache.GetStem(addr[:])
 	)
 
 	// Code size is encoded in BasicData as a 3-byte big-endian integer. Spare bytes are present
@@ -508,7 +518,7 @@ func (s *verkleState) updateStorage(address common.Address, key, value []byte) e
 	} else {
 		copy(v[32-len(value):], value[:])
 	}
-	k := utils.StorageSlotKeyWithEvaluatedAddress(s.cache.Get(address[:]), key)
+	k := utils.StorageSlotKeyWithEvaluatedAddress(s.pointCache.Get(address[:]), key)
 	return s.root.Insert(k, v[:], s.readNode)
 }
 
@@ -516,7 +526,7 @@ func (s *verkleState) updateStorage(address common.Address, key, value []byte) e
 // account address and storage key. If the specified slot is not in the verkle tree,
 // nil will be returned. If the tree is corrupted, an error will be returned.
 func (s *verkleState) getStorage(addr common.Address, key []byte) ([]byte, error) {
-	k := utils.StorageSlotKeyWithEvaluatedAddress(s.cache.Get(addr[:]), key)
+	k := utils.StorageSlotKeyWithEvaluatedAddress(s.pointCache.Get(addr[:]), key)
 	val, err := s.root.Get(k, s.readNode)
 	if err != nil {
 		return nil, err
@@ -593,7 +603,7 @@ func (s *verkleState) updateContractCode(addr common.Address, codeHash common.Ha
 		groupOffset := (chunknr + 128) % 256
 		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
 			values = make([][]byte, verkle.NodeWidth)
-			key = utils.CodeChunkKeyWithEvaluatedAddress(s.cache.Get(addr[:]), uint256.NewInt(chunknr))
+			key = utils.CodeChunkKeyWithEvaluatedAddress(s.pointCache.Get(addr[:]), uint256.NewInt(chunknr))
 		}
 		values[groupOffset] = chunks[i : i+32]
 
