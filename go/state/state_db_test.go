@@ -1337,6 +1337,32 @@ func TestStateDB_SubtractingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *
 	db.EndBlock(1)
 }
 
+func TestStateDB_AddSubBalanceChecksCacheFirstBeforeReadingFromState(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	state := CreateStateDBUsing(mock)
+
+	// Only first AddBalance goes to the DB
+	want := amount.New(12)
+	allow_db_call := true
+	mock.EXPECT().Exists(address1).Times(1).Return(true, nil)
+	mock.EXPECT().GetBalance(address1).DoAndReturn(func(common.Address) (amount.Amount, error) {
+		if allow_db_call {
+			return want, nil
+		}
+		return amount.New(), fmt.Errorf("unexpected call to GetBalance")
+	})
+
+	state.AddBalance(address1, amount.New(5))
+	allow_db_call = false
+	require.Equal(amount.New(17), state.GetBalance(address1))
+	state.AddBalance(address1, amount.New(3))
+	require.Equal(amount.New(20), state.GetBalance(address1))
+	state.SubBalance(address1, amount.New(10))
+	require.Equal(amount.New(10), state.GetBalance(address1))
+}
+
 func TestStateDB_ProducingANegativeBalanceCausesTheBlockToFail(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)

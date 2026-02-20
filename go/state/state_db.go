@@ -656,7 +656,13 @@ func (s *stateDB) AddBalance(addr common.Address, diff amount.Amount) {
 		return
 	}
 
-	oldValue := s.GetBalance(addr)
+	var oldValue amount.Amount
+	if val, exists := s.balances[addr]; exists {
+		oldValue = val.current
+	} else {
+		oldValue = s.GetBalance(addr)
+	}
+
 	newValue, overflow := amount.AddOverflow(oldValue, diff)
 
 	if overflow {
@@ -678,7 +684,13 @@ func (s *stateDB) SubBalance(addr common.Address, diff amount.Amount) {
 		return
 	}
 
-	oldValue := s.GetBalance(addr)
+	var oldValue amount.Amount
+	if val, exists := s.balances[addr]; exists {
+		oldValue = val.current
+	} else {
+		oldValue = s.GetBalance(addr)
+	}
+
 	newValue, underflow := amount.SubUnderflow(oldValue, diff)
 
 	if underflow {
