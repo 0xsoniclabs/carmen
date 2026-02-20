@@ -1299,16 +1299,18 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 
 	// Send the update to the state.
 	archiveDone, err := s.state.Apply(block, update)
-
-	// Relay any error from the archive update back to the caller.
-	errRelay := make(chan error, 1)
-	go func() {
-		defer close(errRelay)
-		if syncError := <-archiveDone; syncError != nil {
-			s.trackErrors(fmt.Errorf("failed to update archive for block %d: %w", block, syncError))
-			errRelay <- syncError
-		}
-	}()
+	var errRelay chan error
+	if archiveDone != nil {
+		// Relay any error from the archive update back to the caller.
+		errRelay = make(chan error, 1)
+		go func() {
+			defer close(errRelay)
+			if syncError := <-archiveDone; syncError != nil {
+				s.trackErrors(fmt.Errorf("failed to update archive for block %d: %w", block, syncError))
+				errRelay <- syncError
+			}
+		}()
+	}
 
 	if err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
