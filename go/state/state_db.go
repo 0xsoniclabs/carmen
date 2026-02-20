@@ -122,6 +122,8 @@ type StateDB interface {
 	// like the update of the archive, if there is such.
 	// The channel may be nil if there are no asynchronous operations to be performed.
 	// If the asynchronous operations fail, the error is returned through the channel.
+	// Errors reported by this channel shall also be accumulated and
+	// reported by Check().
 	EndBlock(number uint64) <-chan error
 
 	BeginEpoch()
@@ -1296,17 +1298,28 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 	}
 
 	// Send the update to the state.
-	archiveDoneChan, err := s.state.Apply(block, update)
+	archiveDone, err := s.state.Apply(block, update)
+
+	// Relay any error from the archive update back to the caller.
+	errRelay := make(chan error, 1)
+	go func() {
+		defer close(errRelay)
+		if syncError := <-archiveDone; syncError != nil {
+			s.trackErrors(fmt.Errorf("failed to update archive for block %d: %w", block, syncError))
+			errRelay <- syncError
+		}
+	}()
+
 	if err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
 		// even if there is an error, we return the channel to allow
 		// the caller to wait for the archive update to finish.
-		return archiveDoneChan
+		return errRelay
 	}
 
 	// Reset internal state for next block
 	s.ResetBlockContext()
-	return archiveDoneChan
+	return errRelay
 }
 
 func (s *stateDB) BeginEpoch() {
