@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -59,6 +60,12 @@ func newState(
 		liveOnly = true
 	case state.LevelDbArchive, state.S5Archive:
 		liveOnly = false
+		// To be compatible with other archive implementations, a archive
+		// directory needs to be created. However, all data is stored in the
+		// live directory, so the archive directory remains empty.
+		if err := os.Mkdir(filepath.Join(dataDir, "archive"), 0755); err != nil {
+			return nil, fmt.Errorf("failed to create archive directory: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported archive mode: %v", params.Archive)
 	}
