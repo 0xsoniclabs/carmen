@@ -9,17 +9,17 @@ on:
     branches: [ "**/**" ]
 
 jobs:
-  targets-main:
-    name: targets main
+  targets-S5:
+    name: targets S5
     runs-on: ubuntu-latest
     steps:
-      - name: check PR targets main
+      - name: check PR targets S5
         env:
           TARGET_BRANCH: ${{ github.base_ref }}
         run: |
-          if [ "$TARGET_BRANCH" == "main" ]; then
+          if [ "$TARGET_BRANCH" == "S5" ]; then
             exit 0
           else
-            echo "Stacked PRs can not be merged."
+            echo "Stacked PRs can not be merged. Target branch: $TARGET_BRANCH"
             exit 1
           fi
