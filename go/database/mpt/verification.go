@@ -138,7 +138,7 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 
 	// Check that all IDs used to reference other nodes are valid.
 	observer.Progress("Checking node references ...")
-	checkId := func(ref NodeReference) error {
+	checkId := func(ref *NodeReference) error {
 		if source.isValid(ref.Id()) {
 			return nil
 		}
@@ -148,7 +148,7 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 	// Check that roots are valid.
 	errs := []error{}
 	for _, root := range roots {
-		if err := checkId(root.NodeRef); err != nil {
+		if err := checkId(&root.NodeRef); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -159,13 +159,13 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 	err := source.forAllInnerNodes(func(node Node) error {
 		switch n := node.(type) {
 		case *AccountNode:
-			return checkId(n.storage)
+			return checkId(&n.storage)
 		case *ExtensionNode:
-			return checkId(n.next)
+			return checkId(&n.next)
 		case *BranchNode:
 			errs := []error{}
-			for i := 0; i < len(n.children); i++ {
-				if err := checkId(n.children[i]); err != nil {
+			for i := range n.children {
+				if err := checkId(&n.children[i]); err != nil {
 					errs = append(errs, err)
 				}
 			}
@@ -243,11 +243,11 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 		func(id NodeId) bool { return id.IsBranch() },
 		func(node *BranchNode, hashes map[NodeId]common.Hash, embedded map[NodeId]bool) {
 			for i := 0; i < 16; i++ {
-				child := node.children[i]
+				child := &node.children[i]
 				if !child.Id().IsEmpty() && embedded[child.Id()] {
 					node.setEmbedded(byte(i), true)
 				}
-				if child := node.children[i]; !node.isEmbedded(byte(i)) && !child.Id().IsEmpty() {
+				if child := &node.children[i]; !node.isEmbedded(byte(i)) && !child.Id().IsEmpty() {
 					hash, found := hashes[child.Id()]
 					if !found {
 						panic(fmt.Sprintf("missing hash for %v\n", child.Id()))
@@ -596,7 +596,7 @@ func verifyHashesStoredWithParents[N any](
 			case *BranchNode:
 				{
 					errs := []error{}
-					for i := 0; i < len(n.children); i++ {
+					for i := range n.children {
 						if !n.isEmbedded(byte(i)) {
 							if err := checkNodeHash(n.children[i].Id(), n.hashes[i]); err != nil {
 								errs = append(errs, err)
