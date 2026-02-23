@@ -16,7 +16,11 @@ require (
 	github.com/0xsoniclabs/tracy v0.0.0-20251027125423-00a5ab7968fb
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a
 	github.com/ethereum/go-ethereum v1.16.5
-	github.com/ethereum/go-verkle v0.2.2
+	// This pseudo-version is needed since v0.2.2 contains a bug mutating global
+	// state, which causes identity constants to be invalidated.
+	// This is fixed in https://github.com/ethereum/go-verkle/pull/469, but not
+	// yet included in any release.
+	github.com/ethereum/go-verkle v0.2.3-0.20260102081149-aa0a270c0ed0
 	github.com/golang/snappy v1.0.0
 	github.com/holiman/uint256 v1.3.2
 	github.com/mattn/go-sqlite3 v1.14.16
@@ -61,9 +65,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// This override is needed as the latest version of go-verkle (v0.2.2) contains
-// a bug mutating global state, which causes identity constants to be mutated.
-// This is fixed in https://github.com/ethereum/go-verkle/pull/469, but not yet
-// included in any release.
-replace github.com/ethereum/go-verkle => github.com/ethereum/go-verkle v0.0.0-20260102081149-aa0a270c0ed0
