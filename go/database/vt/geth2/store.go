@@ -18,8 +18,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/cockroachdb/pebble"
 )
 
 const (
@@ -76,12 +75,13 @@ func newLevelDbLiveStore(path string) (*levelDbStore, error) {
 		func(_ uint64, path []byte) []byte {
 			return path
 		},
-		func(db *leveldb.DB, block uint64, path []byte) ([]byte, error) {
-			data, err := db.Get(path, &opt.ReadOptions{})
-			if err == leveldb.ErrNotFound {
+		func(db *pebble.DB, block uint64, path []byte) ([]byte, error) {
+			data, closer, err := db.Get(path)
+			if err == pebble.ErrNotFound {
 				return nil, ErrNotFound
 			}
-			return data, err
+			res := bytes.Clone(data)
+			return res, errors.Join(err, closer.Close())
 		},
 		false,
 	)
@@ -98,29 +98,22 @@ func newLevelDbArchiveStore(path string) (*levelDbStore, error) {
 	return newLevelDbStore(
 		path,
 		toArchivePath,
-		func(db *leveldb.DB, block uint64, path []byte) ([]byte, error) {
+		func(db *pebble.DB, block uint64, path []byte) ([]byte, error) {
 			// In the archive, we need to find the last block that updated this
 			// path before or at the given block, and read the node from that
 			// block.
 			key := toArchivePath(block, path)
-			iter := db.NewIterator(nil, &opt.ReadOptions{})
-			defer iter.Release()
-			if iter.Seek(key) {
-				if bytes.Equal(iter.Key(), key) {
-					// There is a perfect match for this block and path, return it.
-					return iter.Value(), nil
+			iter, err := db.NewIter(&pebble.IterOptions{})
+			if err != nil {
+				return nil, err
+			}
+
+			if iter.SeekLT(append(key, 0)) {
+				if areArchiveKeysForSamePath(iter.Key(), key) {
+					return iter.Value(), iter.Close()
 				}
 			}
-			// No perfect match, we need to find the last update for this path
-			// before this block.
-			if iter.Prev() {
-				// Check if the previous entry is for the same path.
-				prevKey := iter.Key()
-				if areArchiveKeysForSamePath(prevKey, key) {
-					return iter.Value(), nil
-				}
-			}
-			return nil, ErrNotFound
+			return nil, errors.Join(ErrNotFound, iter.Close())
 		},
 		true,
 	)
@@ -129,12 +122,12 @@ func newLevelDbArchiveStore(path string) (*levelDbStore, error) {
 // --- Implementations ---
 
 type keyFactoryFn func(block uint64, path []byte) []byte
-type nodeFinderFn func(db *leveldb.DB, block uint64, path []byte) ([]byte, error)
+type nodeFinderFn func(db *pebble.DB, block uint64, path []byte) ([]byte, error)
 
 // levelDbStore is a generic store implementation instantiated by factory
 // functions to realize different storage strategies (live vs archive).
 type levelDbStore struct {
-	db              *leveldb.DB
+	db              *pebble.DB
 	nextBlock       uint64
 	keyFactory      keyFactoryFn
 	findNode        nodeFinderFn
@@ -147,7 +140,7 @@ func newLevelDbStore(
 	findNode nodeFinderFn,
 	supportsHistory bool,
 ) (*levelDbStore, error) {
-	db, err := leveldb.OpenFile(path, nil)
+	db, err := pebble.Open(path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +170,14 @@ func (s *levelDbStore) HeadState() NodeSource {
 
 func (s *levelDbStore) AddBlock(block uint64, changes []Entry) error {
 
-	batch := new(leveldb.Batch)
+	batch := s.db.NewBatch()
 	for _, change := range changes {
 		key := s.keyFactory(block, change.Path)
-		batch.Put(key, change.Blob)
+		if err := batch.Set(key, change.Blob, &pebble.WriteOptions{}); err != nil {
+			return err
+		}
 	}
-	err := s.db.Write(batch, &opt.WriteOptions{})
+	err := s.db.Apply(batch, &pebble.WriteOptions{})
 	if err != nil {
 		return err
 	}
@@ -202,7 +197,7 @@ func (s *levelDbStore) HistoricState(block uint64) (NodeSource, error) {
 }
 
 func (s *levelDbStore) Flush() error {
-	// no-op, as flushes are managed by LevelDB internally.
+	// no-op, as flushes are managed by Pebble internally.
 	return nil
 }
 
@@ -211,7 +206,7 @@ func (s *levelDbStore) Close() error {
 }
 
 type levelDbNodeSource struct {
-	db    *leveldb.DB
+	db    *pebble.DB
 	block *uint64
 	find  nodeFinderFn
 }
@@ -255,23 +250,24 @@ var (
 	}()
 )
 
-func loadNextBlockFromDb(db *leveldb.DB) (uint64, error) {
+func loadNextBlockFromDb(db *pebble.DB) (uint64, error) {
 	key := nextBlockKey
-	if data, err := db.Get(key, &opt.ReadOptions{}); err == nil {
+	if data, closer, err := db.Get(key); err == nil {
+		defer closer.Close()
 		if len(data) != 8 {
 			return 0, fmt.Errorf("invalid next block data")
 		}
 		nextBlock := binary.BigEndian.Uint64(data)
 		return nextBlock, nil
-	} else if err != leveldb.ErrNotFound {
+	} else if err != pebble.ErrNotFound {
 		return 0, err
 	}
 	return 0, nil // default to 0 if not found
 }
 
-func storeNextBlockToDb(db *leveldb.DB, nextBlock uint64) error {
+func storeNextBlockToDb(db *pebble.DB, nextBlock uint64) error {
 	key := nextBlockKey
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, nextBlock)
-	return db.Put(key, data, &opt.WriteOptions{})
+	return db.Set(key, data, &pebble.WriteOptions{})
 }

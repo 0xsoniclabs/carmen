@@ -103,7 +103,7 @@ func _newStateWithSource(source NodeSource) (_ *verkleState, err error) {
 
 	// Load the root node, if present.
 	var root verkle.VerkleNode
-	if rootData, err := source.GetNode(nil); err == ErrNotFound {
+	if rootData, err := source.GetNode(nil); errors.Is(err, ErrNotFound) {
 		root = verkle.New()
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to read root node from store: %w", err)
