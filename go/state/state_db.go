@@ -1099,11 +1099,19 @@ func (s *stateDB) IsSlotInAccessList(addr common.Address, key common.Key) (addre
 }
 
 func (s *stateDB) Snapshot() int {
+	if len(s.undo) == 0 {
+		s.trackErrors(fmt.Errorf("cannot create snapshot: no active transaction"))
+		return 0
+	}
 	return len(s.undo[len(s.undo)-1])
 }
 
 // RevertToSnapshot reverts all changes that happened since the snapshot in the last transaction.
 func (s *stateDB) RevertToSnapshot(id int) {
+	if len(s.undo) == 0 {
+		s.trackErrors(fmt.Errorf("cannot revert to snapshot: no active transaction"))
+		return
+	}
 	currentTxUndo := &s.undo[len(s.undo)-1]
 	if id < 0 || len(*currentTxUndo) < id {
 		s.trackErrors(fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(*currentTxUndo)))
