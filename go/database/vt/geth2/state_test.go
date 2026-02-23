@@ -116,3 +116,36 @@ func TestState_CanStoreAndRecoverCodes(t *testing.T) {
 
 	require.NoError(s2.Close())
 }
+
+func TestState_ProducesConsistentHash(t *testing.T) {
+	require := require.New(t)
+
+	update := common.Update{
+		Nonces: []common.NonceUpdate{
+			{Account: common.Address{1}, Nonce: common.ToNonce(12)},
+			{Account: common.Address{2}, Nonce: common.ToNonce(34)},
+		},
+	}
+
+	hashes := []common.Hash{}
+	for range 3 {
+		params := state.Parameters{
+			Directory: t.TempDir(),
+			Archive:   state.NoArchive,
+		}
+		state, err := NewState(params)
+		require.NoError(err)
+
+		_, err = state.Apply(1, update)
+		require.NoError(err)
+
+		hash, err := state.GetHash()
+		require.NoError(err)
+		hashes = append(hashes, hash)
+		require.NoError(state.Close())
+	}
+
+	require.Len(hashes, 3)
+	require.Equal(hashes[0], hashes[1])
+	require.Equal(hashes[1], hashes[2])
+}
