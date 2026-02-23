@@ -63,8 +63,11 @@ func newState(
 		// To be compatible with other archive implementations, a archive
 		// directory needs to be created. However, all data is stored in the
 		// live directory, so the archive directory remains empty.
-		if err := os.Mkdir(filepath.Join(dataDir, "archive"), 0755); err != nil {
-			return nil, fmt.Errorf("failed to create archive directory: %w", err)
+		dir := filepath.Join(dataDir, "archive")
+		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(dir, 0755); err != nil {
+				return nil, fmt.Errorf("failed to create archive directory: %w", err)
+			}
 		}
 	default:
 		return nil, fmt.Errorf("unsupported archive mode: %v", params.Archive)
