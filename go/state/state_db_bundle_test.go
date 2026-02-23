@@ -26,6 +26,8 @@ func TestStateDB_revertTransactionsRevertToPreviousState(t *testing.T) {
 	statedb.EndTransaction()
 	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
 
+	checkpoint := statedb.Checkpoint()
+
 	// Tx 2: Add 10 balance
 	statedb.BeginTransaction()
 	statedb.AddBalance(targetAddress, amount.New(10))
@@ -39,7 +41,7 @@ func TestStateDB_revertTransactionsRevertToPreviousState(t *testing.T) {
 	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(30))
 
 	// Revert last two txs
-	statedb.RevertTransactions(2)
+	statedb.RevertToCheckpoint(checkpoint)
 	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
 }
 
@@ -72,6 +74,7 @@ func TestStateDB_RollbackOfTransactionsRestoresCommittedState(t *testing.T) {
 	state.SetState(addr, key, val1)
 	require.Equal(val0, state.GetCommittedState(addr, key))
 	state.EndTransaction()
+	checkpoint := state.Checkpoint()
 
 	// Tx 2: updates the same storage location
 	state.BeginTransaction()
@@ -81,7 +84,7 @@ func TestStateDB_RollbackOfTransactionsRestoresCommittedState(t *testing.T) {
 	state.EndTransaction()
 
 	// Revert last transaction
-	state.RevertTransactions(1)
+	state.RevertToCheckpoint(checkpoint)
 
 	// Now, the committed state should be the state as before Tx 2.
 	state.BeginTransaction()
@@ -165,7 +168,12 @@ func makeSetNonceFunc(ctx *StateDBOpContext) func() func() {
 	}
 }
 
-func TestStateDB_RevertTransactions(t *testing.T) {
+func TestStateDB_RevertToCheckpoint(t *testing.T) {
+	type revertWithCheckpoint struct {
+		funcToRevert func()
+		checkpointID int
+	}
+
 	require := require.New(t)
 	ctx := NewStateDBOpContext(t, require)
 
@@ -173,11 +181,15 @@ func TestStateDB_RevertTransactions(t *testing.T) {
 		makeSetStateFunc(ctx),
 		makeSetNonceFunc(ctx),
 	}
-	var revertCheckerList []func()
+	var revertCheckerList []revertWithCheckpoint
 
 	runTx := func(op func() func()) {
+		checkpointID := ctx.state.Checkpoint()
 		ctx.state.BeginTransaction()
-		revertCheckerList = append(revertCheckerList, op())
+		revertCheckerList = append(revertCheckerList, revertWithCheckpoint{
+			funcToRevert: op(),
+			checkpointID: checkpointID,
+		})
 		ctx.state.EndTransaction()
 	}
 
@@ -192,22 +204,12 @@ func TestStateDB_RevertTransactions(t *testing.T) {
 				runTx(opList[k])
 
 				for range 3 {
-					ctx.state.RevertTransactions(1)
-					revertCheckerList[len(revertCheckerList)-1]()
+					curTxRevertContext := revertCheckerList[len(revertCheckerList)-1]
+					err := ctx.state.RevertToCheckpoint(curTxRevertContext.checkpointID)
+					require.NoError(err)
+					curTxRevertContext.funcToRevert()
 					revertCheckerList = revertCheckerList[:len(revertCheckerList)-1]
 				}
-
-				// Optionally, we could test reverting more than one transaction at once
-				// for rev := 1; rev <= 3; rev++ {
-				// 	runTx(opList[i])
-				// 	runTx(opList[j])
-				// 	runTx(opList[k])
-				// 	for j := 3; j-rev >= 0; j -= rev {
-				// 		ctx.state.RevertTransactions(rev)
-				// 		revertCheckerList[len(revertCheckerList)-rev]()
-				// 		revertCheckerList = revertCheckerList[:len(revertCheckerList)-rev]
-				// 	}
-				// }
 			}
 		}
 	}
