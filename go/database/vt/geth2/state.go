@@ -348,7 +348,7 @@ func (s *verkleState) GetHash() (common.Hash, error) {
 }
 
 func (s *verkleState) GetCommitment() future.Future[result.Result[common.Hash]] {
-	return future.Immediate(result.Ok(common.Hash(s.root.Commitment().Bytes())))
+	return future.Immediate(result.Ok(common.Hash(s.root.Commit().Bytes())))
 }
 
 func (s *verkleState) Flush() error {

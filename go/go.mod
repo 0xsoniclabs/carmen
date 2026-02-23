@@ -32,7 +32,7 @@ require (
 require (
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
-	github.com/consensys/gnark-crypto v0.18.0 // indirect
+	github.com/consensys/gnark-crypto v0.18.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.4.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -61,3 +61,9 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// This override is needed as the latest version of go-verkle (v0.2.2) contains
+// a bug mutating global state, which causes identity constants to be mutated.
+// This is fixed in https://github.com/ethereum/go-verkle/pull/469, but not yet
+// included in any release.
+replace github.com/ethereum/go-verkle => github.com/ethereum/go-verkle v0.0.0-20260102081149-aa0a270c0ed0
