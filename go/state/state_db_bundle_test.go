@@ -45,7 +45,7 @@ func TestStateDB_revertTransactionsRevertToPreviousState(t *testing.T) {
 	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
 }
 
-func TestStateDB_RollbackOfTransactionsRestoresCommittedState(t *testing.T) {
+func TestStateDB_RevertToCheckpointRestoresCommittedState(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	st := NewMockState(ctrl)
