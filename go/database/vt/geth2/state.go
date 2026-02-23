@@ -329,21 +329,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	}
 	s.root = rootNode
 
-	/*
-		// Limit memory usage by pruning in-memory tree structure at a certain depth.
-		// The nodes will be reloaded from the store when needed.
-		s.root.(*verkle.InternalNode).Flush(func([]byte, verkle.VerkleNode) {
-			// no-op callback, since all nodes are stored as deltas.
-		})
-	*/
-	/*
-		s.root.(*verkle.InternalNode).FlushAtDepth(4, func(path []byte, node verkle.VerkleNode) {
-			// no-op callback, since all nodes are stored as deltas.
-		})
-	*/
-
 	return nil, nil
-	//return nil, s.store.AddBlock(block, changes)
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
