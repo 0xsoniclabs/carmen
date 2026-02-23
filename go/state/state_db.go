@@ -147,8 +147,11 @@ type StateDB interface {
 
 	ResetBlockContext()
 
-	// RevertTransactions revert `number` of transactions in the current block which haven't been committed to the underlying state.
-	RevertTransactions(number int)
+	// Checkpoint creates a restore point to the last executed transaction. Returns an identifier of the created checkpoint to be used for reverting to it.
+	Checkpoint() int
+
+	// RevertToCheckpoint reverts the state to the state at the checkpoint with the given identifier. Returns an error if the checkpoint does not exists.
+	RevertToCheckpoint(id int) error
 }
 
 // NonCommittableStateDB is the public interface offered for views on states that can not
@@ -1198,15 +1201,19 @@ func (s *stateDB) EndTransaction() {
 	s.resetTransactionContext()
 }
 
-func (s *stateDB) RevertTransactions(num_tx int) {
-	if num_tx > len(s.undo) {
-		s.trackErrors(fmt.Errorf("cannot revert %d transactions, only %d transactions in the current block", num_tx, len(s.undo)))
-		return
+func (s *stateDB) Checkpoint() int {
+	return len(s.undo)
+}
+
+func (s *stateDB) RevertToCheckpoint(id int) error {
+	if id > len(s.undo) {
+		return fmt.Errorf("cannot revert to checkpoint %d, only %d checkpoints in the current block", id, len(s.undo))
 	}
-	for range num_tx {
+	for len(s.undo) > id {
 		s.RevertToSnapshot(0)
 		s.undo = s.undo[:len(s.undo)-1]
 	}
+	return nil
 }
 
 func (s *stateDB) GetTransactionChanges() map[common.Address][]common.Key {
