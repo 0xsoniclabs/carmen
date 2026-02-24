@@ -18,7 +18,7 @@ def parse_db_size(log_file_path):
     block_numbers = []
     live_sizes = []
     archive_sizes = []
-    pattern = r"Processing block (\d+).*?, [\d.]+ txs/s, [\d.]+ MGas/s, [\d.]+x realtime, live DB size: ([\d.]+) ([GM])iB, archive DB size: ([\d.]+) [GM]iB"
+    pattern = r"Processing block (\d+).*?, [\d.]+ txs/s, [\d.]+ MGas/s, [\d.]+x realtime, live DB size: ([\d.]+) ([GM])iB, archive DB size: (n/a|[\d.]+ [GM]iB)"
 
     with open(log_file_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -27,7 +27,12 @@ def parse_db_size(log_file_path):
                 block = int(match.group(1))
                 live_size = float(match.group(2))
                 unit = match.group(3)
-                archive_size = float(match.group(4))
+                archive_size_str = match.group(4)
+                archive_size = (
+                    float(archive_size_str.split()[0])
+                    if archive_size_str != "n/a"
+                    else 0.0
+                )
 
                 # NOTE: Earlier versions of Bertha logged in MiB instead of GiB, normalize to GiB
                 if unit == "M":
@@ -375,3 +380,44 @@ def plot_archive_delta_comparison(df):
 
 df = parse_archive_delta_log(archive_delta_logs)
 plot_archive_delta_comparison(df)
+
+# %% S6 vs go geth archive DB growth comparison
+
+S6_archive_log = "./data/rust-file-archive-for-size-55M-main-fe06e3.log"
+Geth_archive_log = (
+    "./data/go-geth2-leveldb-archive-for-size-3M-support-level-db-0c8fc8b1.log"
+)
+s6_archive_db_sizes = parse_db_size(S6_archive_log)
+geth_archive_db_sizes = parse_db_size(Geth_archive_log)
+
+plt.figure(figsize=(10, 5))
+plt.plot(s6_archive_db_sizes[0][:300], s6_archive_db_sizes[2][:300], label="S6")
+plt.plot(geth_archive_db_sizes[0], geth_archive_db_sizes[1], label="Geth Verkle")
+plt.xlabel("Block Number")
+plt.ylabel("DB Size [GiB]")
+plt.xlim(0, geth_archive_db_sizes[0][-1])
+plt.ylim(0)
+plt.title("S6 vs Geth Archive DB Size Growth - 3M Blocks Sonic Mainnet")
+plt.grid(True)
+plt.legend()
+plt.show()
+
+
+# %% S6 vs go geth live DB growth comparison
+
+S6_live_log = "./data/rust-file-live-for-size-1M-main-2b3b9e28.log"
+Geth_live_log = "./data/go-geth2-leveldb-live-for-size-1M-support-level-db-0c8fc8b1.log"
+s6_live_db_sizes = parse_db_size(S6_live_log)
+geth_live_db_sizes = parse_db_size(Geth_live_log)
+
+plt.figure(figsize=(10, 5))
+plt.plot(s6_live_db_sizes[0], s6_live_db_sizes[1], label="S6")
+plt.plot(geth_live_db_sizes[0], geth_live_db_sizes[1], label="Geth Verkle")
+plt.xlabel("Block Number")
+plt.ylabel("DB Size [GiB]")
+plt.xlim(0, s6_live_db_sizes[0][99])
+plt.ylim(0)
+plt.title("S6 vs Geth Live DB Size Growth - 1M Blocks Sonic Mainnet")
+plt.grid(True)
+plt.legend()
+plt.show()
