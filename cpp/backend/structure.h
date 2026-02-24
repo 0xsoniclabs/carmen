@@ -55,20 +55,22 @@ class Context {
 
 // Defines universal requirements for all data structure implementations.
 template <typename S>
-concept Structure = requires(S a) {
-  // All data structures must be open-able through a static factory function.
-  // The provided context can be used to share elements between structures.
-  {
-    S::Open(std::declval<Context&>(),
-            std::declval<const std::filesystem::path&>())
-    } -> std::same_as<absl::StatusOr<S>>;
-  // Structures must be flushable.
-  { a.Flush() } -> std::same_as<absl::Status>;
-  // Structures must be closeable.
-  { a.Close() } -> std::same_as<absl::Status>;
-}
-// All structures must be movable.
-&&std::is_move_constructible_v<S>
+concept Structure =
+    requires(S a) {
+      // All data structures must be open-able through a static factory
+      // function. The provided context can be used to share elements between
+      // structures.
+      {
+        S::Open(std::declval<Context&>(),
+                std::declval<const std::filesystem::path&>())
+      } -> std::same_as<absl::StatusOr<S>>;
+      // Structures must be flushable.
+      { a.Flush() } -> std::same_as<absl::Status>;
+      // Structures must be closeable.
+      { a.Close() } -> std::same_as<absl::Status>;
+    }
+    // All structures must be movable.
+    && std::is_move_constructible_v<S>
     // Structures must provide memory-footprint information.
     && MemoryFootprintProvider<S>;
 

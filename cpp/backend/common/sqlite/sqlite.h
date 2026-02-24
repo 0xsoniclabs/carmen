@@ -97,7 +97,7 @@ class Sqlite {
   MemoryFootprint GetMemoryFootprint() const;
 
  private:
-  Sqlite(std::shared_ptr<internal::SqliteDb> db) : db_(std::move(db)){};
+  Sqlite(std::shared_ptr<internal::SqliteDb> db) : db_(std::move(db)) {};
 
   // The actual DB connection state wich shared ownership between this instance
   // and all derived statements.
@@ -281,7 +281,7 @@ class SqlQueryResult {
   absl::Status Consume(absl::FunctionRef<void(const SqlRow& row)> consumer);
 
  private:
-  SqlQueryResult(SqlStatement stmt) : stmt_(std::move(stmt)){};
+  SqlQueryResult(SqlStatement stmt) : stmt_(std::move(stmt)) {};
   SqlStatement stmt_;
 };
 
