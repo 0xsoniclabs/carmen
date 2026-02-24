@@ -89,6 +89,12 @@ type VmStateDB interface {
 	BeginTransaction()
 	EndTransaction()
 
+	// Checkpoint creates a restore point to the last executed transaction. Returns an identifier of the created checkpoint to be used for reverting to it.
+	Checkpoint() int
+
+	// RevertToCheckpoint reverts the state to the state at the checkpoint with the given identifier. Returns an error if the checkpoint does not exists.
+	RevertToCheckpoint(id int) error
+
 	// GetTransactionChanges provides a set of accounts and their slots, which have been
 	// potentially changed in the current transaction.
 	// Must be called before EndTransaction call.
@@ -146,12 +152,6 @@ type StateDB interface {
 	GetMemoryFootprint() *common.MemoryFootprint
 
 	ResetBlockContext()
-
-	// Checkpoint creates a restore point to the last executed transaction. Returns an identifier of the created checkpoint to be used for reverting to it.
-	Checkpoint() int
-
-	// RevertToCheckpoint reverts the state to the state at the checkpoint with the given identifier. Returns an error if the checkpoint does not exists.
-	RevertToCheckpoint(id int) error
 }
 
 // NonCommittableStateDB is the public interface offered for views on states that can not
@@ -498,10 +498,18 @@ func (s *stateDB) Exist(addr common.Address) bool {
 	if exists {
 		state = accountExists
 	}
+	oldAccountValue, oldExists := s.accounts[addr]
 	s.accounts[addr] = &accountState{
 		original: state,
 		current:  state,
 	}
+	s.addUndo(func() {
+		if oldExists {
+			s.accounts[addr] = oldAccountValue
+		} else {
+			delete(s.accounts, addr)
+		}
+	})
 	return exists
 }
 
@@ -543,10 +551,14 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	})
 
 	// Mark account to be treated like if was already committed.
-	oldState := s.clearedAccounts[addr]
+	oldState, exists := s.clearedAccounts[addr]
 	s.clearedAccounts[addr] = cleared
 	s.addUndo(func() {
-		s.clearedAccounts[addr] = oldState
+		if exists {
+			s.clearedAccounts[addr] = oldState
+		} else {
+			delete(s.clearedAccounts, addr)
+		}
 	})
 }
 
@@ -596,11 +608,15 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 
 	// Mark account for clearing to plan its removing on commit and
 	// to avoid fetching new data into the cache during the ongoing block.
-	oldState := s.clearedAccounts[addr]
+	oldState, oldStateExists := s.clearedAccounts[addr]
 	if oldState == noClearing {
 		s.clearedAccounts[addr] = pendingClearing
 		s.addUndo(func() {
-			s.clearedAccounts[addr] = oldState
+			if oldStateExists {
+				s.clearedAccounts[addr] = oldState
+			} else {
+				delete(s.clearedAccounts, addr)
+			}
 		})
 	}
 
@@ -739,6 +755,9 @@ func (s *stateDB) GetNonce(addr common.Address) uint64 {
 		original: &res,
 		current:  res,
 	}
+	s.addUndo(func() {
+		delete(s.nonces, addr)
+	})
 	return res
 }
 
@@ -842,8 +861,14 @@ func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Val
 		if entry.current != value {
 			oldValue := entry.current
 			entry.current = value
+			oldWrittenSlots := s.writtenSlots[entry]
 			s.writtenSlots[entry] = true
 			s.addUndo(func() {
+				if !oldWrittenSlots {
+					delete(s.writtenSlots, entry)
+				} else {
+					s.writtenSlots[entry] = oldWrittenSlots
+				}
 				entry.current = oldValue
 			})
 		}
@@ -920,6 +945,9 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 	if !exists {
 		val = &codeValue{}
 		s.codes[addr] = val
+		s.addUndo(func() {
+			delete(s.codes, addr)
+		})
 	}
 	if !val.codeValid {
 		code, err := s.state.GetCode(addr)
@@ -927,8 +955,13 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 			s.trackErrors(fmt.Errorf("unable to obtain code for %v: %w", addr, err))
 			return nil
 		}
+
+		oldVal := *val
 		val.code, val.codeValid = code, true
 		val.size, val.sizeValid = len(code), true
+		s.addUndo(func() {
+			*(s.codes[addr]) = oldVal
+		})
 	}
 	return val.code
 }
@@ -972,7 +1005,12 @@ func (s *stateDB) GetCodeHash(addr common.Address) common.Hash {
 	if !exists {
 		val = &codeValue{}
 		s.codes[addr] = val
+		s.addUndo(func() {
+			delete(s.codes, addr)
+		})
 	}
+
+	oldValueHash := val.hash
 	if val.dirty && val.hash == nil {
 		// If the code is dirty (=uncommitted) the hash needs to be computed on the fly.
 		hash := common.GetKeccak256Hash(val.code)
@@ -987,6 +1025,9 @@ func (s *stateDB) GetCodeHash(addr common.Address) common.Hash {
 		}
 		val.hash = &hash
 	}
+	s.addUndo(func() {
+		val.hash = oldValueHash
+	})
 	return *val.hash
 }
 
@@ -995,7 +1036,11 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 	if !exists {
 		val = &codeValue{}
 		s.codes[addr] = val
+		s.addUndo(func() {
+			delete(s.codes, addr)
+		})
 	}
+	oldValue := *val
 	if !val.sizeValid {
 		size, err := s.state.GetCodeSize(addr)
 		if err != nil {
@@ -1004,6 +1049,9 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 		}
 		val.size, val.sizeValid = size, true
 	}
+	s.addUndo(func() {
+		*(s.codes[addr]) = oldValue
+	})
 	return val.size
 }
 
@@ -1135,12 +1183,20 @@ func (s *stateDB) EndTransaction() {
 	// which is now empty SHALL instead become non-existent (i.e. deleted).
 	for _, addr := range s.emptyCandidates {
 		if s.Empty(addr) {
+			// Very hacky way, we could probably turn accountstodelete into a map
+			oldAccountsToDelete := make([]common.Address, len(s.accountsToDelete))
+			copy(oldAccountsToDelete, s.accountsToDelete)
 			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
-			oldState := s.clearedAccounts[addr]
+			oldState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
 			s.addUndo(func() {
-				s.clearedAccounts[addr] = oldState
+				s.accountsToDelete = oldAccountsToDelete
+				if oldExists {
+					s.clearedAccounts[addr] = oldState
+				} else {
+					delete(s.clearedAccounts, addr)
+				}
 			})
 		}
 	}
@@ -1150,9 +1206,17 @@ func (s *stateDB) EndTransaction() {
 		for _, addr := range s.accountsToDelete {
 			// Transition accounts marked by suicide to be deleted.
 			if s.HasSuicided(addr) {
+				oldClearedAccountState, oldClearedAccountExists := s.clearedAccounts[addr]
 				s.setAccountState(addr, accountNonExisting)
 				s.setCodeInternal(addr, []byte{})
 				s.clearedAccounts[addr] = pendingClearing
+				s.addUndo(func() {
+					if oldClearedAccountExists {
+						s.clearedAccounts[addr] = oldClearedAccountState
+					} else {
+						delete(s.clearedAccounts, addr)
+					}
+				})
 			}
 
 			// If the account was already cleared because it was recreated, we skip this part.
@@ -1185,10 +1249,14 @@ func (s *stateDB) EndTransaction() {
 			})
 
 			// Signal to future fetches in this block that this account should be considered cleared.
-			oldClearedAccountState := s.clearedAccounts[addr]
+			oldClearedAccountState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = cleared
 			s.addUndo(func() {
-				s.clearedAccounts[addr] = oldClearedAccountState
+				if oldExists {
+					s.clearedAccounts[addr] = oldClearedAccountState
+				} else {
+					delete(s.clearedAccounts, addr)
+				}
 			})
 		}
 
