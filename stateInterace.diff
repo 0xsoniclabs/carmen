@@ -1,0 +1,1539 @@
+4,15c4,508
+< 
+< diff --git a/go/database/mpt/tool/benchmark.go b/go/database/mpt/tool/benchmark.go
+< index aebd743a..80fc312e 100644
+< --- a/go/database/mpt/tool/benchmark.go
+< +++ b/go/database/mpt/tool/benchmark.go
+< @@ -272,7 +272,7 @@ func runBenchmark(
+<  			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+<  			counter++
+<  		}
+< -		if err := state.Apply(uint64(i), update); err != nil {
+< +		if _, err := state.Apply(uint64(i), update); err != nil {
+<  			return res, fmt.Errorf("error applying block %d: %v", i, err)
+---
+> diff --git a/go/database/flat/flat.go b/go/database/flat/flat.go
+> index e4dbdc50..69b3bcd2 100644
+> --- a/go/database/flat/flat.go
+> +++ b/go/database/flat/flat.go
+> @@ -106,14 +106,6 @@ type update struct {
+>  // NewState creates a new flat State instance that wraps the provided backend state.
+>  // The resulting state is wrapped into a synced state for thread-safe access.
+>  func NewState(path string, backend state.State) (state.State, error) {
+> -	res, err := _newState(path, backend)
+> -	if err != nil {
+> -		return nil, err
+> -	}
+> -	return state.WrapIntoSyncedState(res), nil
+> -}
+> -
+> -func _newState(path string, backend state.State) (*State, error) {
+>  	// Unwrap the backend from any synced state to avoid double synchronization.
+>  	// The flat state will handle synchronization itself.
+>  	if backend != nil {
+> @@ -153,7 +145,7 @@ func _newState(path string, backend state.State) (*State, error) {
+>  	}
+>  
+>  	if backend == nil {
+> -		return res, nil
+> +		return state.WrapIntoSyncedState(res), nil
+>  	}
+>  
+>  	commands := make(chan command, 1024)
+> @@ -167,7 +159,7 @@ func _newState(path string, backend state.State) (*State, error) {
+>  	res.commands = commands
+>  	res.syncs = syncs
+>  	res.done = done
+> -	return res, nil
+> +	return state.WrapIntoSyncedState(res), nil
+>  }
+>  
+>  // WrapFactory wraps an existing state factory to produce flat State instances.
+> @@ -218,18 +210,13 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
+>  	return true, nil
+>  }
+>  
+> -func (s *State) Apply(block uint64, data common.Update) error {
+> -	_, err := s._apply(block, data)
+> -	return err
+> -}
+> -
+> -// _apply is an internal method, which implements apply and optionally
+> +// Apply applies the provided updates to the state content.
+>  // returns a channel for synchronization.
+>  //
+>  // The channel signals the completion of any spawned asynchronous operations
+>  // like the update of the backend.
+>  // The channel will be nil if the backend state is nil.
+> -func (s *State) _apply(block uint64, data common.Update) (<-chan error, error) {
+> +func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
+>  	zone := tracy.ZoneBegin("State.Apply")
+>  	defer zone.End()
+>  
+> @@ -309,14 +296,23 @@ func processCommands(
+>  	for command := range commands {
+>  		if command.update != nil {
+>  			zone := tracy.ZoneBegin("State.Update")
+> -			// TODO: once the State interface is expanded to return a channel,
+> -			// 		 forward the backend channel to the update channel.
+> -			err := backend.Apply(command.update.block, command.update.data)
+> -			issues.HandleIssue(err)
+> -			if err != nil {
+> -				command.update.done <- err
+> +			backendChan, err := backend.Apply(command.update.block, command.update.data)
+> +			if command.update.done != nil {
+> +				// Do no block the command processing loop while waiting for the
+> +				// backend asynchronous update to complete.
+> +				go func() {
+> +					if backendChan != nil {
+> +						// wait for the backend sync channel and forward
+> +						// both errors into the update synch channel.
+> +						syncError := <-backendChan
+> +						issues.HandleIssue(syncError)
+> +						err = errors.Join(err, syncError)
+> +					}
+> +					command.update.done <- err
+> +					close(command.update.done)
+> +				}()
+>  			}
+> -			close(command.update.done)
+> +			issues.HandleIssue(err)
+>  			zone.End()
+>  		} else if command.commit != nil {
+>  			zone := tracy.ZoneBegin("State.Commit")
+> diff --git a/go/database/flat/flat_test.go b/go/database/flat/flat_test.go
+> index bceb7b09..97b462a5 100644
+> --- a/go/database/flat/flat_test.go
+> +++ b/go/database/flat/flat_test.go
+> @@ -155,12 +155,13 @@ func TestState_StateCanBeClosedAndReopened(t *testing.T) {
+>  	stateA, err := NewState(dir, nil)
+>  	require.NoError(err)
+>  
+> -	require.NoError(stateA.Apply(0, common.Update{
+> +	_, err = stateA.Apply(0, common.Update{
+>  		Nonces: []common.NonceUpdate{
+>  			{Account: common.Address{1}, Nonce: common.Nonce{2}},
+>  			{Account: common.Address{3}, Nonce: common.Nonce{4}},
+>  		},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	require.NoError(stateA.Close())
+>  
+> @@ -342,7 +343,8 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
+>  		commands: commands,
+>  	}
+>  
+> -	require.NoError(state.Apply(1, update))
+> +	_, err := state.Apply(1, update)
+> +	require.NoError(err)
+>  
+>  	// The update is send to the commands channel.
+>  	command := <-commands
+> @@ -395,7 +397,7 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
+>  	require := require.New(t)
+>  	ctrl := gomock.NewController(t)
+>  	backend := state.NewMockState(ctrl)
+> -	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+> +	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
+>  	backend.EXPECT().Close().Return(nil)
+>  
+>  	address := common.Address{0x01}
+> @@ -404,14 +406,17 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
+>  
+>  	require.False(state.Exists(address))
+>  
+> -	require.NoError(state.Apply(1, common.Update{
+> +	_, err = state.Apply(1, common.Update{
+>  		CreatedAccounts: []common.Address{address},
+> -	}))
+> +	})
+> +	require.NoError(err)
+> +
+>  	require.True(state.Exists(address))
+>  
+> -	require.NoError(state.Apply(2, common.Update{
+> +	_, err = state.Apply(2, common.Update{
+>  		DeletedAccounts: []common.Address{address},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	require.False(state.Exists(address))
+>  	require.NoError(state.Close())
+> @@ -436,7 +441,7 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
+>  	flatState, err := NewState(t.TempDir(), backend)
+>  	require.NoError(t, err)
+>  
+> -	err = flatState.Apply(block, update)
+> +	_, err = flatState.Apply(block, update)
+>  	require.NoError(t, err)
+>  
+>  	require.NoError(t, flatState.Close())
+> @@ -453,7 +458,7 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
+>  	flatState, err := NewState(t.TempDir(), nil)
+>  	require.NoError(t, err)
+>  
+> -	err = flatState.Apply(block, update)
+> +	_, err = flatState.Apply(block, update)
+>  	require.NoError(t, err)
+>  	require.NoError(t, flatState.Close())
+>  }
+> @@ -477,14 +482,15 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+>  
+>  		backend.EXPECT().Close()
+>  
+> -		state, err := _newState(t.TempDir(), backend)
+> +		state, err := NewState(t.TempDir(), backend)
+>  		require.NoError(t, err)
+>  
+> -		applyDone, err := state._apply(1, common.Update{})
+> +		applyDone, err := state.Apply(1, common.Update{})
+>  		require.NoError(t, err)
+>  		require.NotNil(t, applyDone)
+>  
+>  		// Wait until the update blocks in the backend update.
+> +		close(backendApplyDone)
+>  		synctest.Wait()
+>  		require.True(t, started)
+>  		select {
+> @@ -510,9 +516,9 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+>  }
+>  
+>  func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
+> -	flatState, err := _newState(t.TempDir(), nil)
+> +	flatState, err := NewState(t.TempDir(), nil)
+>  	require.NoError(t, err)
+> -	applyDone, err := flatState._apply(1, common.Update{})
+> +	applyDone, err := flatState.Apply(1, common.Update{})
+>  	require.NoError(t, err)
+>  	require.Nil(t, applyDone)
+>  }
+> @@ -521,17 +527,29 @@ func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
+>  	ctrl := gomock.NewController(t)
+>  	backend := state.NewMockState(ctrl)
+>  	issue := errors.New("backend apply failed")
+> +	syncIssue := errors.New("sync channel issue")
+> +	backendSyncChann := make(chan error, 1)
+> +	backendSyncChann <- syncIssue
+>  
+> -	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(issue)
+> +	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+> +		func(_, _ any) (<-chan error, error) {
+> +			return backendSyncChann, issue
+> +		},
+> +	)
+>  
+> -	flatState, err := _newState(t.TempDir(), backend)
+> +	flatState, err := NewState(t.TempDir(), backend)
+>  	require.NoError(t, err)
+>  
+> -	applyDone, err := flatState._apply(1, common.Update{})
+> -
+> +	applyDone, err := flatState.Apply(1, common.Update{})
+>  	require.NoError(t, err)
+>  	require.NotNil(t, applyDone)
+> -	require.ErrorIs(t, <-applyDone, issue)
+> +
+> +	got := <-applyDone
+> +	require.ErrorIs(t, got, issue)
+> +	require.ErrorIs(t, got, syncIssue)
+> +	errors := flatState.Check()
+> +	require.ErrorIs(t, errors, issue)
+> +	require.ErrorIs(t, errors, syncIssue)
+>  }
+>  
+>  func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
+> diff --git a/go/database/vt/geth/state.go b/go/database/vt/geth/state.go
+> index 0b3fd9fc..0e5cea6b 100644
+> --- a/go/database/vt/geth/state.go
+> +++ b/go/database/vt/geth/state.go
+> @@ -237,12 +237,8 @@ func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error)
+>  	return amount.NewFromUint256(account.Balance), nil
+>  }
+>  
+> -func (s *verkleState) Apply(block uint64, update common.Update) error {
+> -	if err := update.ApplyTo(s); err != nil {
+> -		return err
+> -	}
+> -
+> -	return nil
+> +func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
+> +	return nil, update.ApplyTo(s)
+>  }
+>  
+>  //
+> @@ -297,9 +293,9 @@ type persistentVerkleState struct {
+>  	source singleNodeReader
+>  }
+>  
+> -func (s *persistentVerkleState) Apply(block uint64, update common.Update) error {
+> +func (s *persistentVerkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
+>  	if err := update.ApplyTo(s); err != nil {
+> -		return err
+> +		return nil, err
+>  	}
+>  
+>  	rootHash, nodeSet := s.verkle.Commit(false)
+> @@ -309,17 +305,17 @@ func (s *persistentVerkleState) Apply(block uint64, update common.Update) error
+>  	}
+>  
+>  	if err := errors.Join(errs...); err != nil {
+> -		return err
+> +		return nil, err
+>  	}
+>  
+>  	// recreate the verkle trie to flush the in-memory nodes
+>  	vt, err := trie.NewVerkleTrie(rootHash, s.source, s.pointCache)
+>  	if err != nil {
+> -		return err
+> +		return nil, err
+>  	}
+>  	s.verkle = vt
+>  
+> -	return nil
+> +	return nil, nil
+>  }
+>  
+>  func (s *persistentVerkleState) Flush() error {
+> diff --git a/go/database/vt/geth/state_test.go b/go/database/vt/geth/state_test.go
+> index f6d7d09b..53077092 100644
+> --- a/go/database/vt/geth/state_test.go
+> +++ b/go/database/vt/geth/state_test.go
+> @@ -61,7 +61,8 @@ func TestState_CreateAccounts_Many_Updates_Success(t *testing.T) {
+>  					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+>  					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
+>  				}
+> -				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
+> +				_, err := state.Apply(uint64(i), update)
+> +				require.NoError(t, err, "failed to apply block %d", i)
+>  			}
+>  			for i := 0; i < numBlocks; i++ {
+>  				for j := 0; j < numInsertsPerBlock; j++ {
+> @@ -102,7 +103,8 @@ func TestState_Update_And_Get_Code_Success(t *testing.T) {
+>  				expectedCodes[i] = code
+>  				code = append(code, byte(i))
+>  			}
+> -			require.NoError(t, state.Apply(0, update), "failed to apply update")
+> +			_, err := state.Apply(0, update)
+> +			require.NoError(t, err, "failed to apply update")
+>  			for i := 0; i < numOfCodes; i++ {
+>  				addr := common.Address{byte(i), byte(i >> 8)}
+>  				code, err := state.GetCode(addr)
+> @@ -138,7 +140,8 @@ func TestState_Set_And_Get_Storage_Success(t *testing.T) {
+>  					})
+>  				}
+>  			}
+> -			require.NoError(t, state.Apply(0, update), "failed to apply")
+> +			_, err := state.Apply(0, update)
+> +			require.NoError(t, err, "failed to apply")
+>  			for i := 0; i < numOfAddresses; i++ {
+>  				addr := common.Address{byte(i), byte(i >> 8)}
+>  				for j := 0; j < numOfKeys; j++ {
+> @@ -165,7 +168,8 @@ func TestState_Set_And_Get_Storage_Success_Padded_Right(t *testing.T) {
+>  				Key:     key,
+>  				Value:   value,
+>  			})
+> -			require.NoError(t, state.Apply(0, update), "failed to apply")
+> +			_, err := state.Apply(0, update)
+> +			require.NoError(t, err, "failed to apply")
+>  			gotValue, err := state.GetStorage(addr, key)
+>  			require.NoError(t, err, "failed to get storage for account %x", addr)
+>  			require.Equal(t, value, gotValue, "unexpected storage value for account %x, key %x", addr, key)
+> @@ -219,7 +223,8 @@ func TestState_GetHash_Is_Updated_Each_Block(t *testing.T) {
+>  					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+>  					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
+>  				}
+> -				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
+> +				_, err := state.Apply(uint64(i), update)
+> +				require.NoError(t, err, "failed to apply block %d", i)
+>  				hash, err := state.GetHash()
+>  				require.NoError(t, err, "failed to get hash for block %d", i)
+>  				require.NotEqual(t, prevHash, hash, "hash did not change")
+> @@ -255,7 +260,7 @@ func TestState_DeletedAccount_Unsupported(t *testing.T) {
+>  			st := stateInit(state.Parameters{}, t)
+>  			update := common.Update{}
+>  			update.DeletedAccounts = append(update.DeletedAccounts, common.Address{})
+> -			err := st.Apply(0, update)
+> +			_, err := st.Apply(0, update)
+>  			require.Error(t, err, "expected error when applying update with deleted accounts")
+>  		})
+>  	}
+> @@ -300,7 +305,8 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
+>  		},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update))
+> +	_, err = state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	codeHash, err := state.GetCodeHash(addr1)
+>  	require.NoError(err)
+> @@ -325,7 +331,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+>  		},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update))
+> +	_, err = state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	codeHash, err := state.GetCodeHash(addr1)
+>  	require.NoError(err)
+> @@ -336,7 +343,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+>  		CreatedAccounts: []common.Address{addr1},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update2))
+> +	_, err = state.Apply(0, update2)
+> +	require.NoError(err)
+>  
+>  	codeHash, err = state.GetCodeHash(addr1)
+>  	require.NoError(err)
+> @@ -360,7 +368,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+>  		},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update))
+> +	_, err = state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	balance, err := state.GetBalance(addr1)
+>  	require.NoError(err)
+> @@ -371,7 +380,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+>  		CreatedAccounts: []common.Address{addr1},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update2))
+> +	_, err = state.Apply(0, update2)
+> +	require.NoError(err)
+>  
+>  	// The balance should remain the same
+>  	balance, err = state.GetBalance(addr1)
+> @@ -397,7 +407,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+>  		},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update))
+> +	_, err = state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	nonce, err := state.GetNonce(addr1)
+>  	require.NoError(err)
+> @@ -408,7 +419,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+>  		CreatedAccounts: []common.Address{addr1},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update2))
+> +	_, err = state.Apply(0, update2)
+> +	require.NoError(err)
+>  
+>  	// The nonce should remain the same
+>  	nonce, err = state.GetNonce(addr1)
+> @@ -429,7 +441,7 @@ func TestState_Error_from_Apply(t *testing.T) {
+>  		},
+>  	}
+>  
+> -	err = st.Apply(0, update)
+> +	_, err = st.Apply(0, update)
+>  	require.NoError(t, err, "failed to apply update")
+>  
+>  	for i := 0; i < source.count; i++ {
+> @@ -437,7 +449,7 @@ func TestState_Error_from_Apply(t *testing.T) {
+>  		st, err := NewStateWithSource(state.Parameters{}, source)
+>  		require.NoError(t, err, "failed to create state")
+>  
+> -		err = st.Apply(0, update)
+> +		_, err = st.Apply(0, update)
+>  		require.ErrorIs(t, err, injectedErr, "expected injected error at count %d", i)
+>  	}
+>  }
+> diff --git a/go/database/vt/memory/state_test.go b/go/database/vt/memory/state_test.go
+> index f1b73711..62047960 100644
+> --- a/go/database/vt/memory/state_test.go
+> +++ b/go/database/vt/memory/state_test.go
+> @@ -81,12 +81,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
+>  			require.Equal(common.ToNonce(0), nonce)
+>  
+>  			// Set a nonce
+> -			require.NoError(state.Apply(0, common.Update{
+> +			_, err = state.Apply(0, common.Update{
+>  				Nonces: []common.NonceUpdate{{
+>  					Account: address,
+>  					Nonce:   common.ToNonce(42),
+>  				}},
+> -			}))
+> +			})
+> +			require.NoError(err)
+>  
+>  			// Retrieve the nonce again
+>  			nonce, err = state.GetNonce(address)
+> @@ -94,12 +95,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
+>  			require.Equal(common.ToNonce(42), nonce)
+>  
+>  			// Set another nonce
+> -			require.NoError(state.Apply(0, common.Update{
+> +			_, err = state.Apply(0, common.Update{
+>  				Nonces: []common.NonceUpdate{{
+>  					Account: address,
+>  					Nonce:   common.ToNonce(123),
+>  				}},
+> -			}))
+> +			})
+> +			require.NoError(err)
+>  
+>  			// Retrieve the updated nonce
+>  			nonce, err = state.GetNonce(address)
+> @@ -150,14 +152,16 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
+>  
+>  			state, err := NewState(params)
+>  			require.NoError(err)
+> -			require.NoError(state.Apply(0, update))
+> +			_, err = state.Apply(0, update)
+> +			require.NoError(err)
+>  
+>  			hash, err := state.GetCommitment().Await().Get()
+>  			require.NoError(err)
+>  
+>  			reference, err := reference.NewState(params)
+>  			require.NoError(err)
+> -			require.NoError(reference.Apply(0, update))
+> +			_, err = reference.Apply(0, update)
+> +			require.NoError(err)
+>  			want, err := reference.GetCommitment().Await().Get()
+>  			require.NoError(err)
+>  
+> diff --git a/go/database/vt/reference/state.go b/go/database/vt/reference/state.go
+> index 9a9b6580..5112b014 100644
+> --- a/go/database/vt/reference/state.go
+> +++ b/go/database/vt/reference/state.go
+> @@ -112,7 +112,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
+>  	return true, nil
+>  }
+>  
+> -func (s *State) Apply(block uint64, update common.Update) error {
+> +func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) {
+>  
+>  	// init potentially empty accounts with empty code hash,
+>  	for _, address := range update.CreatedAccounts {
+> @@ -168,7 +168,7 @@ func (s *State) Apply(block uint64, update common.Update) error {
+16a510,514
+>  	}
+>  
+> -	return nil
+> +	return nil, nil
+>  }
+18,22c516,1002
+< diff --git a/go/state/cppstate/cpp_state_test.go b/go/state/cppstate/cpp_state_test.go
+< index dbae3d8c..14c34e60 100644
+< --- a/go/state/cppstate/cpp_state_test.go
+< +++ b/go/state/cppstate/cpp_state_test.go
+< @@ -71,7 +71,7 @@ func TestReadUninitializedBalance(t *testing.T) {
+---
+>  func (s *State) GetHash() (common.Hash, error) {
+> diff --git a/go/database/vt/reference/state_test.go b/go/database/vt/reference/state_test.go
+> index 1fc24505..1fd21f55 100644
+> --- a/go/database/vt/reference/state_test.go
+> +++ b/go/database/vt/reference/state_test.go
+> @@ -77,12 +77,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
+>  	require.Equal(common.ToNonce(0), nonce)
+>  
+>  	// Set a nonce
+> -	require.NoError(state.Apply(0, common.Update{
+> +	_, err = state.Apply(0, common.Update{
+>  		Nonces: []common.NonceUpdate{{
+>  			Account: address,
+>  			Nonce:   common.ToNonce(42),
+>  		}},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	// Retrieve the nonce again
+>  	nonce, err = state.GetNonce(address)
+> @@ -90,12 +91,13 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
+>  	require.Equal(common.ToNonce(42), nonce)
+>  
+>  	// Set another nonce
+> -	require.NoError(state.Apply(0, common.Update{
+> +	_, err = state.Apply(0, common.Update{
+>  		Nonces: []common.NonceUpdate{{
+>  			Account: address,
+>  			Nonce:   common.ToNonce(123),
+>  		}},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	// Retrieve the updated nonce
+>  	nonce, err = state.GetNonce(address)
+> @@ -116,12 +118,13 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
+>  	require.Equal(amount.New(0), balance)
+>  
+>  	// Set a balance
+> -	require.NoError(state.Apply(0, common.Update{
+> +	_, err = state.Apply(0, common.Update{
+>  		Balances: []common.BalanceUpdate{{
+>  			Account: address,
+>  			Balance: amount.New(42),
+>  		}},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	// Retrieve the balance again
+>  	balance, err = state.GetBalance(address)
+> @@ -129,12 +132,13 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
+>  	require.Equal(amount.New(42), balance)
+>  
+>  	// Set another balance
+> -	require.NoError(state.Apply(0, common.Update{
+> +	_, err = state.Apply(0, common.Update{
+>  		Balances: []common.BalanceUpdate{{
+>  			Account: address,
+>  			Balance: amount.New(123),
+>  		}},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	// Retrieve the updated balance
+>  	balance, err = state.GetBalance(address)
+> @@ -162,12 +166,13 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
+>  	for name, code := range tests {
+>  		t.Run(name, func(t *testing.T) {
+>  			// Set a code.
+> -			require.NoError(state.Apply(0, common.Update{
+> +			_, err = state.Apply(0, common.Update{
+>  				Codes: []common.CodeUpdate{{
+>  					Account: address,
+>  					Code:    bytes.Clone(code),
+>  				}},
+> -			}))
+> +			})
+> +			require.NoError(err)
+>  
+>  			// Retrieve the code size.
+>  			length, err = state.GetCodeSize(address)
+> @@ -207,12 +212,13 @@ func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
+>  		code := random[:i]
+>  
+>  		// Set a code.
+> -		require.NoError(state.Apply(0, common.Update{
+> +		_, err := state.Apply(0, common.Update{
+>  			Codes: []common.CodeUpdate{{
+>  				Account: address,
+>  				Code:    bytes.Clone(code),
+>  			}},
+> -		}))
+> +		})
+> +		require.NoError(err)
+>  
+>  		// Retrieve the code size.
+>  		length, err := state.GetCodeSize(address)
+> @@ -245,13 +251,14 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
+>  	require.Equal(common.Value{}, value)
+>  
+>  	// Set a value
+> -	require.NoError(state.Apply(0, common.Update{
+> +	_, err = state.Apply(0, common.Update{
+>  		Slots: []common.SlotUpdate{{
+>  			Account: address,
+>  			Key:     key,
+>  			Value:   common.Value{1, 2, 3},
+>  		}},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	// Retrieve the value again
+>  	value, err = state.GetStorage(address, key)
+> @@ -259,13 +266,14 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
+>  	require.Equal(common.Value{1, 2, 3}, value)
+>  
+>  	// Set another value
+> -	require.NoError(state.Apply(0, common.Update{
+> +	_, err = state.Apply(0, common.Update{
+>  		Slots: []common.SlotUpdate{{
+>  			Account: address,
+>  			Key:     key,
+>  			Value:   common.Value{3, 2, 1},
+>  		}},
+> -	}))
+> +	})
+> +	require.NoError(err)
+>  
+>  	// Retrieve the updated value
+>  	value, err = state.GetStorage(address, key)
+> @@ -476,14 +484,17 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t
+>  	}
+>  
+>  	state := newState()
+> -	require.NoError(state.Apply(0, update))
+> +	_, err := state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	hash, err := state.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+>  	reference, err := newRefState()
+>  	require.NoError(err)
+> -	require.NoError(reference.Apply(0, update))
+> +	_, err = reference.Apply(0, update)
+> +	require.NoError(err)
+> +
+>  	want, err := reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -503,7 +514,8 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
+>  	}
+>  
+>  	state := newState()
+> -	require.NoError(state.Apply(0, update))
+> +	_, err := state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	codeHash, err := state.GetCodeHash(addr1)
+>  	require.NoError(err)
+> @@ -514,7 +526,8 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
+>  
+>  	reference, err := newRefState()
+>  	require.NoError(err)
+> -	require.NoError(reference.Apply(0, update))
+> +	_, err = reference.Apply(0, update)
+> +	require.NoError(err)
+>  	want, err := reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -534,7 +547,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+>  	}
+>  
+>  	state := newState()
+> -	require.NoError(state.Apply(0, update))
+> +	_, err := state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	codeHash, err := state.GetCodeHash(addr1)
+>  	require.NoError(err)
+> @@ -545,7 +559,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+>  
+>  	reference, err := newRefState()
+>  	require.NoError(err)
+> -	require.NoError(reference.Apply(0, update))
+> +	_, err = reference.Apply(0, update)
+> +	require.NoError(err)
+>  	want, err := reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -556,7 +571,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+>  		CreatedAccounts: []common.Address{addr1},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update2))
+> +	_, err = state.Apply(0, update2)
+> +	require.NoError(err)
+>  
+>  	codeHash, err = state.GetCodeHash(addr1)
+>  	require.NoError(err)
+> @@ -565,7 +581,8 @@ func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
+>  	hash, err = state.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> -	require.NoError(reference.Apply(0, update2))
+> +	_, err = reference.Apply(0, update2)
+> +	require.NoError(err)
+>  	want, err = reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -585,7 +602,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+>  	}
+>  
+>  	state := newState()
+> -	require.NoError(state.Apply(0, update))
+> +	_, err := state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	balance, err := state.GetBalance(addr1)
+>  	require.NoError(err)
+> @@ -596,7 +614,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+>  
+>  	reference, err := newRefState()
+>  	require.NoError(err)
+> -	require.NoError(reference.Apply(0, update))
+> +	_, err = reference.Apply(0, update)
+> +	require.NoError(err)
+>  	want, err := reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -607,7 +626,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+>  		CreatedAccounts: []common.Address{addr1},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update2))
+> +	_, err = state.Apply(0, update2)
+> +	require.NoError(err)
+>  
+>  	// The balance should remain the same
+>  	balance, err = state.GetBalance(addr1)
+> @@ -617,7 +637,8 @@ func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
+>  	hash, err = state.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> -	require.NoError(reference.Apply(0, update2))
+> +	_, err = reference.Apply(0, update2)
+> +	require.NoError(err)
+>  	want, err = reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -637,7 +658,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+>  	}
+>  
+>  	state := newState()
+> -	require.NoError(state.Apply(0, update))
+> +	_, err := state.Apply(0, update)
+> +	require.NoError(err)
+>  
+>  	nonce, err := state.GetNonce(addr1)
+>  	require.NoError(err)
+> @@ -648,7 +670,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+>  
+>  	reference, err := newRefState()
+>  	require.NoError(err)
+> -	require.NoError(reference.Apply(0, update))
+> +	_, err = reference.Apply(0, update)
+> +	require.NoError(err)
+>  	want, err := reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -659,7 +682,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+>  		CreatedAccounts: []common.Address{addr1},
+>  	}
+>  
+> -	require.NoError(state.Apply(0, update2))
+> +	_, err = state.Apply(0, update2)
+> +	require.NoError(err)
+>  
+>  	// The nonce should remain the same
+>  	nonce, err = state.GetNonce(addr1)
+> @@ -669,7 +693,8 @@ func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
+>  	hash, err = state.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> -	require.NoError(reference.Apply(0, update2))
+> +	_, err = reference.Apply(0, update2)
+> +	require.NoError(err)
+>  	want, err = reference.GetCommitment().Await().Get()
+>  	require.NoError(err)
+>  
+> @@ -694,7 +719,7 @@ func newRefState() (*refState, error) {
+>  	return &refState{trie: trie}, nil
+>  }
+>  
+> -func (s *refState) Apply(block uint64, update common.Update) error {
+> +func (s *refState) Apply(block uint64, update common.Update) (<-chan error, error) {
+>  	accountStates := map[geth_common.Address]*types.StateAccount{}
+>  
+>  	getAccountState := func(addr geth_common.Address) *types.StateAccount {
+> @@ -751,7 +776,7 @@ func (s *refState) Apply(block uint64, update common.Update) error {
+>  		s.trie.UpdateStorage(addr, key[:], value[:])
+>  	}
+>  
+> -	return nil
+> +	return nil, nil
+>  }
+>  
+>  func (s *refState) GetCommitment() future.Future[result.Result[common.Hash]] {
+> diff --git a/go/database/vt/state_test.go b/go/database/vt/state_test.go
+> index 3bbd9beb..2840be4a 100644
+> --- a/go/database/vt/state_test.go
+> +++ b/go/database/vt/state_test.go
+> @@ -45,7 +45,8 @@ func TestState_CreateAccount_Hash_Matches(t *testing.T) {
+>  			update := common.Update{}
+>  			update.CreatedAccounts = append(update.CreatedAccounts, addr)
+>  
+> -			require.NoError(t, state.Apply(0, update), "failed to apply update")
+> +			_, err = state.Apply(0, update)
+> +			require.NoError(t, err, "failed to apply update")
+>  
+>  			// check hash consistency
+>  			hash, err := state.GetHash()
+> @@ -79,7 +80,8 @@ func TestState_Insert_Single_Values_One_Account_One_Storage(t *testing.T) {
+>  			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(1)})
+>  			update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
+>  
+> -			require.NoError(t, state.Apply(0, update), "failed to apply update")
+> +			_, err = state.Apply(0, update)
+> +			require.NoError(t, err, "failed to apply update")
+>  
+>  			// check hash consistency
+>  			hash, err := state.GetHash()
+> @@ -127,7 +129,8 @@ func TestState_CreateAccounts_In_Blocks_Accounts_Updated(t *testing.T) {
+>  					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(uint64(i * j))})
+>  					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
+>  				}
+> -				require.NoError(t, state.Apply(uint64(i), update), "failed to apply block %d", i)
+> +				_, err = state.Apply(uint64(i), update)
+> +				require.NoError(t, err, "failed to apply block %d", i)
+>  
+>  				// check hash consistency
+>  				hash, err := state.GetHash()
+> @@ -178,7 +181,8 @@ func TestState_Storage_Can_Set_And_Receive(t *testing.T) {
+>  					update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
+>  				}
+>  			}
+> -			require.NoError(t, state.Apply(uint64(0), update), "failed to apply block")
+> +			_, err = state.Apply(uint64(0), update)
+> +			require.NoError(t, err, "failed to apply block")
+>  
+>  			// check hash consistency
+>  			hash, err := state.GetHash()
+> @@ -244,7 +248,8 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
+>  					code = append(code, byte(i))
+>  				}
+>  
+> -				require.NoError(t, state.Apply(block_number, update), "failed to apply update")
+> +				_, err = state.Apply(block_number, update)
+> +				require.NoError(t, err, "failed to apply update")
+>  				block_number++
+>  
+>  				// check hash consistency
+> @@ -303,7 +308,8 @@ func TestState_Storage_Leading_Zeros_HashesMatch(t *testing.T) {
+>  				require.NoError(t, state.Close(), "failed to close state")
+>  			}()
+>  
+> -			require.NoError(t, state.Apply(0, update))
+> +			_, err = state.Apply(0, update)
+> +			require.NoError(t, err, "failed to apply update")
+>  
+>  			hash, err := state.GetHash()
+>  			require.NoError(t, err)
+> @@ -450,10 +456,11 @@ func (s *comparingState) GetBalance(address common.Address) (amount.Amount, erro
+>  	})
+>  }
+>  
+> -func (s *comparingState) Apply(block uint64, update common.Update) error {
+> +func (s *comparingState) Apply(block uint64, update common.Update) (<-chan error, error) {
+>  	s.t.Helper()
+> -	return s.action(func(state state.State) error {
+> -		return state.Apply(block, update)
+> +	return nil, s.action(func(state state.State) error {
+> +		_, err := state.Apply(block, update)
+> +		return err
+>  	})
+>  }
+>  
+> diff --git a/go/state/externalstate/external_state.go b/go/state/externalstate/external_state.go
+> index b5f6fea4..2dc76caf 100644
+> --- a/go/state/externalstate/external_state.go
+> +++ b/go/state/externalstate/external_state.go
+> @@ -313,7 +313,8 @@ func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
+>  
+>  func (s *ExternalState) CreateAccount(address common.Address) error {
+>  	update := common.Update{}
+> -	return s.Apply(0, update)
+> +	_, err := s.Apply(0, update)
+> +	return err
+>  }
+>  
+>  func (s *ExternalState) Exists(address common.Address) (bool, error) {
+> @@ -328,7 +329,8 @@ func (s *ExternalState) Exists(address common.Address) (bool, error) {
+>  func (s *ExternalState) DeleteAccount(address common.Address) error {
+>  	update := common.Update{}
+>  	update.AppendDeleteAccount(address)
+> -	return s.Apply(0, update)
+> +	_, err := s.Apply(0, update)
+> +	return err
+>  }
+>  
+>  func (s *ExternalState) GetBalance(address common.Address) (amount.Amount, error) {
+> @@ -343,7 +345,8 @@ func (s *ExternalState) GetBalance(address common.Address) (amount.Amount, error
+>  func (s *ExternalState) SetBalance(address common.Address, balance amount.Amount) error {
+>  	update := common.Update{}
+>  	update.AppendBalanceUpdate(address, balance)
+> -	return s.Apply(0, update)
+> +	_, err := s.Apply(0, update)
+> +	return err
+>  }
+>  
+>  func (s *ExternalState) GetNonce(address common.Address) (common.Nonce, error) {
+> @@ -358,7 +361,8 @@ func (s *ExternalState) GetNonce(address common.Address) (common.Nonce, error) {
+>  func (s *ExternalState) SetNonce(address common.Address, nonce common.Nonce) error {
+>  	update := common.Update{}
+>  	update.AppendNonceUpdate(address, nonce)
+> -	return s.Apply(0, update)
+> +	_, err := s.Apply(0, update)
+> +	return err
+>  }
+>  
+>  func (s *ExternalState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
+> @@ -373,7 +377,8 @@ func (s *ExternalState) GetStorage(address common.Address, key common.Key) (comm
+>  func (s *ExternalState) SetStorage(address common.Address, key common.Key, value common.Value) error {
+>  	update := common.Update{}
+>  	update.AppendSlotUpdate(address, key, value)
+> -	return s.Apply(0, update)
+> +	_, err := s.Apply(0, update)
+> +	return err
+>  }
+>  
+>  func (s *ExternalState) GetCode(address common.Address) ([]byte, error) {
+> @@ -405,7 +410,8 @@ func (s *ExternalState) GetCode(address common.Address) ([]byte, error) {
+>  func (s *ExternalState) SetCode(address common.Address, code []byte) error {
+>  	update := common.Update{}
+>  	update.AppendCodeUpdate(address, code)
+> -	return s.Apply(0, update)
+> +	_, err := s.Apply(0, update)
+> +	return err
+>  }
+>  
+>  func (s *ExternalState) GetCodeHash(address common.Address) (common.Hash, error) {
+> @@ -439,21 +445,21 @@ func (s *ExternalState) GetCommitment() future.Future[result.Result[common.Hash]
+>  	return future.Immediate(result.Ok(hash))
+>  }
+>  
+> -func (s *ExternalState) Apply(block uint64, update common.Update) error {
+> +func (s *ExternalState) Apply(block uint64, update common.Update) (<-chan error, error) {
+>  	if err := update.Normalize(); err != nil {
+> -		return err
+> +		return nil, err
+>  	}
+>  	data := update.ToBytes()
+>  	dataPtr := unsafe.Pointer(&data[0])
+>  	result := s.bindings.Apply(s.state, C.uint64_t(block), dataPtr, C.uint64_t(len(data)))
+>  	if result != C.kResult_Success {
+> -		return fmt.Errorf("failed to apply update at block %d (error code %v)", block, result)
+> +		return nil, fmt.Errorf("failed to apply update at block %d (error code %v)", block, result)
+>  	}
+>  	// Apply code changes to Go-sided code cache.
+>  	for _, change := range update.Codes {
+>  		s.codeCache.Set(change.Account, change.Code)
+>  	}
+> -	return nil
+> +	return nil, nil
+>  }
+>  
+>  func (s *ExternalState) Flush() error {
+> diff --git a/go/state/externalstate/external_state_test.go b/go/state/externalstate/external_state_test.go
+> index ba3107bf..4ade5539 100644
+> --- a/go/state/externalstate/external_state_test.go
+> +++ b/go/state/externalstate/external_state_test.go
+> @@ -78,7 +78,7 @@ func TestReadUninitializedBalance(t *testing.T) {
+25,27c1005,1007
+<  	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+< -		err := state.Apply(1, common.Update{
+< +		_, err := state.Apply(1, common.Update{
+---
+>  	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+> -		err := state.Apply(0, common.Update{
+> +		_, err := state.Apply(0, common.Update{
+31c1011
+< @@ -101,7 +101,7 @@ func TestReadUninitializedNonce(t *testing.T) {
+---
+> @@ -108,7 +108,7 @@ func TestReadUninitializedNonce(t *testing.T) {
+34,36c1014,1016
+<  	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+< -		err := state.Apply(1, common.Update{
+< +		_, err := state.Apply(1, common.Update{
+---
+>  	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+> -		err := state.Apply(0, common.Update{
+> +		_, err := state.Apply(0, common.Update{
+40c1020
+< @@ -131,7 +131,7 @@ func TestReadUninitializedSlot(t *testing.T) {
+---
+> @@ -138,7 +138,7 @@ func TestReadUninitializedSlot(t *testing.T) {
+43,45c1023,1025
+<  	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+< -		err := state.Apply(1, common.Update{
+< +		_, err := state.Apply(1, common.Update{
+---
+>  	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+> -		err := state.Apply(0, common.Update{
+> +		_, err := state.Apply(0, common.Update{
+49c1029
+< @@ -170,7 +170,7 @@ func getTestCodes() [][]byte {
+---
+> @@ -216,7 +216,7 @@ func getTestCodes() [][]byte {
+51,54c1031,1034
+<  	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+<  		for _, code := range getTestCodes() {
+< -			err := state.Apply(1, common.Update{
+< +		_, err := state.Apply(1, common.Update{
+---
+>  	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+>  		for i, code := range getTestCodes() {
+> -			err := state.Apply(uint64(i), common.Update{
+> +			_, err := state.Apply(uint64(i), common.Update{
+58c1038
+< @@ -197,7 +197,7 @@ func TestSetAndGetCode(t *testing.T) {
+---
+> @@ -243,7 +243,7 @@ func TestSetAndGetCode(t *testing.T) {
+60,63c1040,1043
+<  	runForEachCppConfig(t, func(t *testing.T, state state.State) {
+<  		for _, code := range getTestCodes() {
+< -			err := state.Apply(1, common.Update{
+< +			_, err  := state.Apply(1, common.Update{
+---
+>  	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+>  		for i, code := range getTestCodes() {
+> -			err := state.Apply(uint64(i), common.Update{
+> +			_, err := state.Apply(uint64(i), common.Update{
+93c1073
+< index 53ae950c..d3e2a350 100644
+---
+> index 2c5152e2..810595fb 100644
+96c1076
+< @@ -136,7 +136,7 @@ func (s *ArchiveState) HasEmptyStorage(addr common.Address) (bool, error) {
+---
+> @@ -137,7 +137,7 @@ func (s *ArchiveState) HasEmptyStorage(addr common.Address) (bool, error) {
+106c1086
+< index 029c6b97..4269f13d 100644
+---
+> index e9fb5318..1e86aa9c 100644
+109c1089
+< @@ -37,7 +37,7 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
+---
+> @@ -39,7 +39,7 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
+118c1098
+< @@ -119,7 +119,7 @@ func TestCarmen_Empty_Archive_And_Live_Must_Be_InSync(t *testing.T) {
+---
+> @@ -129,7 +129,7 @@ func TestCarmen_Empty_Archive_And_Live_Must_Be_InSync(t *testing.T) {
+128c1108
+< index 00755a50..09542c56 100644
+---
+> index 354bbdc2..b9f0dd64 100644
+131c1111
+< @@ -43,10 +43,6 @@ type GoState struct {
+---
+> @@ -44,10 +44,6 @@ type GoState struct {
+142c1122
+< @@ -99,7 +95,7 @@ func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *
+---
+> @@ -100,7 +96,7 @@ func _newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) *
+151,152c1131,1132
+< @@ -220,19 +216,13 @@ func (s *GoState) GetHash() (common.Hash, error) {
+<  	return h, s.stateError
+---
+> @@ -226,19 +222,13 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
+>  	return future.Immediate(result.Ok(h))
+174c1154
+< index 6ecd8382..ba131217 100644
+---
+> index 44a63f4a..622d5277 100644
+177c1157
+< @@ -128,7 +128,7 @@ func TestBasicOperations(t *testing.T) {
+---
+> @@ -132,7 +132,7 @@ func TestBasicOperations(t *testing.T) {
+186c1166
+< @@ -160,7 +160,7 @@ func TestBasicOperations(t *testing.T) {
+---
+> @@ -171,7 +171,7 @@ func TestBasicOperations(t *testing.T) {
+195c1175
+< @@ -192,7 +192,7 @@ func TestDeletingAccounts(t *testing.T) {
+---
+> @@ -207,7 +207,7 @@ func TestDeletingAccounts(t *testing.T) {
+204c1184
+< @@ -205,7 +205,7 @@ func TestDeletingAccounts(t *testing.T) {
+---
+> @@ -220,7 +220,7 @@ func TestDeletingAccounts(t *testing.T) {
+213c1193
+< @@ -247,7 +247,7 @@ func TestMoreInserts(t *testing.T) {
+---
+> @@ -262,7 +262,7 @@ func TestMoreInserts(t *testing.T) {
+222c1202
+< @@ -283,7 +283,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
+---
+> @@ -305,7 +305,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
+231c1211
+< @@ -308,7 +308,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
+---
+> @@ -330,7 +330,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
+240c1220
+< @@ -660,7 +660,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
+---
+> @@ -700,7 +700,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
+249c1229
+< @@ -720,7 +720,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
+---
+> @@ -760,7 +760,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
+258c1238
+< @@ -753,9 +753,9 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+---
+> @@ -793,9 +793,9 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+270c1250
+< @@ -789,9 +789,9 @@ func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
+---
+> @@ -829,9 +829,9 @@ func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
+282c1262
+< @@ -806,9 +806,9 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
+---
+> @@ -846,9 +846,9 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
+294c1274
+< @@ -829,12 +829,12 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
+---
+> @@ -869,12 +869,12 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
+309a1290,1298
+> @@ -1044,7 +1044,7 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
+>  		},
+>  	}
+>  
+> -	if err := st.Apply(1, update); err != nil {
+> +	if _, err := st.Apply(1, update); err != nil {
+>  		t.Errorf("failed to apply update: %v", err)
+>  	}
+>  
+311c1300
+< index 8a1315c7..86230b94 100644
+---
+> index 30c05e69..ae4620ac 100644
+314c1303
+< @@ -53,7 +53,11 @@ type State interface {
+---
+> @@ -54,7 +54,11 @@ type State interface {
+325,326c1314,1315
+<  	// GetHash hashes the values.
+<  	GetHash() (common.Hash, error)
+---
+>  	// GetHash hashes the state.
+>  	// Deprecated: use GetCommitment instead.
+328c1317
+< index 825e265c..8e1d1975 100644
+---
+> index b8aa34bf..78093433 100644
+331c1320
+< @@ -1278,7 +1278,7 @@ func (s *stateDB) EndBlock(block uint64) {
+---
+> @@ -1288,7 +1288,7 @@ func (s *stateDB) EndBlock(block uint64) {
+337c1326
+<  		s.errors = append(s.errors, fmt.Errorf("failed to apply update for block %d: %w", block, err))
+---
+>  		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
+340c1329
+< @@ -1454,7 +1454,7 @@ func (l *bulkLoad) apply() {
+---
+> @@ -1506,7 +1506,7 @@ func (l *bulkLoad) apply() {
+349,398d1337
+< diff --git a/go/state/state_db_mock.go b/go/state/state_db_mock.go
+< index 4575d36b..295a5631 100644
+< --- a/go/state/state_db_mock.go
+< +++ b/go/state/state_db_mock.go
+< @@ -1,13 +1,3 @@
+< -// Copyright (c) 2025 Sonic Operations Ltd
+< -//
+< -// Use of this software is governed by the Business Source License included
+< -// in the LICENSE file and at soniclabs.com/bsl11.
+< -//
+< -// Change Date: 2028-4-16
+< -//
+< -// On the date above, in accordance with the Business Source License, use of
+< -// this software will be governed by the GNU Lesser General Public License v3.
+< -
+<  // Code generated by MockGen. DO NOT EDIT.
+<  // Source: state_db.go
+<  //
+< @@ -32,6 +22,7 @@ import (
+<  type MockVmStateDB struct {
+<  	ctrl     *gomock.Controller
+<  	recorder *MockVmStateDBMockRecorder
+< +	isgomock struct{}
+<  }
+<  
+<  // MockVmStateDBMockRecorder is the mock recorder for MockVmStateDB.
+< @@ -580,6 +571,7 @@ func (mr *MockVmStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
+<  type MockStateDB struct {
+<  	ctrl     *gomock.Controller
+<  	recorder *MockStateDBMockRecorder
+< +	isgomock struct{}
+<  }
+<  
+<  // MockStateDBMockRecorder is the mock recorder for MockStateDB.
+< @@ -1275,6 +1267,7 @@ func (mr *MockStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
+<  type MockNonCommittableStateDB struct {
+<  	ctrl     *gomock.Controller
+<  	recorder *MockNonCommittableStateDBMockRecorder
+< +	isgomock struct{}
+<  }
+<  
+<  // MockNonCommittableStateDBMockRecorder is the mock recorder for MockNonCommittableStateDB.
+< @@ -1869,6 +1862,7 @@ func (mr *MockNonCommittableStateDBMockRecorder) SuicideNewContract(arg0 any) *g
+<  type MockBulkLoad struct {
+<  	ctrl     *gomock.Controller
+<  	recorder *MockBulkLoadMockRecorder
+< +	isgomock struct{}
+<  }
+<  
+<  // MockBulkLoadMockRecorder is the mock recorder for MockBulkLoad.
+400c1339
+< index 1d6a91e3..bb994622 100644
+---
+> index 2f531568..d40d783b 100644
+403c1342
+< @@ -3592,7 +3592,7 @@ func TestStateDB_CollectsErrorsAndReportsThemDuringACheck(t *testing.T) {
+---
+> @@ -3612,7 +3612,7 @@ func TestStateDB_CollectsErrorsAndReportsThemDuringACheck(t *testing.T) {
+412c1351
+< @@ -3677,7 +3677,7 @@ func TestStateDB_NoApplyWhenErrorsHaveBeenEncountered(t *testing.T) {
+---
+> @@ -3705,7 +3705,7 @@ func TestStateDB_NoApplyWhenErrorsHaveBeenEncountered(t *testing.T) {
+421c1360
+< @@ -3950,7 +3950,7 @@ func TestStateDB_BulkLoadApplyForwardsUpdateIssues(t *testing.T) {
+---
+> @@ -3978,7 +3978,7 @@ func TestStateDB_BulkLoadApplyForwardsUpdateIssues(t *testing.T) {
+430c1369
+< @@ -3977,7 +3977,7 @@ func TestStateDB_BulkLoadCloseReportsApplyIssues(t *testing.T) {
+---
+> @@ -4005,7 +4005,7 @@ func TestStateDB_BulkLoadCloseReportsApplyIssues(t *testing.T) {
+439c1378
+< @@ -4001,7 +4001,7 @@ func TestStateDB_BulkLoadCloseReportsFlushIssues(t *testing.T) {
+---
+> @@ -4029,7 +4029,7 @@ func TestStateDB_BulkLoadCloseReportsFlushIssues(t *testing.T) {
+448c1387
+< @@ -4022,7 +4022,7 @@ func TestStateDB_BulkLoadCloseReportsHashingIssues(t *testing.T) {
+---
+> @@ -4050,7 +4050,7 @@ func TestStateDB_BulkLoadCloseReportsHashingIssues(t *testing.T) {
+455c1394
+<  	state.EXPECT().GetHash().Return(common.Hash{}, injectedError)
+---
+>  	state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
+458c1397
+< index 6751fbcd..3cc5416d 100644
+---
+> index 93b47837..fec516f5 100644
+461,473c1400,1402
+< @@ -1,13 +1,3 @@
+< -// Copyright (c) 2025 Sonic Operations Ltd
+< -//
+< -// Use of this software is governed by the Business Source License included
+< -// in the LICENSE file and at soniclabs.com/bsl11.
+< -//
+< -// Change Date: 2028-4-16
+< -//
+< -// On the date above, in accordance with the Business Source License, use of
+< -// this software will be governed by the GNU Lesser General Public License v3.
+< -
+<  // Code generated by MockGen. DO NOT EDIT.
+<  // Source: state.go
+---
+> @@ -5,6 +5,7 @@
+>  //
+>  //	mockgen -source state.go -destination state_mock.go -package state
+475c1404,1408
+< @@ -35,6 +25,7 @@ import (
+---
+> +
+>  // Package state is a generated GoMock package.
+>  package state
+>  
+> @@ -25,6 +26,7 @@ import (
+483c1416
+< @@ -55,11 +46,12 @@ func (m *MockState) EXPECT() *MockStateMockRecorder {
+---
+> @@ -45,11 +47,12 @@ func (m *MockState) EXPECT() *MockStateMockRecorder {
+499c1432
+< @@ -388,6 +380,7 @@ func (mr *MockStateMockRecorder) Restore(data any) *gomock.Call {
+---
+> @@ -333,6 +336,7 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
+508c1441
+< index 46f42977..09f0a382 100644
+---
+> index c409a540..1b4c203c 100644
+511c1444,1453
+< @@ -320,7 +320,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
+---
+> @@ -320,7 +320,7 @@ func TestCanComputeNonEmptyMemoryFootprint(t *testing.T) {
+>  func TestCodeCanBeUpdated(t *testing.T) {
+>  	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+>  		// account must exist (not aut-created in Verkle Trie)
+> -		if err := s.Apply(0, common.Update{
+> +		if _, err := s.Apply(0, common.Update{
+>  			CreatedAccounts: []common.Address{address1},
+>  		}); err != nil {
+>  			t.Errorf("failed to apply: %v", err)
+> @@ -343,7 +343,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
+520c1462
+< @@ -337,7 +337,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
+---
+> @@ -360,7 +360,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
+529,531c1471,1472
+< @@ -403,10 +403,10 @@ func TestCodeHashesMatchCodes(t *testing.T) {
+<  
+<  func TestDeleteNotExistingAccount(t *testing.T) {
+---
+> @@ -380,7 +380,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
+>  func TestCodeHashesMatchCodes(t *testing.T) {
+533,534c1474,1485
+< -		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+< +		if _, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+---
+>  		// account must exist (not aut-created in Verkle Trie)
+> -		if err := s.Apply(0, common.Update{
+> +		if _, err := s.Apply(0, common.Update{
+>  			CreatedAccounts: []common.Address{address1},
+>  		}); err != nil {
+>  			t.Errorf("failed to apply: %v", err)
+> @@ -434,10 +434,10 @@ func TestDeleteNotExistingAccount(t *testing.T) {
+>  		if config.config.Schema == 6 {
+>  			t.Skipf("scheme %d not supported", config.config.Schema)
+>  		}
+> -		if err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+> +		if _, err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+537,538c1488,1489
+< -		if err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
+< +		if _, err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
+---
+> -		if err := s.Apply(1, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
+> +		if _, err := s.Apply(1, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
+542,544c1493,1495
+< @@ -422,7 +422,7 @@ func TestDeleteNotExistingAccount(t *testing.T) {
+<  func TestCreatingAccountClearsStorage(t *testing.T) {
+<  	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+---
+> @@ -460,7 +460,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
+>  		}
+>  
+546,547c1497,1498
+< -		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+< +		if _, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+---
+> -		if err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+> +		if _, err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+551c1502
+< @@ -434,7 +434,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
+---
+> @@ -472,7 +472,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
+555,556c1506,1507
+< -		if err = s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+< +		if _, err = s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+---
+> -		if err = s.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+> +		if _, err = s.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+560c1511
+< @@ -446,7 +446,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
+---
+> @@ -484,7 +484,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
+564,565c1515,1516
+< -		if err := s.Apply(3, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+< +		if _, err := s.Apply(3, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+---
+> -		if err := s.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+> +		if _, err := s.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+569,571c1520,1522
+< @@ -463,11 +463,11 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
+<  func TestDeletingAccountsClearsStorage(t *testing.T) {
+<  	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+---
+> @@ -508,11 +508,11 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
+>  		}
+>  
+573,574c1524,1525
+< -		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+< +		if _, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+---
+> -		if err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+> +		if _, err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+578,579c1529,1530
+< -		if err := s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+< +		if _, err := s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+---
+> -		if err := s.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+> +		if _, err := s.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+583c1534
+< @@ -479,7 +479,7 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
+---
+> @@ -524,7 +524,7 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
+587,588c1538,1539
+< -		if err := s.Apply(3, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
+< +		if _, err := s.Apply(3, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
+---
+> -		if err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
+> +		if _, err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
+592c1543
+< @@ -516,7 +516,7 @@ func TestArchive(t *testing.T) {
+---
+> @@ -561,7 +561,7 @@ func TestArchive(t *testing.T) {
+596,597c1547,1548
+< -			if err := s.Apply(1, common.Update{
+< +			if _, err := s.Apply(1, common.Update{
+---
+> -			if err := s.Apply(0, common.Update{
+> +			if _, err := s.Apply(0, common.Update{
+601c1552
+< @@ -530,7 +530,7 @@ func TestArchive(t *testing.T) {
+---
+> @@ -575,7 +575,7 @@ func TestArchive(t *testing.T) {
+605,606c1556,1557
+< -			if err := s.Apply(2, common.Update{
+< +			if _, err := s.Apply(2, common.Update{
+---
+> -			if err := s.Apply(1, common.Update{
+> +			if _, err := s.Apply(1, common.Update{
+610c1561
+< @@ -640,13 +640,13 @@ func TestLastArchiveBlock(t *testing.T) {
+---
+> @@ -687,13 +687,13 @@ func TestLastArchiveBlock(t *testing.T) {
+614,615c1565,1566
+< -			if err := s.Apply(1, common.Update{
+< +			if _, err := s.Apply(1, common.Update{
+---
+> -			if err := s.Apply(0, common.Update{
+> +			if _, err := s.Apply(0, common.Update{
+618c1569
+<  				t.Fatalf("failed to add block 1; %s", err)
+---
+>  				t.Fatalf("failed to add block 0; %s", err)
+621,622c1572,1573
+< -			if err := s.Apply(2, common.Update{
+< +			if _, err := s.Apply(2, common.Update{
+---
+> -			if err := s.Apply(1, common.Update{
+> +			if _, err := s.Apply(1, common.Update{
+625,626c1576,1577
+<  				t.Fatalf("failed to add block 2; %s", err)
+< @@ -718,7 +718,7 @@ func TestPersistentState(t *testing.T) {
+---
+>  				t.Fatalf("failed to add block 1; %s", err)
+> @@ -769,7 +769,7 @@ func TestPersistentState(t *testing.T) {
+630,631c1581,1582
+< -			if err := s.Apply(1, update); err != nil {
+< +			if _, err := s.Apply(1, update); err != nil {
+---
+> -			if err := s.Apply(0, update); err != nil {
+> +			if _, err := s.Apply(0, update); err != nil {
+635c1586
+< @@ -990,7 +990,7 @@ func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
+---
+> @@ -862,7 +862,7 @@ func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
+645c1596
+< index 610ff904..afafaffe 100644
+---
+> index 88357ea3..9fd4ef1b 100644
+648c1599
+< @@ -101,7 +101,7 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
+---
+> @@ -102,7 +102,7 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
+656a1608,1633
+> diff --git a/go/state/tool/benchmark.go b/go/state/tool/benchmark.go
+> index 48cae7f7..0bc947ed 100644
+> --- a/go/state/tool/benchmark.go
+> +++ b/go/state/tool/benchmark.go
+> @@ -266,7 +266,7 @@ func runBenchmarkState(
+>  			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+>  			counter++
+>  		}
+> -		if err := state.Apply(uint64(i), update); err != nil {
+> +		if _, err := state.Apply(uint64(i), update); err != nil {
+>  			return res, fmt.Errorf("error applying block %d: %v", i, err)
+>  		}
+>  		// make sure hash/commit is computed
+> diff --git a/go/state/tool/benchmark_test.go b/go/state/tool/benchmark_test.go
+> index 3bd21090..3e6809ee 100644
+> --- a/go/state/tool/benchmark_test.go
+> +++ b/go/state/tool/benchmark_test.go
+> @@ -246,7 +246,7 @@ func TestRunBenchmarkState_ApplyError(t *testing.T) {
+>  	for i := 0; i <= methods; i++ {
+>  		state := state.NewMockState(ctrl)
+>  		state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), getError(i, 1)).AnyTimes()
+> -		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(getError(i, 2)).AnyTimes()
+> +		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, getError(i, 2)).AnyTimes()
+>  		state.EXPECT().GetCommitment().DoAndReturn(func() future.Future[result.Result[common.Hash]] {
+>  			return future.Immediate(result.Err[common.Hash](getError(i, 3)))
+>  		}).AnyTimes()
