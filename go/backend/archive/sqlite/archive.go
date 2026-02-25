@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"slices"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/witness"
@@ -302,15 +303,17 @@ func (a *Archive) addUpdateIntoTx(tx *sql.Tx, block uint64, update common.Update
 
 	stmt := tx.Stmt(a.addStatusStmt)
 	for _, account := range update.DeletedAccounts {
-		reincarnation, err := getReincarnationNumber(account)
-		if err != nil {
-			return fmt.Errorf("failed to get status; %s", err)
+		if !slices.Contains(update.CreatedAccounts, account) {
+			reincarnation, err := getReincarnationNumber(account)
+			if err != nil {
+				return fmt.Errorf("failed to get status; %s", err)
+			}
+			_, err = stmt.Exec(account[:], block, false, reincarnation+1)
+			if err != nil {
+				return fmt.Errorf("failed to add status; %s", err)
+			}
+			a.reincarnationNumberCache[account] = reincarnation + 1
 		}
-		_, err = stmt.Exec(account[:], block, false, reincarnation+1)
-		if err != nil {
-			return fmt.Errorf("failed to add status; %s", err)
-		}
-		a.reincarnationNumberCache[account] = reincarnation + 1
 	}
 
 	for _, account := range update.CreatedAccounts {
