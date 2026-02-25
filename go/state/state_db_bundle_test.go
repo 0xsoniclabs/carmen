@@ -277,17 +277,12 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 
 // copyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
 func copyStateDB(s *stateDB) *stateDB {
-	ns := createStateDBWith(s.state, defaultStoredDataCacheSize, true)
+	ns := createStateDBWith(s.state, 1, true)
 	copyMap(s.accounts, ns.accounts)
 	copyMap(s.balances, ns.balances)
 	copyMap(s.nonces, ns.nonces)
 	s.data.CopyTo(ns.data)
 	s.transientStorage.CopyTo(ns.transientStorage)
-	// s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
-	// 	// Ignoring returns
-	// 	ns.storedDataCache.Set(id, value)
-	// 	return true
-	// })
 	copyMap(s.reincarnation, ns.reincarnation)
 	copyMap(s.codes, ns.codes)
 	ns.refund = s.refund
@@ -305,18 +300,13 @@ func copyStateDB(s *stateDB) *stateDB {
 	return ns
 }
 
+// checkStateDBEqual checks if two stateDB instances are equal, excluding the `storedDataCache` field.
 func checkStateDBEqual(require *require.Assertions, expected *stateDB, actual *stateDB) {
 	require.Equal(expected.accounts, actual.accounts)
 	require.Equal(expected.balances, actual.balances)
 	require.Equal(expected.nonces, actual.nonces)
 	require.True(fastMapEqual(expected.data, actual.data))
 	require.True(fastMapEqual(expected.transientStorage, actual.transientStorage))
-	expected.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
-		v, ok := actual.storedDataCache.Get(id)
-		require.True(ok)
-		require.Equal(value, v)
-		return true
-	})
 	require.Equal(expected.reincarnation, actual.reincarnation)
 	require.Equal(expected.codes, actual.codes)
 	require.Equal(expected.refund, actual.refund)
