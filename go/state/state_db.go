@@ -230,6 +230,9 @@ type stateDB struct {
 	// to mark eligible accounts to be self-destructed according to EIP-6780.
 	createdContracts map[common.Address]struct{}
 
+	// True if the current state DB is operating in a transaction, false otherwise.
+	transactionState bool
+
 	// For each transaction in the current block, a list of operations undoing modifications applied on the inner state if a snapshot revert needs to be performed.
 	undo [][]func()
 
@@ -471,6 +474,7 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
 		writtenSlots:      map[*slotValue]bool{},
 		accountsToDelete:  make([]common.Address, 0, 100),
+		transactionState:  false,
 		undo:              make([][]func(), 0, 100),
 		clearedAccounts:   make(map[common.Address]accountClearingState),
 		createdContracts:  make(map[common.Address]struct{}),
@@ -1172,10 +1176,21 @@ func (s *stateDB) RevertToSnapshot(id int) {
 }
 
 func (s *stateDB) BeginTransaction() {
+	if s.transactionState {
+		s.trackErrors(fmt.Errorf("cannot begin transaction: already in a transaction"))
+		return
+	}
+	s.transactionState = true
 	s.undo = append(s.undo, make([]func(), 0, 100))
 }
 
 func (s *stateDB) EndTransaction() {
+	if !s.transactionState {
+		s.trackErrors(fmt.Errorf("cannot end transaction: not in a transaction"))
+		return
+	}
+	s.transactionState = false
+
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
 		oldValueCommitted := value.committed
@@ -1286,6 +1301,10 @@ func (s *stateDB) EndTransaction() {
 }
 
 func (s *stateDB) Checkpoint() int {
+	if s.transactionState {
+		s.trackErrors(fmt.Errorf("cannot create checkpoint in a transaction"))
+		return 0
+	}
 	return len(s.undo)
 }
 

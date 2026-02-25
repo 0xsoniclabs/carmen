@@ -283,11 +283,11 @@ func copyStateDB(s *stateDB) *stateDB {
 	copyMap(s.nonces, ns.nonces)
 	s.data.CopyTo(ns.data)
 	s.transientStorage.CopyTo(ns.transientStorage)
-	s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
-		// Ignoring returns
-		ns.storedDataCache.Set(id, value)
-		return true
-	})
+	// s.storedDataCache.Iterate(func(id slotId, value storedDataCacheValue) bool {
+	// 	// Ignoring returns
+	// 	ns.storedDataCache.Set(id, value)
+	// 	return true
+	// })
 	copyMap(s.reincarnation, ns.reincarnation)
 	copyMap(s.codes, ns.codes)
 	ns.refund = s.refund
