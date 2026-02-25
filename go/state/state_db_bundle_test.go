@@ -161,6 +161,8 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 	var revertCheckerList []checkpointWithStateCheck
 	runTx := func(op_call func()) {
 		checkpointID := ctx.state.Checkpoint()
+		require.Empty(ctx.state.accountsToDelete)
+		require.Empty(ctx.state.writtenSlots)
 		oldStateDB := copyStateDB(ctx.state)
 
 		ctx.state.BeginTransaction()
