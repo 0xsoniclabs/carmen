@@ -1164,15 +1164,17 @@ func (s *stateDB) RevertToSnapshot(id int) {
 		s.trackErrors(fmt.Errorf("cannot revert to snapshot: no active transaction"))
 		return
 	}
-	currentTxUndo := &s.undo[len(s.undo)-1]
-	if id < 0 || len(*currentTxUndo) < id {
-		s.trackErrors(fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(*currentTxUndo)))
+
+	currentTxUndo := s.undo[len(s.undo)-1]
+	if id < 0 || len(currentTxUndo) < id {
+		s.trackErrors(fmt.Errorf("failed to revert to invalid snapshot id %d, allowed range 0 - %d", id, len(currentTxUndo)))
 		return
 	}
-	for len(*currentTxUndo) > id {
-		(*currentTxUndo)[len(*currentTxUndo)-1]()
-		*currentTxUndo = (*currentTxUndo)[:len(*currentTxUndo)-1]
+	slices.Reverse(currentTxUndo[id:])
+	for _, undo := range currentTxUndo[id:] {
+		undo()
 	}
+	s.undo[len(s.undo)-1] = currentTxUndo[:id]
 }
 
 func (s *stateDB) BeginTransaction() {
