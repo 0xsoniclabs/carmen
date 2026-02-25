@@ -13,102 +13,20 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestStateDB_revertTransactionsRevertToPreviousState(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	st := NewMockState(ctrl)
-
-	st.EXPECT().Exists(gomock.Any()).AnyTimes().Return(true, nil)
-	st.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-
-	statedb := CreateStateDBUsing(st)
-	targetAddress := common.Address{}
-
-	// Tx 1: Set balance to 10
-	statedb.BeginTransaction()
-	statedb.AddBalance(targetAddress, amount.New(10))
-	statedb.EndTransaction()
-	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
-
-	checkpoint := statedb.Checkpoint()
-
-	// Tx 2: Add 10 balance
-	statedb.BeginTransaction()
-	statedb.AddBalance(targetAddress, amount.New(10))
-	statedb.EndTransaction()
-	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(20))
-
-	// Tx 3: Add 10 balance
-	statedb.BeginTransaction()
-	statedb.AddBalance(targetAddress, amount.New(10))
-	statedb.EndTransaction()
-	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(30))
-
-	// Revert last two txs
-	statedb.RevertToCheckpoint(checkpoint)
-	require.Equal(t, statedb.GetBalance(targetAddress), amount.New(10))
-}
-
-func TestStateDB_RevertToCheckpointRestoresCommittedState(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	st := NewMockState(ctrl)
-
-	any := gomock.Any()
-	st.EXPECT().Exists(any).Return(true, nil).AnyTimes()
-	st.EXPECT().GetStorage(any, any).AnyTimes()
-	st.EXPECT().Check().AnyTimes()
-	st.EXPECT().Flush().AnyTimes()
-	st.EXPECT().Close()
-
-	state := CreateStateDBUsing(st)
-	defer func() {
-		require.NoError(state.Close())
-	}()
-
-	addr := common.Address{0x1}
-	key := common.Key{0x1}
-	val0 := common.Value{}
-	val1 := common.Value{0x1}
-	val2 := common.Value{0x2}
-
-	// Tx 1: updates a storage location
-	state.BeginTransaction()
-	require.Equal(val0, state.GetCommittedState(addr, key))
-	state.SetState(addr, key, val1)
-	require.Equal(val0, state.GetCommittedState(addr, key))
-	state.EndTransaction()
-	checkpoint := state.Checkpoint()
-
-	// Tx 2: updates the same storage location
-	state.BeginTransaction()
-	require.Equal(val1, state.GetCommittedState(addr, key))
-	state.SetState(addr, key, val2)
-	require.Equal(val1, state.GetCommittedState(addr, key))
-	state.EndTransaction()
-
-	// Revert last transaction
-	state.RevertToCheckpoint(checkpoint)
-
-	// Now, the committed state should be the state as before Tx 2.
-	state.BeginTransaction()
-	require.Equal(val1, state.GetCommittedState(addr, key))
-	state.EndTransaction()
-}
-
-// StateDBOpContext is a helper struct representing a state and some of the operations that can be performed on it, to be used in the tests of StateDB transaction revert functionality.
+// StateDBOpContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
 type StateDBOpContext struct {
 	state *stateDB
 	db    MockState
 	addr  common.Address
 	key   common.Key
 	value common.Value
-	code  []byte
 	nonce uint64
 	// Test stuff
 	require *require.Assertions
 	pcg     *rand.PCG
 }
 
+// NewStateDBOpContext creates a new StateDBOpContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
 func NewStateDBOpContext(t *testing.T, require *require.Assertions) *StateDBOpContext {
 	ctrl := gomock.NewController(t)
 	db := NewMockState(ctrl)
@@ -166,7 +84,7 @@ func makeSetCodeFunc(ctx *StateDBOpContext) func() {
 		for i := range randomCode {
 			randomCode[i] = byte(ctx.pcg.Uint64())
 		}
-		ctx.state.SetCode(ctx.addr, []byte{0x1})
+		ctx.state.SetCode(ctx.addr, randomCode)
 	}
 }
 
@@ -275,6 +193,37 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 	}
 }
 
+func Test_StateDB_copyStateDB(t *testing.T) {
+	// TODO: The proper implementation should make sure every field is mutated before copying
+	ctrl := gomock.NewController(t)
+	st := NewMockState(ctrl)
+
+	st.EXPECT().Check().Return(nil).AnyTimes()
+	st.EXPECT().Flush().Return(nil).AnyTimes()
+	st.EXPECT().Close().Return(nil).AnyTimes()
+
+	state := createStateDBWith(st, defaultStoredDataCacheSize, true)
+	defer func() {
+		require.NoError(t, state.Close())
+	}()
+
+	// Create a state with some data
+	addr := common.Address{0x1}
+	key := common.Key{0x1}
+	value := common.Value{0x1}
+	state.BeginTransaction()
+	st.EXPECT().Exists(gomock.Any()).Return(true, nil).Times(1)
+	state.CreateAccount(addr)
+	st.EXPECT().GetBalance(addr).Return(amount.New(0), nil).Times(1)
+	state.AddBalance(addr, amount.New(10))
+	state.SetState(addr, key, value)
+	state.EndTransaction()
+
+	copiedState := copyStateDB(state)
+
+	checkStateDBEqual(require.New(t), state, copiedState)
+}
+
 // copyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
 func copyStateDB(s *stateDB) *stateDB {
 	ns := createStateDBWith(s.state, 1, true)
@@ -328,36 +277,6 @@ func checkStateDBEqual(require *require.Assertions, expected *stateDB, actual *s
 			require.Equal(addr1, addr2)
 		}
 	}
-}
-
-func Test_StateDB_copyStateDB(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	st := NewMockState(ctrl)
-
-	st.EXPECT().Check().Return(nil).AnyTimes()
-	st.EXPECT().Flush().Return(nil).AnyTimes()
-	st.EXPECT().Close().Return(nil).AnyTimes()
-
-	state := createStateDBWith(st, defaultStoredDataCacheSize, true)
-	defer func() {
-		require.NoError(t, state.Close())
-	}()
-
-	// Create a state with some data
-	addr := common.Address{0x1}
-	key := common.Key{0x1}
-	value := common.Value{0x1}
-	state.BeginTransaction()
-	st.EXPECT().Exists(gomock.Any()).Return(true, nil).Times(1)
-	state.CreateAccount(addr)
-	st.EXPECT().GetBalance(addr).Return(amount.New(0), nil).Times(1)
-	state.AddBalance(addr, amount.New(10))
-	state.SetState(addr, key, value)
-	state.EndTransaction()
-
-	copiedState := copyStateDB(state)
-
-	checkStateDBEqual(require.New(t), state, copiedState)
 }
 
 func incValue(value *common.Value, amount uint64) {
