@@ -3,8 +3,10 @@ package state
 import (
 	"encoding/binary"
 	"iter"
+	"maps"
 	"math/rand/v2"
 	reflect "reflect"
+	"slices"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -227,23 +229,23 @@ func Test_StateDB_copyStateDB(t *testing.T) {
 // copyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
 func copyStateDB(s *stateDB) *stateDB {
 	ns := createStateDBWith(s.state, 1, true)
-	copyMap(s.accounts, ns.accounts)
-	copyMap(s.balances, ns.balances)
-	copyMap(s.nonces, ns.nonces)
+	ns.accounts = maps.Clone(s.accounts)
+	ns.balances = maps.Clone(s.balances)
+	ns.nonces = maps.Clone(s.nonces)
 	s.data.CopyTo(ns.data)
 	s.transientStorage.CopyTo(ns.transientStorage)
-	copyMap(s.reincarnation, ns.reincarnation)
-	copyMap(s.codes, ns.codes)
+	ns.reincarnation = maps.Clone(s.reincarnation)
+	ns.codes = maps.Clone(s.codes)
 	ns.refund = s.refund
-	copyMap(s.accessedAddresses, ns.accessedAddresses)
+	ns.accessedAddresses = maps.Clone(s.accessedAddresses)
 	s.accessedSlots.CopyTo(ns.accessedSlots)
-	ns.accountsToDelete = copySlice(s.accountsToDelete)
+	ns.accountsToDelete = slices.Clone(s.accountsToDelete)
 	for undo := range s.undo {
-		ns.undo = append(ns.undo, copySlice(s.undo[undo]))
+		ns.undo = append(ns.undo, slices.Clone(s.undo[undo]))
 	}
-	copyMap(s.clearedAccounts, ns.clearedAccounts)
-	copyMap(s.createdContracts, ns.createdContracts)
-	ns.emptyCandidates = copySlice(s.emptyCandidates)
+	ns.clearedAccounts = maps.Clone(s.clearedAccounts)
+	ns.createdContracts = maps.Clone(s.createdContracts)
+	ns.emptyCandidates = slices.Clone(s.emptyCandidates)
 	ns.canApplyChanges = s.canApplyChanges
 
 	return ns
@@ -282,18 +284,6 @@ func checkStateDBEqual(require *require.Assertions, expected *stateDB, actual *s
 func incValue(value *common.Value, amount uint64) {
 	newValue := binary.LittleEndian.Uint64(value[:8]) + amount
 	binary.LittleEndian.PutUint64(value[:8], newValue)
-}
-
-func copyMap[K comparable, V any](src map[K]V, dst map[K]V) {
-	for k, v := range src {
-		dst[k] = v
-	}
-}
-
-func copySlice[K any](src []K) []K {
-	dst := make([]K, len(src))
-	copy(dst, src)
-	return dst
 }
 
 func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {

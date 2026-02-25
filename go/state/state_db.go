@@ -223,7 +223,7 @@ type stateDB struct {
 	createdContracts map[common.Address]struct{}
 
 	// True if the current state DB is operating in a transaction, false otherwise.
-	transactionState bool
+	withinTransaction bool
 
 	// For each transaction in the current block, a list of operations undoing modifications applied on the inner state if a snapshot revert needs to be performed.
 	undo [][]func()
@@ -466,7 +466,7 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
 		writtenSlots:      map[*slotValue]bool{},
 		accountsToDelete:  make([]common.Address, 0, 100),
-		transactionState:  false,
+		withinTransaction: false,
 		undo:              make([][]func(), 0, 100),
 		clearedAccounts:   make(map[common.Address]accountClearingState),
 		createdContracts:  make(map[common.Address]struct{}),
@@ -1168,20 +1168,20 @@ func (s *stateDB) RevertToSnapshot(id int) {
 }
 
 func (s *stateDB) BeginTransaction() {
-	if s.transactionState {
+	if s.withinTransaction {
 		s.trackErrors(fmt.Errorf("cannot begin transaction: already in a transaction"))
 		return
 	}
-	s.transactionState = true
+	s.withinTransaction = true
 	s.undo = append(s.undo, make([]func(), 0, 100))
 }
 
 func (s *stateDB) EndTransaction() {
-	if !s.transactionState {
+	if !s.withinTransaction {
 		s.trackErrors(fmt.Errorf("cannot end transaction: not in a transaction"))
 		return
 	}
-	s.transactionState = false
+	s.withinTransaction = false
 
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
@@ -1199,8 +1199,7 @@ func (s *stateDB) EndTransaction() {
 	for _, addr := range s.emptyCandidates {
 		if s.Empty(addr) {
 			// Very hacky way, we could probably turn accountstodelete into a map
-			oldAccountsToDelete := make([]common.Address, len(s.accountsToDelete))
-			copy(oldAccountsToDelete, s.accountsToDelete)
+			oldAccountsToDelete := slices.Clone(s.accountsToDelete)
 			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
 			oldState, oldExists := s.clearedAccounts[addr]
@@ -1293,7 +1292,7 @@ func (s *stateDB) EndTransaction() {
 }
 
 func (s *stateDB) Checkpoint() int {
-	if s.transactionState {
+	if s.withinTransaction {
 		s.trackErrors(fmt.Errorf("cannot create checkpoint in a transaction"))
 		return 0
 	}
@@ -1301,6 +1300,10 @@ func (s *stateDB) Checkpoint() int {
 }
 
 func (s *stateDB) RevertToCheckpoint(id int) error {
+	if s.withinTransaction {
+		return fmt.Errorf("cannot revert to checkpoint in a transaction")
+	}
+
 	if id > len(s.undo) {
 		return fmt.Errorf("cannot revert to checkpoint %d, only %d checkpoints in the current block", id, len(s.undo))
 	}
