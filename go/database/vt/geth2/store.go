@@ -179,6 +179,19 @@ func (s *levelDbStore) AddBlock(block uint64, changes []Entry) error {
 
 	batch := new(leveldb.Batch)
 	for _, change := range changes {
+
+		// Avoid writing to the DB if the node hasn't changed since the last
+		// update, to reduce unnecessary writes and to save disk space in the
+		// archive store.
+		current, err := s.findNode(s.db, block, change.Path)
+		if err != nil && err != ErrNotFound {
+			return err
+		}
+		if err == nil && bytes.Equal(current, change.Blob) {
+			// No change for this node, skip it.
+			continue
+		}
+
 		key := s.keyFactory(block, change.Path)
 		batch.Put(key, change.Blob)
 	}
