@@ -15,6 +15,71 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestStateDB_RevertToCheckpoint(t *testing.T) {
+	t.Parallel()
+
+	type checkpointWithStateCheck struct {
+		stateCheck   func()
+		checkpointID int
+	}
+
+	require := require.New(t)
+	ctx := NewStateDBOpContext(t)
+
+	opList := map[string]func(){
+		"setState":      makeSetStateFunc(ctx),
+		"setNonce":      makeSetNonceFunc(ctx),
+		"setCode":       makeSetCodeFunc(ctx),
+		"addRefund":     makeAddRefundFunc(ctx),
+		"subRefund":     makeSubRefundFunc(ctx),
+		"addBalance":    makeAddBalanceFunc(ctx),
+		"subBalance":    makeSubBalanceFunc(ctx),
+		"addAddress":    makeAddAddressToAccessListFunc(ctx),
+		"createAccount": makeCreateAccountFunc(ctx),
+		"suicide":       makeSuicideFunc(ctx),
+	}
+
+	var revertCheckerList []checkpointWithStateCheck
+	runTx := func(op_call func()) {
+		checkpointID := ctx.state.Checkpoint()
+		require.Empty(ctx.state.accountsToDelete)
+		require.Empty(ctx.state.writtenSlots)
+		oldStateDB := copyStateDB(ctx.state)
+
+		ctx.state.BeginTransaction()
+		op_call()
+		ctx.state.EndTransaction()
+
+		revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
+			stateCheck: func() {
+				checkStateDBEqual(t, oldStateDB, ctx.state)
+			},
+			checkpointID: checkpointID,
+		})
+	}
+
+	for tx1Name, tx1Func := range opList {
+		for tx2Name, tx2Func := range opList {
+			for tx3Name, tx3Func := range opList {
+				t.Run(tx1Name+"-"+tx2Name+"-"+tx3Name, func(t *testing.T) {
+					*ctx = *NewStateDBOpContext(t)
+
+					runTx(tx1Func)
+					runTx(tx2Func)
+					runTx(tx3Func)
+
+					for curCheckpoint := range PopStackIterator(&revertCheckerList) {
+						require.NoError(
+							ctx.state.RevertToCheckpoint(curCheckpoint.checkpointID),
+						)
+						curCheckpoint.stateCheck()
+					}
+				})
+			}
+		}
+	}
+}
+
 // StateDBOpContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
 type StateDBOpContext struct {
 	state *stateDB
@@ -24,12 +89,14 @@ type StateDBOpContext struct {
 	value common.Value
 	nonce uint64
 	// Test stuff
-	require *require.Assertions
-	pcg     *rand.PCG
+	t   *testing.T
+	pcg *rand.PCG
 }
 
 // NewStateDBOpContext creates a new StateDBOpContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
-func NewStateDBOpContext(t *testing.T, require *require.Assertions) *StateDBOpContext {
+func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
+	t.Helper()
+
 	ctrl := gomock.NewController(t)
 	db := NewMockState(ctrl)
 	db.EXPECT().Check().Return(nil).AnyTimes()
@@ -49,20 +116,15 @@ func NewStateDBOpContext(t *testing.T, require *require.Assertions) *StateDBOpCo
 	setAddrDbExpectations(addr)
 
 	return &StateDBOpContext{
-		state:   state,
-		db:      *db,
-		addr:    addr,
-		key:     common.Key{0x1},
-		value:   common.Value{0x1},
-		nonce:   1,
-		require: require,
-		pcg:     rand.NewPCG(42, 42),
+		state: state,
+		db:    *db,
+		addr:  addr,
+		key:   common.Key{0x1},
+		value: common.Value{0x1},
+		nonce: 1,
+		t:     t,
+		pcg:   rand.NewPCG(42, 42),
 	}
-}
-
-func (ctx *StateDBOpContext) Reset(t *testing.T) {
-	_ = ctx.state.Close()
-	*ctx = *NewStateDBOpContext(t, ctx.require)
 }
 
 func makeSetStateFunc(ctx *StateDBOpContext) func() {
@@ -133,70 +195,6 @@ func makeSuicideFunc(ctx *StateDBOpContext) func() {
 	}
 }
 
-func TestStateDB_RevertToCheckpoint(t *testing.T) {
-	t.Parallel()
-
-	type checkpointWithStateCheck struct {
-		stateCheck   func()
-		checkpointID int
-	}
-
-	require := require.New(t)
-	ctx := NewStateDBOpContext(t, require)
-
-	opList := []func(){
-		makeSetStateFunc(ctx),
-		makeSetNonceFunc(ctx),
-		makeSetCodeFunc(ctx),
-		makeAddRefundFunc(ctx),
-		makeSubRefundFunc(ctx),
-		makeAddRefundFunc(ctx),
-		makeAddBalanceFunc(ctx),
-		makeSubBalanceFunc(ctx),
-		makeAddAddressToAccessListFunc(ctx),
-		makeCreateAccountFunc(ctx),
-		makeSuicideFunc(ctx),
-	}
-
-	var revertCheckerList []checkpointWithStateCheck
-	runTx := func(op_call func()) {
-		checkpointID := ctx.state.Checkpoint()
-		require.Empty(ctx.state.accountsToDelete)
-		require.Empty(ctx.state.writtenSlots)
-		oldStateDB := copyStateDB(ctx.state)
-
-		ctx.state.BeginTransaction()
-		op_call()
-		ctx.state.EndTransaction()
-
-		revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
-			stateCheck: func() {
-				checkStateDBEqual(ctx.require, oldStateDB, ctx.state)
-			},
-			checkpointID: checkpointID,
-		})
-	}
-
-	for i := range opList {
-		for j := range opList {
-			for k := range opList {
-				ctx.Reset(t)
-
-				runTx(opList[i])
-				runTx(opList[j])
-				runTx(opList[k])
-
-				for _, curCheckpoint := range PopStackIterator(&revertCheckerList) {
-					require.NoError(
-						ctx.state.RevertToCheckpoint(curCheckpoint.checkpointID),
-					)
-					curCheckpoint.stateCheck()
-				}
-			}
-		}
-	}
-}
-
 func Test_StateDB_copyStateDB(t *testing.T) {
 	// TODO: The proper implementation should make sure every field is mutated before copying
 	ctrl := gomock.NewController(t)
@@ -225,7 +223,7 @@ func Test_StateDB_copyStateDB(t *testing.T) {
 
 	copiedState := copyStateDB(state)
 
-	checkStateDBEqual(require.New(t), state, copiedState)
+	checkStateDBEqual(t, state, copiedState)
 }
 
 // copyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
@@ -254,7 +252,10 @@ func copyStateDB(s *stateDB) *stateDB {
 }
 
 // checkStateDBEqual checks if two stateDB instances are equal, excluding the `storedDataCache` field.
-func checkStateDBEqual(require *require.Assertions, expected *stateDB, actual *stateDB) {
+func checkStateDBEqual(t *testing.T, expected *stateDB, actual *stateDB) {
+	t.Helper()
+	require := require.New(t)
+
 	require.Equal(expected.accounts, actual.accounts)
 	require.Equal(expected.balances, actual.balances)
 	require.Equal(expected.nonces, actual.nonces)
@@ -300,12 +301,12 @@ func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool
 }
 
 // PopStackIterator returns an iterator that pops elements from the given slice in a stack-like manner.
-func PopStackIterator[T any](s *[]T) iter.Seq2[int, *T] {
-	return func(yield func(int, *T) bool) {
+func PopStackIterator[T any](s *[]T) iter.Seq[*T] {
+	return func(yield func(*T) bool) {
 		for i := len(*s) - 1; i >= 0; i-- {
 			v := &(*s)[i]
 			*s = (*s)[:i]
-			if !yield(i, v) {
+			if !yield(v) {
 				return
 			}
 		}
