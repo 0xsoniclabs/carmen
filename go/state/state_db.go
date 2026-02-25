@@ -1206,14 +1206,10 @@ func (s *stateDB) EndTransaction() {
 	// which is now empty SHALL instead become non-existent (i.e. deleted).
 	for _, addr := range s.emptyCandidates {
 		if s.Empty(addr) {
-			// Very hacky way, we could probably turn accountstodelete into a map
-			oldAccountsToDelete := slices.Clone(s.accountsToDelete)
-			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
 			oldState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
 			s.addUndo(func() {
-				s.accountsToDelete = oldAccountsToDelete
 				if oldExists {
 					s.clearedAccounts[addr] = oldState
 				} else {
@@ -1282,19 +1278,10 @@ func (s *stateDB) EndTransaction() {
 			})
 		}
 
-		oldAccountsToDelete := make([]common.Address, len(s.accountsToDelete))
-		copy(oldAccountsToDelete, s.accountsToDelete)
 		s.accountsToDelete = s.accountsToDelete[0:0]
-		s.addUndo(func() {
-			s.accountsToDelete = oldAccountsToDelete
-		})
 	}
 
-	oldWrittenSlots := s.writtenSlots // Pointers to data fields in written slots should still be valid at this point
 	s.writtenSlots = map[*slotValue]bool{}
-	s.addUndo(func() {
-		s.writtenSlots = oldWrittenSlots
-	})
 	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
 }
