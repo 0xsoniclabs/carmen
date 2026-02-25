@@ -170,7 +170,7 @@ func getTestCodes() [][]byte {
 func TestSetAndGetCode(t *testing.T) {
 	runForEachCppConfig(t, func(t *testing.T, state state.State) {
 		for _, code := range getTestCodes() {
-		_, err := state.Apply(1, common.Update{
+			_, err := state.Apply(1, common.Update{
 				Codes: []common.CodeUpdate{{Account: address1, Code: code}},
 			})
 			if err != nil {
@@ -197,7 +197,7 @@ func TestSetAndGetCode(t *testing.T) {
 func TestSetAndGetCodeHash(t *testing.T) {
 	runForEachCppConfig(t, func(t *testing.T, state state.State) {
 		for _, code := range getTestCodes() {
-			_, err  := state.Apply(1, common.Update{
+			_, err := state.Apply(1, common.Update{
 				Codes: []common.CodeUpdate{{Account: address1, Code: code}},
 			})
 			if err != nil {
