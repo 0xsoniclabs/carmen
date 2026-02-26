@@ -19,60 +19,53 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 	t.Parallel()
 
 	type checkpointWithStateCheck struct {
-		stateCheck   func()
 		checkpointID int
+		stateBackup  *stateDB
 	}
 
-	require := require.New(t)
-	ctx := NewStateDBOpContext(t)
-
-	opList := map[string]func(){
-		"setState":      makeSetStateFunc(ctx),
-		"setNonce":      makeSetNonceFunc(ctx),
-		"setCode":       makeSetCodeFunc(ctx),
-		"addRefund":     makeAddRefundFunc(ctx),
-		"subRefund":     makeSubRefundFunc(ctx),
-		"addBalance":    makeAddBalanceFunc(ctx),
-		"subBalance":    makeSubBalanceFunc(ctx),
-		"addAddress":    makeAddAddressToAccessListFunc(ctx),
-		"createAccount": makeCreateAccountFunc(ctx),
-		"suicide":       makeSuicideFunc(ctx),
+	opList := map[string]func(*StateDBOpContext){
+		"setState":      setStateOp,
+		"setNonce":      setNonceOp,
+		"setCode":       setCodeOp,
+		"addRefund":     addRefundOp,
+		"subRefund":     subRefundOp,
+		"addBalance":    addBalanceOp,
+		"subBalance":    subBalanceOp,
+		"addAddress":    addAddressToAccessListOp,
+		"createAccount": createAccountOp,
+		"suicide":       suicideOp,
 	}
 
-	var revertCheckerList []checkpointWithStateCheck
-	runTx := func(op_call func()) {
-		checkpointID := ctx.state.Checkpoint()
-		require.Empty(ctx.state.accountsToDelete)
-		require.Empty(ctx.state.writtenSlots)
-		oldStateDB := copyStateDB(ctx.state)
+	for n1, op1 := range opList {
+		for n2, op2 := range opList {
+			for n3, op3 := range opList {
+				t.Run(n1+"-"+n2+"-"+n3, func(t *testing.T) {
+					t.Parallel()
+					require := require.New(t)
+					ctx := NewStateDBOpContext(t)
 
-		ctx.state.BeginTransaction()
-		op_call()
-		ctx.state.EndTransaction()
+					var revertCheckerList []checkpointWithStateCheck
+					for _, op := range []func(*StateDBOpContext){op1, op2, op3} {
+						checkpointID := ctx.state.Checkpoint()
+						require.Empty(ctx.state.accountsToDelete)
+						require.Empty(ctx.state.writtenSlots)
+						oldStateDB := copyStateDB(ctx.state)
 
-		revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
-			stateCheck: func() {
-				checkStateDBEqual(t, oldStateDB, ctx.state)
-			},
-			checkpointID: checkpointID,
-		})
-	}
+						ctx.state.BeginTransaction()
+						op(ctx)
+						ctx.state.EndTransaction()
 
-	for tx1Name, tx1Func := range opList {
-		for tx2Name, tx2Func := range opList {
-			for tx3Name, tx3Func := range opList {
-				t.Run(tx1Name+"-"+tx2Name+"-"+tx3Name, func(t *testing.T) {
-					*ctx = *NewStateDBOpContext(t)
-
-					runTx(tx1Func)
-					runTx(tx2Func)
-					runTx(tx3Func)
+						revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
+							checkpointID: checkpointID,
+							stateBackup:  oldStateDB,
+						})
+					}
 
 					for curCheckpoint := range PopStackIterator(&revertCheckerList) {
 						require.NoError(
 							ctx.state.RevertToCheckpoint(curCheckpoint.checkpointID),
 						)
-						curCheckpoint.stateCheck()
+						checkStateDBEqual(t, curCheckpoint.stateBackup, ctx.state)
 					}
 				})
 			}
@@ -107,13 +100,10 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 
 	addr := common.Address{0x1}
 	// Set expectation in case values are not cached, i.e. they are untouched.
-	setAddrDbExpectations := func(addr common.Address) {
-		db.EXPECT().Exists(addr).Return(false, nil).AnyTimes()
-		db.EXPECT().GetBalance(addr).Return(amount.New(0), nil).AnyTimes()
-		db.EXPECT().GetNonce(addr).Return(common.Nonce([common.NonceSize]byte{}), nil).AnyTimes()
-		db.EXPECT().GetCodeSize(addr).Return(0, nil).AnyTimes()
-	}
-	setAddrDbExpectations(addr)
+	db.EXPECT().Exists(addr).Return(false, nil).AnyTimes()
+	db.EXPECT().GetBalance(addr).Return(amount.New(0), nil).AnyTimes()
+	db.EXPECT().GetNonce(addr).Return(common.Nonce([common.NonceSize]byte{}), nil).AnyTimes()
+	db.EXPECT().GetCodeSize(addr).Return(0, nil).AnyTimes()
 
 	return &StateDBOpContext{
 		state: state,
@@ -127,74 +117,52 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 	}
 }
 
-func makeSetStateFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.db.EXPECT().GetStorage(ctx.addr, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
-		ctx.state.SetState(ctx.addr, ctx.key, ctx.value)
-		incValue(&ctx.value, 1)
-	}
+func setStateOp(ctx *StateDBOpContext) {
+	ctx.db.EXPECT().GetStorage(ctx.addr, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
+	ctx.state.SetState(ctx.addr, ctx.key, ctx.value)
+	incValue(&ctx.value, 1)
 }
 
-func makeSetNonceFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.SetNonce(ctx.addr, ctx.nonce)
-		ctx.nonce++
-	}
+func setNonceOp(ctx *StateDBOpContext) {
+	ctx.state.SetNonce(ctx.addr, ctx.nonce)
+	ctx.nonce++
 }
 
-func makeSetCodeFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		randomCode := make([]byte, 8)
-		for i := range randomCode {
-			randomCode[i] = byte(ctx.pcg.Uint64())
-		}
-		ctx.state.SetCode(ctx.addr, randomCode)
+func setCodeOp(ctx *StateDBOpContext) {
+	randomCode := make([]byte, 8)
+	for i := range randomCode {
+		randomCode[i] = byte(ctx.pcg.Uint64())
 	}
+	ctx.state.SetCode(ctx.addr, randomCode)
 }
 
-func makeAddRefundFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.AddRefund(10)
-	}
+func addRefundOp(ctx *StateDBOpContext) {
+	ctx.state.AddRefund(10)
 }
 
-func makeSubRefundFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.SubRefund(10)
-	}
+func subRefundOp(ctx *StateDBOpContext) {
+	ctx.state.SubRefund(10)
 }
 
-func makeAddAddressToAccessListFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		addr := common.Address{byte(ctx.pcg.Uint64())}
-		ctx.state.AddAddressToAccessList(addr)
-	}
+func addAddressToAccessListOp(ctx *StateDBOpContext) {
+	addr := common.Address{byte(ctx.pcg.Uint64())}
+	ctx.state.AddAddressToAccessList(addr)
 }
 
-func makeAddBalanceFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.AddBalance(ctx.addr, amount.New(10))
-	}
+func addBalanceOp(ctx *StateDBOpContext) {
+	ctx.state.AddBalance(ctx.addr, amount.New(10))
+}
+func subBalanceOp(ctx *StateDBOpContext) {
+	ctx.state.SubBalance(ctx.addr, amount.New(10))
 }
 
-func makeSubBalanceFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.SubBalance(ctx.addr, amount.New(10))
-	}
+func createAccountOp(ctx *StateDBOpContext) {
+	ctx.state.CreateAccount(ctx.addr)
 }
 
-func makeCreateAccountFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.CreateAccount(ctx.addr)
-	}
+func suicideOp(ctx *StateDBOpContext) {
+	ctx.state.Suicide(ctx.addr)
 }
-
-func makeSuicideFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.Suicide(ctx.addr)
-	}
-}
-
 func Test_StateDB_copyStateDB(t *testing.T) {
 	// TODO: The proper implementation should make sure every field is mutated before copying
 	ctrl := gomock.NewController(t)
