@@ -2,7 +2,6 @@ package state
 
 import (
 	"encoding/binary"
-	"iter"
 	"maps"
 	"math/rand/v2"
 	reflect "reflect"
@@ -44,7 +43,7 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 					require := require.New(t)
 					ctx := NewStateDBOpContext(t)
 
-					var revertCheckerList []checkpointWithStateCheck
+					var statesToCheck []checkpointWithStateCheck
 					for _, op := range []func(*StateDBOpContext){op1, op2, op3} {
 						checkpointID := ctx.state.Checkpoint()
 						require.Empty(ctx.state.accountsToDelete)
@@ -55,17 +54,18 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 						op(ctx)
 						ctx.state.EndTransaction()
 
-						revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
+						statesToCheck = append(statesToCheck, checkpointWithStateCheck{
 							checkpointID: checkpointID,
 							stateBackup:  oldStateDB,
 						})
 					}
 
-					for curCheckpoint := range PopStackIterator(&revertCheckerList) {
+					slices.Reverse(statesToCheck)
+					for _, cur := range statesToCheck {
 						require.NoError(
-							ctx.state.RevertToCheckpoint(curCheckpoint.checkpointID),
+							ctx.state.RevertToCheckpoint(cur.checkpointID),
 						)
-						checkStateDBEqual(t, curCheckpoint.stateBackup, ctx.state)
+						checkStateDBEqual(t, cur.stateBackup, ctx.state)
 					}
 				})
 			}
@@ -76,13 +76,12 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 // StateDBOpContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
 type StateDBOpContext struct {
 	state *stateDB
-	db    MockState
+	db    *MockState
 	addr  common.Address
 	key   common.Key
 	value common.Value
 	nonce uint64
 	// Test stuff
-	t   *testing.T
 	pcg *rand.PCG
 }
 
@@ -107,12 +106,11 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 
 	return &StateDBOpContext{
 		state: state,
-		db:    *db,
+		db:    db,
 		addr:  addr,
 		key:   common.Key{0x1},
 		value: common.Value{0x1},
 		nonce: 1,
-		t:     t,
 		pcg:   rand.NewPCG(42, 42),
 	}
 }
@@ -266,17 +264,4 @@ func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool
 		}
 	})
 	return equal
-}
-
-// PopStackIterator returns an iterator that pops elements from the given slice in a stack-like manner.
-func PopStackIterator[T any](s *[]T) iter.Seq[*T] {
-	return func(yield func(*T) bool) {
-		for i := len(*s) - 1; i >= 0; i-- {
-			v := &(*s)[i]
-			*s = (*s)[:i]
-			if !yield(v) {
-				return
-			}
-		}
-	}
 }
