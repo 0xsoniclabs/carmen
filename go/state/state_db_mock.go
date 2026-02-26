@@ -32,6 +32,7 @@ import (
 type MockVmStateDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockVmStateDBMockRecorder
+	isgomock struct{}
 }
 
 // MockVmStateDBMockRecorder is the mock recorder for MockVmStateDB.
@@ -580,6 +581,7 @@ func (mr *MockVmStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
 type MockStateDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockStateDBMockRecorder
+	isgomock struct{}
 }
 
 // MockStateDBMockRecorder is the mock recorder for MockStateDB.
@@ -786,9 +788,11 @@ func (mr *MockStateDBMockRecorder) Empty(arg0 any) *gomock.Call {
 }
 
 // EndBlock mocks base method.
-func (m *MockStateDB) EndBlock(number uint64) {
+func (m *MockStateDB) EndBlock(number uint64) <-chan error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "EndBlock", number)
+	ret := m.ctrl.Call(m, "EndBlock", number)
+	ret0, _ := ret[0].(<-chan error)
+	return ret0
 }
 
 // EndBlock indicates an expected call of EndBlock.
@@ -1275,6 +1279,7 @@ func (mr *MockStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
 type MockNonCommittableStateDB struct {
 	ctrl     *gomock.Controller
 	recorder *MockNonCommittableStateDBMockRecorder
+	isgomock struct{}
 }
 
 // MockNonCommittableStateDBMockRecorder is the mock recorder for MockNonCommittableStateDB.
@@ -1869,6 +1874,7 @@ func (mr *MockNonCommittableStateDBMockRecorder) SuicideNewContract(arg0 any) *g
 type MockBulkLoad struct {
 	ctrl     *gomock.Controller
 	recorder *MockBulkLoadMockRecorder
+	isgomock struct{}
 }
 
 // MockBulkLoadMockRecorder is the mock recorder for MockBulkLoad.

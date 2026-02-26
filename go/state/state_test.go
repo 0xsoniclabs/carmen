@@ -325,7 +325,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 
 		// Set the code to a new value.
 		code1 := []byte{0, 1, 2, 3, 4}
-		if err := s.Apply(1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code1}}}); err != nil {
+		if _, err := s.Apply(1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code1}}}); err != nil {
 			t.Fatalf("failed to update code: %v", err)
 		}
 		code, err = s.GetCode(address1)
@@ -342,7 +342,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 
 		// Update code again should be fine.
 		code2 := []byte{5, 4, 3, 2, 1}
-		if err := s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code2}}}); err != nil {
+		if _, err := s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code2}}}); err != nil {
 			t.Fatalf("failed to update code: %v", err)
 		}
 		code, err = s.GetCode(address1)
@@ -408,10 +408,10 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 
 func TestDeleteNotExistingAccount(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
-		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Fatalf("Error: %s", err)
 		}
-		if err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
+		if _, err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
 			t.Fatalf("Error: %s", err)
 		}
 
@@ -427,7 +427,7 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 func TestCreatingAccountClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		zero := common.Value{}
-		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Errorf("failed to create account: %v", err)
 		}
 
@@ -439,7 +439,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
 			t.Errorf("storage slot are initially not zero")
 		}
 
-		if err = s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+		if _, err = s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
 			t.Errorf("failed to update storage slot: %v", err)
 		}
 
@@ -451,7 +451,7 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
 			t.Errorf("storage slot update did not take effect")
 		}
 
-		if err := s.Apply(3, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(3, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Fatalf("Error: %s", err)
 		}
 
@@ -468,11 +468,11 @@ func TestCreatingAccountClearsStorage(t *testing.T) {
 func TestDeletingAccountsClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		zero := common.Value{}
-		if err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 			t.Errorf("failed to create account: %v", err)
 		}
 
-		if err := s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
+		if _, err := s.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
 			t.Errorf("failed to update storage slot: %v", err)
 		}
 
@@ -484,7 +484,7 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
 			t.Errorf("storage slot update did not take effect")
 		}
 
-		if err := s.Apply(3, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(3, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
 			t.Fatalf("Error: %s", err)
 		}
 
@@ -521,7 +521,7 @@ func TestArchive(t *testing.T) {
 			balance12 := amount.New(0x12)
 			balance34 := amount.New(0x34)
 
-			if err := s.Apply(1, common.Update{
+			if _, err := s.Apply(1, common.Update{
 				CreatedAccounts: []common.Address{address1},
 				Balances: []common.BalanceUpdate{
 					{Account: address1, Balance: balance12},
@@ -535,7 +535,7 @@ func TestArchive(t *testing.T) {
 				t.Fatalf("failed to add block 1; %s", err)
 			}
 
-			if err := s.Apply(2, common.Update{
+			if _, err := s.Apply(2, common.Update{
 				Balances: []common.BalanceUpdate{
 					{Account: address1, Balance: balance34},
 					{Account: address2, Balance: balance12},
@@ -645,13 +645,13 @@ func TestLastArchiveBlock(t *testing.T) {
 				t.Fatalf("empty archive is not reporting lack of blocks")
 			}
 
-			if err := s.Apply(1, common.Update{
+			if _, err := s.Apply(1, common.Update{
 				CreatedAccounts: []common.Address{address1},
 			}); err != nil {
 				t.Fatalf("failed to add block 1; %s", err)
 			}
 
-			if err := s.Apply(2, common.Update{
+			if _, err := s.Apply(2, common.Update{
 				CreatedAccounts: []common.Address{address2},
 			}); err != nil {
 				t.Fatalf("failed to add block 2; %s", err)
@@ -723,7 +723,7 @@ func TestPersistentState(t *testing.T) {
 			update.AppendNonceUpdate(address1, nonce1)
 			update.AppendSlotUpdate(address1, key1, val1)
 			update.AppendCodeUpdate(address1, []byte{1, 2, 3})
-			if err := s.Apply(1, update); err != nil {
+			if _, err := s.Apply(1, update); err != nil {
 				t.Errorf("Error to init state: %v", err)
 			}
 
@@ -995,7 +995,7 @@ func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
 			t.Fatalf("unable to create state: %v", err)
 		}
 		for i, update := range updates {
-			if err = st.Apply(uint64(i), update); err != nil {
+			if _, err = st.Apply(uint64(i), update); err != nil {
 				t.Fatalf("failed to apply state: %v", err)
 			}
 			isEmpty, err := st.HasEmptyStorage(address1)

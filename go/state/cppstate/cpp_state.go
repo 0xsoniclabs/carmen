@@ -94,7 +94,8 @@ func newLevelDbBasedState(params state.Parameters) (state.State, error) {
 func (cs *CppState) CreateAccount(address common.Address) error {
 	update := common.Update{}
 	update.AppendCreateAccount(address)
-	return cs.Apply(0, update)
+	_, err := cs.Apply(0, update)
+	return err
 }
 
 func (cs *CppState) Exists(address common.Address) (bool, error) {
@@ -106,7 +107,8 @@ func (cs *CppState) Exists(address common.Address) (bool, error) {
 func (cs *CppState) DeleteAccount(address common.Address) error {
 	update := common.Update{}
 	update.AppendDeleteAccount(address)
-	return cs.Apply(0, update)
+	_, err := cs.Apply(0, update)
+	return err
 }
 
 func (cs *CppState) GetBalance(address common.Address) (amount.Amount, error) {
@@ -118,7 +120,8 @@ func (cs *CppState) GetBalance(address common.Address) (amount.Amount, error) {
 func (cs *CppState) SetBalance(address common.Address, balance amount.Amount) error {
 	update := common.Update{}
 	update.AppendBalanceUpdate(address, balance)
-	return cs.Apply(0, update)
+	_, err := cs.Apply(0, update)
+	return err
 }
 
 func (cs *CppState) GetNonce(address common.Address) (common.Nonce, error) {
@@ -130,7 +133,8 @@ func (cs *CppState) GetNonce(address common.Address) (common.Nonce, error) {
 func (cs *CppState) SetNonce(address common.Address, nonce common.Nonce) error {
 	update := common.Update{}
 	update.AppendNonceUpdate(address, nonce)
-	return cs.Apply(0, update)
+	_, err := cs.Apply(0, update)
+	return err
 }
 
 func (cs *CppState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
@@ -142,7 +146,8 @@ func (cs *CppState) GetStorage(address common.Address, key common.Key) (common.V
 func (cs *CppState) SetStorage(address common.Address, key common.Key, value common.Value) error {
 	update := common.Update{}
 	update.AppendSlotUpdate(address, key, value)
-	return cs.Apply(0, update)
+	_, err := cs.Apply(0, update)
+	return err
 }
 
 func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
@@ -171,7 +176,8 @@ func (cs *CppState) GetCode(address common.Address) ([]byte, error) {
 func (cs *CppState) SetCode(address common.Address, code []byte) error {
 	update := common.Update{}
 	update.AppendCodeUpdate(address, code)
-	return cs.Apply(0, update)
+	_, err := cs.Apply(0, update)
+	return err
 }
 
 func (cs *CppState) GetCodeHash(address common.Address) (common.Hash, error) {
@@ -192,12 +198,12 @@ func (cs *CppState) GetHash() (common.Hash, error) {
 	return hash, nil
 }
 
-func (cs *CppState) Apply(block uint64, update common.Update) error {
+func (cs *CppState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	if update.IsEmpty() {
-		return nil
+		return nil, nil
 	}
 	if err := update.Normalize(); err != nil {
-		return err
+		return nil, err
 	}
 	data := update.ToBytes()
 	dataPtr := unsafe.Pointer(&data[0])
@@ -206,7 +212,7 @@ func (cs *CppState) Apply(block uint64, update common.Update) error {
 	for _, change := range update.Codes {
 		cs.codeCache.Set(change.Account, change.Code)
 	}
-	return nil
+	return nil, nil
 }
 
 func (cs *CppState) Flush() error {
