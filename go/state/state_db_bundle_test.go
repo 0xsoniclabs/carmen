@@ -3,7 +3,6 @@ package state
 import (
 	"encoding/binary"
 	"fmt"
-	"iter"
 	"maps"
 	"math/rand/v2"
 	reflect "reflect"
@@ -17,64 +16,60 @@ import (
 )
 
 func TestStateDB_RevertToCheckpoint_RevertsStateCorrectly(t *testing.T) {
-	t.Parallel()
-
 	type checkpointWithStateCheck struct {
-		stateCheck   func()
+		stateBackup  *stateDB
 		checkpointID int
 	}
 
-	require := require.New(t)
-	ctx := NewStateDBOpContext(t)
-
-	opList := map[string]func(ctx *StateDBOpContext){
-		"setState":      setStateFunc,
-		"setNonce":      setNonceFunc,
-		"setCode":       setCodeFunc,
-		"addRefund":     addRefundFunc,
-		"subRefund":     subRefundFunc,
-		"addBalance":    addBalanceFunc,
-		"subBalance":    subBalanceFunc,
-		"addAddress":    addAddressToAccessListFunc,
-		"createAccount": createAccountFunc,
-		"suicide":       suicideFunc,
+	operationList := map[string]func(ctx *StateDBOpContext){
+		"setState":      setStateOp,
+		"setNonce":      setNonceOp,
+		"setCode":       setCodeOp,
+		"addRefund":     addRefundOp,
+		"subRefund":     subRefundOp,
+		"addBalance":    addBalanceOp,
+		"subBalance":    subBalanceOp,
+		"addAddress":    addAddressToAccessListOp,
+		"createAccount": createAccountOp,
+		"suicide":       suicideOp,
 	}
 
-	var revertCheckerList []checkpointWithStateCheck
-	runTx := func(ctx *StateDBOpContext, op_call func(ctx *StateDBOpContext)) {
-		checkpointID := ctx.state.Checkpoint()
-		require.Empty(ctx.state.accountsToDelete)
-		require.Empty(ctx.state.writtenSlots)
-		oldStateDB := partialCopyStateDB(ctx.state)
+	for n1, op1 := range operationList {
+		for n2, op2 := range operationList {
+			for n3, op3 := range operationList {
+				t.Run(fmt.Sprintf("%s %s %s", n1, n2, n3), func(t *testing.T) {
+					t.Parallel()
+					require := require.New(t)
 
-		ctx.state.BeginTransaction()
-		op_call(ctx)
-		ctx.state.EndTransaction()
+					ctx := NewStateDBOpContext(t)
 
-		revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
-			stateCheck: func() {
-				checkStateDBEqual(t, oldStateDB, ctx.state)
-			},
-			checkpointID: checkpointID,
-		})
-	}
+					var statesToCheck []checkpointWithStateCheck
+					for _, op := range []func(ctx *StateDBOpContext){
+						op1,
+						op2,
+						op3,
+					} {
+						checkpointID := ctx.state.Checkpoint()
+						require.Empty(ctx.state.accountsToDelete)
+						require.Empty(ctx.state.writtenSlots)
+						oldStateDB := partialCopyStateDB(ctx.state)
 
-	for tx1Name, tx1Func := range opList {
-		for tx2Name, tx2Func := range opList {
-			for tx3Name, tx3Func := range opList {
-				testName := fmt.Sprintf("%s %s %s", tx1Name, tx2Name, tx3Name)
-				t.Run(testName, func(t *testing.T) {
-					ctx = NewStateDBOpContext(t)
+						ctx.state.BeginTransaction()
+						op(ctx)
+						ctx.state.EndTransaction()
 
-					runTx(ctx, tx1Func)
-					runTx(ctx, tx2Func)
-					runTx(ctx, tx3Func)
+						statesToCheck = append(statesToCheck, checkpointWithStateCheck{
+							stateBackup:  oldStateDB,
+							checkpointID: checkpointID,
+						})
+					}
 
-					for curCheckpoint := range PopStackIterator(&revertCheckerList) {
+					slices.Reverse(statesToCheck)
+					for _, cur := range statesToCheck {
 						require.NoError(
-							ctx.state.RevertToCheckpoint(curCheckpoint.checkpointID),
+							ctx.state.RevertToCheckpoint(cur.checkpointID),
 						)
-						curCheckpoint.stateCheck()
+						checkStateDBEqual(t, cur.stateBackup, ctx.state)
 					}
 				})
 			}
@@ -84,15 +79,13 @@ func TestStateDB_RevertToCheckpoint_RevertsStateCorrectly(t *testing.T) {
 
 // StateDBOpContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
 type StateDBOpContext struct {
-	state *stateDB
-	db    MockState
-	addr  common.Address
-	key   common.Key
-	value common.Value
-	nonce uint64
-	// Test stuff
-	t   *testing.T
-	pcg *rand.PCG
+	state   *stateDB
+	db      *MockState
+	address common.Address
+	key     common.Key
+	value   common.Value
+	nonce   uint64
+	pcg     *rand.PCG
 }
 
 // NewStateDBOpContext creates a new StateDBOpContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
@@ -107,7 +100,7 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 
 	state := createStateDBWith(db, 1, true)
 
-	addr := common.Address{0x1}
+	address := common.Address{0x1}
 	// Set expectation in case values are not cached, i.e. they are untouched.
 	setAddrDbExpectations := func(addr common.Address) {
 		db.EXPECT().Exists(addr).Return(false, nil).AnyTimes()
@@ -115,66 +108,65 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 		db.EXPECT().GetNonce(addr).Return(common.Nonce([common.NonceSize]byte{}), nil).AnyTimes()
 		db.EXPECT().GetCodeSize(addr).Return(0, nil).AnyTimes()
 	}
-	setAddrDbExpectations(addr)
+	setAddrDbExpectations(address)
 
 	return &StateDBOpContext{
-		state: state,
-		db:    *db,
-		addr:  addr,
-		key:   common.Key{0x1},
-		value: common.Value{0x1},
-		nonce: 1,
-		t:     t,
-		pcg:   rand.NewPCG(42, 42),
+		state:   state,
+		db:      db,
+		address: address,
+		key:     common.Key{0x1},
+		value:   common.Value{0x1},
+		nonce:   1,
+		pcg:     rand.NewPCG(42, 42),
 	}
 }
 
-func setStateFunc(ctx *StateDBOpContext) {
-	ctx.db.EXPECT().GetStorage(ctx.addr, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
-	ctx.state.SetState(ctx.addr, ctx.key, ctx.value)
+func setStateOp(ctx *StateDBOpContext) {
+	ctx.db.EXPECT().GetStorage(ctx.address, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
+	ctx.state.SetState(ctx.address, ctx.key, ctx.value)
 	incValue(&ctx.value, 1)
 }
 
-func setNonceFunc(ctx *StateDBOpContext) {
-	ctx.state.SetNonce(ctx.addr, ctx.nonce)
+func setNonceOp(ctx *StateDBOpContext) {
+	ctx.state.SetNonce(ctx.address, ctx.nonce)
 	ctx.nonce++
 }
 
-func setCodeFunc(ctx *StateDBOpContext) {
+func setCodeOp(ctx *StateDBOpContext) {
 	randomCode := make([]byte, 8)
 	for i := range randomCode {
 		randomCode[i] = byte(ctx.pcg.Uint64())
 	}
-	ctx.state.SetCode(ctx.addr, randomCode)
+	ctx.state.SetCode(ctx.address, randomCode)
 }
 
-func addRefundFunc(ctx *StateDBOpContext) {
+func addRefundOp(ctx *StateDBOpContext) {
 	ctx.state.AddRefund(10)
 }
 
-func subRefundFunc(ctx *StateDBOpContext) {
+func subRefundOp(ctx *StateDBOpContext) {
 	ctx.state.SubRefund(10)
 }
 
-func addAddressToAccessListFunc(ctx *StateDBOpContext) {
+func addAddressToAccessListOp(ctx *StateDBOpContext) {
 	addr := common.Address{byte(ctx.pcg.Uint64())}
 	ctx.state.AddAddressToAccessList(addr)
 }
 
-func addBalanceFunc(ctx *StateDBOpContext) {
-	ctx.state.AddBalance(ctx.addr, amount.New(10))
+func addBalanceOp(ctx *StateDBOpContext) {
+	ctx.state.AddBalance(ctx.address, amount.New(10))
 }
 
-func subBalanceFunc(ctx *StateDBOpContext) {
-	ctx.state.SubBalance(ctx.addr, amount.New(10))
+func subBalanceOp(ctx *StateDBOpContext) {
+	ctx.state.SubBalance(ctx.address, amount.New(10))
 }
 
-func createAccountFunc(ctx *StateDBOpContext) {
-	ctx.state.CreateAccount(ctx.addr)
+func createAccountOp(ctx *StateDBOpContext) {
+	ctx.state.CreateAccount(ctx.address)
 }
 
-func suicideFunc(ctx *StateDBOpContext) {
-	ctx.state.Suicide(ctx.addr)
+func suicideOp(ctx *StateDBOpContext) {
+	ctx.state.Suicide(ctx.address)
 }
 
 func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T) {
@@ -274,25 +266,14 @@ func incValue(value *common.Value, amount uint64) {
 }
 
 func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {
-	equal := true
-	m1.ForEach(func(key K, value V) {
-		v2, ok := m2.Get(key)
-		if !ok || v2 != value {
-			equal = false
-		}
-	})
-	return equal
-}
-
-// PopStackIterator returns an iterator that pops elements from the given slice in a stack-like manner.
-func PopStackIterator[T any](s *[]T) iter.Seq[*T] {
-	return func(yield func(*T) bool) {
-		for i := len(*s) - 1; i >= 0; i-- {
-			v := &(*s)[i]
-			*s = (*s)[:i]
-			if !yield(v) {
-				return
+	equal := m1.Size() == m2.Size()
+	if equal {
+		m1.ForEach(func(key K, value V) {
+			v2, ok := m2.Get(key)
+			if !ok || v2 != value {
+				equal = false
 			}
-		}
+		})
 	}
+	return equal
 }
