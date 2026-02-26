@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/binary"
+	"fmt"
 	"iter"
 	"maps"
 	"math/rand/v2"
@@ -15,7 +16,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestStateDB_RevertToCheckpoint(t *testing.T) {
+func TestStateDB_RevertToCheckpoint_RevertsStateCorrectly(t *testing.T) {
 	t.Parallel()
 
 	type checkpointWithStateCheck struct {
@@ -26,28 +27,28 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 	require := require.New(t)
 	ctx := NewStateDBOpContext(t)
 
-	opList := map[string]func(){
-		"setState":      makeSetStateFunc(ctx),
-		"setNonce":      makeSetNonceFunc(ctx),
-		"setCode":       makeSetCodeFunc(ctx),
-		"addRefund":     makeAddRefundFunc(ctx),
-		"subRefund":     makeSubRefundFunc(ctx),
-		"addBalance":    makeAddBalanceFunc(ctx),
-		"subBalance":    makeSubBalanceFunc(ctx),
-		"addAddress":    makeAddAddressToAccessListFunc(ctx),
-		"createAccount": makeCreateAccountFunc(ctx),
-		"suicide":       makeSuicideFunc(ctx),
+	opList := map[string]func(ctx *StateDBOpContext){
+		"setState":      setStateFunc,
+		"setNonce":      setNonceFunc,
+		"setCode":       setCodeFunc,
+		"addRefund":     addRefundFunc,
+		"subRefund":     subRefundFunc,
+		"addBalance":    addBalanceFunc,
+		"subBalance":    subBalanceFunc,
+		"addAddress":    addAddressToAccessListFunc,
+		"createAccount": createAccountFunc,
+		"suicide":       suicideFunc,
 	}
 
 	var revertCheckerList []checkpointWithStateCheck
-	runTx := func(op_call func()) {
+	runTx := func(ctx *StateDBOpContext, op_call func(ctx *StateDBOpContext)) {
 		checkpointID := ctx.state.Checkpoint()
 		require.Empty(ctx.state.accountsToDelete)
 		require.Empty(ctx.state.writtenSlots)
-		oldStateDB := copyStateDB(ctx.state)
+		oldStateDB := partialCopyStateDB(ctx.state)
 
 		ctx.state.BeginTransaction()
-		op_call()
+		op_call(ctx)
 		ctx.state.EndTransaction()
 
 		revertCheckerList = append(revertCheckerList, checkpointWithStateCheck{
@@ -61,12 +62,13 @@ func TestStateDB_RevertToCheckpoint(t *testing.T) {
 	for tx1Name, tx1Func := range opList {
 		for tx2Name, tx2Func := range opList {
 			for tx3Name, tx3Func := range opList {
-				t.Run(tx1Name+"-"+tx2Name+"-"+tx3Name, func(t *testing.T) {
-					*ctx = *NewStateDBOpContext(t)
+				testName := fmt.Sprintf("%s %s %s", tx1Name, tx2Name, tx3Name)
+				t.Run(testName, func(t *testing.T) {
+					ctx = NewStateDBOpContext(t)
 
-					runTx(tx1Func)
-					runTx(tx2Func)
-					runTx(tx3Func)
+					runTx(ctx, tx1Func)
+					runTx(ctx, tx2Func)
+					runTx(ctx, tx3Func)
 
 					for curCheckpoint := range PopStackIterator(&revertCheckerList) {
 						require.NoError(
@@ -127,75 +129,57 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 	}
 }
 
-func makeSetStateFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.db.EXPECT().GetStorage(ctx.addr, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
-		ctx.state.SetState(ctx.addr, ctx.key, ctx.value)
-		incValue(&ctx.value, 1)
-	}
+func setStateFunc(ctx *StateDBOpContext) {
+	ctx.db.EXPECT().GetStorage(ctx.addr, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
+	ctx.state.SetState(ctx.addr, ctx.key, ctx.value)
+	incValue(&ctx.value, 1)
 }
 
-func makeSetNonceFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.SetNonce(ctx.addr, ctx.nonce)
-		ctx.nonce++
-	}
+func setNonceFunc(ctx *StateDBOpContext) {
+	ctx.state.SetNonce(ctx.addr, ctx.nonce)
+	ctx.nonce++
 }
 
-func makeSetCodeFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		randomCode := make([]byte, 8)
-		for i := range randomCode {
-			randomCode[i] = byte(ctx.pcg.Uint64())
-		}
-		ctx.state.SetCode(ctx.addr, randomCode)
+func setCodeFunc(ctx *StateDBOpContext) {
+	randomCode := make([]byte, 8)
+	for i := range randomCode {
+		randomCode[i] = byte(ctx.pcg.Uint64())
 	}
+	ctx.state.SetCode(ctx.addr, randomCode)
 }
 
-func makeAddRefundFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.AddRefund(10)
-	}
+func addRefundFunc(ctx *StateDBOpContext) {
+	ctx.state.AddRefund(10)
 }
 
-func makeSubRefundFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.SubRefund(10)
-	}
+func subRefundFunc(ctx *StateDBOpContext) {
+	ctx.state.SubRefund(10)
 }
 
-func makeAddAddressToAccessListFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		addr := common.Address{byte(ctx.pcg.Uint64())}
-		ctx.state.AddAddressToAccessList(addr)
-	}
+func addAddressToAccessListFunc(ctx *StateDBOpContext) {
+	addr := common.Address{byte(ctx.pcg.Uint64())}
+	ctx.state.AddAddressToAccessList(addr)
 }
 
-func makeAddBalanceFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.AddBalance(ctx.addr, amount.New(10))
-	}
+func addBalanceFunc(ctx *StateDBOpContext) {
+	ctx.state.AddBalance(ctx.addr, amount.New(10))
 }
 
-func makeSubBalanceFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.SubBalance(ctx.addr, amount.New(10))
-	}
+func subBalanceFunc(ctx *StateDBOpContext) {
+	ctx.state.SubBalance(ctx.addr, amount.New(10))
 }
 
-func makeCreateAccountFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.CreateAccount(ctx.addr)
-	}
+func createAccountFunc(ctx *StateDBOpContext) {
+	ctx.state.CreateAccount(ctx.addr)
 }
 
-func makeSuicideFunc(ctx *StateDBOpContext) func() {
-	return func() {
-		ctx.state.Suicide(ctx.addr)
-	}
+func suicideFunc(ctx *StateDBOpContext) {
+	ctx.state.Suicide(ctx.addr)
 }
 
-func Test_StateDB_copyStateDB(t *testing.T) {
+func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T) {
+	t.Parallel()
+
 	// TODO: The proper implementation should make sure every field is mutated before copying
 	ctrl := gomock.NewController(t)
 	st := NewMockState(ctrl)
@@ -221,13 +205,13 @@ func Test_StateDB_copyStateDB(t *testing.T) {
 	state.SetState(addr, key, value)
 	state.EndTransaction()
 
-	copiedState := copyStateDB(state)
+	copiedState := partialCopyStateDB(state)
 
 	checkStateDBEqual(t, state, copiedState)
 }
 
-// copyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
-func copyStateDB(s *stateDB) *stateDB {
+// partialCopyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
+func partialCopyStateDB(s *stateDB) *stateDB {
 	ns := createStateDBWith(s.state, 1, true)
 	ns.accounts = maps.Clone(s.accounts)
 	ns.balances = maps.Clone(s.balances)
