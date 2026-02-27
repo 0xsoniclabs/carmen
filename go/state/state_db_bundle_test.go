@@ -1,7 +1,6 @@
 package state
 
 import (
-	"encoding/binary"
 	"fmt"
 	"maps"
 	"math/rand/v2"
@@ -102,13 +101,10 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 
 	address := common.Address{0x1}
 	// Set expectation in case values are not cached, i.e. they are untouched.
-	setAddrDbExpectations := func(addr common.Address) {
-		db.EXPECT().Exists(addr).Return(false, nil).AnyTimes()
-		db.EXPECT().GetBalance(addr).Return(amount.New(0), nil).AnyTimes()
-		db.EXPECT().GetNonce(addr).Return(common.Nonce([common.NonceSize]byte{}), nil).AnyTimes()
-		db.EXPECT().GetCodeSize(addr).Return(0, nil).AnyTimes()
-	}
-	setAddrDbExpectations(address)
+	db.EXPECT().Exists(address).Return(false, nil).AnyTimes()
+	db.EXPECT().GetBalance(address).Return(amount.New(0), nil).AnyTimes()
+	db.EXPECT().GetNonce(address).Return(common.Nonce([common.NonceSize]byte{}), nil).AnyTimes()
+	db.EXPECT().GetCodeSize(address).Return(0, nil).AnyTimes()
 
 	return &StateDBOpContext{
 		state:   state,
@@ -124,7 +120,7 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 func setStateOp(ctx *StateDBOpContext) {
 	ctx.db.EXPECT().GetStorage(ctx.address, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
 	ctx.state.SetState(ctx.address, ctx.key, ctx.value)
-	incValue(&ctx.value, 1)
+	ctx.value[0] += byte(1)
 }
 
 func setNonceOp(ctx *StateDBOpContext) {
@@ -205,13 +201,13 @@ func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T)
 // partialCopyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
 func partialCopyStateDB(s *stateDB) *stateDB {
 	ns := createStateDBWith(s.state, 1, true)
-	ns.accounts = maps.Clone(s.accounts)
-	ns.balances = maps.Clone(s.balances)
-	ns.nonces = maps.Clone(s.nonces)
-	s.data.CopyTo(ns.data)
+	ns.accounts = cloneMapWith(s.accounts, cloneValue)
+	ns.balances = cloneMapWith(s.balances, cloneBalanceValue)
+	ns.nonces = cloneMapWith(s.nonces, cloneNonceValue)
+	copyFastMapWith(s.data, ns.data, cloneValue)
 	s.transientStorage.CopyTo(ns.transientStorage)
 	ns.reincarnation = maps.Clone(s.reincarnation)
-	ns.codes = maps.Clone(s.codes)
+	ns.codes = cloneMapWith(s.codes, cloneCodeValue)
 	ns.refund = s.refund
 	ns.accessedAddresses = maps.Clone(s.accessedAddresses)
 	s.accessedSlots.CopyTo(ns.accessedSlots)
@@ -260,20 +256,87 @@ func checkStateDBEqual(t *testing.T, expected *stateDB, actual *stateDB) {
 	}
 }
 
-func incValue(value *common.Value, amount uint64) {
-	newValue := binary.LittleEndian.Uint64(value[:8]) + amount
-	binary.LittleEndian.PutUint64(value[:8], newValue)
-}
-
 func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {
 	equal := m1.Size() == m2.Size()
 	if equal {
 		m1.ForEach(func(key K, value V) {
 			v2, ok := m2.Get(key)
-			if !ok || v2 != value {
+			if !ok {
 				equal = false
+				return
+			}
+			if reflect.ValueOf(value).Kind() == reflect.Pointer {
+				equal = (reflect.ValueOf(value).IsNil() && reflect.ValueOf(v2).IsNil()) || (reflect.ValueOf(value).Elem().Interface() == reflect.ValueOf(v2).Elem().Interface())
+			} else {
+				equal = reflect.DeepEqual(value, v2)
 			}
 		})
 	}
 	return equal
+}
+
+func copyFastMapWith[K comparable, V any](src *common.FastMap[K, V], dst *common.FastMap[K, V], cloneFunc func(V) V) {
+	// TODO: This panics if one of the two maps is nil
+	if src == nil || dst == nil {
+		return
+	}
+	src.ForEach(func(key K, value V) {
+		dst.Put(key, cloneFunc(value))
+	})
+}
+
+func cloneMapWith[K comparable, V any](m map[K]V, cloneFunc func(V) V) map[K]V {
+	if m == nil {
+		return nil
+	}
+	cloned := make(map[K]V, len(m))
+	for k, v := range m {
+		cloned[k] = cloneFunc(v)
+	}
+	return cloned
+}
+
+func cloneValue[V any](v *V) *V {
+	if v == nil {
+		return nil
+	}
+	cloned := *v
+	return &cloned
+}
+
+func cloneBalanceValue(bv *balanceValue) *balanceValue {
+	if bv == nil {
+		return nil
+	}
+	cloned := *bv
+	if bv.original != nil {
+		originalCopy := *bv.original
+		cloned.original = &originalCopy
+	}
+	return &cloned
+}
+
+func cloneNonceValue(nv *nonceValue) *nonceValue {
+	if nv == nil {
+		return nil
+	}
+	cloned := *nv
+	if nv.original != nil {
+		originalCopy := *nv.original
+		cloned.original = &originalCopy
+	}
+	return &cloned
+}
+
+func cloneCodeValue(cv *codeValue) *codeValue {
+	if cv == nil {
+		return nil
+	}
+	cloned := *cv
+	if cv.hash != nil {
+		hashCopy := *cv.hash
+		cloned.hash = &hashCopy
+	}
+	cloned.code = slices.Clone(cv.code)
+	return &cloned
 }
