@@ -911,11 +911,6 @@ func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value c
 	}
 
 	// Save previous value for rollbacks
-	oldValue := currentValue
-	s.addUndo(func() {
-		s.transientStorage.Put(sid, oldValue)
-	})
-
 	s.transientStorage.Put(sid, value)
 }
 

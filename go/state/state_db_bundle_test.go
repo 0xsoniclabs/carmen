@@ -2,7 +2,9 @@ package state
 
 import (
 	"fmt"
+	"iter"
 	"maps"
+	"math"
 	"math/rand/v2"
 	reflect "reflect"
 	"slices"
@@ -20,70 +22,107 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		snapshotID  interTxSnapshotID
 	}
 
-	operationList := map[string]func(ctx *StateDBOpContext){
-		"setState":      setStateOp,
-		"setNonce":      setNonceOp,
-		"setCode":       setCodeOp,
-		"addRefund":     addRefundOp,
-		"subRefund":     subRefundOp,
-		"addBalance":    addBalanceOp,
-		"subBalance":    subBalanceOp,
-		"addAddress":    addAddressToAccessListOp,
-		"createAccount": createAccountOp,
-		"suicide":       suicideOp,
+	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpAddressAndKey){
+		"setNonce":       setNonceOp,
+		"setCode":        setCodeOp,
+		"addRefund":      addRefundOp,
+		"subRefund":      subRefundOp,
+		"addBalance":     addBalanceOp,
+		"subBalance":     subBalanceOp,
+		"addAddress":     addAddressToAccessListOp,
+		"createAccount":  createAccountOp,
+		"suicide":        suicideOp,
+		"createContract": createContractOp,
 	}
 
-	for n1, op1 := range operationList {
-		for n2, op2 := range operationList {
-			for n3, op3 := range operationList {
-				t.Run(fmt.Sprintf("%s %s %s", n1, n2, n3), func(t *testing.T) {
-					t.Parallel()
-					require := require.New(t)
+	operationListWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpAddressAndKey){
+		"setState": setStateOp,
+	}
 
-					ctx := NewStateDBOpContext(t)
-
-					var statesToCheck []InterTxSnapshotWithStateCheck
-					for _, op := range []func(ctx *StateDBOpContext){
-						op1,
-						op2,
-						op3,
-					} {
-						snapshotID := ctx.state.InterTxSnapshot()
-						require.Empty(ctx.state.accountsToDelete)
-						require.Empty(ctx.state.writtenSlots)
-						oldStateDB := partialCopyStateDB(ctx.state)
-
-						ctx.state.BeginTransaction()
-						op(ctx)
-						ctx.state.EndTransaction()
-
-						statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
-							stateBackup: oldStateDB,
-							snapshotID:  snapshotID,
-						})
-					}
-
-					slices.Reverse(statesToCheck)
-					for _, cur := range statesToCheck {
-						require.NoError(
-							ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
-						)
-						checkStateDBEqual(t, cur.stateBackup, ctx.state)
-					}
+	var opWithNameList []Op
+	for opName, op := range operationListWithAddress {
+		for i, address := range addresses {
+			opWithNameList = append(opWithNameList, Op{
+				name: fmt.Sprintf("%s(addr:%d)", opName, i),
+				op:   op,
+				args: OpAddressAndKey{address: address},
+			})
+		}
+	}
+	for opName, op := range operationListWithAddressAndKey {
+		for i, address := range addresses {
+			for j, key := range keys {
+				opWithNameList = append(opWithNameList, Op{
+					name: fmt.Sprintf("%s(addr:%d,key:%d)", opName, i, j),
+					op:   op,
+					args: OpAddressAndKey{address: address, key: key},
 				})
 			}
 		}
 	}
+
+	testNameFunc := func(t1, t2, t3 Op) string {
+		return fmt.Sprintf("%s %s  %s", t1.name, t2.name, t3.name)
+	}
+
+	for testCaseName, testCaseList := range CartesianTripleSlice(opWithNameList, testNameFunc) {
+		t.Run(testCaseName, func(t *testing.T) {
+			// t.Parallel()
+			require := require.New(t)
+
+			ctx := NewStateDBContext(t)
+
+			var statesToCheck []InterTxSnapshotWithStateCheck
+			for _, testCase := range testCaseList {
+				snapshotID := ctx.state.InterTxSnapshot()
+				require.Empty(ctx.state.accountsToDelete)
+				require.Empty(ctx.state.writtenSlots)
+				oldStateDB := partialCopyStateDB(ctx.state)
+
+				ctx.state.BeginTransaction()
+				testCase.Execute(ctx)
+				ctx.state.EndTransaction()
+
+				statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
+					stateBackup: oldStateDB,
+					snapshotID:  snapshotID,
+				})
+			}
+
+			slices.Reverse(statesToCheck)
+			for _, cur := range statesToCheck {
+				require.NoError(
+					ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
+				)
+				checkStateDBEqual(t, cur.stateBackup, ctx.state)
+			}
+		})
+	}
 }
 
-// StateDBOpContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
-type StateDBOpContext struct {
-	state   *stateDB
-	db      *MockState
+// StateDBContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
+type StateDBContext struct {
+	state *stateDB
+	db    *MockState
+	rng   *rand.Rand
+}
+
+// OpAddressAndKey is a struct containing an address and a key, to be used as arguments for operations that require them in the tests of StateDB transaction revert functionality.
+type OpAddressAndKey struct {
 	address common.Address
 	key     common.Key
-	nonce   uint64
-	pcg     *rand.PCG
+}
+
+// Op is an helper struct representing an operation to be performed on the StateDB, containing the operation function, its name for better test readability, and the address and key arguments to be used in the operation if needed.
+type Op struct {
+	name string
+	op   func(ctx *StateDBContext, args OpAddressAndKey)
+	args OpAddressAndKey
+}
+
+// Execute executes the operation on the given StateDBContext with the stored arguments.
+func (op *Op) Execute(ctx *StateDBContext) {
+	op.op(ctx, op.args)
 }
 
 var (
@@ -91,10 +130,21 @@ var (
 	mockBalance    = amount.New(0)
 	mockNonce      = common.Nonce{0}
 	mockStateValue = common.Value{0x1}
+	mockCodeSize   = math.MaxInt
+	addresses      = []common.Address{
+		{0x1},
+		{0x2},
+		{0x3},
+	}
+	keys = []common.Key{
+		{0x4},
+		{0x5},
+		{0x6},
+	}
 )
 
-// NewStateDBOpContext creates a new StateDBOpContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
-func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
+// NewStateDBContext creates a new StateDBContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
+func NewStateDBContext(t *testing.T) *StateDBContext {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -105,75 +155,70 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 
 	state := createStateDBWith(db, 1, true)
 
-	address := common.Address{0x1}
-	key := common.Key{0x1}
 	// Set expectation in case values are not cached, i.e. they are untouched.
-	db.EXPECT().Exists(address).Return(false, nil).AnyTimes()
-	db.EXPECT().GetBalance(address).Return(mockBalance, nil).AnyTimes()
-	db.EXPECT().GetNonce(address).Return(mockNonce, nil).AnyTimes()
-	db.EXPECT().GetCode(address).Return(mockCode, nil).AnyTimes()
+	for _, address := range addresses {
+		db.EXPECT().Exists(address).Return(false, nil).MaxTimes(1)
+		db.EXPECT().GetBalance(address).Return(mockBalance, nil).MaxTimes(1)
+		db.EXPECT().GetNonce(address).Return(mockNonce, nil).MaxTimes(1)
+		db.EXPECT().GetCode(address).Return(mockCode, nil).MaxTimes(1)
+		db.EXPECT().GetCodeSize(address).Return(mockCodeSize, nil).MaxTimes(1)
+		for _, key := range keys {
+			db.EXPECT().GetStorage(address, key).Return(mockStateValue, nil).MaxTimes(1)
+		}
+	}
 
-	return &StateDBOpContext{
-		state:   state,
-		db:      db,
-		address: address,
-		key:     key,
-		nonce:   1,
-		pcg:     rand.NewPCG(42, 42),
+	return &StateDBContext{
+		state: state,
+		db:    db,
+		rng:   rand.New(rand.NewPCG(42, 42)),
 	}
 }
 
-func setStateOp(ctx *StateDBOpContext) {
-	ctx.db.EXPECT().GetStorage(ctx.address, ctx.key).Return(mockStateValue, nil).MinTimes(0).MaxTimes(1)
-	randomValue := make([]byte, 32)
-	randomValue[0] = byte(0x2)
-	for i := range randomValue[1:] {
-		randomValue[i+1] = byte(ctx.pcg.Uint64())
-	}
-	ctx.state.SetState(ctx.address, ctx.key, common.Value(randomValue))
+func setStateOp(ctx *StateDBContext, args OpAddressAndKey) {
+	randomValue := common.Value(randomByteArrayWithPrefix(ctx.rng, 32, []byte{0x2}))
+	ctx.state.SetState(args.address, args.key, randomValue)
 }
 
-func setNonceOp(ctx *StateDBOpContext) {
-	ctx.state.SetNonce(ctx.address, ctx.nonce)
-	ctx.nonce++
+func setNonceOp(ctx *StateDBContext, args OpAddressAndKey) {
+	ctx.state.SetNonce(args.address, ctx.rng.Uint64N(math.MaxUint64)+1)
 }
 
-func setCodeOp(ctx *StateDBOpContext) {
-	randomCode := make([]byte, 8)
-	randomCode[0] = byte(0x2)
-	for i := range randomCode[1:] {
-		randomCode[i+1] = byte(ctx.pcg.Uint64())
-	}
-	ctx.state.SetCode(ctx.address, randomCode)
+func setCodeOp(ctx *StateDBContext, args OpAddressAndKey) {
+	randomCode := randomByteArrayWithPrefix(ctx.rng, 8, []byte{0x2})
+	ctx.state.SetCode(args.address, randomCode)
 }
 
-func addRefundOp(ctx *StateDBOpContext) {
+func addRefundOp(ctx *StateDBContext, args OpAddressAndKey) {
 	ctx.state.AddRefund(10)
 }
 
-func subRefundOp(ctx *StateDBOpContext) {
+func subRefundOp(ctx *StateDBContext, args OpAddressAndKey) {
 	ctx.state.SubRefund(10)
 }
 
-func addAddressToAccessListOp(ctx *StateDBOpContext) {
-	addr := common.Address{byte(ctx.pcg.Uint64())}
+func addAddressToAccessListOp(ctx *StateDBContext, args OpAddressAndKey) {
+	addr := common.Address{byte(ctx.rng.Uint64N(256))}
 	ctx.state.AddAddressToAccessList(addr)
 }
 
-func addBalanceOp(ctx *StateDBOpContext) {
-	ctx.state.AddBalance(ctx.address, amount.New(10))
+func addBalanceOp(ctx *StateDBContext, args OpAddressAndKey) {
+	ctx.state.AddBalance(args.address, amount.New(10))
 }
 
-func subBalanceOp(ctx *StateDBOpContext) {
-	ctx.state.SubBalance(ctx.address, amount.New(10))
+func subBalanceOp(ctx *StateDBContext, args OpAddressAndKey) {
+	ctx.state.SubBalance(args.address, amount.New(10))
 }
 
-func createAccountOp(ctx *StateDBOpContext) {
-	ctx.state.CreateAccount(ctx.address)
+func createAccountOp(ctx *StateDBContext, args OpAddressAndKey) {
+	ctx.state.CreateAccount(args.address)
 }
 
-func suicideOp(ctx *StateDBOpContext) {
-	ctx.state.Suicide(ctx.address)
+func suicideOp(ctx *StateDBContext, args OpAddressAndKey) {
+	ctx.state.Suicide(args.address)
+}
+
+func createContractOp(ctx *StateDBContext, args OpAddressAndKey) {
+	ctx.state.CreateContract(args.address)
 }
 
 func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T) {
@@ -282,6 +327,7 @@ func checkStateDBEqual(t *testing.T, expected *stateDB, actual *stateDB) {
 	}
 }
 
+// fastMapEqual checks if two FastMaps are equal. If the values are pointers, the pointed values are compared for equality instead of the pointers themselves.
 func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {
 	equal := m1.Size() == m2.Size()
 	if equal {
@@ -365,4 +411,29 @@ func cloneCodeValue(cv *codeValue) *codeValue {
 	}
 	cloned.code = slices.Clone(cv.code)
 	return &cloned
+}
+
+// randomByteArrayWithPrefix generates a random byte array of the given size, where the first bytes are the given prefix.
+func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
+	b := make([]byte, size)
+	copy(b, prefix)
+	for i := len(prefix); i < size; i++ {
+		b[i] = byte(rng.Uint64N(256))
+	}
+	return b
+}
+
+// CartesianTripleSlice generates the cartesian product of a slice with itself three times, yielding the result as a sequence of tuples containing the values and string representations of them.
+func CartesianTripleSlice[T any](slice []T, genName func(T, T, T) string) iter.Seq2[string, [3]T] {
+	return func(yield func(string, [3]T) bool) {
+		for _, a := range slice {
+			for _, b := range slice {
+				for _, c := range slice {
+					if !yield(genName(a, b, c), [3]T{a, b, c}) {
+						return
+					}
+				}
+			}
+		}
+	}
 }
