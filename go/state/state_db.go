@@ -670,18 +670,10 @@ func (s *stateDB) GetBalance(addr common.Address) amount.Amount {
 		s.trackErrors(fmt.Errorf("failed to load balance for address %v: %w", addr, err))
 		return amount.New() // We need to return something that allows the VM to continue.
 	}
-	oldBalance, oldExists := s.balances[addr]
 	s.balances[addr] = &balanceValue{
 		original: &balance,
 		current:  balance,
 	}
-	s.addUndo(func() {
-		if oldExists {
-			s.balances[addr] = oldBalance
-		} else {
-			delete(s.balances, addr)
-		}
-	})
 	return balance
 }
 
@@ -770,9 +762,6 @@ func (s *stateDB) GetNonce(addr common.Address) uint64 {
 		original: &res,
 		current:  res,
 	}
-	s.addUndo(func() {
-		delete(s.nonces, addr)
-	})
 	return res
 }
 
@@ -960,9 +949,6 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 	if !exists {
 		val = &codeValue{}
 		s.codes[addr] = val
-		s.addUndo(func() {
-			delete(s.codes, addr)
-		})
 	}
 	if !val.codeValid {
 		code, err := s.state.GetCode(addr)
@@ -971,12 +957,8 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 			return nil
 		}
 
-		oldVal := *val
 		val.code, val.codeValid = code, true
 		val.size, val.sizeValid = len(code), true
-		s.addUndo(func() {
-			*(s.codes[addr]) = oldVal
-		})
 	}
 	return val.code
 }
@@ -1020,12 +1002,8 @@ func (s *stateDB) GetCodeHash(addr common.Address) common.Hash {
 	if !exists {
 		val = &codeValue{}
 		s.codes[addr] = val
-		s.addUndo(func() {
-			delete(s.codes, addr)
-		})
 	}
 
-	oldValueHash := val.hash
 	if val.dirty && val.hash == nil {
 		// If the code is dirty (=uncommitted) the hash needs to be computed on the fly.
 		hash := common.GetKeccak256Hash(val.code)
@@ -1040,9 +1018,6 @@ func (s *stateDB) GetCodeHash(addr common.Address) common.Hash {
 		}
 		val.hash = &hash
 	}
-	s.addUndo(func() {
-		val.hash = oldValueHash
-	})
 	return *val.hash
 }
 
@@ -1051,11 +1026,7 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 	if !exists {
 		val = &codeValue{}
 		s.codes[addr] = val
-		s.addUndo(func() {
-			delete(s.codes, addr)
-		})
 	}
-	oldValue := *val
 	if !val.sizeValid {
 		size, err := s.state.GetCodeSize(addr)
 		if err != nil {
@@ -1064,9 +1035,6 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 		}
 		val.size, val.sizeValid = size, true
 	}
-	s.addUndo(func() {
-		*(s.codes[addr]) = oldValue
-	})
 	return val.size
 }
 

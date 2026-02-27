@@ -82,10 +82,16 @@ type StateDBOpContext struct {
 	db      *MockState
 	address common.Address
 	key     common.Key
-	value   common.Value
 	nonce   uint64
 	pcg     *rand.PCG
 }
+
+var (
+	mockCode       = []byte{0x1}
+	mockBalance    = amount.New(0)
+	mockNonce      = common.Nonce{0}
+	mockStateValue = common.Value{0x1}
+)
 
 // NewStateDBOpContext creates a new StateDBOpContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
 func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
@@ -100,27 +106,31 @@ func NewStateDBOpContext(t *testing.T) *StateDBOpContext {
 	state := createStateDBWith(db, 1, true)
 
 	address := common.Address{0x1}
+	key := common.Key{0x1}
 	// Set expectation in case values are not cached, i.e. they are untouched.
 	db.EXPECT().Exists(address).Return(false, nil).AnyTimes()
-	db.EXPECT().GetBalance(address).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(address).Return(common.Nonce([common.NonceSize]byte{}), nil).AnyTimes()
-	db.EXPECT().GetCodeSize(address).Return(0, nil).AnyTimes()
+	db.EXPECT().GetBalance(address).Return(mockBalance, nil).AnyTimes()
+	db.EXPECT().GetNonce(address).Return(mockNonce, nil).AnyTimes()
+	db.EXPECT().GetCode(address).Return(mockCode, nil).AnyTimes()
 
 	return &StateDBOpContext{
 		state:   state,
 		db:      db,
 		address: address,
-		key:     common.Key{0x1},
-		value:   common.Value{0x1},
+		key:     key,
 		nonce:   1,
 		pcg:     rand.NewPCG(42, 42),
 	}
 }
 
 func setStateOp(ctx *StateDBOpContext) {
-	ctx.db.EXPECT().GetStorage(ctx.address, ctx.key).Return(common.Value{}, nil).MinTimes(0).MaxTimes(1)
-	ctx.state.SetState(ctx.address, ctx.key, ctx.value)
-	ctx.value[0] += byte(1)
+	ctx.db.EXPECT().GetStorage(ctx.address, ctx.key).Return(mockStateValue, nil).MinTimes(0).MaxTimes(1)
+	randomValue := make([]byte, 32)
+	randomValue[0] = byte(0x2)
+	for i := range randomValue[1:] {
+		randomValue[i+1] = byte(ctx.pcg.Uint64())
+	}
+	ctx.state.SetState(ctx.address, ctx.key, common.Value(randomValue))
 }
 
 func setNonceOp(ctx *StateDBOpContext) {
@@ -130,8 +140,9 @@ func setNonceOp(ctx *StateDBOpContext) {
 
 func setCodeOp(ctx *StateDBOpContext) {
 	randomCode := make([]byte, 8)
-	for i := range randomCode {
-		randomCode[i] = byte(ctx.pcg.Uint64())
+	randomCode[0] = byte(0x2)
+	for i := range randomCode[1:] {
+		randomCode[i+1] = byte(ctx.pcg.Uint64())
 	}
 	ctx.state.SetCode(ctx.address, randomCode)
 }
@@ -230,15 +241,26 @@ func checkStateDBEqual(t *testing.T, expected *stateDB, actual *stateDB) {
 
 	for addr, account := range actual.accounts {
 		value, exists := expected.accounts[addr]
-		ok := (exists && reflect.DeepEqual(account, value)) || (!exists && account.current == account.original && account.current == accountNonExisting)
-		require.True(ok, fmt.Sprintf("accounts differ at address %v: expected %v, got %v", addr, value, account))
+		require.True((exists && reflect.DeepEqual(account, value)) || (!exists && account.current == account.original && account.current == accountNonExisting), fmt.Sprintf("accounts differ at address %v: got %v", addr, account))
 	}
-	require.Equal(expected.balances, actual.balances)
-	require.Equal(expected.nonces, actual.nonces)
+	for addr, balance := range actual.balances {
+		value, exists := expected.balances[addr]
+		require.True((exists && reflect.DeepEqual(balance, value)) || (!exists && balance.current == mockBalance && balance.original == &balance.current), fmt.Sprintf("balances differ at address %v: got %v", addr, balance))
+	}
+	for addr, nonce := range actual.nonces {
+		value, exists := expected.nonces[addr]
+		require.True((exists && reflect.DeepEqual(nonce, value)) || (!exists && nonce.current == mockNonce.ToUint64()), fmt.Sprintf("nonces differ at address %v: got %v", addr, nonce))
+	}
+
 	require.True(fastMapEqual(expected.data, actual.data))
 	require.True(fastMapEqual(expected.transientStorage, actual.transientStorage))
 	require.Equal(expected.reincarnation, actual.reincarnation)
-	require.Equal(expected.codes, actual.codes)
+	for addr, code := range actual.codes {
+		value, exists := expected.codes[addr]
+		ok := (exists && reflect.DeepEqual(code, value)) || (!exists && (code.code == nil || slices.Equal(code.code, mockCode)))
+		require.True(ok, fmt.Sprintf("codes differ at address %v: expected %v, got %v", addr, value, code))
+	}
+
 	require.Equal(expected.refund, actual.refund)
 	require.Equal(expected.accessedAddresses, actual.accessedAddresses)
 	require.True(fastMapEqual(expected.accessedSlots, actual.accessedSlots))
