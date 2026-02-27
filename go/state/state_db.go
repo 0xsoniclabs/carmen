@@ -89,11 +89,11 @@ type VmStateDB interface {
 	BeginTransaction()
 	EndTransaction()
 
-	// Checkpoint creates a restore point to the last executed transaction. Returns an identifier of the created checkpoint to be used for reverting to it.
-	Checkpoint() int
+	// InterTxSnapshot creates a restore point to the last executed transaction. Returns an identifier of the created snapshot to be used for reverting to it.
+	InterTxSnapshot() interTxSnapshotID
 
-	// RevertToCheckpoint reverts the state to the state at the checkpoint with the given identifier. Returns an error if the checkpoint does not exists.
-	RevertToCheckpoint(id int) error
+	// RevertToInterTxSnapshot reverts the state to the state at the snapshot with the given identifier. Returns an error if the snapshot does not exists.
+	RevertToInterTxSnapshot(id interTxSnapshotID) error
 
 	// GetTransactionChanges provides a set of accounts and their slots, which have been
 	// potentially changed in the current transaction.
@@ -425,6 +425,9 @@ type storedDataCacheValue struct {
 	value         common.Value // < the cached version of the value in the store
 	reincarnation uint64       // < the reincarnation the cached value belongs to
 }
+
+// interTxSnapshotID identifies an iter-transaction snapshot created with `InterTxSnapshot`.
+type interTxSnapshotID int
 
 // CreateStateDBUsing creates a StateDB instance wrapping the given state supporting
 // all operations including end-of-block operations mutating the underlying state.
@@ -1288,23 +1291,23 @@ func (s *stateDB) EndTransaction() {
 	s.resetTransactionContext()
 }
 
-func (s *stateDB) Checkpoint() int {
+func (s *stateDB) InterTxSnapshot() interTxSnapshotID {
 	if s.withinTransaction {
-		s.trackErrors(fmt.Errorf("cannot create checkpoint in a transaction"))
+		s.trackErrors(fmt.Errorf("cannot create inter-transaction snapshot in a transaction"))
 		return 0
 	}
-	return len(s.undo)
+	return interTxSnapshotID(len(s.undo))
 }
 
-func (s *stateDB) RevertToCheckpoint(id int) error {
+func (s *stateDB) RevertToInterTxSnapshot(id interTxSnapshotID) error {
 	if s.withinTransaction {
-		return fmt.Errorf("cannot revert to checkpoint in a transaction")
+		return fmt.Errorf("cannot revert to inter-transaction snapshot in a transaction")
 	}
 
-	if id > len(s.undo) {
-		return fmt.Errorf("cannot revert to checkpoint %d, only %d checkpoints in the current block", id, len(s.undo))
+	if id > interTxSnapshotID(len(s.undo)) {
+		return fmt.Errorf("cannot revert to inter-transaction snapshot %d, only %d snapshots in the current block", id, len(s.undo))
 	}
-	for len(s.undo) > id {
+	for len(s.undo) > int(id) {
 		s.RevertToSnapshot(0)
 		s.undo = s.undo[:len(s.undo)-1]
 	}

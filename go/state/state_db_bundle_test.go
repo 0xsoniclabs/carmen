@@ -15,10 +15,10 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestStateDB_RevertToCheckpoint_RevertsStateCorrectly(t *testing.T) {
-	type checkpointWithStateCheck struct {
-		stateBackup  *stateDB
-		checkpointID int
+func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
+	type InterTxSnapshotWithStateCheck struct {
+		stateBackup *stateDB
+		snapshotID  interTxSnapshotID
 	}
 
 	operationList := map[string]func(ctx *StateDBOpContext){
@@ -43,13 +43,13 @@ func TestStateDB_RevertToCheckpoint_RevertsStateCorrectly(t *testing.T) {
 
 					ctx := NewStateDBOpContext(t)
 
-					var statesToCheck []checkpointWithStateCheck
+					var statesToCheck []InterTxSnapshotWithStateCheck
 					for _, op := range []func(ctx *StateDBOpContext){
 						op1,
 						op2,
 						op3,
 					} {
-						checkpointID := ctx.state.Checkpoint()
+						snapshotID := ctx.state.InterTxSnapshot()
 						require.Empty(ctx.state.accountsToDelete)
 						require.Empty(ctx.state.writtenSlots)
 						oldStateDB := partialCopyStateDB(ctx.state)
@@ -58,16 +58,16 @@ func TestStateDB_RevertToCheckpoint_RevertsStateCorrectly(t *testing.T) {
 						op(ctx)
 						ctx.state.EndTransaction()
 
-						statesToCheck = append(statesToCheck, checkpointWithStateCheck{
-							stateBackup:  oldStateDB,
-							checkpointID: checkpointID,
+						statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
+							stateBackup: oldStateDB,
+							snapshotID:  snapshotID,
 						})
 					}
 
 					slices.Reverse(statesToCheck)
 					for _, cur := range statesToCheck {
 						require.NoError(
-							ctx.state.RevertToCheckpoint(cur.checkpointID),
+							ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
 						)
 						checkStateDBEqual(t, cur.stateBackup, ctx.state)
 					}
