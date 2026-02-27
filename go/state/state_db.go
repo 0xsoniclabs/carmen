@@ -513,18 +513,10 @@ func (s *stateDB) Exist(addr common.Address) bool {
 	if exists {
 		state = accountExists
 	}
-	oldAccountValue, oldExists := s.accounts[addr]
 	s.accounts[addr] = &accountState{
 		original: state,
 		current:  state,
 	}
-	s.addUndo(func() {
-		if oldExists {
-			s.accounts[addr] = oldAccountValue
-		} else {
-			delete(s.accounts, addr)
-		}
-	})
 	return exists
 }
 
@@ -678,10 +670,18 @@ func (s *stateDB) GetBalance(addr common.Address) amount.Amount {
 		s.trackErrors(fmt.Errorf("failed to load balance for address %v: %w", addr, err))
 		return amount.New() // We need to return something that allows the VM to continue.
 	}
+	oldBalance, oldExists := s.balances[addr]
 	s.balances[addr] = &balanceValue{
 		original: &balance,
 		current:  balance,
 	}
+	s.addUndo(func() {
+		if oldExists {
+			s.balances[addr] = oldBalance
+		} else {
+			delete(s.balances, addr)
+		}
+	})
 	return balance
 }
 

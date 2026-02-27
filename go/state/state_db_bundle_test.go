@@ -228,7 +228,11 @@ func checkStateDBEqual(t *testing.T, expected *stateDB, actual *stateDB) {
 	t.Helper()
 	require := require.New(t)
 
-	require.Equal(expected.accounts, actual.accounts)
+	for addr, account := range actual.accounts {
+		value, exists := expected.accounts[addr]
+		ok := (exists && reflect.DeepEqual(account, value)) || (!exists && account.current == account.original && account.current == accountNonExisting)
+		require.True(ok, fmt.Sprintf("accounts differ at address %v: expected %v, got %v", addr, value, account))
+	}
 	require.Equal(expected.balances, actual.balances)
 	require.Equal(expected.nonces, actual.nonces)
 	require.True(fastMapEqual(expected.data, actual.data))
