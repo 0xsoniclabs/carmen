@@ -22,52 +22,52 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		snapshotID  interTxSnapshotID
 	}
 
-	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpAddressAndKey){
-		"setNonce":       setNonceOp,
-		"setCode":        setCodeOp,
-		"addRefund":      addRefundOp,
-		"subRefund":      subRefundOp,
-		"addBalance":     addBalanceOp,
-		"subBalance":     subBalanceOp,
-		"addAddress":     addAddressToAccessListOp,
-		"createAccount":  createAccountOp,
-		"suicide":        suicideOp,
-		"createContract": createContractOp,
+	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
+		"setNonce":      setNonceOp,
+		"setCode":       setCodeOp,
+		"addBalance":    addBalanceOp,
+		"subBalance":    subBalanceOp,
+		"addAddress":    addAddressToAccessListOp,
+		"createAccount": createAccountOp,
+		"suicide":       suicideOp,
 	}
 
-	operationListWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpAddressAndKey){
+	operationListWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
 		"setState": setStateOp,
 	}
 
-	var opWithNameList []Op
+	var opWithNameList []StateDBOperation
 	for opName, op := range operationListWithAddress {
 		for i, address := range addresses {
-			opWithNameList = append(opWithNameList, Op{
+			opWithNameList = append(opWithNameList, StateDBOperation{
 				name: fmt.Sprintf("%s(addr:%d)", opName, i),
 				op:   op,
-				args: OpAddressAndKey{address: address},
+				args: OpArgs{address: address},
 			})
 		}
 	}
 	for opName, op := range operationListWithAddressAndKey {
 		for i, address := range addresses {
 			for j, key := range keys {
-				opWithNameList = append(opWithNameList, Op{
+				op := StateDBOperation{
 					name: fmt.Sprintf("%s(addr:%d,key:%d)", opName, i, j),
 					op:   op,
-					args: OpAddressAndKey{address: address, key: key},
-				})
+					args: OpArgs{address: address, key: key},
+				}
+				opWithNameList = append(opWithNameList, op)
+				// Simulating multiple writes on the same address and key
+				opWithNameList = append(opWithNameList, op)
 			}
 		}
 	}
 
-	testNameFunc := func(t1, t2, t3 Op) string {
+	testNameFunc := func(t1, t2, t3 StateDBOperation) string {
 		return fmt.Sprintf("%s %s  %s", t1.name, t2.name, t3.name)
 	}
 
 	for testCaseName, testCaseList := range CartesianTripleSlice(opWithNameList, testNameFunc) {
 		t.Run(testCaseName, func(t *testing.T) {
-			// t.Parallel()
+			t.Parallel()
 			require := require.New(t)
 
 			ctx := NewStateDBContext(t)
@@ -94,7 +94,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 				require.NoError(
 					ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
 				)
-				checkStateDBEqual(t, cur.stateBackup, ctx.state)
+				checkStateDB(t, cur.stateBackup, ctx.state)
 			}
 		})
 	}
@@ -107,21 +107,21 @@ type StateDBContext struct {
 	rng   *rand.Rand
 }
 
-// OpAddressAndKey is a struct containing an address and a key, to be used as arguments for operations that require them in the tests of StateDB transaction revert functionality.
-type OpAddressAndKey struct {
+// OpArgs is a struct containing an address and a key, to be used as arguments for operations that require them in the tests of StateDB transaction revert functionality.
+type OpArgs struct {
 	address common.Address
 	key     common.Key
 }
 
-// Op is an helper struct representing an operation to be performed on the StateDB, containing the operation function, its name for better test readability, and the address and key arguments to be used in the operation if needed.
-type Op struct {
+// StateDBOperation is an helper struct representing an operation to be performed on the StateDB, containing the operation function, its name for better test readability, and the address and key arguments to be used in the operation if needed.
+type StateDBOperation struct {
 	name string
-	op   func(ctx *StateDBContext, args OpAddressAndKey)
-	args OpAddressAndKey
+	op   func(ctx *StateDBContext, args OpArgs)
+	args OpArgs
 }
 
 // Execute executes the operation on the given StateDBContext with the stored arguments.
-func (op *Op) Execute(ctx *StateDBContext) {
+func (op *StateDBOperation) Execute(ctx *StateDBContext) {
 	op.op(ctx, op.args)
 }
 
@@ -174,51 +174,47 @@ func NewStateDBContext(t *testing.T) *StateDBContext {
 	}
 }
 
-func setStateOp(ctx *StateDBContext, args OpAddressAndKey) {
+func setStateOp(ctx *StateDBContext, args OpArgs) {
 	randomValue := common.Value(randomByteArrayWithPrefix(ctx.rng, 32, []byte{0x2}))
 	ctx.state.SetState(args.address, args.key, randomValue)
 }
 
-func setNonceOp(ctx *StateDBContext, args OpAddressAndKey) {
+func setNonceOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.SetNonce(args.address, ctx.rng.Uint64N(math.MaxUint64)+1)
 }
 
-func setCodeOp(ctx *StateDBContext, args OpAddressAndKey) {
+func setCodeOp(ctx *StateDBContext, args OpArgs) {
 	randomCode := randomByteArrayWithPrefix(ctx.rng, 8, []byte{0x2})
 	ctx.state.SetCode(args.address, randomCode)
 }
 
-func addRefundOp(ctx *StateDBContext, args OpAddressAndKey) {
+func addRefundOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.AddRefund(10)
 }
 
-func subRefundOp(ctx *StateDBContext, args OpAddressAndKey) {
+func subRefundOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.SubRefund(10)
 }
 
-func addAddressToAccessListOp(ctx *StateDBContext, args OpAddressAndKey) {
+func addAddressToAccessListOp(ctx *StateDBContext, args OpArgs) {
 	addr := common.Address{byte(ctx.rng.Uint64N(256))}
 	ctx.state.AddAddressToAccessList(addr)
 }
 
-func addBalanceOp(ctx *StateDBContext, args OpAddressAndKey) {
+func addBalanceOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.AddBalance(args.address, amount.New(10))
 }
 
-func subBalanceOp(ctx *StateDBContext, args OpAddressAndKey) {
+func subBalanceOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.SubBalance(args.address, amount.New(10))
 }
 
-func createAccountOp(ctx *StateDBContext, args OpAddressAndKey) {
+func createAccountOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.CreateAccount(args.address)
 }
 
-func suicideOp(ctx *StateDBContext, args OpAddressAndKey) {
+func suicideOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.Suicide(args.address)
-}
-
-func createContractOp(ctx *StateDBContext, args OpAddressAndKey) {
-	ctx.state.CreateContract(args.address)
 }
 
 func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T) {
@@ -251,7 +247,7 @@ func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T)
 
 	copiedState := partialCopyStateDB(state)
 
-	checkStateDBEqual(t, state, copiedState)
+	checkStateDB(t, state, copiedState)
 }
 
 // partialCopyStateDB creates a deep copy of the given stateDB, excluding the `storedDataCache` field.
@@ -279,8 +275,8 @@ func partialCopyStateDB(s *stateDB) *stateDB {
 	return ns
 }
 
-// checkStateDBEqual checks if two stateDB instances are equal, excluding the `storedDataCache` field.
-func checkStateDBEqual(t *testing.T, expected *stateDB, actual *stateDB) {
+// checkStateDB checks if the `actual` stateDB matches the `expected` stateDB. It compares all fields except for the `storedDataCache`, and takes into account cached values generated from calls to read-only functions in stateDB.
+func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) {
 	t.Helper()
 	require := require.New(t)
 

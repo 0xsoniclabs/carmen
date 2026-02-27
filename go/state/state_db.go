@@ -865,14 +865,8 @@ func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Val
 		if entry.current != value {
 			oldValue := entry.current
 			entry.current = value
-			oldWrittenSlots := s.writtenSlots[entry]
 			s.writtenSlots[entry] = true
 			s.addUndo(func() {
-				if !oldWrittenSlots {
-					delete(s.writtenSlots, entry)
-				} else {
-					s.writtenSlots[entry] = oldWrittenSlots
-				}
 				entry.current = oldValue
 			})
 		}
@@ -911,6 +905,10 @@ func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value c
 	}
 
 	// Save previous value for rollbacks
+	oldValue := currentValue
+	s.addUndo(func() {
+		s.transientStorage.Put(sid, oldValue)
+	})
 	s.transientStorage.Put(sid, value)
 }
 
@@ -1034,11 +1032,7 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 }
 
 func (s *stateDB) AddRefund(amount uint64) {
-	old := s.refund
 	s.refund += amount
-	s.addUndo(func() {
-		s.refund = old
-	})
 }
 
 func (s *stateDB) SubRefund(amount uint64) {
@@ -1046,11 +1040,7 @@ func (s *stateDB) SubRefund(amount uint64) {
 		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
 		return
 	}
-	old := s.refund
 	s.refund -= amount
-	s.addUndo(func() {
-		s.refund = old
-	})
 }
 
 func (s *stateDB) GetRefund() uint64 {
