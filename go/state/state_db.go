@@ -1172,6 +1172,7 @@ func (s *stateDB) EndTransaction() {
 	// which is now empty SHALL instead become non-existent (i.e. deleted).
 	for _, addr := range s.emptyCandidates {
 		if s.Empty(addr) {
+			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
 			oldState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
@@ -1568,6 +1569,7 @@ func (s *stateDB) ResetBlockContext() {
 	s.resetTransactionContext()
 	s.undo = s.undo[0:0]
 	s.resetReincarnationWhenExceeds(10_000_000)
+	s.withinTransaction = false
 }
 
 // resetReincarnationWhenExceeds limits the reincarnation map size
