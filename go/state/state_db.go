@@ -1032,7 +1032,11 @@ func (s *stateDB) GetCodeSize(addr common.Address) int {
 }
 
 func (s *stateDB) AddRefund(amount uint64) {
+	old := s.refund
 	s.refund += amount
+	s.addUndo(func() {
+		s.refund = old
+	})
 }
 
 func (s *stateDB) SubRefund(amount uint64) {
@@ -1040,7 +1044,11 @@ func (s *stateDB) SubRefund(amount uint64) {
 		s.trackErrors(fmt.Errorf("failed to lower refund, attempted to removed %d from current refund %d", amount, s.refund))
 		return
 	}
+	old := s.refund
 	s.refund -= amount
+	s.addUndo(func() {
+		s.refund = old
+	})
 }
 
 func (s *stateDB) GetRefund() uint64 {
@@ -1182,16 +1190,12 @@ func (s *stateDB) EndTransaction() {
 		for _, addr := range s.accountsToDelete {
 			// Transition accounts marked by suicide to be deleted.
 			if s.HasSuicided(addr) {
-				oldClearedAccountState, oldClearedAccountExists := s.clearedAccounts[addr]
+				oldClearedAccountState := s.clearedAccounts[addr]
 				s.setAccountState(addr, accountNonExisting)
 				s.setCodeInternal(addr, []byte{})
 				s.clearedAccounts[addr] = pendingClearing
 				s.addUndo(func() {
-					if oldClearedAccountExists {
-						s.clearedAccounts[addr] = oldClearedAccountState
-					} else {
-						delete(s.clearedAccounts, addr)
-					}
+					s.clearedAccounts[addr] = oldClearedAccountState
 				})
 			}
 

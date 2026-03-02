@@ -16,6 +16,182 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestStateDB_CreateAccount_RevertsClearedAccountsOnInterTxSnapshotRevert(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	require := require.New(t)
+
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+	addr := common.Address{0x1}
+	setEmptyAccountExpectations(db, addr)
+
+	val, exists := state.clearedAccounts[addr]
+	require.False(exists)
+	require.Equal(noClearing, val)
+
+	snapshot := state.InterTxSnapshot()
+	state.BeginTransaction()
+	state.CreateAccount(addr)
+	state.Suicide(addr)
+	state.CreateAccount(addr)
+	state.EndTransaction()
+
+	if err := db.Check(); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	val, exists = state.clearedAccounts[addr]
+	require.True(exists)
+	require.Equal(cleared, val)
+
+	err := state.RevertToInterTxSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("Error while reverting to inter-transaction snapshot: %v", err)
+	}
+	val, exists = state.clearedAccounts[addr]
+	require.False(exists)
+	require.Equal(noClearing, val)
+}
+
+func TestStateDB_Suicide_RevertsClearedAccountsOnSnapshotRevert(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	require := require.New(t)
+
+	db := NewMockState(ctrl)
+	addr := common.Address{0x1}
+	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
+	db.EXPECT().Check().Return(nil).AnyTimes()
+	state := createStateDBWith(db, 1, true)
+
+	val, exists := state.clearedAccounts[addr]
+	require.False(exists)
+	require.Equal(noClearing, val)
+
+	snapshot := state.InterTxSnapshot()
+	state.BeginTransaction()
+	state.Suicide(addr)
+	state.CreateAccount(addr)
+	state.clearedAccounts[addr] = noClearing
+	state.Suicide(addr)
+	state.EndTransaction()
+
+	if err := db.Check(); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	val, exists = state.clearedAccounts[addr]
+	require.True(exists)
+	require.Equal(cleared, val)
+
+	err := state.RevertToInterTxSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("Error while reverting to inter-transaction snapshot: %v", err)
+	}
+	val, exists = state.clearedAccounts[addr]
+	require.False(exists)
+	require.Equal(noClearing, val)
+}
+
+func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	require := require.New(t)
+	addr := common.Address{0x1}
+
+	db := NewMockState(ctrl)
+	db.EXPECT().Check().Return(nil).AnyTimes()
+	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
+	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
+	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
+	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
+	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+	state := createStateDBWith(db, 1, true)
+
+	// To Revert:
+	// - Empty account: pending clearing (delete)
+	// - Cleared account (existing)
+	val, exists := state.clearedAccounts[addr]
+	require.False(exists)
+	require.Equal(noClearing, val)
+	snapshot := state.InterTxSnapshot()
+	state.BeginTransaction()
+	state.emptyCandidates = append(state.emptyCandidates, addr)
+	state.accountsToDelete = append(state.accountsToDelete, addr)
+	state.EndTransaction()
+	val, exists = state.clearedAccounts[addr]
+	require.True(exists)
+	require.Equal(cleared, val)
+
+	err := state.RevertToInterTxSnapshot(snapshot)
+	require.NoError(err)
+	val, exists = state.clearedAccounts[addr]
+	require.False(exists)
+	require.Equal(noClearing, val)
+
+	// To Revert:
+	// - Cleared account (delete)
+	clearedAccountValue, clearedAccountExists := state.clearedAccounts[addr]
+	require.False(clearedAccountExists)
+	require.Equal(noClearing, clearedAccountValue)
+	snapshot = state.InterTxSnapshot()
+	state.BeginTransaction()
+	state.accountsToDelete = append(state.accountsToDelete, addr)
+	state.EndTransaction()
+	err = state.Check()
+
+	require.NoError(err)
+	clearedAccountValue, clearedAccountExists = state.clearedAccounts[addr]
+	require.True(clearedAccountExists)
+	require.Equal(cleared, clearedAccountValue)
+
+	err = state.RevertToInterTxSnapshot(snapshot)
+	require.NoError(err)
+	clearedAccountValue, clearedAccountExists = state.clearedAccounts[addr]
+	require.False(clearedAccountExists)
+	require.Equal(noClearing, clearedAccountValue)
+
+	// To Revert:
+	// - Written slots
+	// - Empty account: pending clearing (existing)
+	// - Has suicided: pending clearing
+	// - Data
+	key := common.Key{0x2}
+	clearedAccountVal, clearedAccountExists := state.clearedAccounts[addr]
+	require.False(clearedAccountExists)
+	require.Equal(noClearing, clearedAccountVal)
+
+	// Set data to test data undo
+	valueToWrite := common.Value{0x3}
+	slotId := slotId{addr, key}
+	_, slotExists := state.data.Get(slotId)
+	require.False(slotExists)
+	state.BeginTransaction()
+	state.SetState(addr, key, valueToWrite)
+	state.EndTransaction()
+	slotValue, slotExists := state.data.Get(slotId)
+	require.True(slotExists)
+	require.Equal(valueToWrite, slotValue.committed)
+
+	snapshot = state.InterTxSnapshot()
+	state.BeginTransaction()
+	state.emptyCandidates = append(state.emptyCandidates, addr)
+	state.accountsToDelete = append(state.accountsToDelete, addr)
+	// state.SetState(addr, key, valueToWrite)
+	state.Suicide(addr)
+	state.EndTransaction()
+	require.NoError(state.Check())
+
+	slotValue, slotExists = state.data.Get(slotId)
+	require.True(slotExists)
+	require.Equal(slotValue.committed, common.Value{}) // Value reset by suicide
+	clearedAccountVal, clearedAccountExists = state.clearedAccounts[addr]
+	require.True(clearedAccountExists)
+	require.Equal(cleared, clearedAccountVal)
+
+	err = state.RevertToInterTxSnapshot(snapshot)
+	require.NoError(err)
+	slotValue, slotExists = state.data.Get(slotId)
+	require.True(slotExists)
+	require.Equal(valueToWrite, slotValue.committed)
+}
+
 func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	type InterTxSnapshotWithStateCheck struct {
 		stateBackup *stateDB
@@ -40,7 +216,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	for opName, op := range operationListWithAddress {
 		for i, address := range addresses {
 			opWithNameList = append(opWithNameList, StateDBOperation{
-				name: fmt.Sprintf("%s(addr:%d)", opName, i),
+				name: fmt.Sprintf("%s addr %d", opName, i),
 				op:   op,
 				args: OpArgs{address: address},
 			})
@@ -50,7 +226,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		for i, address := range addresses {
 			for j, key := range keys {
 				op := StateDBOperation{
-					name: fmt.Sprintf("%s(addr:%d,key:%d)", opName, i, j),
+					name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
 					op:   op,
 					args: OpArgs{address: address, key: key},
 				}
@@ -432,4 +608,15 @@ func CartesianTripleSlice[T any](slice []T, genName func(T, T, T) string) iter.S
 			}
 		}
 	}
+}
+
+func setEmptyAccountExpectations(db *MockState, address common.Address) {
+	db.EXPECT().Check().Return(nil).AnyTimes()
+	db.EXPECT().Flush().Return(nil).AnyTimes()
+	db.EXPECT().Close().Return(nil).AnyTimes()
+	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
+	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
+	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
+	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+	db.EXPECT().Exists(gomock.Any()).Return(false, nil).AnyTimes()
 }
