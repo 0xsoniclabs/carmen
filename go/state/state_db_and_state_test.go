@@ -134,7 +134,12 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to fetch block %d from archive: %v", expectation.block, err)
 				}
-				defer block.Close()
+				defer func() {
+					err := block.Close()
+					if err != nil {
+						t.Errorf("failed to close block %d: %v", expectation.block, err)
+					}
+				}()
 
 				got, err := block.GetBalance(expectation.account)
 				if err != nil {
@@ -271,7 +276,12 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 					}
 				}
 				stateDb := state.CreateStateDBUsing(store)
-				defer stateDb.Close()
+				defer func() {
+					err := stateDb.Close()
+					if err != nil {
+						t.Errorf("failed to close state DB; %s", err)
+					}
+				}()
 
 				mod(stateDb)
 				stateDb.EndTransaction()
