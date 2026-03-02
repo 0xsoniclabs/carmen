@@ -90,10 +90,10 @@ type VmStateDB interface {
 	EndTransaction()
 
 	// InterTxSnapshot creates a restore point to the last executed transaction. Returns an identifier of the created snapshot to be used for reverting to it.
-	InterTxSnapshot() interTxSnapshotID
+	InterTxSnapshot() InterTxSnapshotID
 
 	// RevertToInterTxSnapshot reverts the state to the state at the snapshot with the given identifier. Returns an error if the snapshot does not exists.
-	RevertToInterTxSnapshot(id interTxSnapshotID) error
+	RevertToInterTxSnapshot(id InterTxSnapshotID) error
 
 	// GetTransactionChanges provides a set of accounts and their slots, which have been
 	// potentially changed in the current transaction.
@@ -426,8 +426,8 @@ type storedDataCacheValue struct {
 	reincarnation uint64       // < the reincarnation the cached value belongs to
 }
 
-// interTxSnapshotID identifies an iter-transaction snapshot created with `InterTxSnapshot`.
-type interTxSnapshotID int
+// InterTxSnapshotID identifies an iter-transaction snapshot created with `InterTxSnapshot`.
+type InterTxSnapshotID int
 
 // CreateStateDBUsing creates a StateDB instance wrapping the given state supporting
 // all operations including end-of-block operations mutating the underlying state.
@@ -1248,20 +1248,20 @@ func (s *stateDB) EndTransaction() {
 	s.resetTransactionContext()
 }
 
-func (s *stateDB) InterTxSnapshot() interTxSnapshotID {
+func (s *stateDB) InterTxSnapshot() InterTxSnapshotID {
 	if s.withinTransaction {
 		s.trackErrors(fmt.Errorf("cannot create inter-transaction snapshot in a transaction"))
 		return 0
 	}
-	return interTxSnapshotID(len(s.undo))
+	return InterTxSnapshotID(len(s.undo))
 }
 
-func (s *stateDB) RevertToInterTxSnapshot(id interTxSnapshotID) error {
+func (s *stateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
 	if s.withinTransaction {
 		return fmt.Errorf("cannot revert to inter-transaction snapshot in a transaction")
 	}
 
-	if id > interTxSnapshotID(len(s.undo)) {
+	if id > InterTxSnapshotID(len(s.undo)) {
 		return fmt.Errorf("cannot revert to inter-transaction snapshot %d, only %d snapshots in the current block", id, len(s.undo))
 	}
 	for len(s.undo) > int(id) {

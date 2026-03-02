@@ -429,10 +429,10 @@ func (mr *MockVmStateDBMockRecorder) HasSuicided(arg0 any) *gomock.Call {
 }
 
 // InterTxSnapshot mocks base method.
-func (m *MockVmStateDB) InterTxSnapshot() interTxSnapshotID {
+func (m *MockVmStateDB) InterTxSnapshot() InterTxSnapshotID {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InterTxSnapshot")
-	ret0, _ := ret[0].(interTxSnapshotID)
+	ret0, _ := ret[0].(InterTxSnapshotID)
 	return ret0
 }
 
@@ -472,7 +472,7 @@ func (mr *MockVmStateDBMockRecorder) IsSlotInAccessList(arg0, arg1 any) *gomock.
 }
 
 // RevertToInterTxSnapshot mocks base method.
-func (m *MockVmStateDB) RevertToInterTxSnapshot(id interTxSnapshotID) error {
+func (m *MockVmStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
 	ret0, _ := ret[0].(error)
@@ -1143,10 +1143,10 @@ func (mr *MockStateDBMockRecorder) HasSuicided(arg0 any) *gomock.Call {
 }
 
 // InterTxSnapshot mocks base method.
-func (m *MockStateDB) InterTxSnapshot() interTxSnapshotID {
+func (m *MockStateDB) InterTxSnapshot() InterTxSnapshotID {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InterTxSnapshot")
-	ret0, _ := ret[0].(interTxSnapshotID)
+	ret0, _ := ret[0].(InterTxSnapshotID)
 	return ret0
 }
 
@@ -1198,7 +1198,7 @@ func (mr *MockStateDBMockRecorder) ResetBlockContext() *gomock.Call {
 }
 
 // RevertToInterTxSnapshot mocks base method.
-func (m *MockStateDB) RevertToInterTxSnapshot(id interTxSnapshotID) error {
+func (m *MockStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
 	ret0, _ := ret[0].(error)
@@ -1794,10 +1794,10 @@ func (mr *MockNonCommittableStateDBMockRecorder) HasSuicided(arg0 any) *gomock.C
 }
 
 // InterTxSnapshot mocks base method.
-func (m *MockNonCommittableStateDB) InterTxSnapshot() interTxSnapshotID {
+func (m *MockNonCommittableStateDB) InterTxSnapshot() InterTxSnapshotID {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InterTxSnapshot")
-	ret0, _ := ret[0].(interTxSnapshotID)
+	ret0, _ := ret[0].(InterTxSnapshotID)
 	return ret0
 }
 
@@ -1849,7 +1849,7 @@ func (mr *MockNonCommittableStateDBMockRecorder) Release() *gomock.Call {
 }
 
 // RevertToInterTxSnapshot mocks base method.
-func (m *MockNonCommittableStateDB) RevertToInterTxSnapshot(id interTxSnapshotID) error {
+func (m *MockNonCommittableStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
 	ret0, _ := ret[0].(error)

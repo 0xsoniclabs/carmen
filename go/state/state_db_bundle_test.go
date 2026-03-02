@@ -195,7 +195,7 @@ func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T
 func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	type InterTxSnapshotWithStateCheck struct {
 		stateBackup *stateDB
-		snapshotID  interTxSnapshotID
+		snapshotID  InterTxSnapshotID
 	}
 
 	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
