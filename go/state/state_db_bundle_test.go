@@ -17,6 +17,7 @@ import (
 )
 
 func TestStateDB_CreateAccount_RevertsClearedAccountsOnInterTxSnapshotRevert(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	require := require.New(t)
 
@@ -53,6 +54,7 @@ func TestStateDB_CreateAccount_RevertsClearedAccountsOnInterTxSnapshotRevert(t *
 }
 
 func TestStateDB_Suicide_RevertsClearedAccountsOnSnapshotRevert(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	require := require.New(t)
 
@@ -91,6 +93,7 @@ func TestStateDB_Suicide_RevertsClearedAccountsOnSnapshotRevert(t *testing.T) {
 }
 
 func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	require := require.New(t)
 	addr := common.Address{0x1}
@@ -162,6 +165,7 @@ func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T
 	slotId := slotId{addr, key}
 	_, slotExists := state.data.Get(slotId)
 	require.False(slotExists)
+	dataSnapshot := state.InterTxSnapshot()
 	state.BeginTransaction()
 	state.SetState(addr, key, valueToWrite)
 	state.EndTransaction()
@@ -172,8 +176,6 @@ func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T
 	snapshot = state.InterTxSnapshot()
 	state.BeginTransaction()
 	state.emptyCandidates = append(state.emptyCandidates, addr)
-	state.accountsToDelete = append(state.accountsToDelete, addr)
-	// state.SetState(addr, key, valueToWrite)
 	state.Suicide(addr)
 	state.EndTransaction()
 	require.NoError(state.Check())
@@ -190,6 +192,179 @@ func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T
 	slotValue, slotExists = state.data.Get(slotId)
 	require.True(slotExists)
 	require.Equal(valueToWrite, slotValue.committed)
+
+	// Back to initial state
+	err = state.RevertToInterTxSnapshot(dataSnapshot)
+	require.NoError(err)
+	_, slotExists = state.data.Get(slotId)
+	require.False(slotExists)
+}
+
+func TestStateDB_EndTransaction_SetWithinTransactionToFalse(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.BeginTransaction()
+	require.True(state.withinTransaction, "withinTransaction should be true after beginning a transaction")
+	state.EndTransaction()
+	require.False(state.withinTransaction, "withinTransaction should be false after ending a transaction")
+}
+
+func TestStateDB_EndTransaction_ThrowsErrorIfNotWithinTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.EndTransaction()
+	require.Equal(len(state.errors), 1)
+	err := state.errors[0]
+	require.EqualError(err, "cannot end transaction: not in a transaction")
+}
+
+func TestStateDB_BeginTransaction_AddsEntryToUndoList(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+
+	state := createStateDBWith(db, 1, true)
+	want := len(state.undo)
+	state.BeginTransaction()
+	require.Equal(t, want+1, len(state.undo),
+		"Undo list length mismatch: want %d, got %d", want+1, len(state.undo))
+}
+
+func TestStateDB_BeginTransaction_SetsWithinTransactionToTrue(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	require.False(state.withinTransaction, "withinTransaction should be false before beginning a transaction")
+	state.BeginTransaction()
+	require.True(state.withinTransaction, "withinTransaction should be true after beginning a transaction")
+}
+
+func TestStateDB_InterTxSnapshot_ThrowsErrorIfWithinTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.BeginTransaction()
+	require.True(state.withinTransaction)
+	_ = state.InterTxSnapshot()
+	require.Equal(len(state.errors), 1)
+	err := state.errors[0]
+	require.EqualError(err, "cannot create inter-transaction snapshot in a transaction")
+}
+
+func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	snapshotID := state.InterTxSnapshot()
+	require.Equal(snapshotID, InterTxSnapshotID(0), "unexpected snapshot ID: want %d, got %d", 0, snapshotID)
+
+	state.BeginTransaction()
+	state.EndTransaction()
+	snapshotID2 := state.InterTxSnapshot()
+	require.Equal(snapshotID2, InterTxSnapshotID(1), "unexpected snapshot ID: want %d, got %d", 1, snapshotID2)
+}
+
+func TestStateDB_RevertToInterTxSnapshot_ThrowsErrorIfWithinTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.BeginTransaction()
+	require.True(state.withinTransaction)
+	err := state.RevertToInterTxSnapshot(0)
+	require.EqualError(err, "cannot revert to inter-transaction snapshot in a transaction")
+}
+
+func TestStateDB_RevertToInterTxSnapshot_ThrowsErrorIfInvalidSnapshotID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	err := state.RevertToInterTxSnapshot(1)
+	require.EqualError(err, "cannot revert to inter-transaction snapshot 1, only 0 snapshots in the current block")
+
+	state.BeginTransaction()
+	state.EndTransaction()
+	err = state.RevertToInterTxSnapshot(2)
+	require.EqualError(err, "cannot revert to inter-transaction snapshot 2, only 1 snapshots in the current block")
+}
+
+func TestStateDB_Snapshot_ThrowsErrorIfNoActiveTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	_ = state.Snapshot()
+	require.Equal(len(state.errors), 1)
+	err := state.errors[0]
+	require.EqualError(err, "cannot create snapshot: no active transaction")
+}
+
+func TestStateDB_RevertToSnapshot_ThrowsErrorIfNoActiveTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.RevertToSnapshot(0)
+	require.Equal(len(state.errors), 1)
+	err := state.errors[0]
+	require.EqualError(err, "cannot revert to snapshot: no active transaction")
+}
+
+func TestStateDB_AddUndo_AddsUndoFunctionToCurrentTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.BeginTransaction()
+	snapshot := state.Snapshot()
+	value := 1
+	state.addUndo(func() {
+		value = 0
+	})
+	require.Equal(1, value)
+	state.RevertToSnapshot(snapshot)
+	require.Equal(0, value)
+}
+
+func TestStateDB_AddUndo_ThrowsErrorIfNoActiveTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.addUndo(func() {})
+	require.Equal(len(state.errors), 1)
+	err := state.errors[0]
+	require.EqualError(err, "cannot add undo function: no active transaction")
 }
 
 func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
@@ -231,7 +406,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 					args: OpArgs{address: address, key: key},
 				}
 				opWithNameList = append(opWithNameList, op)
-				// Simulating multiple writes on the same address and key
+				// Simulate multiple writes on the same address and key
 				opWithNameList = append(opWithNameList, op)
 			}
 		}

@@ -1542,7 +1542,7 @@ func (s *stateDB) GetArchiveBlockHeight() (uint64, bool, error) {
 // addUndo adds the given undo function to the list of undo functions for the current transaction.
 func (s *stateDB) addUndo(undoFunc func()) {
 	if len(s.undo) == 0 {
-		s.trackErrors(fmt.Errorf("cannot add undo function, no active transaction"))
+		s.trackErrors(fmt.Errorf("cannot add undo function: no active transaction"))
 		return
 	}
 	s.undo[len(s.undo)-1] = append(s.undo[len(s.undo)-1], undoFunc)
