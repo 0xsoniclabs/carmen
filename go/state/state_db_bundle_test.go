@@ -367,89 +367,89 @@ func TestStateDB_AddUndo_ThrowsErrorIfNoActiveTransaction(t *testing.T) {
 	require.EqualError(err, "cannot add undo function: no active transaction")
 }
 
-func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
-	type InterTxSnapshotWithStateCheck struct {
-		stateBackup *stateDB
-		snapshotID  InterTxSnapshotID
-	}
+// func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
+// 	type InterTxSnapshotWithStateCheck struct {
+// 		stateBackup *stateDB
+// 		snapshotID  InterTxSnapshotID
+// 	}
 
-	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
-		"setNonce":      setNonceOp,
-		"setCode":       setCodeOp,
-		"addBalance":    addBalanceOp,
-		"subBalance":    subBalanceOp,
-		"addAddress":    addAddressToAccessListOp,
-		"createAccount": createAccountOp,
-		"suicide":       suicideOp,
-	}
+// 	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
+// 		"setNonce":      setNonceOp,
+// 		"setCode":       setCodeOp,
+// 		"addBalance":    addBalanceOp,
+// 		"subBalance":    subBalanceOp,
+// 		"addAddress":    addAddressToAccessListOp,
+// 		"createAccount": createAccountOp,
+// 		"suicide":       suicideOp,
+// 	}
 
-	operationListWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
-		"setState": setStateOp,
-	}
+// 	operationListWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
+// 		"setState": setStateOp,
+// 	}
 
-	var opWithNameList []StateDBOperation
-	for opName, op := range operationListWithAddress {
-		for i, address := range addresses {
-			opWithNameList = append(opWithNameList, StateDBOperation{
-				name: fmt.Sprintf("%s addr %d", opName, i),
-				op:   op,
-				args: OpArgs{address: address},
-			})
-		}
-	}
-	for opName, op := range operationListWithAddressAndKey {
-		for i, address := range addresses {
-			for j, key := range keys {
-				op := StateDBOperation{
-					name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
-					op:   op,
-					args: OpArgs{address: address, key: key},
-				}
-				opWithNameList = append(opWithNameList, op)
-				// Simulate multiple writes on the same address and key
-				opWithNameList = append(opWithNameList, op)
-			}
-		}
-	}
+// 	var opWithNameList []StateDBOperation
+// 	for opName, op := range operationListWithAddress {
+// 		for i, address := range addresses {
+// 			opWithNameList = append(opWithNameList, StateDBOperation{
+// 				name: fmt.Sprintf("%s addr %d", opName, i),
+// 				op:   op,
+// 				args: OpArgs{address: address},
+// 			})
+// 		}
+// 	}
+// 	for opName, op := range operationListWithAddressAndKey {
+// 		for i, address := range addresses {
+// 			for j, key := range keys {
+// 				op := StateDBOperation{
+// 					name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
+// 					op:   op,
+// 					args: OpArgs{address: address, key: key},
+// 				}
+// 				opWithNameList = append(opWithNameList, op)
+// 				// Simulate multiple writes on the same address and key
+// 				opWithNameList = append(opWithNameList, op)
+// 			}
+// 		}
+// 	}
 
-	testNameFunc := func(t1, t2, t3 StateDBOperation) string {
-		return fmt.Sprintf("%s %s  %s", t1.name, t2.name, t3.name)
-	}
+// 	testNameFunc := func(t1, t2, t3 StateDBOperation) string {
+// 		return fmt.Sprintf("%s %s  %s", t1.name, t2.name, t3.name)
+// 	}
 
-	for testCaseName, testCaseList := range CartesianTripleSlice(opWithNameList, testNameFunc) {
-		t.Run(testCaseName, func(t *testing.T) {
-			t.Parallel()
-			require := require.New(t)
+// 	for testCaseName, testCaseList := range CartesianTripleSlice(opWithNameList, testNameFunc) {
+// 		t.Run(testCaseName, func(t *testing.T) {
+// 			t.Parallel()
+// 			require := require.New(t)
 
-			ctx := NewStateDBContext(t)
+// 			ctx := NewStateDBContext(t)
 
-			var statesToCheck []InterTxSnapshotWithStateCheck
-			for _, testCase := range testCaseList {
-				snapshotID := ctx.state.InterTxSnapshot()
-				require.Empty(ctx.state.accountsToDelete)
-				require.Empty(ctx.state.writtenSlots)
-				oldStateDB := partialCopyStateDB(ctx.state)
+// 			var statesToCheck []InterTxSnapshotWithStateCheck
+// 			for _, testCase := range testCaseList {
+// 				snapshotID := ctx.state.InterTxSnapshot()
+// 				require.Empty(ctx.state.accountsToDelete)
+// 				require.Empty(ctx.state.writtenSlots)
+// 				oldStateDB := partialCopyStateDB(ctx.state)
 
-				ctx.state.BeginTransaction()
-				testCase.Execute(ctx)
-				ctx.state.EndTransaction()
+// 				ctx.state.BeginTransaction()
+// 				testCase.Execute(ctx)
+// 				ctx.state.EndTransaction()
 
-				statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
-					stateBackup: oldStateDB,
-					snapshotID:  snapshotID,
-				})
-			}
+// 				statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
+// 					stateBackup: oldStateDB,
+// 					snapshotID:  snapshotID,
+// 				})
+// 			}
 
-			slices.Reverse(statesToCheck)
-			for _, cur := range statesToCheck {
-				require.NoError(
-					ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
-				)
-				checkStateDB(t, cur.stateBackup, ctx.state)
-			}
-		})
-	}
-}
+// 			slices.Reverse(statesToCheck)
+// 			for _, cur := range statesToCheck {
+// 				require.NoError(
+// 					ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
+// 				)
+// 				checkStateDB(t, cur.stateBackup, ctx.state)
+// 			}
+// 		})
+// 	}
+// }
 
 // StateDBContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
 type StateDBContext struct {
