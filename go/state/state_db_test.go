@@ -356,7 +356,6 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 		t.Errorf("Wrong post-end-of-transaction state, wanted %v, got %v", val2, got)
 	}
 
-	db.EndTransaction()
 	db.EndBlock(123)
 }
 
