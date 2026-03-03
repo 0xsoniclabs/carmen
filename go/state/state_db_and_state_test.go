@@ -48,8 +48,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			}
 			db := state.CreateStateDBUsing(store)
 			defer func() {
-				err := db.Close()
-				if err != nil {
+				if err := db.Close(); err != nil {
 					t.Errorf("failed to close state DB; %s", err)
 				}
 			}()
@@ -135,8 +134,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 					t.Fatalf("failed to fetch block %d from archive: %v", expectation.block, err)
 				}
 				defer func() {
-					err := block.Close()
-					if err != nil {
+					if block.Close(); err != nil {
 						t.Errorf("failed to close block %d: %v", expectation.block, err)
 					}
 				}()
@@ -162,7 +160,6 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 
 func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 	for _, config := range initStates() {
-		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -176,8 +173,7 @@ func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 			}
 			db := state.CreateStateDBUsing(store)
 			defer func() {
-				err := db.Close()
-				if err != nil {
+				if err := db.Close(); err != nil {
 					t.Errorf("failed to close state DB; %s", err)
 				}
 			}()
@@ -196,7 +192,6 @@ func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 
 func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 	for _, config := range initStates() {
-		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -210,8 +205,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 			}
 			db := state.CreateStateDBUsing(store)
 			defer func() {
-				err := db.Close()
-				if err != nil {
+				if err := db.Close(); err != nil {
 					t.Errorf("failed to close state DB; %s", err)
 				}
 			}()
@@ -252,8 +246,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 		}
 		ref := state.CreateStateDBUsing(ref_state)
 		defer func() {
-			err := ref.Close()
-			if err != nil {
+			if err := ref.Close(); err != nil {
 				t.Errorf("failed to close reference state DB; %s", err)
 			}
 		}()
@@ -277,8 +270,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 				}
 				stateDb := state.CreateStateDBUsing(store)
 				defer func() {
-					err := stateDb.Close()
-					if err != nil {
+					if err := stateDb.Close(); err != nil {
 						t.Errorf("failed to close state DB; %s", err)
 					}
 				}()
@@ -445,8 +437,7 @@ func TestStateDBRead(t *testing.T) {
 
 	s := createState(t, *stateImpl, *stateDir)
 	defer func() {
-		err := s.Close()
-		if err != nil {
+		if err := s.Close(); err != nil {
 			t.Errorf("failed to close state; %s", err)
 		}
 	}()
@@ -569,8 +560,7 @@ func TestStateDBArchive(t *testing.T) {
 				}
 			}
 			defer func() {
-				err := s.Close()
-				if err != nil {
+				if err := s.Close(); err != nil {
 					t.Errorf("failed to close state; %s", err)
 				}
 			}()
@@ -635,8 +625,7 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
 			defer func() {
-				err := s.Close()
-				if err != nil {
+				if err := s.Close(); err != nil {
 					t.Errorf("failed to close state; %s", err)
 				}
 			}()
@@ -709,8 +698,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
 			defer func() {
-				err := s.Close()
-				if err != nil {
+				if err := s.Close(); err != nil {
 					t.Errorf("failed to close state; %s", err)
 				}
 			}()
