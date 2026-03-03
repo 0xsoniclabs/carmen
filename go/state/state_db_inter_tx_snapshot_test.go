@@ -16,7 +16,67 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestStateDB_CreateAccount_RevertsClearedAccountsOnInterTxSnapshotRevert(t *testing.T) {
+func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	snapshotID := state.InterTxSnapshot()
+	require.Equal(snapshotID, InterTxSnapshotID(0), "unexpected snapshot ID: want %d, got %d", 0, snapshotID)
+
+	state.BeginTransaction()
+	state.EndTransaction()
+	snapshotID2 := state.InterTxSnapshot()
+	require.Equal(snapshotID2, InterTxSnapshotID(1), "unexpected snapshot ID: want %d, got %d", 1, snapshotID2)
+}
+
+func TestStateDB_InterTxSnapshot_ReturnsErrorIfWithinTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.BeginTransaction()
+	require.True(state.withinTransaction)
+	_ = state.InterTxSnapshot()
+	require.Equal(len(state.errors), 1)
+	err := state.errors[0]
+	require.EqualError(err, "cannot create inter-transaction snapshot in a transaction")
+}
+
+func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfWithinTransaction(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	state.BeginTransaction()
+	require.True(state.withinTransaction)
+	err := state.RevertToInterTxSnapshot(0)
+	require.EqualError(err, "cannot revert to inter-transaction snapshot in a transaction")
+}
+
+func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfInvalidSnapshotID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	state := createStateDBWith(db, 1, true)
+
+	err := state.RevertToInterTxSnapshot(1)
+	require.EqualError(err, "cannot revert to inter-transaction snapshot 1, only 0 snapshots in the current block")
+
+	state.BeginTransaction()
+	state.EndTransaction()
+	err = state.RevertToInterTxSnapshot(2)
+	require.EqualError(err, "cannot revert to inter-transaction snapshot 2, only 1 snapshots in the current block")
+}
+
+func TestStateDB_RevertToInterTxSnapshot_RevertsClearedAccountsFromCreateAccount(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	require := require.New(t)
@@ -60,7 +120,7 @@ func TestStateDB_CreateAccount_RevertsClearedAccountsOnInterTxSnapshotRevert(t *
 	require.Equal(noClearing, val)
 }
 
-func TestStateDB_Suicide_RevertsClearedAccountsOnSnapshotRevert(t *testing.T) {
+func TestStateDB_RevertToInterTxSnapshot_RevertsClearedAccountsFromSuicide(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	require := require.New(t)
@@ -99,7 +159,7 @@ func TestStateDB_Suicide_RevertsClearedAccountsOnSnapshotRevert(t *testing.T) {
 	require.Equal(noClearing, val)
 }
 
-func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T) {
+func TestStateDB_RevertToInterTxSnapshot_RevertsStateFromEndTransaction(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	require := require.New(t)
@@ -207,66 +267,6 @@ func TestStateDB_EndTransaction_RevertsStateOnInterTxSnapshotRevert(t *testing.T
 	require.False(slotExists)
 }
 
-func TestStateDB_InterTxSnapshot_ThrowsErrorIfWithinTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.BeginTransaction()
-	require.True(state.withinTransaction)
-	_ = state.InterTxSnapshot()
-	require.Equal(len(state.errors), 1)
-	err := state.errors[0]
-	require.EqualError(err, "cannot create inter-transaction snapshot in a transaction")
-}
-
-func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	snapshotID := state.InterTxSnapshot()
-	require.Equal(snapshotID, InterTxSnapshotID(0), "unexpected snapshot ID: want %d, got %d", 0, snapshotID)
-
-	state.BeginTransaction()
-	state.EndTransaction()
-	snapshotID2 := state.InterTxSnapshot()
-	require.Equal(snapshotID2, InterTxSnapshotID(1), "unexpected snapshot ID: want %d, got %d", 1, snapshotID2)
-}
-
-func TestStateDB_RevertToInterTxSnapshot_ThrowsErrorIfWithinTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.BeginTransaction()
-	require.True(state.withinTransaction)
-	err := state.RevertToInterTxSnapshot(0)
-	require.EqualError(err, "cannot revert to inter-transaction snapshot in a transaction")
-}
-
-func TestStateDB_RevertToInterTxSnapshot_ThrowsErrorIfInvalidSnapshotID(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	err := state.RevertToInterTxSnapshot(1)
-	require.EqualError(err, "cannot revert to inter-transaction snapshot 1, only 0 snapshots in the current block")
-
-	state.BeginTransaction()
-	state.EndTransaction()
-	err = state.RevertToInterTxSnapshot(2)
-	require.EqualError(err, "cannot revert to inter-transaction snapshot 2, only 1 snapshots in the current block")
-}
-
 func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	type InterTxSnapshotWithStateCheck struct {
 		stateBackup *stateDB
@@ -315,7 +315,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		return fmt.Sprintf("%s %s  %s", t1.name, t2.name, t3.name)
 	}
 
-	for testCaseName, testCaseList := range CartesianTriple(opWithNameList, testNameFunc) {
+	for testCaseName, testCaseList := range cartesianTriple(opWithNameList, testNameFunc) {
 		t.Run(testCaseName, func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
@@ -350,20 +350,21 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	}
 }
 
-// StateDBContext is a helper struct containing a state and values to be used in subsequent operations on it, to be used in the tests of StateDB transaction revert functionality. Such values are supposed to be mutated by the operations to properly check after reverts that the state is properly reverted to the previous state.
+// StateDBContext is a helper struct wrapping a StateDB and its underlying mocked State.
+// It also contains a random number generator to generate random values for the operations performed on the StateDB.
 type StateDBContext struct {
 	state *stateDB
 	db    *MockState
 	rng   *rand.Rand
 }
 
-// OpArgs is a struct containing an address and a key, to be used as arguments for operations that require them in the tests of StateDB transaction revert functionality.
+// OpArgs is a struct containing an address and a key, to be used as arguments for operations performed on the StateDB.
 type OpArgs struct {
 	address common.Address
 	key     common.Key
 }
 
-// StateDBOperation is an helper struct representing an operation to be performed on the StateDB, containing the operation function, its name for better test readability, and the address and key arguments to be used in the operation if needed.
+// StateDBOperation is an helper struct representing an operation to be performed on the StateDB, with its name and arguments.
 type StateDBOperation struct {
 	name string
 	op   func(ctx *StateDBContext, args OpArgs)
@@ -376,12 +377,15 @@ func (op *StateDBOperation) Execute(ctx *StateDBContext) {
 }
 
 var (
+	// Mock values to be used in tests.
+	// TODO: move them in constructor
 	mockCode       = []byte{0x1}
 	mockBalance    = amount.New(0)
 	mockNonce      = common.Nonce{0}
 	mockStateValue = common.Value{0x1}
 	mockCodeSize   = math.MaxInt
-	addresses      = []common.Address{
+	// Set of address and key values to be used in tests.
+	addresses = []common.Address{
 		{0x1},
 		{0x2},
 		{0x3},
@@ -393,7 +397,9 @@ var (
 	}
 )
 
-// NewStateDBContext creates a new StateDBContext with a mocked State. It sets up an address and key with initial values, and sets expectations on the mocked State for operations that might be performed on the address and key.
+// NewStateDBContext creates a new StateDBContext with a mocked State and a StateDB using that mocked State.
+// It sets up a random number generator for generating random values within stateDB operations.
+// For each test address and keys, sets expectation on the mocked State for read-only operations with mocked values.
 func NewStateDBContext(t *testing.T) *StateDBContext {
 	t.Helper()
 
@@ -454,39 +460,6 @@ func suicideOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.Suicide(args.address)
 }
 
-func Test_partialCopyStateDB_copiesStateDBApartFromStoredDataCache(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-	st := NewMockState(ctrl)
-
-	st.EXPECT().Check().Return(nil).AnyTimes()
-	st.EXPECT().Flush().Return(nil).AnyTimes()
-	st.EXPECT().Close().Return(nil).AnyTimes()
-
-	state := createStateDBWith(st, defaultStoredDataCacheSize, true)
-	defer func() {
-		require.NoError(t, state.Close())
-	}()
-
-	// Create a state with some data and set all fields that are copied by partialCopyStateDB
-	addr := common.Address{0x1}
-	state.BeginTransaction()
-
-	state.accounts[addr] = &accountState{}
-	state.balances[addr] = &balanceValue{original: func() *amount.Amount { a := amount.New(100); return &a }(), current: amount.New(10)}
-	state.nonces[addr] = &nonceValue{original: func() *uint64 { n := uint64(100); return &n }(), current: 200}
-	state.reincarnation[addr] = 42
-	state.codes[addr] = &codeValue{code: []byte{0x1}}
-	state.undo = [][]func(){{func() {}}}
-	state.clearedAccounts[addr] = 1
-	state.canApplyChanges = true
-
-	copiedState := backupStateDB(state)
-
-	require.NoError(t, checkStateDB(t, state, copiedState))
-}
-
 // backupStateDB creates a partial copy of the stateDB to be used to check transaction revert effects.
 func backupStateDB(s *stateDB) *stateDB {
 	ns := createStateDBWith(s.state, 1, true)
@@ -494,21 +467,18 @@ func backupStateDB(s *stateDB) *stateDB {
 	ns.balances = cloneMapWith(s.balances, cloneBalanceValue)
 	ns.nonces = cloneMapWith(s.nonces, cloneNonceValue)
 	copyFastMapWith(s.data, ns.data, cloneValue)
-	s.transientStorage.CopyTo(ns.transientStorage)
 	ns.reincarnation = maps.Clone(s.reincarnation)
 	ns.codes = cloneMapWith(s.codes, cloneCodeValue)
 	for undo := range s.undo {
 		ns.undo = append(ns.undo, slices.Clone(s.undo[undo]))
 	}
 	ns.clearedAccounts = maps.Clone(s.clearedAccounts)
-	ns.createdContracts = maps.Clone(s.createdContracts)
-	ns.emptyCandidates = slices.Clone(s.emptyCandidates)
 	ns.canApplyChanges = s.canApplyChanges
 
 	return ns
 }
 
-// checkStateDB checks if the `actual` reverted stateDB fields match the backup `expected` stateDB ones, along with postconditions on transaction context fields.
+// checkStateDB checks if the `actual` reverted stateDB fields match the backup `expected` stateDB one, along with postconditions on transaction context fields.
 func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) error {
 	t.Helper()
 
@@ -531,7 +501,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) error {
 		}
 	}
 
-	if !fastMapEqual(expected.data, actual.data) {
+	if !fastMapDeepEqual(expected.data, actual.data) {
 		return fmt.Errorf("data maps differ: expected %v, got %v", expected.data, actual.data)
 	}
 	if !reflect.DeepEqual(expected.reincarnation, actual.reincarnation) {
@@ -593,6 +563,41 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) error {
 	}
 
 	return nil
+}
+
+func Test_partialCopyStateDB_performPartialCopy(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	st := NewMockState(ctrl)
+
+	st.EXPECT().Check().Return(nil).AnyTimes()
+	st.EXPECT().Flush().Return(nil).AnyTimes()
+	st.EXPECT().Close().Return(nil).AnyTimes()
+
+	state := createStateDBWith(st, defaultStoredDataCacheSize, true)
+	defer func() {
+		require.NoError(t, state.Close())
+	}()
+
+	// Create a state with some data and set all fields that are copied by partialCopyStateDB
+	addr := common.Address{0x1}
+	key := common.Key{0x2}
+	state.BeginTransaction()
+
+	state.accounts[addr] = &accountState{}
+	state.balances[addr] = &balanceValue{original: func() *amount.Amount { a := amount.New(100); return &a }(), current: amount.New(10)}
+	state.nonces[addr] = &nonceValue{original: func() *uint64 { n := uint64(100); return &n }(), current: 200}
+	state.data.Put(slotId{addr: addr, key: key}, &slotValue{stored: common.Value{0x1}})
+	state.reincarnation[addr] = 42
+	state.codes[addr] = &codeValue{code: []byte{0x1}}
+	state.undo = [][]func(){{func() {}}}
+	state.clearedAccounts[addr] = 1
+	state.canApplyChanges = true
+
+	copiedState := backupStateDB(state)
+
+	require.NoError(t, checkStateDB(t, state, copiedState))
 }
 
 func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T) {
@@ -731,8 +736,66 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 
 }
 
-// fastMapEqual checks if two FastMaps are equal. If the values are pointers, the pointed values are compared for equality instead of the pointers themselves.
-func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {
+func Test_fastMapDeepEqual_checksForDeepEquality(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+
+	// Empty
+	m1 := &common.FastMap[common.Key, common.Value]{}
+	m2 := &common.FastMap[common.Key, common.Value]{}
+	require.True(fastMapDeepEqual(m1, m2))
+
+	// Both nil
+	var m3 *common.FastMap[common.Key, common.Value]
+	var m4 *common.FastMap[common.Key, common.Value]
+	require.True(fastMapDeepEqual(m3, m4))
+
+	// One nil, one not
+	m5 := &common.FastMap[common.Key, common.Value]{}
+	require.False(fastMapDeepEqual(m3, m5))
+	require.False(fastMapDeepEqual(m5, m4))
+
+	// Same keys and values
+	testSlotId := slotId{common.Address{0x1}, common.Key{0x1}}
+	m6 := common.NewFastMap[slotId, common.Value](slotHasher{})
+	m7 := common.NewFastMap[slotId, common.Value](slotHasher{})
+	m6.Put(testSlotId, common.Value{0x1})
+	m7.Put(testSlotId, common.Value{0x1})
+	require.True(fastMapDeepEqual(m6, m7))
+	require.True(fastMapDeepEqual(m7, m6))
+
+	// Same keys, different values
+	m6.Put(testSlotId, common.Value{0x2})
+	require.False(fastMapDeepEqual(m6, m7))
+	require.False(fastMapDeepEqual(m7, m6))
+
+	// Same keys, same value with different pointers
+	m8 := common.NewFastMap[slotId, *common.Value](slotHasher{})
+	m9 := common.NewFastMap[slotId, *common.Value](slotHasher{})
+	val1 := &common.Value{0x1}
+	val2 := &common.Value{0x1}
+	m8.Put(testSlotId, val1)
+	m9.Put(testSlotId, val2)
+	require.True(fastMapDeepEqual(m8, m9))
+
+	// Same keys, different value and pointers
+	m10 := common.NewFastMap[slotId, *common.Value](slotHasher{})
+	m11 := common.NewFastMap[slotId, *common.Value](slotHasher{})
+	val3 := &common.Value{0x2}
+	m10.Put(testSlotId, val1)
+	m11.Put(testSlotId, val3)
+	require.False(fastMapDeepEqual(m10, m11))
+}
+
+// fastMapDeepEqual checks if two FastMaps are equal. If the values are pointers, the pointed values are compared for equality instead of the pointers themselves.
+func fastMapDeepEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {
+	if m1 == nil && m2 != nil || m1 != nil && m2 == nil {
+		return false
+	}
+	if m1 == nil && m2 == nil {
+		return true
+	}
 	equal := m1.Size() == m2.Size()
 	if equal {
 		m1.ForEach(func(key K, value V) {
@@ -751,6 +814,7 @@ func fastMapEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool
 	return equal
 }
 
+// copyFastMapWith copies `src` into `dst` using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
 func copyFastMapWith[K comparable, V any](src *common.FastMap[K, V], dst *common.FastMap[K, V], cloneFunc func(V) V) {
 	if src == nil || dst == nil {
 		return
@@ -760,6 +824,7 @@ func copyFastMapWith[K comparable, V any](src *common.FastMap[K, V], dst *common
 	})
 }
 
+// cloneMapWith copies `src` into `dst` using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
 func cloneMapWith[K comparable, V any](m map[K]V, cloneFunc func(V) V) map[K]V {
 	if m == nil {
 		return nil
@@ -826,8 +891,9 @@ func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
 	return b
 }
 
-// CartesianTriple generates the cartesian product of a slice with itself three times, yielding the result as a sequence of tuples containing the values and string representations of them.
-func CartesianTriple[T any](slice []T, genName func(T, T, T) string) iter.Seq2[string, [3]T] {
+// cartesianTriple generates the cartesian product of a slice with itself three times,
+// yielding the result as a sequence of tuples containing the values and a string representations of them.
+func cartesianTriple[T any](slice []T, genName func(T, T, T) string) iter.Seq2[string, [3]T] {
 	return func(yield func(string, [3]T) bool) {
 		for _, a := range slice {
 			for _, b := range slice {
