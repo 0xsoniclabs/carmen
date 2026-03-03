@@ -1155,7 +1155,6 @@ func (s *stateDB) EndTransaction() {
 		s.trackErrors(fmt.Errorf("cannot end transaction: not in a transaction"))
 		return
 	}
-	s.withinTransaction = false
 
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
@@ -1245,6 +1244,7 @@ func (s *stateDB) EndTransaction() {
 	}
 
 	s.writtenSlots = map[*slotValue]bool{}
+	s.withinTransaction = false
 	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
 }
@@ -1542,8 +1542,7 @@ func (s *stateDB) GetArchiveBlockHeight() (uint64, bool, error) {
 
 // addUndo adds the given undo function to the list of undo functions for the current transaction.
 func (s *stateDB) addUndo(undoFunc func()) {
-	if len(s.undo) == 0 {
-		s.trackErrors(fmt.Errorf("cannot add undo function: no active transaction"))
+	if !s.withinTransaction {
 		return
 	}
 	s.undo[len(s.undo)-1] = append(s.undo[len(s.undo)-1], undoFunc)
