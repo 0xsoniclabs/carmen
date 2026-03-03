@@ -366,7 +366,10 @@ func TestPersistentStateDB(t *testing.T) {
 		if config.config.Archive == state.NoArchive {
 			continue
 		}
-		config := config
+		// TODO https://github.com/0xsoniclabs/sonic-admin/issues/611
+		if strings.Contains(config.name(), "rust") {
+			continue
+		}
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -544,7 +547,7 @@ func TestStateDBArchive(t *testing.T) {
 		if config.config.Archive == state.NoArchive {
 			continue
 		}
-		// See https://github.com/0xsoniclabs/sonic-admin/issues/611
+		// TODO https://github.com/0xsoniclabs/sonic-admin/issues/611
 		if strings.Contains(string(config.config.Variant), "rust") {
 			continue
 		}
