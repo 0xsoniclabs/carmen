@@ -316,7 +316,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 					args: OpArgs{address: address, key: key},
 				}
 				opWithNameList = append(opWithNameList, op)
-				// Simulate multiple writes on the same address and key
+				// Multiple writes to to the same slot to trigger already existing case
 				opWithNameList = append(opWithNameList, op)
 			}
 		}
@@ -472,7 +472,8 @@ func backupStateDB(s *stateDB) *stateDB {
 }
 
 // checkStateDB checks if the `actual` reverted stateDB fields match the backup `expected` stateDB one, along with postconditions on transaction context fields.
-func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockState, defaultValueAccount common.Address) error {
+// Caches populated by read-only functions are checked against default values and are retrieved by querying `mock` with an untouched `defaultAccount`.
+func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockState, defaultAccount common.Address) error {
 	t.Helper()
 
 	for addr, account := range actual.accounts {
@@ -486,7 +487,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 		if exists && reflect.DeepEqual(balance, value) {
 			continue
 		}
-		defaultBalance, _ := mock.GetBalance(defaultValueAccount)
+		defaultBalance, _ := mock.GetBalance(defaultAccount)
 		if !(balance.current == defaultBalance && balance.original == &balance.current) {
 			return fmt.Errorf("balances differ at address %v: got %v", addr, balance)
 		}
@@ -496,7 +497,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 		if exists && reflect.DeepEqual(nonce, value) {
 			continue
 		}
-		defaultNonce, _ := mock.GetNonce(defaultValueAccount)
+		defaultNonce, _ := mock.GetNonce(defaultAccount)
 		if !(nonce.current == defaultNonce.ToUint64()) {
 			return fmt.Errorf("nonces differ at address %v: got %v", addr, nonce)
 		}
@@ -514,7 +515,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 		if exists && reflect.DeepEqual(code, value) {
 			continue
 		}
-		defaultCode, _ := mock.GetCode(defaultValueAccount)
+		defaultCode, _ := mock.GetCode(defaultAccount)
 		if !(code.code == nil || slices.Equal(code.code, defaultCode)) {
 			return fmt.Errorf("codes differ at address %v: expected %v, got %v", addr, value, code)
 		}
