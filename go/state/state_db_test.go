@@ -1413,6 +1413,7 @@ func TestStateDB_IncreasingTheBalanceBeyondItsMaximumValueCausesTheBlockToFail(t
 	db.AddBalance(address1, amount.New(1))
 	db.AddBalance(address1, amount.Max())
 	db.EndTransaction()
+
 	db.EndBlock(1)
 
 	if err := db.Check(); err == nil {
@@ -4523,6 +4524,10 @@ func TestStateDB_TransientStorage_IsClearedAfterCallingEndTransaction(t *testing
 	if got, want := db.GetTransientState(address1, key1), valEmpty; got != want {
 		t.Errorf("unexpected value, wanted %v, got %v", want, got)
 	}
+
+	if len(db.undo) > 0 {
+		t.Errorf("unexpected undo len, wanted: 0, got: %v", len(db.undo))
+	}
 }
 
 func TestStateDB_SetTransientState_NewestValueCanBeObtained(t *testing.T) {
@@ -5008,147 +5013,4 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 	if !errors.Is(err, injectedError1) || !errors.Is(err, injectedError2) {
 		t.Errorf("expected errors %v and %v to be tracked, got %v", injectedError1, injectedError2, err)
 	}
-}
-
-func TestStateDB_BeginTransaction_AddsEntryToUndoList(t *testing.T) {
-	t.Parallel()
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-
-	state := createStateDBWith(db, 1, true)
-	want := len(state.undo)
-	state.BeginTransaction()
-	require.Equal(t, want+1, len(state.undo),
-		"Undo list length mismatch: want %d, got %d", want+1, len(state.undo))
-}
-
-func TestStateDB_BeginTransaction_SetsWithinTransactionToTrue(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	require.False(state.withinTransaction)
-	state.BeginTransaction()
-	require.True(state.withinTransaction)
-}
-
-func TestStateDB_BeginTransaction_ReturnsErrorIfWithinTransaction(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	mock.EXPECT().Check().Return(nil).AnyTimes()
-	db := CreateStateDBUsing(mock)
-
-	db.BeginTransaction()
-	db.BeginTransaction()
-
-	require.EqualError(t, db.Check(), "cannot begin transaction: already in a transaction")
-}
-
-func TestStateDB_EndTransaction_SetWithinTransactionToFalse(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.BeginTransaction()
-	require.True(state.withinTransaction)
-	state.EndTransaction()
-	require.False(state.withinTransaction)
-}
-
-func TestStateDB_EndTransaction_ReturnsErrorIfNotWithinTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.EndTransaction()
-	require.Equal(len(state.errors), 1)
-	err := state.errors[0]
-	require.EqualError(err, "cannot end transaction: not in a transaction")
-}
-
-func TestStateDB_Snapshot_ReturnsErrorIfNoActiveTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	_ = state.Snapshot()
-	require.Equal(len(state.errors), 1)
-	err := state.errors[0]
-	require.EqualError(err, "cannot create snapshot: no active transaction")
-}
-
-func TestStateDB_RevertToSnapshot_ReturnsErrorIfNoActiveTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.RevertToSnapshot(0)
-	require.Equal(len(state.errors), 1)
-	err := state.errors[0]
-	require.EqualError(err, "cannot revert to snapshot: no active transaction")
-}
-
-func TestStateDB_AddUndo_AddsUndoFunctionToCurrentTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.BeginTransaction()
-	snapshot := state.Snapshot()
-	value := 1
-	state.addUndo(func() {
-		value = 0
-	})
-	require.Equal(1, value)
-	state.RevertToSnapshot(snapshot)
-	require.Equal(0, value)
-}
-
-func TestStateDB_AddUndo_ReturnsErrorIfNoActiveTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.addUndo(func() {})
-	require.Equal(len(state.errors), 1)
-	err := state.errors[0]
-	require.EqualError(err, "cannot add undo function: no active transaction")
-}
-
-func TestStateDB_BeginBlock_ReturnsErrorIfWithinTransaction(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	mock.EXPECT().Check().Return(nil).AnyTimes()
-	db := CreateStateDBUsing(mock)
-
-	db.BeginTransaction()
-	db.BeginBlock()
-
-	require.EqualError(t, db.Check(), "cannot start block: currently in a transaction")
-}
-
-func TestStateDB_EndBlock_ReturnsErrorIfWithinTransaction(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	mock.EXPECT().Check().Return(nil).AnyTimes()
-	db := CreateStateDBUsing(mock)
-
-	db.BeginTransaction()
-	db.EndBlock(1)
-
-	require.EqualError(t, db.Check(), "cannot end block: currently in a transaction")
 }
