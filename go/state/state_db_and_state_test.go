@@ -570,17 +570,21 @@ func TestStateDBArchive(t *testing.T) {
 
 			stateDb := state.CreateStateDBUsing(s)
 
+			stateDb.BeginTransaction()
 			stateDb.AddBalance(address2, amount.New(22))
 
 			bl := stateDb.StartBulkLoad(0)
 			bl.CreateAccount(address1)
 			bl.SetBalance(address1, amount.New(12))
+			stateDb.EndTransaction()
 			if err := bl.Close(); err != nil {
 				t.Fatalf("failed to bulk-load StateDB with archive; %s", err)
 			}
 
 			stateDb.BeginBlock()
+			stateDb.BeginTransaction()
 			stateDb.AddBalance(address1, amount.New(22))
+			stateDb.EndTransaction()
 			stateDb.EndBlock(1)
 
 			if err := stateDb.Flush(); err != nil { // wait until archives are written
