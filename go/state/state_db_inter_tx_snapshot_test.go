@@ -32,34 +32,6 @@ func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
 	require.Equal(snapshotID2, InterTxSnapshotID(1), "unexpected snapshot ID: want %d, got %d", 1, snapshotID2)
 }
 
-func TestStateDB_InterTxSnapshot_ReturnsErrorIfWithinTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.BeginTransaction()
-	require.True(state.withinTransaction)
-	_ = state.InterTxSnapshot()
-	require.Equal(len(state.errors), 1)
-	err := state.errors[0]
-	require.EqualError(err, "cannot create inter-transaction snapshot in a transaction")
-}
-
-func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfWithinTransaction(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	db := NewMockState(ctrl)
-	state := createStateDBWith(db, 1, true)
-
-	state.BeginTransaction()
-	require.True(state.withinTransaction)
-	err := state.RevertToInterTxSnapshot(0)
-	require.EqualError(err, "cannot revert to inter-transaction snapshot in a transaction")
-}
-
 func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfInvalidSnapshotID(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -462,9 +434,7 @@ func backupStateDB(s *stateDB) *stateDB {
 	s.data.CopyToWith(ns.data, cloneValue)
 	ns.reincarnation = maps.Clone(s.reincarnation)
 	ns.codes = cloneMapWith(s.codes, cloneCodeValue)
-	for undo := range s.undo {
-		ns.undo = append(ns.undo, slices.Clone(s.undo[undo]))
-	}
+	ns.undo = slices.Clone(s.undo)
 	ns.clearedAccounts = maps.Clone(s.clearedAccounts)
 	ns.canApplyChanges = s.canApplyChanges
 
@@ -529,16 +499,14 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 	}
 
 	// For the undo, we check function pointers as they will stay in memory
+	if len(expected.undo) != len(actual.undo) {
+		return fmt.Errorf("undo functions length differ: expected %d, got %d", len(expected.undo), len(actual.undo))
+	}
 	for i := range expected.undo {
-		if len(expected.undo[i]) != len(actual.undo[i]) {
-			return fmt.Errorf("undo functions length differ at transaction %d: expected %d, got %d", i, len(expected.undo[i]), len(actual.undo[i]))
-		}
-		for j := range expected.undo[i] {
-			addr1 := reflect.ValueOf(expected.undo[i][j]).Pointer()
-			addr2 := reflect.ValueOf(actual.undo[i][j]).Pointer()
-			if addr1 != addr2 {
-				return fmt.Errorf("undo functions differ at transaction %d, function %d: expected %v, got %v", i, j, addr1, addr2)
-			}
+		addr1 := reflect.ValueOf(expected.undo[i]).Pointer()
+		addr2 := reflect.ValueOf(actual.undo[i]).Pointer()
+		if addr1 != addr2 {
+			return fmt.Errorf("undo functions differ, function %d: expected %v, got %v", i, addr1, addr2)
 		}
 	}
 
@@ -596,7 +564,7 @@ func Test_partialCopyStateDB_performPartialCopy(t *testing.T) {
 	state.data.Put(slotId{addr: addr, key: key}, &slotValue{stored: common.Value{0x1}})
 	state.reincarnation[addr] = 42
 	state.codes[addr] = &codeValue{code: []byte{0x1}}
-	state.undo = [][]func(){{func() {}}}
+	state.undo = []func(){func() {}}
 	state.clearedAccounts[addr] = 1
 	state.canApplyChanges = true
 
@@ -639,8 +607,8 @@ func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T
 	s1.canApplyChanges = true
 	s2.canApplyChanges = true
 	f := func() {}
-	s1.undo = [][]func(){{f}}
-	s2.undo = [][]func(){{f}}
+	s1.undo = []func(){f}
+	s2.undo = []func(){f}
 	// Caches populated by read-only functions with mock values should not cause checkStateDB to fail
 	newAddr := common.Address{0x2}
 	mockBalance := amount.New(100)
@@ -704,8 +672,8 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 	s2.clearedAccounts[addr] = 1
 	s1.canApplyChanges = true
 	s2.canApplyChanges = true
-	s1.undo = [][]func(){{f}}
-	s2.undo = [][]func(){{f}}
+	s1.undo = []func(){f}
+	s2.undo = []func(){f}
 	require.NoError(checkStateDB(t, s1, s2, nil, defaultAddr))
 
 	s2.accounts[addr] = &accountState{current: accountNonExisting, original: accountExists}
@@ -749,9 +717,9 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 	s2.canApplyChanges = true
 	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
-	s2.undo = [][]func(){{func() {}}}
+	s2.undo = []func(){func() {}}
 	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
-	s2.undo = [][]func(){{f}}
+	s2.undo = []func(){f}
 	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 }

@@ -1220,10 +1220,7 @@ func (s *stateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
 	if id > InterTxSnapshotID(len(s.undo)) {
 		return fmt.Errorf("cannot revert to inter-transaction snapshot %d, only %d snapshots in the current block", id, len(s.undo))
 	}
-	for len(s.undo) > int(id) {
-		s.RevertToSnapshot(0)
-		s.undo = s.undo[:len(s.undo)-1]
-	}
+	s.RevertToSnapshot(int(id))
 	return nil
 }
 
