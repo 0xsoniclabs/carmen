@@ -355,7 +355,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 				require.NoError(
 					ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
 				)
-				checkStateDB(t, cur.stateBackup, ctx.state)
+				checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x0})
 			}
 		})
 	}
@@ -459,7 +459,7 @@ func backupStateDB(s *stateDB) *stateDB {
 	ns.accounts = cloneMapWith(s.accounts, cloneValue)
 	ns.balances = cloneMapWith(s.balances, cloneBalanceValue)
 	ns.nonces = cloneMapWith(s.nonces, cloneNonceValue)
-	copyFastMapWith(s.data, ns.data, cloneValue)
+	s.data.CopyToWith(ns.data, cloneValue)
 	ns.reincarnation = maps.Clone(s.reincarnation)
 	ns.codes = cloneMapWith(s.codes, cloneCodeValue)
 	for undo := range s.undo {
@@ -483,20 +483,26 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 	}
 	for addr, balance := range actual.balances {
 		value, exists := expected.balances[addr]
+		if exists && reflect.DeepEqual(balance, value) {
+			continue
+		}
 		defaultBalance, _ := mock.GetBalance(defaultValueAccount)
-		if !((exists && reflect.DeepEqual(balance, value)) || (!exists && balance.current == defaultBalance && balance.original == &balance.current)) {
+		if !(balance.current == defaultBalance && balance.original == &balance.current) {
 			return fmt.Errorf("balances differ at address %v: got %v", addr, balance)
 		}
 	}
 	for addr, nonce := range actual.nonces {
 		value, exists := expected.nonces[addr]
+		if exists && reflect.DeepEqual(nonce, value) {
+			continue
+		}
 		defaultNonce, _ := mock.GetNonce(defaultValueAccount)
-		if !((exists && reflect.DeepEqual(nonce, value)) || (!exists && nonce.current == defaultNonce.ToUint64())) {
+		if !(nonce.current == defaultNonce.ToUint64()) {
 			return fmt.Errorf("nonces differ at address %v: got %v", addr, nonce)
 		}
 	}
 
-	if !fastMapDeepEqual(expected.data, actual.data) {
+	if !expected.data.DeepEqual(actual.data) {
 		return fmt.Errorf("data maps differ: expected %v, got %v", expected.data, actual.data)
 	}
 	if !reflect.DeepEqual(expected.reincarnation, actual.reincarnation) {
@@ -505,8 +511,11 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 
 	for addr, code := range actual.codes {
 		value, exists := expected.codes[addr]
+		if exists && reflect.DeepEqual(code, value) {
+			continue
+		}
 		defaultCode, _ := mock.GetCode(defaultValueAccount)
-		if !((exists && reflect.DeepEqual(code, value)) || (!exists && (code.code == nil || slices.Equal(code.code, defaultCode)))) {
+		if !(code.code == nil || slices.Equal(code.code, defaultCode)) {
 			return fmt.Errorf("codes differ at address %v: expected %v, got %v", addr, value, code)
 		}
 	}
@@ -579,7 +588,6 @@ func Test_partialCopyStateDB_performPartialCopy(t *testing.T) {
 	// Create a state with some data and set all fields that are copied by partialCopyStateDB
 	addr := common.Address{0x1}
 	key := common.Key{0x2}
-	state.BeginTransaction()
 
 	state.accounts[addr] = &accountState{}
 	state.balances[addr] = &balanceValue{original: func() *amount.Amount { a := amount.New(100); return &a }(), current: amount.New(10)}
@@ -593,7 +601,7 @@ func Test_partialCopyStateDB_performPartialCopy(t *testing.T) {
 
 	copiedState := backupStateDB(state)
 
-	require.NoError(t, checkStateDB(t, state, copiedState, st, common.Address{0x0}))
+	require.NoError(t, checkStateDB(t, state, copiedState, nil, common.Address{0x0}))
 }
 
 func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T) {
@@ -634,13 +642,21 @@ func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T
 	s2.undo = [][]func(){{f}}
 	// Caches populated by read-only functions with mock values should not cause checkStateDB to fail
 	newAddr := common.Address{0x2}
+	mockBalance := amount.New(100)
+	mockNonce := common.Nonce{100}
+	mockCode := []byte{0x3}
+	mockState := NewMockState(gomock.NewController(t))
+	mockState.EXPECT().GetBalance(newAddr).Return(mockBalance, nil).AnyTimes()
+	mockState.EXPECT().GetNonce(newAddr).Return(mockNonce, nil).AnyTimes()
+	mockState.EXPECT().GetCode(newAddr).Return(mockCode, nil).AnyTimes()
+	mockState.EXPECT().GetCodeSize(newAddr).Return(len(mockCode), nil).AnyTimes()
 	s1.accounts[newAddr] = &accountState{current: accountNonExisting, original: accountNonExisting}
 	s1.balances[newAddr] = &balanceValue{current: mockBalance, original: &mockBalance}
 	s1.nonces[newAddr] = &nonceValue{current: mockNonce.ToUint64(), original: nil}
 	s1.codes[newAddr] = &codeValue{code: nil}
 	s1.codes[common.Address{0x3}] = &codeValue{code: mockCode}
 
-	require.NoError(t, checkStateDB(t, s1, s2))
+	require.NoError(t, checkStateDB(t, s1, s2, mockState, newAddr))
 }
 
 func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
@@ -648,6 +664,7 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 
 	require := require.New(t)
 	addr := common.Address{0x1}
+	defaultAddr := common.Address{0x0}
 	key := common.Key{0x1}
 	value := common.Value{0x1}
 	nonce := uint64(42)
@@ -662,6 +679,12 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 
 	s1 := createStateDBWith(NewMockState(gomock.NewController(t)), 1, true)
 	s2 := createStateDBWith(NewMockState(gomock.NewController(t)), 1, true)
+
+	mockState := NewMockState(gomock.NewController(t))
+	mockState.EXPECT().GetBalance(defaultAddr).Return(amount.New(math.MaxUint64), nil).AnyTimes()
+	mockState.EXPECT().GetNonce(defaultAddr).Return(common.Nonce{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, nil).AnyTimes()
+	mockState.EXPECT().GetCode(defaultAddr).Return([]byte{0x10}, nil).AnyTimes()
+	mockState.EXPECT().GetCodeSize(defaultAddr).Return(100, nil).AnyTimes()
 
 	// Set all fields to be equal
 	s1.accounts[addr] = &as
@@ -682,142 +705,54 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 	s2.canApplyChanges = true
 	s1.undo = [][]func(){{f}}
 	s2.undo = [][]func(){{f}}
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, nil, defaultAddr))
 
 	s2.accounts[addr] = &accountState{current: accountNonExisting, original: accountExists}
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.accounts[addr] = &as
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	tmpBalance := balanceValue{current: amount.New(100), original: &bv.current}
 	s2.balances[addr] = &tmpBalance
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.balances[addr] = bv
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.nonces[addr] = &nonceValue{current: nonce + 1}
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.nonces[addr] = nv
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.data.Put(slot, &slotValue{})
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.data.Put(slot, sv)
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.reincarnation[addr] = 100
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.reincarnation[addr] = 99
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.codes[addr] = &codeValue{code: []byte{0x3}}
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.codes[addr] = cv
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.clearedAccounts[addr] = 2
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.clearedAccounts[addr] = 1
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.canApplyChanges = false
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.canApplyChanges = true
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.undo = [][]func(){{func() {}}}
-	require.Error(checkStateDB(t, s1, s2))
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.undo = [][]func(){{f}}
-	require.NoError(checkStateDB(t, s1, s2))
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
-}
-
-func Test_fastMapDeepEqual_checksForDeepEquality(t *testing.T) {
-	t.Parallel()
-
-	require := require.New(t)
-
-	// Empty
-	m1 := &common.FastMap[common.Key, common.Value]{}
-	m2 := &common.FastMap[common.Key, common.Value]{}
-	require.True(fastMapDeepEqual(m1, m2))
-
-	// Both nil
-	var m3 *common.FastMap[common.Key, common.Value]
-	var m4 *common.FastMap[common.Key, common.Value]
-	require.True(fastMapDeepEqual(m3, m4))
-
-	// One nil, one not
-	m5 := &common.FastMap[common.Key, common.Value]{}
-	require.False(fastMapDeepEqual(m3, m5))
-	require.False(fastMapDeepEqual(m5, m4))
-
-	// Same keys and values
-	testSlotId := slotId{common.Address{0x1}, common.Key{0x1}}
-	m6 := common.NewFastMap[slotId, common.Value](slotHasher{})
-	m7 := common.NewFastMap[slotId, common.Value](slotHasher{})
-	m6.Put(testSlotId, common.Value{0x1})
-	m7.Put(testSlotId, common.Value{0x1})
-	require.True(fastMapDeepEqual(m6, m7))
-	require.True(fastMapDeepEqual(m7, m6))
-
-	// Same keys, different values
-	m6.Put(testSlotId, common.Value{0x2})
-	require.False(fastMapDeepEqual(m6, m7))
-	require.False(fastMapDeepEqual(m7, m6))
-
-	// Same keys, same value with different pointers
-	m8 := common.NewFastMap[slotId, *common.Value](slotHasher{})
-	m9 := common.NewFastMap[slotId, *common.Value](slotHasher{})
-	val1 := &common.Value{0x1}
-	val2 := &common.Value{0x1}
-	m8.Put(testSlotId, val1)
-	m9.Put(testSlotId, val2)
-	require.True(fastMapDeepEqual(m8, m9))
-
-	// Same keys, different value and pointers
-	m10 := common.NewFastMap[slotId, *common.Value](slotHasher{})
-	m11 := common.NewFastMap[slotId, *common.Value](slotHasher{})
-	val3 := &common.Value{0x2}
-	m10.Put(testSlotId, val1)
-	m11.Put(testSlotId, val3)
-	require.False(fastMapDeepEqual(m10, m11))
-}
-
-// fastMapDeepEqual checks if two FastMaps are equal. If the values are pointers, the pointed values are compared for equality instead of the pointers themselves.
-func fastMapDeepEqual[K comparable, V comparable](m1, m2 *common.FastMap[K, V]) bool {
-	if m1 == nil && m2 != nil || m1 != nil && m2 == nil {
-		return false
-	}
-	if m1 == nil && m2 == nil {
-		return true
-	}
-	equal := m1.Size() == m2.Size()
-	if equal {
-		m1.ForEach(func(key K, value V) {
-			v2, ok := m2.Get(key)
-			if !ok {
-				equal = false
-				return
-			}
-			if reflect.ValueOf(value).Kind() == reflect.Pointer {
-				equal = (reflect.ValueOf(value).IsNil() && reflect.ValueOf(v2).IsNil()) || (reflect.ValueOf(value).Elem().Interface() == reflect.ValueOf(v2).Elem().Interface())
-			} else {
-				equal = reflect.DeepEqual(value, v2)
-			}
-		})
-	}
-	return equal
-}
-
-// copyFastMapWith copies `src` into `dst` using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
-func copyFastMapWith[K comparable, V any](src *common.FastMap[K, V], dst *common.FastMap[K, V], cloneFunc func(V) V) {
-	if src == nil || dst == nil {
-		return
-	}
-	src.ForEach(func(key K, value V) {
-		dst.Put(key, cloneFunc(value))
-	})
 }
 
 // cloneMapWith copies `src` into `dst` using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
