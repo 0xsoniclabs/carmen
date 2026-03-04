@@ -273,6 +273,17 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		snapshotID  InterTxSnapshotID
 	}
 
+	addresses := []common.Address{
+		{0x1},
+		{0x2},
+		{0x3},
+	}
+	keys := []common.Key{
+		{0x4},
+		{0x5},
+		{0x6},
+	}
+
 	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
 		"setNonce":      setNonceOp,
 		"setCode":       setCodeOp,
@@ -376,35 +387,21 @@ func (op *StateDBOperation) Execute(ctx *StateDBContext) {
 	op.op(ctx, op.args)
 }
 
-var (
-	// Mock values to be used in tests.
-	// TODO: move them in constructor
-	mockCode       = []byte{0x1}
-	mockBalance    = amount.New(0)
-	mockNonce      = common.Nonce{0}
-	mockStateValue = common.Value{0x1}
-	mockCodeSize   = math.MaxInt
-	// Set of address and key values to be used in tests.
-	addresses = []common.Address{
-		{0x1},
-		{0x2},
-		{0x3},
-	}
-	keys = []common.Key{
-		{0x4},
-		{0x5},
-		{0x6},
-	}
-)
-
 // NewStateDBContext creates a new StateDBContext with a mocked State and a StateDB using that mocked State.
 // It sets up a random number generator for generating random values within stateDB operations.
 // For each test address and keys, sets expectation on the mocked State for read-only operations with mocked values.
 func NewStateDBContext(t *testing.T) *StateDBContext {
 	t.Helper()
 
+	defaultCode := []byte{0x1}
+	defaultBalance := amount.New(0)
+	defaultNonce := common.Nonce{0}
+	defaultStateValue := common.Value{0x1}
+	defaultCodeSize := math.MaxInt
+
 	ctrl := gomock.NewController(t)
 	db := NewMockState(ctrl)
+	any := gomock.Any()
 	db.EXPECT().Check().Return(nil).AnyTimes()
 	db.EXPECT().Flush().Return(nil).AnyTimes()
 	db.EXPECT().Close().Return(nil).AnyTimes()
@@ -412,16 +409,12 @@ func NewStateDBContext(t *testing.T) *StateDBContext {
 	state := createStateDBWith(db, 1, true)
 
 	// Set expectation in case values are not cached, i.e. they are untouched.
-	for _, address := range addresses {
-		db.EXPECT().Exists(address).Return(false, nil).MaxTimes(1)
-		db.EXPECT().GetBalance(address).Return(mockBalance, nil).MaxTimes(1)
-		db.EXPECT().GetNonce(address).Return(mockNonce, nil).MaxTimes(1)
-		db.EXPECT().GetCode(address).Return(mockCode, nil).MaxTimes(1)
-		db.EXPECT().GetCodeSize(address).Return(mockCodeSize, nil).MaxTimes(1)
-		for _, key := range keys {
-			db.EXPECT().GetStorage(address, key).Return(mockStateValue, nil).MaxTimes(1)
-		}
-	}
+	db.EXPECT().Exists(any).Return(false, nil).AnyTimes()
+	db.EXPECT().GetBalance(any).Return(defaultBalance, nil).AnyTimes()
+	db.EXPECT().GetNonce(any).Return(defaultNonce, nil).AnyTimes()
+	db.EXPECT().GetCode(any).Return(defaultCode, nil).AnyTimes()
+	db.EXPECT().GetCodeSize(any).Return(defaultCodeSize, nil).AnyTimes()
+	db.EXPECT().GetStorage(any, any).Return(defaultStateValue, nil).AnyTimes()
 
 	return &StateDBContext{
 		state: state,
@@ -479,7 +472,7 @@ func backupStateDB(s *stateDB) *stateDB {
 }
 
 // checkStateDB checks if the `actual` reverted stateDB fields match the backup `expected` stateDB one, along with postconditions on transaction context fields.
-func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) error {
+func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockState, defaultValueAccount common.Address) error {
 	t.Helper()
 
 	for addr, account := range actual.accounts {
@@ -490,13 +483,15 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) error {
 	}
 	for addr, balance := range actual.balances {
 		value, exists := expected.balances[addr]
-		if !((exists && reflect.DeepEqual(balance, value)) || (!exists && balance.current == mockBalance && balance.original == &balance.current)) {
+		defaultBalance, _ := mock.GetBalance(defaultValueAccount)
+		if !((exists && reflect.DeepEqual(balance, value)) || (!exists && balance.current == defaultBalance && balance.original == &balance.current)) {
 			return fmt.Errorf("balances differ at address %v: got %v", addr, balance)
 		}
 	}
 	for addr, nonce := range actual.nonces {
 		value, exists := expected.nonces[addr]
-		if !((exists && reflect.DeepEqual(nonce, value)) || (!exists && nonce.current == mockNonce.ToUint64())) {
+		defaultNonce, _ := mock.GetNonce(defaultValueAccount)
+		if !((exists && reflect.DeepEqual(nonce, value)) || (!exists && nonce.current == defaultNonce.ToUint64())) {
 			return fmt.Errorf("nonces differ at address %v: got %v", addr, nonce)
 		}
 	}
@@ -510,7 +505,8 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB) error {
 
 	for addr, code := range actual.codes {
 		value, exists := expected.codes[addr]
-		if !((exists && reflect.DeepEqual(code, value)) || (!exists && (code.code == nil || slices.Equal(code.code, mockCode)))) {
+		defaultCode, _ := mock.GetCode(defaultValueAccount)
+		if !((exists && reflect.DeepEqual(code, value)) || (!exists && (code.code == nil || slices.Equal(code.code, defaultCode)))) {
 			return fmt.Errorf("codes differ at address %v: expected %v, got %v", addr, value, code)
 		}
 	}
@@ -597,7 +593,7 @@ func Test_partialCopyStateDB_performPartialCopy(t *testing.T) {
 
 	copiedState := backupStateDB(state)
 
-	require.NoError(t, checkStateDB(t, state, copiedState))
+	require.NoError(t, checkStateDB(t, state, copiedState, st, common.Address{0x0}))
 }
 
 func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T) {
