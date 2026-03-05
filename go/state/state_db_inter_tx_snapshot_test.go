@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	reflect "reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -284,7 +285,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		{0x6},
 	}
 
-	operationListWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
+	operationWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
 		"setNonce":      setNonceOp,
 		"setCode":       setCodeOp,
 		"addBalance":    addBalanceOp,
@@ -293,12 +294,12 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		"suicide":       suicideOp,
 	}
 
-	operationListWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
+	operationWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
 		"setState": setStateOp,
 	}
 
 	var opWithNameList []StateDBOperation
-	for opName, op := range operationListWithAddress {
+	for opName, op := range operationWithAddress {
 		for i, address := range addresses {
 			opWithNameList = append(opWithNameList, StateDBOperation{
 				name: fmt.Sprintf("%s addr %d", opName, i),
@@ -307,7 +308,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 			})
 		}
 	}
-	for opName, op := range operationListWithAddressAndKey {
+	for opName, op := range operationWithAddressAndKey {
 		for i, address := range addresses {
 			for j, key := range keys {
 				op := StateDBOperation{
@@ -322,42 +323,55 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		}
 	}
 
-	testNameFunc := func(t1, t2, t3 StateDBOperation) string {
-		return fmt.Sprintf("%s %s  %s", t1.name, t2.name, t3.name)
+	testCaseFuncName := func(s [][]StateDBOperation) string {
+		var nameParts []string
+		for _, opList := range s {
+			name := "["
+			for _, op := range opList {
+				name += op.name + " "
+			}
+			name = strings.TrimSpace(name) + "]"
+			nameParts = append(nameParts, name)
+		}
+		return strings.Join(nameParts, " ")
 	}
 
-	for testCaseName, testCaseList := range cartesianTriple(opWithNameList, testNameFunc) {
-		t.Run(testCaseName, func(t *testing.T) {
-			t.Parallel()
-			require := require.New(t)
+	for testCaseList := range cartesianTriple(opWithNameList) {
+		for testCaseName, opPartitions := range orderedPartitions(testCaseList, testCaseFuncName) {
+			t.Run(testCaseName, func(t *testing.T) {
+				t.Parallel()
+				require := require.New(t)
 
-			ctx := NewStateDBContext(t)
+				ctx := NewStateDBContext(t)
 
-			var statesToCheck []InterTxSnapshotWithStateCheck
-			for _, testCase := range testCaseList {
-				snapshotID := ctx.state.InterTxSnapshot()
-				require.Empty(ctx.state.accountsToDelete)
-				require.Empty(ctx.state.writtenSlots)
-				oldStateDB := backupStateDB(ctx.state)
+				var statesToCheck []InterTxSnapshotWithStateCheck
+				for _, opList := range opPartitions {
+					snapshotID := ctx.state.InterTxSnapshot()
+					require.Empty(ctx.state.accountsToDelete)
+					require.Empty(ctx.state.writtenSlots)
+					oldStateDB := backupStateDB(ctx.state)
 
-				ctx.state.BeginTransaction()
-				testCase.Execute(ctx)
-				ctx.state.EndTransaction()
+					ctx.state.BeginTransaction()
+					for _, op := range opList {
+						op.Execute(ctx)
+					}
+					ctx.state.EndTransaction()
 
-				statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
-					stateBackup: oldStateDB,
-					snapshotID:  snapshotID,
-				})
-			}
+					statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
+						stateBackup: oldStateDB,
+						snapshotID:  snapshotID,
+					})
+				}
 
-			slices.Reverse(statesToCheck)
-			for _, cur := range statesToCheck {
-				require.NoError(
-					ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
-				)
-				checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x0})
-			}
-		})
+				slices.Reverse(statesToCheck)
+				for _, cur := range statesToCheck {
+					require.NoError(
+						ctx.state.RevertToInterTxSnapshot(cur.snapshotID),
+					)
+					checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x0})
+				}
+			})
+		}
 	}
 }
 
@@ -389,7 +403,6 @@ func (op *StateDBOperation) Execute(ctx *StateDBContext) {
 
 // NewStateDBContext creates a new StateDBContext with a mocked State and a StateDB using that mocked State.
 // It sets up a random number generator for generating random values within stateDB operations.
-// For each test address and keys, sets expectation on the mocked State for read-only operations with mocked values.
 func NewStateDBContext(t *testing.T) *StateDBContext {
 	t.Helper()
 
@@ -586,7 +599,6 @@ func Test_partialCopyStateDB_performPartialCopy(t *testing.T) {
 		require.NoError(t, state.Close())
 	}()
 
-	// Create a state with some data and set all fields that are copied by partialCopyStateDB
 	addr := common.Address{0x1}
 	key := common.Key{0x2}
 
@@ -824,17 +836,84 @@ func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
 }
 
 // cartesianTriple generates the cartesian product of a slice with itself three times,
-// yielding the result as a sequence of tuples containing the values and a string representations of them.
-func cartesianTriple[T any](slice []T, genName func(T, T, T) string) iter.Seq2[string, [3]T] {
-	return func(yield func(string, [3]T) bool) {
+// yielding the result as a sequence of tuples containing the values.
+func cartesianTriple[T any](slice []T) iter.Seq[[]T] {
+	return func(yield func([]T) bool) {
 		for _, a := range slice {
 			for _, b := range slice {
 				for _, c := range slice {
-					if !yield(genName(a, b, c), [3]T{a, b, c}) {
+					if !yield([]T{a, b, c}) {
 						return
 					}
 				}
 			}
 		}
 	}
+}
+
+// orderedPartitions yields each ordered partition of the input slice.
+func orderedPartitions[T any](input []T, nameFunc func([][]T) string) iter.Seq2[string, [][]T] {
+	return func(yield func(string, [][]T) bool) {
+		n := len(input)
+		if n == 0 {
+			return
+		}
+
+		numCombinations := 1 << (n - 1)
+		for i := range numCombinations {
+			var result [][]T
+			currentGroup := []T{input[0]}
+
+			for j := 0; j < n-1; j++ {
+				if (i>>j)&1 == 1 {
+					result = append(result, currentGroup)
+					currentGroup = []T{input[j+1]}
+				} else {
+					currentGroup = append(currentGroup, input[j+1])
+				}
+			}
+			result = append(result, currentGroup)
+			name := nameFunc(result)
+			if !yield(name, result) {
+				return
+			}
+		}
+	}
+}
+
+func Test_OrderedPartitions(t *testing.T) {
+	t.Parallel()
+	type partitionWithName struct {
+		p    [][]int
+		name string
+	}
+
+	input := []int{1, 2, 3}
+	var partitions []partitionWithName
+	for name, p := range orderedPartitions(input, func(s [][]int) string {
+		var nameParts []string
+		for _, group := range s {
+			name := "["
+			for _, num := range group {
+				name += fmt.Sprintf("%d ", num)
+			}
+			name = strings.TrimSpace(name) + "]"
+			nameParts = append(nameParts, name)
+		}
+		return strings.Join(nameParts, " ")
+	}) {
+		partitions = append(partitions, partitionWithName{
+			p:    p,
+			name: name,
+		})
+	}
+
+	expected := []partitionWithName{
+		{p: [][]int{{1, 2, 3}}, name: "[1 2 3]"},
+		{p: [][]int{{1}, {2, 3}}, name: "[1] [2 3]"},
+		{p: [][]int{{1, 2}, {3}}, name: "[1 2] [3]"},
+		{p: [][]int{{1}, {2}, {3}}, name: "[1] [2] [3]"},
+	}
+
+	require.Equal(t, expected, partitions)
 }
