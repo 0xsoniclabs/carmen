@@ -1,0 +1,124 @@
++ trap 'git apply --reverse enable-carmen.patch &> /dev/null' EXIT
+++ pwd
++ CARMEN_RUST_DIR=/var/data/luigi/bertha/block-db-go-bindings/../../carmen/rust
+++ pwd
++ BLOCK_DB_GO_BINDINGS_DIR=/var/data/luigi/bertha/block-db-go-bindings
++ cd /var/data/luigi/bertha/block-db-go-bindings/../../carmen/rust
++ cargo build --release
+    Finished `release` profile [optimized] target(s) in 0.06s
++ cd /var/data/luigi/bertha/block-db-go-bindings
++ git apply --reverse --check enable-carmen.patch
++ go run /var/data/luigi/carmen/rust/../../bertha/block-db-go-bindings/cmd/block-db/main.go replay --db /var/data/carmen/blockdbs/sonic-60000/.blockdb --json-genesis /var/data/luigi/carmen/rust/../../bertha/../sonic.json -e 1000000 --log-db-size --use-pipeline=false --schema 6 --variant rust-file --state-db-dir '/var/data/luigi/carmen/rust/state_db_main_rust-file_[]' --use-pipeline=false
+[32mINFO [0m[02-24|09:27:44.420] Loading genesis file                     [32mfile[0m=/var/data/luigi/carmen/rust/../../bertha/../sonic.json
+[32mINFO [0m[02-24|09:27:44.420] Creating state database                  [32mdirectory[0m=/var/data/luigi/carmen/rust/state_db_main_rust-file_[]
+[33mWARN [0m[02-24|09:27:44.420] State database will be deleted after replay (use --keep-db to keep it)
+[33mWARN [0m[02-24|09:27:44.420] DB size log enabled. This will trigger a flush with every progress report and reduce performance
+[32mINFO [0m[02-24|09:27:44.494] Starting replay from genesis
+[32mINFO [0m[02-24|09:27:45.423] Loaded state                             [32mchain_id[0m=146 [32mroot_hash[0m=18975c..bb2b78
+[32mINFO [0m[02-24|09:27:45.423] Opening block database                   [32mdirectory[0m=/var/data/carmen/blockdbs/sonic-60000/.blockdb
+[32mINFO [0m[02-24|09:27:46.272] Using simple replay loop
+[33mWARN [0m[02-24|09:27:46.272] No state root set in the block DB. No checks will be performed [33mblock_number[0m=0
+[32mINFO [0m[02-24|09:27:46.717] "Processing block 10000 from 2024-12-02 02:15:57 @ t= 0:00:00, 2802.86 txs/s, 339.87 MGas/s, 204770.55x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:47.239] "Processing block 20000 from 2024-12-02 10:24:19 @ t= 0:00:00, 2979.99 txs/s, 249.45 MGas/s, 56118.09x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:47.751] "Processing block 30000 from 2024-12-02 18:29:42 @ t= 0:00:01, 2924.58 txs/s, 257.90 MGas/s, 56895.54x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:48.246] "Processing block 40000 from 2024-12-03 02:38:30 @ t= 0:00:01, 3149.01 txs/s, 263.18 MGas/s, 59239.44x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:48.785] "Processing block 50000 from 2024-12-03 10:48:52 @ t= 0:00:02, 2987.56 txs/s, 371.16 MGas/s, 54596.19x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:49.348] "Processing block 60000 from 2024-12-03 19:00:07 @ t= 0:00:03, 2814.71 txs/s, 334.93 MGas/s, 52277.01x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:49.850] "Processing block 70000 from 2024-12-04 03:07:27 @ t= 0:00:03, 3106.46 txs/s, 264.49 MGas/s, 58300.96x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:50.423] "Processing block 80000 from 2024-12-04 11:06:10 @ t= 0:00:04, 3709.51 txs/s, 283.96 MGas/s, 50093.20x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:51.037] "Processing block 90000 from 2024-12-04 18:55:18 @ t= 0:00:04, 3646.85 txs/s, 275.32 MGas/s, 45826.59x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:51.639] "Processing block 100000 from 2024-12-05 02:56:44 @ t= 0:00:05, 3785.20 txs/s, 290.46 MGas/s, 47997.95x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:52.264] "Processing block 110000 from 2024-12-05 10:56:40 @ t= 0:00:05, 3541.47 txs/s, 298.16 MGas/s, 46103.19x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:52.950] "Processing block 120000 from 2024-12-05 18:45:41 @ t= 0:00:06, 3227.68 txs/s, 292.80 MGas/s, 41025.30x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:53.574] "Processing block 130000 from 2024-12-06 02:41:25 @ t= 0:00:07, 3619.30 txs/s, 288.42 MGas/s, 45752.62x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:54.371] "Processing block 140000 from 2024-12-06 10:32:06 @ t= 0:00:08, 3085.29 txs/s, 314.68 MGas/s, 35405.03x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:56.201] "Processing block 150000 from 2024-12-06 17:43:00 @ t= 0:00:09, 2258.85 txs/s, 340.22 MGas/s, 14130.24x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:56.851] "Processing block 160000 from 2024-12-07 01:36:49 @ t= 0:00:10, 3359.80 txs/s, 266.72 MGas/s, 43754.38x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:57.501] "Processing block 170000 from 2024-12-07 09:36:09 @ t= 0:00:11, 3327.00 txs/s, 269.07 MGas/s, 44236.95x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:58.159] "Processing block 180000 from 2024-12-07 17:25:21 @ t= 0:00:11, 3204.84 txs/s, 271.80 MGas/s, 42800.16x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:58.822] "Processing block 190000 from 2024-12-08 01:14:36 @ t= 0:00:12, 3185.06 txs/s, 270.02 MGas/s, 42459.88x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:27:59.521] "Processing block 200000 from 2024-12-08 09:02:33 @ t= 0:00:13, 3092.09 txs/s, 408.55 MGas/s, 40155.75x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:00.276] "Processing block 210000 from 2024-12-08 16:50:33 @ t= 0:00:14, 2901.23 txs/s, 320.85 MGas/s, 37182.32x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:01.049] "Processing block 220000 from 2024-12-09 00:39:07 @ t= 0:00:14, 2810.29 txs/s, 338.79 MGas/s, 36392.72x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:01.676] "Processing block 230000 from 2024-12-09 08:29:27 @ t= 0:00:15, 3260.04 txs/s, 262.60 MGas/s, 45008.97x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:02.481] "Processing block 240000 from 2024-12-09 16:14:41 @ t= 0:00:16, 2901.93 txs/s, 441.89 MGas/s, 34676.55x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:03.397] "Processing block 250000 from 2024-12-09 23:55:47 @ t= 0:00:17, 3078.63 txs/s, 542.22 MGas/s, 30203.28x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:04.283] "Processing block 260000 from 2024-12-10 07:38:49 @ t= 0:00:18, 3006.42 txs/s, 596.34 MGas/s, 31352.95x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:05.106] "Processing block 270000 from 2024-12-10 15:21:58 @ t= 0:00:18, 3114.53 txs/s, 399.61 MGas/s, 33755.69x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:07.064] "Processing block 280000 from 2024-12-10 22:37:01 @ t= 0:00:20, 2040.52 txs/s, 603.28 MGas/s, 13329.25x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:07.858] "Processing block 290000 from 2024-12-11 06:24:21 @ t= 0:00:21, 2607.09 txs/s, 377.55 MGas/s, 35315.39x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:08.720] "Processing block 300000 from 2024-12-11 14:09:49 @ t= 0:00:22, 2437.34 txs/s, 372.97 MGas/s, 32398.82x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:09.672] "Processing block 310000 from 2024-12-11 21:50:23 @ t= 0:00:23, 2630.93 txs/s, 324.60 MGas/s, 29034.77x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:11.870] "Processing block 320000 from 2024-12-12 04:29:18 @ t= 0:00:25, 6687.86 txs/s, 234.35 MGas/s, 10890.87x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:13.641] "Processing block 330000 from 2024-12-12 11:05:04 @ t= 0:00:27, 3312.67 txs/s, 270.98 MGas/s, 13405.35x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:15.878] "Processing block 340000 from 2024-12-12 16:32:55 @ t= 0:00:29, 4427.73 txs/s, 241.01 MGas/s, 8793.32x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:16.991] "Processing block 350000 from 2024-12-13 00:05:33 @ t= 0:00:30, 2822.29 txs/s, 371.28 MGas/s, 24402.33x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:17.802] "Processing block 360000 from 2024-12-13 07:49:29 @ t= 0:00:31, 3272.53 txs/s, 310.05 MGas/s, 34349.27x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:18.790] "Processing block 370000 from 2024-12-13 15:27:03 @ t= 0:00:32, 3026.68 txs/s, 340.98 MGas/s, 27762.97x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:20.301] "Processing block 380000 from 2024-12-13 22:47:12 @ t= 0:00:34, 2535.91 txs/s, 349.87 MGas/s, 17481.30x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:21.490] "Processing block 390000 from 2024-12-14 06:11:26 @ t= 0:00:35, 3396.04 txs/s, 295.57 MGas/s, 22410.99x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:24.001] "Processing block 400000 from 2024-12-14 12:07:21 @ t= 0:00:37, 2584.62 txs/s, 255.82 MGas/s, 8505.86x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:26.019] "Processing block 410000 from 2024-12-14 18:45:54 @ t= 0:00:39, 2572.37 txs/s, 309.97 MGas/s, 11852.23x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:28.916] "Processing block 420000 from 2024-12-15 00:42:14 @ t= 0:00:42, 2296.98 txs/s, 302.56 MGas/s, 7380.42x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:32.413] "Processing block 430000 from 2024-12-15 05:34:23 @ t= 0:00:46, 2445.30 txs/s, 291.57 MGas/s, 5012.11x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:33.797] "Processing block 440000 from 2024-12-15 13:00:36 @ t= 0:00:47, 2594.04 txs/s, 337.86 MGas/s, 19345.45x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:37.050] "Processing block 450000 from 2024-12-15 18:48:22 @ t= 0:00:50, 2265.88 txs/s, 319.37 MGas/s, 6413.43x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:40.388] "Processing block 460000 from 2024-12-16 00:15:54 @ t= 0:00:54, 2349.30 txs/s, 306.17 MGas/s, 5888.09x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:42.035] "Processing block 470000 from 2024-12-16 07:28:32 @ t= 0:00:55, 2606.93 txs/s, 320.09 MGas/s, 15759.38x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:44.514] "Processing block 480000 from 2024-12-16 14:03:38 @ t= 0:00:58, 2415.94 txs/s, 397.81 MGas/s, 9561.30x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:47.727] "Processing block 490000 from 2024-12-16 19:54:12 @ t= 0:01:01, 2187.80 txs/s, 442.78 MGas/s, 6547.82x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:50.483] "Processing block 500000 from 2024-12-17 01:45:36 @ t= 0:01:04, 2521.88 txs/s, 612.50 MGas/s, 7650.56x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:51.772] "Processing block 510000 from 2024-12-17 09:10:38 @ t= 0:01:05, 2949.69 txs/s, 335.31 MGas/s, 20705.23x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:53.269] "Processing block 520000 from 2024-12-17 16:32:46 @ t= 0:01:06, 2544.73 txs/s, 325.94 MGas/s, 17718.30x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:54.791] "Processing block 530000 from 2024-12-17 23:53:54 @ t= 0:01:08, 2493.66 txs/s, 348.35 MGas/s, 17391.87x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:28:56.499] "Processing block 540000 from 2024-12-18 06:52:19 @ t= 0:01:10, 2631.72 txs/s, 327.02 MGas/s, 14698.39x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:00.977] "Processing block 550000 from 2024-12-18 12:20:30 @ t= 0:01:14, 3560.44 txs/s, 628.72 MGas/s, 4397.17x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:09.162] "Processing block 560000 from 2024-12-18 15:05:32 @ t= 0:01:22, 3048.65 txs/s, 715.56 MGas/s, 1209.83x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:18.842] "Processing block 570000 from 2024-12-18 16:03:14 @ t= 0:01:32, 3052.79 txs/s, 615.09 MGas/s, 357.66x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:29.372] "Processing block 580000 from 2024-12-18 17:01:10 @ t= 0:01:43, 3227.35 txs/s, 735.32 MGas/s, 330.08x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:39.631] "Processing block 590000 from 2024-12-18 18:03:07 @ t= 0:01:53, 2667.63 txs/s, 636.79 MGas/s, 362.33x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:49.336] "Processing block 600000 from 2024-12-18 19:10:51 @ t= 0:02:03, 2581.27 txs/s, 691.19 MGas/s, 418.76x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:29:59.869] "Processing block 610000 from 2024-12-18 20:40:57 @ t= 0:02:13, 1945.83 txs/s, 673.19 MGas/s, 513.25x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:08.167] "Processing block 620000 from 2024-12-18 22:19:49 @ t= 0:02:21, 2663.54 txs/s, 701.00 MGas/s, 714.87x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:14.641] "Processing block 630000 from 2024-12-18 23:51:56 @ t= 0:02:28, 2979.45 txs/s, 487.49 MGas/s, 853.68x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:21.558] "Processing block 640000 from 2024-12-19 01:48:28 @ t= 0:02:35, 3272.65 txs/s, 620.88 MGas/s, 1010.84x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:28.180] "Processing block 650000 from 2024-12-19 03:57:40 @ t= 0:02:41, 2873.41 txs/s, 518.67 MGas/s, 1170.57x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:34.578] "Processing block 660000 from 2024-12-19 06:22:35 @ t= 0:02:48, 2491.49 txs/s, 526.93 MGas/s, 1359.15x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:43.156] "Processing block 670000 from 2024-12-19 08:37:17 @ t= 0:02:56, 2523.45 txs/s, 542.49 MGas/s, 942.18x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:49.062] "Processing block 680000 from 2024-12-19 11:07:15 @ t= 0:03:02, 2766.62 txs/s, 461.53 MGas/s, 1523.50x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:30:55.186] "Processing block 690000 from 2024-12-19 13:05:52 @ t= 0:03:08, 2549.52 txs/s, 437.57 MGas/s, 1162.10x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:31:01.601] "Processing block 700000 from 2024-12-19 14:50:17 @ t= 0:03:15, 2666.08 txs/s, 439.42 MGas/s, 976.56x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:31:12.136] "Processing block 710000 from 2024-12-19 15:58:36 @ t= 0:03:25, 3620.67 txs/s, 508.45 MGas/s, 389.10x realtime, live DB size: 0.000 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:31:21.751] "Processing block 720000 from 2024-12-19 16:58:45 @ t= 0:03:35, 3272.65 txs/s, 454.91 MGas/s, 375.35x realtime, live DB size: 0.186 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:31:30.323] "Processing block 730000 from 2024-12-19 18:00:03 @ t= 0:03:44, 3075.00 txs/s, 420.54 MGas/s, 429.10x realtime, live DB size: 0.190 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:31:38.466] "Processing block 740000 from 2024-12-19 19:12:46 @ t= 0:03:52, 2701.18 txs/s, 462.92 MGas/s, 535.74x realtime, live DB size: 0.192 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:31:55.749] "Processing block 750000 from 2024-12-19 20:29:37 @ t= 0:04:09, 2955.66 txs/s, 589.09 MGas/s, 266.80x realtime, live DB size: 0.201 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:02.399] "Processing block 760000 from 2024-12-19 21:55:34 @ t= 0:04:16, 3001.15 txs/s, 461.00 MGas/s, 775.43x realtime, live DB size: 0.203 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:09.372] "Processing block 770000 from 2024-12-19 23:45:38 @ t= 0:04:23, 2814.36 txs/s, 495.61 MGas/s, 947.16x realtime, live DB size: 0.203 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:15.983] "Processing block 780000 from 2024-12-20 01:33:10 @ t= 0:04:29, 2689.06 txs/s, 428.22 MGas/s, 975.91x realtime, live DB size: 0.206 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:23.085] "Processing block 790000 from 2024-12-20 02:57:50 @ t= 0:04:36, 3097.32 txs/s, 391.84 MGas/s, 715.33x realtime, live DB size: 0.209 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:30.974] "Processing block 800000 from 2024-12-20 04:14:35 @ t= 0:04:44, 3211.04 txs/s, 417.98 MGas/s, 583.72x realtime, live DB size: 0.211 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:38.155] "Processing block 810000 from 2024-12-20 05:52:21 @ t= 0:04:51, 2506.95 txs/s, 427.26 MGas/s, 816.81x realtime, live DB size: 0.215 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:44.041] "Processing block 820000 from 2024-12-20 07:20:12 @ t= 0:04:57, 3149.11 txs/s, 372.98 MGas/s, 895.50x realtime, live DB size: 0.217 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:50.834] "Processing block 830000 from 2024-12-20 08:34:44 @ t= 0:05:04, 2989.21 txs/s, 338.18 MGas/s, 658.38x realtime, live DB size: 0.220 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:32:56.822] "Processing block 840000 from 2024-12-20 09:39:29 @ t= 0:05:10, 3727.77 txs/s, 287.55 MGas/s, 648.82x realtime, live DB size: 0.220 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:02.824] "Processing block 850000 from 2024-12-20 10:56:12 @ t= 0:05:16, 3588.57 txs/s, 318.02 MGas/s, 766.90x realtime, live DB size: 0.222 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:14.757] "Processing block 860000 from 2024-12-20 12:10:12 @ t= 0:05:28, 2999.49 txs/s, 495.30 MGas/s, 372.06x realtime, live DB size: 0.235 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:22.546] "Processing block 870000 from 2024-12-20 13:25:37 @ t= 0:05:36, 3083.33 txs/s, 415.70 MGas/s, 581.00x realtime, live DB size: 0.247 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:29.891] "Processing block 880000 from 2024-12-20 14:29:06 @ t= 0:05:43, 3450.53 txs/s, 383.18 MGas/s, 518.57x realtime, live DB size: 0.255 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:36.702] "Processing block 890000 from 2024-12-20 15:41:23 @ t= 0:05:50, 3759.00 txs/s, 407.78 MGas/s, 636.73x realtime, live DB size: 0.260 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:43.050] "Processing block 900000 from 2024-12-20 16:59:12 @ t= 0:05:56, 3506.15 txs/s, 446.02 MGas/s, 735.54x realtime, live DB size: 0.264 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:51.109] "Processing block 910000 from 2024-12-20 18:32:13 @ t= 0:06:04, 3514.42 txs/s, 713.66 MGas/s, 692.56x realtime, live DB size: 0.269 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:33:58.247] "Processing block 920000 from 2024-12-20 20:35:19 @ t= 0:06:11, 3001.19 txs/s, 582.88 MGas/s, 1034.62x realtime, live DB size: 0.273 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:34:07.275] "Processing block 930000 from 2024-12-20 22:12:50 @ t= 0:06:21, 4065.23 txs/s, 724.01 MGas/s, 648.13x realtime, live DB size: 0.276 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:34:16.484] "Processing block 940000 from 2024-12-20 23:44:47 @ t= 0:06:30, 2551.66 txs/s, 521.00 MGas/s, 599.09x realtime, live DB size: 0.292 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:34:27.369] "Processing block 950000 from 2024-12-21 00:51:33 @ t= 0:06:41, 2721.48 txs/s, 606.20 MGas/s, 368.02x realtime, live DB size: 0.306 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:34:38.032] "Processing block 960000 from 2024-12-21 01:55:13 @ t= 0:06:51, 3245.67 txs/s, 538.17 MGas/s, 358.24x realtime, live DB size: 0.323 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:34:48.256] "Processing block 970000 from 2024-12-21 02:56:57 @ t= 0:07:01, 4129.33 txs/s, 550.09 MGas/s, 362.30x realtime, live DB size: 0.336 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:34:56.792] "Processing block 980000 from 2024-12-21 04:14:08 @ t= 0:07:10, 2952.33 txs/s, 456.57 MGas/s, 542.51x realtime, live DB size: 0.343 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:35:06.754] "Processing block 990000 from 2024-12-21 06:12:38 @ t= 0:07:20, 5560.83 txs/s, 427.81 MGas/s, 713.73x realtime, live DB size: 0.347 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:35:14.087] "Processing block 1000000 from 2024-12-21 08:32:43 @ t= 0:07:27, 3111.78 txs/s, 525.83 MGas/s, 1146.17x realtime, live DB size: 0.347 GiB, archive DB size: n/a"
+[32mINFO [0m[02-24|09:35:14.087] Replay finished in 7m27.815126702s, processed 1376011 txs (3072.72 Tx/s), used 0.223 TGas (497.06 MGas/s), 3919.39x realtime
+[32mINFO [0m[02-24|09:35:14.098] Closing state database                   [32mdirectory[0m=/var/data/luigi/carmen/rust/state_db_main_rust-file_[]
+[32mINFO [0m[02-24|09:35:18.583] Removing state database directory        [32mdirectory[0m=/var/data/luigi/carmen/rust/state_db_main_rust-file_[]
++ git apply --reverse enable-carmen.patch
