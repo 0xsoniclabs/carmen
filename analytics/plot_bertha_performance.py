@@ -34,8 +34,13 @@ def parse_performance_metrics(log_file_path):
 
 def plot_mgas_comparison(mgas_with_labels, title):
     plt.figure(figsize=(10, 5))
+    i = 0
     for (block_numbers, mgas_values), label in mgas_with_labels:
-        plt.plot(block_numbers, mgas_values, label=label)
+        # Change color of second one to green
+        plt.plot(
+            block_numbers, mgas_values, label=label, color="green" if i == 1 else None
+        )
+        i += 1
     plt.xlabel("Block Number")
     plt.ylabel("MGas/s")
     max_blocks = max(
@@ -46,6 +51,7 @@ def plot_mgas_comparison(mgas_with_labels, title):
     plt.title(title)
     plt.grid(True)
     plt.legend()
+    plt.savefig(f"{title.replace(' ', '_')}.pdf")
     plt.show()
 
 
@@ -153,7 +159,7 @@ data = [
                 "./data/rust-file-live-for-gas-55M-main-056907.log"
             )
         ),
-        "Live (S6)",
+        "Live",
     ),
     (
         itemgetter(0, 1)(
@@ -161,23 +167,51 @@ data = [
                 "./data/rust-file-archive-for-gas-55M-main-056907.log"
             )
         ),
-        "Archive (S6)",
+        "Archive",
+    ),
+    # (
+    #     itemgetter(0, 1)(
+    #         parse_performance_metrics(
+    #             "./data/go-geth-memory-live-for-mgas-4M-main-2eab53d5.log"
+    #         )
+    #     ),
+    #     "Geth Verkle (in-memory)",
+    # ),
+]
+
+# for i in range(len(data)):
+#     block_numbers, mgas_values = data[i][0]
+#     data[i] = (block_numbers[:400], mgas_values[:400]), data[i][1]
+
+plot_mgas_comparison(
+    data,
+    "S6 Live vs Archive - 55M Blocks Sonic Mainnet",
+)
+
+# %% Plot live rust and geth verkle perforamnce
+data = [
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/rust-file-live-for-gas-55M-main-056907.log"
+            )
+        ),
+        "LiveDB",
     ),
     (
         itemgetter(0, 1)(
             parse_performance_metrics(
-                "./data/go-geth-memory-live-for-mgas-4M-main-2eab53d5.log"
+                "./data/go-geth2-leveldb-live-for-mgas-55M-support-level-db-4930b6ac.log"
             )
         ),
-        "Geth Verkle (in-memory)",
+        "Geth Verkle (levelDB)",
     ),
 ]
 
-for i in range(len(data)):
-    block_numbers, mgas_values = data[i][0]
-    data[i] = (block_numbers[:400], mgas_values[:400]), data[i][1]
 
 plot_mgas_comparison(
     data,
-    "Live vs Archive vs Geth Verkle (in-memory) - 4M Blocks Sonic Mainnet",
+    "Live DB vs Geth Verkle (levelDB) - 55M Blocks Sonic Mainnet",
 )
+
+# %%
