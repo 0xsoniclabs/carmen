@@ -13,6 +13,8 @@ package common
 import (
 	"math/rand"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // BuildInMap adapts the language level map as a reference map for
@@ -535,6 +537,81 @@ func TestFastMap_CopyTo(t *testing.T) {
 			t.Errorf("values do not match: %v -> got %v != want %v", key, shadowVal, val)
 		}
 	})
+}
+
+func TestFastMap_CopyToWith(t *testing.T) {
+	require := require.New(t)
+
+	m := NewFastMap[Key, *int](KeyShortHasher{})
+	// fill in data
+	var k Key
+	for i := 0; i < 100; i++ {
+		val := i
+		m.Put(k, &val)
+		k[i%32]++
+	}
+
+	shadow := NewFastMap[Key, *int](KeyShortHasher{})
+	m.CopyToWith(shadow, func(v *int) *int {
+		if v == nil {
+			return nil
+		}
+		val := *v
+		return &val
+	})
+
+	require.True(m.DeepEqual(shadow))
+}
+
+func TestFastMap_DeepEqual(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+
+	// Empty
+	m1 := &FastMap[Key, int]{}
+	m2 := &FastMap[Key, int]{}
+	require.True(m1.DeepEqual(m2))
+
+	// Both nil
+	var m3 *FastMap[Key, int]
+	var m4 *FastMap[Key, int]
+	require.True(m3.DeepEqual(m4))
+
+	// One nil, one not
+	m5 := &FastMap[Key, int]{}
+	require.False(m3.DeepEqual(m5))
+	require.False(m5.DeepEqual(m4))
+
+	// Same keys and values
+	m6 := NewFastMap[Key, int](KeyShortHasher{})
+	m7 := NewFastMap[Key, int](KeyShortHasher{})
+	m6.Put(Key{0x1}, 1)
+	m7.Put(Key{0x1}, 1)
+	require.True(m6.DeepEqual(m7))
+	require.True(m7.DeepEqual(m6))
+
+	// Same keys, different values
+	m6.Put(Key{0x1}, 2)
+	require.False(m6.DeepEqual(m7))
+	require.False(m7.DeepEqual(m6))
+
+	// Same keys, same value with different pointers
+	m8 := NewFastMap[Key, *int](KeyShortHasher{})
+	m9 := NewFastMap[Key, *int](KeyShortHasher{})
+	val1 := 1
+	val2 := 1
+	m8.Put(Key{0x1}, &val1)
+	m9.Put(Key{0x1}, &val2)
+	require.True(m8.DeepEqual(m9))
+
+	// Same keys, different value and pointers
+	m10 := NewFastMap[Key, *int](KeyShortHasher{})
+	m11 := NewFastMap[Key, *int](KeyShortHasher{})
+	val3 := 3
+	m10.Put(Key{0x1}, &val1)
+	m11.Put(Key{0x1}, &val3)
+	require.False(m10.DeepEqual(m11))
 }
 
 func TestMap_Internal_Negative_Position(t *testing.T) {
