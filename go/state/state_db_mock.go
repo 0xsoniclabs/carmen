@@ -428,6 +428,20 @@ func (mr *MockVmStateDBMockRecorder) HasSuicided(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasSuicided", reflect.TypeOf((*MockVmStateDB)(nil).HasSuicided), arg0)
 }
 
+// InterTxSnapshot mocks base method.
+func (m *MockVmStateDB) InterTxSnapshot() InterTxSnapshotID {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InterTxSnapshot")
+	ret0, _ := ret[0].(InterTxSnapshotID)
+	return ret0
+}
+
+// InterTxSnapshot indicates an expected call of InterTxSnapshot.
+func (mr *MockVmStateDBMockRecorder) InterTxSnapshot() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InterTxSnapshot", reflect.TypeOf((*MockVmStateDB)(nil).InterTxSnapshot))
+}
+
 // IsAddressInAccessList mocks base method.
 func (m *MockVmStateDB) IsAddressInAccessList(arg0 common.Address) bool {
 	m.ctrl.T.Helper()
@@ -455,6 +469,20 @@ func (m *MockVmStateDB) IsSlotInAccessList(arg0 common.Address, arg1 common.Key)
 func (mr *MockVmStateDBMockRecorder) IsSlotInAccessList(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSlotInAccessList", reflect.TypeOf((*MockVmStateDB)(nil).IsSlotInAccessList), arg0, arg1)
+}
+
+// RevertToInterTxSnapshot mocks base method.
+func (m *MockVmStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevertToInterTxSnapshot indicates an expected call of RevertToInterTxSnapshot.
+func (mr *MockVmStateDBMockRecorder) RevertToInterTxSnapshot(id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertToInterTxSnapshot", reflect.TypeOf((*MockVmStateDB)(nil).RevertToInterTxSnapshot), id)
 }
 
 // RevertToSnapshot mocks base method.
@@ -1114,6 +1142,20 @@ func (mr *MockStateDBMockRecorder) HasSuicided(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasSuicided", reflect.TypeOf((*MockStateDB)(nil).HasSuicided), arg0)
 }
 
+// InterTxSnapshot mocks base method.
+func (m *MockStateDB) InterTxSnapshot() InterTxSnapshotID {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InterTxSnapshot")
+	ret0, _ := ret[0].(InterTxSnapshotID)
+	return ret0
+}
+
+// InterTxSnapshot indicates an expected call of InterTxSnapshot.
+func (mr *MockStateDBMockRecorder) InterTxSnapshot() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InterTxSnapshot", reflect.TypeOf((*MockStateDB)(nil).InterTxSnapshot))
+}
+
 // IsAddressInAccessList mocks base method.
 func (m *MockStateDB) IsAddressInAccessList(arg0 common.Address) bool {
 	m.ctrl.T.Helper()
@@ -1153,6 +1195,20 @@ func (m *MockStateDB) ResetBlockContext() {
 func (mr *MockStateDBMockRecorder) ResetBlockContext() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetBlockContext", reflect.TypeOf((*MockStateDB)(nil).ResetBlockContext))
+}
+
+// RevertToInterTxSnapshot mocks base method.
+func (m *MockStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevertToInterTxSnapshot indicates an expected call of RevertToInterTxSnapshot.
+func (mr *MockStateDBMockRecorder) RevertToInterTxSnapshot(id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertToInterTxSnapshot", reflect.TypeOf((*MockStateDB)(nil).RevertToInterTxSnapshot), id)
 }
 
 // RevertToSnapshot mocks base method.
@@ -1737,6 +1793,20 @@ func (mr *MockNonCommittableStateDBMockRecorder) HasSuicided(arg0 any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasSuicided", reflect.TypeOf((*MockNonCommittableStateDB)(nil).HasSuicided), arg0)
 }
 
+// InterTxSnapshot mocks base method.
+func (m *MockNonCommittableStateDB) InterTxSnapshot() InterTxSnapshotID {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InterTxSnapshot")
+	ret0, _ := ret[0].(InterTxSnapshotID)
+	return ret0
+}
+
+// InterTxSnapshot indicates an expected call of InterTxSnapshot.
+func (mr *MockNonCommittableStateDBMockRecorder) InterTxSnapshot() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InterTxSnapshot", reflect.TypeOf((*MockNonCommittableStateDB)(nil).InterTxSnapshot))
+}
+
 // IsAddressInAccessList mocks base method.
 func (m *MockNonCommittableStateDB) IsAddressInAccessList(arg0 common.Address) bool {
 	m.ctrl.T.Helper()
@@ -1776,6 +1846,20 @@ func (m *MockNonCommittableStateDB) Release() {
 func (mr *MockNonCommittableStateDBMockRecorder) Release() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Release", reflect.TypeOf((*MockNonCommittableStateDB)(nil).Release))
+}
+
+// RevertToInterTxSnapshot mocks base method.
+func (m *MockNonCommittableStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevertToInterTxSnapshot indicates an expected call of RevertToInterTxSnapshot.
+func (mr *MockNonCommittableStateDBMockRecorder) RevertToInterTxSnapshot(id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertToInterTxSnapshot", reflect.TypeOf((*MockNonCommittableStateDB)(nil).RevertToInterTxSnapshot), id)
 }
 
 // RevertToSnapshot mocks base method.
