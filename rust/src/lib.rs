@@ -13,7 +13,7 @@
     deny(clippy::disallowed_types, clippy::disallowed_methods)
 )]
 
-use std::{mem::MaybeUninit, ops::Deref, path::Path};
+use std::{collections::HashMap, mem::MaybeUninit, ops::Deref, path::Path, sync::{LazyLock, Mutex}};
 
 #[cfg(feature = "storage-statistics")]
 use crate::statistics::storage::StorageOperationLogger;
@@ -25,7 +25,7 @@ use crate::{
             StateMode,
             variants::managed::{
                 FullInnerNode, FullLeafNode, InnerDeltaNode, LeafDeltaNode, SparseInnerNode,
-                SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager, VerkleNodeId,
+                SparseLeafNode, VerkleNode, VerkleNodeFileStorageManager, VerkleNodeId, VerkleNodeKind,
             },
         },
     },
@@ -569,6 +569,46 @@ pub type VerkleStorageManager = VerkleNodeFileStorageManager<
 
 type VerkleStorage = StorageWithFlushBuffer<VerkleStorageManager>;
 
+pub struct SpecializationTransactions {
+    pub inner: HashMap<(usize, VerkleNodeKind), usize>,
+    pub leaf: HashMap<(usize, VerkleNodeKind), usize>, 
+}
+
+pub static SPECIALIZATION_TRANSACTIONS : Mutex<LazyLock<SpecializationTransactions>> = Mutex::new(LazyLock::new(|| {
+    SpecializationTransactions {
+        inner: HashMap::new(),
+        leaf: HashMap::new(),
+    }
+}));
+
+
+impl SpecializationTransactions {
+    pub fn print(&self, out: &mut dyn std::io::Write) -> BTResult<(), Error> {
+        writeln!(out, "Inner node specialization transactions:").map_err(storage::Error::from)?;
+        for (record, num_tranformations) in &self.inner {
+            self.print_record(record, num_tranformations, "Inner", out)?;
+        }
+
+        writeln!(out, "Leaf node specialization transactions:").map_err(storage::Error::from)?;
+        for (record, num_transformations) in &self.leaf {
+            self.print_record(record,  num_transformations, "Leaf", out)?;
+        }
+        Ok(())
+    }
+
+    pub fn print_record(&self, record : &(usize, VerkleNodeKind), num: &usize, prefix: &str, out: &mut dyn std::io::Write) -> BTResult<(), Error> {
+        let (src, dst) = record;
+        let dst_str = format!("{dst:?}").strip_prefix(prefix).map(str::to_owned).unwrap_or_else(|| format!("{dst:?}").to_owned());
+        writeln!(out, "{} -> {}: {}", src, dst_str, num).map_err(storage::Error::from)?;
+        Ok(())
+    }
+
+    pub fn get_node_kind_size(node_kind: &VerkleNodeKind, prefix: &str) -> BTResult<String, Error> {
+        Ok(format!("{node_kind:?}").strip_prefix(prefix).ok_or(Error::CorruptedState("Expected node kind to start with".to_string()))?.to_owned())
+    }
+}
+
+
 /// Opens a new [CarmenDb] database object based on the provided implementation maintaining
 /// its data in the given directory. If the directory does not exist, it is
 /// created. If it is empty, a new, empty state is initialized. If it contains
@@ -830,6 +870,9 @@ where
             Error::CorruptedState("node manager reference count is not 1 on close".to_owned())
         })?;
         manager.close()?;
+
+        SPECIALIZATION_TRANSACTIONS.lock().unwrap().print(&mut std::io::stdout())?; 
+
         Ok(())
     }
 

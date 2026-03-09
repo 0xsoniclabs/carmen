@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    database::{
+    SPECIALIZATION_TRANSACTIONS, database::{
         managed_trie::{LookupResult, ManagedTrieNode, StoreAction},
         verkle::{
             KeyedUpdate, KeyedUpdateBatch,
@@ -24,17 +24,12 @@ use crate::{
                     VerkleInnerCommitment, VerkleLeafCommitment,
                 },
                 nodes::{
-                    ItemWithIndex, ValueWithIndex, VerkleIdWithIndex, leaf_delta::LeafDeltaNode,
-                    make_smallest_inner_node_for, make_smallest_leaf_node_for,
+                    ItemWithIndex, ValueWithIndex, VerkleIdWithIndex, leaf_delta::LeafDeltaNode, make_smallest_inner_node_for, make_smallest_leaf_node_for
                 },
             },
         },
         visitor::NodeVisitor,
-    },
-    error::{BTError, BTResult, Error},
-    statistics::node_count::NodeCountVisitor,
-    storage,
-    types::{DiskRepresentable, Key, Value},
+    }, error::{BTError, BTResult, Error}, statistics::node_count::NodeCountVisitor, storage, types::{DiskRepresentable, Key, ToNodeKind, Value}
 };
 
 /// A sparsely populated leaf node in a managed Verkle trie.
@@ -232,6 +227,14 @@ impl<const N: usize> ManagedTrieNode for SparseLeafNode<N> {
         );
         if slots > N {
             // If the stems match but we don't have a free/matching slot, convert to a bigger leaf.
+            let new_leaf = make_smallest_leaf_node_for(
+                slots,
+                self.stem,
+                &self.values,
+                &self.commitment,
+            )?;
+
+            SPECIALIZATION_TRANSACTIONS.lock().unwrap().leaf.entry((N, new_leaf.to_node_kind().unwrap())).and_modify(|count| *count += 1).or_insert(1);
             return Ok(StoreAction::HandleTransform(make_smallest_leaf_node_for(
                 slots,
                 self.stem,
