@@ -34,13 +34,11 @@ def parse_performance_metrics(log_file_path):
 
 def plot_mgas_comparison(mgas_with_labels, title):
     plt.figure(figsize=(10, 5))
-    i = 0
+    # i = 0
     for (block_numbers, mgas_values), label in mgas_with_labels:
-        # Change color of second one to green
         plt.plot(
-            block_numbers, mgas_values, label=label, color="green" if i == 1 else None
-        )
-        i += 1
+            block_numbers, mgas_values, label=label) #if i == 1 else None)
+        # i += 1
     plt.xlabel("Block Number")
     plt.ylabel("MGas/s")
     max_blocks = max(
@@ -214,4 +212,29 @@ plot_mgas_comparison(
     "Live DB vs Geth Verkle (levelDB) - 55M Blocks Sonic Mainnet",
 )
 
+# %% Plot live optimal and 512 specializations 
+data = [
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/rust-file-live-for-gas-55M-main-056907.log"
+            )
+        ),
+        "LiveDB",
+    ),
+    (
+        itemgetter(0, 1)(
+            parse_performance_metrics(
+                "./data/live-for-mgas-rust-file-256_specializations-54b23a4c1.log"
+            )
+        ),
+        "512 specializations",
+    ),
+]
+
+
+plot_mgas_comparison(
+    data,
+    "LiveDB - Optimal vs 512 specializations - 55M Blocks Sonic Mainnet",
+)
 # %%
