@@ -89,6 +89,12 @@ type VmStateDB interface {
 	BeginTransaction()
 	EndTransaction()
 
+	// InterTxSnapshot creates a restore point to the last executed transaction. Returns an identifier of the created snapshot to be used for reverting to it.
+	InterTxSnapshot() InterTxSnapshotID
+
+	// RevertToInterTxSnapshot reverts the state to the state at the snapshot with the given identifier. Returns an error if the snapshot does not exists.
+	RevertToInterTxSnapshot(id InterTxSnapshotID) error
+
 	// GetTransactionChanges provides a set of accounts and their slots, which have been
 	// potentially changed in the current transaction.
 	// Must be called before EndTransaction call.
@@ -417,6 +423,9 @@ type storedDataCacheValue struct {
 	reincarnation uint64       // < the reincarnation the cached value belongs to
 }
 
+// InterTxSnapshotID identifies an iter-transaction snapshot created with `InterTxSnapshot`.
+type InterTxSnapshotID int
+
 // CreateStateDBUsing creates a StateDB instance wrapping the given state supporting
 // all operations including end-of-block operations mutating the underlying state.
 // Note: any StateDB instanced becomes invalid if the underlying state is
@@ -545,10 +554,14 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	})
 
 	// Mark account to be treated like if was already committed.
-	oldState := s.clearedAccounts[addr]
+	oldState, exists := s.clearedAccounts[addr]
 	s.clearedAccounts[addr] = cleared
 	s.undo = append(s.undo, func() {
-		s.clearedAccounts[addr] = oldState
+		if exists {
+			s.clearedAccounts[addr] = oldState
+		} else {
+			delete(s.clearedAccounts, addr)
+		}
 	})
 }
 
@@ -598,11 +611,15 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 
 	// Mark account for clearing to plan its removing on commit and
 	// to avoid fetching new data into the cache during the ongoing block.
-	oldState := s.clearedAccounts[addr]
+	oldState, oldStateExists := s.clearedAccounts[addr]
 	if oldState == noClearing {
 		s.clearedAccounts[addr] = pendingClearing
 		s.undo = append(s.undo, func() {
-			s.clearedAccounts[addr] = oldState
+			if oldStateExists {
+				s.clearedAccounts[addr] = oldState
+			} else {
+				delete(s.clearedAccounts, addr)
+			}
 		})
 	}
 
@@ -888,7 +905,6 @@ func (s *stateDB) SetTransientState(addr common.Address, key common.Key, value c
 	s.undo = append(s.undo, func() {
 		s.transientStorage.Put(sid, oldValue)
 	})
-
 	s.transientStorage.Put(sid, value)
 }
 
@@ -929,6 +945,7 @@ func (s *stateDB) GetCode(addr common.Address) []byte {
 			s.trackErrors(fmt.Errorf("unable to obtain code for %v: %w", addr, err))
 			return nil
 		}
+
 		val.code, val.codeValid = code, true
 		val.size, val.sizeValid = len(code), true
 	}
@@ -1113,7 +1130,13 @@ func (s *stateDB) BeginTransaction() {
 func (s *stateDB) EndTransaction() {
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
+		oldValueCommitted := value.committed
+		oldValueCommittedKnown := value.committedKnown
 		value.committed, value.committedKnown = value.current, true
+		s.undo = append(s.undo, func() {
+			value.committed = oldValueCommitted
+			value.committedKnown = oldValueCommittedKnown
+		})
 	}
 
 	// EIP-161: At the end of the transaction, any account touched by the execution of that transaction
@@ -1122,7 +1145,15 @@ func (s *stateDB) EndTransaction() {
 		if s.Empty(addr) {
 			s.accountsToDelete = append(s.accountsToDelete, addr)
 			// Mark the account storage state to be cleaned below.
+			oldState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
+			s.undo = append(s.undo, func() {
+				if oldExists {
+					s.clearedAccounts[addr] = oldState
+				} else {
+					delete(s.clearedAccounts, addr)
+				}
+			})
 		}
 	}
 
@@ -1131,9 +1162,13 @@ func (s *stateDB) EndTransaction() {
 		for _, addr := range s.accountsToDelete {
 			// Transition accounts marked by suicide to be deleted.
 			if s.HasSuicided(addr) {
+				oldClearedAccountState := s.clearedAccounts[addr]
 				s.setAccountState(addr, accountNonExisting)
 				s.setCodeInternal(addr, []byte{})
 				s.clearedAccounts[addr] = pendingClearing
+				s.undo = append(s.undo, func() {
+					s.clearedAccounts[addr] = oldClearedAccountState
+				})
 			}
 
 			// If the account was already cleared because it was recreated, we skip this part.
@@ -1151,17 +1186,30 @@ func (s *stateDB) EndTransaction() {
 			// Clear cached value states for the targeted account.
 			s.data.ForEach(func(slot slotId, value *slotValue) {
 				if slot.addr == addr {
+					oldValue := *value
 					// Clear cached values.
 					value.stored = common.Value{}
 					value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
+
+					s.undo = append(s.undo, func() {
+						*value = oldValue
+					})
 				}
 			})
 
 			// Signal to future fetches in this block that this account should be considered cleared.
+			oldClearedAccountState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = cleared
+			s.undo = append(s.undo, func() {
+				if oldExists {
+					s.clearedAccounts[addr] = oldClearedAccountState
+				} else {
+					delete(s.clearedAccounts, addr)
+				}
+			})
 		}
 
 		s.accountsToDelete = s.accountsToDelete[0:0]
@@ -1170,6 +1218,18 @@ func (s *stateDB) EndTransaction() {
 	s.writtenSlots = map[*slotValue]bool{}
 	// Reset state, in particular seal effects by forgetting undo list.
 	s.resetTransactionContext()
+}
+
+func (s *stateDB) InterTxSnapshot() InterTxSnapshotID {
+	return InterTxSnapshotID(len(s.undo))
+}
+
+func (s *stateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+	if id > InterTxSnapshotID(len(s.undo)) {
+		return fmt.Errorf("cannot revert to inter-transaction snapshot with value %d, only %d snapshots in the current block", id, len(s.undo))
+	}
+	s.RevertToSnapshot(int(id))
+	return nil
 }
 
 func (s *stateDB) GetTransactionChanges() map[common.Address][]common.Key {
@@ -1444,7 +1504,6 @@ func (s *stateDB) resetTransactionContext() {
 	s.refund = 0
 	s.ClearAccessList()
 	s.transientStorage.Clear()
-	s.undo = s.undo[0:0]
 	s.emptyCandidates = s.emptyCandidates[0:0]
 	s.logs = s.logs[0:0]
 	s.createdContracts = make(map[common.Address]struct{})
@@ -1459,6 +1518,7 @@ func (s *stateDB) ResetBlockContext() {
 	s.codes = make(map[common.Address]*codeValue)
 	s.logsInBlock = 0
 	s.resetTransactionContext()
+	s.undo = s.undo[0:0]
 	s.resetReincarnationWhenExceeds(10_000_000)
 }
 

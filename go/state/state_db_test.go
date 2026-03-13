@@ -4332,10 +4332,6 @@ func TestStateDB_TransientStorage_IsClearedAfterCallingEndTransaction(t *testing
 	if got, want := db.GetTransientState(address1, key1), valEmpty; got != want {
 		t.Errorf("unexpected value, wanted %v, got %v", want, got)
 	}
-
-	if len(db.undo) > 0 {
-		t.Errorf("unexpected undo len, wanted: 0, got: %v", len(db.undo))
-	}
 }
 
 func TestStateDB_SetTransientState_NewestValueCanBeObtained(t *testing.T) {
