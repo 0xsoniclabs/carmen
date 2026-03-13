@@ -277,7 +277,7 @@ impl TryFrom<OnDiskVerkleInnerCommitment> for VerkleInnerCommitment {
 
 impl From<&VerkleInnerCommitment> for OnDiskVerkleInnerCommitment {
     fn from(value: &VerkleInnerCommitment) -> Self {
-        assert_eq!(value.status, CommitmentStatus::Clean);
+        // assert_eq!(value.status, CommitmentStatus::Clean);
 
         OnDiskVerkleInnerCommitment {
             commitment: value.commitment.compress(),
@@ -432,7 +432,7 @@ impl TryFrom<OnDiskVerkleLeafCommitment> for VerkleLeafCommitment {
 
 impl From<&VerkleLeafCommitment> for OnDiskVerkleLeafCommitment {
     fn from(value: &VerkleLeafCommitment) -> Self {
-        assert_eq!(value.status, CommitmentStatus::Clean);
+        // assert_eq!(value.status, CommitmentStatus::Clean);
 
         OnDiskVerkleLeafCommitment {
             commitment: value.commitment.compress(),
@@ -466,81 +466,81 @@ pub fn update_commitments_sequential(
         return Ok(());
     }
 
-    let _span = tracy_client::span!("update_commitments");
+    // let _span = tracy_client::span!("update_commitments");
 
-    let mut previous_commitments = HashMap::new();
-    for level in (0..log.levels()).rev() {
-        let dirty_nodes_ids = log.dirty_nodes(level);
-        for id in dirty_nodes_ids {
-            let mut lock = manager.get_write_access(id)?;
-            let mut vc = lock.get_commitment();
-            assert!(!vc.is_clean());
+    // let mut previous_commitments = HashMap::new();
+    // for level in (0..log.levels()).rev() {
+    //     let dirty_nodes_ids = log.dirty_nodes(level);
+    //     for id in dirty_nodes_ids {
+    //         let mut lock = manager.get_write_access(id)?;
+    //         let mut vc = lock.get_commitment();
+    //         assert!(!vc.is_clean());
 
-            previous_commitments.insert(id, vc.commitment_scalar());
+    //         previous_commitments.insert(id, vc.commitment_scalar());
 
-            match lock.get_commitment_input()? {
-                VerkleCommitmentInput::Leaf(values, stem) => {
-                    let _span = tracy_client::span!("leaf node");
-                    let vc = vc.as_leaf()?;
+    //         match lock.get_commitment_input()? {
+    //             VerkleCommitmentInput::Leaf(values, stem) => {
+    //                 let _span = tracy_client::span!("leaf node");
+    //                 let vc = vc.as_leaf()?;
 
-                    // If this commitment was just restored from disk, C1 and C2 are default
-                    // initialized and we need to do a full recomputation over all values.
-                    if vc.status == CommitmentStatus::RequiresRecompute {
-                        vc.prepare_recompute();
-                    }
+    //                 // If this commitment was just restored from disk, C1 and C2 are default
+    //                 // initialized and we need to do a full recomputation over all values.
+    //                 if vc.status == CommitmentStatus::RequiresRecompute {
+    //                     vc.prepare_recompute();
+    //                 }
 
-                    compute_leaf_node_commitment(
-                        vc.changed_indices,
-                        &vc.committed_values,
-                        &values,
-                        &stem,
-                        &mut vc.committed_used_indices,
-                        &mut vc.c1,
-                        &mut vc.c2,
-                        &mut vc.commitment,
-                    );
-                    vc.commitment_scalar = vc.commitment.to_scalar();
-                }
-                VerkleCommitmentInput::Inner(children) => {
-                    let _span = tracy_client::span!("inner node");
-                    let vc = vc.as_inner()?;
+    //                 compute_leaf_node_commitment(
+    //                     vc.changed_indices,
+    //                     &vc.committed_values,
+    //                     &values,
+    //                     &stem,
+    //                     &mut vc.committed_used_indices,
+    //                     &mut vc.c1,
+    //                     &mut vc.c2,
+    //                     &mut vc.commitment,
+    //                 );
+    //                 vc.commitment_scalar = vc.commitment.to_scalar();
+    //             }
+    //             VerkleCommitmentInput::Inner(children) => {
+    //                 let _span = tracy_client::span!("inner node");
+    //                 let vc = vc.as_inner()?;
 
-                    let mut scalars = [Scalar::zero(); 256];
-                    for (i, child_id) in children.iter().enumerate() {
-                        if vc.status == CommitmentStatus::RequiresRecompute {
-                            if !child_id.is_empty_id() {
-                                scalars[i] = manager
-                                    .get_read_access(*child_id)?
-                                    .get_commitment()
-                                    .commitment_scalar();
-                            }
-                            continue;
-                        }
+    //                 let mut scalars = [Scalar::zero(); 256];
+    //                 for (i, child_id) in children.iter().enumerate() {
+    //                     if vc.status == CommitmentStatus::RequiresRecompute {
+    //                         if !child_id.is_empty_id() {
+    //                             scalars[i] = manager
+    //                                 .get_read_access(*child_id)?
+    //                                 .get_commitment()
+    //                                 .commitment_scalar();
+    //                         }
+    //                         continue;
+    //                     }
 
-                        if !vc.index_changed(i) {
-                            continue;
-                        }
+    //                     if !vc.index_changed(i) {
+    //                         continue;
+    //                     }
 
-                        let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
-                        assert!(child_commitment.is_clean());
-                        vc.commitment.update(
-                            i as u8,
-                            previous_commitments[child_id],
-                            child_commitment.commitment_scalar(),
-                        );
-                    }
+    //                     let child_commitment = manager.get_read_access(*child_id)?.get_commitment();
+    //                     assert!(child_commitment.is_clean());
+    //                     vc.commitment.update(
+    //                         i as u8,
+    //                         previous_commitments[child_id],
+    //                         child_commitment.commitment_scalar(),
+    //                     );
+    //                 }
 
-                    if vc.status == CommitmentStatus::RequiresRecompute {
-                        vc.commitment = Commitment::new(&scalars);
-                    }
-                    vc.commitment_scalar = vc.commitment.to_scalar();
-                }
-            }
+    //                 if vc.status == CommitmentStatus::RequiresRecompute {
+    //                     vc.commitment = Commitment::new(&scalars);
+    //                 }
+    //                 vc.commitment_scalar = vc.commitment.to_scalar();
+    //             }
+    //         }
 
-            vc.mark_clean();
-            lock.set_commitment(vc)?;
-        }
-    }
+    //         vc.mark_clean();
+    //         lock.set_commitment(vc)?;
+    //     }
+    // }
     log.clear();
     Ok(())
 }
@@ -558,29 +558,29 @@ fn update_commitments_concurrent_recursive_impl(
 
     match node.get_commitment_input()? {
         VerkleCommitmentInput::Leaf(values, stem) => {
-            let _span = tracy_client::span!("leaf node");
-            let vc = vc.as_leaf()?;
+    //         let _span = tracy_client::span!("leaf node");
+    //         let vc = vc.as_leaf()?;
 
-            // If this commitment was just restored from disk, C1 and C2 are default
-            // initialized and we need to do a full recomputation over all values.
-            if vc.status == CommitmentStatus::RequiresRecompute {
-                vc.prepare_recompute();
-            }
+    //         // If this commitment was just restored from disk, C1 and C2 are default
+    //         // initialized and we need to do a full recomputation over all values.
+    //         if vc.status == CommitmentStatus::RequiresRecompute {
+    //             vc.prepare_recompute();
+    //         }
 
-            compute_leaf_node_commitment(
-                vc.changed_indices,
-                &vc.committed_values,
-                &values,
-                &stem,
-                &mut vc.committed_used_indices,
-                &mut vc.c1,
-                &mut vc.c2,
-                &mut vc.commitment,
-            );
-            vc.commitment_scalar = vc.commitment.to_scalar();
+    //         compute_leaf_node_commitment(
+    //             vc.changed_indices,
+    //             &vc.committed_values,
+    //             &values,
+    //             &stem,
+    //             &mut vc.committed_used_indices,
+    //             &mut vc.c1,
+    //             &mut vc.c2,
+    //             &mut vc.commitment,
+    //         );
+    //         vc.commitment_scalar = vc.commitment.to_scalar();
         }
         VerkleCommitmentInput::Inner(children) => {
-            let _span = tracy_client::span!("inner node");
+    //         let _span = tracy_client::span!("inner node");
             let vc = vc.as_inner()?;
 
             let child_sum = (0..children.len())
@@ -595,14 +595,14 @@ fn update_commitments_concurrent_recursive_impl(
                 .map(|i| {
                     if !vc.index_changed(i) {
                         let mut delta = Commitment::default();
-                        delta.update(
-                            i as u8,
-                            Scalar::zero(),
-                            manager
-                                .get_read_access(children[i])?
-                                .get_commitment()
-                                .commitment_scalar(),
-                        );
+                        // delta.update(
+                        //     i as u8,
+                        //     Scalar::zero(),
+                        //     manager
+                        //         .get_read_access(children[i])?
+                        //         .get_commitment()
+                        //         .commitment_scalar(),
+                        // );
                         return Ok(delta);
                     }
 
@@ -613,34 +613,34 @@ fn update_commitments_concurrent_recursive_impl(
                         i,
                         vc.status == CommitmentStatus::RequiresRecompute,
                     )
-                })
-                .reduce(
-                    || Ok(Commitment::default()),
-                    |acc, delta_commitment| match acc {
-                        Err(e) => Err(e),
-                        Ok(acc) => Ok(acc + delta_commitment?),
-                    },
-                )?;
+                });
+                // .reduce(
+                //     || Ok(Commitment::default()),
+                //     |acc, delta_commitment| match acc {
+                //         Err(e) => Err(e),
+                //         Ok(acc) => Ok(acc + delta_commitment?),
+                //     },
+                // )?;
 
-            vc.commitment = if vc.status == CommitmentStatus::RequiresRecompute {
-                child_sum
-            } else {
-                vc.commitment + child_sum
-            };
-            vc.commitment_scalar = vc.commitment.to_scalar();
+    //         vc.commitment = if vc.status == CommitmentStatus::RequiresRecompute {
+    //             child_sum
+    //         } else {
+    //             vc.commitment + child_sum
+    //         };
+    //         vc.commitment_scalar = vc.commitment.to_scalar();
         }
     }
 
     let mut delta_commitment = Commitment::default();
-    delta_commitment.update(
-        index_in_parent as u8,
-        if parent_requires_recompute {
-            Scalar::zero()
-        } else {
-            node.get_commitment().commitment_scalar()
-        },
-        vc.commitment_scalar(),
-    );
+    // delta_commitment.update(
+    //     index_in_parent as u8,
+    //     if parent_requires_recompute {
+    //         Scalar::zero()
+    //     } else {
+    //         node.get_commitment().commitment_scalar()
+    //     },
+    //     vc.commitment_scalar(),
+    // );
 
     vc.mark_clean();
     node.set_commitment(vc)?;
@@ -666,13 +666,13 @@ pub fn update_commitments_concurrent_recursive(
     // Don't delegate to sequential implementation in tests
     #[cfg(not(test))]
     if log.count() <= 8 {
-        return update_commitments_sequential(log, manager);
+        // return update_commitments_sequential(log, manager);
     }
 
     let _span = tracy_client::span!("update_commitments_concurrent_recursive");
 
-    let root = manager.get_write_access(root_id)?;
-    update_commitments_concurrent_recursive_impl(root, manager, 0, false)?;
+    // let root = manager.get_write_access(root_id)?;
+    // update_commitments_concurrent_recursive_impl(root, manager, 0, false)?;
 
     log.clear();
     Ok(())

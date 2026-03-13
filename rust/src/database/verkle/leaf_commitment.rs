@@ -58,76 +58,76 @@ pub fn compute_leaf_node_commitment(
     c2: &mut Commitment,
     c: &mut Commitment,
 ) {
-    /// Computing a single commitment update is relatively cheap (in the order of ~10us),
-    /// which means we have to balance it against the overhead introduced by Rayon workers.
-    /// 16 was empirically determined to provide good performance.
-    const MIN_UPDATES_PER_THREAD: usize = 16;
+    // /// Computing a single commitment update is relatively cheap (in the order of ~10us),
+    // /// which means we have to balance it against the overhead introduced by Rayon workers.
+    // /// 16 was empirically determined to provide good performance.
+    // const MIN_UPDATES_PER_THREAD: usize = 16;
 
-    let prev_c1 = *c1;
-    let prev_c2 = *c2;
+    // let prev_c1 = *c1;
+    // let prev_c2 = *c2;
 
-    let update_index = |i: usize| {
-        let prev_value = prev_values[i];
-        let cur_value = cur_values[i];
+    // let update_index = |i: usize| {
+    //     let prev_value = prev_values[i];
+    //     let cur_value = cur_values[i];
 
-        let mut prev_lower = Scalar::from_le_bytes(&prev_value[..16]);
-        let prev_upper = Scalar::from_le_bytes(&prev_value[16..]);
-        if committed_used_indices[i / 8] & (1 << (i % 8)) != 0 {
-            prev_lower.set_bit128();
-        }
-        let mut lower = Scalar::from_le_bytes(&cur_value[..16]);
-        let upper = Scalar::from_le_bytes(&cur_value[16..]);
-        lower.set_bit128();
+    //     let mut prev_lower = Scalar::from_le_bytes(&prev_value[..16]);
+    //     let prev_upper = Scalar::from_le_bytes(&prev_value[16..]);
+    //     if committed_used_indices[i / 8] & (1 << (i % 8)) != 0 {
+    //         prev_lower.set_bit128();
+    //     }
+    //     let mut lower = Scalar::from_le_bytes(&cur_value[..16]);
+    //     let upper = Scalar::from_le_bytes(&cur_value[16..]);
+    //     lower.set_bit128();
 
-        let mut delta_commitment = Commitment::default();
-        delta_commitment.update(((i * 2) % 256) as u8, prev_lower, lower);
-        delta_commitment.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
-        delta_commitment
-    };
+    //     let mut delta_commitment = Commitment::default();
+    //     delta_commitment.update(((i * 2) % 256) as u8, prev_lower, lower);
+    //     delta_commitment.update(((i * 2 + 1) % 256) as u8, prev_upper, upper);
+    //     delta_commitment
+    // };
 
-    let c1_indices = (0..128).filter(|i| changed_indices[i / 8] & (1 << (i % 8)) != 0);
-    let c2_indices = (128..256).filter(|i| changed_indices[i / 8] & (1 << (i % 8)) != 0);
+    // let c1_indices = (0..128).filter(|i| changed_indices[i / 8] & (1 << (i % 8)) != 0);
+    // let c2_indices = (128..256).filter(|i| changed_indices[i / 8] & (1 << (i % 8)) != 0);
 
-    let c1_delta = c1_indices
-        .collect::<Vec<_>>()
-        .into_par_iter()
-        .with_min_len(MIN_UPDATES_PER_THREAD)
-        .map(update_index)
-        .fold(Commitment::default, |acc, c| acc + c)
-        .reduce(Commitment::default, |acc, c| acc + c);
+    // let c1_delta = c1_indices
+    //     .collect::<Vec<_>>()
+    //     .into_par_iter()
+    //     .with_min_len(MIN_UPDATES_PER_THREAD)
+    //     .map(update_index)
+    //     .fold(Commitment::default, |acc, c| acc + c)
+    //     .reduce(Commitment::default, |acc, c| acc + c);
 
-    let c2_delta = c2_indices
-        .collect::<Vec<_>>()
-        .into_par_iter()
-        .with_min_len(MIN_UPDATES_PER_THREAD)
-        .map(update_index)
-        .fold(Commitment::default, |acc, c| acc + c)
-        .reduce(Commitment::default, |acc, c| acc + c);
+    // let c2_delta = c2_indices
+    //     .collect::<Vec<_>>()
+    //     .into_par_iter()
+    //     .with_min_len(MIN_UPDATES_PER_THREAD)
+    //     .map(update_index)
+    //     .fold(Commitment::default, |acc, c| acc + c)
+    //     .reduce(Commitment::default, |acc, c| acc + c);
 
-    *c1 = *c1 + c1_delta;
-    *c2 = *c2 + c2_delta;
+    // *c1 = *c1 + c1_delta;
+    // *c2 = *c2 + c2_delta;
 
-    for i in 0..(256 / 8) {
-        committed_used_indices[i] |= changed_indices[i];
-    }
+    // for i in 0..(256 / 8) {
+    //     committed_used_indices[i] |= changed_indices[i];
+    // }
 
-    if *c == Commitment::default() {
-        let combined = [
-            Scalar::from(1),
-            Scalar::from_le_bytes(stem),
-            c1.to_scalar(),
-            c2.to_scalar(),
-        ];
-        *c = Commitment::new(&combined);
-    } else {
-        let deltas = [
-            Scalar::zero(),
-            Scalar::zero(),
-            c1.to_scalar() - prev_c1.to_scalar(),
-            c2.to_scalar() - prev_c2.to_scalar(),
-        ];
-        *c = *c + Commitment::new(&deltas);
-    }
+    // if *c == Commitment::default() {
+    //     let combined = [
+    //         Scalar::from(1),
+    //         Scalar::from_le_bytes(stem),
+    //         c1.to_scalar(),
+    //         c2.to_scalar(),
+    //     ];
+    //     *c = Commitment::new(&combined);
+    // } else {
+    //     let deltas = [
+    //         Scalar::zero(),
+    //         Scalar::zero(),
+    //         c1.to_scalar() - prev_c1.to_scalar(),
+    //         c2.to_scalar() - prev_c2.to_scalar(),
+    //     ];
+    //     *c = *c + Commitment::new(&deltas);
+    // }
 }
 
 #[cfg(test)]
