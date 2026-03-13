@@ -8,12 +8,12 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-use std::{borrow::Cow};
+use std::borrow::Cow;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, Unaligned};
 
 use crate::{
-    SPECIALIZATION_TRANSACTIONS, database::{
+    database::{
         managed_trie::{DescendAction, LookupResult, ManagedTrieNode, StoreAction},
         verkle::{
             KeyedUpdateBatch,
@@ -23,14 +23,19 @@ use crate::{
                     OnDiskVerkleInnerCommitment, VerkleCommitment, VerkleCommitmentInput,
                     VerkleInnerCommitment,
                 },
-                nodes::{ VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId, make_smallest_inner_node_for
+                nodes::{
+                    VerkleIdWithIndex, VerkleManagedInnerNode, VerkleNodeKind, id::VerkleNodeId,
+                    make_smallest_inner_node_for,
                 },
             },
         },
         visitor::NodeVisitor,
-    }, error::{BTError, BTResult, Error}, statistics::node_count::NodeCountVisitor, storage, types::{DiskRepresentable, Key, ToNodeKind}
+    },
+    error::{BTError, BTResult, Error},
+    statistics::node_count::NodeCountVisitor,
+    storage,
+    types::{DiskRepresentable, Key, ToNodeKind},
 };
-
 
 /// An inner node in a managed Verkle trie.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,13 +175,11 @@ impl<const N: usize> ManagedTrieNode for SparseInnerNode<N> {
         );
 
         if slots > N {
-            let new_inner_node = make_smallest_inner_node_for(
+            Ok(StoreAction::HandleTransform(make_smallest_inner_node_for(
                 slots,
                 &self.children,
                 &self.commitment,
-            )?;
-            SPECIALIZATION_TRANSACTIONS.lock().unwrap().inner.entry((N, new_inner_node.to_node_kind().unwrap())).and_modify(|count| *count += 1).or_insert(1);
-            Ok(StoreAction::HandleTransform(new_inner_node))
+            )?))
         } else {
             let mut descent_actions = Vec::new();
             for sub_updates in updates.split(depth) {
