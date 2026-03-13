@@ -10,6 +10,10 @@
 
 package common
 
+import (
+	reflect "reflect"
+)
+
 const kFastMapBuckets = 1 << 16
 
 // ShortHasher is an interface for types implementing hash functions for values.
@@ -134,11 +138,46 @@ func (m *FastMap[K, V]) ForEach(op func(K, V)) {
 	}
 }
 
-// CopyTo copy all the map content to another FastMap.
+// CopyTo shallow copies all the map content to another FastMap. If either map is nil, it's a no-op.
 func (m *FastMap[K, V]) CopyTo(dest *FastMap[K, V]) {
-	m.ForEach(func(key K, value V) {
-		dest.Put(key, value)
+	m.CopyToWith(dest, func(v V) V { return v })
+}
+
+// CopyToWith copies all the map content to another FastMap using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
+func (src *FastMap[K, V]) CopyToWith(dst *FastMap[K, V], cloneFunc func(V) V) {
+	if src == nil || dst == nil {
+		return
+	}
+	src.ForEach(func(key K, value V) {
+		dst.Put(key, cloneFunc(value))
 	})
+}
+
+// DeepEqual checks if this map is deeply equal to another map.
+// If the values are pointers, the pointed values are compared for equality instead of the pointers themselves.
+func (m *FastMap[K, V]) DeepEqual(m2 *FastMap[K, V]) bool {
+	if m == nil && m2 != nil || m != nil && m2 == nil {
+		return false
+	}
+	if m == nil && m2 == nil {
+		return true
+	}
+	equal := m.Size() == m2.Size()
+	if equal {
+		m.ForEach(func(key K, value V) {
+			v2, ok := m2.Get(key)
+			if !ok {
+				equal = false
+				return
+			}
+			if reflect.ValueOf(value).Kind() == reflect.Pointer {
+				equal = (reflect.ValueOf(value).IsNil() && reflect.ValueOf(v2).IsNil()) || (reflect.ValueOf(value).Elem().Interface() == reflect.ValueOf(v2).Elem().Interface())
+			} else {
+				equal = reflect.DeepEqual(value, v2)
+			}
+		})
+	}
+	return equal
 }
 
 // fmPtr is the pointer type used inside the FastMap, comprising an
