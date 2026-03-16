@@ -488,17 +488,17 @@ node_info = load_statistics(path)
 with open("node_optimization_results.txt", "w") as writer:
     print_size_constants(writer)
     # Best variants for Inner and Leaf nodes
+    # get_best_variants(
+    #     "Inner",
+    #     range(1, 10),
+    #     node_info["Inner"],
+    #     256,
+    #     inner_node_sizes,
+    #     0,
+    #     writer,
+    # )
     get_best_variants(
-        "Inner",
-        range(1, 10),
-        node_info["Inner"],
-        256,
-        inner_node_sizes,
-        0,
-        writer,
-    )
-    get_best_variants(
-        "Leaf", range(1, 10), node_info["Leaf"], 256, leaf_node_sizes, 0.002, writer
+        "Leaf", range(64, 65), node_info["Leaf"], 256, leaf_node_sizes, 0.002, writer
     )
     # Minimum storage sizes with all specializations
     writer.write("Minimum possible storage sizes:\n")
