@@ -66,7 +66,7 @@ func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfInvalidSnapshotID(t *test
 
 func TestStateDB_EndTransaction_AddsUndoForRestoreWhen(t *testing.T) {
 	runTests := func(t *testing.T, beginOp func(state *stateDB)) {
-		testCases := map[string](func(t *testing.T, beginOp func(state *stateDB))){
+		testCases := map[string](func(t *testing.T, state *stateDB, beginOp func(state *stateDB))){
 			"UpdatingWrittenSlots":                UpdatingWrittenSlots,
 			"AddingEmptyAccountWithoutState":      AddingEmptyAccountWithState,
 			"AddingEmptyAccountWithState":         AddingEmptyAccountWithState,
@@ -79,7 +79,18 @@ func TestStateDB_EndTransaction_AddsUndoForRestoreWhen(t *testing.T) {
 
 		for name, testFunc := range testCases {
 			t.Run(name, func(t *testing.T) {
-				testFunc(t, beginOp)
+				ctrl := gomock.NewController(t)
+				db := NewMockState(ctrl)
+				db.EXPECT().Check().Return(nil).AnyTimes()
+				db.EXPECT().Check().Return(nil).AnyTimes()
+				db.EXPECT().Exists(gomock.Any()).Return(true, nil).AnyTimes()
+				db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
+				db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
+				db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
+				db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+				state := createStateDBWith(db, 1, true)
+
+				testFunc(t, state, beginOp)
 			})
 		}
 	}
@@ -97,16 +108,12 @@ func TestStateDB_EndTransaction_AddsUndoForRestoreWhen(t *testing.T) {
 	})
 }
 
-func UpdatingWrittenSlots(t *testing.T, beginOp func(state *stateDB)) {
+func UpdatingWrittenSlots(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
 
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
-
 	backup := state.InterTxSnapshot()
+
 	beginOp(state)
 	entry := slotValue{committed: common.Value{0x1}, current: common.Value{0x2}}
 	state.writtenSlots[&entry] = true
@@ -119,21 +126,11 @@ func UpdatingWrittenSlots(t *testing.T, beginOp func(state *stateDB)) {
 	require.Equal(entry.current, common.Value{0x2})
 }
 
-func AddingEmptyAccountWithoutState(t *testing.T, beginOp func(state *stateDB)) {
+func AddingEmptyAccountWithoutState(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
+
 	addr := common.Address{0x1}
-
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
-
 	backup := state.InterTxSnapshot()
 	beginOp(state)
 	state.emptyCandidates = append(state.emptyCandidates, addr)
@@ -145,22 +142,13 @@ func AddingEmptyAccountWithoutState(t *testing.T, beginOp func(state *stateDB)) 
 
 }
 
-func AddingEmptyAccountWithState(t *testing.T, beginOp func(state *stateDB)) {
+func AddingEmptyAccountWithState(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
+
 	addr := common.Address{0x1}
-
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
-
 	backup := state.InterTxSnapshot()
+
 	beginOp(state)
 	state.clearedAccounts[addr] = noClearing
 	state.emptyCandidates = append(state.emptyCandidates, addr)
@@ -171,22 +159,13 @@ func AddingEmptyAccountWithState(t *testing.T, beginOp func(state *stateDB)) {
 	require.Equal(state.clearedAccounts[addr], noClearing)
 }
 
-func DeletingSuicidedAccountWithoutState(t *testing.T, beginOp func(state *stateDB)) {
+func DeletingSuicidedAccountWithoutState(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
+
 	addr := common.Address{0x1}
-
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
-
 	backup := state.InterTxSnapshot()
+
 	beginOp(state)
 	state.accounts[addr] = &accountState{current: accountSelfDestructed}
 	state.accountsToDelete = append(state.accountsToDelete, addr)
@@ -197,20 +176,11 @@ func DeletingSuicidedAccountWithoutState(t *testing.T, beginOp func(state *state
 	require.Empty(state.clearedAccounts)
 }
 
-func DeletingSuicidedAccountWithState(t *testing.T, beginOp func(state *stateDB)) {
+func DeletingSuicidedAccountWithState(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
-	addr := common.Address{0x1}
 
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
+	addr := common.Address{0x1}
 	backup := state.InterTxSnapshot()
 
 	beginOp(state)
@@ -224,21 +194,11 @@ func DeletingSuicidedAccountWithState(t *testing.T, beginOp func(state *stateDB)
 	require.Equal(state.clearedAccounts[addr], noClearing)
 }
 
-func DeletingAccountWithData(t *testing.T, beginOp func(state *stateDB)) {
+func DeletingAccountWithData(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
 	addr := common.Address{0x1}
 	key := common.Key{0x2}
-
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
 
 	defaultSlotValue := slotValue{
 		stored:         common.Value{0x1},
@@ -251,6 +211,7 @@ func DeletingAccountWithData(t *testing.T, beginOp func(state *stateDB)) {
 
 	state.data.Put(slotId{addr, key}, &testSlotValue)
 	backup := state.InterTxSnapshot()
+
 	beginOp(state)
 	state.accountsToDelete = append(state.accountsToDelete, addr)
 	state.EndTransaction()
@@ -267,22 +228,13 @@ func DeletingAccountWithData(t *testing.T, beginOp func(state *stateDB)) {
 	require.Equal(testSlotValue, defaultSlotValue)
 }
 
-func DeletingAccountWithoutState(t *testing.T, beginOp func(state *stateDB)) {
+func DeletingAccountWithoutState(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
 	addr := common.Address{0x1}
 
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
-
 	backup := state.InterTxSnapshot()
+
 	beginOp(state)
 	state.accountsToDelete = append(state.accountsToDelete, addr)
 	state.EndTransaction()
@@ -292,22 +244,13 @@ func DeletingAccountWithoutState(t *testing.T, beginOp func(state *stateDB)) {
 	require.Empty(state.clearedAccounts)
 }
 
-func DeletingAccountWithState(t *testing.T, beginOp func(state *stateDB)) {
+func DeletingAccountWithState(t *testing.T, state *stateDB, beginOp func(state *stateDB)) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 	require := require.New(t)
 	addr := common.Address{0x1}
 
-	db := NewMockState(ctrl)
-	db.EXPECT().Check().Return(nil).AnyTimes()
-	db.EXPECT().Exists(addr).Return(true, nil).AnyTimes()
-	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
-	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
-	db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
-	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
-	state := createStateDBWith(db, 1, true)
-
 	backup := state.InterTxSnapshot()
+
 	beginOp(state)
 	state.clearedAccounts[addr] = noClearing
 	state.accountsToDelete = append(state.accountsToDelete, addr)
