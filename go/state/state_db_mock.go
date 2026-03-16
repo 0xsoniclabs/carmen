@@ -472,11 +472,9 @@ func (mr *MockVmStateDBMockRecorder) IsSlotInAccessList(arg0, arg1 any) *gomock.
 }
 
 // RevertToInterTxSnapshot mocks base method.
-func (m *MockVmStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+func (m *MockVmStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
 }
 
 // RevertToInterTxSnapshot indicates an expected call of RevertToInterTxSnapshot.
@@ -1198,11 +1196,9 @@ func (mr *MockStateDBMockRecorder) ResetBlockContext() *gomock.Call {
 }
 
 // RevertToInterTxSnapshot mocks base method.
-func (m *MockStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+func (m *MockStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
 }
 
 // RevertToInterTxSnapshot indicates an expected call of RevertToInterTxSnapshot.
@@ -1849,11 +1845,9 @@ func (mr *MockNonCommittableStateDBMockRecorder) Release() *gomock.Call {
 }
 
 // RevertToInterTxSnapshot mocks base method.
-func (m *MockNonCommittableStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+func (m *MockNonCommittableStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "RevertToInterTxSnapshot", id)
 }
 
 // RevertToInterTxSnapshot indicates an expected call of RevertToInterTxSnapshot.
