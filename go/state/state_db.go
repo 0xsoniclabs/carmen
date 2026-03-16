@@ -93,7 +93,7 @@ type VmStateDB interface {
 	InterTxSnapshot() InterTxSnapshotID
 
 	// RevertToInterTxSnapshot reverts the state to the state at the snapshot with the given identifier. Returns an error if the snapshot does not exists.
-	RevertToInterTxSnapshot(id InterTxSnapshotID) error
+	RevertToInterTxSnapshot(id InterTxSnapshotID)
 
 	// GetTransactionChanges provides a set of accounts and their slots, which have been
 	// potentially changed in the current transaction.
@@ -557,11 +557,7 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	oldState, exists := s.clearedAccounts[addr]
 	s.clearedAccounts[addr] = cleared
 	s.undo = append(s.undo, func() {
-		if exists {
-			s.clearedAccounts[addr] = oldState
-		} else {
-			delete(s.clearedAccounts, addr)
-		}
+		revertOrDelete(s.clearedAccounts, addr, exists, oldState)
 	})
 }
 
@@ -615,11 +611,7 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 	if oldState == noClearing {
 		s.clearedAccounts[addr] = pendingClearing
 		s.undo = append(s.undo, func() {
-			if oldStateExists {
-				s.clearedAccounts[addr] = oldState
-			} else {
-				delete(s.clearedAccounts, addr)
-			}
+			revertOrDelete(s.clearedAccounts, addr, oldStateExists, oldState)
 		})
 	}
 
@@ -1148,11 +1140,7 @@ func (s *stateDB) EndTransaction() {
 			oldState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = pendingClearing
 			s.undo = append(s.undo, func() {
-				if oldExists {
-					s.clearedAccounts[addr] = oldState
-				} else {
-					delete(s.clearedAccounts, addr)
-				}
+				revertOrDelete(s.clearedAccounts, addr, oldExists, oldState)
 			})
 		}
 	}
@@ -1162,12 +1150,12 @@ func (s *stateDB) EndTransaction() {
 		for _, addr := range s.accountsToDelete {
 			// Transition accounts marked by suicide to be deleted.
 			if s.HasSuicided(addr) {
-				oldClearedAccountState := s.clearedAccounts[addr]
+				oldClearedAccountState, oldExists := s.clearedAccounts[addr]
 				s.setAccountState(addr, accountNonExisting)
 				s.setCodeInternal(addr, []byte{})
 				s.clearedAccounts[addr] = pendingClearing
 				s.undo = append(s.undo, func() {
-					s.clearedAccounts[addr] = oldClearedAccountState
+					revertOrDelete(s.clearedAccounts, addr, oldExists, oldClearedAccountState)
 				})
 			}
 
@@ -1204,11 +1192,7 @@ func (s *stateDB) EndTransaction() {
 			oldClearedAccountState, oldExists := s.clearedAccounts[addr]
 			s.clearedAccounts[addr] = cleared
 			s.undo = append(s.undo, func() {
-				if oldExists {
-					s.clearedAccounts[addr] = oldClearedAccountState
-				} else {
-					delete(s.clearedAccounts, addr)
-				}
+				revertOrDelete(s.clearedAccounts, addr, oldExists, oldClearedAccountState)
 			})
 		}
 
@@ -1224,12 +1208,12 @@ func (s *stateDB) InterTxSnapshot() InterTxSnapshotID {
 	return InterTxSnapshotID(len(s.undo))
 }
 
-func (s *stateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) error {
+func (s *stateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) {
 	if id > InterTxSnapshotID(len(s.undo)) {
-		return fmt.Errorf("cannot revert to inter-transaction snapshot with value %d, only %d snapshots in the current block", id, len(s.undo))
+		s.trackErrors(fmt.Errorf("cannot revert to inter-transaction snapshot with value %d, only %d snapshots in the current block", id, len(s.undo)))
+		return
 	}
 	s.RevertToSnapshot(int(id))
-	return nil
 }
 
 func (s *stateDB) GetTransactionChanges() map[common.Address][]common.Key {
@@ -1658,5 +1642,13 @@ func (db *nonCommittableStateDB) Release() {
 	if db.stateDB != nil {
 		nonCommittableStateDbPool.Put(db.stateDB)
 		db.stateDB = nil
+	}
+}
+
+func revertOrDelete[K comparable, T any](m map[K]T, key K, oldExists bool, oldValue T) {
+	if oldExists {
+		m[key] = oldValue
+	} else {
+		delete(m, key)
 	}
 }
