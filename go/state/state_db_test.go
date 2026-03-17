@@ -4328,13 +4328,15 @@ func TestStateDB_TransientStorage_IsClearedAfterCallingEndTransaction(t *testing
 		t.Errorf("unexpected value, wanted %v, got %v", want, got)
 	}
 
+	undoListlen := len(db.undo)
+
 	db.EndTransaction()
 	if got, want := db.GetTransientState(address1, key1), valEmpty; got != want {
 		t.Errorf("unexpected value, wanted %v, got %v", want, got)
 	}
 
-	if len(db.undo) > 0 {
-		t.Errorf("unexpected undo len, wanted: 0, got: %v", len(db.undo))
+	if len(db.undo) < undoListlen {
+		t.Errorf("undo list should not shrink, wanted at least %v, got %v", undoListlen, len(db.undo))
 	}
 }
 
@@ -4621,6 +4623,88 @@ func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 	}
 }
 
+func TestStateDB_CreateAccount_CreateNonExistingAccount_AddsRemovalOfClearedAccountToUndoList(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	db.EXPECT().Exists(gomock.Any()).AnyTimes()
+
+	state := createStateDBWith(db, 1, true)
+
+	require.Empty(state.clearedAccounts)
+	addr := common.Address{1, 2, 3}
+
+	state.BeginTransaction()
+	backup := state.Snapshot()
+	state.CreateAccount(addr)
+
+	require.NotEmpty(state.clearedAccounts)
+
+	state.RevertToSnapshot(backup)
+	require.Empty(state.clearedAccounts)
+}
+
+func TestStateDB_CreateAccount_CreateAccountWithClearState_AddsUndoForRestore(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	db.EXPECT().Exists(gomock.Any()).AnyTimes()
+
+	state := createStateDBWith(db, 1, true)
+
+	addr := common.Address{1, 2, 3}
+	require.Empty(state.clearedAccounts)
+	state.clearedAccounts[addr] = 123
+
+	state.BeginTransaction()
+	backup := state.Snapshot()
+	state.CreateAccount(addr)
+
+	require.Equal(cleared, state.clearedAccounts[addr])
+
+	state.RevertToSnapshot(backup)
+	require.EqualValues(123, state.clearedAccounts[addr])
+}
+
+func TestStateDB_Suicide_SuicideNonCachedAccount_AddsUndoForRestore(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	db.EXPECT().Exists(gomock.Any()).AnyTimes().Return(true, nil)
+
+	state := createStateDBWith(db, 1, true)
+	addr := common.Address{1, 2, 3}
+
+	state.BeginTransaction()
+	backup := state.Snapshot()
+	state.Suicide(addr)
+
+	require.Equal(state.clearedAccounts[addr], pendingClearing)
+
+	state.RevertToSnapshot(backup)
+	require.Empty(state.clearedAccounts)
+}
+
+func TestStateDB_Suicide_SuicideCachedAccount_AddsUndoForRestore(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	db := NewMockState(ctrl)
+	db.EXPECT().Exists(gomock.Any()).AnyTimes().Return(true, nil)
+
+	state := createStateDBWith(db, 1, true)
+	addr := common.Address{1, 2, 3}
+
+	state.BeginTransaction()
+	state.clearedAccounts[addr] = noClearing
+	backup := state.Snapshot()
+	state.Suicide(addr)
+
+	require.Equal(state.clearedAccounts[addr], pendingClearing)
+
+	state.RevertToSnapshot(backup)
+	require.Equal(state.clearedAccounts[addr], noClearing)
+}
+
 func TestStateDB_trackErrors_AddsErrorsToList(t *testing.T) {
 	require := require.New(t)
 	db := &stateDB{}
@@ -4811,4 +4895,17 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 	if !errors.Is(err, injectedError1) || !errors.Is(err, injectedError2) {
 		t.Errorf("expected errors %v and %v to be tracked, got %v", injectedError1, injectedError2, err)
 	}
+}
+
+func TestStateDB_EndBlock_ClearsUndoList(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	state.EXPECT().Check().AnyTimes()
+	state.EXPECT().Apply(uint64(12), gomock.Any()).Return(nil, nil)
+
+	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
+	stateDB.undo = []func(){nil, nil, nil}
+
+	stateDB.EndBlock(12)
+	require.Empty(t, stateDB.undo)
 }
