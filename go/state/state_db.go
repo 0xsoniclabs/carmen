@@ -1210,7 +1210,7 @@ func (s *stateDB) InterTxSnapshot() InterTxSnapshotID {
 
 func (s *stateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) {
 	if id > InterTxSnapshotID(len(s.undo)) {
-		s.trackErrors(fmt.Errorf("cannot revert to inter-transaction snapshot with value %d, only %d snapshots in the current block", id, len(s.undo)))
+		s.trackErrors(fmt.Errorf("cannot revert to inter-transaction snapshot: the snapshot point is ahead of the last recorded one"))
 		return
 	}
 	s.RevertToSnapshot(int(id))

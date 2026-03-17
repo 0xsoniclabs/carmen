@@ -44,7 +44,7 @@ func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
 	require.Equal(InterTxSnapshotID(3), snapshotID3)
 }
 
-func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfInvalidSnapshotID(t *testing.T) {
+func TestStateDB_RevertToInterTxSnapshot_RecordsErrorIfInvalidSnapshotID(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
@@ -54,14 +54,14 @@ func TestStateDB_RevertToInterTxSnapshot_ReturnsErrorIfInvalidSnapshotID(t *test
 	state := createStateDBWith(db, 1, true)
 
 	state.RevertToInterTxSnapshot(1)
-	require.EqualError(state.Check(), "cannot revert to inter-transaction snapshot with value 1, only 0 snapshots in the current block")
+	require.EqualError(state.Check(), "cannot revert to inter-transaction snapshot: the snapshot point is ahead of the last recorded one")
 	state.errors = state.errors[:0]
 
 	state.BeginTransaction()
 	state.SetCode(common.Address{}, []byte{0x1})
 	state.EndTransaction()
 	state.RevertToInterTxSnapshot(10)
-	require.EqualError(state.Check(), "cannot revert to inter-transaction snapshot with value 10, only 3 snapshots in the current block")
+	require.EqualError(state.Check(), "cannot revert to inter-transaction snapshot: the snapshot point is ahead of the last recorded one")
 }
 
 func TestStateDB_EndTransaction_AddsUndoForRestoreWhen(t *testing.T) {
