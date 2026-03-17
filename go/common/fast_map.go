@@ -162,21 +162,17 @@ func (m *FastMap[K, V]) DeepEqual(m2 *FastMap[K, V]) bool {
 	if m == nil && m2 == nil {
 		return true
 	}
-	equal := m.Size() == m2.Size()
-	if equal {
-		m.ForEach(func(key K, value V) {
-			v2, ok := m2.Get(key)
-			if !ok {
-				equal = false
-				return
-			}
-			if reflect.ValueOf(value).Kind() == reflect.Pointer {
-				equal = (reflect.ValueOf(value).IsNil() && reflect.ValueOf(v2).IsNil()) || (reflect.ValueOf(value).Elem().Interface() == reflect.ValueOf(v2).Elem().Interface())
-			} else {
-				equal = reflect.DeepEqual(value, v2)
-			}
-		})
+	if m.Size() != m2.Size() {
+		return false
 	}
+	equal := true
+	m.ForEach(func(key K, value V) {
+		v2, ok := m2.Get(key)
+		if !ok || !reflect.DeepEqual(value, v2) {
+			equal = false
+			return
+		}
+	})
 	return equal
 }
 

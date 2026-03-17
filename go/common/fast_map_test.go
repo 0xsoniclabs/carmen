@@ -547,11 +547,9 @@ func TestFastMap_CopyToWith(t *testing.T) {
 
 	m = NewFastMap[Key, *int](KeyShortHasher{})
 	// fill in data
-	var k Key
-	for i := 0; i < 100; i++ {
-		val := i
-		m.Put(k, &val)
-		k[i%32]++
+	for i := range 100 {
+		k := Key{byte(i)}
+		m.Put(k, &i)
 	}
 
 	var shadow *FastMap[Key, *int]
@@ -566,6 +564,16 @@ func TestFastMap_CopyToWith(t *testing.T) {
 		val := *v
 		return &val
 	})
+
+	for i := range 100 {
+		k := Key{byte(i)}
+		v1, exist := m.Get(k)
+		require.True(exist)
+		v2, exist := shadow.Get(k)
+		require.True(exist)
+		require.NotSame(v1, v2)
+		require.Equal(*v1, *v2)
+	}
 
 	require.True(m.DeepEqual(shadow))
 }
@@ -619,6 +627,14 @@ func TestFastMap_DeepEqual(t *testing.T) {
 	m10.Put(Key{0x1}, &val1)
 	m11.Put(Key{0x1}, &val3)
 	require.False(m10.DeepEqual(m11))
+
+	// subset of keys
+	m12 := NewFastMap[Key, int](KeyShortHasher{})
+	m13 := NewFastMap[Key, int](KeyShortHasher{})
+	m12.Put(Key{0x1}, 1)
+	m12.Put(Key{0x2}, 2)
+	m13.Put(Key{0x1}, 1)
+	require.False(m12.DeepEqual(m13))
 }
 
 func TestMap_Internal_Negative_Position(t *testing.T) {
