@@ -37,6 +37,7 @@ type VmStateDB interface {
 	Empty(common.Address) bool
 
 	CreateContract(common.Address)
+	IsNewContract(common.Address) bool
 	Suicide(common.Address) bool
 	SuicideNewContract(common.Address) bool
 	HasSuicided(common.Address) bool
@@ -577,6 +578,11 @@ func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
 	s.resetBalance(addr)
 
 	return true
+}
+
+func (s *stateDB) IsNewContract(addr common.Address) bool {
+	_, exists := s.createdContracts[addr]
+	return exists
 }
 
 // Suicide marks the given account as suicided.

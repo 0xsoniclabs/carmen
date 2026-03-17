@@ -4434,6 +4434,10 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 	mock.EXPECT().Exists(address1).Return(true, nil)
 	db.CreateContract(address1)
 
+	if !db.IsNewContract(address1) {
+		t.Errorf("account should be marked as new contract")
+	}
+
 	// suicide the newly created contract in the same tx scope
 	if deleted := db.SuicideNewContract(address1); !deleted {
 		t.Errorf("account should be deleted")
@@ -4460,6 +4464,10 @@ func TestStateDB_ContractCannotBeCreatedAndDeletedInDifferentTransactions(t *tes
 	// start next transaction
 	db.EndTransaction()
 	db.BeginTransaction()
+
+	if db.IsNewContract(address1) {
+		t.Errorf("account should not be marked as new contract")
+	}
 
 	// suicide the contract from previous transaction
 	if deleted := db.SuicideNewContract(address1); deleted {
