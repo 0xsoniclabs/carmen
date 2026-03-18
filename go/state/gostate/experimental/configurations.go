@@ -28,12 +28,12 @@ var configurations = map[state.Configuration]state.StateFactory{
 		return flat.NewState(params.Directory, nil)
 	},
 	{
-		Variant: "go-geth2-leveldb",
+		Variant: "go-geth-leveldb",
 		Schema:  6,
 		Archive: state.NoArchive,
 	}: vtgeth.NewState,
 	{
-		Variant: "go-geth2-leveldb",
+		Variant: "go-geth-leveldb",
 		Schema:  6,
 		Archive: state.LevelDbArchive,
 	}: vtgeth.NewState,
