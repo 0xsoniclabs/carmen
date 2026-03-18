@@ -325,7 +325,7 @@ func initTestedStates() ([]*testedStateFactory, error) {
 	var refConfig state.Configuration
 
 	for config, factory := range state.GetAllRegisteredStateFactories() {
-		if config.Schema == 6 && config.Variant == "go-geth-memory" {
+		if config.Schema == 6 && config.Variant == "go-reference" {
 			refStateFactory = factory
 			refConfig = config
 		}
