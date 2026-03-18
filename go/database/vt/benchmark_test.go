@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/0xsoniclabs/carmen/go/database/vt/utils"
 	"github.com/ethereum/go-verkle"
 )
 

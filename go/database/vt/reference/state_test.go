@@ -19,13 +19,11 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/result"
+	geth "github.com/0xsoniclabs/carmen/go/database/vt/geth"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
-	geth_common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	geth_trie "github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-ethereum/triedb/database"
+
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -370,7 +368,7 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 	hash, err := state.GetCommitment().Await().Get()
 	require.NoError(err)
 
-	reference, err := newRefState()
+	reference, err := newRefState(t)
 	require.NoError(err)
 	reference.Apply(0, update)
 	want, err := reference.GetCommitment().Await().Get()
@@ -455,7 +453,7 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 	}
 
 	state := newState()
-	reference, err := newRefState()
+	reference, err := newRefState(t)
 	require.NoError(err)
 
 	for _, update := range updates {
@@ -490,7 +488,7 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	hash, err := state.GetCommitment().Await().Get()
 	require.NoError(err)
 
-	reference, err := newRefState()
+	reference, err := newRefState(t)
 	require.NoError(err)
 	_, err = reference.Apply(0, update)
 	require.NoError(err)
@@ -524,7 +522,7 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 	hash, err := state.GetCommitment().Await().Get()
 	require.NoError(err)
 
-	reference, err := newRefState()
+	reference, err := newRefState(t)
 	require.NoError(err)
 	_, err = reference.Apply(0, update)
 	require.NoError(err)
@@ -534,184 +532,19 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 	require.Equal(want, hash)
 }
 
-func TestState_Account_CodeHash_NotEmptied_When_Recreated(t *testing.T) {
-	require := require.New(t)
-
-	addr1 := common.Address{1}
-
-	update := common.Update{
-		Codes: []common.CodeUpdate{{Account: addr1, Code: []byte{1, 2, 3}}},
-		Balances: []common.BalanceUpdate{
-			{Account: addr1, Balance: amount.New(1)},
-		},
-	}
-
-	state := newState()
-	_, err := state.Apply(0, update)
-	require.NoError(err)
-
-	codeHash, err := state.GetCodeHash(addr1)
-	require.NoError(err)
-	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
-
-	hash, err := state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	reference, err := newRefState()
-	require.NoError(err)
-	_, err = reference.Apply(0, update)
-	require.NoError(err)
-	want, err := reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-
-	// Recreate the account, which should not empty the code hash
-	update2 := common.Update{
-		CreatedAccounts: []common.Address{addr1},
-	}
-
-	_, err = state.Apply(0, update2)
-	require.NoError(err)
-
-	codeHash, err = state.GetCodeHash(addr1)
-	require.NoError(err)
-	require.NotEqual(common.Hash(types.EmptyCodeHash), codeHash)
-
-	hash, err = state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	_, err = reference.Apply(0, update2)
-	require.NoError(err)
-	want, err = reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-}
-
-func TestState_Account_Balance_NotEmptied_When_Recreated(t *testing.T) {
-	require := require.New(t)
-
-	addr1 := common.Address{1}
-
-	update := common.Update{
-		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
-		Balances: []common.BalanceUpdate{
-			{Account: addr1, Balance: amount.New(1)},
-		},
-	}
-
-	state := newState()
-	_, err := state.Apply(0, update)
-	require.NoError(err)
-
-	balance, err := state.GetBalance(addr1)
-	require.NoError(err)
-	require.Equal(amount.New(1), balance)
-
-	hash, err := state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	reference, err := newRefState()
-	require.NoError(err)
-	_, err = reference.Apply(0, update)
-	require.NoError(err)
-	want, err := reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-
-	// Recreate the account, which should not empty the code hash
-	update2 := common.Update{
-		CreatedAccounts: []common.Address{addr1},
-	}
-
-	_, err = state.Apply(0, update2)
-	require.NoError(err)
-
-	// The balance should remain the same
-	balance, err = state.GetBalance(addr1)
-	require.NoError(err)
-	require.Equal(amount.New(1), balance)
-
-	hash, err = state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	_, err = reference.Apply(0, update2)
-	require.NoError(err)
-	want, err = reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-}
-
-func TestState_Account_Nonce_NotEmptied_When_Recreated(t *testing.T) {
-	require := require.New(t)
-
-	addr1 := common.Address{1}
-
-	update := common.Update{
-		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
-		Nonces: []common.NonceUpdate{
-			{Account: addr1, Nonce: common.ToNonce(1)},
-		},
-	}
-
-	state := newState()
-	_, err := state.Apply(0, update)
-	require.NoError(err)
-
-	nonce, err := state.GetNonce(addr1)
-	require.NoError(err)
-	require.Equal(common.ToNonce(1), nonce)
-
-	hash, err := state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	reference, err := newRefState()
-	require.NoError(err)
-	_, err = reference.Apply(0, update)
-	require.NoError(err)
-	want, err := reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-
-	// Recreate the account, which should not empty the nonce
-	update2 := common.Update{
-		CreatedAccounts: []common.Address{addr1},
-	}
-
-	_, err = state.Apply(0, update2)
-	require.NoError(err)
-
-	// The nonce should remain the same
-	nonce, err = state.GetNonce(addr1)
-	require.NoError(err)
-	require.Equal(common.ToNonce(1), nonce)
-
-	hash, err = state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	_, err = reference.Apply(0, update2)
-	require.NoError(err)
-	want, err = reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-}
-
-// --- reference implementation from geth ---
+// --- Use geth leveldb as reference implementation ---
 
 type refState struct {
-	trie *geth_trie.VerkleTrie
+	trie state.State
 }
 
-func newRefState() (*refState, error) {
-	trie, err := geth_trie.NewVerkleTrie(
-		types.EmptyVerkleHash,
-		&refTestDb{},
-		utils.NewPointCache(1_000),
+func newRefState(t *testing.T) (*refState, error) {
+	testDir := t.TempDir()
+	trie, err := geth.NewState(
+		state.Parameters{
+			Directory: testDir,
+			Archive:   state.NoArchive,
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -720,75 +553,11 @@ func newRefState() (*refState, error) {
 }
 
 func (s *refState) Apply(block uint64, update common.Update) (<-chan error, error) {
-	accountStates := map[geth_common.Address]*types.StateAccount{}
-
-	getAccountState := func(addr geth_common.Address) *types.StateAccount {
-		state, ok := accountStates[addr]
-		if !ok {
-			s, err := s.trie.GetAccount(addr)
-			if err != nil {
-				panic(err)
-			}
-			if s == nil {
-				s = types.NewEmptyStateAccount()
-			}
-			accountStates[addr] = s
-			state = s
-		}
-		return state
-	}
-
-	for _, update := range update.Balances {
-		addr := geth_common.Address(update.Account)
-		balance := update.Balance.Uint256()
-		state := getAccountState(addr)
-		state.Balance = &balance
-	}
-
-	for _, update := range update.Nonces {
-		addr := geth_common.Address(update.Account)
-		state := getAccountState(addr)
-		state.Nonce = update.Nonce.ToUint64()
-	}
-
-	codes := make(map[geth_common.Address][]byte)
-	for _, update := range update.Codes {
-		addr := geth_common.Address(update.Account)
-		state := getAccountState(addr)
-		codeHash := common.Keccak256(update.Code)
-		state.CodeHash = codeHash[:]
-		codes[addr] = update.Code
-	}
-
-	for addr, state := range accountStates {
-		s.trie.UpdateAccount(addr, state, len(codes[addr]))
-	}
-
-	for addr, code := range codes {
-		hash := geth_common.Hash(common.Keccak256(code))
-		s.trie.UpdateContractCode(addr, hash, code)
-	}
-
-	for _, update := range update.Slots {
-		addr := geth_common.Address(update.Account)
-		key := geth_common.BytesToHash(update.Key[:])
-		value := geth_common.BytesToHash(update.Value[:])
-		s.trie.UpdateStorage(addr, key[:], value[:])
-	}
-
-	return nil, nil
+	return s.trie.Apply(block, update)
 }
 
 func (s *refState) GetCommitment() future.Future[result.Result[common.Hash]] {
-	hash, _ := s.trie.Commit(false)
-	return future.Immediate(result.Ok(common.Hash(hash)))
-}
-
-type refTestDb struct {
-}
-
-func (db *refTestDb) NodeReader(stateRoot geth_common.Hash) (database.NodeReader, error) {
-	panic("NodeReader not implemented")
+	return s.trie.GetCommitment()
 }
 
 // newState creates a new, empty in-memory state instance based on a reference

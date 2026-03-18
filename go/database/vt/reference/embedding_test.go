@@ -15,7 +15,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
-	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/0xsoniclabs/carmen/go/database/vt/utils"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
