@@ -24,7 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
-	"github.com/0xsoniclabs/carmen/go/database/vt/geth/utils"
+	"github.com/0xsoniclabs/carmen/go/database/vt/utils"
 	"github.com/0xsoniclabs/carmen/go/state"
 	geth_common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
