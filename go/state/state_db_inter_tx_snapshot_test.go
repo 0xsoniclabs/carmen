@@ -329,12 +329,11 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		for _, opList := range s {
 			name := ""
 			for _, op := range opList {
-				name += op.name + " "
+				name += op.name + " AND "
 			}
-			name = strings.TrimSpace(name) + "__"
-			nameParts = append(nameParts, name)
+			nameParts = append(nameParts, name[:len(name)-5])
 		}
-		return strings.Join(nameParts, " ")
+		return strings.Join(nameParts, " THEN ")
 	}
 
 	for operationTriple := range cartesianProductTriple(opWithNameList) {
@@ -368,7 +367,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 				for _, cur := range statesToCheck {
 					ctx.state.RevertToInterTxSnapshot(cur.snapshotID)
 					require.NoError(ctx.state.Check())
-					checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x1})
+					require.NoError(checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x1}))
 				}
 			})
 		}
@@ -493,7 +492,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 
 	for addr, account := range actual.accounts {
 		value, exists := expected.accounts[addr]
-		if !((exists && reflect.DeepEqual(account, value)) || (!exists && account.current == account.original && account.current == accountNonExisting)) {
+		if (exists && !reflect.DeepEqual(account, value)) || (account.current == accountExists && account.current != account.original) {
 			return fmt.Errorf("accounts differ at address %v: got %v", addr, account)
 		}
 	}
@@ -503,7 +502,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 			continue
 		}
 		defaultBalance, _ := mock.GetBalance(defaultAccount)
-		if !(balance.current == defaultBalance && balance.original == &balance.current) {
+		if balance.current != defaultBalance && balance.original != &balance.current {
 			return fmt.Errorf("balances differ at address %v: got %v", addr, balance)
 		}
 	}
@@ -513,7 +512,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 			continue
 		}
 		defaultNonce, _ := mock.GetNonce(defaultAccount)
-		if !(nonce.current == defaultNonce.ToUint64()) {
+		if nonce.current != defaultNonce.ToUint64() {
 			return fmt.Errorf("nonces differ at address %v: got %v", addr, nonce)
 		}
 	}
@@ -531,7 +530,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 			continue
 		}
 		defaultCode, _ := mock.GetCode(defaultAccount)
-		if !(code.code == nil || slices.Equal(code.code, defaultCode)) {
+		if code.code != nil && !slices.Equal(code.code, defaultCode) {
 			return fmt.Errorf("codes differ at address %v: expected %v, got %v", addr, value, code)
 		}
 	}
@@ -734,33 +733,33 @@ func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T
 	nonce := uint64(42)
 	code := []byte{0x2}
 
-	s1 := createStateDBWith(NewMockState(gomock.NewController(t)), 1, true)
-	s2 := createStateDBWith(NewMockState(gomock.NewController(t)), 1, true)
+	expected := createStateDBWith(NewMockState(gomock.NewController(t)), 1, true)
+	actual := createStateDBWith(NewMockState(gomock.NewController(t)), 1, true)
 
-	s1.accounts[addr] = &accountState{current: 1, original: 1}
-	s2.accounts[addr] = &accountState{current: 1, original: 1}
+	expected.accounts[addr] = &accountState{current: 1, original: 1}
+	actual.accounts[addr] = &accountState{current: 1, original: 1}
 	bv := &balanceValue{}
-	s1.balances[addr] = bv
-	s2.balances[addr] = bv
+	expected.balances[addr] = bv
+	actual.balances[addr] = bv
 	nv := &nonceValue{current: nonce}
-	s1.nonces[addr] = nv
-	s2.nonces[addr] = nv
+	expected.nonces[addr] = nv
+	actual.nonces[addr] = nv
 	slot := slotId{addr, key}
 	sv := &slotValue{}
-	s1.data.Put(slot, sv)
-	s2.data.Put(slot, sv)
-	s1.reincarnation[addr] = 99
-	s2.reincarnation[addr] = 99
+	expected.data.Put(slot, sv)
+	actual.data.Put(slot, sv)
+	expected.reincarnation[addr] = 99
+	actual.reincarnation[addr] = 99
 	cv := &codeValue{code: code}
-	s1.codes[addr] = cv
-	s2.codes[addr] = cv
-	s1.clearedAccounts[addr] = 1
-	s2.clearedAccounts[addr] = 1
-	s1.canApplyChanges = true
-	s2.canApplyChanges = true
+	expected.codes[addr] = cv
+	actual.codes[addr] = cv
+	expected.clearedAccounts[addr] = 1
+	actual.clearedAccounts[addr] = 1
+	expected.canApplyChanges = true
+	actual.canApplyChanges = true
 	f := func() {}
-	s1.undo = []func(){f}
-	s2.undo = []func(){f}
+	expected.undo = []func(){f}
+	actual.undo = []func(){f}
 	// Caches populated by read-only functions with mock values should not cause checkStateDB to fail
 	newAddr := common.Address{0x2}
 	mockBalance := amount.New(100)
@@ -771,13 +770,13 @@ func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T
 	mockState.EXPECT().GetNonce(newAddr).Return(mockNonce, nil).AnyTimes()
 	mockState.EXPECT().GetCode(newAddr).Return(mockCode, nil).AnyTimes()
 	mockState.EXPECT().GetCodeSize(newAddr).Return(len(mockCode), nil).AnyTimes()
-	s1.accounts[newAddr] = &accountState{current: accountNonExisting, original: accountNonExisting}
-	s1.balances[newAddr] = &balanceValue{current: mockBalance, original: &mockBalance}
-	s1.nonces[newAddr] = &nonceValue{current: mockNonce.ToUint64(), original: nil}
-	s1.codes[newAddr] = &codeValue{code: nil}
-	s1.codes[common.Address{0x3}] = &codeValue{code: mockCode}
+	actual.accounts[newAddr] = &accountState{current: accountExists, original: accountExists}
+	actual.balances[newAddr] = &balanceValue{current: mockBalance, original: &mockBalance}
+	actual.nonces[newAddr] = &nonceValue{current: mockNonce.ToUint64(), original: nil}
+	actual.codes[newAddr] = &codeValue{code: nil}
+	actual.codes[common.Address{0x3}] = &codeValue{code: mockCode}
 
-	require.NoError(t, checkStateDB(t, s1, s2, mockState, newAddr))
+	require.NoError(t, checkStateDB(t, expected, actual, mockState, newAddr))
 }
 
 func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
