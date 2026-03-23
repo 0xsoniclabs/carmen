@@ -37,6 +37,7 @@ type VmStateDB interface {
 	Empty(common.Address) bool
 
 	CreateContract(common.Address)
+	IsNewContract(common.Address) bool
 	Suicide(common.Address) bool
 	SuicideNewContract(common.Address) bool
 	HasSuicided(common.Address) bool
@@ -570,6 +571,11 @@ func (s *stateDB) CreateContract(addr common.Address) {
 	s.undo = append(s.undo, func() {
 		delete(s.createdContracts, addr)
 	})
+}
+
+func (s *stateDB) IsNewContract(addr common.Address) bool {
+	_, exists := s.createdContracts[addr]
+	return exists
 }
 
 func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {

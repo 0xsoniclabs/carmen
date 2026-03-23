@@ -239,6 +239,10 @@ type TransactionContext interface {
 	// This method enables the support of EIP-6780 self-destruct mechanism.
 	CreateContract(Address)
 
+	// IsNewContract checks if the account with the given
+	// address has been created in the current transaction.
+	IsNewContract(Address) bool
+
 	// Exist checks if the account with the given address exists.
 	Exist(Address) bool
 
@@ -249,12 +253,7 @@ type TransactionContext interface {
 
 	// SelfDestruct invalidates the account with the given address.
 	// It clears its balance, and marks the account as destructed.
-	SelfDestruct(Address) bool
-
-	// SelfDestruct6780 implements the EIP-6780 self-destruct mechanism.
-	// If called in the same transaction scope as the CreateContract method,
-	// it will act as SelfDestruct, otherwise it will act as a no-op.
-	SelfDestruct6780(Address) bool
+	SelfDestruct(Address)
 
 	// HasSelfDestructed checks if the account with the given address
 	// was destructed.
