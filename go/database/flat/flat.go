@@ -300,7 +300,7 @@ func processCommands(
 			if command.update.done != nil {
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.
-				go func() {
+				go func(err error) {
 					if backendChan != nil {
 						// wait for the backend sync channel and forward
 						// both errors into the update synch channel.
@@ -310,7 +310,7 @@ func processCommands(
 					}
 					command.update.done <- err
 					close(command.update.done)
-				}()
+				}(err)
 			}
 			issues.HandleIssue(err)
 			zone.End()
