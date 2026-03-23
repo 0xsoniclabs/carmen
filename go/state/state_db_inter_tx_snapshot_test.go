@@ -324,54 +324,59 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		}
 	}
 
-	testCaseNameFunc := func(s [][]StateDBOperation) string {
-		var nameParts []string
-		for _, opList := range s {
-			name := ""
-			for _, op := range opList {
-				name += op.name + " AND "
-			}
-			nameParts = append(nameParts, name[:len(name)-5])
-		}
-		return strings.Join(nameParts, " THEN ")
-	}
-
+	tests := make(map[string][][]StateDBOperation, 0)
 	for operationTriple := range cartesianProductTriple(opWithNameList) {
 		for testCase := range orderedPartitions(operationTriple) {
-			t.Run(testCaseNameFunc(testCase), func(t *testing.T) {
-				t.Parallel()
-				require := require.New(t)
-
-				ctx := NewStateDBContext(t)
-
-				var statesToCheck []InterTxSnapshotWithStateCheck
-				for _, opList := range testCase {
-					snapshotID := ctx.state.InterTxSnapshot()
-					require.Empty(ctx.state.accountsToDelete)
-					require.Empty(ctx.state.writtenSlots)
-					oldStateDB := backupStateDB(ctx.state)
-
-					ctx.state.BeginTransaction()
-					for _, op := range opList {
-						op.Execute(ctx)
-					}
-					ctx.state.EndTransaction()
-
-					statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
-						stateBackup: oldStateDB,
-						snapshotID:  snapshotID,
-					})
-				}
-
-				slices.Reverse(statesToCheck)
-				for _, cur := range statesToCheck {
-					ctx.state.RevertToInterTxSnapshot(cur.snapshotID)
-					require.NoError(ctx.state.Check())
-					require.NoError(checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x1}))
-				}
-			})
+			tests[testCaseName(testCase)] = testCase
 		}
 	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+
+			ctx := NewStateDBContext(t)
+
+			var statesToCheck []InterTxSnapshotWithStateCheck
+			for _, opList := range test {
+				snapshotID := ctx.state.InterTxSnapshot()
+				require.Empty(ctx.state.accountsToDelete)
+				require.Empty(ctx.state.writtenSlots)
+				oldStateDB := backupStateDB(ctx.state)
+
+				ctx.state.BeginTransaction()
+				for _, op := range opList {
+					op.Execute(ctx)
+				}
+				ctx.state.EndTransaction()
+
+				statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
+					stateBackup: oldStateDB,
+					snapshotID:  snapshotID,
+				})
+			}
+
+			slices.Reverse(statesToCheck)
+			for _, cur := range statesToCheck {
+				ctx.state.RevertToInterTxSnapshot(cur.snapshotID)
+				require.NoError(ctx.state.Check())
+				require.NoError(checkStateDB(t, cur.stateBackup, ctx.state, ctx.db, common.Address{0x1}))
+			}
+		})
+	}
+}
+
+func testCaseName(s [][]StateDBOperation) string {
+	var nameParts []string
+	for _, opList := range s {
+		name := ""
+		for _, op := range opList {
+			name += op.name + " AND "
+		}
+		nameParts = append(nameParts, name[:len(name)-5])
+	}
+	return strings.Join(nameParts, " THEN ")
 }
 
 // StateDBContext is a helper struct wrapping a StateDB and its underlying mocked db.
