@@ -456,6 +456,20 @@ func (mr *MockVmStateDBMockRecorder) IsAddressInAccessList(arg0 any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAddressInAccessList", reflect.TypeOf((*MockVmStateDB)(nil).IsAddressInAccessList), arg0)
 }
 
+// IsNewContract mocks base method.
+func (m *MockVmStateDB) IsNewContract(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNewContract", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNewContract indicates an expected call of IsNewContract.
+func (mr *MockVmStateDBMockRecorder) IsNewContract(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewContract", reflect.TypeOf((*MockVmStateDB)(nil).IsNewContract), arg0)
+}
+
 // IsSlotInAccessList mocks base method.
 func (m *MockVmStateDB) IsSlotInAccessList(arg0 common.Address, arg1 common.Key) (bool, bool) {
 	m.ctrl.T.Helper()
@@ -1168,6 +1182,20 @@ func (mr *MockStateDBMockRecorder) IsAddressInAccessList(arg0 any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAddressInAccessList", reflect.TypeOf((*MockStateDB)(nil).IsAddressInAccessList), arg0)
 }
 
+// IsNewContract mocks base method.
+func (m *MockStateDB) IsNewContract(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNewContract", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNewContract indicates an expected call of IsNewContract.
+func (mr *MockStateDBMockRecorder) IsNewContract(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewContract", reflect.TypeOf((*MockStateDB)(nil).IsNewContract), arg0)
+}
+
 // IsSlotInAccessList mocks base method.
 func (m *MockStateDB) IsSlotInAccessList(arg0 common.Address, arg1 common.Key) (bool, bool) {
 	m.ctrl.T.Helper()
@@ -1815,6 +1843,20 @@ func (m *MockNonCommittableStateDB) IsAddressInAccessList(arg0 common.Address) b
 func (mr *MockNonCommittableStateDBMockRecorder) IsAddressInAccessList(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAddressInAccessList", reflect.TypeOf((*MockNonCommittableStateDB)(nil).IsAddressInAccessList), arg0)
+}
+
+// IsNewContract mocks base method.
+func (m *MockNonCommittableStateDB) IsNewContract(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNewContract", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNewContract indicates an expected call of IsNewContract.
+func (mr *MockNonCommittableStateDBMockRecorder) IsNewContract(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewContract", reflect.TypeOf((*MockNonCommittableStateDB)(nil).IsNewContract), arg0)
 }
 
 // IsSlotInAccessList mocks base method.
