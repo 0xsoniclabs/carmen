@@ -34,6 +34,13 @@ func (t *transactionContext) CreateContract(address Address) {
 	}
 }
 
+func (t *transactionContext) IsNewContract(address Address) bool {
+	if t.state != nil {
+		return t.state.IsNewContract(common.Address(address))
+	}
+	return false
+}
+
 func (t *transactionContext) Exist(address Address) bool {
 	if t.state != nil {
 		return t.state.Exist(common.Address(address))
@@ -48,18 +55,10 @@ func (t *transactionContext) Empty(address Address) bool {
 	return false
 }
 
-func (t *transactionContext) SelfDestruct(address Address) bool {
+func (t *transactionContext) SelfDestruct(address Address) {
 	if t.state != nil {
-		return t.state.Suicide(common.Address(address))
+		t.state.Suicide(common.Address(address))
 	}
-	return false
-}
-
-func (t *transactionContext) SelfDestruct6780(address Address) bool {
-	if t.state != nil {
-		return t.state.SuicideNewContract(common.Address(address))
-	}
-	return false
 }
 
 func (t *transactionContext) HasSelfDestructed(address Address) bool {
