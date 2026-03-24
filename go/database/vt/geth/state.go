@@ -56,7 +56,7 @@ func newState(
 	// Determine the mode, live or archive.
 	var liveOnly bool
 	switch params.Archive {
-	case state.NoArchive:
+	case state.ArchiveType(""), state.NoArchive:
 		liveOnly = true
 	case state.LevelDbArchive, state.S5Archive:
 		liveOnly = false
