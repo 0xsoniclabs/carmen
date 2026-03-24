@@ -4441,7 +4441,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 	}
 
 	// suicide the newly created contract in the same tx scope
-	if deleted := db.SuicideNewContract(address1); !deleted {
+	if deleted := db.Suicide(address1); !deleted {
 		t.Errorf("account should be deleted")
 	}
 
@@ -4454,7 +4454,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 	}
 }
 
-func TestStateDB_ContractCannotBeCreatedAndDeletedInDifferentTransactions(t *testing.T) {
+func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
@@ -4472,16 +4472,16 @@ func TestStateDB_ContractCannotBeCreatedAndDeletedInDifferentTransactions(t *tes
 	}
 
 	// suicide the contract from previous transaction
-	if deleted := db.SuicideNewContract(address1); deleted {
-		t.Errorf("account should not be deleted")
+	if deleted := db.Suicide(address1); !deleted {
+		t.Errorf("account should be deleted")
 	}
 
 	// the contract should still exist when suicided in different transaction
 	db.EndTransaction()
 	db.BeginTransaction()
 
-	if !db.Exist(address1) {
-		t.Errorf("account should exist after suicide in different transaction")
+	if db.Exist(address1) {
+		t.Errorf("account should not exist after suicide in different transaction")
 	}
 }
 
@@ -4501,16 +4501,16 @@ func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 	db.RevertToSnapshot(ss)
 
 	// suicide the contract
-	if deleted := db.SuicideNewContract(address1); deleted {
-		t.Errorf("account should not be deleted")
+	if deleted := db.Suicide(address1); !deleted {
+		t.Errorf("account should be deleted")
 	}
 
 	// the contract account should still exist, because CreateContract method was rolled back
 	db.EndTransaction()
 	db.BeginTransaction()
 
-	if !db.Exist(address1) {
-		t.Errorf("account should still exist after CreateContract call rollback")
+	if db.Exist(address1) {
+		t.Errorf("account should not exist after CreateContract call rollback")
 	}
 }
 
@@ -4522,6 +4522,10 @@ func TestStateDB_ContractIsNoLongerMarkedAsNewAfterRollback(t *testing.T) {
 	// create snapshot of current state
 	snapshot := db.Snapshot()
 
+	if db.IsNewContract(address1) {
+		t.Errorf("account should not be marked as new before creation")
+	}
+
 	// mark contract as created
 	mock.EXPECT().Exists(address1).Return(true, nil)
 	db.CreateContract(address1)
@@ -4532,6 +4536,10 @@ func TestStateDB_ContractIsNoLongerMarkedAsNewAfterRollback(t *testing.T) {
 
 	// revert to snapshot
 	db.RevertToSnapshot(snapshot)
+
+	if db.IsNewContract(address1) {
+		t.Errorf("account should not be marked as new after CreateContract call rollback")
+	}
 
 	// the contract account should still exist, because CreateContract method was rolled back
 	db.EndTransaction()

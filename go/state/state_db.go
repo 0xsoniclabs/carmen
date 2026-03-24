@@ -39,7 +39,6 @@ type VmStateDB interface {
 	CreateContract(common.Address)
 	IsNewContract(common.Address) bool
 	Suicide(common.Address) bool
-	SuicideNewContract(common.Address) bool
 	HasSuicided(common.Address) bool
 
 	// Balance
@@ -622,19 +621,6 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 	}
 
 	return true
-}
-
-// SuicideNewContract marks the given contract account as suicided.
-// If called in the same transaction scope after CreateContract, works
-// the same as Suicide, otherwise has no effect.
-func (s *stateDB) SuicideNewContract(addr common.Address) bool {
-	// If called in the same tx, behave as previously
-	if _, exists := s.createdContracts[addr]; exists {
-		return s.Suicide(addr)
-	}
-
-	// Otherwise do nothing
-	return false
 }
 
 func (s *stateDB) HasSuicided(addr common.Address) bool {
