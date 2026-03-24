@@ -41,7 +41,7 @@ func TestAccountsAreInitiallyUnknown(t *testing.T) {
 
 func TestAccountsCanBeCreated(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
+		state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}, Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
 		account_state, _ := state.Exists(address1)
 		if account_state != true {
 			t.Errorf("Created account does not exist, got %v", account_state)

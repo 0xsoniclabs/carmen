@@ -797,6 +797,56 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 	}
 }
 
+func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
+	for _, config := range initStates() {
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			dir := t.TempDir()
+
+			s, err := config.createState(dir)
+			require.NoError(err)
+			defer func() {
+				require.NoError(s.Close())
+			}()
+
+			statedb := state.CreateStateDBUsing(s)
+
+			createAccountWithBalance := func(address common.Address, balance amount.Amount, blockNum uint64) {
+				statedb.BeginBlock()
+				statedb.CreateAccount(address)
+				statedb.AddBalance(address, balance)
+				statedb.EndTransaction()
+				statedb.EndBlock(blockNum)
+			}
+
+			// Case 1: deleted account because is empty
+			createAccountWithBalance(address1, balance1, 0)
+			statedb.BeginBlock()
+			statedb.BeginTransaction()
+			statedb.SubBalance(address1, balance1)
+			statedb.EndTransaction()
+			statedb.EndBlock(1)
+
+			exists, err := s.Exists(address1)
+			require.NoError(err)
+			require.False(exists)
+
+			// Case 2: deleted account because of suicide
+			createAccountWithBalance(address1, balance1, 2)
+			statedb.BeginBlock()
+			statedb.BeginTransaction()
+			require.True(statedb.Suicide(address1))
+			statedb.EndTransaction()
+			statedb.EndBlock(3)
+
+			exists, err = s.Exists(address1)
+			require.NoError(err)
+			require.False(exists)
+		})
+	}
+}
+
 func toVal(key uint64) common.Value {
 	keyBytes := make([]byte, 32)
 	binary.BigEndian.PutUint64(keyBytes, key)

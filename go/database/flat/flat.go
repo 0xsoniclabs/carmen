@@ -176,8 +176,11 @@ func WrapFactory(innerFactory state.StateFactory) state.StateFactory {
 // --- State Interface Implementation ---
 
 func (s *State) Exists(address common.Address) (bool, error) {
-	_, found := s.accounts[address]
-	return found, nil
+	account, found := s.accounts[address]
+	accountEqual := account.balance == amount.Amount{}
+	nonceEqual := account.nonce == common.Nonce{}
+	codeHashEqual := account.codeHash == common.Hash(types.EmptyCodeHash)
+	return found && (!accountEqual || !nonceEqual || !codeHashEqual), nil
 }
 
 func (s *State) GetBalance(address common.Address) (amount.Amount, error) {
@@ -269,6 +272,7 @@ func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 			},
 		}
 	}
+
 	return done, nil
 }
 

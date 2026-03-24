@@ -197,7 +197,9 @@ func TestState_Exists_ReturnsFromLocalMap(t *testing.T) {
 	addr := common.Address{0x01}
 	state := &State{
 		accounts: map[common.Address]account{
-			addr: {},
+			addr: {
+				balance: amount.New(10),
+			},
 		},
 	}
 
@@ -408,13 +410,18 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 
 	_, err = state.Apply(1, common.Update{
 		CreatedAccounts: []common.Address{address},
+		Balances:        []common.BalanceUpdate{{Account: address, Balance: amount.New(10)}},
 	})
 	require.NoError(err)
 
 	require.True(state.Exists(address))
 
+	// Deleting an account usually resets also all its values
 	_, err = state.Apply(2, common.Update{
 		DeletedAccounts: []common.Address{address},
+		Balances:        []common.BalanceUpdate{{Account: address, Balance: amount.New(0)}},
+		Nonces:          []common.NonceUpdate{{Account: address, Nonce: common.Nonce{}}},
+		Codes:           []common.CodeUpdate{{Account: address, Code: []byte{}}},
 	})
 	require.NoError(err)
 

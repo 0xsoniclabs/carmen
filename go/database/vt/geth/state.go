@@ -131,7 +131,7 @@ func (s *verkleState) Exists(address common.Address) (bool, error) {
 		return false, err
 	}
 
-	return account != nil, nil
+	return account != nil && (!account.Balance.IsZero() || account.Nonce != 0 || common.Hash(account.CodeHash) != common.Hash(types.EmptyCodeHash)), nil
 }
 
 func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) {
@@ -229,10 +229,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 		return &res, nil
 	}
 
-	// Process deleted accounts.
-	if len(update.DeletedAccounts) > 0 {
-		return nil, fmt.Errorf("not supported: verkle trie does not support deleting accounts")
-	}
+	// Deleted accounts are ignored.
 
 	// Process created accounts.
 	for _, newAccount := range update.CreatedAccounts {

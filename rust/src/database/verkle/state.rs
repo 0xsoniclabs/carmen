@@ -132,7 +132,14 @@ impl<T: VerkleTrie> IsArchive for VerkleTrieCarmenState<T> {
 
 impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
     fn account_exists(&self, addr: &Address) -> BTResult<bool, Error> {
-        Ok(self.get_code_hash(addr)? != Hash::default())
+        let key = self.embedding.get_basic_data_key(addr);
+        let value = self.trie.lookup(&key)?;
+        let balance = &value[16..32];
+        let nonce = &value[8..16];
+        Ok(value != Value::default()
+            && (balance != U256::default()
+                || nonce != Nonce::default()
+                || self.get_code_hash(addr)? != EMPTY_CODE_HASH))
     }
 
     fn get_balance(&self, addr: &Address) -> BTResult<U256, Error> {
