@@ -4432,8 +4432,12 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	// the account should exist prior to CreateContract call
+	// the account should not exist prior to CreateContract call
 	mock.EXPECT().Exists(address1).Return(false, nil)
+
+	require.False(t, db.IsNewContract(address1),
+		"account marked as new before CreateContract call")
+
 	db.CreateContract(address1)
 
 	require.True(t, db.IsNewContract(address1),
@@ -4442,11 +4446,18 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 	// suicide the newly created contract in the same tx scope
 	require.True(t, db.Suicide(address1), "contract did not suicide")
 
+	// Inside of the same transaction, the contract sill exists and is marked as new
+	require.True(t, db.Exist(address1),
+		"account no longer exists in same transaction")
+	require.True(t, db.IsNewContract(address1),
+		"account no longer marked as new in same transaction")
+
 	db.EndTransaction()
 	db.BeginTransaction()
 
 	// the contract account should stop existing at the end of the transaction
 	require.False(t, db.Exist(address1), "account still exists after suicide")
+	require.False(t, db.IsNewContract(address1), "account still marked as new after suicide")
 }
 
 func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testing.T) {
@@ -4454,9 +4465,16 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testin
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	// the account should exist prior to CreateContract call
+	// the account should not exist prior to CreateContract call
 	mock.EXPECT().Exists(address1).Return(false, nil)
+
+	require.False(t, db.IsNewContract(address1),
+		"account marked as new before CreateContract call")
+
 	db.CreateContract(address1)
+
+	require.True(t, db.IsNewContract(address1),
+		"account not marked as new contract after CreateContract call")
 
 	// start next transaction
 	db.EndTransaction()
@@ -4465,14 +4483,24 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testin
 	require.False(t, db.IsNewContract(address1),
 		"account marked as new contract in new transaction")
 
-	// suicide the contract from previous transaction
+	// suicide the contract from the previous transaction
 	require.True(t, db.Suicide(address1), "contract did not suicide")
+
+	// inside of the same transaction, the contract sill exists
+	require.True(t, db.Exist(address1),
+		"account no longer exists in same transaction")
+
+	// ensure suicide has no impact
+	require.False(t, db.IsNewContract(address1),
+		"account marked as new contract in new transaction")
 
 	db.EndTransaction()
 	db.BeginTransaction()
 
 	// the contract account should stop existing at the end of the transaction
 	require.False(t, db.Exist(address1), "account still exists after suicide")
+	require.False(t, db.IsNewContract(address1),
+		"account marked as new contract in new transaction")
 }
 
 func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
@@ -4483,7 +4511,7 @@ func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 	// create snapshot of current state
 	ss := db.Snapshot()
 
-	// mark contract as created
+	// create new contract
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	db.CreateContract(address1)
 
@@ -4491,7 +4519,8 @@ func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 	db.RevertToSnapshot(ss)
 
 	// suicide the contract
-	require.False(t, db.Suicide(address1), "non existing account should not have suicided")
+	require.False(t, db.Suicide(address1),
+		"suicide of non existing account should not be successful")
 
 	db.EndTransaction()
 	db.BeginTransaction()
