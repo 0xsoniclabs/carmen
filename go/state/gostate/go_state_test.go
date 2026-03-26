@@ -882,6 +882,54 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	require.ErrorContains(t, err, errors.Join(firstErr, secondErr).Error())
 }
 
+func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
+	// This test stimulates the concurrency of stateError accesses.
+
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		liveDB := state.NewMockLiveDB(ctrl)
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		liveDB.EXPECT().Flush()
+		liveDB.EXPECT().Close()
+
+		addRelease := make(chan struct{})
+
+		archiveDB := archive.NewMockArchive(ctrl)
+		// Add blocks until released, then returns an error so the
+		// archive goroutine writes stateError inside Check().
+		archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_, _, _ any) error {
+				<-addRelease
+				return fmt.Errorf("archive error")
+			},
+		)
+		archiveDB.EXPECT().Flush()
+		archiveDB.EXPECT().Close()
+
+		db := newGoState(liveDB, archiveDB, nil)
+		defer db.Close()
+
+		// Send an update to the archive writer goroutine.
+		_, err := db.Apply(1, common.Update{})
+		require.NoError(t, err)
+
+		// Ensure the archive goroutine is blocked inside Add.
+		synctest.Wait()
+
+		// Release Add so it returns an error. The archive goroutine
+		// will send the error to archiveWriterError, then call
+		// Check() which drains it and *writes* stateError.
+		close(addRelease)
+
+		// Read stateError from the main goroutine at the same time.
+		// Without a mutex on stateError this is a data race between
+		// the archive goroutine's write and the main goroutine's read.
+		_ = db.Check()
+
+		synctest.Wait()
+	})
+}
+
 func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 	addr := common.Address{0xA}
 	key := common.Key{0xB}
