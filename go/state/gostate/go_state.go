@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -33,7 +34,8 @@ type GoState struct {
 	archive archive.Archive
 	cleanup []func()
 
-	stateError error // collect errors occurred during operation
+	stateError     error // collect errors occurred during operation
+	stateErrorLock sync.RWMutex
 
 	// Channels are only present if archive is enabled.
 	archiveWriter          chan<- archiveUpdate
@@ -108,112 +110,112 @@ type archiveUpdate = struct {
 }
 
 func (s *GoState) Exists(address common.Address) (bool, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return false, err
 	}
 
 	exist, err := s.live.Exists(address)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return exist, s.stateError
+	return exist, s.getStateError()
 }
 
 func (s *GoState) GetBalance(address common.Address) (amount.Amount, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return amount.New(), err
 	}
 
 	balance, err := s.live.GetBalance(address)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
 
-	return balance, s.stateError
+	return balance, s.getStateError()
 }
 
 func (s *GoState) GetNonce(address common.Address) (common.Nonce, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return common.Nonce{}, err
 	}
 
 	nonce, err := s.live.GetNonce(address)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return nonce, s.stateError
+	return nonce, s.getStateError()
 }
 
 func (s *GoState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return common.Value{}, err
 	}
 
 	val, err := s.live.GetStorage(address, key)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return val, s.stateError
+	return val, s.getStateError()
 }
 
 func (s *GoState) GetCode(address common.Address) ([]byte, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return []byte{}, err
 	}
 
 	code, err := s.live.GetCode(address)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return code, s.stateError
+	return code, s.getStateError()
 }
 
 func (s *GoState) GetCodeSize(address common.Address) (int, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return 0, err
 	}
 
 	size, err := s.live.GetCodeSize(address)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return size, s.stateError
+	return size, s.getStateError()
 }
 
 func (s *GoState) GetCodeHash(address common.Address) (common.Hash, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return common.Hash{}, err
 	}
 
 	h, err := s.live.GetCodeHash(address)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return h, s.stateError
+	return h, s.getStateError()
 }
 
 func (s *GoState) HasEmptyStorage(addr common.Address) (bool, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return false, err
 	}
 
 	empty, err := s.live.HasEmptyStorage(addr)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return empty, s.stateError
+	return empty, s.getStateError()
 }
 
 func (s *GoState) GetHash() (common.Hash, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return common.Hash{}, err
 	}
 
 	h, err := s.live.GetHash()
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
-	return h, s.stateError
+	return h, s.getStateError()
 }
 
 // Apply applies the provided updates to the state content.
@@ -223,15 +225,15 @@ func (s *GoState) GetHash() (common.Hash, error) {
 // The channel may be nil if there are no asynchronous operations to be performed.
 // If the asynchronous operations fail, the error is returned through the channel.
 func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error) {
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return nil, err
 	}
 
 	// Apply the changes to the LiveDB.
 	archiveUpdateHints, err := s.live.Apply(block, update)
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
-		return nil, s.stateError
+		s.addStateError(err)
+		return nil, s.getStateError()
 	}
 
 	var archiveWriteDone chan error
@@ -246,13 +248,13 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 			select {
 			// In case there was an error, process it.
 			case err := <-s.archiveWriterError:
-				s.stateError = errors.Join(s.stateError, err)
+				s.addStateError(err)
 			default:
 				// all errors consumed, moving on
 				done = true
 			}
 		}
-		if err := s.stateError; err != nil {
+		if err := s.getStateError(); err != nil {
 			return nil, err
 		}
 	} else if archiveUpdateHints != nil {
@@ -279,7 +281,7 @@ func (s *GoState) Flush() error {
 
 	err := s.live.Flush()
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, err)
+		s.addStateError(err)
 	}
 
 	if s.archiveWriter != nil {
@@ -291,11 +293,10 @@ func (s *GoState) Flush() error {
 }
 
 func (s *GoState) Close() error {
-	s.stateError = errors.Join(
-		s.stateError,
+	s.addStateError(errors.Join(
 		s.Flush(),
 		s.live.Close(),
-	)
+	))
 
 	// Shut down archive writer background worker.
 	if s.archiveWriter != nil {
@@ -309,7 +310,7 @@ func (s *GoState) Close() error {
 	// Close the archive.
 	if s.archive != nil {
 		if err := s.archive.Close(); err != nil {
-			s.stateError = errors.Join(s.stateError, err)
+			s.addStateError(err)
 		}
 	}
 
@@ -327,13 +328,13 @@ func (s *GoState) GetArchiveState(block uint64) (as state.State, err error) {
 	if s.archive == nil {
 		return nil, state.NoArchiveError
 	}
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return nil, err
 	}
 	lastBlock, empty, err := s.archive.GetBlockHeight()
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, errors.Join(fmt.Errorf("failed to get last block in the archive"), err))
-		return nil, s.stateError
+		s.addStateError(fmt.Errorf("failed to get last block in the archive: %w", err))
+		return nil, s.getStateError()
 	}
 	if empty {
 		return nil, fmt.Errorf("block %d is not present in the archive (archive is empty)", block)
@@ -351,13 +352,13 @@ func (s *GoState) GetArchiveBlockHeight() (uint64, bool, error) {
 	if s.archive == nil {
 		return 0, false, state.NoArchiveError
 	}
-	if err := s.stateError; err != nil {
+	if err := s.getStateError(); err != nil {
 		return 0, false, err
 	}
 	lastBlock, empty, err := s.archive.GetBlockHeight()
 	if err != nil {
-		s.stateError = errors.Join(s.stateError, errors.Join(fmt.Errorf("failed to get last block in the archive"), err))
-		return 0, false, s.stateError
+		s.addStateError(fmt.Errorf("failed to get last block in the archive: %w", err))
+		return 0, false, s.getStateError()
 	}
 	return lastBlock, empty, nil
 }
@@ -370,13 +371,13 @@ func (s *GoState) Check() error {
 		for !done {
 			select {
 			case err := <-s.archiveWriterError:
-				s.stateError = errors.Join(s.stateError, err)
+				s.addStateError(err)
 			default:
 				done = true
 			}
 		}
 	}
-	return s.stateError
+	return s.getStateError()
 }
 
 func (s *GoState) GetProof() (backend.Proof, error) {
@@ -461,4 +462,18 @@ func (s *GoState) GetSnapshotVerifier(metadata []byte) (backend.SnapshotVerifier
 
 func (s *GoState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	panic("not implemented")
+}
+
+// addStateError adds the provided error to the state error, ensuring thread safety.
+func (s *GoState) addStateError(err error) {
+	s.stateErrorLock.Lock()
+	defer s.stateErrorLock.Unlock()
+	s.stateError = errors.Join(s.stateError, err)
+}
+
+// getStateError retrieves the current state error, ensuring thread safety.
+func (s *GoState) getStateError() error {
+	s.stateErrorLock.RLock()
+	defer s.stateErrorLock.RUnlock()
+	return s.stateError
 }
