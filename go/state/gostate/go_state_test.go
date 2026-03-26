@@ -883,7 +883,7 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 }
 
 func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
-	// This test estimulates the concurrency of stateError accesses.
+	// This test stimulates the concurrency of stateError accesses.
 
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)

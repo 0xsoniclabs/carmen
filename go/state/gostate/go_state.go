@@ -394,12 +394,14 @@ func (s *GoState) CreateWitnessProof(address common.Address, keys ...common.Key)
 	panic("not implemented")
 }
 
+// addStateError adds the provided error to the state error, ensuring thread safety.
 func (s *GoState) addStateError(err error) {
 	s.stateErrorLock.Lock()
 	defer s.stateErrorLock.Unlock()
 	s.stateError = errors.Join(s.stateError, err)
 }
 
+// getStateError retrieves the current state error, ensuring thread safety.
 func (s *GoState) getStateError() error {
 	s.stateErrorLock.RLock()
 	defer s.stateErrorLock.RUnlock()
