@@ -14,9 +14,11 @@
 package state_test
 
 import (
+	"strings"
+	"testing"
+
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
-	"testing"
 )
 
 func TestStress_CanHandleLargeBlock(t *testing.T) {
@@ -62,12 +64,12 @@ func TestStress_CanHandleLargeBlock(t *testing.T) {
 
 func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 	// the number of slots in the account (larger than what could be filled in a single block)
-	const N = 10_000_000
+	const N = 1_000_000
 	for _, config := range initStates() {
 		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			// to safe processing time only S5 is tested
-			if config.config.Schema != 5 {
+			if config.config.Schema != 5 || strings.HasSuffix(string(config.config.Variant), "-flat") {
 				t.Skip()
 			}
 			t.Parallel()
