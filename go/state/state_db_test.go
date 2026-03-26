@@ -4522,6 +4522,8 @@ func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 	require.False(t, db.Suicide(address1),
 		"suicide of non existing account should not be successful")
 
+	require.False(t, db.Exist(address1), "contract exists after rollback")
+
 	db.EndTransaction()
 	db.BeginTransaction()
 
@@ -4541,7 +4543,6 @@ func TestStateDB_ContractIsNoLongerMarkedAsNewAfterRollback(t *testing.T) {
 	require.False(t, db.IsNewContract(address1),
 		"account marked as new before CreateContract call")
 
-	// mark contract as created
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	db.CreateContract(address1)
 
@@ -4554,10 +4555,14 @@ func TestStateDB_ContractIsNoLongerMarkedAsNewAfterRollback(t *testing.T) {
 	require.False(t, db.IsNewContract(address1),
 		"account marked as new after CreateContract call rollback")
 
+	require.False(t, db.Exist(address1), "contract exists after rollback")
+
 	db.EndTransaction()
 	db.BeginTransaction()
 
-	// the contract account should stop existing after the rollback
+	require.False(t, db.IsNewContract(address1),
+		"account marked as new after rolled back transaction")
+
 	require.False(t, db.Exist(address1),
 		"account still exists after CreateContract call rollback")
 }
