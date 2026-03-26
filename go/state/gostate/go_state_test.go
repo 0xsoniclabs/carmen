@@ -219,6 +219,9 @@ func TestDeletingAccounts(t *testing.T) {
 			// delete account
 			update = common.Update{
 				DeletedAccounts: []common.Address{address1},
+				Balances:        []common.BalanceUpdate{{Account: address1, Balance: amount.New(0)}},
+				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{}}},
+				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 			}
 			if _, err := state.Apply(2, update); err != nil {
 				t.Errorf("failed to apply update: %v", err)

@@ -690,12 +690,18 @@ func TestLastArchiveBlock(t *testing.T) {
 
 			if _, err := s.Apply(0, common.Update{
 				CreatedAccounts: []common.Address{address1},
+				Balances: []common.BalanceUpdate{
+					{Account: address1, Balance: balance1},
+				},
 			}); err != nil {
 				t.Fatalf("failed to add block 0; %s", err)
 			}
 
 			if _, err := s.Apply(1, common.Update{
 				CreatedAccounts: []common.Address{address2},
+				Balances: []common.BalanceUpdate{
+					{Account: address2, Balance: balance2},
+				},
 			}); err != nil {
 				t.Fatalf("failed to add block 1; %s", err)
 			}

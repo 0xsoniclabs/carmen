@@ -801,7 +801,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 	for _, config := range initStates() {
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
-			if strings.Contains(config.name(), "-flat") || config.config.Schema == 0 || config.config.Schema == 6 {
+			if strings.Contains(config.name(), "-flat") || config.config.Schema == 0 {
 				t.Skip()
 			}
 			require := require.New(t)
