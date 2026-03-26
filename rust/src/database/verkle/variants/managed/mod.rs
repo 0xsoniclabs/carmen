@@ -293,7 +293,7 @@ mod tests {
         trie.accept(&mut mock_visitor).unwrap();
     }
 
-    struct TestNodeWrapper {
+    pub struct TestNodeWrapper {
         node: VerkleNode,
     }
 
