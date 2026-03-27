@@ -456,6 +456,20 @@ func (mr *MockVmStateDBMockRecorder) IsAddressInAccessList(arg0 any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAddressInAccessList", reflect.TypeOf((*MockVmStateDB)(nil).IsAddressInAccessList), arg0)
 }
 
+// IsNewContract mocks base method.
+func (m *MockVmStateDB) IsNewContract(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNewContract", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNewContract indicates an expected call of IsNewContract.
+func (mr *MockVmStateDBMockRecorder) IsNewContract(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewContract", reflect.TypeOf((*MockVmStateDB)(nil).IsNewContract), arg0)
+}
+
 // IsSlotInAccessList mocks base method.
 func (m *MockVmStateDB) IsSlotInAccessList(arg0 common.Address, arg1 common.Key) (bool, bool) {
 	m.ctrl.T.Helper()
@@ -593,20 +607,6 @@ func (m *MockVmStateDB) Suicide(arg0 common.Address) bool {
 func (mr *MockVmStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockVmStateDB)(nil).Suicide), arg0)
-}
-
-// SuicideNewContract mocks base method.
-func (m *MockVmStateDB) SuicideNewContract(arg0 common.Address) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SuicideNewContract", arg0)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// SuicideNewContract indicates an expected call of SuicideNewContract.
-func (mr *MockVmStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuicideNewContract", reflect.TypeOf((*MockVmStateDB)(nil).SuicideNewContract), arg0)
 }
 
 // MockStateDB is a mock of StateDB interface.
@@ -1168,6 +1168,20 @@ func (mr *MockStateDBMockRecorder) IsAddressInAccessList(arg0 any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAddressInAccessList", reflect.TypeOf((*MockStateDB)(nil).IsAddressInAccessList), arg0)
 }
 
+// IsNewContract mocks base method.
+func (m *MockStateDB) IsNewContract(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNewContract", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNewContract indicates an expected call of IsNewContract.
+func (mr *MockStateDBMockRecorder) IsNewContract(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewContract", reflect.TypeOf((*MockStateDB)(nil).IsNewContract), arg0)
+}
+
 // IsSlotInAccessList mocks base method.
 func (m *MockStateDB) IsSlotInAccessList(arg0 common.Address, arg1 common.Key) (bool, bool) {
 	m.ctrl.T.Helper()
@@ -1331,20 +1345,6 @@ func (m *MockStateDB) Suicide(arg0 common.Address) bool {
 func (mr *MockStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockStateDB)(nil).Suicide), arg0)
-}
-
-// SuicideNewContract mocks base method.
-func (m *MockStateDB) SuicideNewContract(arg0 common.Address) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SuicideNewContract", arg0)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// SuicideNewContract indicates an expected call of SuicideNewContract.
-func (mr *MockStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuicideNewContract", reflect.TypeOf((*MockStateDB)(nil).SuicideNewContract), arg0)
 }
 
 // MockNonCommittableStateDB is a mock of NonCommittableStateDB interface.
@@ -1817,6 +1817,20 @@ func (mr *MockNonCommittableStateDBMockRecorder) IsAddressInAccessList(arg0 any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAddressInAccessList", reflect.TypeOf((*MockNonCommittableStateDB)(nil).IsAddressInAccessList), arg0)
 }
 
+// IsNewContract mocks base method.
+func (m *MockNonCommittableStateDB) IsNewContract(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNewContract", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNewContract indicates an expected call of IsNewContract.
+func (mr *MockNonCommittableStateDBMockRecorder) IsNewContract(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNewContract", reflect.TypeOf((*MockNonCommittableStateDB)(nil).IsNewContract), arg0)
+}
+
 // IsSlotInAccessList mocks base method.
 func (m *MockNonCommittableStateDB) IsSlotInAccessList(arg0 common.Address, arg1 common.Key) (bool, bool) {
 	m.ctrl.T.Helper()
@@ -1966,20 +1980,6 @@ func (m *MockNonCommittableStateDB) Suicide(arg0 common.Address) bool {
 func (mr *MockNonCommittableStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockNonCommittableStateDB)(nil).Suicide), arg0)
-}
-
-// SuicideNewContract mocks base method.
-func (m *MockNonCommittableStateDB) SuicideNewContract(arg0 common.Address) bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SuicideNewContract", arg0)
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// SuicideNewContract indicates an expected call of SuicideNewContract.
-func (mr *MockNonCommittableStateDBMockRecorder) SuicideNewContract(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuicideNewContract", reflect.TypeOf((*MockNonCommittableStateDB)(nil).SuicideNewContract), arg0)
 }
 
 // MockBulkLoad is a mock of BulkLoad interface.
