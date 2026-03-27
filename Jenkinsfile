@@ -52,7 +52,7 @@ pipeline {
 
                 stage('Check C++ sources formatting') {
                     steps {
-                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format --dry-run -Werror '
+                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format-14 --dry-run -Werror '
                     }
                 }
 
