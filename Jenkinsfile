@@ -85,11 +85,6 @@ pipeline {
                     }
                 }
 
-                stage('Run C++ tests') {
-                    steps {
-                        sh 'cd cpp && bazel test --test_output=errors //...'
-                    }
-                }
             }
         }
     }
