@@ -84,7 +84,15 @@ pipeline {
                         sh 'cd go && go run ./database/mpt/tool stress-test --num-blocks 2000'
                     }
                 }
-
+               
+                 stage('Run C++ tests') {
+                    when {
+                        changeset "cpp/**"
+                    }
+                    steps {
+                        sh 'cd cpp && bazel test --test_output=errors //...'
+                    }
+                }
             }
         }
     }
