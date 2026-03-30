@@ -258,8 +258,7 @@ def parse_id_rs(node_types, specializations_to_keep):
 
 if __name__ == "__main__":
     specializations_names = ["Leaf", "Inner"]
-    leaf = [256, "Delta"]
-    leaf.extend([i for i in range(1, 256)])
+    leaf = [1,2,5,8,18,64,146,256, "Delta"]
     specializations_to_keep = {
             "Leaf": leaf,
             "Inner": [9, 15, 21, 256, "Delta"],

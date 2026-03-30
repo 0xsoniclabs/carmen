@@ -30,7 +30,9 @@ VALUE_INDEX_SIZE = 1
 STEM_SIZE = 31
 LEAF_NODE_CHILDREN = 256
 USED_BITS = 256 / 8
-FULL_LEAF_NODE_SIZE = COMMITMENT_SIZE + LEAF_NODE_CHILDREN * VALUE_SIZE + STEM_SIZE + USED_BITS
+FULL_LEAF_NODE_SIZE = (
+    COMMITMENT_SIZE + LEAF_NODE_CHILDREN * VALUE_SIZE + STEM_SIZE + USED_BITS
+)
 
 
 def print_size_constants(writer):
@@ -52,7 +54,12 @@ def print_size_constants(writer):
 
 def sparse_leaf_node_size(num_children: int) -> int:
     """Return the size of a sparse leaf node with the given number of children."""
-    return COMMITMENT_SIZE + num_children * (VALUE_SIZE + VALUE_INDEX_SIZE) + STEM_SIZE + USED_BITS
+    return (
+        COMMITMENT_SIZE
+        + num_children * (VALUE_SIZE + VALUE_INDEX_SIZE)
+        + STEM_SIZE
+        + USED_BITS
+    )
 
 
 # Precompute leaf node sizes for all possible children counts
@@ -96,7 +103,7 @@ def load_statistics(csv_path):
     # Remove all empty nodes
     df = df[df["Node Kind"] != "Empty"]
     # Group by `Node Kind` and calculate the prefix sum of `Count` within each group
-    df['PrefixSum'] = df.groupby("Node Kind")["Count"].transform('cumsum')
+    df["PrefixSum"] = df.groupby("Node Kind")["Count"].transform("cumsum")
     # Collect the node info into a nested dictionary
     node_info = dict()
     for node_kind, group in df.groupby("Node Kind"):
@@ -478,7 +485,7 @@ def min_storage_size(node_info: dict, node_sizes: dict, node_type: str):
 
 # %% Compute the best variants and write results to file
 
-is_interactive = 'IPython' in sys.modules
+is_interactive = "IPython" in sys.modules
 if not is_interactive and len(sys.argv) > 1:
     path = sys.argv[1]
 else:
@@ -488,17 +495,17 @@ node_info = load_statistics(path)
 with open("node_optimization_results.txt", "w") as writer:
     print_size_constants(writer)
     # Best variants for Inner and Leaf nodes
+    # get_best_variants(
+    #     "Inner",
+    #     range(1, 10),
+    #     node_info["Inner"],
+    #     256,
+    #     inner_node_sizes,
+    #     0,
+    #     writer,
+    # )
     get_best_variants(
-        "Inner",
-        range(1, 10),
-        node_info["Inner"],
-        256,
-        inner_node_sizes,
-        0,
-        writer,
-    )
-    get_best_variants(
-        "Leaf", range(1, 10), node_info["Leaf"], 256, leaf_node_sizes, 0.002, writer
+        "Leaf", range(9, 10), node_info["Leaf"], 256, leaf_node_sizes, 0.002, writer
     )
     # Minimum storage sizes with all specializations
     writer.write("Minimum possible storage sizes:\n")
