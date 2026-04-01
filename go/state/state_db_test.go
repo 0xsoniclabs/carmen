@@ -3351,34 +3351,66 @@ func TestStateDB_ResetClearsInternalState(t *testing.T) {
 }
 
 func TestStateDB_Copy(t *testing.T) {
+	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateNonCommittableStateDBUsing(mock)
+	db := createNonCommittableStateDBWith(mock)
 
-	mock.EXPECT().Exists(gomock.Any()).Return(true, nil).AnyTimes()
-	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	db.accounts[address1] = &accountState{
+		original: accountNonExisting,
+		current:  accountExists,
+	}
+	originalBalance := amount.New(10)
+	db.balances[address1] = &balanceValue{
+		original: &originalBalance,
+		current:  amount.New(20),
+	}
+	originalNonce := uint64(1)
+	db.nonces[address1] = &nonceValue{
+		original: &originalNonce,
+		current:  2,
+	}
+	originalHash := common.GetKeccak256Hash([]byte{0xAB})
+	db.codes[address1] = &codeValue{
+		code: []byte{0xAB},
+		hash: &originalHash,
+	}
+	slotKey := slotId{
+		addr: address1,
+		key:  key1,
+	}
+	slot := slotValue{
+		stored: common.Value{10},
+	}
+	db.data.Put(slotKey, &slot)
 
-	db.BeginTransaction()
-	db.AddBalance(address1, amount.New(2))
-	db.SetNonce(address1, 8)
-	db.SetCode(address1, []byte{0x12})
-	db.SetState(address2, key3, val1)
-	db.EndTransaction()
+	cp := db.copy()
 
-	cp := db.Copy()
-	// state introduced by the previous tx should be readable from the copy
-	if cp.GetBalance(address1) != amount.New(2) {
-		t.Errorf("balance not copied")
+	require.Equal(db.accounts, cp.accounts)
+
+	require.Equal(cp.balances, db.balances)
+	for addr, balance := range cp.balances {
+		require.NotSame(balance, db.balances[addr])
+		require.NotSame(balance.original, db.balances[addr].original)
 	}
-	if cp.GetNonce(address1) != 8 {
-		t.Errorf("nonce not copied")
+
+	require.Equal(cp.nonces, db.nonces)
+	for addr, nonce := range cp.nonces {
+		require.NotSame(nonce, db.nonces[addr])
+		require.NotSame(nonce.original, db.nonces[addr].original)
 	}
-	if !bytes.Equal(cp.GetCode(address1), []byte{0x12}) {
-		t.Errorf("code not copied")
+
+	require.Equal(cp.codes, db.codes)
+	for addr, code := range cp.codes {
+		require.NotSame(code, db.codes[addr])
+		require.NotSame(code.hash, db.codes[addr].hash)
 	}
-	if cp.GetState(address2, key3) != val1 {
-		t.Errorf("storage not copied")
-	}
+
+	require.True(cp.data.DeepEqual(db.data))
+	cp.data.ForEach(func(si slotId, sv *slotValue) {
+		slot, _ := db.data.Get(si)
+		require.NotSame(sv, slot)
+	})
 }
 
 func TestStateDB_CreateWitnessProofCallsAreForwarded(t *testing.T) {

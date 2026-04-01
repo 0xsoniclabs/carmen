@@ -451,6 +451,10 @@ func CreateCustomStateDBUsing(state State, storedDataCacheSize int) StateDB {
 // Note: any StateDB instanced becomes invalid if the underlying state is
 // modified by any other StateDB instance or through any other direct modification.
 func CreateNonCommittableStateDBUsing(state State) NonCommittableStateDB {
+	return createNonCommittableStateDBWith(state)
+}
+
+func createNonCommittableStateDBWith(state State) *nonCommittableStateDB {
 	// Since StateDB instances are big objects costly to create we reuse those using
 	// a pool of objects. However, instances need to be properly reset.
 	db := nonCommittableStateDbPool.Get().(*stateDB)
@@ -1609,16 +1613,24 @@ type nonCommittableStateDB struct {
 }
 
 func (db *nonCommittableStateDB) Copy() NonCommittableStateDB {
+	return db.copy()
+}
+
+func (db *nonCommittableStateDB) copy() *nonCommittableStateDB {
 	cp := nonCommittableStateDbPool.Get().(*stateDB)
 	cp.resetState(db.state)
 
 	maps.Copy(cp.accounts, db.accounts)
-	maps.Copy(cp.balances, db.balances)
-	maps.Copy(cp.nonces, db.nonces)
-	db.data.CopyTo(cp.data)
-	maps.Copy(cp.codes, db.codes)
-	maps.Copy(cp.clearedAccounts, db.clearedAccounts)
-	maps.Copy(cp.reincarnation, db.reincarnation)
+	cp.balances = cloneMapWith(db.balances, cloneBalanceValue)
+	cp.nonces = cloneMapWith(db.nonces, cloneNonceValue)
+	db.data.CopyToWith(cp.data, func(value *slotValue) *slotValue {
+		if value == nil {
+			return nil
+		}
+		cloned := *value
+		return &cloned
+	})
+	cp.codes = cloneMapWith(db.codes, cloneCodeValue)
 	cp.logsInBlock = db.logsInBlock
 	// we suppose ended tx - we may skip members,
 	// which are reset at the end of every tx
@@ -1643,4 +1655,53 @@ func revertOrDelete[K comparable, T any](m map[K]T, key K, oldExists bool, oldVa
 	} else {
 		delete(m, key)
 	}
+}
+
+// cloneMapWith clones `m` using `cloneFunc` to clone the values. If `m` is nil, it returns nil.
+func cloneMapWith[K comparable, V any](m map[K]V, cloneFunc func(V) V) map[K]V {
+	if m == nil {
+		return nil
+	}
+	cloned := make(map[K]V, len(m))
+	for k, v := range m {
+		cloned[k] = cloneFunc(v)
+	}
+	return cloned
+}
+
+func cloneBalanceValue(bv *balanceValue) *balanceValue {
+	if bv == nil {
+		return nil
+	}
+	cloned := *bv
+	if bv.original != nil {
+		originalCopy := *bv.original
+		cloned.original = &originalCopy
+	}
+	return &cloned
+}
+
+func cloneNonceValue(nv *nonceValue) *nonceValue {
+	if nv == nil {
+		return nil
+	}
+	cloned := *nv
+	if nv.original != nil {
+		originalCopy := *nv.original
+		cloned.original = &originalCopy
+	}
+	return &cloned
+}
+
+func cloneCodeValue(cv *codeValue) *codeValue {
+	if cv == nil {
+		return nil
+	}
+	cloned := *cv
+	if cv.hash != nil {
+		hashCopy := *cv.hash
+		cloned.hash = &hashCopy
+	}
+	cloned.code = slices.Clone(cv.code)
+	return &cloned
 }
