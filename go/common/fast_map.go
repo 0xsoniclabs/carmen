@@ -10,7 +10,7 @@
 
 package common
 
-import reflect "reflect"
+import "reflect"
 
 const kFastMapBuckets = 1 << 16
 
@@ -165,6 +165,9 @@ func (m *FastMap[K, V]) DeepEqual(m2 *FastMap[K, V]) bool {
 	}
 	equal := true
 	m.ForEach(func(key K, value V) {
+		if !equal {
+			return
+		}
 		v2, ok := m2.Get(key)
 		if !ok || !reflect.DeepEqual(value, v2) {
 			equal = false
