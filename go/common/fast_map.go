@@ -143,7 +143,7 @@ func (m *FastMap[K, V]) CopyTo(dest *FastMap[K, V]) {
 
 // CopyToWith copies all the map content to another FastMap using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
 func (src *FastMap[K, V]) CopyToWith(dst *FastMap[K, V], cloneFunc func(V) V) {
-	if src == nil || dst == nil {
+	if dst == nil {
 		return
 	}
 	src.ForEach(func(key K, value V) {

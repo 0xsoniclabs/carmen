@@ -635,6 +635,7 @@ func TestFastMap_DeepEqual(t *testing.T) {
 	m12.Put(Key{0x2}, 2)
 	m13.Put(Key{0x1}, 1)
 	require.False(m12.DeepEqual(m13))
+	require.False(m13.DeepEqual(m12))
 }
 
 func TestMap_Internal_Negative_Position(t *testing.T) {
