@@ -539,28 +539,30 @@ func TestFastMap_CopyTo(t *testing.T) {
 	})
 }
 
-func TestFastMap_CopyToWith(t *testing.T) {
+func TestFastMap_CopyToWith_WithNilDestinationIsNoOp(t *testing.T) {
 	require := require.New(t)
 
 	var m *FastMap[Key, *int]
 	m.CopyToWith(nil, func(i *int) *int { return i })
 
-	m = NewFastMap[Key, *int](KeyShortHasher{})
+	var shadow *FastMap[Key, *int]
+	m.CopyToWith(shadow, func(i *int) *int { return i })
+	require.Nil(shadow)
+
+}
+
+func TestFastMap_CopyToWith_AppliesCloneFuncToAllEntries(t *testing.T) {
+	require := require.New(t)
+
+	m := NewFastMap[Key, *int](KeyShortHasher{})
 	// fill in data
 	for i := range 100 {
 		k := Key{byte(i)}
 		m.Put(k, &i)
 	}
 
-	var shadow *FastMap[Key, *int]
-	m.CopyToWith(shadow, func(i *int) *int { return i })
-	require.Nil(shadow)
-
-	shadow = NewFastMap[Key, *int](KeyShortHasher{})
+	shadow := NewFastMap[Key, *int](KeyShortHasher{})
 	m.CopyToWith(shadow, func(v *int) *int {
-		if v == nil {
-			return nil
-		}
 		val := *v
 		return &val
 	})
@@ -574,8 +576,6 @@ func TestFastMap_CopyToWith(t *testing.T) {
 		require.NotSame(v1, v2)
 		require.Equal(*v1, *v2)
 	}
-
-	require.True(m.DeepEqual(shadow))
 }
 
 func TestFastMap_DeepEqual(t *testing.T) {

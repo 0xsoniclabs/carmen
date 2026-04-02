@@ -136,12 +136,14 @@ func (m *FastMap[K, V]) ForEach(op func(K, V)) {
 	}
 }
 
-// CopyTo shallow copies all the map content to another FastMap. If either map is nil, it's a no-op.
+// CopyTo shallow copies all the map content to another FastMap.
+// If either map is nil, it's a no-op.
 func (m *FastMap[K, V]) CopyTo(dest *FastMap[K, V]) {
 	m.CopyToWith(dest, func(v V) V { return v })
 }
 
-// CopyToWith copies all the map content to another FastMap using `cloneFunc` to clone the values. If either map is nil, it's a no-op.
+// CopyToWith copies all the map content to another FastMap using `cloneFunc` to clone the values.
+// If either map is nil, it's a no-op.
 func (src *FastMap[K, V]) CopyToWith(dst *FastMap[K, V], cloneFunc func(V) V) {
 	if dst == nil {
 		return
@@ -153,14 +155,14 @@ func (src *FastMap[K, V]) CopyToWith(dst *FastMap[K, V], cloneFunc func(V) V) {
 
 // DeepEqual checks if this map is deeply equal to another map.
 // If the values are pointers, the pointed values are compared for equality instead of the pointers themselves.
-func (m *FastMap[K, V]) DeepEqual(m2 *FastMap[K, V]) bool {
-	if m == nil && m2 != nil || m != nil && m2 == nil {
+func (m *FastMap[K, V]) DeepEqual(other *FastMap[K, V]) bool {
+	if m == nil && other != nil || m != nil && other == nil {
 		return false
 	}
-	if m == nil && m2 == nil {
+	if m == nil && other == nil {
 		return true
 	}
-	if m.Size() != m2.Size() {
+	if m.Size() != other.Size() {
 		return false
 	}
 	equal := true
@@ -168,7 +170,7 @@ func (m *FastMap[K, V]) DeepEqual(m2 *FastMap[K, V]) bool {
 		if !equal {
 			return
 		}
-		v2, ok := m2.Get(key)
+		v2, ok := other.Get(key)
 		if !ok || !reflect.DeepEqual(value, v2) {
 			equal = false
 			return
