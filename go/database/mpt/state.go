@@ -134,7 +134,6 @@ type MptState struct {
 	lock      common.LockFile
 	trie      *LiveTrie
 	codes     *codes
-	undo      []func()
 }
 
 func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptState, error) {
@@ -147,7 +146,6 @@ func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptSt
 		lock:      lock,
 		trie:      trie,
 		codes:     codes,
-		undo:      []func(){},
 	}, nil
 }
 
@@ -243,9 +241,6 @@ func (s *MptState) SetBalance(address common.Address, balance amount.Amount) (er
 	if info.Balance == balance {
 		return nil
 	}
-	s.undo = append(s.undo, func() {
-		s.trie.SetAccountInfo(address, info)
-	})
 	info.Balance = balance
 	if !exists {
 		info.CodeHash = emptyCodeHash
