@@ -213,7 +213,7 @@ func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *verkleState) Apply(block uint64, update common.Update) ([]func(), <-chan error, error) {
 
 	// Aggregate changes to the account data.
 	modifiedAccounts := map[common.Address]*accountData{}
@@ -231,14 +231,14 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 
 	// Process deleted accounts.
 	if len(update.DeletedAccounts) > 0 {
-		return nil, fmt.Errorf("not supported: verkle trie does not support deleting accounts")
+		return nil, nil, fmt.Errorf("not supported: verkle trie does not support deleting accounts")
 	}
 
 	// Process created accounts.
 	for _, newAccount := range update.CreatedAccounts {
 		data, err := getAccountData(newAccount)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		data.Balance = *uint256.NewInt(0)
 		data.Nonce = 0
@@ -250,7 +250,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	for _, update := range update.Balances {
 		account, err := getAccountData(update.Account)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		account.Balance = update.Balance.Uint256()
 	}
@@ -259,7 +259,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	for _, update := range update.Nonces {
 		account, err := getAccountData(update.Account)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		account.Nonce = update.Nonce.ToUint64()
 	}
@@ -268,7 +268,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	for _, update := range update.Codes {
 		account, err := getAccountData(update.Account)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// update code len and code hash
@@ -278,7 +278,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 
 		// insert code into the trie
 		if err := s.updateContractCode(update.Account, codeHash, update.Code); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		s.codeCache[update.Account] = update.Code
@@ -287,14 +287,14 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	// Update storage slots.
 	for _, update := range update.Slots {
 		if err := s.updateStorage(update.Account, update.Key[:], update.Value[:]); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	// Write back all modified accounts.
 	for addr, data := range modifiedAccounts {
 		if err := s.setAccountData(addr, *data); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -303,7 +303,7 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	// Compute and commit all changes to the store.
 	nodes, err := s.root.(*verkle.InternalNode).BatchSerialize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to serialize nodes: %w", err)
+		return nil, nil, fmt.Errorf("failed to serialize nodes: %w", err)
 	}
 	changes := make([]Entry, 0, len(nodes))
 	for _, node := range nodes {
@@ -314,22 +314,26 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	}
 
 	if err := s.store.AddBlock(block, changes); err != nil {
-		return nil, fmt.Errorf("failed to add block changes to store: %w", err)
+		return nil, nil, fmt.Errorf("failed to add block changes to store: %w", err)
 	}
 
 	// Reload root node, pruning the in-memory tree to the root.
 	// Note: flush is crashing, so we re-load the root only, discard the rest.
 	rootData, err := s.source.GetNode(nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rootNode, err := verkle.ParseNode(rootData, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.root = rootNode
 
-	return nil, nil
+	return nil, nil, nil
+}
+
+func (s *verkleState) RevertLastBlock(blockUndoList []func()) error {
+	panic("Not implemented")
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {

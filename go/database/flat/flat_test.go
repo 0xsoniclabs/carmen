@@ -10,1224 +10,1224 @@
 
 package flat
 
-import (
-	"bytes"
-	"encoding/binary"
-	"errors"
-	"io"
-	"os"
-	"path/filepath"
-	"testing"
-	"testing/synctest"
-
-	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"github.com/0xsoniclabs/carmen/go/common/future"
-	"github.com/0xsoniclabs/carmen/go/common/result"
-	"github.com/0xsoniclabs/carmen/go/state"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
-)
-
-var _ state.State = (*State)(nil)
-
-func TestWrapFactory_ProducesAStateFactoryWrappingGivenFactory(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	wrapped := state.NewMockState(ctrl)
-	wrapped.EXPECT().Close()
-
-	params := state.Parameters{
-		Directory: t.TempDir(),
-		Variant:   "test",
-	}
-
-	counter := 0
-	inner := func(p state.Parameters) (state.State, error) {
-		counter++
-		require.Equal(t, params, p)
-		return wrapped, nil
-	}
-
-	factory := WrapFactory(inner)
-	s, err := factory(params)
-	require.NoError(t, err)
-	require.Equal(t, 1, counter)
-	require.IsType(t, &State{}, state.UnsafeUnwrapSyncedState(s))
-
-	require.NoError(t, s.Close())
-}
-
-func TestWrapFactory_FailingNestedFactory_ForwardsError(t *testing.T) {
-	issues := errors.New("factory failed")
-	inner := func(state.Parameters) (state.State, error) {
-		return nil, issues
-	}
-
-	factory := WrapFactory(inner)
-	state, err := factory(state.Parameters{})
-	require.ErrorIs(t, err, issues)
-	require.Nil(t, state)
-}
-
-func TestState_CanBeOpenedAndClosed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	backend.EXPECT().Close().Return(nil)
-
-	flatState, err := NewState(t.TempDir(), backend)
-	require.NoError(t, err)
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_CanBeOpenedAndClosedWithoutBackend(t *testing.T) {
-	flatState, err := NewState(t.TempDir(), nil)
-	require.NoError(t, err)
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_NewState_CreatesDataFile(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	state, err := NewState(dir, nil)
-	require.NoError(err)
-
-	file := filepath.Join(dir, "live", "flat.db")
-	require.FileExists(file)
-
-	require.NoError(state.Close())
-	require.FileExists(file)
-}
-
-func TestState_NewState_InvalidPath_ReportsError(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "file.txt")
-	require.NoError(t, os.WriteFile(dir, []byte("not a directory"), 0o644))
-
-	state, err := NewState(dir, nil)
-	require.ErrorContains(t, err, "not a directory")
-	require.Nil(t, state)
-}
-
-func TestState_NewState_NoPermissionToCreateFile_ReportsError(t *testing.T) {
-	dir := t.TempDir()
-	liveDir := filepath.Join(dir, "live")
-	require.NoError(t, os.MkdirAll(liveDir, 0o700))
-
-	require.NoError(t, os.Chmod(liveDir, 0o400)) // < -- read-only
-	defer func() {
-		require.NoError(t, os.Chmod(liveDir, 0o700))
-	}()
-
-	state, err := NewState(dir, nil)
-	require.ErrorContains(t, err, "permission denied")
-	require.Nil(t, state)
-}
-
-func TestState_NewState_NoPermissionToReadFile_ReportsError(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "live", "flat.db")
-	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
-	require.NoError(t, os.WriteFile(file, []byte("data"), 0o000)) // < -- no permissions
-	defer func() {
-		require.NoError(t, os.Chmod(file, 0o700))
-	}()
-	state, err := NewState(dir, nil)
-	require.ErrorContains(t, err, "failed to open existing flat state")
-	require.Nil(t, state)
-}
-
-func TestState_NewState_CorruptedFile_ReportsError(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "live", "flat.db")
-	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
-	require.NoError(t, os.WriteFile(file, []byte("some invalid data"), 0o700))
-	state, err := NewState(dir, nil)
-	require.ErrorContains(t, err, "failed to load existing flat state")
-	require.Nil(t, state)
-}
-
-func TestState_StateCanBeClosedAndReopened(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-
-	// Create and close state.
-	stateA, err := NewState(dir, nil)
-	require.NoError(err)
-
-	_, err = stateA.Apply(0, common.Update{
-		Nonces: []common.NonceUpdate{
-			{Account: common.Address{1}, Nonce: common.Nonce{2}},
-			{Account: common.Address{3}, Nonce: common.Nonce{4}},
-		},
-	})
-	require.NoError(err)
-
-	require.NoError(stateA.Close())
-
-	// Reopen state.
-	stateB, err := NewState(dir, nil)
-	require.NoError(err)
-
-	nonce, err := stateB.GetNonce(common.Address{1})
-	require.NoError(err)
-	require.Equal(common.Nonce{2}, nonce)
-	nonce, err = stateB.GetNonce(common.Address{3})
-	require.NoError(err)
-	require.Equal(common.Nonce{4}, nonce)
-
-	require.NoError(stateB.Close())
-}
-
-func TestState_Close_IssueDuringCloseIsReported(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	issue := errors.New("backend close failed")
-	backend.EXPECT().Close().Return(issue)
-
-	flatState, err := NewState(t.TempDir(), backend)
-	require.NoError(t, err)
-	err = flatState.Close()
-	require.ErrorIs(t, err, issue)
-}
-
-func TestState_Exists_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {},
-		},
-	}
-
-	exists, err := state.Exists(addr)
-	require.NoError(err)
-	require.True(exists)
-	exists, err = state.Exists(common.Address{0x03})
-	require.NoError(err)
-	require.False(exists)
-}
-
-func TestState_GetBalance_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	expectedBalance := amount.New(12345)
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {balance: expectedBalance},
-		},
-	}
-
-	balance, err := state.GetBalance(addr)
-	require.NoError(err)
-	require.Equal(expectedBalance, balance)
-}
-
-func TestState_GetNonce_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	expectedNonce := common.Nonce{42}
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {nonce: expectedNonce},
-		},
-	}
-
-	nonce, err := state.GetNonce(addr)
-	require.NoError(err)
-	require.Equal(expectedNonce, nonce)
-}
-
-func TestState_GetStorage_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	key := common.Key{0x02}
-	expectedValue := common.Value{0xAB, 0xCD}
-	state := &State{
-		storage: map[slotKey]common.Value{
-			{addr, key}: expectedValue,
-		},
-	}
-
-	value, err := state.GetStorage(addr, key)
-	require.NoError(err)
-	require.Equal(expectedValue, value)
-}
-
-func TestState_GetCode_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	codeHash := common.Hash{0x0A, 0x0B}
-	expectedCode := []byte{0xDE, 0xAD, 0xBE, 0xEF}
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {codeHash: codeHash},
-		},
-		codes: map[common.Hash][]byte{
-			codeHash: expectedCode,
-		},
-	}
-
-	code, err := state.GetCode(addr)
-	require.NoError(err)
-	require.Equal(expectedCode, code)
-}
-
-func TestState_GetCodeSize_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	expectedSize := 256
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {codeSize: expectedSize},
-		},
-	}
-
-	size, err := state.GetCodeSize(addr)
-	require.NoError(err)
-	require.Equal(expectedSize, size)
-}
-
-func TestState_GetCodeHash_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	expectedHash := common.Hash{0x0A, 0x0B, 0x0C}
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {codeHash: expectedHash},
-		},
-	}
-
-	hash, err := state.GetCodeHash(addr)
-	require.NoError(err)
-	require.Equal(expectedHash, hash)
-}
-
-func TestState_HasEmptyStorage_AlwaysReturnsTrue(t *testing.T) {
-	require := require.New(t)
-	state := &State{}
-	empty, err := state.HasEmptyStorage(common.Address{0x01})
-	require.NoError(err)
-	require.True(empty)
-}
-
-func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
-	require := require.New(t)
-
-	update := common.Update{
-		CreatedAccounts: []common.Address{{0x01}, {0x02}},
-		Nonces: []common.NonceUpdate{
-			{Account: common.Address{0x03}, Nonce: common.Nonce{42}},
-			{Account: common.Address{0x04}, Nonce: common.Nonce{84}},
-		},
-		Balances: []common.BalanceUpdate{
-			{Account: common.Address{0x05}, Balance: amount.New(100)},
-			{Account: common.Address{0x06}, Balance: amount.New(200)},
-		},
-		Slots: []common.SlotUpdate{
-			{Account: common.Address{0x07}, Key: common.Key{0x0A}, Value: common.Value{0xFF}},
-			{Account: common.Address{0x08}, Key: common.Key{0x0B}, Value: common.Value{0xEE}},
-		},
-		Codes: []common.CodeUpdate{
-			{Account: common.Address{0x09}, Code: []byte{0xAA, 0xBB}},
-			{Account: common.Address{0x0A}, Code: []byte{0xCC, 0xDD}},
-		},
-	}
-
-	commands := make(chan command, 1)
-	state := &State{
-		accounts: make(map[common.Address]account),
-		storage:  make(map[slotKey]common.Value),
-		codes:    make(map[common.Hash][]byte),
-		commands: commands,
-	}
-
-	_, err := state.Apply(1, update)
-	require.NoError(err)
-
-	// The update is send to the commands channel.
-	command := <-commands
-	require.NotNil(command.update)
-	require.Equal(uint64(1), command.update.block)
-	require.Equal(update, command.update.data)
-
-	// The local maps are updated immediately.
-	for _, address := range update.CreatedAccounts {
-		acc, exists := state.accounts[address]
-		require.True(exists)
-		require.Equal(common.Hash(types.EmptyCodeHash), acc.codeHash)
-		require.Equal(0, acc.codeSize)
-		require.Equal(amount.New(0), acc.balance)
-		require.Equal(common.Nonce{}, acc.nonce)
-	}
-
-	for _, nonceUpdate := range update.Nonces {
-		acc, exists := state.accounts[nonceUpdate.Account]
-		require.True(exists)
-		require.Equal(nonceUpdate.Nonce, acc.nonce)
-	}
-
-	for _, balanceUpdate := range update.Balances {
-		acc, exists := state.accounts[balanceUpdate.Account]
-		require.True(exists)
-		require.Equal(balanceUpdate.Balance, acc.balance)
-	}
-
-	for _, slotUpdate := range update.Slots {
-		value, exists := state.storage[slotKey{slotUpdate.Account, slotUpdate.Key}]
-		require.True(exists)
-		require.Equal(slotUpdate.Value, value)
-	}
-
-	for _, codeUpdate := range update.Codes {
-		acc, exists := state.accounts[codeUpdate.Account]
-		require.True(exists)
-		require.Equal(len(codeUpdate.Code), acc.codeSize)
-		expectedHash := common.Keccak256(codeUpdate.Code)
-		require.Equal(expectedHash, acc.codeHash)
-
-		code, exists := state.codes[expectedHash]
-		require.True(exists)
-		require.Equal(codeUpdate.Code, code)
-	}
-}
-
-func TestState_Apply_DeletesAccounts(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
-	backend.EXPECT().Close().Return(nil)
-
-	address := common.Address{0x01}
-	state, err := NewState(t.TempDir(), backend)
-	require.NoError(err)
-
-	require.False(state.Exists(address))
-
-	_, err = state.Apply(1, common.Update{
-		CreatedAccounts: []common.Address{address},
-	})
-	require.NoError(err)
-
-	require.True(state.Exists(address))
-
-	_, err = state.Apply(2, common.Update{
-		DeletedAccounts: []common.Address{address},
-	})
-	require.NoError(err)
-
-	require.False(state.Exists(address))
-	require.NoError(state.Close())
-}
-
-func TestState_Apply_IsForwardedToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	block := uint64(21)
-	update := common.Update{
-		Nonces: []common.NonceUpdate{
-			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
-		},
-	}
-
-	gomock.InOrder(
-		backend.EXPECT().Apply(block, update),
-		backend.EXPECT().Close(),
-	)
-
-	flatState, err := NewState(t.TempDir(), backend)
-	require.NoError(t, err)
-
-	_, err = flatState.Apply(block, update)
-	require.NoError(t, err)
-
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
-	block := uint64(21)
-	update := common.Update{
-		Nonces: []common.NonceUpdate{
-			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
-		},
-	}
-
-	flatState, err := NewState(t.TempDir(), nil)
-	require.NoError(t, err)
-
-	_, err = flatState.Apply(block, update)
-	require.NoError(t, err)
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		backend := state.NewMockState(ctrl)
-
-		started := false
-		release := make(chan struct{})
-		backendApplyDone := make(chan error)
-
-		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(_, _ any) (<-chan error, error) {
-				started = true
-				<-release
-				return backendApplyDone, nil
-			},
-		)
-
-		backend.EXPECT().Close()
-
-		state, err := NewState(t.TempDir(), backend)
-		require.NoError(t, err)
-
-		applyDone, err := state.Apply(1, common.Update{})
-		require.NoError(t, err)
-		require.NotNil(t, applyDone)
-
-		// Wait until the update blocks in the backend update.
-		close(backendApplyDone)
-		synctest.Wait()
-		require.True(t, started)
-		select {
-		case <-applyDone:
-			t.Errorf("ApplyDone finished before backend update was released")
-		default:
-			// success
-		}
-
-		// Release the backend update and wait for the applyDone to finish.
-		close(release)
-		synctest.Wait()
-
-		select {
-		case <-applyDone:
-			// success
-		default:
-			t.Errorf("ApplyDone did not finish after backend update was released")
-		}
-
-		require.NoError(t, state.Close())
-	})
-}
-
-func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
-	flatState, err := NewState(t.TempDir(), nil)
-	require.NoError(t, err)
-	applyDone, err := flatState.Apply(1, common.Update{})
-	require.NoError(t, err)
-	require.Nil(t, applyDone)
-}
-
-func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-	issue := errors.New("backend apply failed")
-	syncIssue := errors.New("sync channel issue")
-	backendSyncChann := make(chan error, 1)
-	backendSyncChann <- syncIssue
-
-	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_, _ any) (<-chan error, error) {
-			return backendSyncChann, issue
-		},
-	)
-
-	flatState, err := NewState(t.TempDir(), backend)
-	require.NoError(t, err)
-
-	applyDone, err := flatState.Apply(1, common.Update{})
-	require.NoError(t, err)
-	require.NotNil(t, applyDone)
-
-	got := <-applyDone
-	require.ErrorIs(t, got, issue)
-	require.ErrorIs(t, got, syncIssue)
-	errors := flatState.Check()
-	require.ErrorIs(t, errors, issue)
-	require.ErrorIs(t, errors, syncIssue)
-}
-
-func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	hash := common.Hash{1, 2, 3}
-
-	future := future.Immediate(result.Ok(hash))
-	gomock.InOrder(
-		backend.EXPECT().GetCommitment().Return(future),
-		backend.EXPECT().Close(),
-	)
-
-	flatState, err := NewState(t.TempDir(), backend)
-	require.NoError(t, err)
-
-	// The sync-wrapper is redirecting all GetHash calls to GetCommitment. So
-	// we unwrap it here, to target the GetHash function.
-	got, err := state.UnsafeUnwrapSyncedState(flatState).GetHash()
-	require.NoError(t, err)
-	require.Equal(t, hash, got)
-
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_GetCommitment_IsForwardedToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	hash := common.Hash{1, 2, 3}
-	future := future.Immediate(result.Ok(hash))
-
-	gomock.InOrder(
-		backend.EXPECT().GetCommitment().Return(future),
-		backend.EXPECT().Close(),
-	)
-
-	flatState, err := NewState(t.TempDir(), backend)
-	require.NoError(t, err)
-
-	got, err := flatState.GetCommitment().Await().Get()
-	require.NoError(t, err)
-	require.Equal(t, hash, got)
-
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_GetCommitment_MissingBackend_ReturnsZeroHash(t *testing.T) {
-	flatState, err := NewState(t.TempDir(), nil)
-	require.NoError(t, err)
-
-	got, err := flatState.GetCommitment().Await().Get()
-	require.NoError(t, err)
-	require.Equal(t, common.Hash{}, got)
-	require.NoError(t, flatState.Close())
-}
-
-func TestState_Check_DoesNotSync(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	issue := errors.New("test issue")
-
-	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	// Expect the backend check to be called, returning an issue.
-	backend.EXPECT().Check().Return(issue)
-
-	state := &State{
-		backend:  backend,
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-
-	require.ErrorIs(t, state.Check(), issue)
-	select {
-	case <-syncs:
-	default:
-		t.Fatal("syncs should have not been consumed")
-	}
-}
-
-func TestState_Check_IssueReportedByBackendIsForwarded(t *testing.T) {
-	issue := errors.New("test issue")
-
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	state := &State{
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-	state.issues.HandleIssue(issue)
-
-	require.ErrorIs(t, state.Check(), issue)
-}
-
-func TestState_Check_CanHandleMissingBackend(t *testing.T) {
-	state, err := NewState(t.TempDir(), nil)
-	require.NoError(t, err)
-	require.NoError(t, state.Check())
-}
-
-func TestState_Flush_SyncsAndConsultsBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	issue := errors.New("test issue")
-
-	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	// Expect the backend flush to be called, returning an issue.
-	backend.EXPECT().Flush().Return(issue)
-
-	state := &State{
-		file:     filepath.Join(t.TempDir(), "flat.db"),
-		backend:  backend,
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-
-	require.ErrorIs(t, state.Flush(), issue)
-	select {
-	case <-syncs:
-		t.Fatal("syncs should have been consumed")
-	default:
-	}
-}
-
-func TestState_Flush_IssueReportedBySyncIsForwarded(t *testing.T) {
-	issue := errors.New("test issue")
-
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	state := &State{
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-	state.issues.HandleIssue(issue)
-
-	require.ErrorIs(t, state.Flush(), issue)
-}
-
-func TestState_Flush_CanHandleMissingBackend(t *testing.T) {
-	state, err := NewState(t.TempDir(), nil)
-	require.NoError(t, err)
-	require.NoError(t, state.Flush())
-}
-
-func TestState_FlushToDisk_NoWritePermission_ReportsError(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "flat.db")
-	require.NoError(t, os.WriteFile(file, nil, 0o400)) // read-only
-
-	state := &State{file: file}
-	require.ErrorContains(t, state.flushToDisk(), "failed to open flat state file for writing")
-}
-
-func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	issue := errors.New("test issue")
-
-	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	// Signal the background worker to be done.
-	done := make(chan struct{})
-	close(done)
-
-	// Expect the backend close to be called, returning an issue.
-	backend.EXPECT().Close().Return(issue)
-
-	state := &State{
-		file:     filepath.Join(t.TempDir(), "flat.db"),
-		backend:  backend,
-		commands: make(chan command, 1),
-		syncs:    syncs,
-		done:     done,
-	}
-
-	require.ErrorIs(t, state.Close(), issue)
-	select {
-	case <-syncs:
-		t.Fatal("syncs should have been consumed")
-	default:
-	}
-}
-
-func TestState_Close_IssueReportedBySyncIsForwarded(t *testing.T) {
-	issue := errors.New("test issue")
-
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	state := &State{
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-	state.issues.HandleIssue(issue)
-
-	require.ErrorIs(t, state.Close(), issue)
-}
-
-func TestState_GetMemoryFootprint_ListsInternalMaps(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	backendFootprint := common.NewMemoryFootprint(1234)
-	backend.EXPECT().GetMemoryFootprint().Return(backendFootprint)
-
-	state := &State{
-		accounts: map[common.Address]account{
-			{0x01}: {},
-			{0x02}: {},
-		},
-		storage: map[slotKey]common.Value{
-			{common.Address{0x03}, common.Key{0x0A}}: {0xFF},
-			{common.Address{0x04}, common.Key{0x0B}}: {0xEE},
-			{common.Address{0x05}, common.Key{0x0C}}: {0xDD},
-		},
-		codes: map[common.Hash][]byte{
-			{0x0A}: {0xAA, 0xBB},
-		},
-		backend: backend,
-	}
-
-	footprint := state.GetMemoryFootprint()
-	accounts := footprint.GetChild("accounts")
-	require.EqualValues(memoryFootprintOfMap(state.accounts), accounts)
-	storage := footprint.GetChild("storage")
-	require.EqualValues(memoryFootprintOfMap(state.storage), storage)
-	codes := footprint.GetChild("codes")
-	require.EqualValues(memoryFootprintOfMap(state.codes), codes)
-
-	require.Equal(footprint.GetChild("backend"), backendFootprint)
-}
-
-func TestState_Sync_SyncsWithBackgroundWorker(t *testing.T) {
-	commands := make(chan command, 1)
-	syncs := make(chan struct{}, 1)
-
-	state := &State{
-		commands: commands,
-		syncs:    syncs,
-	}
-
-	// Emulate background worker processing the sync command.
-	issue := errors.New("sync issue")
-	go func() {
-		// Wait for the sync command (empty command).
-		command := <-commands
-		require.Empty(t, command)
-		// Signal an error in the worker.
-		state.issues.HandleIssue(issue)
-		// Send the sync result.
-		syncs <- struct{}{}
-	}()
-
-	require.ErrorIs(t, state.sync(), issue)
-}
-
-func TestState_GetArchiveState_ForwardsQueryToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-	archiveState := state.NewMockState(ctrl)
-
-	block := uint64(42)
-	backend.EXPECT().GetArchiveState(block).Return(archiveState, nil)
-
-	flatState := &State{
-		backend: backend,
-	}
-	state, err := flatState.GetArchiveState(block)
-	require.NoError(t, err)
-	require.Equal(t, archiveState, state)
-}
-
-func TestState_GetArchiveBlockHeight_ForwardsQueryToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	height := uint64(100)
-	empty := false
-	backend.EXPECT().GetArchiveBlockHeight().Return(height, empty, nil)
-
-	flatState := &State{
-		backend: backend,
-	}
-	gotHeight, gotEmpty, err := flatState.GetArchiveBlockHeight()
-	require.NoError(t, err)
-	require.Equal(t, height, gotHeight)
-	require.Equal(t, empty, gotEmpty)
-}
-
-func TestState_CreateWitnessProof_ForwardsToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	address := common.Address{0x01}
-	keys := []common.Key{{0x0A}, {0x0B}}
-
-	backend.EXPECT().CreateWitnessProof(address, keys).Return(nil, nil)
-
-	flatState := &State{
-		backend: backend,
-	}
-	_, err := flatState.CreateWitnessProof(address, keys...)
-	require.NoError(t, err)
-}
-
-func TestState_ArchiveFeatures_NotSupportedWithoutBackend(t *testing.T) {
-	flatState := &State{}
-
-	_, err := flatState.GetArchiveState(0)
-	require.ErrorIs(t, err, state.NoArchiveError)
-
-	_, _, err = flatState.GetArchiveBlockHeight()
-	require.ErrorIs(t, err, state.NoArchiveError)
-
-	_, err = flatState.CreateWitnessProof(common.Address{}, common.Key{})
-	require.ErrorIs(t, err, state.NoArchiveError)
-}
-
-func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-
-	// Expect a sync call to the background worker, returning no issue.
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	// Expect the backend export to be called.
-	backend.EXPECT().Export(gomock.Any(), gomock.Any()).Return(common.Hash{0xAA}, nil)
-
-	state := &State{
-		backend:  backend,
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-
-	hash, err := state.Export(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, common.Hash{0xAA}, hash)
-
-	select {
-	case <-syncs:
-		t.Fatal("syncs should have been consumed")
-	default:
-	}
-}
-
-func TestState_Export_IssueReportedBySyncIsForwarded(t *testing.T) {
-	issue := errors.New("test issue")
-
-	syncs := make(chan struct{}, 1)
-	syncs <- struct{}{}
-
-	state := &State{
-		commands: make(chan command, 1),
-		syncs:    syncs,
-	}
-	state.issues.HandleIssue(issue)
-
-	_, err := state.Export(t.Context(), nil)
-	require.ErrorIs(t, err, issue)
-}
-
-func TestState_Export_NotSupportedWithoutBackend(t *testing.T) {
-	flatState := &State{}
-
-	_, err := flatState.Export(t.Context(), nil)
-	require.ErrorIs(t, err, state.ExportNotSupported)
-}
-
-func TestState_StoreAndLoad_NonEmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T) {
-	require := require.New(t)
-	state := &State{
-		accounts: map[common.Address]account{
-			{0x01}: {
-				balance:  amount.New(12345),
-				nonce:    common.Nonce{42},
-				codeSize: 123,
-				codeHash: common.Hash{0x0A},
-			},
-			{0x02}: {
-				balance:  amount.New(54321),
-				nonce:    common.Nonce{24},
-				codeSize: 321,
-				codeHash: common.Hash{0x0B},
-			},
-		},
-		storage: map[slotKey]common.Value{
-			{common.Address{1}, common.Key{1}}: {1},
-			{common.Address{1}, common.Key{2}}: {2},
-			{common.Address{2}, common.Key{3}}: {3},
-		},
-		codes: map[common.Hash][]byte{
-			{0x0A, 0x0B}: {},
-			{0x0B, 0x0C}: {0xDE, 0xAD, 0xBE, 0xEF},
-		},
-	}
-
-	// Store to buffer
-	buf := new(bytes.Buffer)
-	require.NoError(state.store(buf))
-
-	// Load into new state
-	restored := &State{}
-	require.NoError(restored.load(bytes.NewReader(buf.Bytes())))
-
-	// Check roundtrip
-	require.Equal(state.accounts, restored.accounts)
-	require.Equal(state.storage, restored.storage)
-	require.Equal(state.codes, restored.codes)
-}
-
-func TestState_StoreAndLoad_EmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T) {
-	require := require.New(t)
-	state := &State{
-		accounts: map[common.Address]account{},
-		storage:  map[slotKey]common.Value{},
-		codes:    map[common.Hash][]byte{},
-	}
-	buf := new(bytes.Buffer)
-	require.NoError(state.store(buf))
-	restored := &State{}
-	require.NoError(restored.load(bytes.NewReader(buf.Bytes())))
-	require.Empty(restored.accounts)
-	require.Empty(restored.storage)
-	require.Empty(restored.codes)
-}
-
-func TestState_Store_ProducesDeterministicOutput(t *testing.T) {
-	require := require.New(t)
-
-	state := &State{
-		accounts: map[common.Address]account{
-			{1}: {nonce: common.Nonce{3}},
-			{2}: {nonce: common.Nonce{4}},
-		},
-		storage: map[slotKey]common.Value{
-			{common.Address{1}, common.Key{10}}: {100},
-			{common.Address{2}, common.Key{20}}: {200},
-		},
-		codes: map[common.Hash][]byte{
-			{}:  {},
-			{1}: {1, 2, 3},
-		},
-	}
-
-	buf := new(bytes.Buffer)
-	require.NoError(state.store(buf))
-	want := buf.Bytes()
-
-	for range 50 {
-		buf := new(bytes.Buffer)
-		require.NoError(state.store(buf))
-		have := buf.Bytes()
-		require.Equal(want, have)
-	}
-}
-
-func TestState_Store_IoError_IsReported(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-
-	state := &State{
-		accounts: map[common.Address]account{
-			{}: {},
-		},
-		storage: map[slotKey]common.Value{
-			{}: {},
-		},
-		codes: map[common.Hash][]byte{
-			{}: {},
-		},
-	}
-
-	// Counter number of write calls.
-	numWriteCalls := 0
-	counter := NewMock_Writer(ctrl)
-	counter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
-		numWriteCalls++
-		return len(p), nil
-	}).AnyTimes()
-	require.NoError(state.store(counter))
-
-	// Now simulate an error on each write call in turn.
-	issue := errors.New("simulated write error")
-	for i := range numWriteCalls {
-		errorWriter := NewMock_Writer(ctrl)
-		currentCall := 0
-		errorWriter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
-			if currentCall == i {
-				return 0, issue
-			}
-			currentCall++
-			return len(p), nil
-		}).AnyTimes()
-		require.ErrorIs(state.store(errorWriter), issue)
-	}
-}
-
-func TestState_Load_InvalidMagicNumber_ReportsAnIssue(t *testing.T) {
-	require := require.New(t)
-	buf := new(bytes.Buffer)
-	require.NoError(binary.Write(buf, binary.BigEndian, uint32(0xDEADBEEF)))
-	err := (&State{}).load(bytes.NewReader(buf.Bytes()))
-	require.ErrorContains(err, "invalid state magic number")
-}
-
-func TestState_Load_IoError_IsReported(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-
-	state := &State{
-		accounts: map[common.Address]account{
-			{}: {},
-		},
-		storage: map[slotKey]common.Value{
-			{}: {},
-		},
-		codes: map[common.Hash][]byte{
-			{}: {1, 2, 3},
-		},
-	}
-	buf := new(bytes.Buffer)
-	require.NoError(state.store(buf))
-
-	// Counter number of write calls.
-	numReadCalls := 0
-	counter := NewMock_Reader(ctrl)
-	reader := bytes.NewReader(buf.Bytes())
-	counter.EXPECT().Read(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
-		numReadCalls++
-		return reader.Read(p)
-	}).AnyTimes()
-	require.NoError(state.load(counter))
-
-	// Now simulate an error on each read call in turn.
-	issue := errors.New("simulated read error")
-	for i := range numReadCalls {
-		errorReader := NewMock_Reader(ctrl)
-		currentCall := 0
-		reader := bytes.NewReader(buf.Bytes())
-		errorReader.EXPECT().Read(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
-			if currentCall == i {
-				return 0, issue
-			}
-			currentCall++
-			return reader.Read(p)
-		}).AnyTimes()
-		require.ErrorIs(state.load(errorReader), issue)
-	}
-}
-
-// --- issue collector tests ---
-
-func TestIssueCollector_HandleIssue_CollectsIssues(t *testing.T) {
-	require := require.New(t)
-	collector := issueCollector{}
-
-	issueA := errors.New("issue A")
-	issueB := errors.New("issue B")
-	issueC := errors.New("issue C")
-
-	require.Empty(collector.issues)
-	require.Zero(collector.extraIssues)
-
-	collector.HandleIssue(issueA)
-
-	require.Equal([]error{issueA}, collector.issues)
-	require.Zero(collector.extraIssues)
-
-	collector.HandleIssue(issueB)
-
-	require.Equal([]error{issueA, issueB}, collector.issues)
-	require.Zero(collector.extraIssues)
-
-	collector.HandleIssue(issueC)
-
-	require.Equal([]error{issueA, issueB, issueC}, collector.issues)
-	require.Zero(collector.extraIssues)
-}
-
-func TestIssueCollector_HandleIssue_CapsIssuesAtTen(t *testing.T) {
-	require := require.New(t)
-	collector := issueCollector{}
-
-	issue := errors.New("test issue")
-	for i := range 20 {
-		collector.HandleIssue(issue)
-		require.Equal(min(i+1, 10), len(collector.issues))
-		require.Equal(max(0, i-9), collector.extraIssues)
-	}
-}
-
-func TestIssueCollector_HandleIssue_IgnoresNilErrors(t *testing.T) {
-	require := require.New(t)
-	collector := issueCollector{}
-
-	require.Empty(collector.issues)
-	require.Zero(collector.extraIssues)
-
-	collector.HandleIssue(nil)
-
-	require.Empty(collector.issues)
-	require.Zero(collector.extraIssues)
-}
-
-func TestIssueCollector_Collect_ReturnsNilIfThereIsNoIssue(t *testing.T) {
-	collector := issueCollector{}
-	require.Nil(t, collector.Collect())
-}
-
-func TestIssueCollector_Collect_JoinsReportedIssues(t *testing.T) {
-	require := require.New(t)
-	collector := issueCollector{}
-
-	issueA := errors.New("issue A")
-	issueB := errors.New("issue B")
-
-	collector.HandleIssue(issueA)
-	collector.HandleIssue(issueB)
-	err := collector.Collect()
-	require.ErrorIs(err, issueA)
-	require.ErrorIs(err, issueB)
-
-	require.Equal(errors.Join(issueA, issueB), err)
-}
-
-func TestIssueCollector_Collect_AppendsInfoOnTruncatedIssues(t *testing.T) {
-	require := require.New(t)
-	collector := issueCollector{}
-
-	issue := errors.New("test issue")
-	for range 15 {
-		collector.HandleIssue(issue)
-	}
-
-	err := collector.Collect()
-	require.ErrorContains(err, "5 additional errors truncated")
-}
-
-func TestMemoryFootprintOfMap_GivesApproximationBasedOnKeyValueTypes(t *testing.T) {
-
-	int32ToInt64Map := map[int32]int64{
-		1: 10,
-		2: 20,
-	}
-	footprint := memoryFootprintOfMap(int32ToInt64Map)
-	require.EqualValues(t, footprint.Total(), (4+8)*2)
-
-	int16ToByteMap := map[int16]byte{
-		1: 0xAA,
-		2: 0xBB,
-		3: 0xCC,
-	}
-	footprint = memoryFootprintOfMap(int16ToByteMap)
-	require.EqualValues(t, footprint.Total(), (2+1)*3)
-}
-
-// -- Interfaces to generate mock implementations ---
-
-type _Reader interface {
-	io.Reader
-}
-
-type _Writer interface {
-	io.Writer
-}
+// import (
+// 	"bytes"
+// 	"encoding/binary"
+// 	"errors"
+// 	"io"
+// 	"os"
+// 	"path/filepath"
+// 	"testing"
+// 	"testing/synctest"
+
+// 	"github.com/0xsoniclabs/carmen/go/common"
+// 	"github.com/0xsoniclabs/carmen/go/common/amount"
+// 	"github.com/0xsoniclabs/carmen/go/common/future"
+// 	"github.com/0xsoniclabs/carmen/go/common/result"
+// 	"github.com/0xsoniclabs/carmen/go/state"
+// 	"github.com/ethereum/go-ethereum/core/types"
+// 	"github.com/stretchr/testify/require"
+// 	"go.uber.org/mock/gomock"
+// )
+
+// var _ state.State = (*State)(nil)
+
+// func TestWrapFactory_ProducesAStateFactoryWrappingGivenFactory(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	wrapped := state.NewMockState(ctrl)
+// 	wrapped.EXPECT().Close()
+
+// 	params := state.Parameters{
+// 		Directory: t.TempDir(),
+// 		Variant:   "test",
+// 	}
+
+// 	counter := 0
+// 	inner := func(p state.Parameters) (state.State, error) {
+// 		counter++
+// 		require.Equal(t, params, p)
+// 		return wrapped, nil
+// 	}
+
+// 	factory := WrapFactory(inner)
+// 	s, err := factory(params)
+// 	require.NoError(t, err)
+// 	require.Equal(t, 1, counter)
+// 	require.IsType(t, &State{}, state.UnsafeUnwrapSyncedState(s))
+
+// 	require.NoError(t, s.Close())
+// }
+
+// func TestWrapFactory_FailingNestedFactory_ForwardsError(t *testing.T) {
+// 	issues := errors.New("factory failed")
+// 	inner := func(state.Parameters) (state.State, error) {
+// 		return nil, issues
+// 	}
+
+// 	factory := WrapFactory(inner)
+// 	state, err := factory(state.Parameters{})
+// 	require.ErrorIs(t, err, issues)
+// 	require.Nil(t, state)
+// }
+
+// func TestState_CanBeOpenedAndClosed(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	backend.EXPECT().Close().Return(nil)
+
+// 	flatState, err := NewState(t.TempDir(), backend)
+// 	require.NoError(t, err)
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_CanBeOpenedAndClosedWithoutBackend(t *testing.T) {
+// 	flatState, err := NewState(t.TempDir(), nil)
+// 	require.NoError(t, err)
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_NewState_CreatesDataFile(t *testing.T) {
+// 	require := require.New(t)
+// 	dir := t.TempDir()
+// 	state, err := NewState(dir, nil)
+// 	require.NoError(err)
+
+// 	file := filepath.Join(dir, "live", "flat.db")
+// 	require.FileExists(file)
+
+// 	require.NoError(state.Close())
+// 	require.FileExists(file)
+// }
+
+// func TestState_NewState_InvalidPath_ReportsError(t *testing.T) {
+// 	dir := filepath.Join(t.TempDir(), "file.txt")
+// 	require.NoError(t, os.WriteFile(dir, []byte("not a directory"), 0o644))
+
+// 	state, err := NewState(dir, nil)
+// 	require.ErrorContains(t, err, "not a directory")
+// 	require.Nil(t, state)
+// }
+
+// func TestState_NewState_NoPermissionToCreateFile_ReportsError(t *testing.T) {
+// 	dir := t.TempDir()
+// 	liveDir := filepath.Join(dir, "live")
+// 	require.NoError(t, os.MkdirAll(liveDir, 0o700))
+
+// 	require.NoError(t, os.Chmod(liveDir, 0o400)) // < -- read-only
+// 	defer func() {
+// 		require.NoError(t, os.Chmod(liveDir, 0o700))
+// 	}()
+
+// 	state, err := NewState(dir, nil)
+// 	require.ErrorContains(t, err, "permission denied")
+// 	require.Nil(t, state)
+// }
+
+// func TestState_NewState_NoPermissionToReadFile_ReportsError(t *testing.T) {
+// 	dir := t.TempDir()
+// 	file := filepath.Join(dir, "live", "flat.db")
+// 	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
+// 	require.NoError(t, os.WriteFile(file, []byte("data"), 0o000)) // < -- no permissions
+// 	defer func() {
+// 		require.NoError(t, os.Chmod(file, 0o700))
+// 	}()
+// 	state, err := NewState(dir, nil)
+// 	require.ErrorContains(t, err, "failed to open existing flat state")
+// 	require.Nil(t, state)
+// }
+
+// func TestState_NewState_CorruptedFile_ReportsError(t *testing.T) {
+// 	dir := t.TempDir()
+// 	file := filepath.Join(dir, "live", "flat.db")
+// 	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o700))
+// 	require.NoError(t, os.WriteFile(file, []byte("some invalid data"), 0o700))
+// 	state, err := NewState(dir, nil)
+// 	require.ErrorContains(t, err, "failed to load existing flat state")
+// 	require.Nil(t, state)
+// }
+
+// func TestState_StateCanBeClosedAndReopened(t *testing.T) {
+// 	require := require.New(t)
+// 	dir := t.TempDir()
+
+// 	// Create and close state.
+// 	stateA, err := NewState(dir, nil)
+// 	require.NoError(err)
+
+// 	_, err = stateA.Apply(0, common.Update{
+// 		Nonces: []common.NonceUpdate{
+// 			{Account: common.Address{1}, Nonce: common.Nonce{2}},
+// 			{Account: common.Address{3}, Nonce: common.Nonce{4}},
+// 		},
+// 	})
+// 	require.NoError(err)
+
+// 	require.NoError(stateA.Close())
+
+// 	// Reopen state.
+// 	stateB, err := NewState(dir, nil)
+// 	require.NoError(err)
+
+// 	nonce, err := stateB.GetNonce(common.Address{1})
+// 	require.NoError(err)
+// 	require.Equal(common.Nonce{2}, nonce)
+// 	nonce, err = stateB.GetNonce(common.Address{3})
+// 	require.NoError(err)
+// 	require.Equal(common.Nonce{4}, nonce)
+
+// 	require.NoError(stateB.Close())
+// }
+
+// func TestState_Close_IssueDuringCloseIsReported(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	issue := errors.New("backend close failed")
+// 	backend.EXPECT().Close().Return(issue)
+
+// 	flatState, err := NewState(t.TempDir(), backend)
+// 	require.NoError(t, err)
+// 	err = flatState.Close()
+// 	require.ErrorIs(t, err, issue)
+// }
+
+// func TestState_Exists_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			addr: {},
+// 		},
+// 	}
+
+// 	exists, err := state.Exists(addr)
+// 	require.NoError(err)
+// 	require.True(exists)
+// 	exists, err = state.Exists(common.Address{0x03})
+// 	require.NoError(err)
+// 	require.False(exists)
+// }
+
+// func TestState_GetBalance_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	expectedBalance := amount.New(12345)
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			addr: {balance: expectedBalance},
+// 		},
+// 	}
+
+// 	balance, err := state.GetBalance(addr)
+// 	require.NoError(err)
+// 	require.Equal(expectedBalance, balance)
+// }
+
+// func TestState_GetNonce_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	expectedNonce := common.Nonce{42}
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			addr: {nonce: expectedNonce},
+// 		},
+// 	}
+
+// 	nonce, err := state.GetNonce(addr)
+// 	require.NoError(err)
+// 	require.Equal(expectedNonce, nonce)
+// }
+
+// func TestState_GetStorage_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	key := common.Key{0x02}
+// 	expectedValue := common.Value{0xAB, 0xCD}
+// 	state := &State{
+// 		storage: map[slotKey]common.Value{
+// 			{addr, key}: expectedValue,
+// 		},
+// 	}
+
+// 	value, err := state.GetStorage(addr, key)
+// 	require.NoError(err)
+// 	require.Equal(expectedValue, value)
+// }
+
+// func TestState_GetCode_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	codeHash := common.Hash{0x0A, 0x0B}
+// 	expectedCode := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			addr: {codeHash: codeHash},
+// 		},
+// 		codes: map[common.Hash][]byte{
+// 			codeHash: expectedCode,
+// 		},
+// 	}
+
+// 	code, err := state.GetCode(addr)
+// 	require.NoError(err)
+// 	require.Equal(expectedCode, code)
+// }
+
+// func TestState_GetCodeSize_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	expectedSize := 256
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			addr: {codeSize: expectedSize},
+// 		},
+// 	}
+
+// 	size, err := state.GetCodeSize(addr)
+// 	require.NoError(err)
+// 	require.Equal(expectedSize, size)
+// }
+
+// func TestState_GetCodeHash_ReturnsFromLocalMap(t *testing.T) {
+// 	require := require.New(t)
+// 	addr := common.Address{0x01}
+// 	expectedHash := common.Hash{0x0A, 0x0B, 0x0C}
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			addr: {codeHash: expectedHash},
+// 		},
+// 	}
+
+// 	hash, err := state.GetCodeHash(addr)
+// 	require.NoError(err)
+// 	require.Equal(expectedHash, hash)
+// }
+
+// func TestState_HasEmptyStorage_AlwaysReturnsTrue(t *testing.T) {
+// 	require := require.New(t)
+// 	state := &State{}
+// 	empty, err := state.HasEmptyStorage(common.Address{0x01})
+// 	require.NoError(err)
+// 	require.True(empty)
+// }
+
+// func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
+// 	require := require.New(t)
+
+// 	update := common.Update{
+// 		CreatedAccounts: []common.Address{{0x01}, {0x02}},
+// 		Nonces: []common.NonceUpdate{
+// 			{Account: common.Address{0x03}, Nonce: common.Nonce{42}},
+// 			{Account: common.Address{0x04}, Nonce: common.Nonce{84}},
+// 		},
+// 		Balances: []common.BalanceUpdate{
+// 			{Account: common.Address{0x05}, Balance: amount.New(100)},
+// 			{Account: common.Address{0x06}, Balance: amount.New(200)},
+// 		},
+// 		Slots: []common.SlotUpdate{
+// 			{Account: common.Address{0x07}, Key: common.Key{0x0A}, Value: common.Value{0xFF}},
+// 			{Account: common.Address{0x08}, Key: common.Key{0x0B}, Value: common.Value{0xEE}},
+// 		},
+// 		Codes: []common.CodeUpdate{
+// 			{Account: common.Address{0x09}, Code: []byte{0xAA, 0xBB}},
+// 			{Account: common.Address{0x0A}, Code: []byte{0xCC, 0xDD}},
+// 		},
+// 	}
+
+// 	commands := make(chan command, 1)
+// 	state := &State{
+// 		accounts: make(map[common.Address]account),
+// 		storage:  make(map[slotKey]common.Value),
+// 		codes:    make(map[common.Hash][]byte),
+// 		commands: commands,
+// 	}
+
+// 	_, err := state.Apply(1, update)
+// 	require.NoError(err)
+
+// 	// The update is send to the commands channel.
+// 	command := <-commands
+// 	require.NotNil(command.update)
+// 	require.Equal(uint64(1), command.update.block)
+// 	require.Equal(update, command.update.data)
+
+// 	// The local maps are updated immediately.
+// 	for _, address := range update.CreatedAccounts {
+// 		acc, exists := state.accounts[address]
+// 		require.True(exists)
+// 		require.Equal(common.Hash(types.EmptyCodeHash), acc.codeHash)
+// 		require.Equal(0, acc.codeSize)
+// 		require.Equal(amount.New(0), acc.balance)
+// 		require.Equal(common.Nonce{}, acc.nonce)
+// 	}
+
+// 	for _, nonceUpdate := range update.Nonces {
+// 		acc, exists := state.accounts[nonceUpdate.Account]
+// 		require.True(exists)
+// 		require.Equal(nonceUpdate.Nonce, acc.nonce)
+// 	}
+
+// 	for _, balanceUpdate := range update.Balances {
+// 		acc, exists := state.accounts[balanceUpdate.Account]
+// 		require.True(exists)
+// 		require.Equal(balanceUpdate.Balance, acc.balance)
+// 	}
+
+// 	for _, slotUpdate := range update.Slots {
+// 		value, exists := state.storage[slotKey{slotUpdate.Account, slotUpdate.Key}]
+// 		require.True(exists)
+// 		require.Equal(slotUpdate.Value, value)
+// 	}
+
+// 	for _, codeUpdate := range update.Codes {
+// 		acc, exists := state.accounts[codeUpdate.Account]
+// 		require.True(exists)
+// 		require.Equal(len(codeUpdate.Code), acc.codeSize)
+// 		expectedHash := common.Keccak256(codeUpdate.Code)
+// 		require.Equal(expectedHash, acc.codeHash)
+
+// 		code, exists := state.codes[expectedHash]
+// 		require.True(exists)
+// 		require.Equal(codeUpdate.Code, code)
+// 	}
+// }
+
+// func TestState_Apply_DeletesAccounts(t *testing.T) {
+// 	require := require.New(t)
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+// 	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
+// 	backend.EXPECT().Close().Return(nil)
+
+// 	address := common.Address{0x01}
+// 	state, err := NewState(t.TempDir(), backend)
+// 	require.NoError(err)
+
+// 	require.False(state.Exists(address))
+
+// 	_, err = state.Apply(1, common.Update{
+// 		CreatedAccounts: []common.Address{address},
+// 	})
+// 	require.NoError(err)
+
+// 	require.True(state.Exists(address))
+
+// 	_, err = state.Apply(2, common.Update{
+// 		DeletedAccounts: []common.Address{address},
+// 	})
+// 	require.NoError(err)
+
+// 	require.False(state.Exists(address))
+// 	require.NoError(state.Close())
+// }
+
+// func TestState_Apply_IsForwardedToBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	block := uint64(21)
+// 	update := common.Update{
+// 		Nonces: []common.NonceUpdate{
+// 			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
+// 		},
+// 	}
+
+// 	gomock.InOrder(
+// 		backend.EXPECT().Apply(block, update),
+// 		backend.EXPECT().Close(),
+// 	)
+
+// 	flatState, err := NewState(t.TempDir(), backend)
+// 	require.NoError(t, err)
+
+// 	_, err = flatState.Apply(block, update)
+// 	require.NoError(t, err)
+
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
+// 	block := uint64(21)
+// 	update := common.Update{
+// 		Nonces: []common.NonceUpdate{
+// 			{Account: common.Address{0x01}, Nonce: common.Nonce{42}},
+// 		},
+// 	}
+
+// 	flatState, err := NewState(t.TempDir(), nil)
+// 	require.NoError(t, err)
+
+// 	_, err = flatState.Apply(block, update)
+// 	require.NoError(t, err)
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+// 	synctest.Test(t, func(t *testing.T) {
+// 		ctrl := gomock.NewController(t)
+// 		backend := state.NewMockState(ctrl)
+
+// 		started := false
+// 		release := make(chan struct{})
+// 		backendApplyDone := make(chan error)
+
+// 		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+// 			func(_, _ any) (<-chan error, error) {
+// 				started = true
+// 				<-release
+// 				return backendApplyDone, nil
+// 			},
+// 		)
+
+// 		backend.EXPECT().Close()
+
+// 		state, err := NewState(t.TempDir(), backend)
+// 		require.NoError(t, err)
+
+// 		applyDone, err := state.Apply(1, common.Update{})
+// 		require.NoError(t, err)
+// 		require.NotNil(t, applyDone)
+
+// 		// Wait until the update blocks in the backend update.
+// 		close(backendApplyDone)
+// 		synctest.Wait()
+// 		require.True(t, started)
+// 		select {
+// 		case <-applyDone:
+// 			t.Errorf("ApplyDone finished before backend update was released")
+// 		default:
+// 			// success
+// 		}
+
+// 		// Release the backend update and wait for the applyDone to finish.
+// 		close(release)
+// 		synctest.Wait()
+
+// 		select {
+// 		case <-applyDone:
+// 			// success
+// 		default:
+// 			t.Errorf("ApplyDone did not finish after backend update was released")
+// 		}
+
+// 		require.NoError(t, state.Close())
+// 	})
+// }
+
+// func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
+// 	flatState, err := NewState(t.TempDir(), nil)
+// 	require.NoError(t, err)
+// 	applyDone, err := flatState.Apply(1, common.Update{})
+// 	require.NoError(t, err)
+// 	require.Nil(t, applyDone)
+// }
+
+// func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+// 	issue := errors.New("backend apply failed")
+// 	syncIssue := errors.New("sync channel issue")
+// 	backendSyncChann := make(chan error, 1)
+// 	backendSyncChann <- syncIssue
+
+// 	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+// 		func(_, _ any) (<-chan error, error) {
+// 			return backendSyncChann, issue
+// 		},
+// 	)
+
+// 	flatState, err := NewState(t.TempDir(), backend)
+// 	require.NoError(t, err)
+
+// 	applyDone, err := flatState.Apply(1, common.Update{})
+// 	require.NoError(t, err)
+// 	require.NotNil(t, applyDone)
+
+// 	got := <-applyDone
+// 	require.ErrorIs(t, got, issue)
+// 	require.ErrorIs(t, got, syncIssue)
+// 	errors := flatState.Check()
+// 	require.ErrorIs(t, errors, issue)
+// 	require.ErrorIs(t, errors, syncIssue)
+// }
+
+// func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	hash := common.Hash{1, 2, 3}
+
+// 	future := future.Immediate(result.Ok(hash))
+// 	gomock.InOrder(
+// 		backend.EXPECT().GetCommitment().Return(future),
+// 		backend.EXPECT().Close(),
+// 	)
+
+// 	flatState, err := NewState(t.TempDir(), backend)
+// 	require.NoError(t, err)
+
+// 	// The sync-wrapper is redirecting all GetHash calls to GetCommitment. So
+// 	// we unwrap it here, to target the GetHash function.
+// 	got, err := state.UnsafeUnwrapSyncedState(flatState).GetHash()
+// 	require.NoError(t, err)
+// 	require.Equal(t, hash, got)
+
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_GetCommitment_IsForwardedToBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	hash := common.Hash{1, 2, 3}
+// 	future := future.Immediate(result.Ok(hash))
+
+// 	gomock.InOrder(
+// 		backend.EXPECT().GetCommitment().Return(future),
+// 		backend.EXPECT().Close(),
+// 	)
+
+// 	flatState, err := NewState(t.TempDir(), backend)
+// 	require.NoError(t, err)
+
+// 	got, err := flatState.GetCommitment().Await().Get()
+// 	require.NoError(t, err)
+// 	require.Equal(t, hash, got)
+
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_GetCommitment_MissingBackend_ReturnsZeroHash(t *testing.T) {
+// 	flatState, err := NewState(t.TempDir(), nil)
+// 	require.NoError(t, err)
+
+// 	got, err := flatState.GetCommitment().Await().Get()
+// 	require.NoError(t, err)
+// 	require.Equal(t, common.Hash{}, got)
+// 	require.NoError(t, flatState.Close())
+// }
+
+// func TestState_Check_DoesNotSync(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	issue := errors.New("test issue")
+
+// 	// Expect a sync call to the background worker, returning no issue.
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	// Expect the backend check to be called, returning an issue.
+// 	backend.EXPECT().Check().Return(issue)
+
+// 	state := &State{
+// 		backend:  backend,
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+
+// 	require.ErrorIs(t, state.Check(), issue)
+// 	select {
+// 	case <-syncs:
+// 	default:
+// 		t.Fatal("syncs should have not been consumed")
+// 	}
+// }
+
+// func TestState_Check_IssueReportedByBackendIsForwarded(t *testing.T) {
+// 	issue := errors.New("test issue")
+
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	state := &State{
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+// 	state.issues.HandleIssue(issue)
+
+// 	require.ErrorIs(t, state.Check(), issue)
+// }
+
+// func TestState_Check_CanHandleMissingBackend(t *testing.T) {
+// 	state, err := NewState(t.TempDir(), nil)
+// 	require.NoError(t, err)
+// 	require.NoError(t, state.Check())
+// }
+
+// func TestState_Flush_SyncsAndConsultsBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	issue := errors.New("test issue")
+
+// 	// Expect a sync call to the background worker, returning no issue.
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	// Expect the backend flush to be called, returning an issue.
+// 	backend.EXPECT().Flush().Return(issue)
+
+// 	state := &State{
+// 		file:     filepath.Join(t.TempDir(), "flat.db"),
+// 		backend:  backend,
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+
+// 	require.ErrorIs(t, state.Flush(), issue)
+// 	select {
+// 	case <-syncs:
+// 		t.Fatal("syncs should have been consumed")
+// 	default:
+// 	}
+// }
+
+// func TestState_Flush_IssueReportedBySyncIsForwarded(t *testing.T) {
+// 	issue := errors.New("test issue")
+
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	state := &State{
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+// 	state.issues.HandleIssue(issue)
+
+// 	require.ErrorIs(t, state.Flush(), issue)
+// }
+
+// func TestState_Flush_CanHandleMissingBackend(t *testing.T) {
+// 	state, err := NewState(t.TempDir(), nil)
+// 	require.NoError(t, err)
+// 	require.NoError(t, state.Flush())
+// }
+
+// func TestState_FlushToDisk_NoWritePermission_ReportsError(t *testing.T) {
+// 	dir := t.TempDir()
+// 	file := filepath.Join(dir, "flat.db")
+// 	require.NoError(t, os.WriteFile(file, nil, 0o400)) // read-only
+
+// 	state := &State{file: file}
+// 	require.ErrorContains(t, state.flushToDisk(), "failed to open flat state file for writing")
+// }
+
+// func TestState_Close_SyncsAndConsultsBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	issue := errors.New("test issue")
+
+// 	// Expect a sync call to the background worker, returning no issue.
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	// Signal the background worker to be done.
+// 	done := make(chan struct{})
+// 	close(done)
+
+// 	// Expect the backend close to be called, returning an issue.
+// 	backend.EXPECT().Close().Return(issue)
+
+// 	state := &State{
+// 		file:     filepath.Join(t.TempDir(), "flat.db"),
+// 		backend:  backend,
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 		done:     done,
+// 	}
+
+// 	require.ErrorIs(t, state.Close(), issue)
+// 	select {
+// 	case <-syncs:
+// 		t.Fatal("syncs should have been consumed")
+// 	default:
+// 	}
+// }
+
+// func TestState_Close_IssueReportedBySyncIsForwarded(t *testing.T) {
+// 	issue := errors.New("test issue")
+
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	state := &State{
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+// 	state.issues.HandleIssue(issue)
+
+// 	require.ErrorIs(t, state.Close(), issue)
+// }
+
+// func TestState_GetMemoryFootprint_ListsInternalMaps(t *testing.T) {
+// 	require := require.New(t)
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	backendFootprint := common.NewMemoryFootprint(1234)
+// 	backend.EXPECT().GetMemoryFootprint().Return(backendFootprint)
+
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			{0x01}: {},
+// 			{0x02}: {},
+// 		},
+// 		storage: map[slotKey]common.Value{
+// 			{common.Address{0x03}, common.Key{0x0A}}: {0xFF},
+// 			{common.Address{0x04}, common.Key{0x0B}}: {0xEE},
+// 			{common.Address{0x05}, common.Key{0x0C}}: {0xDD},
+// 		},
+// 		codes: map[common.Hash][]byte{
+// 			{0x0A}: {0xAA, 0xBB},
+// 		},
+// 		backend: backend,
+// 	}
+
+// 	footprint := state.GetMemoryFootprint()
+// 	accounts := footprint.GetChild("accounts")
+// 	require.EqualValues(memoryFootprintOfMap(state.accounts), accounts)
+// 	storage := footprint.GetChild("storage")
+// 	require.EqualValues(memoryFootprintOfMap(state.storage), storage)
+// 	codes := footprint.GetChild("codes")
+// 	require.EqualValues(memoryFootprintOfMap(state.codes), codes)
+
+// 	require.Equal(footprint.GetChild("backend"), backendFootprint)
+// }
+
+// func TestState_Sync_SyncsWithBackgroundWorker(t *testing.T) {
+// 	commands := make(chan command, 1)
+// 	syncs := make(chan struct{}, 1)
+
+// 	state := &State{
+// 		commands: commands,
+// 		syncs:    syncs,
+// 	}
+
+// 	// Emulate background worker processing the sync command.
+// 	issue := errors.New("sync issue")
+// 	go func() {
+// 		// Wait for the sync command (empty command).
+// 		command := <-commands
+// 		require.Empty(t, command)
+// 		// Signal an error in the worker.
+// 		state.issues.HandleIssue(issue)
+// 		// Send the sync result.
+// 		syncs <- struct{}{}
+// 	}()
+
+// 	require.ErrorIs(t, state.sync(), issue)
+// }
+
+// func TestState_GetArchiveState_ForwardsQueryToBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+// 	archiveState := state.NewMockState(ctrl)
+
+// 	block := uint64(42)
+// 	backend.EXPECT().GetArchiveState(block).Return(archiveState, nil)
+
+// 	flatState := &State{
+// 		backend: backend,
+// 	}
+// 	state, err := flatState.GetArchiveState(block)
+// 	require.NoError(t, err)
+// 	require.Equal(t, archiveState, state)
+// }
+
+// func TestState_GetArchiveBlockHeight_ForwardsQueryToBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	height := uint64(100)
+// 	empty := false
+// 	backend.EXPECT().GetArchiveBlockHeight().Return(height, empty, nil)
+
+// 	flatState := &State{
+// 		backend: backend,
+// 	}
+// 	gotHeight, gotEmpty, err := flatState.GetArchiveBlockHeight()
+// 	require.NoError(t, err)
+// 	require.Equal(t, height, gotHeight)
+// 	require.Equal(t, empty, gotEmpty)
+// }
+
+// func TestState_CreateWitnessProof_ForwardsToBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	address := common.Address{0x01}
+// 	keys := []common.Key{{0x0A}, {0x0B}}
+
+// 	backend.EXPECT().CreateWitnessProof(address, keys).Return(nil, nil)
+
+// 	flatState := &State{
+// 		backend: backend,
+// 	}
+// 	_, err := flatState.CreateWitnessProof(address, keys...)
+// 	require.NoError(t, err)
+// }
+
+// func TestState_ArchiveFeatures_NotSupportedWithoutBackend(t *testing.T) {
+// 	flatState := &State{}
+
+// 	_, err := flatState.GetArchiveState(0)
+// 	require.ErrorIs(t, err, state.NoArchiveError)
+
+// 	_, _, err = flatState.GetArchiveBlockHeight()
+// 	require.ErrorIs(t, err, state.NoArchiveError)
+
+// 	_, err = flatState.CreateWitnessProof(common.Address{}, common.Key{})
+// 	require.ErrorIs(t, err, state.NoArchiveError)
+// }
+
+// func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	backend := state.NewMockState(ctrl)
+
+// 	// Expect a sync call to the background worker, returning no issue.
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	// Expect the backend export to be called.
+// 	backend.EXPECT().Export(gomock.Any(), gomock.Any()).Return(common.Hash{0xAA}, nil)
+
+// 	state := &State{
+// 		backend:  backend,
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+
+// 	hash, err := state.Export(t.Context(), nil)
+// 	require.NoError(t, err)
+// 	require.Equal(t, common.Hash{0xAA}, hash)
+
+// 	select {
+// 	case <-syncs:
+// 		t.Fatal("syncs should have been consumed")
+// 	default:
+// 	}
+// }
+
+// func TestState_Export_IssueReportedBySyncIsForwarded(t *testing.T) {
+// 	issue := errors.New("test issue")
+
+// 	syncs := make(chan struct{}, 1)
+// 	syncs <- struct{}{}
+
+// 	state := &State{
+// 		commands: make(chan command, 1),
+// 		syncs:    syncs,
+// 	}
+// 	state.issues.HandleIssue(issue)
+
+// 	_, err := state.Export(t.Context(), nil)
+// 	require.ErrorIs(t, err, issue)
+// }
+
+// func TestState_Export_NotSupportedWithoutBackend(t *testing.T) {
+// 	flatState := &State{}
+
+// 	_, err := flatState.Export(t.Context(), nil)
+// 	require.ErrorIs(t, err, state.ExportNotSupported)
+// }
+
+// func TestState_StoreAndLoad_NonEmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T) {
+// 	require := require.New(t)
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			{0x01}: {
+// 				balance:  amount.New(12345),
+// 				nonce:    common.Nonce{42},
+// 				codeSize: 123,
+// 				codeHash: common.Hash{0x0A},
+// 			},
+// 			{0x02}: {
+// 				balance:  amount.New(54321),
+// 				nonce:    common.Nonce{24},
+// 				codeSize: 321,
+// 				codeHash: common.Hash{0x0B},
+// 			},
+// 		},
+// 		storage: map[slotKey]common.Value{
+// 			{common.Address{1}, common.Key{1}}: {1},
+// 			{common.Address{1}, common.Key{2}}: {2},
+// 			{common.Address{2}, common.Key{3}}: {3},
+// 		},
+// 		codes: map[common.Hash][]byte{
+// 			{0x0A, 0x0B}: {},
+// 			{0x0B, 0x0C}: {0xDE, 0xAD, 0xBE, 0xEF},
+// 		},
+// 	}
+
+// 	// Store to buffer
+// 	buf := new(bytes.Buffer)
+// 	require.NoError(state.store(buf))
+
+// 	// Load into new state
+// 	restored := &State{}
+// 	require.NoError(restored.load(bytes.NewReader(buf.Bytes())))
+
+// 	// Check roundtrip
+// 	require.Equal(state.accounts, restored.accounts)
+// 	require.Equal(state.storage, restored.storage)
+// 	require.Equal(state.codes, restored.codes)
+// }
+
+// func TestState_StoreAndLoad_EmptyStateRoundtrip_IsRestoredCorrectly(t *testing.T) {
+// 	require := require.New(t)
+// 	state := &State{
+// 		accounts: map[common.Address]account{},
+// 		storage:  map[slotKey]common.Value{},
+// 		codes:    map[common.Hash][]byte{},
+// 	}
+// 	buf := new(bytes.Buffer)
+// 	require.NoError(state.store(buf))
+// 	restored := &State{}
+// 	require.NoError(restored.load(bytes.NewReader(buf.Bytes())))
+// 	require.Empty(restored.accounts)
+// 	require.Empty(restored.storage)
+// 	require.Empty(restored.codes)
+// }
+
+// func TestState_Store_ProducesDeterministicOutput(t *testing.T) {
+// 	require := require.New(t)
+
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			{1}: {nonce: common.Nonce{3}},
+// 			{2}: {nonce: common.Nonce{4}},
+// 		},
+// 		storage: map[slotKey]common.Value{
+// 			{common.Address{1}, common.Key{10}}: {100},
+// 			{common.Address{2}, common.Key{20}}: {200},
+// 		},
+// 		codes: map[common.Hash][]byte{
+// 			{}:  {},
+// 			{1}: {1, 2, 3},
+// 		},
+// 	}
+
+// 	buf := new(bytes.Buffer)
+// 	require.NoError(state.store(buf))
+// 	want := buf.Bytes()
+
+// 	for range 50 {
+// 		buf := new(bytes.Buffer)
+// 		require.NoError(state.store(buf))
+// 		have := buf.Bytes()
+// 		require.Equal(want, have)
+// 	}
+// }
+
+// func TestState_Store_IoError_IsReported(t *testing.T) {
+// 	require := require.New(t)
+// 	ctrl := gomock.NewController(t)
+
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			{}: {},
+// 		},
+// 		storage: map[slotKey]common.Value{
+// 			{}: {},
+// 		},
+// 		codes: map[common.Hash][]byte{
+// 			{}: {},
+// 		},
+// 	}
+
+// 	// Counter number of write calls.
+// 	numWriteCalls := 0
+// 	counter := NewMock_Writer(ctrl)
+// 	counter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+// 		numWriteCalls++
+// 		return len(p), nil
+// 	}).AnyTimes()
+// 	require.NoError(state.store(counter))
+
+// 	// Now simulate an error on each write call in turn.
+// 	issue := errors.New("simulated write error")
+// 	for i := range numWriteCalls {
+// 		errorWriter := NewMock_Writer(ctrl)
+// 		currentCall := 0
+// 		errorWriter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+// 			if currentCall == i {
+// 				return 0, issue
+// 			}
+// 			currentCall++
+// 			return len(p), nil
+// 		}).AnyTimes()
+// 		require.ErrorIs(state.store(errorWriter), issue)
+// 	}
+// }
+
+// func TestState_Load_InvalidMagicNumber_ReportsAnIssue(t *testing.T) {
+// 	require := require.New(t)
+// 	buf := new(bytes.Buffer)
+// 	require.NoError(binary.Write(buf, binary.BigEndian, uint32(0xDEADBEEF)))
+// 	err := (&State{}).load(bytes.NewReader(buf.Bytes()))
+// 	require.ErrorContains(err, "invalid state magic number")
+// }
+
+// func TestState_Load_IoError_IsReported(t *testing.T) {
+// 	require := require.New(t)
+// 	ctrl := gomock.NewController(t)
+
+// 	state := &State{
+// 		accounts: map[common.Address]account{
+// 			{}: {},
+// 		},
+// 		storage: map[slotKey]common.Value{
+// 			{}: {},
+// 		},
+// 		codes: map[common.Hash][]byte{
+// 			{}: {1, 2, 3},
+// 		},
+// 	}
+// 	buf := new(bytes.Buffer)
+// 	require.NoError(state.store(buf))
+
+// 	// Counter number of write calls.
+// 	numReadCalls := 0
+// 	counter := NewMock_Reader(ctrl)
+// 	reader := bytes.NewReader(buf.Bytes())
+// 	counter.EXPECT().Read(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+// 		numReadCalls++
+// 		return reader.Read(p)
+// 	}).AnyTimes()
+// 	require.NoError(state.load(counter))
+
+// 	// Now simulate an error on each read call in turn.
+// 	issue := errors.New("simulated read error")
+// 	for i := range numReadCalls {
+// 		errorReader := NewMock_Reader(ctrl)
+// 		currentCall := 0
+// 		reader := bytes.NewReader(buf.Bytes())
+// 		errorReader.EXPECT().Read(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
+// 			if currentCall == i {
+// 				return 0, issue
+// 			}
+// 			currentCall++
+// 			return reader.Read(p)
+// 		}).AnyTimes()
+// 		require.ErrorIs(state.load(errorReader), issue)
+// 	}
+// }
+
+// // --- issue collector tests ---
+
+// func TestIssueCollector_HandleIssue_CollectsIssues(t *testing.T) {
+// 	require := require.New(t)
+// 	collector := issueCollector{}
+
+// 	issueA := errors.New("issue A")
+// 	issueB := errors.New("issue B")
+// 	issueC := errors.New("issue C")
+
+// 	require.Empty(collector.issues)
+// 	require.Zero(collector.extraIssues)
+
+// 	collector.HandleIssue(issueA)
+
+// 	require.Equal([]error{issueA}, collector.issues)
+// 	require.Zero(collector.extraIssues)
+
+// 	collector.HandleIssue(issueB)
+
+// 	require.Equal([]error{issueA, issueB}, collector.issues)
+// 	require.Zero(collector.extraIssues)
+
+// 	collector.HandleIssue(issueC)
+
+// 	require.Equal([]error{issueA, issueB, issueC}, collector.issues)
+// 	require.Zero(collector.extraIssues)
+// }
+
+// func TestIssueCollector_HandleIssue_CapsIssuesAtTen(t *testing.T) {
+// 	require := require.New(t)
+// 	collector := issueCollector{}
+
+// 	issue := errors.New("test issue")
+// 	for i := range 20 {
+// 		collector.HandleIssue(issue)
+// 		require.Equal(min(i+1, 10), len(collector.issues))
+// 		require.Equal(max(0, i-9), collector.extraIssues)
+// 	}
+// }
+
+// func TestIssueCollector_HandleIssue_IgnoresNilErrors(t *testing.T) {
+// 	require := require.New(t)
+// 	collector := issueCollector{}
+
+// 	require.Empty(collector.issues)
+// 	require.Zero(collector.extraIssues)
+
+// 	collector.HandleIssue(nil)
+
+// 	require.Empty(collector.issues)
+// 	require.Zero(collector.extraIssues)
+// }
+
+// func TestIssueCollector_Collect_ReturnsNilIfThereIsNoIssue(t *testing.T) {
+// 	collector := issueCollector{}
+// 	require.Nil(t, collector.Collect())
+// }
+
+// func TestIssueCollector_Collect_JoinsReportedIssues(t *testing.T) {
+// 	require := require.New(t)
+// 	collector := issueCollector{}
+
+// 	issueA := errors.New("issue A")
+// 	issueB := errors.New("issue B")
+
+// 	collector.HandleIssue(issueA)
+// 	collector.HandleIssue(issueB)
+// 	err := collector.Collect()
+// 	require.ErrorIs(err, issueA)
+// 	require.ErrorIs(err, issueB)
+
+// 	require.Equal(errors.Join(issueA, issueB), err)
+// }
+
+// func TestIssueCollector_Collect_AppendsInfoOnTruncatedIssues(t *testing.T) {
+// 	require := require.New(t)
+// 	collector := issueCollector{}
+
+// 	issue := errors.New("test issue")
+// 	for range 15 {
+// 		collector.HandleIssue(issue)
+// 	}
+
+// 	err := collector.Collect()
+// 	require.ErrorContains(err, "5 additional errors truncated")
+// }
+
+// func TestMemoryFootprintOfMap_GivesApproximationBasedOnKeyValueTypes(t *testing.T) {
+
+// 	int32ToInt64Map := map[int32]int64{
+// 		1: 10,
+// 		2: 20,
+// 	}
+// 	footprint := memoryFootprintOfMap(int32ToInt64Map)
+// 	require.EqualValues(t, footprint.Total(), (4+8)*2)
+
+// 	int16ToByteMap := map[int16]byte{
+// 		1: 0xAA,
+// 		2: 0xBB,
+// 		3: 0xCC,
+// 	}
+// 	footprint = memoryFootprintOfMap(int16ToByteMap)
+// 	require.EqualValues(t, footprint.Total(), (2+1)*3)
+// }
+
+// // -- Interfaces to generate mock implementations ---
+
+// type _Reader interface {
+// 	io.Reader
+// }
+
+// type _Writer interface {
+// 	io.Writer
+// }

@@ -216,7 +216,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 // The channel signals the completion of any spawned asynchronous operations
 // like the update of the backend.
 // The channel will be nil if the backend state is nil.
-func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
+func (s *State) Apply(block uint64, data common.Update) ([]func(), <-chan error, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
 
@@ -269,7 +269,13 @@ func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 			},
 		}
 	}
-	return done, nil
+	// TODO:
+	return nil, done, nil
+}
+
+func (s *State) RevertLastBlock(blockUndoList []func()) error {
+	// TODO:
+	return nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
@@ -296,7 +302,8 @@ func processCommands(
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
-			backendChan, err := backend.Apply(command.update.block, command.update.data)
+			// TODO:
+			_, backendChan, err := backend.Apply(command.update.block, command.update.data)
 			if command.update.done != nil {
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.

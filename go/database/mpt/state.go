@@ -13,6 +13,7 @@ package mpt
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -48,16 +49,18 @@ type Database interface {
 	GetAccountInfo(rootRef *NodeReference, addr common.Address) (AccountInfo, bool, error)
 
 	// SetAccountInfo sets the input account into the storage under the input root and the address.
-	SetAccountInfo(rootRef *NodeReference, addr common.Address, info AccountInfo) (NodeReference, error)
+	SetAccountInfo(rootRef *NodeReference, addr common.Address, info AccountInfo) (NodeReference, AccountInfoWithStorage, error)
 
 	// GetValue retrieves storage slot for input root, account address, and storage key.
 	GetValue(rootRef *NodeReference, addr common.Address, key common.Key) (common.Value, error)
 
 	// SetValue sets storage slot for input root, account address, and storage key.
-	SetValue(rootRef *NodeReference, addr common.Address, key common.Key, value common.Value) (NodeReference, error)
+	SetValue(rootRef *NodeReference, addr common.Address, key common.Key, value common.Value) (NodeReference, common.Value, error)
 
 	// ClearStorage removes all storage slots for the input address and the root.
-	ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, error)
+	ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, NodeReference, error)
+
+	RestoreStorage(rootRef *NodeReference, addr common.Address, storageRoot NodeReference) (NodeReference, error)
 
 	// HasEmptyStorage returns true if account has empty storage.
 	HasEmptyStorage(rootRef *NodeReference, addr common.Address) (bool, error)
@@ -89,6 +92,11 @@ type Database interface {
 
 	updateHashesFor(ref *NodeReference) (common.Hash, *NodeHashes, error)
 	setHashesFor(root *NodeReference, hashes *NodeHashes) error
+}
+
+type AccountInfoWithStorage struct {
+	Info    AccountInfo
+	Storage Optional[NodeReference]
 }
 
 // LiveState represents a single  Merkle-Patricia-Trie (MPT) view to the Database
@@ -134,6 +142,7 @@ type MptState struct {
 	lock      common.LockFile
 	trie      *LiveTrie
 	codes     *codes
+	undoList  []func()
 }
 
 func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptState, error) {
@@ -146,6 +155,7 @@ func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptSt
 		lock:      lock,
 		trie:      trie,
 		codes:     codes,
+		undoList:  make([]func(), 0),
 	}, nil
 }
 
@@ -205,12 +215,28 @@ func (s *MptState) CreateAccount(address common.Address) (err error) {
 	}
 	if exists {
 		// For existing accounts, only clear the storage, preserve the rest.
-		return s.trie.ClearStorage(address)
+		prevStorageRoot, err := s.trie.ClearStorage(address)
+		if err != nil {
+			return err
+		}
+		s.undoList = append(s.undoList, func() {
+			_ = s.trie.RestoreStorage(address, prevStorageRoot)
+		})
 	}
-	// Create account with hash of empty code.
-	return s.trie.SetAccountInfo(address, AccountInfo{
+	prevAccountInfo, err := s.trie.SetAccountInfo(address, AccountInfo{
 		CodeHash: emptyCodeHash,
 	})
+	if err != nil {
+		return err
+	}
+	s.undoList = append(s.undoList, func() {
+		if !exists {
+			_ = s.DeleteAccount(address)
+		} else {
+			s.trie.SetAccountInfo(address, prevAccountInfo.Info)
+		}
+	})
+	return nil
 }
 
 func (s *MptState) Exists(address common.Address) (bool, error) {
@@ -222,7 +248,12 @@ func (s *MptState) Exists(address common.Address) (bool, error) {
 }
 
 func (s *MptState) DeleteAccount(address common.Address) error {
-	return s.trie.SetAccountInfo(address, AccountInfo{})
+	prevAccountData, err := s.trie.SetAccountInfo(address, AccountInfo{})
+	if err != nil {
+		return err
+	}
+	s.undoAccountInfoWithStorage(address, prevAccountData)
+	return nil
 }
 
 func (s *MptState) GetBalance(address common.Address) (balance amount.Amount, err error) {
@@ -245,7 +276,13 @@ func (s *MptState) SetBalance(address common.Address, balance amount.Amount) (er
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+
+	prevAccountInfoWithStorage, err := s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+	s.undoAccountInfoWithStorage(address, prevAccountInfoWithStorage)
+	return nil
 }
 
 func (s *MptState) GetNonce(address common.Address) (nonce common.Nonce, err error) {
@@ -268,7 +305,13 @@ func (s *MptState) SetNonce(address common.Address, nonce common.Nonce) (err err
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+
+	prevAccountInfoWithStorage, err := s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+	s.undoAccountInfoWithStorage(address, prevAccountInfoWithStorage)
+	return nil
 }
 
 func (s *MptState) GetStorage(address common.Address, key common.Key) (value common.Value, err error) {
@@ -276,12 +319,28 @@ func (s *MptState) GetStorage(address common.Address, key common.Key) (value com
 }
 
 func (s *MptState) SetStorage(address common.Address, key common.Key, value common.Value) error {
-	return s.trie.SetValue(address, key, value)
+	oldValue, err := s.trie.GetValue(address, key)
+	if err != nil {
+		return err
+	}
+	if oldValue == value {
+		return nil
+	}
+
+	oldStorageValue, err := s.trie.SetValue(address, key, value)
+	if err != nil {
+		return err
+	}
+	s.undoList = append(s.undoList, func() {
+		s.trie.SetValue(address, key, oldStorageValue)
+	})
+	return nil
 }
 
 func (s *MptState) HasEmptyStorage(address common.Address) (bool, error) {
 	return s.trie.HasEmptyStorage(address)
 }
+
 func (s *MptState) GetCode(address common.Address) (value []byte, err error) {
 	info, exists, err := s.trie.GetAccountInfo(address)
 	if err != nil {
@@ -315,7 +374,12 @@ func (s *MptState) SetCode(address common.Address, code []byte) (err error) {
 	}
 	codeHash := s.codes.add(code)
 	info.CodeHash = codeHash
-	return s.trie.SetAccountInfo(address, info)
+	prevAccountInfoWithStorage, err := s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+	s.undoAccountInfoWithStorage(address, prevAccountInfoWithStorage)
+	return nil
 }
 
 func (s *MptState) GetCodeHash(address common.Address) (hash common.Hash, err error) {
@@ -340,14 +404,26 @@ func (s *MptState) GetHash() (hash common.Hash, err error) {
 	return hash, err
 }
 
-func (s *MptState) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
+func (s *MptState) Apply(block uint64, update *common.Update) (undoList []func(), archiveUpdateHints common.Releaser, err error) {
+	// TODO:
 	zone := tracy.ZoneBegin("Apply")
 	defer zone.End()
 	if err := update.ApplyTo(s); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	_, hints, err := s.trie.UpdateHashes()
-	return hints, err
+	undoList = s.undoList
+	s.undoList = s.undoList[0:0]
+	return undoList, hints, err
+}
+
+func (s *MptState) RevertLastBlock(undo []func()) error {
+	slices.Reverse(undo)
+	for _, undoFunc := range undo {
+		undoFunc()
+	}
+
+	return nil
 }
 
 func (s *MptState) Visit(mode AccessMode, visitor NodeVisitor) error {
@@ -432,4 +508,13 @@ func EstimatePerNodeMemoryUsage() int {
 		unsafe.Sizeof(shared.Shared[Node]{})
 
 	return maxNodeSize + int(nodeCacheSlotSize)
+}
+
+func (s *MptState) undoAccountInfoWithStorage(address common.Address, prevAccountInfo AccountInfoWithStorage) {
+	s.undoList = append(s.undoList, func() {
+		s.trie.SetAccountInfo(address, prevAccountInfo.Info)
+		if prevStorageRoot := prevAccountInfo.Storage.Get(); prevStorageRoot != nil {
+			s.trie.RestoreStorage(address, *prevStorageRoot)
+		}
+	})
 }

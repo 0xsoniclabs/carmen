@@ -363,21 +363,24 @@ func (s *Forest) GetAccountInfo(rootRef *NodeReference, addr common.Address) (Ac
 	return info, exists, err
 }
 
-func (s *Forest) SetAccountInfo(rootRef *NodeReference, addr common.Address, info AccountInfo) (NodeReference, error) {
+func (s *Forest) SetAccountInfo(rootRef *NodeReference, addr common.Address, info AccountInfo) (NodeReference, AccountInfoWithStorage, error) {
 	root, err := s.getWriteAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
 		s.errors = append(s.errors, err)
-		return NodeReference{}, err
+		return NodeReference{}, AccountInfoWithStorage{}, err
 	}
 	defer root.Release()
 	path := AddressToNibblePath(addr, s)
-	newRoot, _, err := root.Get().SetAccount(s, rootRef, root, addr, path[:], info)
+	newRoot, oldValues, _, err := root.Get().SetAccount(s, rootRef, root, addr, path[:], info)
 	if err != nil {
 		err = fmt.Errorf("failed to update account information for account %v: %w", addr, err)
 		s.errors = append(s.errors, err)
 	}
-	return newRoot, err
+	return newRoot, AccountInfoWithStorage{
+		Info:    *oldValues.AccountInfo.Get(),
+		Storage: oldValues.StorageRoot,
+	}, err
 }
 
 func (s *Forest) GetValue(rootRef *NodeReference, addr common.Address, key common.Key) (common.Value, error) {
@@ -397,21 +400,21 @@ func (s *Forest) GetValue(rootRef *NodeReference, addr common.Address, key commo
 	return value, err
 }
 
-func (s *Forest) SetValue(rootRef *NodeReference, addr common.Address, key common.Key, value common.Value) (NodeReference, error) {
+func (s *Forest) SetValue(rootRef *NodeReference, addr common.Address, key common.Key, value common.Value) (NodeReference, common.Value, error) {
 	root, err := s.getWriteAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
 		s.errors = append(s.errors, err)
-		return NodeReference{}, err
+		return NodeReference{}, common.Value{}, err
 	}
 	defer root.Release()
 	path := AddressToNibblePath(addr, s)
-	newRoot, _, err := root.Get().SetSlot(s, rootRef, root, addr, path[:], key, value)
+	newRoot, oldValues, _, err := root.Get().SetSlot(s, rootRef, root, addr, path[:], key, value)
 	if err != nil {
 		err = fmt.Errorf("failed to update value for %v/%v: %w", addr, key, err)
 		s.errors = append(s.errors, err)
 	}
-	return newRoot, err
+	return newRoot, *oldValues.StorageValue.Get(), err
 }
 
 func (s *Forest) HasEmptyStorage(rootRef *NodeReference, addr common.Address) (isEmpty bool, err error) {
@@ -431,7 +434,24 @@ func (s *Forest) HasEmptyStorage(rootRef *NodeReference, addr common.Address) (i
 	return isEmpty || !exists, err
 }
 
-func (s *Forest) ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, error) {
+func (s *Forest) ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, NodeReference, error) {
+	root, err := s.getWriteAccess(rootRef)
+	if err != nil {
+		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
+		s.errors = append(s.errors, err)
+		return NodeReference{}, NodeReference{}, err
+	}
+	defer root.Release()
+	path := AddressToNibblePath(addr, s)
+	newRoot, oldValues, _, err := root.Get().ClearStorage(s, rootRef, root, addr, path[:])
+	if err != nil {
+		err = fmt.Errorf("failed to clear storage for %v: %w", addr, err)
+		s.errors = append(s.errors, err)
+	}
+	return newRoot, *oldValues.StorageRoot.Get(), err
+}
+
+func (s *Forest) RestoreStorage(rootRef *NodeReference, addr common.Address, storageRoot NodeReference) (NodeReference, error) {
 	root, err := s.getWriteAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
@@ -440,12 +460,14 @@ func (s *Forest) ClearStorage(rootRef *NodeReference, addr common.Address) (Node
 	}
 	defer root.Release()
 	path := AddressToNibblePath(addr, s)
-	newRoot, _, err := root.Get().ClearStorage(s, rootRef, root, addr, path[:])
+	newRoot, _, _, err := root.Get().RestoreStorage(s, rootRef, root, addr, path[:], storageRoot)
 	if err != nil {
-		err = fmt.Errorf("failed to clear storage for %v: %w", addr, err)
+		err = fmt.Errorf("failed to restore storage for %v: %w", addr, err)
 		s.errors = append(s.errors, err)
+		return NodeReference{}, err
 	}
-	return newRoot, err
+	return newRoot, nil
+
 }
 
 func (s *Forest) VisitTrie(rootRef *NodeReference, mode AccessMode, visitor NodeVisitor) error {

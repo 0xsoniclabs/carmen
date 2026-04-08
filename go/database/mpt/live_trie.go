@@ -129,30 +129,39 @@ func (s *LiveTrie) GetAccountInfo(addr common.Address) (AccountInfo, bool, error
 	return s.forest.GetAccountInfo(&s.root, addr)
 }
 
-func (s *LiveTrie) SetAccountInfo(addr common.Address, info AccountInfo) error {
-	newRoot, err := s.forest.SetAccountInfo(&s.root, addr, info)
+func (s *LiveTrie) SetAccountInfo(addr common.Address, info AccountInfo) (AccountInfoWithStorage, error) {
+	newRoot, accountInfoWithStorage, err := s.forest.SetAccountInfo(&s.root, addr, info)
 	if err != nil {
-		return err
+		return AccountInfoWithStorage{}, err
 	}
 	s.root = newRoot
-	return nil
+	return accountInfoWithStorage, nil
 }
 
 func (s *LiveTrie) GetValue(addr common.Address, key common.Key) (common.Value, error) {
 	return s.forest.GetValue(&s.root, addr, key)
 }
 
-func (s *LiveTrie) SetValue(addr common.Address, key common.Key, value common.Value) error {
-	newRoot, err := s.forest.SetValue(&s.root, addr, key, value)
+func (s *LiveTrie) SetValue(addr common.Address, key common.Key, value common.Value) (common.Value, error) {
+	newRoot, oldValue, err := s.forest.SetValue(&s.root, addr, key, value)
 	if err != nil {
-		return err
+		return common.Value{}, err
 	}
 	s.root = newRoot
-	return nil
+	return oldValue, nil
 }
 
-func (s *LiveTrie) ClearStorage(addr common.Address) error {
-	newRoot, err := s.forest.ClearStorage(&s.root, addr)
+func (s *LiveTrie) ClearStorage(addr common.Address) (NodeReference, error) {
+	newRoot, oldStorageRoot, err := s.forest.ClearStorage(&s.root, addr)
+	if err != nil {
+		return NodeReference{}, err
+	}
+	s.root = newRoot
+	return oldStorageRoot, nil
+}
+
+func (s *LiveTrie) RestoreStorage(addr common.Address, storageRoot NodeReference) error {
+	newRoot, err := s.forest.RestoreStorage(&s.root, addr, storageRoot)
 	if err != nil {
 		return err
 	}

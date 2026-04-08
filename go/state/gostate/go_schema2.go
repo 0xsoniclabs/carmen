@@ -274,11 +274,15 @@ func (s *GoSchema2) GetHash() (hash common.Hash, err error) {
 	return hash, nil
 }
 
-func (s *GoSchema2) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
+func (s *GoSchema2) Apply(block uint64, update *common.Update) (blockUndoList []func(), archiveUpdateHints common.Releaser, err error) {
 	if err := update.Normalize(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return nil, update.ApplyTo(s)
+	return nil, nil, update.ApplyTo(s)
+}
+
+func (s *GoSchema2) RevertLastBlock(undoList []func()) error {
+	panic("RevertLastBlock is not implemented for Scheme2")
 }
 
 func (s *GoSchema2) Flush() (lastErr error) {

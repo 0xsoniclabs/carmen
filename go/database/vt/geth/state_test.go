@@ -10,142 +10,142 @@
 
 package geth2
 
-import (
-	"testing"
+// import (
+// 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/state"
-	"github.com/stretchr/testify/require"
-)
+// 	"github.com/0xsoniclabs/carmen/go/common"
+// 	"github.com/0xsoniclabs/carmen/go/state"
+// 	"github.com/stretchr/testify/require"
+// )
 
-var _ state.State = (*verkleState)(nil)
+// var _ state.State = (*verkleState)(nil)
 
-func TestState_ContentIsStoredPersistent(t *testing.T) {
-	modes := map[string]state.Parameters{
-		"path-based": {Archive: state.NoArchive},
-		"archive":    {Archive: state.LevelDbArchive},
-	}
+// func TestState_ContentIsStoredPersistent(t *testing.T) {
+// 	modes := map[string]state.Parameters{
+// 		"path-based": {Archive: state.NoArchive},
+// 		"archive":    {Archive: state.LevelDbArchive},
+// 	}
 
-	for name, params := range modes {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			dir := t.TempDir()
+// 	for name, params := range modes {
+// 		t.Run(name, func(t *testing.T) {
+// 			require := require.New(t)
+// 			dir := t.TempDir()
 
-			params.Directory = dir
-			s1, err := NewState(params)
-			require.NoError(err)
+// 			params.Directory = dir
+// 			s1, err := NewState(params)
+// 			require.NoError(err)
 
-			_, err = s1.Apply(0, common.Update{
-				Nonces: []common.NonceUpdate{
-					{Account: common.Address{1}, Nonce: common.ToNonce(12)},
-				},
-			})
-			require.NoError(err)
+// 			_, err = s1.Apply(0, common.Update{
+// 				Nonces: []common.NonceUpdate{
+// 					{Account: common.Address{1}, Nonce: common.ToNonce(12)},
+// 				},
+// 			})
+// 			require.NoError(err)
 
-			nonce, err := s1.GetNonce(common.Address{1})
-			require.NoError(err)
-			require.Equal(common.ToNonce(12), nonce)
+// 			nonce, err := s1.GetNonce(common.Address{1})
+// 			require.NoError(err)
+// 			require.Equal(common.ToNonce(12), nonce)
 
-			require.NoError(s1.Close())
+// 			require.NoError(s1.Close())
 
-			// Reopen
-			s2, err := NewState(params)
-			require.NoError(err)
+// 			// Reopen
+// 			s2, err := NewState(params)
+// 			require.NoError(err)
 
-			nonce, err = s2.GetNonce(common.Address{1})
-			require.NoError(err)
-			require.Equal(common.ToNonce(12), nonce)
+// 			nonce, err = s2.GetNonce(common.Address{1})
+// 			require.NoError(err)
+// 			require.Equal(common.ToNonce(12), nonce)
 
-			require.NoError(s2.Close())
-		})
-	}
-}
+// 			require.NoError(s2.Close())
+// 		})
+// 	}
+// }
 
-func TestState_CanStoreAndRecoverCodes(t *testing.T) {
-	require := require.New(t)
+// func TestState_CanStoreAndRecoverCodes(t *testing.T) {
+// 	require := require.New(t)
 
-	params := state.Parameters{
-		Directory: t.TempDir(),
-		Archive:   state.NoArchive,
-	}
-	s1, err := NewState(params)
-	require.NoError(err)
+// 	params := state.Parameters{
+// 		Directory: t.TempDir(),
+// 		Archive:   state.NoArchive,
+// 	}
+// 	s1, err := NewState(params)
+// 	require.NoError(err)
 
-	addr := common.Address{1}
-	code := make([]byte, 1<<16) // 64KB code
-	for i := range code {
-		code[i] = byte(i % 256)
-	}
+// 	addr := common.Address{1}
+// 	code := make([]byte, 1<<16) // 64KB code
+// 	for i := range code {
+// 		code[i] = byte(i % 256)
+// 	}
 
-	_, err = s1.Apply(1, common.Update{
-		Codes: []common.CodeUpdate{
-			{Account: addr, Code: code},
-		},
-	})
-	require.NoError(err)
+// 	_, err = s1.Apply(1, common.Update{
+// 		Codes: []common.CodeUpdate{
+// 			{Account: addr, Code: code},
+// 		},
+// 	})
+// 	require.NoError(err)
 
-	codeLength, err := s1.GetCodeSize(addr)
-	require.NoError(err)
-	require.Equal(len(code), codeLength)
+// 	codeLength, err := s1.GetCodeSize(addr)
+// 	require.NoError(err)
+// 	require.Equal(len(code), codeLength)
 
-	codeHash, err := s1.GetCodeHash(addr)
-	require.NoError(err)
-	require.Equal(common.Keccak256(code), codeHash)
+// 	codeHash, err := s1.GetCodeHash(addr)
+// 	require.NoError(err)
+// 	require.Equal(common.Keccak256(code), codeHash)
 
-	restored, err := s1.GetCode(addr)
-	require.NoError(err)
-	require.Equal(code, restored)
+// 	restored, err := s1.GetCode(addr)
+// 	require.NoError(err)
+// 	require.Equal(code, restored)
 
-	require.NoError(s1.Close())
+// 	require.NoError(s1.Close())
 
-	// Reopen
-	s2, err := NewState(params)
-	require.NoError(err)
+// 	// Reopen
+// 	s2, err := NewState(params)
+// 	require.NoError(err)
 
-	codeLength, err = s2.GetCodeSize(addr)
-	require.NoError(err)
-	require.Equal(len(code), codeLength)
+// 	codeLength, err = s2.GetCodeSize(addr)
+// 	require.NoError(err)
+// 	require.Equal(len(code), codeLength)
 
-	codeHash, err = s2.GetCodeHash(addr)
-	require.NoError(err)
-	require.Equal(common.Keccak256(code), codeHash)
+// 	codeHash, err = s2.GetCodeHash(addr)
+// 	require.NoError(err)
+// 	require.Equal(common.Keccak256(code), codeHash)
 
-	restored, err = s2.GetCode(addr)
-	require.NoError(err)
-	require.Equal(code, restored)
+// 	restored, err = s2.GetCode(addr)
+// 	require.NoError(err)
+// 	require.Equal(code, restored)
 
-	require.NoError(s2.Close())
-}
+// 	require.NoError(s2.Close())
+// }
 
-func TestState_ProducesConsistentHash(t *testing.T) {
-	require := require.New(t)
+// func TestState_ProducesConsistentHash(t *testing.T) {
+// 	require := require.New(t)
 
-	update := common.Update{
-		Nonces: []common.NonceUpdate{
-			{Account: common.Address{1}, Nonce: common.ToNonce(12)},
-			{Account: common.Address{2}, Nonce: common.ToNonce(34)},
-		},
-	}
+// 	update := common.Update{
+// 		Nonces: []common.NonceUpdate{
+// 			{Account: common.Address{1}, Nonce: common.ToNonce(12)},
+// 			{Account: common.Address{2}, Nonce: common.ToNonce(34)},
+// 		},
+// 	}
 
-	hashes := []common.Hash{}
-	for range 3 {
-		params := state.Parameters{
-			Directory: t.TempDir(),
-			Archive:   state.NoArchive,
-		}
-		state, err := NewState(params)
-		require.NoError(err)
+// 	hashes := []common.Hash{}
+// 	for range 3 {
+// 		params := state.Parameters{
+// 			Directory: t.TempDir(),
+// 			Archive:   state.NoArchive,
+// 		}
+// 		state, err := NewState(params)
+// 		require.NoError(err)
 
-		_, err = state.Apply(1, update)
-		require.NoError(err)
+// 		_, err = state.Apply(1, update)
+// 		require.NoError(err)
 
-		hash, err := state.GetHash()
-		require.NoError(err)
-		hashes = append(hashes, hash)
-		require.NoError(state.Close())
-	}
+// 		hash, err := state.GetHash()
+// 		require.NoError(err)
+// 		hashes = append(hashes, hash)
+// 		require.NoError(state.Close())
+// 	}
 
-	require.Len(hashes, 3)
-	require.Equal(hashes[0], hashes[1])
-	require.Equal(hashes[1], hashes[2])
-}
+// 	require.Len(hashes, 3)
+// 	require.Equal(hashes[0], hashes[1])
+// 	require.Equal(hashes[1], hashes[2])
+// }

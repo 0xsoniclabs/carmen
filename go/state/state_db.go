@@ -117,6 +117,11 @@ type VmStateDB interface {
 	Check() error
 }
 
+type endBlockResult struct {
+	UndoList []func()
+	ErrorCh  <-chan error
+}
+
 // StateDB serves as the public interface definition of a Carmen StateDB.
 type StateDB interface {
 	VmStateDB
@@ -130,7 +135,10 @@ type StateDB interface {
 	// If the asynchronous operations fail, the error is returned through the channel.
 	// Errors reported by this channel shall also be accumulated and
 	// reported by Check().
-	EndBlock(number uint64) <-chan error
+	EndBlock(number uint64) endBlockResult
+
+	// RevertLastBlock reverts the last block committed state.
+	RevertLastBlock(undoList []func()) error
 
 	BeginEpoch()
 	EndEpoch(number uint64)
@@ -1243,16 +1251,16 @@ func (s *stateDB) BeginBlock() {
 
 // EndBlock commits pending changes into a block and triggers the asynchronous
 // update of the Live and Archive DB.
-func (s *stateDB) EndBlock(block uint64) <-chan error {
+func (s *stateDB) EndBlock(block uint64) endBlockResult {
 	if !s.canApplyChanges {
 		err := fmt.Errorf("unable to process EndBlock event in StateDB without permission to apply changes")
 		s.trackErrors(err)
-		return nil
+		return endBlockResult{}
 	}
 
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
-		return nil
+		return endBlockResult{}
 	}
 
 	update := common.Update{}
@@ -1330,11 +1338,11 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
-		return nil
+		return endBlockResult{}
 	}
 
 	// Send the update to the state.
-	archiveDone, err := s.state.Apply(block, update)
+	blockUndoList, archiveDone, err := s.state.Apply(block, update)
 	var errRelay chan error
 	if archiveDone != nil {
 		// Relay any error from the archive update back to the caller.
@@ -1352,12 +1360,21 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
 		// even if there is an error, we return the channel to allow
 		// the caller to wait for the archive update to finish.
-		return errRelay
+		return endBlockResult{ErrorCh: errRelay}
 	}
 
 	// Reset internal state for next block
 	s.ResetBlockContext()
-	return errRelay
+	return endBlockResult{UndoList: blockUndoList, ErrorCh: errRelay}
+}
+
+func (s *stateDB) RevertLastBlock(undoList []func()) error {
+	err := s.state.RevertLastBlock(undoList)
+	if err != nil {
+		return fmt.Errorf("failed to revert last block: %w", err)
+	}
+	s.resetState(s.state)
+	return nil
 }
 
 func (s *stateDB) BeginEpoch() {
@@ -1569,7 +1586,7 @@ func (l *bulkLoad) apply() {
 		l.errs = append(l.errs, err)
 		return
 	}
-	_, err := l.db.state.Apply(l.block, l.update)
+	_, _, err := l.db.state.Apply(l.block, l.update)
 	l.update = common.Update{}
 	if err != nil {
 		l.errs = append(l.errs, err)
