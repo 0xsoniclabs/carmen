@@ -293,6 +293,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		"subBalance":    subBalanceOp,
 		"createAccount": createAccountOp,
 		"suicide":       suicideOp,
+		"addLog":        addLogOp,
 	}
 
 	operationWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
@@ -474,6 +475,14 @@ func suicideOp(ctx *StateDBContext, args OpArgs) {
 	ctx.state.Suicide(*args.address)
 }
 
+func addLogOp(ctx *StateDBContext, args OpArgs) {
+	ctx.state.AddLog(&common.Log{
+		Address: *args.address,
+		Topics:  []common.Hash{common.Hash(randomByteArrayWithPrefix(ctx.rng, 32, []byte{}))},
+		Data:    randomByteArrayWithPrefix(ctx.rng, 3, []byte{}),
+	})
+}
+
 // backupStateDB creates a partial copy of the stateDB to be used to check transaction revert effects.
 func backupStateDB(s *stateDB) *stateDB {
 	ns := createStateDBWith(s.state, 1, true)
@@ -486,6 +495,7 @@ func backupStateDB(s *stateDB) *stateDB {
 	ns.undo = slices.Clone(s.undo)
 	ns.clearedAccounts = maps.Clone(s.clearedAccounts)
 	ns.canApplyChanges = s.canApplyChanges
+	ns.logsInBlock = s.logsInBlock
 
 	return ns
 }
@@ -503,6 +513,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 			return fmt.Errorf("accounts differ at address %v: got %v", addr, account)
 		}
 	}
+
 	for addr, balance := range actual.balances {
 		value, exists := expected.balances[addr]
 		if exists && reflect.DeepEqual(balance, value) {
@@ -513,6 +524,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 			return fmt.Errorf("balances differ at address %v: got %v", addr, balance)
 		}
 	}
+
 	for addr, nonce := range actual.nonces {
 		value, exists := expected.nonces[addr]
 		if exists && reflect.DeepEqual(nonce, value) {
@@ -527,6 +539,7 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 	if !expected.data.DeepEqual(actual.data) {
 		return fmt.Errorf("data maps differ: expected %v, got %v", expected.data, actual.data)
 	}
+
 	if !reflect.DeepEqual(expected.reincarnation, actual.reincarnation) {
 		return fmt.Errorf("reincarnation maps differ: expected %v, got %v", expected.reincarnation, actual.reincarnation)
 	}
@@ -545,14 +558,20 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 	if !reflect.DeepEqual(expected.clearedAccounts, actual.clearedAccounts) {
 		return fmt.Errorf("clearedAccounts maps differ: expected %v, got %v", expected.clearedAccounts, actual.clearedAccounts)
 	}
+
 	if !reflect.DeepEqual(expected.canApplyChanges, actual.canApplyChanges) {
 		return fmt.Errorf("canApplyChanges differ: expected %v, got %v", expected.canApplyChanges, actual.canApplyChanges)
+	}
+
+	if expected.logsInBlock != actual.logsInBlock {
+		return fmt.Errorf("logsInBlock differ: expected %v, got %v", expected.logsInBlock, actual.logsInBlock)
 	}
 
 	// For the undo, we check function pointers
 	if len(expected.undo) != len(actual.undo) {
 		return fmt.Errorf("undo functions length differ: expected %d, got %d", len(expected.undo), len(actual.undo))
 	}
+
 	for i := range expected.undo {
 		addr1 := reflect.ValueOf(expected.undo[i]).Pointer()
 		addr2 := reflect.ValueOf(actual.undo[i]).Pointer()
@@ -585,6 +604,9 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 	}
 	if actual.transientStorage.Size() > 0 {
 		return fmt.Errorf("transientStorage size mismatch: expected 0, got %d", actual.transientStorage.Size())
+	}
+	if len(actual.writtenSlots) > 0 {
+		return fmt.Errorf("writtenSlots size mismatch: expected 0, got %d", len(actual.writtenSlots))
 	}
 
 	return nil
@@ -630,6 +652,8 @@ func orderedPartitions[T any](input []T) iter.Seq[[][]T] {
 			currentGroup := []T{input[0]}
 
 			for j := 0; j < n-1; j++ {
+				// If the j-th bit of i is set, we start a new group;
+				// otherwise, we continue adding to the current group.
 				if (i>>j)&1 == 1 {
 					result = append(result, currentGroup)
 					currentGroup = []T{input[j+1]}
@@ -669,6 +693,7 @@ func Test_backupStateDB_performPartialStateDBCopy(t *testing.T) {
 	state.undo = []func(){func() {}}
 	state.clearedAccounts[addr] = 1
 	state.canApplyChanges = true
+	state.logsInBlock = 5
 
 	backup := backupStateDB(state)
 
@@ -707,6 +732,8 @@ func Test_checkStateDB_checksStateDBRevertedFieldsAndPostconditions(t *testing.T
 	actual.clearedAccounts[addr] = 1
 	expected.canApplyChanges = true
 	actual.canApplyChanges = true
+	actual.logsInBlock = 5
+	expected.logsInBlock = 5
 	f := func() {}
 	expected.undo = []func(){f}
 	actual.undo = []func(){f}
@@ -774,6 +801,8 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 	s2.clearedAccounts[addr] = 1
 	s1.canApplyChanges = true
 	s2.canApplyChanges = true
+	s1.logsInBlock = 5
+	s2.logsInBlock = 5
 	s1.undo = []func(){f}
 	s2.undo = []func(){f}
 	require.NoError(checkStateDB(t, s1, s2, nil, defaultAddr))
@@ -817,6 +846,11 @@ func Test_checkStateDB_failsOnDifferentStateDB(t *testing.T) {
 	s2.canApplyChanges = false
 	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
 	s2.canApplyChanges = true
+	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
+
+	s2.logsInBlock = 6
+	require.Error(checkStateDB(t, s1, s2, mockState, defaultAddr))
+	s2.logsInBlock = 5
 	require.NoError(checkStateDB(t, s1, s2, mockState, defaultAddr))
 
 	s2.undo = []func(){func() {}}
