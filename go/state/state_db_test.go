@@ -4951,6 +4951,8 @@ func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker_WhenApplyReturnsChanne
 	// simulating the state finishing the update with an error.
 	applyDone <- injectedError
 	close(applyDone)
+	// Wait for the archive error goroutine to register the error in the issue tracker.
+	<-done
 
 	err := db.Check()
 	if !errors.Is(err, injectedError) {
