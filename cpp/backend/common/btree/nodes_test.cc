@@ -226,7 +226,8 @@ struct Tree<0> {
 
 // A factory for leaf-level Trees.
 template <typename... Ints>
-requires(std::same_as<Ints, int>&&...) Tree<0> Node(Ints&&... args) {
+requires(std::same_as<Ints, int> && ...)
+Tree<0> Node(Ints&&... args) {
   return Tree<0>{std::vector<int>{args...}};
 }
 

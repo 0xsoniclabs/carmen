@@ -68,7 +68,9 @@ TEST(TempFile, TheTemporaryFileCanBeRemovedAndRecreatedManually) {
   EXPECT_TRUE(std::filesystem::exists(a.GetPath()));
   std::filesystem::remove(a.GetPath());
   EXPECT_FALSE(std::filesystem::exists(a.GetPath()));
-  { std::fstream out(a.GetPath(), std::ios::out); }
+  {
+    std::fstream out(a.GetPath(), std::ios::out);
+  }
   EXPECT_TRUE(std::filesystem::exists(a.GetPath()));
 }
 
@@ -140,7 +142,9 @@ TEST(TempDir, ContentOfTemporaryDirectoryIsAutomaticallyRemoved) {
     EXPECT_TRUE(std::filesystem::exists(path));
     file = a.GetPath() / "file.dat";
     ASSERT_FALSE(std::filesystem::exists(file));
-    { std::fstream out(file, std::ios::out); }
+    {
+      std::fstream out(file, std::ios::out);
+    }
     EXPECT_TRUE(std::filesystem::exists(file));
   }
   EXPECT_FALSE(std::filesystem::exists(path));
