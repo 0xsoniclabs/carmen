@@ -850,6 +850,49 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
+	for _, config := range initStates() {
+		if config.config.Archive == state.NoArchive {
+			continue // Test is only for archive
+		}
+		if strings.Contains(config.name(), "rust") {
+			continue // https://github.com/0xsoniclabs/sonic-admin/issues/611
+
+		}
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			dir := t.TempDir()
+
+			s, err := config.createState(dir)
+			require.NoError(err)
+			statedb := state.CreateStateDBUsing(s)
+			defer func() {
+				require.NoError(statedb.Close())
+			}()
+
+			statedb.BeginBlock()
+			statedb.BeginTransaction()
+			statedb.AddBalance(address1, amount.New(10))
+			statedb.EndTransaction()
+			archiveChannel := statedb.EndBlock(0)
+
+			if archiveChannel != nil { // If nil, the archive is updated synchronously
+				require.NoError(<-archiveChannel) // Wait for the archive update to complete
+			}
+
+			archiveState, err := statedb.GetArchiveStateDB(0)
+			require.NoError(err)
+			defer archiveState.Release()
+
+			balance := archiveState.GetBalance(address1)
+			require.Equal(amount.New(10), balance)
+
+		})
+
+	}
+}
+
 func toVal(key uint64) common.Value {
 	keyBytes := make([]byte, 32)
 	binary.BigEndian.PutUint64(keyBytes, key)
