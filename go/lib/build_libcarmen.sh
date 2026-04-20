@@ -32,6 +32,6 @@ else
         -v $(pwd):/src \
         -w /src/go/lib \
         --entrypoint=/bin/bash \
-        golang:1.19 \
+        golang:1.25 \
         -c "go install github.com/bazelbuild/bazelisk@v1.15.0 && ln -s /go/bin/bazelisk /go/bin/bazel && apt update && apt install -y clang && ./build_libcarmen.sh"
 fi
