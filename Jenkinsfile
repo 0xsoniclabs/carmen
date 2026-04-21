@@ -20,6 +20,8 @@ pipeline {
         GOMEMLIMIT = '5GiB'
         CC = 'clang-14'
         CXX = 'clang++-14'
+        CXXFLAGS="--gcc-toolchain=--gcc-toolchain=/usr/lib/gcc/x86_64-linux-gnu/12/include"
+        CPLUS_INCLUDE_PATH="/usr/include/c++/12:/usr/include/x86_64-linux-gnu/c++/12"
     }
 
     stages {
