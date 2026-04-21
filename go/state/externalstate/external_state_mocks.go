@@ -270,20 +270,6 @@ func (mr *MockexternalBindingsMockRecorder) OpenDatabase(schema, liveImpl, liveI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDatabase", reflect.TypeOf((*MockexternalBindings)(nil).OpenDatabase), schema, liveImpl, liveImplLen, archiveImpl, archiveImplLen, dir, dirLen, outDatabase)
 }
 
-// ReleaseDatabase mocks base method.
-func (m *MockexternalBindings) ReleaseDatabase(database unsafe.Pointer) C.enum_Result {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReleaseDatabase", database)
-	ret0, _ := ret[0].(C.enum_Result)
-	return ret0
-}
-
-// ReleaseDatabase indicates an expected call of ReleaseDatabase.
-func (mr *MockexternalBindingsMockRecorder) ReleaseDatabase(database any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseDatabase", reflect.TypeOf((*MockexternalBindings)(nil).ReleaseDatabase), database)
-}
-
 // ReleaseMemoryFootprintBuffer mocks base method.
 func (m *MockexternalBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
 	m.ctrl.T.Helper()
