@@ -311,8 +311,8 @@ func TestRestore_RestoreSignalsAllParticipantsToRestoreLastCheckpoint(t *testing
 	}
 
 	ctrl := gomock.NewController(t)
-	p1 := NewMockParticipant(ctrl)
-	p2 := NewMockParticipant(ctrl)
+	p1 := NewMockRestorer(ctrl)
+	p2 := NewMockRestorer(ctrl)
 
 	gomock.InOrder(
 		p1.EXPECT().Restore(checkpoint),
@@ -328,10 +328,10 @@ func TestRestore_RestoreIssuesAreCollectedAndReported(t *testing.T) {
 	dir := t.TempDir()
 
 	ctrl := gomock.NewController(t)
-	p1 := NewMockParticipant(ctrl)
-	p2 := NewMockParticipant(ctrl)
-	p3 := NewMockParticipant(ctrl)
-	p4 := NewMockParticipant(ctrl)
+	p1 := NewMockRestorer(ctrl)
+	p2 := NewMockRestorer(ctrl)
+	p3 := NewMockRestorer(ctrl)
+	p4 := NewMockRestorer(ctrl)
 
 	checkpoint := Checkpoint(1)
 	if err := createCheckpointFile(filepath.Join(dir, "committed"), checkpoint); err != nil {
@@ -360,7 +360,7 @@ func TestRestore_RestoreFailsIfThereIsNoCheckpointData(t *testing.T) {
 	dir := t.TempDir()
 
 	ctrl := gomock.NewController(t)
-	p := NewMockParticipant(ctrl)
+	p := NewMockRestorer(ctrl)
 
 	if err := Restore(dir, p); err == nil {
 		t.Errorf("restoration should have failed, but it did not: %v", err)
