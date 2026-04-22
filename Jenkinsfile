@@ -18,8 +18,10 @@ pipeline {
 
     environment {
         GOMEMLIMIT = '5GiB'
-        CC = 'clang-19'
-        CXX = 'clang++-19'
+        CC = 'clang-14'
+        CXX = 'clang++-14'
+        CXXFLAGS="--gcc-toolchain=--gcc-toolchain=/usr/lib/gcc/x86_64-linux-gnu/12/include"
+        CPLUS_INCLUDE_PATH="/usr/include/c++/12:/usr/include/x86_64-linux-gnu/c++/12"
     }
 
     stages {
@@ -52,7 +54,7 @@ pipeline {
 
                 stage('Check C++ sources formatting') {
                     steps {
-                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format-19 --dry-run -Werror '
+                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format-14 --dry-run -Werror '
                     }
                 }
 
