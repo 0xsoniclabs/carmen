@@ -664,20 +664,26 @@ func TestState_Flush_WriteDirtyCodesOnly(t *testing.T) {
 
 func TestEstimatePerNodeMemoryUsage(t *testing.T) {
 
+	// branch nodes contain 16 node references with heap elements
+	branchNodeSize := unsafe.Sizeof(BranchNode{}) -
+		16*unsafe.Sizeof(NodeReference{}) +
+		16*nodeReferenceSizeInBytes()
+
+	// account nodes contain 1 node reference with a heap element
+	accountNodeSize := unsafe.Sizeof(AccountNode{}) -
+		1*unsafe.Sizeof(NodeReference{}) +
+		1*nodeReferenceSizeInBytes()
+
+	// extension nodes contain 1 node reference
+	extensionNodeSize := unsafe.Sizeof(ExtensionNode{}) -
+		1*unsafe.Sizeof(NodeReference{}) +
+		1*nodeReferenceSizeInBytes()
+
+	// value nodes contain 0 node references
+	valueNodeSize := unsafe.Sizeof(ValueNode{})
+
 	// Use the size of the largest node
-	var maxNodeSize uintptr
-	if cur := unsafe.Sizeof(BranchNode{}); cur > maxNodeSize {
-		maxNodeSize = cur
-	}
-	if cur := unsafe.Sizeof(AccountNode{}); cur > maxNodeSize {
-		maxNodeSize = cur
-	}
-	if cur := unsafe.Sizeof(ExtensionNode{}); cur > maxNodeSize {
-		maxNodeSize = cur
-	}
-	if cur := unsafe.Sizeof(ValueNode{}); cur > maxNodeSize {
-		maxNodeSize = cur
-	}
+	maxNodeSize := max(branchNodeSize, accountNodeSize, extensionNodeSize, valueNodeSize)
 
 	ownerSize := unsafe.Sizeof(nodeOwner{})
 	indexEntrySize := unsafe.Sizeof(NodeId(0)) + unsafe.Sizeof(ownerPosition(0))

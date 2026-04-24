@@ -13,6 +13,7 @@ package shadow
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
@@ -52,7 +53,7 @@ func (s *shadowStock[I, V]) Get(index I) (V, error) {
 	if errA != nil || errB != nil {
 		return a, errors.Join(errA, errB)
 	}
-	if a != b {
+	if !reflect.DeepEqual(a, b) {
 		fmt.Printf("Retrieved for index %v:\nwant: %v\n got: %v\n", index, b, a)
 		panic("failed")
 	}

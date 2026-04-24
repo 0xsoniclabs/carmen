@@ -37,7 +37,7 @@ func TestNodeCache_ElementsCanBeStoredAndRetrieved(t *testing.T) {
 	if got, found := cache.Get(&ref); !found || got != node {
 		t.Errorf("failed to retrieve element for %v, found %t, want %p, got %p", ref, found, node, got)
 	}
-	if ref.tag == 0 {
+	if ref.cacheHint.tag.Load() == 0 {
 		t.Errorf("reference has not been tagged during lookup")
 	}
 
