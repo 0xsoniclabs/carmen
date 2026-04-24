@@ -419,10 +419,9 @@ func (s *MptState) setHashes(hashes *NodeHashes) error {
 // sizes defined by the number of stored nodes.
 func EstimatePerNodeMemoryUsage() int {
 
-	// The largest node is the BranchNode with ~1072 bytes.
-	maxNodeSize := unsafe.Sizeof(BranchNode{}) -
-		16*unsafe.Sizeof(NodeReference{}) +
-		16*nodeReferenceSizeInBytes()
+	// The largest node is the BranchNode with ~1072 bytes. We round this up
+	// to 1152 assuming some extra allocation overhead and padding.
+	maxNodeSize := 1024 + 128
 
 	// Additionally, every node in the node cache needs a owner slot
 	// and a NodeID/ownerPosition entry pair in the index of the cache.
