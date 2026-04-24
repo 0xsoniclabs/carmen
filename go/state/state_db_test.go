@@ -4985,6 +4985,8 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 	// simulating the state finishing the update with an error.
 	applyDone <- injectedError2
 	close(applyDone)
+	// Wait for the archive error goroutine to register the error in the issue tracker.
+	<-done
 
 	err := db.Check()
 	if !errors.Is(err, injectedError1) || !errors.Is(err, injectedError2) {
