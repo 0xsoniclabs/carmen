@@ -316,7 +316,7 @@ func (h ethHasher) updateHashesInternal(
 					// flags in parent nodes may not be valid even for child nodes with
 					// up-to-date hashes. Thus, whether the nodes is embedded or not
 					// needs to be computed for all child nodes.
-					if res, e := h.isEmbedded(handle.Get(), manager); err != nil {
+					if res, e := h.isEmbedded(handle.Get(), manager); e != nil {
 						cur.handle.Release()
 						err = e
 						break
@@ -366,7 +366,7 @@ func (h ethHasher) updateHashesInternal(
 			}
 
 			// Test whether this node is to be embedded.
-			if res, e := h.isEmbedded(cur.handle.Get(), manager); err != nil {
+			if res, e := h.isEmbedded(cur.handle.Get(), manager); e != nil {
 				cur.handle.Release()
 				err = e
 				break
