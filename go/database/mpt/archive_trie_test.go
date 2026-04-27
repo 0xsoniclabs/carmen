@@ -2001,7 +2001,8 @@ func TestArchiveTrie_DirectlyStoredRootsCanBeRestored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load roots: %v", err)
 	}
-	if !slices.Equal(roots, restored.roots) {
+
+	if !reflect.DeepEqual(roots, restored.roots) {
 		t.Errorf("failed to restore roots, wanted %v, got %v", roots, restored.roots)
 	}
 }

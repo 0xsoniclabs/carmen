@@ -30,15 +30,16 @@ import (
 // instance. Mixing references to nodes in different caches can lead to
 // failures and corrupted content.
 type NodeReference struct {
-	id  NodeId // the ID of the referenced node
-	pos uint32 // the position of the node within the cache
-	tag uint64 // a tag used to invalidate references on cache changes
+	id        NodeId // the ID of the referenced node
+	cacheHint *cacheHints
 }
 
 // NewNodeReference creates a new node reference pointing to the addressed
 // Node.
 func NewNodeReference(id NodeId) NodeReference {
-	return NodeReference{id: id, pos: uint32(unknownPosition)}
+	res := NodeReference{id: id, cacheHint: &cacheHints{}}
+	res.cacheHint.pos.Store(uint32(unknownPosition))
+	return res
 }
 
 func (r *NodeReference) Id() NodeId {
@@ -47,6 +48,41 @@ func (r *NodeReference) Id() NodeId {
 
 func (r *NodeReference) String() string {
 	return r.id.String()
+}
+
+// nodeReferenceSizeInBytes returns the size of a NodeReference instance in
+// bytes. This covers the reference itself plus extra data retained on the heap.
+func nodeReferenceSizeInBytes() uintptr {
+	return unsafe.Sizeof(NodeReference{}) + unsafe.Sizeof(cacheHints{})
+}
+
+type cacheHints struct {
+	pos atomic.Uint32 // the position of the node within the cache
+	tag atomic.Uint64 // a tag used to invalidate references on cache changes
+}
+
+func (r *NodeReference) getCacheHints() (pos uint32, tag uint64) {
+	pos = uint32(unknownPosition)
+	if r.cacheHint != nil {
+		pos = r.cacheHint.pos.Load()
+		tag = r.cacheHint.tag.Load()
+	}
+	return pos, tag
+}
+
+func (r *NodeReference) getCachedOwnerPosition() ownerPosition {
+	pos := unknownPosition
+	if r.cacheHint != nil {
+		pos = ownerPosition(r.cacheHint.pos.Load())
+	}
+	return pos
+}
+
+func (r *NodeReference) updateCacheHints(pos uint32, tag uint64) {
+	if r.cacheHint != nil {
+		r.cacheHint.pos.Store(pos)
+		r.cacheHint.tag.Store(tag)
+	}
 }
 
 // NodeCache is managing the life cycle of nodes in memory and limits the
@@ -128,8 +164,7 @@ func (c *nodeCache) Get(r *NodeReference) (*shared.Shared[Node], bool) {
 	// referenced node got evicted, an additional tag is stored. This tag is
 	// incremented every time an owner is recycled, allowing references to
 	// identify modifications.
-	pos := atomic.LoadUint32(&r.pos)
-	tag := atomic.LoadUint64(&r.tag)
+	pos, tag := r.getCacheHints()
 	for {
 		// Resolve the owner position if needed.
 		if pos >= uint32(len(c.owners)) {
@@ -141,8 +176,7 @@ func (c *nodeCache) Get(r *NodeReference) (*shared.Shared[Node], bool) {
 			}
 			pos = uint32(position)
 			tag = c.owners[pos].tag.Load()
-			atomic.StoreUint32(&r.pos, pos)
-			atomic.StoreUint64(&r.tag, tag)
+			r.updateCacheHints(pos, tag)
 			c.mutex.Unlock()
 		}
 		// Fetch the owner and check the tag.
@@ -173,8 +207,7 @@ func (c *nodeCache) GetOrSet(
 	if pos, found := c.index[ref.id]; found {
 		current := c.owners[pos].Node()
 		c.mutex.Unlock()
-		atomic.StoreUint32(&ref.pos, uint32(pos))
-		atomic.StoreUint64(&ref.tag, c.owners[pos].tag.Load())
+		ref.updateCacheHints(uint32(pos), c.owners[pos].tag.Load())
 		return current, true, NodeId(0), nil, false
 	}
 
@@ -215,8 +248,7 @@ func (c *nodeCache) GetOrSet(
 
 	c.index[ref.Id()] = pos
 	c.mutex.Unlock()
-	atomic.StoreUint32(&ref.pos, uint32(pos))
-	atomic.StoreUint64(&ref.tag, stable)
+	ref.updateCacheHints(uint32(pos), stable)
 	return node, false, evictedId, evictedNode, evicted
 }
 
@@ -224,7 +256,7 @@ func (c *nodeCache) Touch(r *NodeReference) {
 	// During a touch we need to update the double-linked list
 	// formed by owners such that the referenced node is at the
 	// head position.
-	pos := ownerPosition(atomic.LoadUint32(&r.pos))
+	pos := r.getCachedOwnerPosition()
 	if uint32(pos) >= uint32(len(c.owners)) {
 		// In this reference does not point to a valid owner; the
 		// reference is not extra resolved to perform a touch, and
@@ -254,7 +286,7 @@ func (c *nodeCache) Release(r *NodeReference) {
 	// During a release we need to update the double-linked list
 	// formed by owners such that the referenced node is at the
 	// tail position.
-	pos := ownerPosition(atomic.LoadUint32(&r.pos))
+	pos := r.getCachedOwnerPosition()
 	if uint32(pos) >= uint32(len(c.owners)) {
 		// This reference does not point to a valid owner; the
 		// reference is not extra resolved to perform a release, and

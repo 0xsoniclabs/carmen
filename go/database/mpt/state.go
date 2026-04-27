@@ -419,10 +419,9 @@ func (s *MptState) setHashes(hashes *NodeHashes) error {
 // sizes defined by the number of stored nodes.
 func EstimatePerNodeMemoryUsage() int {
 
-	// The largest node is the BranchNode with ~944 bytes, which is
-	// likely allocated into 1 KB memory slots. Thus, a memory usage
-	// of 1 KB is used for the notes
-	maxNodeSize := 1 << 10
+	// The largest node is the BranchNode with ~1072 bytes. We round this up
+	// to 1152 assuming some extra allocation overhead and padding.
+	maxNodeSize := 1024 + 128
 
 	// Additionally, every node in the node cache needs a owner slot
 	// and a NodeID/ownerPosition entry pair in the index of the cache.
@@ -431,5 +430,5 @@ func EstimatePerNodeMemoryUsage() int {
 		unsafe.Sizeof(ownerPosition(0)) +
 		unsafe.Sizeof(shared.Shared[Node]{})
 
-	return maxNodeSize + int(nodeCacheSlotSize)
+	return int(maxNodeSize) + int(nodeCacheSlotSize)
 }
