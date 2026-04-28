@@ -15,6 +15,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 
 	"testing"
 )
@@ -34,7 +35,7 @@ func BenchmarkFlushGoState(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer state.Close()
+	defer require.NoError(b, state.Close())
 
 	for n := uint64(0); n < uint64(b.N); n++ {
 		update := common.Update{}

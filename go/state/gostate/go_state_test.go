@@ -88,11 +88,12 @@ func initGoStates() []namedStateConfig {
 func TestMissingKeys(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
+			require := require.New(t)
 			state, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(state.Close())
 
 			accountState, err := state.Exists(address1)
 			if err != nil || accountState != false {
@@ -129,7 +130,7 @@ func TestBasicOperations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(t, state.Close())
 
 			// fill-in values
 			_, err = state.Apply(12, common.Update{
@@ -198,7 +199,7 @@ func TestDeletingAccounts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(t, state.Close())
 
 			// fill-in values
 			update := common.Update{
@@ -237,7 +238,7 @@ func TestMoreInserts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(t, state.Close())
 
 			update := common.Update{
 				// create accounts since setting values to non-existing accounts may be ignored
@@ -293,7 +294,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(t, state.Close())
 
 			code1 := []byte{1, 2, 3}
 
@@ -359,6 +360,7 @@ func TestHashing(t *testing.T) {
 	var hashes = make([][]common.Hash, len(states))
 	for _, config := range states {
 		t.Run(config.name(), func(t *testing.T) {
+			require := require.New(t)
 			if config.config.Schema == 0 {
 				t.Skipf("scheme %d does not support hashing", config.config.Schema)
 			}
@@ -367,20 +369,22 @@ func TestHashing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %v", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(state.Close())
 
 			initialHash, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
-			state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+			_, err = state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+			require.NoError(err)
 			hash1, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
-			state.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
+			_, err = state.Apply(2, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}})
+			require.NoError(err)
 			hash2, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -389,7 +393,8 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+			_, err = state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+			require.NoError(err)
 			hash3, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -402,7 +407,8 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			state.Apply(4, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
+			_, err = state.Apply(4, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34, 0x56, 0x78}}}})
+			require.NoError(err)
 			hash4, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -513,7 +519,7 @@ func TestGetMemoryFootprint(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer state.Close()
+			defer require.NoError(t, state.Close())
 
 			memoryFootprint := state.GetMemoryFootprint()
 			str := memoryFootprint.ToString("state")
@@ -564,7 +570,7 @@ func TestGoState_FlushFlushesLiveDbAndArchive(t *testing.T) {
 	archive.EXPECT().Flush()
 
 	state := newGoState(live, archive, nil)
-	state.Flush()
+	require.NoError(t, state.Flush())
 }
 
 func TestGoState_CloseClosesLiveDbAndArchive(t *testing.T) {
@@ -582,7 +588,7 @@ func TestGoState_CloseClosesLiveDbAndArchive(t *testing.T) {
 	)
 
 	state := newGoState(live, archive, nil)
-	state.Close()
+	require.NoError(t, state.Close())
 }
 
 func TestStateDB_AddBlock_Errors_Propagated_MultipleStateInstances(t *testing.T) {
@@ -907,7 +913,7 @@ func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 		archiveDB.EXPECT().Close()
 
 		db := newGoState(liveDB, archiveDB, nil)
-		defer db.Close()
+		defer require.NoError(t, db.Close())
 
 		// Send an update to the archive writer goroutine.
 		_, err := db.Apply(1, common.Update{})

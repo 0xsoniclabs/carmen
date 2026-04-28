@@ -155,7 +155,11 @@ func Export(ctx context.Context, logger *Log, directory string, out io.Writer) e
 	if err != nil {
 		return fmt.Errorf("failed to open LiveDB: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("failed to close LiveDB: %v", err)
+		}
+	}()
 
 	_, err = ExportLive(ctx, logger, &exportableLiveTrie{db: db, directory: directory}, out)
 	return err
@@ -178,7 +182,11 @@ func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, 
 		return err
 	}
 
-	defer archive.Close()
+	defer func() {
+		if err := archive.Close(); err != nil {
+			fmt.Printf("failed to close ArchiveTrie: %v", err)
+		}
+	}()
 	_, err = ExportLive(ctx, logger, exportableArchiveTrie{trie: archive, block: block}, out)
 	return err
 }
@@ -522,7 +530,11 @@ func checkEmptyDirectory(directory string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open directory %s: %w", directory, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Printf("failed to close directory %s: %v", directory, err)
+		}
+	}()
 	state, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to open file information for %s: %w", directory, err)

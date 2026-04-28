@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"go.uber.org/mock/gomock"
@@ -936,6 +937,7 @@ func TestLiveTrie_VerificationOfFreshArchivePasses(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
 			dir := t.TempDir()
+			require := require.New(t)
 			trie, err := OpenFileLiveTrie(dir, config, NodeCacheConfig{Capacity: 1024})
 			if err != nil {
 				t.Fatalf("failed to create empty trie, err %v", err)
@@ -946,14 +948,14 @@ func TestLiveTrie_VerificationOfFreshArchivePasses(t *testing.T) {
 			trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2), CodeHash: emptyCodeHash})
 			trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3), CodeHash: emptyCodeHash})
 
-			trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1})
+			require.NoError(trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1}))
 
-			trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1})
+			require.NoError(trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1}))
+			require.NoError(trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1}))
 
-			trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1})
+			require.NoError(trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1}))
+			require.NoError(trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1}))
+			require.NoError(trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1}))
 
 			// Delete some data.
 			trie.SetAccountInfo(common.Address{2}, AccountInfo{})

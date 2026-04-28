@@ -134,7 +134,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 					t.Fatalf("failed to fetch block %d from archive: %v", expectation.block, err)
 				}
 				defer func() {
-					if block.Close(); err != nil {
+					if err := block.Close(); err != nil {
 						t.Errorf("failed to close block %d: %v", expectation.block, err)
 					}
 				}()

@@ -3985,7 +3985,7 @@ func TestStateDB_BulkLoadReachesState(t *testing.T) {
 	load.SetState(address1, key1, val1)
 	load.SetCode(address1, code)
 
-	load.Close()
+	require.NoError(t, load.Close())
 }
 
 func TestStateDB_BulkLoadApplyDetectsInconsistencies(t *testing.T) {

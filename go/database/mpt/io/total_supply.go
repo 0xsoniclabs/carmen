@@ -13,6 +13,7 @@ package io
 import (
 	"context"
 	"fmt"
+
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
@@ -33,7 +34,11 @@ func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string
 	if err != nil {
 		return fmt.Errorf("failed to open LiveDB: %v", err)
 	}
-	defer mptState.Close()
+	defer func() {
+		if err := mptState.Close(); err != nil {
+			fmt.Printf("failed to close LiveDB: %v", err)
+		}
+	}()
 
 	hash, err := mptState.GetHash()
 	if err != nil {
@@ -77,7 +82,11 @@ func CalculateArchiveTotalSupply(ctx context.Context, logger *Log, directory str
 	if err != nil {
 		return err
 	}
-	defer archive.Close()
+	defer func() {
+		if err := archive.Close(); err != nil {
+			fmt.Printf("failed to close ArchiveTrie: %v", err)
+		}
+	}()
 
 	hash, err := archive.GetHash(block)
 	if err != nil {

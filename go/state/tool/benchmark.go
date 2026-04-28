@@ -169,7 +169,7 @@ func runBenchmark(
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			_ = pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 			fmt.Printf("signal: interrupt")
 			os.Exit(1)
 		}
@@ -318,7 +318,7 @@ func runBenchmarkState(
 // GetDirectorySize computes the size of all files in the given directory in bytes.
 func getDirectorySize(directory string) int64 {
 	var sum int64 = 0
-	filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
+	_ = filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}

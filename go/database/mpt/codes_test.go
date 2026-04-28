@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -47,6 +48,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 			return file //< passing a file instead of a directory
 		},
 		"missing directory permissions": func(t *testing.T) string {
+			require := require.New(t)
 			dir := t.TempDir()
 			stat, err := os.Stat(dir)
 			if err != nil {
@@ -56,11 +58,12 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change directory permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(dir, stat.Mode())
+				require.NoError(os.Chmod(dir, stat.Mode()))
 			})
 			return dir
 		},
 		"missing permissions to create code file": func(t *testing.T) string {
+			require := require.New(t)
 			dir := t.TempDir()
 			// the code directory must exist to reach the code file creation
 			if err := os.MkdirAll(filepath.Join(dir, fileNameCodesCheckpointDirectory), 0700); err != nil {
@@ -74,11 +77,12 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change directory permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(dir, stat.Mode())
+				require.NoError(os.Chmod(dir, stat.Mode()))
 			})
 			return dir
 		},
 		"missing permissions to read code file": func(t *testing.T) string {
+			require := require.New(t)
 			dir := t.TempDir()
 			file := filepath.Join(dir, fileNameCodes)
 			if err := os.WriteFile(file, []byte{}, 0600); err != nil {
@@ -88,11 +92,12 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change file permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(file, 0600)
+				require.NoError(os.Chmod(file, 0600))
 			})
 			return dir
 		},
 		"missing permissions to read checkpoint data": func(t *testing.T) string {
+			require := require.New(t)
 			dir := t.TempDir()
 			nested := filepath.Join(dir, fileNameCodesCheckpointDirectory)
 			if err := os.MkdirAll(nested, 0700); err != nil {
@@ -106,7 +111,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change file permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(file, 0600)
+				require.NoError(os.Chmod(file, 0600))
 			})
 			return dir
 		},
@@ -349,6 +354,7 @@ func TestCodes_Prepare_CheckpointIsIncremental(t *testing.T) {
 }
 
 func TestCodes_Prepare_FailsIfFlushFails(t *testing.T) {
+	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
@@ -356,8 +362,8 @@ func TestCodes_Prepare_FailsIfFlushFails(t *testing.T) {
 
 	codes.add([]byte("code1"))
 
-	os.Chmod(codes.file, 0400) // make the file read-only
-	defer os.Chmod(codes.file, 0600)
+	require.NoError(os.Chmod(codes.file, 0400)) // make the file read-only
+	defer require.NoError(os.Chmod(codes.file, 0600))
 
 	cp1 := checkpoint.Checkpoint(1)
 	if err := codes.Prepare(cp1); err == nil {
@@ -379,7 +385,7 @@ func TestCodes_Commit_HandlesIoIssues(t *testing.T) {
 				return err
 			}
 			t.Cleanup(func() {
-				os.Chmod(subDir, 0700)
+				require.NoError(t, os.Chmod(subDir, 0700))
 			})
 			return nil
 		},
@@ -858,7 +864,7 @@ func TestCodes_readCodesAndSize_PermissionErrorsAreDetected(t *testing.T) {
 	if err := os.Chmod(dir, 0000); err != nil {
 		t.Fatalf("failed to change directory permissions: %v", err)
 	}
-	defer os.Chmod(dir, 0700)
+	defer require.NoError(t, os.Chmod(dir, 0700))
 
 	_, _, err := readCodesAndSize(path)
 	if err == nil {

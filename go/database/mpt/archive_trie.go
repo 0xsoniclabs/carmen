@@ -515,7 +515,12 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (err e
 	if err != nil {
 		return fmt.Errorf("failed to get exclusive access to directory: %v", err)
 	}
-	defer lock.Release()
+	defer func() {
+		err := lock.Release()
+		if err != nil {
+			fmt.Printf("failed to release directory lock: %v", err)
+		}
+	}()
 
 	// Check available block height -- stop recovery if there are not enough blocks.
 	checkpointHeight, err := GetCheckpointBlock(directory)
@@ -662,7 +667,13 @@ func loadRoots(archiveDirectory string) (*rootList, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		err := f.Close()
+		if err != nil {
+			fmt.Printf("failed to close roots file: %v", err)
+		}
+	}()
+
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err

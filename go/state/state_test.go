@@ -160,7 +160,7 @@ func TestEmptyHash(t *testing.T) {
 
 func TestAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1},
 		})
 	})
@@ -168,7 +168,7 @@ func TestAddressHashes(t *testing.T) {
 
 func TestMultipleAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
 		})
 	})
@@ -179,7 +179,7 @@ func TestDeletedAddressHashes(t *testing.T) {
 		if t != nil && schema == 6 {
 			t.Skipf("schema %d not supported", schema)
 		}
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
 			DeletedAccounts: []common.Address{address1, address2},
 		})
@@ -188,7 +188,7 @@ func TestDeletedAddressHashes(t *testing.T) {
 
 func TestStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, chema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key2, Value: val3}},
 		})
 	})
@@ -196,7 +196,7 @@ func TestStorageHashes(t *testing.T) {
 
 func TestMultipleStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			Slots: []common.SlotUpdate{
 				{Account: address1, Key: key2, Value: val3},
 				{Account: address2, Key: key3, Value: val1},
@@ -208,7 +208,7 @@ func TestMultipleStorageHashes(t *testing.T) {
 
 func TestBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1},
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
@@ -219,7 +219,7 @@ func TestBalanceUpdateHashes(t *testing.T) {
 
 func TestMultipleBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
@@ -232,7 +232,7 @@ func TestMultipleBalanceUpdateHashes(t *testing.T) {
 
 func TestNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1},
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
@@ -243,7 +243,7 @@ func TestNonceUpdateHashes(t *testing.T) {
 
 func TestMultipleNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1, address2, address3},
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
@@ -256,7 +256,7 @@ func TestMultipleNonceUpdateHashes(t *testing.T) {
 
 func TestCodeUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			Codes: []common.CodeUpdate{
 				{Account: address1, Code: []byte{1}},
 			},
@@ -266,7 +266,7 @@ func TestCodeUpdateHashes(t *testing.T) {
 
 func TestMultipleCodeUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		s.Apply(0, common.Update{
+		_, _ = s.Apply(0, common.Update{
 			Codes: []common.CodeUpdate{
 				{Account: address1, Code: []byte{1}},
 				{Account: address2, Code: []byte{1, 2}},
@@ -293,7 +293,7 @@ func TestLargeStateHashes(t *testing.T) {
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: address, Nonce: common.Nonce{byte(i + 1)}})
 			update.Codes = append(update.Codes, common.CodeUpdate{Account: address, Code: []byte{byte(i), byte(i * 2), byte(i*3 + 2)}})
 		}
-		s.Apply(0, update)
+		_, _ = s.Apply(0, update)
 	})
 }
 
@@ -380,6 +380,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 
 func TestCodeHashesMatchCodes(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+		require := require.New(t)
 		// account must exist (not aut-created in Verkle Trie)
 		if _, err := s.Apply(0, common.Update{
 			CreatedAccounts: []common.Address{address1},
@@ -397,7 +398,12 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		}
 
 		// Creating an account should not change this.
-		s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+		channel, err := s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+		require.NoError(err)
+		if channel != nil {
+			require.NoError(<-channel)
+		}
+
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
 			t.Fatalf("error fetching code hash: %v", err)
@@ -409,7 +415,12 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		// Update code to non-empty code updates hash accordingly.
 		code := []byte{1, 2, 3, 4}
 		hashOfTestCode := common.GetKeccak256Hash(code)
-		s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code}}})
+		channel, err = s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code}}})
+		require.NoError(err)
+		if channel != nil {
+			require.NoError(<-channel)
+		}
+
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
 			t.Fatalf("error fetching code hash: %v", err)
@@ -419,7 +430,12 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		}
 
 		// Reset code to empty code updates hash accordingly.
-		s.Apply(3, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{}}}})
+		channel, err = s.Apply(3, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{}}}})
+		require.NoError(err)
+		if channel != nil {
+			require.NoError(<-channel)
+		}
+
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
 			t.Fatalf("error fetching code hash: %v", err)
@@ -548,6 +564,7 @@ func TestArchive(t *testing.T) {
 		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
+			require := require.New(t)
 			dir := t.TempDir()
 			s, err := config.createState(dir)
 			if err != nil {
@@ -557,7 +574,7 @@ func TestArchive(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer s.Close()
+			defer require.NoError(s.Close())
 
 			balance12 := amount.New(0x12)
 			balance34 := amount.New(0x34)
@@ -603,13 +620,13 @@ func TestArchive(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get state of block 0; %v", err)
 			}
-			defer state1.Close()
+			defer require.NoError(state1.Close())
 
 			state2, err := s.GetArchiveState(1)
 			if err != nil {
 				t.Fatalf("failed to get state of block 1; %v", err)
 			}
-			defer state2.Close()
+			defer require.NoError(state2.Close())
 
 			if as, err := state1.Exists(address1); err != nil || as != true {
 				t.Errorf("invalid account state at block 0: %t, %v", as, err)
@@ -678,7 +695,7 @@ func TestLastArchiveBlock(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			defer s.Close()
+			defer require.NoError(t, s.Close())
 
 			_, empty, err := s.GetArchiveBlockHeight()
 			if err != nil {

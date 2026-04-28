@@ -258,7 +258,11 @@ func readCodesAndSize(path string) (map[common.Hash][]byte, uint64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Printf("failed to close file: %v", err)
+		}
+	}()
 	reader := bufio.NewReader(file)
 	data, err := parseCodes(reader)
 	return data, uint64(info.Size()), err

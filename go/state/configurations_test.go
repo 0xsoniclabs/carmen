@@ -22,6 +22,7 @@ import (
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStateConfigs_ContainsConfigurations(t *testing.T) {
@@ -104,7 +105,7 @@ func getFilesIn(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatalf("failed to open directory %s: %v", path, err)
 	}
-	defer file.Close()
+	defer require.NoError(t, file.Close())
 	_, err = file.Stat()
 	if err != nil {
 		t.Fatalf("failed to open file information for %s: %v", path, err)

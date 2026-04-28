@@ -41,7 +41,7 @@ func TestAccountsAreInitiallyUnknown(t *testing.T) {
 
 func TestAccountsCanBeCreated(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
+		_, _ = state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
 		if account_state != true {
 			t.Errorf("Created account does not exist, got %v", account_state)
@@ -55,8 +55,8 @@ func TestAccountsCanBeDeleted(t *testing.T) {
 			t.Skip("Schema 6 does not support account existence checks")
 		}
 
-		state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
-		state.Apply(1, common.Update{DeletedAccounts: []common.Address{address1}})
+		_, _ = state.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}})
+		_, _ = state.Apply(1, common.Update{DeletedAccounts: []common.Address{address1}})
 		account_state, _ := state.Exists(address1)
 		if account_state != false {
 			t.Errorf("Deleted account is not deleted, got %v", account_state)

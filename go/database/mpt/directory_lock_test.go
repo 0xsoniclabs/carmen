@@ -15,6 +15,8 @@ import (
 	"os"
 	"path"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDirectoryLock_AcquireAndRelease(t *testing.T) {
@@ -52,7 +54,7 @@ func TestDirectoryLock_LockIsExclusive(t *testing.T) {
 		t.Errorf("unexpected non-nil lock result in error case: %v", lockB)
 	}
 
-	lockA.Release()
+	require.NoError(t, lockA.Release())
 }
 
 func TestDirectoryLock_CannotLockFile(t *testing.T) {
@@ -114,7 +116,7 @@ func TestDirectoryLock_ForceUnlockDirectory_ReportsErrorIfUnlockingFailed(t *tes
 	if err := os.Chmod(dir, 0500); err != nil {
 		t.Fatalf("failed to remove write permission: %v", err)
 	}
-	defer os.Chmod(dir, 0700)
+	defer require.NoError(t, os.Chmod(dir, 0700))
 
 	if err := ForceUnlockDirectory(dir); err == nil {
 		t.Fatalf("expected error when unlocking failed")

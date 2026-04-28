@@ -20,6 +20,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIO_Archive_ExportAndImport(t *testing.T) {
@@ -67,7 +68,7 @@ func TestIO_Archive_ExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered Archive: %v", err)
 	}
-	defer target.Close()
+	defer require.NoError(t, target.Close())
 
 	height, _, err := target.GetBlockHeight()
 	if err != nil {
@@ -133,7 +134,7 @@ func TestIO_ArchiveAndLive_ExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot open live trie: %v", err)
 	}
-	defer live.Close()
+	defer require.NoError(t, live.Close())
 	headHash, _, err := live.UpdateHashes()
 	if err != nil {
 		t.Fatalf("cannot get live trie hash: %v", err)
@@ -151,7 +152,7 @@ func TestIO_ArchiveAndLive_ExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered Archive: %v", err)
 	}
-	defer archive.Close()
+	defer require.NoError(t, archive.Close())
 
 	height, _, err := archive.GetBlockHeight()
 	if err != nil {

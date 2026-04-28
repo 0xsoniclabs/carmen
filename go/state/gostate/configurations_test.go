@@ -57,8 +57,8 @@ func TestOpenArchive_FailsForNoArchiveIfTheArchiveDirectoryCanNotBeAccessed(t *t
 	require.Nil(cleanup)
 
 	// If the empty archive can not be accessed, an error should be returned.
-	os.Chmod(path, 0000)
-	defer os.Chmod(path, 0755)
+	require.NoError(os.Chmod(path, 0000))
+	defer require.NoError(os.Chmod(path, 0755))
 
 	_, _, err = openArchive(params)
 	require.Error(err)

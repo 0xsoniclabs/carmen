@@ -83,7 +83,7 @@ func TestBenchmark_RunExampleBenchmark(t *testing.T) {
 		}
 	}
 
-	filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+	_ = filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), "mpt_") {
 			t.Errorf("temporary DB was not deleted")
 		}
@@ -107,7 +107,7 @@ func TestBenchmark_KeepStateRetainsState(t *testing.T) {
 	}
 
 	found := false
-	filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+	_ = filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), "state_") {
 			found = true
 		}
@@ -140,7 +140,7 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 			}
 
 			found := false
-			filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+			_ = filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 				if strings.HasPrefix(info.Name(), "archive") {
 					found = true
 				}
