@@ -64,6 +64,15 @@ Options:
           Print version
 ```
 
+## Enable GO bindings
+
+The Rust implementation is referenced by Go through CGO, and it's disabled by default.  
+To enable it, you need to provide the "carmen\_rust" build tag. For example, to run Go tests with the rust implementation run
+
+```bash
+go test -tags carmen_rust go/...
+```
+
 ## Carmen & Bertha Integration
 
 [Bertha](https://github.com/0xsoniclabs/bertha) can be used to replay the history with Carmen.

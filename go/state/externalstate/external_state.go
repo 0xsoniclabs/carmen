@@ -8,15 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
+//go:build carmen_rust || carmen_cpp
+
 package externalstate
 
-//go:generate sh ../../lib/build_libcarmen.sh
 //go:generate mockgen -source external_state.go -destination external_state_mocks.go -package externalstate
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../../cpp
-#cgo LDFLAGS: -L${SRCDIR}/../../lib -lcarmen -L${SRCDIR}/../../../rust/target/release -lcarmen_rust
-#cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../lib -Wl,-rpath,${SRCDIR}/../../../rust/target/release
 #include <stdlib.h>
 #include "state/c_state.h"
 */
@@ -46,11 +45,6 @@ const codeMaxSize = 25000   // Contract limit is 24577
 
 type externalImpl int
 
-const (
-	externalImplCpp externalImpl = iota
-	externalImplRust
-)
-
 type externalBindings interface {
 	OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result
 	Flush(database unsafe.Pointer) C.enum_Result
@@ -72,156 +66,6 @@ type externalBindings interface {
 	ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result
 }
 
-type rustBindings struct {
-}
-
-func (r rustBindings) OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_OpenDatabase(schema, liveImpl, liveImplLen, archiveImpl, archiveImplLen, dir, dirLen, outDatabase)
-}
-
-func (r rustBindings) Flush(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_Flush(database)
-}
-
-func (r rustBindings) Close(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_Close(database)
-}
-
-func (r rustBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_ReleaseState(state)
-}
-
-func (r rustBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetLiveState(database, outState)
-}
-
-func (r rustBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetArchiveState(database, block, outState)
-}
-
-func (r rustBindings) GetArchiveBlockHeight(database unsafe.Pointer, outHeight *C.int64_t) C.enum_Result {
-	return C.Carmen_Rust_GetArchiveBlockHeight(database, outHeight)
-}
-
-func (r rustBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_AccountExists(state, address, outExists)
-}
-
-func (r rustBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetBalance(state, address, outBalance)
-}
-
-func (r rustBindings) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetNonce(state, address, outNonce)
-}
-
-func (r rustBindings) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetStorageValue(state, address, key, outValue)
-}
-
-func (r rustBindings) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
-	return C.Carmen_Rust_GetCode(state, address, outCode, outSize)
-}
-
-func (r rustBindings) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetCodeHash(state, address, outHash)
-}
-
-func (r rustBindings) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
-	return C.Carmen_Rust_GetCodeSize(state, address, outSize)
-}
-
-func (r rustBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
-	return C.Carmen_Rust_Apply(state, block, update, updateLength)
-}
-
-func (r rustBindings) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_GetHash(state, outHash)
-}
-
-func (r rustBindings) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
-	return C.Carmen_Rust_GetMemoryFootprint(database, outBuffer, outSize)
-}
-
-func (r rustBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
-	return C.Carmen_Rust_ReleaseMemoryFootprintBuffer(buffer, size)
-}
-
-type cppBindings struct {
-}
-
-func (c cppBindings) OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_OpenDatabase(schema, liveImpl, liveImplLen, archiveImpl, archiveImplLen, dir, dirLen, outDatabase)
-}
-
-func (c cppBindings) Flush(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_Flush(database)
-}
-
-func (c cppBindings) Close(database unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_Close(database)
-}
-
-func (c cppBindings) ReleaseState(state unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_ReleaseState(state)
-}
-
-func (c cppBindings) GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetLiveState(database, outState)
-}
-
-func (c cppBindings) GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetArchiveState(database, block, outState)
-}
-
-func (c cppBindings) GetArchiveBlockHeight(database unsafe.Pointer, outHeight *C.int64_t) C.enum_Result {
-	return C.kResult_UnsupportedOperation
-}
-
-func (c cppBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_AccountExists(state, address, outExists)
-}
-
-func (c cppBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetBalance(state, address, outBalance)
-}
-
-func (c cppBindings) GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetNonce(state, address, outNonce)
-}
-
-func (c cppBindings) GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetStorageValue(state, address, key, outValue)
-}
-
-func (c cppBindings) GetCode(state unsafe.Pointer, address unsafe.Pointer, outCode unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
-	return C.Carmen_Cpp_GetCode(state, address, outCode, outSize)
-}
-
-func (c cppBindings) GetCodeHash(state unsafe.Pointer, address unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetCodeHash(state, address, outHash)
-}
-
-func (c cppBindings) GetCodeSize(state unsafe.Pointer, address unsafe.Pointer, outSize *C.uint32_t) C.enum_Result {
-	return C.Carmen_Cpp_GetCodeSize(state, address, outSize)
-}
-
-func (c cppBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
-	return C.Carmen_Cpp_Apply(state, block, update, updateLength)
-}
-
-func (c cppBindings) GetHash(state unsafe.Pointer, outHash unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Cpp_GetHash(state, outHash)
-}
-
-func (c cppBindings) GetMemoryFootprint(database unsafe.Pointer, outBuffer **C.char, outSize *C.uint64_t) C.enum_Result {
-	return C.Carmen_Cpp_GetMemoryFootprint(database, outBuffer, outSize)
-}
-
-func (c cppBindings) ReleaseMemoryFootprintBuffer(buffer *C.char, size C.uint64_t) C.enum_Result {
-	return C.Carmen_Cpp_ReleaseMemoryFootprintBuffer(buffer, size)
-}
-
 // ExternalState implements the state interface by forwarding all calls to a implementation
 // in a foreign language.
 type ExternalState struct {
@@ -235,7 +79,7 @@ type ExternalState struct {
 	bindings externalBindings
 }
 
-func newState(impl string, params state.Parameters, extImpl externalImpl) (state.State, error) {
+func newState(impl string, params state.Parameters, bindings externalBindings) (state.State, error) {
 	if err := os.MkdirAll(filepath.Join(params.Directory, "live"), 0700); err != nil {
 		return nil, err
 	}
@@ -247,17 +91,6 @@ func newState(impl string, params state.Parameters, extImpl externalImpl) (state
 
 	archiveStr := C.CString(string(params.Archive)) // Ensure params.Archive is converted to string
 	defer C.free(unsafe.Pointer(archiveStr))
-
-	var bindings externalBindings
-
-	switch extImpl {
-	case externalImplCpp:
-		bindings = cppBindings{}
-	case externalImplRust:
-		bindings = rustBindings{}
-	default:
-		return nil, fmt.Errorf("%w: unsupported external implementation %v", state.UnsupportedConfiguration, extImpl)
-	}
 
 	db := unsafe.Pointer(nil)
 	result := bindings.OpenDatabase(C.C_Schema(params.Schema), implStr, C.int(len(impl)), archiveStr, C.int(len(params.Archive)), dir, C.int(len(params.Directory)), &db)
@@ -285,30 +118,6 @@ func newState(impl string, params state.Parameters, extImpl externalImpl) (state
 		codeCache: common.NewLruCache[common.Address, []byte](codeCacheSize),
 		bindings:  bindings,
 	}), nil
-}
-
-func newRustInMemoryState(params state.Parameters) (state.State, error) {
-	return newState("memory", params, externalImplRust)
-}
-
-func newRustCrateCryptoInMemoryState(params state.Parameters) (state.State, error) {
-	return newState("crate-crypto-memory", params, externalImplRust)
-}
-
-func newRustFileBasedState(params state.Parameters) (state.State, error) {
-	return newState("file", params, externalImplRust)
-}
-
-func newCppInMemoryState(params state.Parameters) (state.State, error) {
-	return newState("memory", params, externalImplCpp)
-}
-
-func newCppFileBasedState(params state.Parameters) (state.State, error) {
-	return newState("file", params, externalImplCpp)
-}
-
-func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
-	return newState("ldb", params, externalImplCpp)
 }
 
 func (s *ExternalState) CreateAccount(address common.Address) error {

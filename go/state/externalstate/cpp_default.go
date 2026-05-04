@@ -8,11 +8,10 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-//go:build carmen_cpp || carmen_rust
+//go:build !carmen_cpp
 
 package externalstate
 
-func init() {
-	initCpp()
-	initRust()
+func initCpp() {
+	// No C++ external state configurations are supported when the "cpp" build tag is not set.
 }

@@ -111,6 +111,15 @@ To visualize the collected data (`graphviz` has to be installed), run:
 pprof --http=":8000" /tmp/profile.dat
 ```
 
+## Enable GO bindings
+
+The C++ implementation is referenced by Go through CGO, and it's disabled by default.  
+To enable it, you need to provide the "carmen\_cpp" build tag. For example, to run Go tests with the cpp implementation run
+
+```bash
+go test -tags carmen_cpp go/...
+```
+
 # Setting up your IDE
 The setup of your development environment depends on the IDE of your choice.
 

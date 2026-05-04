@@ -6,6 +6,8 @@
 //	mockgen -source external_state.go -destination external_state_mocks.go -package externalstate
 //
 
+//go:build carmen_cpp || carmen_rust
+
 // Package externalstate is a generated GoMock package.
 package externalstate
 
