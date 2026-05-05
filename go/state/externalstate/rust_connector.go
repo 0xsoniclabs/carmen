@@ -12,6 +12,8 @@
 
 package externalstate
 
+//go:generate cargo build --release --manifest-path=../../../rust/Cargo.toml
+
 /*
 #cgo LDFLAGS: -L${SRCDIR}/../../../rust/target/release -lcarmen_rust
 #cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../../rust/target/release

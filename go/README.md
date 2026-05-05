@@ -48,11 +48,11 @@ The C++ and Rust implementations are referenced by Go through CGO, and are disab
 To enable them, you need to provide the "carmen\_cpp" or "carmen\_rust" build tags. For example, to run Go tests with the cpp implementation run
 
 ```bash
-go test -tags carmen_cpp go/...
+go test -tags carmen_cpp ./...
 ```
 
-In addition, the C++ bindings provides a generator string to build the required C++ library.   
-To use it, run:
+Both the C++ and Rust bindings provides a generator string to build the required library.   
+For example, to build the C++ library, run the following command 
 
 ```bash
 go generate --tags carmen_cpp state/externalstate/cpp_connector.go
