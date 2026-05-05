@@ -73,6 +73,9 @@ If this command reports that `gomock` is not installed, one can install it using
 go install go.uber.org/mock/mockgen@latest
 ```
 
+> Caveat! The `go generate` command does not respect the guidelines for importing the `C` library for CGO and will erase the CGO include comments in `external_state_mocks.go`.  
+> After running `go generate`, make sure to move the `C` include directive to a separate import, and add the current C headers include comments.
+
 ## Formatting
 
 Formatting rules are enforced in the devvelopment process by running:
