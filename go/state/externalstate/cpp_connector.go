@@ -122,7 +122,7 @@ func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
 	return newState("ldb", params, cppBindings{})
 }
 
-func initCpp() {
+func init() {
 	factories := map[state.Configuration]state.StateFactory{}
 
 	// Add all configuration options supported by the C++ implementation.
