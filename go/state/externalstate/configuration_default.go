@@ -13,5 +13,5 @@
 package externalstate
 
 func init() {
-	// No external state configurations are supported when the "externalstate" build tag is not set.
+	// No external state configurations are supported when no external state implementation is enabled.
 }

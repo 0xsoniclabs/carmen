@@ -12,7 +12,7 @@
 
 package externalstate
 
-//go:generate mockgen -source external_state.go -destination external_state_mocks.go -package externalstate
+//go:generate mockgen -source external_state.go -destination external_state_mocks.go -package externalstate --build_constraint "carmen_cpp || carmen_rust"
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../../cpp
@@ -42,8 +42,6 @@ import (
 
 const codeCacheSize = 8_000 // ~ 200 MiB of memory for go-side code cache
 const codeMaxSize = 25000   // Contract limit is 24577
-
-type externalImpl int
 
 type externalBindings interface {
 	OpenDatabase(schema C.uint8_t, liveImpl *C.char, liveImplLen C.int, archiveImpl *C.char, archiveImplLen C.int, dir *C.char, dirLen C.int, outDatabase *unsafe.Pointer) C.enum_Result

@@ -13,5 +13,5 @@
 package externalstate
 
 func initCpp() {
-	// No C++ external state configurations are supported when the "cpp" build tag is not set.
+	// No C++ external state configurations are supported when the "carmen_cpp" build tag is not set.
 }

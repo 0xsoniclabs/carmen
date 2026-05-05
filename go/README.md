@@ -41,6 +41,23 @@ go test ./... -parallel=1  -timeout 600m
 ```
 all tests should pass.
 
+
+## Enable externalstate GO bindings
+
+The C++ and Rust implementations are referenced by Go through CGO, and are disabled by default.  
+To enable them, you need to provide the "carmen\_cpp" or "carmen\_rust" build tags. For example, to run Go tests with the cpp implementation run
+
+```bash
+go test -tags carmen_cpp go/...
+```
+
+In addition, the C++ bindings provides a generator string to build the required C++ library.   
+To use it, run:
+
+```bash
+go generate --tags carmen_cpp state/externalstate/cpp_connector.go
+```
+
 ## Installing gomock
 
 Tests extensively use mocks.

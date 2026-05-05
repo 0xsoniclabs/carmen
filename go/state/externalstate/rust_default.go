@@ -13,5 +13,5 @@
 package externalstate
 
 func initRust() {
-	// No Rust external state configurations are supported when the "rust" build tag is not set.
+	// No Rust external state configurations are supported when the "carmen_rust" build tag is not set.
 }
