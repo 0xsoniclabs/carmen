@@ -599,10 +599,10 @@ func TestStateDBArchive(t *testing.T) {
 			}
 			defer state2.Release()
 
-			if exist := state1.Exist(address1); err != nil || exist != true {
+			if exist := state1.Exist(address1); exist != true {
 				t.Errorf("invalid account state at block 1: %t", exist)
 			}
-			if exist := state2.Exist(address1); err != nil || exist != true {
+			if exist := state2.Exist(address1); exist != true {
 				t.Errorf("invalid account state at block 2: %t", exist)
 			}
 			if balance := state1.GetBalance(address1); balance != amount.New(12) {
