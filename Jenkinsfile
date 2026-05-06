@@ -75,9 +75,17 @@ pipeline {
                     }
                 }
 
+                stage("Check if Go code compiles with combinations of bindings") {
+                    steps {
+                        sh 'cd go && go build -tags -v ./...'
+                        sh 'cd go && go build -tags "carmen_cpp" -v ./...'
+                        sh 'cd go && go build -tags "carmen_rust" -v ./...'
+                    }
+                }
+
                 stage('Build Go') {
                     steps {
-                        sh 'cd go && go build -v ./...'
+                        sh 'cd go && go build --tags "carmen_cpp carmen_rust" -v ./...'
                     }
                 }
 
@@ -86,7 +94,7 @@ pipeline {
                         CODECOV_TOKEN = credentials('codecov-uploader-0xsoniclabs-global')
                     }
                     steps {
-                        sh 'cd go && go test ./... -coverprofile=coverage.txt -parallel 4 -timeout 60m'
+                        sh 'cd go && go test --tags "carmen_cpp carmen_rust" ./... -coverprofile=coverage.txt -parallel 4 -timeout 60m'
                         sh 'codecov upload-process -r 0xsoniclabs/carmen -f ./go/coverage.txt -t ${CODECOV_TOKEN}'
                     }
                 }
