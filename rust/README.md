@@ -16,7 +16,8 @@ cargo build --release
 
 The shared library called `libcarmen_rust.so` can then be found in [`rust/target/release`](target/release).
 
-The Go code will link against the library automatically when the [`external`](../go/state/externalstate) package is included. (Or the [`experimental`](../go/experimental) packages which includes the `external` package.)
+The Go Rust bindings are locked behind the `carmen_rust` build tag. 
+To link against the library, provide the build tag and include the [`external`](../go/state/externalstate) package. (Or the [`experimental`](../go/experimental) packages which includes the `external` package.)
 
 ### Running Rust Tests
 
@@ -75,7 +76,7 @@ The scripts can be provided with arguments which are passed to `go run` in Berth
 
 The a full list of possible arguments run:
 ```sh
-go run ./cmd/block-db replay --help
+go run --tags "carmen_rust" ./cmd/block-db replay --help
 ```
 
 ### Testing using History Replay
@@ -86,7 +87,7 @@ For a history run using the Carmen Rust implementation, run in `bertha/block-db-
 
 ```sh
 # Record state root hashes for S6 (Verkle Tries) using the Geth reference implementation
-go run ./cmd/block-db replay \
+./go-run-with-carmen.sh ./cmd/block-db replay \
     --json-genesis <path to genesis.json> \
     -db <path to blockdb> \
     --db-schema 6 --db-variant go-geth-memory \
