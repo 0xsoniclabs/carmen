@@ -519,12 +519,13 @@ func (m *MockLiveState) EXPECT() *MockLiveStateMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockLiveState) Apply(block uint64, update *common.Update) (common.Releaser, error) {
+func (m *MockLiveState) Apply(block uint64, update *common.Update) ([]func(), common.Releaser, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
-	ret0, _ := ret[0].(common.Releaser)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret0, _ := ret[0].([]func())
+	ret1, _ := ret[1].(common.Releaser)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Apply indicates an expected call of Apply.
@@ -764,6 +765,20 @@ func (m *MockLiveState) HasEmptyStorage(addr common.Address) (bool, error) {
 func (mr *MockLiveStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockLiveState)(nil).HasEmptyStorage), addr)
+}
+
+// RevertLastBlock mocks base method.
+func (m *MockLiveState) RevertLastBlock(undo []func()) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevertLastBlock", undo)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevertLastBlock indicates an expected call of RevertLastBlock.
+func (mr *MockLiveStateMockRecorder) RevertLastBlock(undo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertLastBlock", reflect.TypeOf((*MockLiveState)(nil).RevertLastBlock), undo)
 }
 
 // Root mocks base method.

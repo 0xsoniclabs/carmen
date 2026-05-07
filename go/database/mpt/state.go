@@ -13,6 +13,7 @@ package mpt
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -58,6 +59,8 @@ type Database interface {
 
 	// ClearStorage removes all storage slots for the input address and the root.
 	ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, error)
+
+	// RestoreStorage(rootRef *NodeReference, addr common.Address, storageRoot NodeReference) (NodeReference, error)
 
 	// HasEmptyStorage returns true if account has empty storage.
 	HasEmptyStorage(rootRef *NodeReference, addr common.Address) (bool, error)
@@ -134,6 +137,7 @@ type MptState struct {
 	lock      common.LockFile
 	trie      *LiveTrie
 	codes     *codes
+	undoList  []func()
 }
 
 func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptState, error) {
@@ -146,6 +150,7 @@ func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptSt
 		lock:      lock,
 		trie:      trie,
 		codes:     codes,
+		undoList:  make([]func(), 0),
 	}, nil
 }
 
@@ -199,18 +204,32 @@ func OpenGoFileState(directory string, config MptConfig, cacheConfig NodeCacheCo
 }
 
 func (s *MptState) CreateAccount(address common.Address) (err error) {
-	_, exists, err := s.trie.GetAccountInfo(address)
+	prevInfo, exists, err := s.trie.GetAccountInfo(address)
 	if err != nil {
 		return err
 	}
 	if exists {
 		// For existing accounts, only clear the storage, preserve the rest.
-		return s.trie.ClearStorage(address)
+		err := s.trie.ClearStorage(address)
+		if err != nil {
+			return err
+		}
+		// NOTE: this will never happen. See https://github.com/0xsoniclabs/sonic-admin/issues/762
 	}
-	// Create account with hash of empty code.
-	return s.trie.SetAccountInfo(address, AccountInfo{
+	err = s.trie.SetAccountInfo(address, AccountInfo{
 		CodeHash: emptyCodeHash,
 	})
+	if err != nil {
+		return err
+	}
+	s.undoList = append(s.undoList, func() {
+		if !exists {
+			_ = s.DeleteAccount(address)
+		} else {
+			s.trie.SetAccountInfo(address, prevInfo)
+		}
+	})
+	return nil
 }
 
 func (s *MptState) Exists(address common.Address) (bool, error) {
@@ -222,7 +241,14 @@ func (s *MptState) Exists(address common.Address) (bool, error) {
 }
 
 func (s *MptState) DeleteAccount(address common.Address) error {
-	return s.trie.SetAccountInfo(address, AccountInfo{})
+	err := s.trie.SetAccountInfo(address, AccountInfo{})
+	if err != nil {
+		return err
+	}
+	// NOTE: No call to DeleteAccount are possible from the EVM. See https://github.com/0xsoniclabs/sonic-admin/issues/762
+	// The only case this is called is to undo the creation of an account during block reversion,
+	// and therefore no undo is required.
+	return nil
 }
 
 func (s *MptState) GetBalance(address common.Address) (balance amount.Amount, err error) {
@@ -241,11 +267,25 @@ func (s *MptState) SetBalance(address common.Address, balance amount.Amount) (er
 	if info.Balance == balance {
 		return nil
 	}
+	oldInfo := info
 	info.Balance = balance
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+
+	err = s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+
+	s.undoList = append(s.undoList, func() {
+		if !exists {
+			s.DeleteAccount(address)
+		} else {
+			s.trie.SetAccountInfo(address, oldInfo)
+		}
+	})
+	return nil
 }
 
 func (s *MptState) GetNonce(address common.Address) (nonce common.Nonce, err error) {
@@ -264,11 +304,25 @@ func (s *MptState) SetNonce(address common.Address, nonce common.Nonce) (err err
 	if info.Nonce == nonce {
 		return nil
 	}
+	oldInfo := info
 	info.Nonce = nonce
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+
+	err = s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+
+	s.undoList = append(s.undoList, func() {
+		if !exists {
+			s.DeleteAccount(address)
+		} else {
+			s.trie.SetAccountInfo(address, oldInfo)
+		}
+	})
+	return nil
 }
 
 func (s *MptState) GetStorage(address common.Address, key common.Key) (value common.Value, err error) {
@@ -276,12 +330,28 @@ func (s *MptState) GetStorage(address common.Address, key common.Key) (value com
 }
 
 func (s *MptState) SetStorage(address common.Address, key common.Key, value common.Value) error {
-	return s.trie.SetValue(address, key, value)
+	oldValue, err := s.trie.GetValue(address, key)
+	if err != nil {
+		return err
+	}
+	if oldValue == value {
+		return nil
+	}
+
+	err = s.trie.SetValue(address, key, value)
+	if err != nil {
+		return err
+	}
+	s.undoList = append(s.undoList, func() {
+		s.trie.SetValue(address, key, oldValue)
+	})
+	return nil
 }
 
 func (s *MptState) HasEmptyStorage(address common.Address) (bool, error) {
 	return s.trie.HasEmptyStorage(address)
 }
+
 func (s *MptState) GetCode(address common.Address) (value []byte, err error) {
 	info, exists, err := s.trie.GetAccountInfo(address)
 	if err != nil {
@@ -313,9 +383,22 @@ func (s *MptState) SetCode(address common.Address, code []byte) (err error) {
 	if !exists && len(code) == 0 {
 		return nil
 	}
+	old_info := info
 	codeHash := s.codes.add(code)
 	info.CodeHash = codeHash
-	return s.trie.SetAccountInfo(address, info)
+	err = s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+	s.undoList = append(s.undoList, func() {
+		if !exists {
+			s.DeleteAccount(address)
+		} else {
+			s.trie.SetAccountInfo(address, old_info)
+		}
+	})
+
+	return nil
 }
 
 func (s *MptState) GetCodeHash(address common.Address) (hash common.Hash, err error) {
@@ -340,14 +423,26 @@ func (s *MptState) GetHash() (hash common.Hash, err error) {
 	return hash, err
 }
 
-func (s *MptState) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
+func (s *MptState) Apply(block uint64, update *common.Update) (undoList []func(), archiveUpdateHints common.Releaser, err error) {
 	zone := tracy.ZoneBegin("Apply")
 	defer zone.End()
 	if err := update.ApplyTo(s); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	_, hints, err := s.trie.UpdateHashes()
-	return hints, err
+	undoList = s.undoList
+	s.undoList = s.undoList[0:0]
+	return undoList, hints, err
+}
+
+func (s *MptState) RevertLastBlock(undo []func()) error {
+	slices.Reverse(undo)
+	for _, undoFunc := range undo {
+		undoFunc()
+	}
+	s.undoList = s.undoList[0:0]
+
+	return nil
 }
 
 func (s *MptState) Visit(mode AccessMode, visitor NodeVisitor) error {

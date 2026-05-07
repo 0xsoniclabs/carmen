@@ -288,11 +288,15 @@ func (s *GoSchema1) GetHash() (hash common.Hash, err error) {
 	return hash, nil
 }
 
-func (s *GoSchema1) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
+func (s *GoSchema1) Apply(block uint64, update *common.Update) (blockUndoList []func(), archiveUpdateHints common.Releaser, err error) {
 	if err := update.Normalize(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return nil, update.ApplyTo(s)
+	return nil, nil, update.ApplyTo(s)
+}
+
+func (s *GoSchema1) RevertLastBlock(undoList []func()) error {
+	panic("RevertLastBlock is not implemented for Scheme1")
 }
 
 func (s *GoSchema1) Flush() (lastErr error) {

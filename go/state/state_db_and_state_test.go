@@ -29,6 +29,45 @@ import (
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
+func TestCarmen_CanRevertLastBlock(t *testing.T) {
+	require := require.New(t)
+	for _, config := range initStates() {
+		if config.config.Schema != 5 || strings.Contains(config.config.String(), "flat") || config.config.Archive != state.NoArchive {
+			continue
+		}
+		t.Run(config.name(), func(t *testing.T) {
+			// t.Parallel()
+			dir := t.TempDir()
+			store, err := config.createState(dir)
+			require.NoError(err)
+
+			db := state.CreateStateDBUsing(store)
+			defer func() {
+				require.NoError(db.Close())
+			}()
+
+			initialHash := db.GetHash()
+
+			db.BeginBlock()
+			db.BeginTransaction()
+			db.AddBalance(address1, amount.New(10))
+			db.EndTransaction()
+			endBlockRes := db.EndBlock(1)
+			newHash := db.GetHash()
+			require.NotEqual(initialHash, newHash)
+
+			err = db.RevertLastBlock(endBlockRes.UndoList)
+			require.NoError(err)
+			require.Equal(initialHash, db.GetHash())
+
+			db.BeginBlock()
+			db.BeginTransaction()
+			balance := db.GetBalance(address1)
+			require.True(balance.IsZero(), "balance should be zero after reverting the block, got %s", balance)
+		})
+	}
+}
+
 func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 	addr1 := common.Address{1}
 	addr2 := common.Address{2}
@@ -875,10 +914,10 @@ func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
 			statedb.BeginTransaction()
 			statedb.AddBalance(address1, amount.New(10))
 			statedb.EndTransaction()
-			archiveChannel := statedb.EndBlock(0)
+			result := statedb.EndBlock(0)
 
-			if archiveChannel != nil { // If nil, the archive is updated synchronously
-				require.NoError(<-archiveChannel) // Wait for the archive update to complete
+			if result.ErrorCh != nil { // If nil, the archive is updated synchronously
+				require.NoError(<-result.ErrorCh) // Wait for the archive update to complete
 			}
 
 			archiveState, err := statedb.GetArchiveStateDB(0)

@@ -137,8 +137,12 @@ func (s *ArchiveState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return empty, s.archiveError
 }
 
-func (s *ArchiveState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *ArchiveState) Apply(block uint64, update common.Update) ([]func(), <-chan error, error) {
 	panic("ArchiveState does not support Apply operation")
+}
+
+func (s *ArchiveState) RevertLastBlock(undo []func()) error {
+	panic("ArchiveState does not support RevertLastBlock operation")
 }
 
 func (s *ArchiveState) GetHash() (common.Hash, error) {

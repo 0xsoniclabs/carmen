@@ -35,7 +35,7 @@ func TestState_ContentIsStoredPersistent(t *testing.T) {
 			s1, err := NewState(params)
 			require.NoError(err)
 
-			_, err = s1.Apply(0, common.Update{
+			_, _, err = s1.Apply(0, common.Update{
 				Nonces: []common.NonceUpdate{
 					{Account: common.Address{1}, Nonce: common.ToNonce(12)},
 				},
@@ -77,7 +77,7 @@ func TestState_CanStoreAndRecoverCodes(t *testing.T) {
 		code[i] = byte(i % 256)
 	}
 
-	_, err = s1.Apply(1, common.Update{
+	_, _, err = s1.Apply(1, common.Update{
 		Codes: []common.CodeUpdate{
 			{Account: addr, Code: code},
 		},
@@ -136,7 +136,7 @@ func TestState_ProducesConsistentHash(t *testing.T) {
 		state, err := NewState(params)
 		require.NoError(err)
 
-		_, err = state.Apply(1, update)
+		_, _, err = state.Apply(1, update)
 		require.NoError(err)
 
 		hash, err := state.GetHash()

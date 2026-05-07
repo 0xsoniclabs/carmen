@@ -230,16 +230,16 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 // like the update of the archive, if there is such.
 // The channel may be nil if there are no asynchronous operations to be performed.
 // If the asynchronous operations fail, the error is returned through the channel.
-func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *GoState) Apply(block uint64, update common.Update) ([]func(), <-chan error, error) {
 	if err := s.getStateError(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Apply the changes to the LiveDB.
-	archiveUpdateHints, err := s.live.Apply(block, &update)
+	undoList, archiveUpdateHints, err := s.live.Apply(block, &update)
 	if err != nil {
 		s.addStateError(err)
-		return nil, s.getStateError()
+		return nil, nil, s.getStateError()
 	}
 
 	var archiveWriteDone chan error
@@ -261,12 +261,24 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 			}
 		}
 		if err := s.getStateError(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	} else if archiveUpdateHints != nil {
 		archiveUpdateHints.Release()
 	}
-	return archiveWriteDone, nil
+	return undoList, archiveWriteDone, nil
+}
+
+// TODO: Check
+func (s *GoState) RevertLastBlock(undo []func()) error {
+	if err := s.getStateError(); err != nil {
+		return err
+	}
+
+	if err := s.live.RevertLastBlock(undo); err != nil {
+		s.addStateError(err)
+	}
+	return s.getStateError()
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory

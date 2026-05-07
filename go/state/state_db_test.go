@@ -4880,14 +4880,14 @@ func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
 				return applyDone, nil
 			})
 
-		done := db.EndBlock(1)
-		if done == nil {
+		result := db.EndBlock(1)
+		if result.ErrorCh == nil {
 			t.Errorf("unexpected nil channel")
 		}
 
 		// The done channel should not be closed.
 		select {
-		case <-done:
+		case <-result.ErrorCh:
 			t.Errorf("returned channel unexpectedly closed")
 		default:
 			// success
@@ -4899,7 +4899,7 @@ func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
 
 		// The done channel should be closed after the state update is released.
 		select {
-		case <-done:
+		case <-result.ErrorCh:
 			// success
 		default:
 			t.Errorf("channel returned is not in sync with the state sync channel")
@@ -4917,8 +4917,8 @@ func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, injectedError)
 
-	done := db.EndBlock(1)
-	if done != nil {
+	result := db.EndBlock(1)
+	if result.ErrorCh != nil {
 		t.Errorf("expected nil channel when Apply returns error, got non-nil")
 	}
 
@@ -4942,8 +4942,8 @@ func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker_WhenApplyReturnsChanne
 			return applyDone, nil
 		})
 
-	done := db.EndBlock(1)
-	if done == nil {
+	result := db.EndBlock(1)
+	if result.ErrorCh == nil {
 		t.Errorf("unexpected nil channel")
 	}
 
@@ -4952,7 +4952,7 @@ func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker_WhenApplyReturnsChanne
 	applyDone <- injectedError
 	close(applyDone)
 	// Wait for the archive error goroutine to register the error in the issue tracker.
-	<-done
+	<-result.ErrorCh
 
 	err := db.Check()
 	if !errors.Is(err, injectedError) {
@@ -4976,8 +4976,8 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 			return applyDone, injectedError1
 		})
 
-	done := db.EndBlock(1)
-	if done == nil {
+	result := db.EndBlock(1)
+	if result.ErrorCh == nil {
 		t.Errorf("expected channel to not be nil")
 	}
 
@@ -4986,7 +4986,7 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 	applyDone <- injectedError2
 	close(applyDone)
 	// Wait for the archive error goroutine to register the error in the issue tracker.
-	<-done
+	<-result.ErrorCh
 
 	err := db.Check()
 	if !errors.Is(err, injectedError1) || !errors.Is(err, injectedError2) {

@@ -102,10 +102,16 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return s.state.HasEmptyStorage(addr)
 }
 
-func (s *syncedState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *syncedState) Apply(block uint64, update common.Update) ([]func(), <-chan error, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.Apply(block, update)
+}
+
+func (s *syncedState) RevertLastBlock(undo []func()) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.RevertLastBlock(undo)
 }
 
 func (s *syncedState) GetHash() (common.Hash, error) {

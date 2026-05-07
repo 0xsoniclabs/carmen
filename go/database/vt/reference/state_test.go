@@ -75,7 +75,7 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require.Equal(common.ToNonce(0), nonce)
 
 	// Set a nonce
-	_, err = state.Apply(0, common.Update{
+	_, _, err = state.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{{
 			Account: address,
 			Nonce:   common.ToNonce(42),
@@ -89,7 +89,7 @@ func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require.Equal(common.ToNonce(42), nonce)
 
 	// Set another nonce
-	_, err = state.Apply(0, common.Update{
+	_, _, err = state.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{{
 			Account: address,
 			Nonce:   common.ToNonce(123),
@@ -116,7 +116,7 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 	require.Equal(amount.New(0), balance)
 
 	// Set a balance
-	_, err = state.Apply(0, common.Update{
+	_, _, err = state.Apply(0, common.Update{
 		Balances: []common.BalanceUpdate{{
 			Account: address,
 			Balance: amount.New(42),
@@ -130,7 +130,7 @@ func TestState_CanStoreAndRestoreBalances(t *testing.T) {
 	require.Equal(amount.New(42), balance)
 
 	// Set another balance
-	_, err = state.Apply(0, common.Update{
+	_, _, err = state.Apply(0, common.Update{
 		Balances: []common.BalanceUpdate{{
 			Account: address,
 			Balance: amount.New(123),
@@ -164,7 +164,7 @@ func TestState_CanStoreAndRestoreCodes(t *testing.T) {
 	for name, code := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Set a code.
-			_, err = state.Apply(0, common.Update{
+			_, _, err = state.Apply(0, common.Update{
 				Codes: []common.CodeUpdate{{
 					Account: address,
 					Code:    bytes.Clone(code),
@@ -210,7 +210,7 @@ func TestState_CanStoreAndRestoreCodesOfArbitraryLength(t *testing.T) {
 		code := random[:i]
 
 		// Set a code.
-		_, err := state.Apply(0, common.Update{
+		_, _, err := state.Apply(0, common.Update{
 			Codes: []common.CodeUpdate{{
 				Account: address,
 				Code:    bytes.Clone(code),
@@ -249,7 +249,7 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 	require.Equal(common.Value{}, value)
 
 	// Set a value
-	_, err = state.Apply(0, common.Update{
+	_, _, err = state.Apply(0, common.Update{
 		Slots: []common.SlotUpdate{{
 			Account: address,
 			Key:     key,
@@ -264,7 +264,7 @@ func TestState_CanStoreAndRestoreStorageSlots(t *testing.T) {
 	require.Equal(common.Value{1, 2, 3}, value)
 
 	// Set another value
-	_, err = state.Apply(0, common.Update{
+	_, _, err = state.Apply(0, common.Update{
 		Slots: []common.SlotUpdate{{
 			Account: address,
 			Key:     key,
@@ -482,7 +482,7 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	}
 
 	state := newState()
-	_, err := state.Apply(0, update)
+	_, _, err := state.Apply(0, update)
 	require.NoError(err)
 
 	hash, err := state.GetCommitment().Await().Get()
@@ -512,7 +512,7 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 	}
 
 	state := newState()
-	_, err := state.Apply(0, update)
+	_, _, err := state.Apply(0, update)
 	require.NoError(err)
 
 	codeHash, err := state.GetCodeHash(addr1)
@@ -553,7 +553,8 @@ func newRefState(t *testing.T) (*refState, error) {
 }
 
 func (s *refState) Apply(block uint64, update common.Update) (<-chan error, error) {
-	return s.trie.Apply(block, update)
+	_, ch, err := s.trie.Apply(block, update)
+	return ch, err
 }
 
 func (s *refState) GetCommitment() future.Future[result.Result[common.Hash]] {

@@ -820,10 +820,10 @@ func (mr *MockStateDBMockRecorder) Empty(arg0 any) *gomock.Call {
 }
 
 // EndBlock mocks base method.
-func (m *MockStateDB) EndBlock(number uint64) <-chan error {
+func (m *MockStateDB) EndBlock(number uint64) endBlockResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EndBlock", number)
-	ret0, _ := ret[0].(<-chan error)
+	ret0, _ := ret[0].(endBlockResult)
 	return ret0
 }
 
@@ -1207,6 +1207,20 @@ func (m *MockStateDB) ResetBlockContext() {
 func (mr *MockStateDBMockRecorder) ResetBlockContext() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetBlockContext", reflect.TypeOf((*MockStateDB)(nil).ResetBlockContext))
+}
+
+// RevertLastBlock mocks base method.
+func (m *MockStateDB) RevertLastBlock(undoList []func()) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevertLastBlock", undoList)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevertLastBlock indicates an expected call of RevertLastBlock.
+func (mr *MockStateDBMockRecorder) RevertLastBlock(undoList any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertLastBlock", reflect.TypeOf((*MockStateDB)(nil).RevertLastBlock), undoList)
 }
 
 // RevertToInterTxSnapshot mocks base method.

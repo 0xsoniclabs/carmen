@@ -112,7 +112,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *State) Apply(block uint64, update common.Update) ([]func(), <-chan error, error) {
 
 	// init potentially empty accounts with empty code hash,
 	for _, address := range update.CreatedAccounts {
@@ -168,7 +168,11 @@ func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) 
 		}
 	}
 
-	return nil, nil
+	return nil, nil, nil
+}
+
+func (s *State) RevertLastBlock(blockUndoList []func()) error {
+	panic("not implemented")
 }
 
 func (s *State) GetHash() (common.Hash, error) {

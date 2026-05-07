@@ -155,7 +155,7 @@ func TestState_StateCanBeClosedAndReopened(t *testing.T) {
 	stateA, err := NewState(dir, nil)
 	require.NoError(err)
 
-	_, err = stateA.Apply(0, common.Update{
+	_, _, err = stateA.Apply(0, common.Update{
 		Nonces: []common.NonceUpdate{
 			{Account: common.Address{1}, Nonce: common.Nonce{2}},
 			{Account: common.Address{3}, Nonce: common.Nonce{4}},
@@ -343,7 +343,7 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		commands: commands,
 	}
 
-	_, err := state.Apply(1, update)
+	_, _, err := state.Apply(1, update)
 	require.NoError(err)
 
 	// The update is send to the commands channel.
@@ -406,14 +406,14 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 
 	require.False(state.Exists(address))
 
-	_, err = state.Apply(1, common.Update{
+	_, _, err = state.Apply(1, common.Update{
 		CreatedAccounts: []common.Address{address},
 	})
 	require.NoError(err)
 
 	require.True(state.Exists(address))
 
-	_, err = state.Apply(2, common.Update{
+	_, _, err = state.Apply(2, common.Update{
 		DeletedAccounts: []common.Address{address},
 	})
 	require.NoError(err)
@@ -441,7 +441,7 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
 
-	_, err = flatState.Apply(block, update)
+	_, _, err = flatState.Apply(block, update)
 	require.NoError(t, err)
 
 	require.NoError(t, flatState.Close())
@@ -458,7 +458,7 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), nil)
 	require.NoError(t, err)
 
-	_, err = flatState.Apply(block, update)
+	_, _, err = flatState.Apply(block, update)
 	require.NoError(t, err)
 	require.NoError(t, flatState.Close())
 }
@@ -485,7 +485,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 		state, err := NewState(t.TempDir(), backend)
 		require.NoError(t, err)
 
-		applyDone, err := state.Apply(1, common.Update{})
+		_, applyDone, err := state.Apply(1, common.Update{})
 		require.NoError(t, err)
 		require.NotNil(t, applyDone)
 
@@ -518,7 +518,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), nil)
 	require.NoError(t, err)
-	applyDone, err := flatState.Apply(1, common.Update{})
+	_, applyDone, err := flatState.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.Nil(t, applyDone)
 }
@@ -540,7 +540,7 @@ func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
 
-	applyDone, err := flatState.Apply(1, common.Update{})
+	_, applyDone, err := flatState.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.NotNil(t, applyDone)
 

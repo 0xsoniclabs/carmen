@@ -459,7 +459,7 @@ func (s *comparingState) GetBalance(address common.Address) (amount.Amount, erro
 func (s *comparingState) Apply(block uint64, update common.Update) (<-chan error, error) {
 	s.t.Helper()
 	return nil, s.action(func(state state.State) error {
-		_, err := state.Apply(block, update)
+		_, _, err := state.Apply(block, update)
 		return err
 	})
 }

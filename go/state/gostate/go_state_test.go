@@ -132,7 +132,7 @@ func TestBasicOperations(t *testing.T) {
 			defer state.Close()
 
 			// fill-in values
-			_, err = state.Apply(12, common.Update{
+			_, _, err = state.Apply(12, common.Update{
 				CreatedAccounts: []common.Address{address1},
 				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
 				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
@@ -171,7 +171,7 @@ func TestBasicOperations(t *testing.T) {
 			}
 
 			// delete account
-			_, err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
+			_, _, err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
 			if err != nil {
 				t.Errorf("Error: %s", err)
 			}
@@ -207,7 +207,7 @@ func TestDeletingAccounts(t *testing.T) {
 				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
 				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			}
-			if _, err := state.Apply(1, update); err != nil {
+			if _, _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -220,7 +220,7 @@ func TestDeletingAccounts(t *testing.T) {
 			update = common.Update{
 				DeletedAccounts: []common.Address{address1},
 			}
-			if _, err := state.Apply(2, update); err != nil {
+			if _, _, err := state.Apply(2, update); err != nil {
 				t.Errorf("failed to apply update: %v", err)
 			}
 			if val, err := state.Exists(address1); err != nil || val != false {
@@ -262,7 +262,7 @@ func TestMoreInserts(t *testing.T) {
 				},
 			}
 
-			if _, err := state.Apply(1, update); err != nil {
+			if _, _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -305,7 +305,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 				Codes:           []common.CodeUpdate{{Account: address1, Code: code1}},
 				Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 			}
-			if _, err := state.Apply(1, update); err != nil {
+			if _, _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
@@ -330,7 +330,7 @@ func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
 			}
 
 			// re-creating the account preserves everything but the state.
-			if _, err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+			if _, _, err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
 				t.Errorf("failed to recreate account: %v", err)
 			}
 
@@ -700,7 +700,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 
 	// the same result many times
 	for i := 0; i < 10; i++ {
-		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
+		if _, _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("operation should fail: %v", err)
 		}
 		if err := db.Check(); !errors.Is(err, injectedErr) {
@@ -760,7 +760,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 			CreatedAccounts: []common.Address{{0xA}},
 			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 		}
-		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
+		if _, _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
 		}
 
@@ -795,7 +795,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 
 		state := newGoState(liveDB, archiveDB, nil)
 
-		archiveWriteDone, err := state.Apply(1, common.Update{})
+		_, archiveWriteDone, err := state.Apply(1, common.Update{})
 		require.NoError(t, err)
 		require.NotNil(t, archiveWriteDone)
 
@@ -831,7 +831,7 @@ func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
 
 	db := newGoState(liveDB, nil, []func(){})
 
-	archiveWriteDone, err := db.Apply(1, common.Update{})
+	_, archiveWriteDone, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.Nil(t, archiveWriteDone)
 }
@@ -848,7 +848,7 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 
 	db := newGoState(liveDB, archiveDB, []func(){})
 
-	archiveWriteDone, err := db.Apply(1, common.Update{})
+	_, archiveWriteDone, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
 	require.NotNil(t, archiveWriteDone)
 
@@ -871,10 +871,10 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 
 	db := newGoState(liveDB, archiveDB, []func(){})
 
-	_, err := db.Apply(1, common.Update{})
+	_, _, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
 
-	archiveWriteDone, err := db.Apply(2, common.Update{})
+	_, archiveWriteDone, err := db.Apply(2, common.Update{})
 	require.NoError(t, err)
 	err = <-archiveWriteDone
 	require.ErrorIs(t, err, firstErr)
@@ -910,7 +910,7 @@ func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 		defer db.Close()
 
 		// Send an update to the archive writer goroutine.
-		_, err := db.Apply(1, common.Update{})
+		_, _, err := db.Apply(1, common.Update{})
 		require.NoError(t, err)
 
 		// Ensure the archive goroutine is blocked inside Add.
@@ -1092,7 +1092,7 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 		},
 	}
 
-	if _, err := st.Apply(1, update); err != nil {
+	if _, _, err := st.Apply(1, update); err != nil {
 		t.Errorf("failed to apply update: %v", err)
 	}
 

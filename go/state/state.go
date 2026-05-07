@@ -58,7 +58,10 @@ type State interface {
 	// like the update of the archive, if there is such.
 	// The channel may be nil if there are no asynchronous operations to be performed.
 	// If the asynchronous operations fail, the error is returned through the channel.
-	Apply(block uint64, update common.Update) (<-chan error, error)
+	Apply(block uint64, update common.Update) ([]func(), <-chan error, error)
+
+	// RevertLastBlock reverts the last block update. The undo functions are applied in the order they are provided.
+	RevertLastBlock(undo []func()) error
 
 	// GetHash hashes the state.
 	// Deprecated: use GetCommitment instead.
@@ -116,7 +119,8 @@ type LiveDB interface {
 	GetCodeHash(address common.Address) (hash common.Hash, err error)
 	HasEmptyStorage(addr common.Address) (bool, error)
 	GetHash() (hash common.Hash, err error)
-	Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error)
+	Apply(block uint64, update *common.Update) (undoList []func(), archiveUpdateHints common.Releaser, err error)
+	RevertLastBlock(undo []func()) error
 	Flush() error
 	Close() error
 	common.MemoryFootprintProvider
