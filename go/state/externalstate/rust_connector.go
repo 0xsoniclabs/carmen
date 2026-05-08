@@ -23,6 +23,7 @@ package externalstate
 */
 import "C"
 import (
+	"maps"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/database/flat"
@@ -122,7 +123,7 @@ func newRustFileBasedState(params state.Parameters) (state.State, error) {
 	return newState("file", params, rustBindings{})
 }
 
-func init() {
+func getRustConfigurations() map[state.Configuration]state.StateFactory {
 	factories := map[state.Configuration]state.StateFactory{}
 
 	// Add all configuration options supported by the Rust implementation.
@@ -150,13 +151,19 @@ func init() {
 		Archive: "file",
 	}] = newRustFileBasedState
 
-	// Register all experimental configurations.
+	flatFactories := map[state.Configuration]state.StateFactory{}
 	for config, factory := range factories {
-		state.RegisterStateFactory(config, factory)
-
-		// Also register flat database variants.
-		config := config
 		config.Variant += "-flat"
-		state.RegisterStateFactory(config, flat.WrapFactory(factory))
+		flatFactories[config] = flat.WrapFactory(factory)
+	}
+	maps.Copy(factories, flatFactories)
+
+	return factories
+}
+
+func init() {
+	// Register all Rust configurations.
+	for config, factory := range getRustConfigurations() {
+		state.RegisterStateFactory(config, factory)
 	}
 }
