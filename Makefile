@@ -18,7 +18,7 @@ carmen-rust:
 	cargo build --release
 
 clean:
-	cd ../rust ; \
+	cd rust ; \
 	cargo clean ; \
 
 .PHONY: license-check
