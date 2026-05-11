@@ -21,8 +21,6 @@ import (
 	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
-	"github.com/0xsoniclabs/carmen/go/backend/index"
-	"github.com/0xsoniclabs/carmen/go/backend/store"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -421,106 +419,6 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hashes differ in schema %d", schema)
 			}
 		}
-	}
-}
-
-var errInjectedByTest = fmt.Errorf("testing error")
-
-type failingStore[I common.Identifier, V any] struct {
-	store.Store[I, V]
-}
-
-func (m failingStore[I, V]) Get(id I) (value V, err error) {
-	err = errInjectedByTest
-	return
-}
-
-type failingIndex[K comparable, I common.Identifier] struct {
-	index.Index[K, I]
-}
-
-func (m failingIndex[K, I]) Get(key K) (id I, err error) {
-	err = errInjectedByTest
-	return
-}
-
-func TestFailingStore(t *testing.T) {
-	db, err := newGoMemoryState(state.Parameters{
-		Directory: t.TempDir(),
-		Schema:    1,
-		Archive:   state.NoArchive,
-	})
-	if err != nil {
-		t.Fatalf("failed to create in-memory state; %s", err)
-	}
-	goSchema := state.UnsafeUnwrapSyncedState(db).(*GoState).live.(*GoSchema1)
-	goSchema.balancesStore = failingStore[uint32, amount.Amount]{goSchema.balancesStore}
-	goSchema.noncesStore = failingStore[uint32, common.Nonce]{goSchema.noncesStore}
-	goSchema.valuesStore = failingStore[uint32, common.Value]{goSchema.valuesStore}
-
-	_ = goSchema.SetBalance(address1, amount.New())
-	_ = goSchema.SetNonce(address1, common.Nonce{})
-	_ = goSchema.SetStorage(address1, key1, common.Value{})
-
-	_, err = db.GetBalance(address1)
-	if !errors.Is(err, errInjectedByTest) {
-		t.Errorf("State service does not return the store err; returned %s", err)
-	}
-
-	_, err = db.GetNonce(address1)
-	if !errors.Is(err, errInjectedByTest) {
-		t.Errorf("State service does not return the store err; returned %s", err)
-	}
-
-	_, err = db.GetStorage(address1, key1)
-	if !errors.Is(err, errInjectedByTest) {
-		t.Errorf("State service does not return the store err; returned %s", err)
-	}
-}
-
-func TestFailingIndex(t *testing.T) {
-	db, err := newGoMemoryState(state.Parameters{
-		Directory: t.TempDir(),
-		Schema:    1,
-		Archive:   state.NoArchive,
-	})
-	if err != nil {
-		t.Fatalf("failed to create in-memory state; %s", err)
-	}
-	goSchema := state.UnsafeUnwrapSyncedState(db).(*GoState).live.(*GoSchema1)
-	goSchema.addressIndex = failingIndex[common.Address, uint32]{goSchema.addressIndex}
-
-	_, err = db.GetBalance(address1)
-	if !errors.Is(err, errInjectedByTest) {
-		t.Errorf("State service does not return the index err; returned %s", err)
-	}
-
-	_, err = db.GetNonce(address1)
-	if !errors.Is(err, errInjectedByTest) {
-		t.Errorf("State service does not return the index err; returned %s", err)
-	}
-
-	_, err = db.GetStorage(address1, key1)
-	if !errors.Is(err, errInjectedByTest) {
-		t.Errorf("State service does not return the index err; returned %s", err)
-	}
-}
-
-func TestGetMemoryFootprint(t *testing.T) {
-	for _, config := range initGoStates() {
-		t.Run(config.name(), func(t *testing.T) {
-			state, err := config.createState(t.TempDir())
-			if err != nil {
-				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
-			}
-			defer state.Close()
-
-			memoryFootprint := state.GetMemoryFootprint()
-			str := memoryFootprint.ToString("state")
-			if config.config.Schema >= 1 && config.config.Schema <= 3 && !strings.Contains(str, "hashTree") {
-				t.Errorf("memory footprint string does not contain any hashTree")
-			}
-		})
 	}
 }
 

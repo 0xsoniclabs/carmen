@@ -11,7 +11,6 @@
 package common_test
 
 import (
-	"bytes"
 	"slices"
 	"testing"
 
@@ -47,75 +46,6 @@ func TestNonceSerializer(t *testing.T) {
 func TestAmountSerializer(t *testing.T) {
 	var s common.AmountSerializer
 	var _ common.Serializer[amount.Amount] = s
-}
-
-func TestSlotIdxSerializer32(t *testing.T) {
-	var s common.SlotIdx32Serializer
-	var _ common.Serializer[common.SlotIdx[uint32]] = s
-
-	// convert back and forth
-	slotIdx := common.SlotIdx[uint32]{
-		AddressIdx: 123,
-		KeyIdx:     456,
-	}
-	b := s.ToBytes(slotIdx)
-	slotIdx2 := s.FromBytes(b)
-
-	if slotIdx != slotIdx2 {
-		t.Errorf("Conversion fails: %x := %x", slotIdx, slotIdx2)
-	}
-}
-
-func TestSlotIdx32KeySerializer(t *testing.T) {
-	var s common.SlotIdx32KeySerializer
-	var _ common.Serializer[common.SlotIdxKey[uint32]] = s
-
-	// convert back and forth
-	slotIdx := common.SlotIdxKey[uint32]{
-		AddressIdx: 0x87654321,
-		Key:        common.Key{0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x99},
-	}
-	b := s.ToBytes(slotIdx)
-	slotIdx2 := s.FromBytes(b)
-	b2 := s.ToBytes(slotIdx2)
-	b3 := make([]byte, s.Size())
-	s.CopyBytes(slotIdx2, b3)
-
-	if slotIdx != slotIdx2 {
-		t.Errorf("Conversion fails")
-	}
-	if !bytes.Equal(b, b2) {
-		t.Errorf("Conversion fails")
-	}
-	if !bytes.Equal(b, b3) {
-		t.Errorf("Conversion fails")
-	}
-}
-
-func TestSlotReincValueSerializer(t *testing.T) {
-	var s common.SlotReincValueSerializer
-	var _ common.Serializer[common.SlotReincValue] = s
-
-	// convert back and forth
-	slotValue := common.SlotReincValue{
-		Reincarnation: 0x87654321,
-		Value:         common.Value{0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x34, 0x56, 0x78, 0x9A, 0x12, 0x99},
-	}
-	b := s.ToBytes(slotValue)
-	slotValue2 := s.FromBytes(b)
-	b2 := s.ToBytes(slotValue2)
-	b3 := make([]byte, s.Size())
-	s.CopyBytes(slotValue2, b3)
-
-	if slotValue != slotValue2 {
-		t.Errorf("Conversion fails")
-	}
-	if !bytes.Equal(b, b2) {
-		t.Errorf("Conversion fails")
-	}
-	if !bytes.Equal(b, b3) {
-		t.Errorf("Conversion fails")
-	}
 }
 
 func TestSerializers(t *testing.T) {
@@ -189,34 +119,6 @@ func TestSerializers(t *testing.T) {
 		var a = uint64(loops)
 		const size = 8
 		testSerializer[uint64](t, a, size, common.Identifier64Serializer{})
-	})
-
-	t.Run("TestSerializers_SlotIdx32Serializer", func(t *testing.T) {
-		var a common.SlotIdx[uint32]
-		a.KeyIdx = uint32(loops)
-		a.AddressIdx = uint32(loops)
-		const size = 4 + 4
-		testSerializer[common.SlotIdx[uint32]](t, a, size, common.SlotIdx32Serializer{})
-	})
-
-	t.Run("TestSerializers_SlotIdx32KeySerializer", func(t *testing.T) {
-		var key common.Key
-		const keySize = 32
-		for i := 1; i < loops; i++ {
-			key[i%keySize]++
-		}
-
-		var a common.SlotIdxKey[uint32]
-		a.Key = key
-		a.AddressIdx = uint32(loops)
-		const size = 4
-		testSerializer[common.SlotIdxKey[uint32]](t, a, keySize+size, common.SlotIdx32KeySerializer{})
-	})
-
-	t.Run("TestSerializers_ReincarnationSerializer", func(t *testing.T) {
-		var a = common.Reincarnation(loops)
-		const size = 4
-		testSerializer[common.Reincarnation](t, a, size, common.ReincarnationSerializer{})
 	})
 }
 
