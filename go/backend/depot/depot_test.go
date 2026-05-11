@@ -432,7 +432,7 @@ func TestDepotPages(t *testing.T) {
 
 func TestStoresHashesAgainstReferenceOutput(t *testing.T) {
 	// Tests the hashes for values [0x00], [0x00, 0x11] ... [..., 0xFF] inserted in sequence.
-	// reference hashes from the C++ implementation
+	// reference hashes from the (now removed) legacy C++ implementation
 	expectedHashes := []string{
 		"a536aa3cede6ea3c1f3e0357c3c60e0f216a8c89b853df13b29daa8f85065dfb",
 		"ab03063682ff571fbdf1f26e310a09911a9eefb57014b24679c3b0c806a17f86",

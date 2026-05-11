@@ -10,13 +10,13 @@ on:
     paths:
     - ".github/workflows/rust.yaml"
     - "rust/**"
-    - "cpp/state/c_state.h"
+    - "bindings/state/c_state.h"
   pull_request:
     branches: [ "**" ]
     paths:
     - ".github/workflows/rust.yaml"
     - "rust/**"
-    - "cpp/state/c_state.h"
+    - "bindings/state/c_state.h"
 
 env:
   CARGO_TERM_COLOR: always

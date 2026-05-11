@@ -21,7 +21,7 @@ import (
 // Configuration is a unique identifier of a Carmen DB setup option.
 // Each setup is defined by three components:
 //   - Variant: the technology used for implementing the DB. This may
-//     reference different languages (Go, C++, ...) or storage solutions
+//     reference different languages (Go, Rust, ...) or storage solutions
 //     (in-memory, files, levelDB, SQL, ...)
 //   - Schema: defining the data format used for storing the data in the
 //     respective implementation. The format may have an impact on performance
@@ -51,10 +51,9 @@ func (c Configuration) String() string {
 }
 
 // Variant describes the base technology underlying an implementation.
-// Examples are go-file for a Go/File-based implementation or cpp-memory
-// for a C++ based in-memory implementation. Values should not be defined
-// by client code using Carmen. Instead, constants shall be provided by
-// specific implementations.
+// Examples are go-file for a Go/File-based implementation.
+// Values should not be defined by client code using Carmen.
+// Instead, constants shall be provided by specific implementations.
 type Variant string
 
 // Schema are used to differentiate between data representation

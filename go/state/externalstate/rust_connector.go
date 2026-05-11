@@ -17,7 +17,7 @@ package externalstate
 /*
 #cgo LDFLAGS: -L${SRCDIR}/../../../rust/target/release -lcarmen_rust
 #cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../../rust/target/release
-#cgo CFLAGS: -I${SRCDIR}/../../../cpp
+#cgo CFLAGS: -I${SRCDIR}/../../../bindings
 #include <stdlib.h>
 #include "state/c_state.h"
 */

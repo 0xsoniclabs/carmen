@@ -5,7 +5,7 @@
    ```
 2. Run tests
     * [Go tests](https://github.com/0xsoniclabs/carmen/tree/main/go#development)
-    * [C++ tests](https://github.com/0xsoniclabs/carmen/blob/main/cpp/README.md#build-and-test)
+    * [Rust tests](https://github.com/0xsoniclabs/carmen/tree/main/rust)
 ***
 
 # How to Integrate

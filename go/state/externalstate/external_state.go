@@ -8,14 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-//go:build carmen_rust || carmen_cpp
+//go:build carmen_rust
 
 package externalstate
 
-//go:generate mockgen -source external_state.go -destination external_state_mocks.go -package externalstate --build_constraint "carmen_cpp || carmen_rust"
+//go:generate mockgen -source external_state.go -destination external_state_mocks.go -package externalstate --build_constraint "carmen_rust"
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../../../cpp
+#cgo CFLAGS: -I${SRCDIR}/../../../bindings
 #include <stdlib.h>
 #include "state/c_state.h"
 */

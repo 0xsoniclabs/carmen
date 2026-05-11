@@ -12,7 +12,7 @@ use std::{env, path::PathBuf};
 
 fn main() {
     let bindings = bindgen::Builder::default()
-        .header("../cpp/state/c_state.h")
+        .header("../bindings/state/c_state.h")
         // regenerate the bindings if any of the included header files changed
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
