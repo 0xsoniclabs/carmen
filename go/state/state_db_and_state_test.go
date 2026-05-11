@@ -893,6 +893,64 @@ func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
 	}
 }
 
+// executeOpOnClearStateDB executes the given operation on a clear stateDB in single transaction/block and returns the state root hash.
+func executeOpOnClearStateDB(t *testing.T, config namedStateConfig, op func(state.StateDB)) common.Hash {
+	t.Helper()
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := config.createState(dir)
+	require.NoError(err)
+	defer func() {
+		require.NoError(s.Close())
+	}()
+
+	db := state.CreateStateDBUsing(s)
+	db.BeginBlock()
+	db.BeginTransaction()
+	op(db)
+	db.EndTransaction()
+	db.EndBlock(0)
+	return db.GetHash()
+}
+
+func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
+	funcList := map[string]func(s state.StateDB){
+		"SetState": func(s state.StateDB) {
+			s.SetState(address1, key1, val1)
+		},
+		"AddBalance": func(s state.StateDB) {
+			s.AddBalance(address1, amount.New(10))
+		},
+		"SetNonce": func(s state.StateDB) {
+			s.SetNonce(address1, 10)
+		},
+		"SetCode": func(s state.StateDB) {
+			s.SetCode(address1, []byte{0xAC})
+		},
+	}
+
+	for _, config := range initStates() {
+		if config.config.Schema < 4 {
+			continue
+		}
+		for name, fn := range funcList {
+			t.Run(config.name()+"_"+name, func(t *testing.T) {
+				t.Parallel()
+				require := require.New(t)
+				with := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+					s.CreateAccount(address1)
+					fn(s)
+				})
+				without := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+					fn(s)
+				})
+				require.Equal(without, with)
+
+			})
+		}
+	}
+}
+
 func toVal(key uint64) common.Value {
 	keyBytes := make([]byte, 32)
 	binary.BigEndian.PutUint64(keyBytes, key)
