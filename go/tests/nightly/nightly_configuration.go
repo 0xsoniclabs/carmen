@@ -12,9 +12,9 @@ package nightly
 
 import "flag"
 
-var Nightly = flag.Bool("nightly", false, "Enable nightly tests")
+var nightly = flag.Bool("nightly", false, "Enable nightly tests")
 
 // IsNightly returns whether the nightly tests should be run.
 func IsNightly() bool {
-	return *Nightly
+	return *nightly
 }
