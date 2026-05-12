@@ -22,15 +22,14 @@ import (
 // Each setup is defined by three components:
 //   - Variant: the technology used for implementing the DB. This may
 //     reference different languages (Go, Rust, ...) or storage solutions
-//     (in-memory, files, levelDB, SQL, ...)
+//     (in-memory, files,  ...)
 //   - Schema: defining the data format used for storing the data in the
 //     respective implementation. The format may have an impact on performance
 //     characteristics of the implementation as well as the availability and
 //     format of state hashes and witness proofs
 //   - Archive: defines what type of archive is utilized to store historic
 //     data. In general, tracking historic data is optional in Carmen, and
-//     can be disabled by this option. Alternative archive solutions may be
-//     SQL, LevelDB, or file based
+//     can be disabled by this option.
 //
 // Not every combination of variants, schemas, and archive values is
 // supported. Furthermore, the Carmen infrastructure is open for future

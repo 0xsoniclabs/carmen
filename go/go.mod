@@ -21,9 +21,8 @@ require (
 	// This is fixed in https://github.com/ethereum/go-verkle/pull/469, but not
 	// yet included in any release.
 	github.com/ethereum/go-verkle v0.2.3-0.20260102081149-aa0a270c0ed0
-	github.com/golang/snappy v1.0.0
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/holiman/uint256 v1.3.2
-	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
