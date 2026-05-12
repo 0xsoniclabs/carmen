@@ -91,8 +91,7 @@ type ArchiveType string
 
 const (
 	NoArchive      ArchiveType = "none"
-	LevelDbArchive ArchiveType = "ldb"
-	SqliteArchive  ArchiveType = "sql"
+	LevelDbArchive ArchiveType = "ldb" // Only supported by VT Geth
 	S4Archive      ArchiveType = "s4"
 	S5Archive      ArchiveType = "s5"
 )

@@ -14,16 +14,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
-	"github.com/0xsoniclabs/carmen/go/backend/archive/ldb"
-	"github.com/0xsoniclabs/carmen/go/backend/archive/sqlite"
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
@@ -40,30 +36,6 @@ var (
 
 func getArchiveFactories(tb testing.TB) []archiveFactory {
 	return []archiveFactory{
-		{
-			label: "SQLite",
-			getArchive: func(tempDir string) archive.Archive {
-				archive, err := sqlite.NewArchive(tempDir + "/archive.sqlite")
-				if err != nil {
-					tb.Fatalf("failed to create archive; %s", err)
-				}
-				return archive
-			},
-		},
-		{
-			label: "LevelDB",
-			getArchive: func(tempDir string) archive.Archive {
-				db, err := backend.OpenLevelDb(tempDir, nil)
-				if err != nil {
-					tb.Fatalf("failed to open LevelDB; %s", err)
-				}
-				archive, err := ldb.NewArchive(db)
-				if err != nil {
-					tb.Fatalf("failed to create archive; %s", err)
-				}
-				return &ldbArchiveWrapper{archive, db}
-			},
-		},
 		{
 			label: "S4",
 			getArchive: func(tempDir string) archive.Archive {
@@ -87,20 +59,6 @@ func getArchiveFactories(tb testing.TB) []archiveFactory {
 			customHash: true,
 		},
 	}
-}
-
-// ldbArchiveWrapper wraps the ldb.Archive to close the LevelDB on the archive Close
-type ldbArchiveWrapper struct {
-	archive.Archive
-	db io.Closer
-}
-
-func (w *ldbArchiveWrapper) Close() error {
-	err := w.Archive.Close()
-	if err != nil {
-		return err
-	}
-	return w.db.Close()
 }
 
 var (

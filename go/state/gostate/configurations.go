@@ -16,13 +16,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/database/flat"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
-	archldb "github.com/0xsoniclabs/carmen/go/backend/archive/ldb"
-	"github.com/0xsoniclabs/carmen/go/backend/archive/sqlite"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
@@ -54,8 +51,6 @@ const (
 func init() {
 	generallySupportedArchives := []state.ArchiveType{
 		state.NoArchive,
-		state.LevelDbArchive,
-		state.SqliteArchive,
 	}
 
 	// Register all configuration options supported by the Go implementation.
@@ -212,27 +207,6 @@ func openArchive(params state.Parameters) (archive archive.Archive, cleanup func
 			return nil, nil, fmt.Errorf("opening DB with no archive would ignore existing archive at %s", path)
 		}
 		return nil, nil, nil
-
-	case state.LevelDbArchive:
-		path, err := prepareArchiveDirectory(params)
-		if err != nil {
-			return nil, nil, err
-		}
-		db, err := backend.OpenLevelDb(path, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		cleanup = func() { _ = db.Close() }
-		arch, err := archldb.NewArchive(db)
-		return arch, cleanup, err
-
-	case state.SqliteArchive:
-		path, err := prepareArchiveDirectory(params)
-		if err != nil {
-			return nil, nil, err
-		}
-		arch, err := sqlite.NewArchive(filepath.Join(path, "archive.sqlite"))
-		return arch, nil, err
 
 	case state.S4Archive:
 		path, err := prepareArchiveDirectory(params)
