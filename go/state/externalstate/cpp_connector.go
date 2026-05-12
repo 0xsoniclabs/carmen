@@ -23,6 +23,7 @@ package externalstate
 */
 import "C"
 import (
+	"maps"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/database/flat"
@@ -122,7 +123,7 @@ func newCppLevelDbBasedState(params state.Parameters) (state.State, error) {
 	return newState("ldb", params, cppBindings{})
 }
 
-func init() {
+func getCppConfigurations() map[state.Configuration]state.StateFactory {
 	factories := map[state.Configuration]state.StateFactory{}
 
 	// Add all configuration options supported by the C++ implementation.
@@ -152,13 +153,19 @@ func init() {
 		}
 	}
 
-	// Register all experimental configurations.
+	flatFactories := map[state.Configuration]state.StateFactory{}
 	for config, factory := range factories {
-		state.RegisterStateFactory(config, factory)
-
-		// Also register flat database variants.
-		config := config
 		config.Variant += "-flat"
-		state.RegisterStateFactory(config, flat.WrapFactory(factory))
+		flatFactories[config] = flat.WrapFactory(factory)
+	}
+	maps.Copy(factories, flatFactories)
+
+	return factories
+}
+
+func init() {
+	// Register all C++ configurations.
+	for config, factory := range getCppConfigurations() {
+		state.RegisterStateFactory(config, factory)
 	}
 }
