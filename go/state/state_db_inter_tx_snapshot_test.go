@@ -272,7 +272,7 @@ func DeletingAccountWithState(t *testing.T, state *stateDB, beginOp func(state *
 
 func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	if !nightly.IsNightly() {
-		t.Skipf("Test must be right nightly")
+		t.Skipf("Test must be run nightly")
 	}
 
 	type InterTxSnapshotWithStateCheck struct {
