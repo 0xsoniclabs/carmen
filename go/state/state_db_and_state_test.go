@@ -692,7 +692,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 	for _, config := range initStates() {
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
-			if config.config.Schema < 4 || config.config.Schema == 6 || strings.Contains(config.name(), "flat") {
+			if config.config.Schema == 0 || config.config.Schema == 6 || strings.Contains(config.name(), "flat") {
 				t.Skip()
 			}
 			dir := t.TempDir()
