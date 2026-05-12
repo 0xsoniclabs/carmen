@@ -8,8 +8,13 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-//go:build !nightly
-
 package nightly
 
-const NightlyTestEnabled = false
+import "flag"
+
+var Nightly = flag.Bool("nightly", false, "Enable nightly tests")
+
+// IsNightly returns whether the nightly tests should be run.
+func IsNightly() bool {
+	return *Nightly
+}

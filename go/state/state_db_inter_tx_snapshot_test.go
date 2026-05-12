@@ -23,7 +23,6 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"github.com/0xsoniclabs/carmen/go/tests/nightly"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -271,10 +270,6 @@ func DeletingAccountWithState(t *testing.T, state *stateDB, beginOp func(state *
 }
 
 func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
-	if !nightly.NightlyTestEnabled {
-		t.Skip("skipping nightly test")
-	}
-
 	type InterTxSnapshotWithStateCheck struct {
 		stateBackup *stateDB
 		snapshotID  InterTxSnapshotID
