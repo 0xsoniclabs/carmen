@@ -12,6 +12,6 @@ The storage layer is abstracted, and various schemas have been implemented
 to read and write information in memory, a key-value store (LevelDB, etc.), 
 or a native file format. 
 One of the schemas is a Merkle-Patricia Trie (MPT) compatible with the EVM. 
-All schemas are implemented in Go, while some are in C++.
+All schemas are implemented in Go, while some in Rust.
 
 More information: [How to use](doc/overview.md)

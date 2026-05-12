@@ -174,7 +174,7 @@ func TestIndexesHashesAgainstReferenceOutput(t *testing.T) {
 	indexes := initIndexesMap()
 
 	// Tests the hashes for keys 0x01, 0x02 inserted in sequence.
-	// reference hashes from the C++ implementation
+	// reference hashes from the (now removed) legacy C++ implementation
 	expectedHashes := []string{
 		"ff9226e320b1deb7fabecff9ac800cd8eb1e3fb7709c003e2effcce37eec68ed",
 		"c28553369c52e217564d3f5a783e2643186064498d1b3071568408d49eae6cbe",

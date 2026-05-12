@@ -8,24 +8,11 @@ RUN apt-get update && apt-get install -y \
   git \
   make \
   wget \
-  clang-19 \
-  clang-format-19 \
   build-essential \
+  clang-19 \
   && rm -rf /var/lib/apt/lists/*
 RUN gcc --version
 RUN clang-19 --version
-
-# Install Bazel
-ENV USER=jenkins
-ENV PATH=/usr/local/bin:$PATH
-RUN \
-  wget https://github.com/bazelbuild/bazelisk/releases/download/v1.26.0/bazelisk-linux-amd64; \
-  chmod +x bazelisk-linux-amd64; \
-  mv bazelisk-linux-amd64 /usr/local/bin/bazel; \
-  wget https://github.com/bazelbuild/buildtools/releases/download/v8.2.1/buildifier-linux-amd64; \
-  chmod +x buildifier-linux-amd64; \
-  mv buildifier-linux-amd64 /usr/local/bin/buildifier; 
-RUN bazel version
 
 # Install Rust
 # adapted from https://github.com/rust-lang/docker-rust/blob/3aad80112be66bf796c202713029d7ba93dff7fa/stable/bullseye/Dockerfile

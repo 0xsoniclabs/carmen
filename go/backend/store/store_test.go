@@ -169,7 +169,7 @@ func TestStoresHashingByComparison(t *testing.T) {
 
 func TestStoresHashesAgainstReferenceOutput(t *testing.T) {
 	// Tests the hashes for values 0x00, 0x11 ... 0xFF inserted in sequence.
-	// reference hashes from the C++ implementation
+	// reference hashes from the (now removed) legacy C++ implementation
 	expectedHashes := []string{
 		"f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
 		"967293ee9d7ba679c3ef076bef139e2ceb96d45d19a624cc59bb5a3c1649ce38",

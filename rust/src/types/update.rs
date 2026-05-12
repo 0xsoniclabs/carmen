@@ -64,7 +64,7 @@ pub struct Update<'d> {
 const VERSION_0: u8 = 0;
 
 // go/common/update.go:ToBytes
-// cpp/state/update.h:Update::FromBytes
+// bindings/state/update.h:Update::FromBytes
 impl<'d> Update<'d> {
     /// Parses an update from its encoded form.
     pub fn from_encoded(mut bytes: &'d [u8]) -> BTResult<Self, String> {

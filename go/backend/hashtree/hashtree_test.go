@@ -12,14 +12,15 @@ package hashtree_test
 
 import (
 	"fmt"
+	"io"
+	"testing"
+
 	"github.com/0xsoniclabs/carmen/go/backend"
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree"
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htfile"
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htldb"
 	"github.com/0xsoniclabs/carmen/go/backend/hashtree/htmemory"
 	"github.com/0xsoniclabs/carmen/go/common"
-	"io"
-	"testing"
 )
 
 type hashTreeFactory struct {
@@ -301,7 +302,7 @@ func TestTreePersisted(t *testing.T) {
 
 func TestHashesAgainstReferenceOutput(t *testing.T) {
 	// Tests the hashes for values 0x00, 0x11 ... 0x44 inserted in sequence.
-	// reference hashes from the C++ implementation
+	// reference hashes from the (now removed) legacy C++ implementation
 	expectedHashes := []string{
 		"6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
 		"6c5f701c7f179fe2f65970ec7105d8e5c156c94fdf5aaaa9583be12473c89f0f",

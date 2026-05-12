@@ -38,7 +38,7 @@ func reduceHashes(branchingFactor int, hashes []common.Hash) common.Hash {
 
 func TestKnownHashes(t *testing.T) {
 	// Tests the hashes for values 0x00, 0x11 ... 0x44 inserted in sequence.
-	// reference hashes from the C++ implementation
+	// reference hashes from the (now removed) legacy C++ implementation
 	expectedHashes := []string{
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		"6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",

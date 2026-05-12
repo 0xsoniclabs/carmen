@@ -9,7 +9,7 @@ It is intended to be used as a shared library from Go.
 
 ### Building and Linking against the Shared Library
 
-To build the shared library either run `make` in the root directory which will build both the C++ and the Rust code, or run in the `rust` directory
+To build the shared library either run `make` in the root directory which will build the Rust code, or run in the `rust` directory
 ```sh
 cargo build --release
 ```

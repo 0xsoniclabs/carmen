@@ -356,7 +356,7 @@ const numSlots = 1000
 func TestPersistentStateDB(t *testing.T) {
 	for _, config := range initStates() {
 		// skip in-memory
-		if strings.HasPrefix(config.name(), "cpp-memory") || strings.HasPrefix(config.name(), "go-memory") {
+		if strings.HasPrefix(config.name(), "go-memory") {
 			continue
 		}
 		if strings.Contains(config.name(), "flat") {

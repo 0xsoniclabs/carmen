@@ -8,8 +8,8 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-//go:build !carmen_cpp && !carmen_rust
+//go:build !carmen_rust
 
 package externalstate
 
-// This file is required to avoid having an empty package when neither the "carmen_cpp" nor "carmen_rust" bindings are enabled.
+// This file is required to avoid having an empty package when no external state implementations are included in the build.

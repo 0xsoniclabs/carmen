@@ -667,9 +667,6 @@ func TestLastArchiveBlock(t *testing.T) {
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			if config.name()[0:3] == "cpp" {
-				t.Skipf("GetArchiveBlockHeight not supported by the cpp state")
-			}
 			s, err := config.createState(dir)
 			if err != nil {
 				if errors.Is(err, UnsupportedConfiguration) {
@@ -745,7 +742,7 @@ func TestPersistentState(t *testing.T) {
 			continue
 		}
 		// skip in-memory
-		if strings.HasPrefix(config.name(), "cpp-memory") || strings.HasPrefix(config.name(), "go-memory") {
+		if strings.HasPrefix(config.name(), "go-memory") {
 			continue
 		}
 		if strings.Contains(config.name(), "flat") {

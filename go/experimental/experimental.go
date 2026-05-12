@@ -12,7 +12,7 @@ package experimental
 
 // This package is used to enable experimental features in the Carmen project to
 // be used for testing and development purposes of off-chain components.
-// In particular, by importing this package, access to C++ and Rust based DB
+// In particular, by importing this package, access to the Rust based DB
 // implementations is enabled.
 //
 // To enable those features, import this package into your project as follows:
@@ -20,7 +20,7 @@ package experimental
 //  import _ "github.com/0xsoniclabs/carmen/go/experimental"
 //
 // As a side-effect, additional packages implementing experimental features are
-// imported into your project. Some of those, like the C++ and Rust based DB
+// imported into your project. Some of those, like the Rust based DB
 // require additional library dependencies to be accessible on your system.
 // Build steps may have to be adjusted to make sure that these required
 // dependencies can be linked correctly.

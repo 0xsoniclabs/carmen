@@ -56,19 +56,6 @@ pipeline {
                     }
                 }
 
-                stage('Check C++ sources formatting') {
-                    steps {
-                        sh 'find cpp/ -iname *.h -o -iname *.cc | xargs clang-format-19 --dry-run -Werror '
-                    }
-                }
-
-                stage('Build C++ libraries') {
-                    steps {
-                        sh 'git submodule update --init --recursive'
-                        sh 'cd go/lib && ./build_libcarmen.sh'
-                    }
-                }
-
                 stage('Build Rust library') {
                     steps {
                         sh 'cd rust && cargo build --release'
@@ -78,14 +65,12 @@ pipeline {
                 stage("Check if Go code compiles with combinations of bindings") {
                     steps {
                         sh 'cd go && go build -tags -v ./...'
-                        sh 'cd go && go build -tags "carmen_cpp" -v ./...'
-                        sh 'cd go && go build -tags "carmen_rust" -v ./...'
                     }
                 }
 
                 stage('Build Go') {
                     steps {
-                        sh 'cd go && go build --tags "carmen_cpp carmen_rust" -v ./...'
+                        sh 'cd go && go build --tags "carmen_rust" -v ./...'
                     }
                 }
 
@@ -94,7 +79,7 @@ pipeline {
                         CODECOV_TOKEN = credentials('codecov-uploader-0xsoniclabs-global')
                     }
                     steps {
-                        sh 'cd go && go test --tags "carmen_cpp carmen_rust" ./... -coverprofile=coverage.txt -parallel 4 -timeout 60m'
+                        sh 'cd go && go test --tags "carmen_rust" ./... -coverprofile=coverage.txt -parallel 4 -timeout 60m'
                         sh 'codecov upload-process -r 0xsoniclabs/carmen -f ./go/coverage.txt -t ${CODECOV_TOKEN}'
                     }
                 }
@@ -102,15 +87,6 @@ pipeline {
                 stage('Run Mpt Go Stress Test') {
                     steps {
                         sh 'cd go && go run ./database/mpt/tool stress-test --num-blocks 2000'
-                    }
-                }
-
-                stage('Run C++ tests') {
-                    when {
-                        changeset "cpp/**"
-                    }
-                    steps {
-                        sh 'cd cpp && bazel test --test_output=errors //...'
                     }
                 }
             }

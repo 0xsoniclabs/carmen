@@ -20,14 +20,13 @@ go get github.com/0xsoniclabs/carmen/go/
 
 # Development
 
-For development purposes, it may come handy to execute all tests. It needs build of c++ parts.
-
-Either install C++ build environment, see [C++ build environment instructions](../cpp/README.md),
-or have [Docker installation](https://www.docker.com)
+For development purposes, it may come handy to execute all tests.
+In addition to the go implementation, other experimental implementations must be build separately.
+You can refer to the language subfolder for more detailed instructions. 
 
 Execute in the root directory:
 ```
-make
+make all
 ```
 
 Then execute in this directory:
@@ -44,18 +43,18 @@ all tests should pass.
 
 ## Enable externalstate GO bindings
 
-The C++ and Rust implementations are referenced by Go through CGO, and are disabled by default.  
-To enable them, you need to provide the "carmen\_cpp" or "carmen\_rust" build tags. For example, to run Go tests with the cpp implementation run
+The Rust implementations is referenced by Go through CGO, and is disabled by default.  
+To enable it, you need to provide the "carmen\_rust" build tags.
 
 ```bash
-go test -tags carmen_cpp ./...
+go test -tags carmen_rust ./...
 ```
 
-Both the C++ and Rust bindings provides a generator string to build the required library.   
-For example, to build the C++ library, run the following command 
+The Rust bindings provides a generator string to build the required library.   
+To build the Rust library, run the following command 
 
 ```bash
-go generate --tags carmen_cpp state/externalstate/cpp_connector.go
+go generate --tags carmen_rust state/externalstate/rust_connector.go
 ```
 
 ## Installing gomock

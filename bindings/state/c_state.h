@@ -9,7 +9,7 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 // This header file defines a C interface for manipulating the world state.
-// It is intended to be used to bridge the Go/C++ boundary.
+// It is intended to be used to bridge the Go/other language boundary.
 
 #include <stdint.h>
 
@@ -17,10 +17,8 @@
 extern "C" {
 #endif
 
-// Macro to duplicate function declarations for Rust and CPP
-#define DUPLICATE_FOR_LANGS(ret_type, fn) \
-  ret_type Carmen_Rust_##fn;              \
-  ret_type Carmen_Cpp_##fn;
+// Macro to duplicate function declarations each language.
+#define DUPLICATE_FOR_LANGS(ret_type, fn) ret_type Carmen_Rust_##fn;
 
 // The C interface for the storage system is designed to minimize overhead
 // between Go and C. All data is passed as pointers and the memory management
