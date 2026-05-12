@@ -9,17 +9,19 @@ on:
     branches: [ "**/**" ]
 
 jobs:
-  targets-main:
-    name: targets main
+  targets-main-or-release:
+    name: targets main or sonic release
     runs-on: ubuntu-latest
     steps:
-      - name: check PR targets main
+      - name: check PR targets main or sonic release branch
         env:
           TARGET_BRANCH: ${{ github.base_ref }}
         run: |
           if [ "$TARGET_BRANCH" == "main" ]; then
             exit 0
+          elif [[ "$TARGET_BRANCH" == sonic_* ]]; then
+            exit 0
           else
-            echo "Stacked PRs can not be merged."
+            echo "PRs can only be merged into main or sonic release branches. Current target branch: $TARGET_BRANCH"
             exit 1
           fi
