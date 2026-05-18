@@ -893,8 +893,8 @@ func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
 	}
 }
 
-// executeOpOnClearStateDB executes the given operation on a clear stateDB in single transaction/block and returns the state root hash.
-func executeOpOnClearStateDB(t *testing.T, config namedStateConfig, op func(state.StateDB)) common.Hash {
+// executeOpOnClearStateDB executes the given operation on a clean stateDB in single transaction/block and returns the state root hash.
+func executeOpOnCleanStateDB(t *testing.T, config namedStateConfig, op func(state.StateDB)) common.Hash {
 	t.Helper()
 	require := require.New(t)
 	dir := t.TempDir()
@@ -918,6 +918,10 @@ func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
 		"AddBalance": func(s state.StateDB) {
 			s.AddBalance(address1, amount.New(10))
 		},
+		"SubBalance": func(s state.StateDB) {
+			s.AddBalance(address1, amount.New(20)) // Add some balance first to avoid negative balance error
+			s.SubBalance(address1, amount.New(10))
+		},
 		"SetState": func(s state.StateDB) {
 			s.SetState(address1, key1, val1)
 		},
@@ -937,11 +941,11 @@ func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
 			t.Run(config.name()+"_"+name, func(t *testing.T) {
 				t.Parallel()
 				require := require.New(t)
-				with := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+				with := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 					s.CreateAccount(address1)
 					fn(s)
 				})
-				without := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+				without := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 					fn(s)
 				})
 				require.Equal(without, with)
@@ -959,11 +963,11 @@ func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *test
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
-			with := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+			with := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				s.CreateAccount(address1)
 				s.Suicide(address1)
 			})
-			without := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+			without := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				// Do nothing
 			})
 			require.Equal(without, with)
