@@ -914,12 +914,12 @@ func executeOpOnClearStateDB(t *testing.T, config namedStateConfig, op func(stat
 }
 
 func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
-	funcList := map[string]func(s state.StateDB){
-		"SetState": func(s state.StateDB) {
-			s.SetState(address1, key1, val1)
-		},
+	ops := map[string]func(s state.StateDB){
 		"AddBalance": func(s state.StateDB) {
 			s.AddBalance(address1, amount.New(10))
+		},
+		"SetState": func(s state.StateDB) {
+			s.SetState(address1, key1, val1)
 		},
 		"SetNonce": func(s state.StateDB) {
 			s.SetNonce(address1, 10)
@@ -933,7 +933,7 @@ func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
 		if config.config.Schema < 4 {
 			continue
 		}
-		for name, fn := range funcList {
+		for name, fn := range ops {
 			t.Run(config.name()+"_"+name, func(t *testing.T) {
 				t.Parallel()
 				require := require.New(t)
@@ -948,6 +948,26 @@ func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
 
 			})
 		}
+	}
+}
+
+func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *testing.T) {
+	for _, config := range initStates() {
+		if config.config.Schema < 4 {
+			continue
+		}
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			with := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+				s.CreateAccount(address1)
+				s.Suicide(address1)
+			})
+			without := executeOpOnClearStateDB(t, config, func(s state.StateDB) {
+				// Do nothing
+			})
+			require.Equal(without, with)
+		})
 	}
 }
 
