@@ -26,7 +26,7 @@ func Test_IsNightlyIsEnabledWhenFlagIsProvided(t *testing.T) {
 
 func Test_IsNightly(t *testing.T) {
 	require := require.New(t)
-	stdout := execSubProcessTest(t, "Test_IsNightlyIsEnabledWhenFlagIsProvided", "-nightly=true")
+	stdout := execSubProcessTest(t, "Test_IsNightlyIsEnabledWhenFlagIsProvided", "CARMEN_NIGHTLY=true")
 	// Use contains as test output includes PASS and statement coverage info
 	require.Contains(stdout.String(), "Nightly flag is true")
 	stdout = execSubProcessTest(t, "Test_IsNightlyIsEnabledWhenFlagIsProvided", "")
@@ -34,13 +34,17 @@ func Test_IsNightly(t *testing.T) {
 }
 
 // execSubProcessTest executes the test with the given name in a subprocess with the provided flag and returns the stdout buffer.
-func execSubProcessTest(t *testing.T, execTestName string, flag string) bytes.Buffer {
+func execSubProcessTest(t *testing.T, execTestName string, envVar string) bytes.Buffer {
 	path, err := os.Executable()
 	if err != nil {
 		t.Fatalf("failed to resolve path to test binary: %v", err)
 	}
 
-	cmd := exec.Command(path, "-test.run", execTestName, flag)
+	cmd := exec.Command(path, "-test.run", execTestName)
+	cmd.Env = os.Environ()
+	if envVar != "" {
+		cmd.Env = append(cmd.Env, envVar)
+	}
 	errBuf := new(bytes.Buffer)
 	cmd.Stderr = errBuf
 	stdBuf := new(bytes.Buffer)

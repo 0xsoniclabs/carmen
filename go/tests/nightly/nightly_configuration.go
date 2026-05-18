@@ -10,11 +10,9 @@
 
 package nightly
 
-import "flag"
-
-var nightly = flag.Bool("nightly", false, "Enable nightly tests")
+import "os"
 
 // IsNightly returns whether the nightly tests should be run.
 func IsNightly() bool {
-	return *nightly
+	return os.Getenv("CARMEN_NIGHTLY") == "true"
 }
