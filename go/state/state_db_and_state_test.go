@@ -963,14 +963,19 @@ func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *test
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
-			with := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+			explicitCreation := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				s.CreateAccount(address1)
 				s.Suicide(address1)
 			})
-			without := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+			implicitCreation := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+				s.SetNonce(address1, 1)
+				s.Suicide(address1)
+			})
+			emptyState := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				// Do nothing
 			})
-			require.Equal(without, with)
+			require.Equal(explicitCreation, implicitCreation)
+			require.Equal(explicitCreation, emptyState)
 		})
 	}
 }
