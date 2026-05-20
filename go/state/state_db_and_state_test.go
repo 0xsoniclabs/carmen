@@ -893,6 +893,93 @@ func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
 	}
 }
 
+// executeOpOnClearStateDB executes the given operation on a clean stateDB in single transaction/block and returns the state root hash.
+func executeOpOnCleanStateDB(t *testing.T, config namedStateConfig, op func(state.StateDB)) common.Hash {
+	t.Helper()
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := config.createState(dir)
+	require.NoError(err)
+	defer func() {
+		require.NoError(s.Close())
+	}()
+
+	db := state.CreateStateDBUsing(s)
+	db.BeginBlock()
+	db.BeginTransaction()
+	op(db)
+	db.EndTransaction()
+	db.EndBlock(0)
+	return db.GetHash()
+}
+
+func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
+	ops := map[string]func(s state.StateDB){
+		"AddBalance": func(s state.StateDB) {
+			s.AddBalance(address1, amount.New(10))
+		},
+		"SubBalance": func(s state.StateDB) {
+			s.AddBalance(address1, amount.New(20)) // Add some balance first to avoid negative balance error
+			s.SubBalance(address1, amount.New(10))
+		},
+		"SetState": func(s state.StateDB) {
+			s.SetState(address1, key1, val1)
+		},
+		"SetNonce": func(s state.StateDB) {
+			s.SetNonce(address1, 10)
+		},
+		"SetCode": func(s state.StateDB) {
+			s.SetCode(address1, []byte{0xAC})
+		},
+	}
+
+	for _, config := range initStates() {
+		if config.config.Schema < 4 {
+			continue
+		}
+		for name, fn := range ops {
+			t.Run(config.name()+"_"+name, func(t *testing.T) {
+				t.Parallel()
+				require := require.New(t)
+				with := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+					s.CreateAccount(address1)
+					fn(s)
+				})
+				without := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+					fn(s)
+				})
+				require.Equal(without, with)
+
+			})
+		}
+	}
+}
+
+func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *testing.T) {
+	for _, config := range initStates() {
+		if config.config.Schema < 4 {
+			continue
+		}
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			explicitCreation := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+				s.CreateAccount(address1)
+				s.Suicide(address1)
+			})
+			implicitCreation := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+				s.SetNonce(address1, 1)
+				s.Suicide(address1)
+			})
+			emptyState := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+				// Do nothing
+			})
+			require.Equal(explicitCreation, implicitCreation)
+			require.Equal(explicitCreation, emptyState)
+		})
+	}
+}
+
 func toVal(key uint64) common.Value {
 	keyBytes := make([]byte, 32)
 	binary.BigEndian.PutUint64(keyBytes, key)
