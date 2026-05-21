@@ -487,7 +487,7 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 		update := common.Update{}
 		// slot update does not include account creation, i.e., create the account if it does not exist.
 		if !c.AccountExists(value.address) {
-			update.AppendCreateAccount(value.address.GetAddress())
+			update.AppendNonceUpdate(value.address.GetAddress(), common.ToNonce(1))
 		}
 		update.AppendSlotUpdate(value.address.GetAddress(), value.key.GetKey(), value.value)
 
@@ -541,15 +541,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 			t.Errorf("error to delete account storage: %v_%v -> %v,  block: %d", value.address, value.key, value.value, c.GetCurrentBlock())
 		}
 		c.DeleteAccountStorage(value.address, value.key)
-	}
-
-	var opCreateAccount = func(_ archiveStorageOpType, value archiveAccountStoragePayload, t fuzzing.TestingT, c *archiveTrieAccountStorageFuzzingContext) {
-		update := common.Update{}
-		update.AppendCreateAccount(value.address.GetAddress())
-		if err := c.archiveTrie.Add(uint64(c.GetNextBlock()), update, nil); err != nil {
-			t.Errorf("error to delete account: %v,  block: %d", value.address, c.GetCurrentBlock())
-		}
-		c.CreateAccount(value.address)
 	}
 
 	var opDeleteAccount = func(_ archiveStorageOpType, value archiveAccountStoragePayload, t fuzzing.TestingT, c *archiveTrieAccountStorageFuzzingContext) {
@@ -636,7 +627,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 	fuzzing.RegisterDataOp(registry, setStorageArchive, serialiseAddressKeyValue, deserialiseAddressKeyValue, opSet)
 	fuzzing.RegisterDataOp(registry, deleteStorageArchive, serialiseAddressKey, deserialiseAddressKey, opDelete)
 	fuzzing.RegisterDataOp(registry, getStorageArchive, serialiseBlockAddressKey, deserialiseBlockAddressKey, opGet)
-	fuzzing.RegisterDataOp(registry, createAccountArchive, serialiseAddress, deserialiseAddress, opCreateAccount)
 	fuzzing.RegisterDataOp(registry, deleteAccountArchive, serialiseAddress, deserialiseAddress, opDeleteAccount)
 
 	init := func(registry fuzzing.OpsFactoryRegistry[archiveStorageOpType, archiveTrieAccountStorageFuzzingContext]) []fuzzing.OperationSequence[archiveTrieAccountStorageFuzzingContext] {
@@ -659,15 +649,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 					}
 				}
 
-			}
-			seed = append(seed, sequence)
-		}
-
-		{
-			var sequence fuzzing.OperationSequence[archiveTrieAccountStorageFuzzingContext]
-			for _, addr := range []tinyAddress{0, 1, 2, 5, 10, 255} {
-				var empty common.Value
-				sequence = append(sequence, registry.CreateDataOp(createAccountArchive, archiveAccountStoragePayload{0, addr, 0, empty}))
 			}
 			seed = append(seed, sequence)
 		}
@@ -789,10 +770,8 @@ func (a *archiveAccountStoragePayload) SerialiseAddress() []byte {
 type archiveStorageOpType byte
 
 const (
-	// createAccountArchive causes deletion of the storage if the account existed in the tip of the chain.
-	createAccountArchive archiveStorageOpType = iota
 	// deleteAccountArchive causes deletion of an account with its storage from the tip of the chain.
-	deleteAccountArchive
+	deleteAccountArchive archiveStorageOpType = iota
 	// setStorageArchive updates the storage in the tip of the chain.
 	setStorageArchive
 	// deleteStorageArchive deletes the storage from the tip of the chain.
@@ -890,29 +869,6 @@ func (c *archiveTrieAccountStorageFuzzingContext) DeleteAccountStorage(address t
 	if storage, exists := current[address]; exists {
 		delete(storage, key)
 	}
-
-	// assign to the next block
-	c.shadow = append(c.shadow, current)
-}
-
-// CreateAccount creates a new empty account or empties the storage of an existing account.
-// The new, or modified, account is added as a new block in the shadow blockchain together with all other copied accounts.
-// If the account already exists, it is emptied by not-copying its storage from the tip of the shadow blockchain.
-// If the account does not exist, a new empty account is created for the given address.
-// The new copy of the block is then appended as a next block in the shadow db.
-func (c *archiveTrieAccountStorageFuzzingContext) CreateAccount(address tinyAddress) {
-	// copy the current block first while emptying the account if it exists
-	current := make(map[tinyAddress]map[tinyKey]common.Value)
-	if len(c.shadow) > 0 {
-		for addr, storage := range c.shadow[c.GetCurrentBlock()] {
-			if addr != address {
-				current[addr] = maps.Clone(storage)
-			}
-		}
-	}
-
-	// assign a new empty account
-	current[address] = make(map[tinyKey]common.Value)
 
 	// assign to the next block
 	c.shadow = append(c.shadow, current)

@@ -352,7 +352,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Errorf("accessing data should fail")
 	}
 	update := common.Update{}
-	update.CreatedAccounts = []common.Address{{1}}
+	update.Balances = []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}}
 	if _, err := state.Apply(0, &update); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}
@@ -720,7 +720,7 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 				b.Fatalf("failed to update hashes: %v", err)
 			}
 		}
-		err = state.CreateAccount(addr)
+		err = state.SetNonce(addr, common.ToNonce(uint64(j)))
 		if err != nil {
 			b.Fatalf("failed to create account: %v", err)
 		}

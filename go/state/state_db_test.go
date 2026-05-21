@@ -186,10 +186,9 @@ func TestStateDB_RecreatingAnAccountSetsStorageToZero(t *testing.T) {
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	db.CreateAccount(address1)
@@ -245,10 +244,9 @@ func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{0, 0, 0, 0, 0, 0, 0, 1}}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{0, 0, 0, 0, 0, 0, 0, 1}}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	// First transaction creates an account and sets some storage values.
@@ -306,11 +304,10 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 
 	// At the end the account is recreated with the new state.
 	mock.EXPECT().Apply(uint64(123), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val2}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: val2}},
 	})
 
 	if got := db.GetState(address1, key1); got != val1 {
@@ -675,10 +672,9 @@ func TestStateDB_DestroyingAndRecreatingAnAccountInTheSameTransactionCallsDelete
 
 	// The account is to be re-created.
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	// In a transaction we destroy the account and recreate it. This should cause
@@ -709,10 +705,9 @@ func TestStateDB_DoubleDestroyedAccountThatIsOnceRolledBackIsStillCleared(t *tes
 
 	// The account is to be re-created.
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	// In a transaction we destroy the account, re-create it, destroy it and roll back
@@ -917,11 +912,10 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 	// The original account is expected to be deleted, the last created one is expected to be really created.
 	newBalance := amount.New(456)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1, Balance: newBalance}},
-		Nonces:          []common.NonceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-		Slots:           []common.SlotUpdate{{Account: address1, Key: key2, Value: val2}},
+		Balances: []common.BalanceUpdate{{Account: address1, Balance: newBalance}},
+		Nonces:   []common.NonceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Slots:    []common.SlotUpdate{{Account: address1, Key: key2, Value: val2}},
 	})
 
 	// The changes are applied to the state at the end of the block.
@@ -1084,10 +1078,9 @@ func TestStateDB_CreatedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	db.CreateAccount(address1)
@@ -1105,10 +1098,9 @@ func TestStateDB_CreatedAccountsAreForgottenAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 	mock.EXPECT().Apply(uint64(2), common.Update{})
 
@@ -1285,8 +1277,7 @@ func TestStateDB_SettingTheBalanceCreatesAccount(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1, Balance: addedBalance}},
+		Balances: []common.BalanceUpdate{{Account: address1, Balance: addedBalance}},
 	})
 
 	db.AddBalance(address1, addedBalance)
@@ -1382,10 +1373,9 @@ func TestStateDB_SettingTheNonceMakesAccountNonEmpty(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	db.CreateAccount(address1)
@@ -1433,9 +1423,8 @@ func TestStateDB_CreatesAccountOnNonceSetting(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
 	})
 
 	db.SetNonce(address1, 1)
@@ -1688,10 +1677,9 @@ func TestStateDB_NonceOfADeletedAccountIsZero(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	// Also the fetch of the Nonce value in the second transaction is expected.
@@ -2523,9 +2511,8 @@ func TestStateDB_SettingCodesCreatesAccountsImplicitly(t *testing.T) {
 	mock.EXPECT().Exists(address1).Return(false, nil)
 	want := []byte{0xAC, 0xDC}
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: want}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: want}},
 	})
 
 	db.SetCode(address1, want)
@@ -3969,11 +3956,10 @@ func TestStateDB_BulkLoadReachesState(t *testing.T) {
 	code := []byte{1, 2, 3}
 
 	mock.EXPECT().Apply(uint64(0), common.Update{
-		CreatedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1, Balance: balance}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(14)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: code}},
-		Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
+		Balances: []common.BalanceUpdate{{Account: address1, Balance: balance}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(14)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: code}},
+		Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
 	})
 	mock.EXPECT().Flush().Return(nil)
 	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))

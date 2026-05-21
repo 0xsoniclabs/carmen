@@ -475,9 +475,11 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	addr1 := common.Address{1}
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
+		},
+		Codes: []common.CodeUpdate{
+			{Account: addr1, Code: []byte{1, 2, 3}},
 		},
 	}
 
@@ -493,39 +495,6 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	_, err = reference.Apply(0, update)
 	require.NoError(err)
 
-	want, err := reference.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	require.Equal(want, hash)
-}
-
-func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
-	require := require.New(t)
-
-	addr1 := common.Address{1}
-
-	update := common.Update{
-		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
-		Balances: []common.BalanceUpdate{
-			{Account: addr1, Balance: amount.New(1)},
-		},
-	}
-
-	state := newState()
-	_, err := state.Apply(0, update)
-	require.NoError(err)
-
-	codeHash, err := state.GetCodeHash(addr1)
-	require.NoError(err)
-	require.Equal(common.Hash(types.EmptyCodeHash), codeHash)
-
-	hash, err := state.GetCommitment().Await().Get()
-	require.NoError(err)
-
-	reference, err := newRefState(t)
-	require.NoError(err)
-	_, err = reference.Apply(0, update)
-	require.NoError(err)
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
