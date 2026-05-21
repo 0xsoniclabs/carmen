@@ -475,7 +475,6 @@ func TestState_SingleAccountFittingInASingleNode_HasSameCommitmentAsReference(t 
 	addr1 := common.Address{1}
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
 		},
@@ -505,7 +504,6 @@ func TestState_Account_CodeHash_Initialised_With_Eth_Empty_Hash(t *testing.T) {
 	addr1 := common.Address{1}
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{addr1}, // we expect the account must be explicitly created
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
 		},

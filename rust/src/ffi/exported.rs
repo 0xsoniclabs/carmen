@@ -2164,7 +2164,7 @@ mod tests {
         create_state_then_call_fn_then_release_state(
             |_| {},
             move |state| {
-                let mut update_data = [0; 24];
+                let mut update_data = [0; 20];
                 let result = unsafe {
                     Carmen_Rust_Apply(
                         state,

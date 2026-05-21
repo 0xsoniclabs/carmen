@@ -161,7 +161,7 @@ func TestEmptyHash(t *testing.T) {
 func TestAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1},
+			Balances: []common.BalanceUpdate{{Account: common.Address{0x01}, Balance: amount.New(100)}},
 		})
 	})
 }
@@ -169,7 +169,11 @@ func TestAddressHashes(t *testing.T) {
 func TestMultipleAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1, address2, address3},
+			Balances: []common.BalanceUpdate{
+				{Account: address1, Balance: balance1},
+				{Account: address2, Balance: balance2},
+				{Account: address3, Balance: balance3},
+			},
 		})
 	})
 }
@@ -180,7 +184,7 @@ func TestDeletedAddressHashes(t *testing.T) {
 			t.Skipf("schema %d not supported", schema)
 		}
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1, address2, address3},
+			Balances:        []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 			DeletedAccounts: []common.Address{address1, address2},
 		})
 	})
@@ -209,7 +213,6 @@ func TestMultipleStorageHashes(t *testing.T) {
 func TestBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1},
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 			},
@@ -220,7 +223,6 @@ func TestBalanceUpdateHashes(t *testing.T) {
 func TestMultipleBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1, address2, address3},
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 				{Account: address2, Balance: balance2},
@@ -233,7 +235,6 @@ func TestMultipleBalanceUpdateHashes(t *testing.T) {
 func TestNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1},
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
 			},
@@ -244,7 +245,6 @@ func TestNonceUpdateHashes(t *testing.T) {
 func TestMultipleNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1, address2, address3},
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
 				{Account: address2, Nonce: nonce2},
@@ -281,7 +281,6 @@ func TestLargeStateHashes(t *testing.T) {
 		update := common.Update{}
 		for i := 0; i < 100; i++ {
 			address := common.Address{byte(i)}
-			update.CreatedAccounts = append(update.CreatedAccounts, address)
 			for j := 0; j < 100; j++ {
 				key := common.Key{byte(j)}
 				update.Slots = append(update.Slots, common.SlotUpdate{Account: address, Key: key, Value: common.Value{byte(i), 0, 0, byte(j)}})
@@ -322,7 +321,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		// account must exist (not aut-created in Verkle Trie)
 		if _, err := s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1},
+			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 		}); err != nil {
 			t.Errorf("failed to apply: %v", err)
 		}
@@ -382,7 +381,7 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		// account must exist (not aut-created in Verkle Trie)
 		if _, err := s.Apply(0, common.Update{
-			CreatedAccounts: []common.Address{address1},
+			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 		}); err != nil {
 			t.Errorf("failed to apply: %v", err)
 		}
@@ -396,20 +395,10 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 			t.Errorf("Invalid hash, wanted %v, got %v", hashOfEmptyCode, hash)
 		}
 
-		// Creating an account should not change this.
-		s.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
-		hash, err = s.GetCodeHash(address1)
-		if err != nil {
-			t.Fatalf("error fetching code hash: %v", err)
-		}
-		if hash != hashOfEmptyCode {
-			t.Errorf("Invalid hash, wanted %v, got %v", hashOfEmptyCode, hash)
-		}
-
 		// Update code to non-empty code updates hash accordingly.
 		code := []byte{1, 2, 3, 4}
 		hashOfTestCode := common.GetKeccak256Hash(code)
-		s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code}}})
+		s.Apply(1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code}}})
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
 			t.Fatalf("error fetching code hash: %v", err)
@@ -419,7 +408,7 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		}
 
 		// Reset code to empty code updates hash accordingly.
-		s.Apply(3, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{}}}})
+		s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{}}}})
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
 			t.Fatalf("error fetching code hash: %v", err)
@@ -435,7 +424,7 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 		if config.config.Schema == 6 {
 			t.Skipf("scheme %d not supported", config.config.Schema)
 		}
-		if _, err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}}); err != nil {
 			t.Fatalf("Error: %s", err)
 		}
 		if _, err := s.Apply(1, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
@@ -451,54 +440,6 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 	})
 }
 
-func TestCreatingAccountClearsStorage(t *testing.T) {
-	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
-		if config.config.Schema == 0 || config.config.Schema == 6 {
-			t.Skipf("scheme %d not supported", config.config.Schema)
-		}
-		if strings.Contains(config.name(), "flat") {
-			t.Skipf("schema with flat variant does not support account recreation")
-		}
-
-		zero := common.Value{}
-		if _, err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
-			t.Errorf("failed to create account: %v", err)
-		}
-
-		val, err := s.GetStorage(address1, key1)
-		if err != nil {
-			t.Errorf("failed to fetch storage value: %v", err)
-		}
-		if val != zero {
-			t.Errorf("storage slot are initially not zero")
-		}
-
-		if _, err = s.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
-			t.Errorf("failed to update storage slot: %v", err)
-		}
-
-		val, err = s.GetStorage(address1, key1)
-		if err != nil {
-			t.Errorf("failed to fetch storage value: %v", err)
-		}
-		if val != val1 {
-			t.Errorf("storage slot update did not take effect")
-		}
-
-		if _, err := s.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
-			t.Fatalf("Error: %s", err)
-		}
-
-		val, err = s.GetStorage(address1, key1)
-		if err != nil {
-			t.Errorf("failed to fetch storage value: %v", err)
-		}
-		if val != zero {
-			t.Errorf("account creation did not clear storage slots")
-		}
-	})
-}
-
 func TestDeletingAccountsClearsStorage(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		if config.config.Schema == 0 || config.config.Schema == 6 {
@@ -509,7 +450,7 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
 		}
 
 		zero := common.Value{}
-		if _, err := s.Apply(0, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
+		if _, err := s.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}}); err != nil {
 			t.Errorf("failed to create account: %v", err)
 		}
 
@@ -563,7 +504,6 @@ func TestArchive(t *testing.T) {
 			balance34 := amount.New(0x34)
 
 			if _, err := s.Apply(0, common.Update{
-				CreatedAccounts: []common.Address{address1},
 				Balances: []common.BalanceUpdate{
 					{Account: address1, Balance: balance12},
 				},
@@ -686,13 +626,13 @@ func TestLastArchiveBlock(t *testing.T) {
 			}
 
 			if _, err := s.Apply(0, common.Update{
-				CreatedAccounts: []common.Address{address1},
+				Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 			}); err != nil {
 				t.Fatalf("failed to add block 0; %s", err)
 			}
 
 			if _, err := s.Apply(1, common.Update{
-				CreatedAccounts: []common.Address{address2},
+				Balances: []common.BalanceUpdate{{Account: address2, Balance: balance2}},
 			}); err != nil {
 				t.Fatalf("failed to add block 1; %s", err)
 			}
@@ -764,7 +704,6 @@ func TestPersistentState(t *testing.T) {
 
 			// init state data
 			update := common.Update{}
-			update.AppendCreateAccount(address1)
 			update.AppendBalanceUpdate(address1, balance1)
 			update.AppendNonceUpdate(address1, nonce1)
 			update.AppendSlotUpdate(address1, key1, val1)
@@ -833,46 +772,6 @@ func TestStateRead(t *testing.T) {
 	}
 	if code, err := as.GetCode(address1); err != nil || !bytes.Equal(code, []byte{1, 2, 3}) {
 		t.Errorf("Unexpected value or err, val: %v != %v, err:  %v", code, []byte{1, 2, 3}, err)
-	}
-}
-
-func TestHasEmptyStorage_S3_Always_Returns_True(t *testing.T) {
-	updates := []common.Update{
-		{
-			CreatedAccounts: []common.Address{address1},
-		},
-		{
-			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val0}},
-		},
-		{
-			Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-		},
-		{
-			DeletedAccounts: []common.Address{address1},
-		},
-	}
-
-	for _, config := range initStates() {
-		if config.config.Schema != 3 {
-			continue
-		}
-		dir := t.TempDir()
-		st, err := config.createState(dir)
-		if err != nil {
-			t.Fatalf("unable to create state: %v", err)
-		}
-		for i, update := range updates {
-			if _, err = st.Apply(uint64(i), update); err != nil {
-				t.Fatalf("failed to apply state: %v", err)
-			}
-			isEmpty, err := st.HasEmptyStorage(address1)
-			if err != nil {
-				t.Fatalf("failed to check state: %v", err)
-			}
-			if !isEmpty {
-				t.Errorf("HasEmptyStorage should always return true")
-			}
-		}
 	}
 }
 

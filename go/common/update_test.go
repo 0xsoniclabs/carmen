@@ -11,7 +11,6 @@
 package common
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"reflect"
@@ -33,31 +32,6 @@ func TestUpdateEmptyUpdateCheckReportsNoErrors(t *testing.T) {
 	update := Update{}
 	if err := update.Check(); err != nil {
 		t.Errorf("Empty update should not report an error, but got: %v", err)
-	}
-}
-
-func TestUpdateCreatedAccountsAreSortedAndMadeUniqueByNormalizer(t *testing.T) {
-	addr1 := Address{0x01}
-	addr2 := Address{0x02}
-	addr3 := Address{0x03}
-
-	update := Update{}
-	update.AppendCreateAccount(addr2)
-	update.AppendCreateAccount(addr1)
-	update.AppendCreateAccount(addr3)
-	update.AppendCreateAccount(addr1)
-
-	if err := update.Normalize(); err != nil {
-		t.Errorf("failed to normalize update: %v", err)
-	}
-
-	want := Update{}
-	want.AppendCreateAccount(addr1)
-	want.AppendCreateAccount(addr2)
-	want.AppendCreateAccount(addr3)
-
-	if !reflect.DeepEqual(want, update) {
-		t.Errorf("failed to normalize create-account list, wanted %v, got %v", want.CreatedAccounts, update.CreatedAccounts)
 	}
 }
 
@@ -276,12 +250,6 @@ var updateValueCase = []struct {
 	appendThird  func(u *Update)
 }{
 	{
-		"CreateAccount",
-		func(u *Update) { u.AppendCreateAccount(Address{0x01}) },
-		func(u *Update) { u.AppendCreateAccount(Address{0x02}) },
-		func(u *Update) { u.AppendCreateAccount(Address{0x03}) },
-	},
-	{
 		"DeleteAccount",
 		func(u *Update) { u.AppendDeleteAccount(Address{0x01}) },
 		func(u *Update) { u.AppendDeleteAccount(Address{0x02}) },
@@ -350,7 +318,7 @@ func TestUpdateCreatingAndDeletingSameAccountIsInvalid(t *testing.T) {
 	addr := Address{0x01}
 
 	update := Update{}
-	update.AppendCreateAccount(addr)
+	update.AppendBalanceUpdate(addr, amount.New(1))
 	if update.Check() != nil {
 		t.Errorf("just creating an account should be fine")
 	}
@@ -365,7 +333,7 @@ func TestUpdateSingleAccountCreatedAndDeletedIsDetectedAlsoWhenPartOfAList(t *te
 	for i := 0; i < 10; i++ {
 		addr := Address{byte(i)}
 		if i%2 == 0 {
-			update.AppendCreateAccount(addr)
+			update.AppendBalanceUpdate(addr, amount.New(1))
 		} else {
 			update.AppendDeleteAccount(addr)
 		}
@@ -375,7 +343,7 @@ func TestUpdateSingleAccountCreatedAndDeletedIsDetectedAlsoWhenPartOfAList(t *te
 		t.Errorf("non-overlapping create and delete list should be fine, but got: %v", err)
 	}
 
-	update.AppendCreateAccount(Address{9})
+	update.AppendBalanceUpdate(Address{9}, amount.New(1))
 
 	if update.Check() == nil {
 		t.Errorf("creating and deleting the same account should fail")
@@ -400,10 +368,6 @@ func getExampleUpdate() Update {
 
 	update.AppendDeleteAccount(Address{0xA1})
 	update.AppendDeleteAccount(Address{0xA2})
-
-	update.AppendCreateAccount(Address{0xB1})
-	update.AppendCreateAccount(Address{0xB2})
-	update.AppendCreateAccount(Address{0xB3})
 
 	update.AppendBalanceUpdate(Address{0xC1}, amount.New(1<<56, 0, 0, 0))
 	update.AppendBalanceUpdate(Address{0xC2}, amount.New(2<<56, 0, 0, 0))
@@ -463,30 +427,6 @@ func TestUpdateParsingTruncatedDataShouldFailWithError(t *testing.T) {
 	}
 }
 
-func TestUpdateKnownEncodings(t *testing.T) {
-	testCases := []struct {
-		update Update
-		hash   string
-	}{
-		{
-			Update{},
-			"61126de1b795b976f3ac878f48e88fa77a87d7308ba57c7642b9e1068403a496",
-		},
-		{
-			getExampleUpdate(),
-			"d16bcf097cba34ece949ae64db100861c15f0058a1366003ad8f90a0dadf351b",
-		},
-	}
-	for _, test := range testCases {
-		hasher := sha256.New()
-		hasher.Write(test.update.ToBytes())
-		hash := fmt.Sprintf("%x", hasher.Sum(nil))
-		if hash != test.hash {
-			t.Errorf("invalid encoding, expected hash %v, got %v", test.hash, hash)
-		}
-	}
-}
-
 func TestUpdate_ApplyTo(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -494,9 +434,6 @@ func TestUpdate_ApplyTo(t *testing.T) {
 	gomock.InOrder(
 		target.EXPECT().DeleteAccount(Address{0xA1}),
 		target.EXPECT().DeleteAccount(Address{0xA2}),
-		target.EXPECT().CreateAccount(Address{0xB1}),
-		target.EXPECT().CreateAccount(Address{0xB2}),
-		target.EXPECT().CreateAccount(Address{0xB3}),
 		target.EXPECT().SetBalance(Address{0xC1}, amount.New(1<<56, 0, 0, 0)),
 		target.EXPECT().SetBalance(Address{0xC2}, amount.New(2<<56, 0, 0, 0)),
 		target.EXPECT().SetNonce(Address{0xD1}, Nonce{0x03}),
@@ -516,7 +453,7 @@ func TestUpdate_ApplyTo(t *testing.T) {
 }
 
 func TestUpdate_ApplyTo_Failures(t *testing.T) {
-	const calls = 6
+	const calls = 5
 	for i := 0; i < calls; i++ {
 		i := i
 		t.Run(fmt.Sprintf("applyTo_failure_at_%d", i), func(t *testing.T) {
@@ -527,11 +464,10 @@ func TestUpdate_ApplyTo_Failures(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			target := NewMockUpdateTarget(ctrl)
 			target.EXPECT().DeleteAccount(gomock.Any()).AnyTimes().Return(returns[0])
-			target.EXPECT().CreateAccount(gomock.Any()).AnyTimes().Return(returns[1])
-			target.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[2])
-			target.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[3])
-			target.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[4])
-			target.EXPECT().SetStorage(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(returns[5])
+			target.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[1])
+			target.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[2])
+			target.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[3])
+			target.EXPECT().SetStorage(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(returns[4])
 
 			update := getExampleUpdate()
 			if err := update.ApplyTo(target); !errors.Is(err, returns[i]) {
@@ -549,7 +485,6 @@ func TestUpdate_Print(t *testing.T) {
 	}
 
 	update.AppendDeleteAccount(Address{1})
-	update.AppendCreateAccount(Address{2})
 	update.AppendBalanceUpdate(Address{3}, amount.New(1))
 	update.AppendNonceUpdate(Address{4}, ToNonce(2))
 	update.AppendCodeUpdate(Address{5}, []byte{1, 2, 3})
@@ -559,7 +494,6 @@ func TestUpdate_Print(t *testing.T) {
 
 	expectations := []string{
 		"Deleted Accounts:",
-		"Created Accounts:",
 		"Balances:",
 		"Nonces:",
 		"Slots:",
@@ -573,4 +507,38 @@ func TestUpdate_Print(t *testing.T) {
 		}
 	}
 
+}
+
+func Test_insertOrdered(t *testing.T) {
+	list := []Address{{0x01}, {0x03}, {0x05}}
+	addr := Address{0x02}
+	updatedList := insertOrdered(list, addr)
+	expectedList := []Address{{0x01}, {0x02}, {0x03}, {0x05}}
+	if !reflect.DeepEqual(updatedList, expectedList) {
+		t.Errorf("expected %v, got %v", expectedList, updatedList)
+	}
+
+	// Test inserting an existing address does not change the list
+	addr = Address{0x03}
+	updatedList = insertOrdered(list, addr)
+	expectedList = []Address{{0x01}, {0x03}, {0x05}}
+	if !reflect.DeepEqual(updatedList, expectedList) {
+		t.Errorf("expected %v, got %v", expectedList, updatedList)
+	}
+
+	// Test inserting an address smaller than all existing addresses
+	addr = Address{0x00}
+	updatedList = insertOrdered(list, addr)
+	expectedList = []Address{{0x00}, {0x01}, {0x03}, {0x05}}
+	if !reflect.DeepEqual(updatedList, expectedList) {
+		t.Errorf("expected %v, got %v", expectedList, updatedList)
+	}
+
+	// Test inserting an address larger than all existing addresses
+	addr = Address{0x06}
+	updatedList = insertOrdered(list, addr)
+	expectedList = []Address{{0x01}, {0x03}, {0x05}, {0x06}}
+	if !reflect.DeepEqual(updatedList, expectedList) {
+		t.Errorf("expected %v, got %v", expectedList, updatedList)
+	}
 }

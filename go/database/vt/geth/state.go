@@ -234,18 +234,6 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 		return nil, fmt.Errorf("not supported: verkle trie does not support deleting accounts")
 	}
 
-	// Process created accounts.
-	for _, newAccount := range update.CreatedAccounts {
-		data, err := getAccountData(newAccount)
-		if err != nil {
-			return nil, err
-		}
-		data.Balance = *uint256.NewInt(0)
-		data.Nonce = 0
-		data.CodeHash = common.Hash(types.EmptyCodeHash[:])
-		data.CodeLength = 0
-	}
-
 	// update balances
 	for _, update := range update.Balances {
 		account, err := getAccountData(update.Account)

@@ -198,21 +198,6 @@ func OpenGoFileState(directory string, config MptConfig, cacheConfig NodeCacheCo
 	return newMptState(directory, lock, trie)
 }
 
-func (s *MptState) CreateAccount(address common.Address) (err error) {
-	_, exists, err := s.trie.GetAccountInfo(address)
-	if err != nil {
-		return err
-	}
-	if exists {
-		// For existing accounts, only clear the storage, preserve the rest.
-		return s.trie.ClearStorage(address)
-	}
-	// Create account with hash of empty code.
-	return s.trie.SetAccountInfo(address, AccountInfo{
-		CodeHash: emptyCodeHash,
-	})
-}
-
 func (s *MptState) Exists(address common.Address) (bool, error) {
 	_, exists, err := s.trie.GetAccountInfo(address)
 	if err != nil {

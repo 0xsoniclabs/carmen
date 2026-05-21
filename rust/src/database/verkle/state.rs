@@ -28,11 +28,6 @@ use crate::{
     types::{Address, Hash, Key, Nonce, U256, Update, Value},
 };
 
-pub const EMPTY_CODE_HASH: Hash = [
-    197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202,
-    130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
-];
-
 /// The mode of the Verkle trie state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateMode {
@@ -266,13 +261,6 @@ mod tests {
     fn all_state_impls(#[case] state: Box<dyn CarmenState>) {}
 
     #[test]
-    fn empty_code_hash_is_keccak256_of_empty_code() {
-        let hasher = Keccak256::new();
-        let expected = hasher.finalize();
-        assert_eq!(EMPTY_CODE_HASH, expected.as_slice());
-    }
-
-    #[test]
     fn new_live_creates_empty_state() {
         let state = VerkleTrieCarmenState::<SimpleInMemoryVerkleTrie>::new_live();
         assert_eq!(state.get_hash().unwrap(), Hash::default());
@@ -371,31 +359,6 @@ mod tests {
 
         set_nonce(&*state, addr, 7u64.to_be_bytes(), 0);
         assert!(state.account_exists(&addr).unwrap());
-    }
-
-    #[rstest_reuse::apply(all_state_impls)]
-    fn creating_account_sets_empty_code_hash(#[case] state: Box<dyn CarmenState>) {
-        let addr = Address::from_index_values(0, &[(0, 1)]);
-        create_account(&*state, addr, 0);
-        let code_hash = state.get_code_hash(&addr).unwrap();
-        assert_eq!(code_hash, EMPTY_CODE_HASH);
-    }
-
-    #[rstest_reuse::apply(all_state_impls)]
-    fn creating_account_does_not_overwrite_basic_account_data(#[case] state: Box<dyn CarmenState>) {
-        let addr = Address::from_index_values(0, &[(0, 1)]);
-        let initial_balance = crypto_bigint::U256::from_u32(42).to_be_bytes();
-        let initial_nonce = 7u64.to_be_bytes();
-
-        set_balance(&*state, addr, initial_balance, 0);
-        set_nonce(&*state, addr, initial_nonce, 1);
-
-        create_account(&*state, addr, 2);
-
-        let balance = state.get_balance(&addr).unwrap();
-        assert_eq!(balance, initial_balance);
-        let nonce = state.get_nonce(&addr).unwrap();
-        assert_eq!(nonce, initial_nonce);
     }
 
     #[rstest_reuse::apply(all_state_impls)]
@@ -879,7 +842,7 @@ mod tests {
         state.apply_block_update(0, update.clone()).unwrap();
 
         let hash = state.get_hash().unwrap();
-        let expected = "0x6b188de48e78866c34d38382b1965ec4908a0525d41cd66d18385390010b707d";
+        let expected = "0x194ac1932cd7f3ab8c373e99843319cf78c67544111a426b6848ddafca0b3ec6";
 
         assert_eq!(const_hex::encode_prefixed(hash), expected);
     }
@@ -902,18 +865,6 @@ mod tests {
         };
         state
             .apply_block_update(block_height, Update::default())
-            .unwrap();
-    }
-
-    fn create_account(state: &dyn CarmenState, addr: Address, block_number: u64) {
-        state
-            .apply_block_update(
-                block_number,
-                Update {
-                    created_accounts: &[addr],
-                    ..Default::default()
-                },
-            )
             .unwrap();
     }
 

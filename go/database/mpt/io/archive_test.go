@@ -201,10 +201,9 @@ func fillTestBlocksIntoArchive(t *testing.T, archive *mpt.ArchiveTrie) (blockHei
 	code1 := []byte{1, 2, 3}
 
 	err := archive.Add(0, common.Update{
-		CreatedAccounts: []common.Address{addr1},
-		Balances:        []common.BalanceUpdate{{Account: addr1, Balance: balance1}},
-		Nonces:          []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
-		Codes:           []common.CodeUpdate{{Account: addr1, Code: code1}},
+		Balances: []common.BalanceUpdate{{Account: addr1, Balance: balance1}},
+		Nonces:   []common.NonceUpdate{{Account: addr1, Nonce: nonce1}},
+		Codes:    []common.CodeUpdate{{Account: addr1, Code: code1}},
 		Slots: []common.SlotUpdate{
 			{Account: addr1, Key: common.Key{1}, Value: common.Value{1}},
 			{Account: addr1, Key: common.Key{2}, Value: common.Value{2}},
@@ -215,9 +214,9 @@ func fillTestBlocksIntoArchive(t *testing.T, archive *mpt.ArchiveTrie) (blockHei
 	}
 
 	err = archive.Add(3, common.Update{
-		CreatedAccounts: []common.Address{addr2},
-		Balances:        []common.BalanceUpdate{{Account: addr2, Balance: balance2}},
-		Nonces:          []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
+		Balances: []common.BalanceUpdate{{Account: addr2, Balance: balance2}},
+		Nonces:   []common.NonceUpdate{{Account: addr2, Nonce: nonce2}},
+		Codes:    []common.CodeUpdate{{Account: addr2, Code: []byte{}}},
 		Slots: []common.SlotUpdate{
 			{Account: addr1, Key: common.Key{1}, Value: common.Value{0}},
 			{Account: addr1, Key: common.Key{2}, Value: common.Value{3}},

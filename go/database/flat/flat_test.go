@@ -25,7 +25,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/future"
 	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -316,7 +315,6 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 	require := require.New(t)
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{{0x01}, {0x02}},
 		Nonces: []common.NonceUpdate{
 			{Account: common.Address{0x03}, Nonce: common.Nonce{42}},
 			{Account: common.Address{0x04}, Nonce: common.Nonce{84}},
@@ -351,16 +349,6 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 	require.NotNil(command.update)
 	require.Equal(uint64(1), command.update.block)
 	require.Equal(update, command.update.data)
-
-	// The local maps are updated immediately.
-	for _, address := range update.CreatedAccounts {
-		acc, exists := state.accounts[address]
-		require.True(exists)
-		require.Equal(common.Hash(types.EmptyCodeHash), acc.codeHash)
-		require.Equal(0, acc.codeSize)
-		require.Equal(amount.New(0), acc.balance)
-		require.Equal(common.Nonce{}, acc.nonce)
-	}
 
 	for _, nonceUpdate := range update.Nonces {
 		acc, exists := state.accounts[nonceUpdate.Account]
@@ -407,7 +395,7 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 	require.False(state.Exists(address))
 
 	_, err = state.Apply(1, common.Update{
-		CreatedAccounts: []common.Address{address},
+		Balances: []common.BalanceUpdate{{Account: address, Balance: amount.New(10)}},
 	})
 	require.NoError(err)
 

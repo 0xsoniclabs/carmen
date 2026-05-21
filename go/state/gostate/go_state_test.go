@@ -131,11 +131,10 @@ func TestBasicOperations(t *testing.T) {
 
 			// fill-in values
 			_, err = state.Apply(12, common.Update{
-				CreatedAccounts: []common.Address{address1},
-				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
-				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
-				Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{67}}},
-				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
+				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
+				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
+				Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{67}}},
+				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			})
 			if err != nil {
 				t.Errorf("Error: %s", err)
@@ -200,10 +199,9 @@ func TestDeletingAccounts(t *testing.T) {
 
 			// fill-in values
 			update := common.Update{
-				CreatedAccounts: []common.Address{address1},
-				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
-				Balances:        []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
-				Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
+				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
+				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
+				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			}
 			if _, err := state.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
@@ -277,81 +275,6 @@ func TestMoreInserts(t *testing.T) {
 	}
 }
 
-func TestRecreatingAccountsPreservesEverythingButTheStorage(t *testing.T) {
-	for _, config := range initGoStates() {
-		t.Run(config.name(), func(t *testing.T) {
-			if config.config.Schema == 0 || config.config.Schema == 6 {
-				t.Skipf("scheme %d not supported", config.config.Schema)
-			}
-			if strings.Contains(config.name(), "flat") {
-				t.Skipf("flat variants not supported")
-			}
-
-			state, err := config.createState(t.TempDir())
-			if err != nil {
-				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
-			}
-			defer state.Close()
-
-			code1 := []byte{1, 2, 3}
-
-			// create an account and set some of its properties
-			update := common.Update{
-				CreatedAccounts: []common.Address{address1},
-				Balances:        []common.BalanceUpdate{{Account: address1, Balance: balance1}},
-				Nonces:          []common.NonceUpdate{{Account: address1, Nonce: nonce1}},
-				Codes:           []common.CodeUpdate{{Account: address1, Code: code1}},
-				Slots:           []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-			}
-			if _, err := state.Apply(1, update); err != nil {
-				t.Errorf("failed to update state: %v", err)
-			}
-
-			if exists, err := state.Exists(address1); !exists || err != nil {
-				t.Errorf("account does not exist, err %v", err)
-			}
-
-			if got, err := state.GetBalance(address1); got != balance1 || err != nil {
-				t.Errorf("unexpected balance, wanted %v, got %v, err %v", balance1, got, err)
-			}
-
-			if got, err := state.GetNonce(address1); got != nonce1 || err != nil {
-				t.Errorf("unexpected nonce, wanted %v, got %v, err %v", nonce1, got, err)
-			}
-
-			if got, err := state.GetCode(address1); !bytes.Equal(got, code1) || err != nil {
-				t.Errorf("unexpected code, wanted %v, got %v, err %v", code1, got, err)
-			}
-
-			if got, err := state.GetStorage(address1, key1); got != val1 || err != nil {
-				t.Errorf("unexpected storage, wanted %v, got %v, err %v", val1, got, err)
-			}
-
-			// re-creating the account preserves everything but the state.
-			if _, err := state.Apply(2, common.Update{CreatedAccounts: []common.Address{address1}}); err != nil {
-				t.Errorf("failed to recreate account: %v", err)
-			}
-
-			if exists, err := state.Exists(address1); !exists || err != nil {
-				t.Errorf("account should still exist, err %v", err)
-			}
-			if got, err := state.GetBalance(address1); got != balance1 || err != nil {
-				t.Errorf("unexpected balance, wanted %v, got %v, err %v", balance1, got, err)
-			}
-			if got, err := state.GetNonce(address1); got != nonce1 || err != nil {
-				t.Errorf("unexpected nonce, wanted %v, got %v, err %v", nonce1, got, err)
-			}
-			if got, err := state.GetCode(address1); !bytes.Equal(got, code1) || err != nil {
-				t.Errorf("unexpected code, wanted %v, got %v, err %v", code1, got, err)
-			}
-			if got, err := state.GetStorage(address1, key1); got != val0 || err != nil {
-				t.Errorf("failed to clear the storage, wanted %v, got %v, err %v", val0, got, err)
-			}
-
-		})
-	}
-}
-
 func TestHashing(t *testing.T) {
 	states := initGoStates()
 	var hashes = make([][]common.Hash, len(states))
@@ -372,7 +295,7 @@ func TestHashing(t *testing.T) {
 				t.Fatalf("unable to get state hash; %v", err)
 			}
 
-			state.Apply(1, common.Update{CreatedAccounts: []common.Address{address1}})
+			state.Apply(1, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
 			hash1, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -387,7 +310,7 @@ func TestHashing(t *testing.T) {
 				t.Errorf("hash of changed state not changed")
 			}
 
-			state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+			state.Apply(3, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance2}}})
 			hash3, err := state.GetCommitment().Await().Get()
 			if err != nil {
 				t.Fatalf("unable to get state hash; %v", err)
@@ -592,8 +515,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 	db := newGoState(liveDB, nil, []func(){})
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{{0xA}},
-		Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+		Balances: []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 	}
 
 	// the same result many times
@@ -655,8 +577,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		update := common.Update{
-			CreatedAccounts: []common.Address{{0xA}},
-			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+			Balances: []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
 		}
 		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)

@@ -1288,7 +1288,6 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 	for addr, value := range s.accounts {
 		if value.original != value.current {
 			if value.current == accountExists {
-				update.AppendCreateAccount(addr)
 				delete(nonExistingAccounts, addr)
 			}
 		}
@@ -1548,7 +1547,7 @@ type bulkLoad struct {
 }
 
 func (l *bulkLoad) CreateAccount(addr common.Address) {
-	l.update.AppendCreateAccount(addr)
+	// No-op
 }
 
 func (l *bulkLoad) SetBalance(addr common.Address, balance amount.Amount) {

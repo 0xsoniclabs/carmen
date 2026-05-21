@@ -19,10 +19,7 @@ use sha3::{Digest, Keccak256};
 use verkle_trie::Key;
 
 use crate::{
-    database::verkle::{
-        embedding::{VerkleTrieEmbedding, code},
-        state::EMPTY_CODE_HASH,
-    },
+    database::verkle::embedding::{VerkleTrieEmbedding, code},
     types::{BalanceUpdate, CodeUpdate, Hash, NonceUpdate, SlotUpdate, Update, Value},
 };
 
@@ -149,8 +146,7 @@ impl KeyedUpdateBatch<'static> {
         update: Update<'_>,
         embedding: &VerkleTrieEmbedding,
     ) -> Result<Self, EmptyUpdate> {
-        if update.created_accounts.is_empty()
-            && update.balances.is_empty()
+        if update.balances.is_empty()
             && update.nonces.is_empty()
             && update.codes.is_empty()
             && update.slots.is_empty()
@@ -164,22 +160,7 @@ impl KeyedUpdateBatch<'static> {
                 + update.codes.len() * 2 // lower bound: code length and code hash
                 + update.slots.len(),
         );
-        for addr in update.created_accounts {
-            // This is just to set the used bit.
-            // Because the mask is all zeros, we don't overwrite any data, so we also don't have to
-            // account for nonce, balance or code length updates here.
-            updates.push(KeyedUpdate::PartialSlot {
-                key: embedding.get_basic_data_key(addr),
-                value: [0u8; 32],
-                mask: mask_for_range(0..0),
-            });
-            // If we also get a code update for this account, we have to make sure that this does
-            // not override the actual code hash. This is checked when processing the code update.
-            updates.push(KeyedUpdate::FullSlot {
-                key: embedding.get_code_hash_key(addr),
-                value: EMPTY_CODE_HASH,
-            });
-        }
+
         for BalanceUpdate { addr, balance } in update.balances {
             updates.push(KeyedUpdate::PartialSlot {
                 key: embedding.get_basic_data_key(addr),
@@ -214,14 +195,7 @@ impl KeyedUpdateBatch<'static> {
                 key,
                 value: code_hash,
             };
-            // This is needed in case the account was created in this same batch, in which case we
-            // already have a FullSlot update for the code hash with value EMPTY_CODE_HASH that we
-            // have to override.
-            if let Some(u) = updates.iter_mut().find(|u| u.key() == &key) {
-                *u = update;
-            } else {
-                updates.push(update);
-            }
+            updates.push(update);
 
             for (i, chunk) in code::split_code(code).into_iter().enumerate() {
                 updates.push(KeyedUpdate::FullSlot {
@@ -236,6 +210,7 @@ impl KeyedUpdateBatch<'static> {
                 value: *value,
             });
         }
+
         if updates.len() > 100_000 {
             updates.par_sort_unstable();
         } else {
@@ -542,7 +517,6 @@ mod tests {
         let embedding = VerkleTrieEmbedding::new();
 
         let update = Update {
-            created_accounts: &[[1; 20], [2; 20]],
             deleted_accounts: &[[3; 20], [4; 20]], // These will be ignored
             balances: &[
                 BalanceUpdate {
@@ -566,7 +540,7 @@ mod tests {
             ],
             codes: vec![
                 CodeUpdate {
-                    addr: [1; 20], // should overwrite the created account code hash
+                    addr: [1; 20],
                     code: &[14; 20],
                 },
                 CodeUpdate {
@@ -594,11 +568,9 @@ mod tests {
         // Verify total number of updates
         assert_eq!(
             keyed_updates.len(),
-            update.created_accounts.len() * 2
-                + update.balances.len()
+            update.balances.len()
                 + update.nonces.len()
                 + update.codes.len() * 2
-                - 1 // the overwrite of the created account code hash
                 + update
                     .codes
                     .iter()
@@ -606,22 +578,6 @@ mod tests {
                     .sum::<usize>()
                 + update.slots.len()
         );
-
-        // Verify created accounts
-        for addr in update.created_accounts {
-            let mut found = false;
-            for keyed_update in &*keyed_updates {
-                if let KeyedUpdate::PartialSlot { key, value, mask } = keyed_update
-                    && *key == embedding.get_basic_data_key(addr)
-                    && *value == [0u8; 32]
-                    && *mask == mask_for_range(0..0)
-                {
-                    assert!(!found);
-                    found = true;
-                }
-            }
-            assert!(found, "No matching PartialSlot for created account");
-        }
 
         // Verify balances
         for balance_update in update.balances {
@@ -661,7 +617,6 @@ mod tests {
         // Verify codes
         for code_update in update.codes {
             let mut found_code_len = false;
-            let mut found_code_hash = false;
             let mut found_chunks = vec![false; code::split_code(code_update.code).len()];
 
             for keyed_update in &*keyed_updates {
@@ -677,23 +632,12 @@ mod tests {
                         found_code_len = true;
                     }
                 } else if let KeyedUpdate::FullSlot { key, value } = keyed_update {
-                    if key == &embedding.get_code_hash_key(&code_update.addr) {
-                        let mut hasher = Keccak256::new();
-                        hasher.update(code_update.code);
-                        let expected_hash = Hash::from(hasher.finalize());
-                        if *value == expected_hash {
-                            assert!(!found_code_hash);
-                            found_code_hash = true;
-                        }
-                    } else {
-                        for (i, chunk) in code::split_code(code_update.code).into_iter().enumerate()
+                    for (i, chunk) in code::split_code(code_update.code).into_iter().enumerate() {
+                        if *key == embedding.get_code_chunk_key(&code_update.addr, i as u32)
+                            && *value == chunk
                         {
-                            if *key == embedding.get_code_chunk_key(&code_update.addr, i as u32)
-                                && *value == chunk
-                            {
-                                assert!(!found_chunks[i]);
-                                found_chunks[i] = true;
-                            }
+                            assert!(!found_chunks[i]);
+                            found_chunks[i] = true;
                         }
                     }
                 }
@@ -703,7 +647,6 @@ mod tests {
                 found_code_len,
                 "No matching PartialSlot found for code length"
             );
-            assert!(found_code_hash, "No matching FullSlot found for code hash");
             assert!(
                 found_chunks.iter().all(|&found| found),
                 "Not all code chunks were found"
