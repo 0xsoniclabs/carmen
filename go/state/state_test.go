@@ -141,6 +141,9 @@ func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state
 	}
 
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
+		if strings.Contains(config.name(), "go-geth-leveldb_s6") {
+			t.Skipf("go-geth-leveldb_s6 not supported")
+		}
 		mod(t, config.config.Schema, s)
 		got, err := s.GetHash()
 		if err != nil {
@@ -322,6 +325,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 		// account must exist (not aut-created in Verkle Trie)
 		if _, err := s.Apply(0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
+			Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 		}); err != nil {
 			t.Errorf("failed to apply: %v", err)
 		}
@@ -382,6 +386,7 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		// account must exist (not aut-created in Verkle Trie)
 		if _, err := s.Apply(0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
+			Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 		}); err != nil {
 			t.Errorf("failed to apply: %v", err)
 		}
@@ -424,7 +429,7 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 		if config.config.Schema == 6 {
 			t.Skipf("scheme %d not supported", config.config.Schema)
 		}
-		if _, err := s.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}}); err != nil {
+		if _, err := s.Apply(0, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{1, 2, 3}}}}); err != nil {
 			t.Fatalf("Error: %s", err)
 		}
 		if _, err := s.Apply(1, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
@@ -450,7 +455,7 @@ func TestDeletingAccountsClearsStorage(t *testing.T) {
 		}
 
 		zero := common.Value{}
-		if _, err := s.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}}); err != nil {
+		if _, err := s.Apply(0, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{1, 2, 3}}}}); err != nil {
 			t.Errorf("failed to create account: %v", err)
 		}
 
@@ -486,7 +491,6 @@ func TestArchive(t *testing.T) {
 		if config.config.Archive == state.NoArchive {
 			continue
 		}
-		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()

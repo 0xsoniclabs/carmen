@@ -47,6 +47,7 @@ func TestState_Insert_Single_Values_One_Account_One_Storage(t *testing.T) {
 			value := common.Value{1}
 
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+			update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: []byte{1, 2, 3}})
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(1)})
 			update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
 
@@ -97,6 +98,7 @@ func TestState_CreateAccounts_In_Blocks_Accounts_Updated(t *testing.T) {
 					addr := common.Address{byte(j), byte(j >> 8)}
 					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(uint64(i * j))})
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
+					update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: []byte{}})
 				}
 				_, err = state.Apply(uint64(i), update)
 				require.NoError(t, err, "failed to apply block %d", i)
@@ -257,6 +259,9 @@ func TestState_Storage_Leading_Zeros_HashesMatch(t *testing.T) {
 	update := common.Update{
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
+		},
+		Codes: []common.CodeUpdate{
+			{Account: addr1, Code: []byte{}},
 		},
 		Slots: []common.SlotUpdate{
 			{Account: addr1, Key: common.Key{0, 0, 0, 1}, Value: value},

@@ -397,13 +397,8 @@ type accountData struct {
 
 func (s *verkleState) getAccountData(address common.Address) (accountData, error) {
 	account, codeLength, err := s.getAccount(address)
-	if err != nil {
+	if err != nil || account == nil {
 		return accountData{}, err
-	}
-	if account == nil {
-		return accountData{
-			CodeHash: common.Hash(types.EmptyCodeHash),
-		}, nil
 	}
 	return accountData{
 		Nonce:      account.Nonce,
