@@ -23,7 +23,7 @@ import (
 //go:generate mockgen -source update.go -destination update_mocks.go -package common
 
 // Update summarizes the effective changes to the state DB at the end of a block.
-// It combines changes to the account state (deleted), balances, nonces
+// It combines changes to balances, nonces
 // codes, and slot updates.
 //
 // An example use of an update would look like this:
@@ -40,33 +40,18 @@ import (
 //
 // Valid instances can then be forwarded to the State as a block update.
 type Update struct {
-	DeletedAccounts []Address
-	Balances        []BalanceUpdate
-	Nonces          []NonceUpdate
-	Codes           []CodeUpdate
-	Slots           []SlotUpdate
+	Balances []BalanceUpdate
+	Nonces   []NonceUpdate
+	Codes    []CodeUpdate
+	Slots    []SlotUpdate
 }
 
 // IsEmpty is true if there is no change covered by this update.
 func (u *Update) IsEmpty() bool {
-	return len(u.DeletedAccounts) == 0 &&
-		len(u.Balances) == 0 &&
+	return len(u.Balances) == 0 &&
 		len(u.Nonces) == 0 &&
 		len(u.Codes) == 0 &&
 		len(u.Slots) == 0
-}
-
-// AppendDeleteAccount registers an account to be deleted in this block. Delete
-// operations are the first to be carried out, leading to a clearing of the
-// account's storage. Subsequent account creations or balance / nonce / slot
-// updates will take effect after the deletion of the account.
-func (u *Update) AppendDeleteAccount(addr Address) {
-	u.AppendDeleteAccounts([]Address{addr})
-}
-
-// AppendDeleteAccounts is the same as AppendDeleteAccount, but for a slice.
-func (u *Update) AppendDeleteAccounts(addr []Address) {
-	u.DeletedAccounts = append(u.DeletedAccounts, addr...)
 }
 
 // AppendBalanceUpdate registers a balance update to be conducted.
@@ -92,7 +77,6 @@ func (u *Update) AppendSlotUpdate(addr Address, key Key, value Value) {
 // Normalize sorts all updates and removes duplicates.
 func (u *Update) Normalize() error {
 
-	u.DeletedAccounts = sortUnique(u.DeletedAccounts, accountLess, accountEqual)
 	u.Balances = sortUnique(u.Balances, balanceLess, balanceEqual)
 	u.Codes = sortUnique(u.Codes, codeLess, codeEqual)
 	u.Nonces = sortUnique(u.Nonces, nonceLess, nonceEqual)
@@ -119,11 +103,6 @@ func (u *Update) Normalize() error {
 // set codes, and set storage values. It is intended to be utilized by
 // state implementations to simplify the processing of updates.
 func (u *Update) ApplyTo(s UpdateTarget) error {
-	for _, addr := range u.DeletedAccounts {
-		if err := s.DeleteAccount(addr); err != nil {
-			return err
-		}
-	}
 	for _, change := range u.Balances {
 		if err := s.SetBalance(change.Account, change.Balance); err != nil {
 			return err
@@ -153,12 +132,7 @@ func (u *Update) String() string {
 	}
 	builder := strings.Builder{}
 	builder.WriteString("Update{\n")
-	if len(u.DeletedAccounts) > 0 {
-		builder.WriteString("\tDeleted Accounts:\n")
-		for _, account := range u.DeletedAccounts {
-			fmt.Fprintf(&builder, "\t\t%v\n", account)
-		}
-	}
+
 	if len(u.Balances) > 0 {
 		builder.WriteString("\tBalances:\n")
 		for _, change := range u.Balances {
@@ -193,9 +167,6 @@ func (u *Update) String() string {
 // and to be utilized by implementations to avoid the need of duplicating
 // the implementation of LiveDB's Apply function.
 type UpdateTarget interface {
-	// DeleteAccount deletes the account with the given address.
-	DeleteAccount(address Address) error
-
 	// SetBalance provides balance for the input account address.
 	SetBalance(address Address, balance amount.Amount) error
 
@@ -212,7 +183,7 @@ type UpdateTarget interface {
 const updateEncodingVersion byte = 0
 
 func UpdateFromBytes(data []byte) (Update, error) {
-	if len(data) < 1+5*4 {
+	if len(data) < 1+4*4 {
 		return Update{}, fmt.Errorf("invalid encoding, too few bytes")
 	}
 	if data[0] != updateEncodingVersion {
@@ -220,27 +191,14 @@ func UpdateFromBytes(data []byte) (Update, error) {
 	}
 
 	data = data[1:]
-	deletedAccountSize := readUint32(data[0:])
-	balancesSize := readUint32(data[4:])
-	codesSize := readUint32(data[8:])
-	noncesSize := readUint32(data[12:])
-	slotsSize := readUint32(data[16:])
+	balancesSize := readUint32(data[0:])
+	codesSize := readUint32(data[4:])
+	noncesSize := readUint32(data[8:])
+	slotsSize := readUint32(data[12:])
 
-	data = data[20:]
+	data = data[16:]
 
 	res := Update{}
-
-	// Read list of deleted accounts
-	if deletedAccountSize > 0 {
-		if len(data) < int(deletedAccountSize)*len(Address{}) {
-			return res, fmt.Errorf("invalid encoding, truncated address list")
-		}
-		res.DeletedAccounts = make([]Address, deletedAccountSize)
-		for i := 0; i < int(deletedAccountSize); i++ {
-			copy(res.DeletedAccounts[i][:], data[:])
-			data = data[len(Address{}):]
-		}
-	}
 
 	// Read list of balance updates
 	if balancesSize > 0 {
@@ -311,8 +269,7 @@ func UpdateFromBytes(data []byte) (Update, error) {
 
 func (u *Update) ToBytes() []byte {
 	const addrLength = len(Address{})
-	size := 1 + 5*4 // version + sizes
-	size += len(u.DeletedAccounts) * addrLength
+	size := 1 + 4*4 // version + sizes
 	size += len(u.Balances) * (addrLength + amount.BytesLength)
 	size += len(u.Nonces) * (addrLength + len(Nonce{}))
 	size += len(u.Slots) * (addrLength + len(Key{}) + len(Value{}))
@@ -323,15 +280,11 @@ func (u *Update) ToBytes() []byte {
 	res := make([]byte, 0, size)
 
 	res = append(res, updateEncodingVersion)
-	res = appendUint32(res, uint32(len(u.DeletedAccounts)))
 	res = appendUint32(res, uint32(len(u.Balances)))
 	res = appendUint32(res, uint32(len(u.Codes)))
 	res = appendUint32(res, uint32(len(u.Nonces)))
 	res = appendUint32(res, uint32(len(u.Slots)))
 
-	for _, addr := range u.DeletedAccounts {
-		res = append(res, addr[:]...)
-	}
 	for _, cur := range u.Balances {
 		res = append(res, cur.Account[:]...)
 		b := cur.Balance.Bytes32()
@@ -373,10 +326,6 @@ func appendUint32(data []byte, value uint32) []byte {
 
 // Check verifies that all updates are unique and in order.
 func (u *Update) Check() error {
-	if !isSortedAndUnique(u.DeletedAccounts, accountLess) {
-		return fmt.Errorf("deleted accounts are not in order or unique")
-	}
-
 	if !isSortedAndUnique(u.Balances, balanceLess) {
 		return fmt.Errorf("balance updates are not in order or unique")
 	}
@@ -391,10 +340,6 @@ func (u *Update) Check() error {
 
 	if !isSortedAndUnique(u.Slots, slotLess) {
 		return fmt.Errorf("storage updates are not in order or unique")
-	}
-
-	if len(u.DeletedAccounts) > 0 {
-		return fmt.Errorf("deleted accounts should be empty")
 	}
 
 	return nil
@@ -415,10 +360,6 @@ func insertOrdered(list []Address, addr Address) []Address {
 
 func accountLess(a, b *Address) bool {
 	return a.Compare(b) < 0
-}
-
-func accountEqual(a, b *Address) bool {
-	return *a == *b
 }
 
 func balanceLess(a, b *BalanceUpdate) bool {

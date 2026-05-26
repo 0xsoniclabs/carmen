@@ -191,6 +191,7 @@ func TestIO_LiveAndArchive_Import_IncorrectMagicNumberIsNoticed(t *testing.T) {
 		t.Errorf("unexpected error message\ngot: %v\nwant:%v", got, want)
 	}
 }
+
 func fillTestBlocksIntoArchive(t *testing.T, archive *mpt.ArchiveTrie) (blockHeight int) {
 
 	addr1 := common.Address{1}
@@ -228,12 +229,5 @@ func fillTestBlocksIntoArchive(t *testing.T, archive *mpt.ArchiveTrie) (blockHei
 		t.Fatalf("failed to create block in archive: %v", err)
 	}
 
-	err = archive.Add(7, common.Update{
-		DeletedAccounts: []common.Address{addr1},
-	}, nil)
-	if err != nil {
-		t.Fatalf("failed to create block in archive: %v", err)
-	}
-
-	return 7
+	return 3
 }

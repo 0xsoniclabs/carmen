@@ -149,11 +149,6 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 				return err
 			}
 			accountDiff := diff[address]
-			if accountDiff.Reset {
-				if _, err := out.Write([]byte{'R'}); err != nil {
-					return err
-				}
-			}
 			if accountDiff.Balance != nil {
 				if _, err := out.Write([]byte{'B'}); err != nil {
 					return err
@@ -325,10 +320,6 @@ func importArchive(logger *Log, liveDbDir, archiveDbDir string, in io.Reader, no
 			if hashType == EthereumHash {
 				context.setBlockHash(hash)
 			}
-
-		case 'R':
-			context.deleteAccount()
-
 		case 'B':
 			var balance [amount.BytesLength]byte
 			if _, err := io.ReadFull(in, balance[:]); err != nil {
@@ -408,10 +399,6 @@ func (c *importContext) setBlockHash(hash common.Hash) {
 
 func (c *importContext) setAccount(address common.Address) {
 	c.currentAccount = address
-}
-
-func (c *importContext) deleteAccount() {
-	c.currentUpdate.AppendDeleteAccount(c.currentAccount)
 }
 
 func (c *importContext) setBalance(balance amount.Amount) {

@@ -25,7 +25,6 @@ import (
 type Diff map[common.Address]*AccountDiff
 
 type AccountDiff struct {
-	Reset   bool
 	Balance *amount.Amount
 	Nonce   *common.Nonce
 	Code    *common.Hash
@@ -47,9 +46,6 @@ func (d Diff) String() string {
 	for _, address := range addresses {
 		fmt.Fprintf(&builder, "\t%x: \n", address[:])
 		diff := d[address]
-		if diff.Reset {
-			fmt.Fprintf(&builder, "\t\tReset:   %t\n", diff.Reset)
-		}
 		if diff.Balance != nil {
 			fmt.Fprintf(&builder, "\t\tBalance: %x\n", *diff.Balance)
 		}
@@ -76,7 +72,7 @@ func (d Diff) String() string {
 }
 
 func (d *AccountDiff) Empty() bool {
-	return !d.Reset && d.Balance == nil && d.Nonce == nil && d.Code == nil && len(d.Storage) == 0
+	return d.Balance == nil && d.Nonce == nil && d.Code == nil && len(d.Storage) == 0
 }
 
 func GetDiff(
@@ -253,7 +249,9 @@ func collectDiffFromLeafs(context *diffContext, before triePosition, after trieP
 			}
 			defer handle.Release()
 			account := handle.Get().(*AccountNode)
-			context.result[account.address] = &AccountDiff{Reset: true}
+			if err = recordDeletedAccount(context, account); err != nil {
+				return err
+			}
 		}
 		if lhs.IsValue() {
 			// A value is removed in the after state.
@@ -286,7 +284,9 @@ func collectDiffFromLeafs(context *diffContext, before triePosition, after trieP
 
 		if beforeNode.address != afterNode.address {
 			// The old account was deleted.
-			recordDeletedAccount(context, beforeNode)
+			if err = recordDeletedAccount(context, beforeNode); err != nil {
+				return err
+			}
 
 			// And a new account was created.
 			return recordAddedAccount(context, afterNode)
@@ -373,13 +373,6 @@ func recordAddedAccount(
 	return collectDiff(context, triePosition{ref: emptyNodeReference}, triePosition{ref: account.storage})
 }
 
-func recordDeletedAccount(
-	context *diffContext,
-	account *AccountNode,
-) {
-	context.result[account.address] = &AccountDiff{Reset: true}
-}
-
 func recordValueUpdate(
 	context *diffContext,
 	key common.Key,
@@ -394,4 +387,22 @@ func recordValueUpdate(
 		diff.Storage = map[common.Key]common.Value{}
 	}
 	diff.Storage[key] = value
+}
+
+func recordDeletedAccount(
+	context *diffContext,
+	account *AccountNode,
+) error {
+	emptyBalance := amount.Amount{}
+	emptyNonce := common.Nonce{}
+	emptyCodeHash := common.Hash{}
+	diff := &AccountDiff{
+		Balance: &emptyBalance,
+		Nonce:   &emptyNonce,
+		Code:    &emptyCodeHash,
+	}
+	context.result[account.address] = diff
+	// Also record the deletion of all storage entries.
+	context.currentAccount = &account.address
+	return collectDiff(context, triePosition{ref: account.storage}, triePosition{ref: emptyNodeReference})
 }

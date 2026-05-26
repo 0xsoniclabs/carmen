@@ -123,13 +123,6 @@ func (s *ExternalState) CreateAccount(address common.Address) error {
 	return err
 }
 
-func (s *ExternalState) DeleteAccount(address common.Address) error {
-	update := common.Update{}
-	update.AppendDeleteAccount(address)
-	_, err := s.Apply(0, update)
-	return err
-}
-
 func (s *ExternalState) GetBalance(address common.Address) (amount.Amount, error) {
 	var balance [amount.BytesLength]byte
 	result := s.bindings.GetBalance(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&balance[0]))

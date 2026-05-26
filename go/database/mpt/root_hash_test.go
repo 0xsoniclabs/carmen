@@ -275,23 +275,6 @@ func TestS5RootHash_AddressAndKeys(t *testing.T) {
 			}
 		}
 	}
-
-	// Delete all accounts.
-	for i, addr := range address {
-		if err := trie.DeleteAccount(addr); err != nil {
-			t.Fatalf("failed to delete account: %v", err)
-		}
-
-		hash, err := trie.GetHash()
-		if err != nil {
-			t.Fatalf("failed to compute hash: %v", err)
-		}
-
-		want := nextHash()
-		if got := fmt.Sprintf("%x", hash); want != got {
-			t.Fatalf("invalid hash after delete #%d\nexpected %v\n     got %v", i, want, got)
-		}
-	}
 }
 
 //go:embed root_hash_test_values.txt

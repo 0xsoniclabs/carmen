@@ -40,20 +40,6 @@ func (m *MockUpdateTarget) EXPECT() *MockUpdateTargetMockRecorder {
 	return m.recorder
 }
 
-// DeleteAccount mocks base method.
-func (m *MockUpdateTarget) DeleteAccount(address Address) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteAccount", address)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteAccount indicates an expected call of DeleteAccount.
-func (mr *MockUpdateTargetMockRecorder) DeleteAccount(address any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAccount", reflect.TypeOf((*MockUpdateTarget)(nil).DeleteAccount), address)
-}
-
 // SetBalance mocks base method.
 func (m *MockUpdateTarget) SetBalance(address Address, balance amount.Amount) error {
 	m.ctrl.T.Helper()

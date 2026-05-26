@@ -198,10 +198,6 @@ func OpenGoFileState(directory string, config MptConfig, cacheConfig NodeCacheCo
 	return newMptState(directory, lock, trie)
 }
 
-func (s *MptState) DeleteAccount(address common.Address) error {
-	return s.trie.SetAccountInfo(address, AccountInfo{})
-}
-
 func (s *MptState) GetBalance(address common.Address) (balance amount.Amount, err error) {
 	info, exists, err := s.trie.GetAccountInfo(address)
 	if !exists || err != nil {

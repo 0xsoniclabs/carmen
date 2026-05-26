@@ -124,6 +124,7 @@ func _newStateWithSource(source NodeSource) (_ *verkleState, err error) {
 }
 
 // --- State interface implementation ---
+
 func (s *verkleState) GetBalance(address common.Address) (amount.Amount, error) {
 	account, err := s.getAccountData(address)
 	if err != nil {
@@ -217,11 +218,6 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 		}
 		modifiedAccounts[addr] = &res
 		return &res, nil
-	}
-
-	// Process deleted accounts.
-	if len(update.DeletedAccounts) > 0 {
-		return nil, fmt.Errorf("not supported: verkle trie does not support deleting accounts")
 	}
 
 	// update balances

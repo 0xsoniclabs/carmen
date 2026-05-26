@@ -422,68 +422,42 @@ func TestStateDB_StorageOfDestroyedAccountIsStillAccessibleTillEndOfTransaction(
 	db.EndTransaction()
 }
 
-func TestStateDB_StoreDataCacheIsResetAfterSuicide(t *testing.T) {
+func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-	zero := common.Value{}
+	require := require.New(t)
+	db := createStateDBWith(mock, 100, true)
 
 	// Initially the account exists and has a slot value set.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
+	mock.EXPECT().GetBalance(gomock.Any()).AnyTimes().Return(amount.New(0), nil)
+	mock.EXPECT().GetNonce(gomock.Any()).AnyTimes().Return(common.Nonce{}, nil)
+	mock.EXPECT().GetCodeSize(gomock.Any()).AnyTimes().Return(0, nil)
+	mock.EXPECT().Apply(uint64(0), common.Update{}) // Empty because it's a non-existing account
+	mock.EXPECT().GetStorage(address1, key1).Times(1).Return(val2, nil)
 
-	// During the processing the account is deleted.
-	mock.EXPECT().Apply(uint64(1), common.Update{})
-	mock.EXPECT().Apply(uint64(2), common.Update{
-		DeletedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
-	mock.EXPECT().Apply(uint64(3), common.Update{})
-
-	// The second value fetched in the last block must also be retrieved from the store.
-	mock.EXPECT().GetStorage(address1, key2).Return(val2, nil)
-
-	// In the first transaction key1 is fetched, ending up in the store data cache.
+	db.BeginBlock()
 	db.BeginTransaction()
-	if got := db.GetState(address1, key1); got != val1 {
-		t.Errorf("unexpected value, wanted %v, got %v", val1, got)
-	}
-	db.EndTransaction()
-	db.EndBlock(1) // < stored value remains in store data cache
+	db.AddBalance(address1, amount.New(10)) // Create the account
+	got := db.GetState(address1, key1)      // Load a value in the storadDataCache
+	db.SubBalance(address1, amount.New(10)) // Empty the account
+	require.Equal(got, val2)
+	db.EndTransaction() // Account will be deleted because empty
+	db.EndBlock(0)
 
-	// In the next block the account is destroyed
-	db.BeginTransaction()
-	db.Suicide(address1)
-	db.EndTransaction()
-	db.BeginTransaction()
-	// This value is zero because within this block the address1 was cleared.
-	if got := db.GetState(address1, key1); got != zero {
-		t.Errorf("unexpected value, wanted %v, got %v", zero, got)
-	}
-	db.SetState(address1, key2, val2) // < implicitly re-creates an empty account, which should be removed at the end of the block
-	db.EndTransaction()
-	db.EndBlock(2) // < here the stored data cache is reset to forget the old state; also, key2/val2 is stored in DB
+	// Value is still in the storadDataCache
+	cachedValue, exists := db.storedDataCache.Get(slotId{address1, key1})
+	require.True(exists)
+	require.Equal(cachedValue.value, val2)
+	// Reincarnation value of the cached entry is higher than the current one
+	require.Greater(db.reincarnation[address1], cachedValue.reincarnation)
 
-	// At this point address1 should be all empty -- in the store and the caches.
-
-	// In this block we try to read the value again. This time it is not cached
-	// in the snapshot state nor is the account marked as being cleared. The value
-	// is retrieved from the store data cache.
+	db.BeginBlock()
 	db.BeginTransaction()
-	// This value is now fetched from the value store, which is supposed to be cleared
-	// at the end of the block deleting the account.
-	if got := db.GetState(address1, key1); got != zero {
-		t.Errorf("unexpected value, wanted %v, got %v", zero, got)
-	}
-	// The value for key2 is also retrieved from the value store.
-	if got := db.GetState(address1, key2); got != val2 {
-		t.Errorf("unexpected value, wanted %v, got %v", val2, got)
-	}
-	db.EndTransaction()
-	db.EndBlock(3)
+	// This will lookup in the storadDataCache, but since the reincarnation is higher, it's gonna return an empty value
+	got = db.GetState(address1, key1)
+	require.Equal(got, common.Value{})
+
 }
 
 func TestStateDB_RollbackToKnownCommittedStateProducesCorrectResult(t *testing.T) {
@@ -1018,10 +992,9 @@ func TestStateDB_SuicideIsExecutedAtEndOfTransaction(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		DeletedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	db.SetNonce(address1, 5)
@@ -1123,10 +1096,9 @@ func TestStateDB_DeletedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		DeletedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(0)}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(0)}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	db.Suicide(address1)
@@ -3090,9 +3062,8 @@ func TestStateDB_DeletesEmptyAccountsEip161(t *testing.T) {
 
 	// The account is deleted in the state at the end of the block
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		DeletedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 	db.EndBlock(1)
 }
@@ -3134,10 +3105,9 @@ func TestStateDB_SuicidedAccountNotRecreatedBySettingBalance(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	// The account will be deleted.
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		DeletedAccounts: []common.Address{address1},
-		Balances:        []common.BalanceUpdate{{Account: address1}},
-		Nonces:          []common.NonceUpdate{{Account: address1}},
-		Codes:           []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Balances: []common.BalanceUpdate{{Account: address1}},
+		Nonces:   []common.NonceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	})
 
 	// The account is suicided

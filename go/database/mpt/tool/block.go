@@ -81,9 +81,6 @@ func block(context *cli.Context) error {
 func diffToUpdate(diff mpt.Diff) (common.Update, error) {
 	res := common.Update{}
 	for account, diff := range diff {
-		if diff.Reset {
-			res.AppendDeleteAccount(account)
-		}
 		if diff.Balance != nil {
 			res.AppendBalanceUpdate(account, *diff.Balance)
 		}

@@ -516,7 +516,6 @@ mod tests {
         let embedding = VerkleTrieEmbedding::new();
 
         let update = Update {
-            deleted_accounts: &[[3; 20], [4; 20]], // These will be ignored
             balances: &[
                 BalanceUpdate {
                     addr: [5; 20],
