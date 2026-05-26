@@ -41,10 +41,7 @@ func execSubProcessTest(t *testing.T, execTestName string, envVar string) bytes.
 	}
 
 	cmd := exec.Command(path, "-test.run", execTestName)
-	cmd.Env = os.Environ()
-	if envVar != "" {
-		cmd.Env = append(cmd.Env, envVar)
-	}
+	cmd.Env = []string{envVar}
 	errBuf := new(bytes.Buffer)
 	cmd.Stderr = errBuf
 	stdBuf := new(bytes.Buffer)
