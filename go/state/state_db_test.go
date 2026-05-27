@@ -43,12 +43,6 @@ var (
 	val3     = common.Value{0x03}
 
 	balance1 = amount.New(1)
-	balance2 = amount.New(2)
-	balance3 = amount.New(3)
-
-	nonce1 = common.Nonce{0x01}
-	nonce2 = common.Nonce{0x02}
-	nonce3 = common.Nonce{0x03}
 )
 
 func TestAccountLifeCycleState_CanBePrinted(t *testing.T) {

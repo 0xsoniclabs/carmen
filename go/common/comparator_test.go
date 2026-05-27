@@ -15,7 +15,6 @@ import "testing"
 var (
 	addressA = Address{0xA}
 	addressB = Address{0xB}
-	addressC = Address{0xC}
 
 	keyA = &Key{0xA}
 	keyB = &Key{0xB}
