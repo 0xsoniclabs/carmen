@@ -11,7 +11,6 @@
 package diagnostics
 
 import (
-	"context"
 	"net/http"
 	_ "net/http/pprof"
 	"path"
@@ -65,7 +64,7 @@ func TestAddPerformanceDiagnosticsAction(t *testing.T) {
 
 	set := []string{"cmd", "--diagnostics", "6060", "--cpu-profile", path.Join(dir, "cpu.profile"), "--trace", path.Join(dir, "tracer.out")}
 	err := app.RunContext(
-		context.TODO(),
+		t.Context(),
 		set,
 	)
 	require.NoError(t, err)

@@ -12,7 +12,6 @@ package reference
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"testing"
 
@@ -326,7 +325,7 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
 	state := newState()
 	require.Panics(
-		func() { state.Export(context.TODO(), nil) },
+		func() { state.Export(t.Context(), nil) },
 		"Export should panic as it is not implemented",
 	)
 }
