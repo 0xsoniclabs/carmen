@@ -53,4 +53,8 @@ output:
       # for human consumption
       path: ./build/golangci-lint-report.html
     tab:
+<<<<<<< HEAD
       path: stdout
+=======
+      path: stdout
+>>>>>>> 164ef64a (Add .golangci.yml)
