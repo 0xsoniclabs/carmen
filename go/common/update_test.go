@@ -510,35 +510,44 @@ func TestUpdate_Print(t *testing.T) {
 }
 
 func Test_insertOrdered(t *testing.T) {
-	list := []Address{{0x01}, {0x03}, {0x05}}
-	addr := Address{0x02}
-	updatedList := insertOrdered(list, addr)
-	expectedList := []Address{{0x01}, {0x02}, {0x03}, {0x05}}
-	if !reflect.DeepEqual(updatedList, expectedList) {
-		t.Errorf("expected %v, got %v", expectedList, updatedList)
+	cases := []struct {
+		name     string
+		list     []Address
+		addr     Address
+		expected []Address
+	}{
+		{
+			name:     "insert in the middle",
+			list:     []Address{{0x01}, {0x03}, {0x05}},
+			addr:     Address{0x02},
+			expected: []Address{{0x01}, {0x02}, {0x03}, {0x05}},
+		},
+		{
+			name:     "insert existing address",
+			list:     []Address{{0x01}, {0x03}, {0x05}},
+			addr:     Address{0x03},
+			expected: []Address{{0x01}, {0x03}, {0x05}},
+		},
+		{
+			name:     "insert smaller than all",
+			list:     []Address{{0x01}, {0x03}, {0x05}},
+			addr:     Address{0x00},
+			expected: []Address{{0x00}, {0x01}, {0x03}, {0x05}},
+		},
+		{
+			name:     "insert larger than all",
+			list:     []Address{{0x01}, {0x03}, {0x05}},
+			addr:     Address{0x06},
+			expected: []Address{{0x01}, {0x03}, {0x05}, {0x06}},
+		},
 	}
 
-	// Test inserting an existing address does not change the list
-	addr = Address{0x03}
-	updatedList = insertOrdered(list, addr)
-	expectedList = []Address{{0x01}, {0x03}, {0x05}}
-	if !reflect.DeepEqual(updatedList, expectedList) {
-		t.Errorf("expected %v, got %v", expectedList, updatedList)
-	}
-
-	// Test inserting an address smaller than all existing addresses
-	addr = Address{0x00}
-	updatedList = insertOrdered(list, addr)
-	expectedList = []Address{{0x00}, {0x01}, {0x03}, {0x05}}
-	if !reflect.DeepEqual(updatedList, expectedList) {
-		t.Errorf("expected %v, got %v", expectedList, updatedList)
-	}
-
-	// Test inserting an address larger than all existing addresses
-	addr = Address{0x06}
-	updatedList = insertOrdered(list, addr)
-	expectedList = []Address{{0x01}, {0x03}, {0x05}, {0x06}}
-	if !reflect.DeepEqual(updatedList, expectedList) {
-		t.Errorf("expected %v, got %v", expectedList, updatedList)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			updatedList := insertOrdered(tc.list, tc.addr)
+			if !reflect.DeepEqual(updatedList, tc.expected) {
+				t.Errorf("expected %v, got %v", tc.expected, updatedList)
+			}
+		})
 	}
 }

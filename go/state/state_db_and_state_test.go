@@ -105,7 +105,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 
 			db.EndTransaction()
 			db.EndBlock(2)
-			require.NoError(t, db.Check(), "state DB check failed after block 1")
+			require.NoError(t, db.Check(), "state DB check failed after block 2")
 
 			if err := db.Flush(); err != nil {
 				t.Fatalf("failed to flush the DB: %v", err)
