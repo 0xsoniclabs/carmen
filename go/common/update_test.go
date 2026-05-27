@@ -510,40 +510,35 @@ func TestUpdate_Print(t *testing.T) {
 }
 
 func Test_insertOrdered(t *testing.T) {
-	cases := []struct {
-		name     string
+	cases := map[string]struct {
 		list     []Address
 		addr     Address
 		expected []Address
 	}{
-		{
-			name:     "insert in the middle",
+		"insert in the middle": {
 			list:     []Address{{0x01}, {0x03}, {0x05}},
 			addr:     Address{0x02},
 			expected: []Address{{0x01}, {0x02}, {0x03}, {0x05}},
 		},
-		{
-			name:     "insert existing address",
+		"insert existing address": {
 			list:     []Address{{0x01}, {0x03}, {0x05}},
 			addr:     Address{0x03},
 			expected: []Address{{0x01}, {0x03}, {0x05}},
 		},
-		{
-			name:     "insert smaller than all",
+		"insert smaller than all": {
 			list:     []Address{{0x01}, {0x03}, {0x05}},
 			addr:     Address{0x00},
 			expected: []Address{{0x00}, {0x01}, {0x03}, {0x05}},
 		},
-		{
-			name:     "insert larger than all",
+		"insert larger than all": {
 			list:     []Address{{0x01}, {0x03}, {0x05}},
 			addr:     Address{0x06},
 			expected: []Address{{0x01}, {0x03}, {0x05}, {0x06}},
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			updatedList := insertOrdered(tc.list, tc.addr)
 			if !reflect.DeepEqual(updatedList, tc.expected) {
 				t.Errorf("expected %v, got %v", tc.expected, updatedList)
