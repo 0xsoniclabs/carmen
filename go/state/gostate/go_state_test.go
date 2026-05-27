@@ -593,7 +593,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 
 	update := common.Update{
 		CreatedAccounts: []common.Address{{0xA}},
-		Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+		Balances:        []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(10)}},
 	}
 
 	// the same result many times
@@ -656,7 +656,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		update := common.Update{
 			CreatedAccounts: []common.Address{{0xA}},
-			Balances:        []common.BalanceUpdate{{common.Address{0xA}, amount.New(10)}},
+			Balances:        []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(10)}},
 		}
 		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
@@ -951,7 +951,7 @@ func TestState_All_Archive_Operations_May_Cause_Failure(t *testing.T) {
 func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	expected := common.Update{
 		Slots: []common.SlotUpdate{
-			{address1, key1, val1},
+			{Account: address1, Key: key1, Value: val1},
 		},
 	}
 
@@ -985,8 +985,8 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	// this update will be normalised in certain schemas to remove duplicates
 	update := common.Update{
 		Slots: []common.SlotUpdate{
-			{address1, key1, val1},
-			{address1, key1, val1},
+			{Account: address1, Key: key1, Value: val1},
+			{Account: address1, Key: key1, Value: val1},
 		},
 	}
 
