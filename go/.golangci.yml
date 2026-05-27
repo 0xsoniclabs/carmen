@@ -1,0 +1,56 @@
+# Copyright (c) 2025 Sonic Operations Ltd
+#
+# Use of this software is governed by the Business Source License included
+# in the LICENSE file and at soniclabs.com/bsl11.
+#
+# Change Date: 2028-4-16
+#
+# On the date above, in accordance with the Business Source License, use of
+# this software will be governed by the GNU Lesser General Public License v3.
+
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        # Ignored rules
+        - "-ST1000" # Incorrect or missing package comment.
+        - "-ST1003" # Poorly chosen identifier.
+        # rules ST1023 and QF1011 have few findings, but in those cases adding
+        # the type to the declaration improves readability.
+        - "-ST1023" # Redundant type in variable declaration.
+        - "-QF1011" # Omit redundant type from variable declaration.
+
+
+formatters:
+  # Enable specific formatter.
+  enable:
+    - gofmt
+
+issues:
+  # do not limit number of findings per linter
+  max-issues-per-linter: 0
+  # do not limit number of same finding
+  max-same-issues: 0
+  # do not limit number of issues per line
+  uniq-by-line: false
+
+output:
+  formats:
+    text:
+      # for CI or automated processing
+      path: ./build/golangci-lint-report.txt
+    html:
+      # for human consumption
+      path: ./build/golangci-lint-report.html
+    tab:
+      path: stdout
