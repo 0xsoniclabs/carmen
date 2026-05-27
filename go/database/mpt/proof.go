@@ -255,7 +255,7 @@ func (p WitnessProof) String() string {
 	// Build the string representation
 	var b strings.Builder
 	for _, k := range keys {
-		b.WriteString(fmt.Sprintf("0x%x->0x%x\n", k, p.proofDb[k]))
+		fmt.Fprintf(&b, "0x%x->0x%x\n", k, p.proofDb[k])
 	}
 	return b.String()
 }

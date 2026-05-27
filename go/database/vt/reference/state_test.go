@@ -12,6 +12,7 @@ package reference
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"testing"
 
@@ -32,7 +33,7 @@ func TestState_ImplementsState(t *testing.T) {
 	var _ state.State = &State{}
 
 	inst, _ := NewState(state.Parameters{})
-	var _ state.State = inst
+	var _ = inst
 }
 
 func TestState_NewState_CreatesEmptyState(t *testing.T) {
@@ -325,7 +326,7 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
 	state := newState()
 	require.Panics(
-		func() { state.Export(nil, nil) },
+		func() { state.Export(context.TODO(), nil) },
 		"Export should panic as it is not implemented",
 	)
 }

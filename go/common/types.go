@@ -107,8 +107,8 @@ func (a *Key) Compare(b *Key) int {
 	return bytes.Compare(a[:], b[:])
 }
 
-func (a *Hash) Compare(b *Hash) int {
-	return bytes.Compare(a[:], b[:])
+func (h *Hash) Compare(b *Hash) int {
+	return bytes.Compare(h[:], b[:])
 }
 
 type AddressComparator struct{}

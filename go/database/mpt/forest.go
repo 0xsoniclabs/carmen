@@ -506,21 +506,21 @@ func (s *Forest) hashAddress(address common.Address) common.Hash {
 	return hash
 }
 
-func (f *Forest) Freeze(ref *NodeReference) error {
-	if f.storageMode != Immutable {
+func (s *Forest) Freeze(ref *NodeReference) error {
+	if s.storageMode != Immutable {
 		return fmt.Errorf("node-freezing only supported in archive mode")
 	}
-	root, err := f.getWriteAccess(ref)
+	root, err := s.getWriteAccess(ref)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", ref.Id(), err)
-		f.errors = append(f.errors, err)
+		s.errors = append(s.errors, err)
 		return err
 	}
 	defer root.Release()
-	err = root.Get().Freeze(f, root)
+	err = root.Get().Freeze(s, root)
 	if err != nil {
 		err = fmt.Errorf("error while freezing trie rooted by %v: %w", ref.Id(), err)
-		f.errors = append(f.errors, err)
+		s.errors = append(s.errors, err)
 	}
 	return err
 }
@@ -818,13 +818,13 @@ func (s *Forest) getHashAccess(ref *NodeReference) (shared.HashHandle[Node], err
 	)
 }
 
-func (f *Forest) getWriteAccess(ref *NodeReference) (shared.WriteHandle[Node], error) {
-	return getAccess(f, ref,
-		func(s *shared.Shared[Node]) shared.WriteHandle[Node] {
+func (s *Forest) getWriteAccess(ref *NodeReference) (shared.WriteHandle[Node], error) {
+	return getAccess(s, ref,
+		func(n *shared.Shared[Node]) shared.WriteHandle[Node] {
 			// When gaining write access to nodes, they need to be touched to make sure
 			// modified nodes are at the head of the cache's LRU queue to be evicted last.
-			f.nodeCache.Touch(ref)
-			return s.GetWriteHandle()
+			s.nodeCache.Touch(ref)
+			return n.GetWriteHandle()
 		},
 		func(p shared.WriteHandle[Node]) {
 			p.Release()

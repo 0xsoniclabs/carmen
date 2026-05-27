@@ -285,6 +285,7 @@ func (t *transactionContext) Abort() error {
 	if t.state == nil {
 		return nil
 	}
+	//nolint:staticcheck
 	t.state.AbortTransaction()
 	return t.end()
 }

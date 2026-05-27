@@ -199,7 +199,7 @@ func (p *Path) String() string {
 	for i := 0; i < p.Length(); i++ {
 		builder.WriteRune(p.Get(i).Rune())
 	}
-	builder.WriteString(fmt.Sprintf(" : %d", p.length))
+	fmt.Fprintf(&builder, " : %d", p.length)
 	return builder.String()
 }
 

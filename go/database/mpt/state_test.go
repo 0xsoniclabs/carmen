@@ -657,7 +657,7 @@ func TestState_Flush_WriteDirtyCodesOnly(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to get modtime of codes file after third flush")
 	}
-	if stat2.ModTime() == stat3.ModTime() {
+	if stat2.ModTime().Equal(stat3.ModTime()) {
 		t.Errorf("codes not written when dirty")
 	}
 }

@@ -251,7 +251,7 @@ type NodeManager interface {
 //                               Utilities
 // ----------------------------------------------------------------------------
 
-// Handler provides a common interface for all node handles. Node handles are
+// Handle provides a common interface for all node handles. Node handles are
 // references to nodes representing a specific access mode to a node.
 type Handle interface {
 	// Release releases the handle, thereby abandoning the access permission on
@@ -1094,7 +1094,7 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 	numChildren := 0
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1565,7 +1565,7 @@ func (n *ExtensionNode) Check(source NodeSource, thisRef *NodeReference, _ []Nib
 	//  - frozen flags are consistent
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1990,7 +1990,7 @@ func (n *AccountNode) Check(source NodeSource, thisRef *NodeReference, path []Ni
 	//  - path length
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -2225,7 +2225,7 @@ func (n *ValueNode) Check(source NodeSource, thisRef *NodeReference, path []Nibb
 	//  - the path length is correct (if enabled to be tracked)
 	var errs []error
 
-	if err := n.nodeBase.check(thisRef); err != nil {
+	if err := n.check(thisRef); err != nil {
 		errs = append(errs, err)
 	}
 

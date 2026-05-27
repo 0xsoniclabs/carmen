@@ -40,7 +40,7 @@ func (c *LruCache[K, V]) Iterate(callback func(K, V) bool) {
 	}
 }
 
-// Iterate all cached entries by passing a mutable value reference to the provided callback.
+// IterateMutable iterates all cached entries by passing a mutable value reference to the provided callback.
 func (c *LruCache[K, V]) IterateMutable(callback func(K, *V) bool) {
 	for key, value := range c.cache {
 		if !callback(key, &value.val) {

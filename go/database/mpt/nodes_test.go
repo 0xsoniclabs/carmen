@@ -7929,7 +7929,7 @@ type Branch struct {
 func (b *Branch) Build(ctx *nodeContext) (NodeReference, *shared.Shared[Node]) {
 	ref := NewNodeReference(BranchId(ctx.nextIndex()))
 	res := &BranchNode{}
-	res.nodeBase.clean = !b.dirty
+	res.clean = !b.dirty
 	res.frozen = b.frozen
 	for i, desc := range b.children {
 		ref, _ := ctx.Build(desc)
@@ -7973,7 +7973,7 @@ type Extension struct {
 func (e *Extension) Build(ctx *nodeContext) (NodeReference, *shared.Shared[Node]) {
 	ref := NewNodeReference(ExtensionId(ctx.nextIndex()))
 	res := &ExtensionNode{}
-	res.nodeBase.clean = !e.dirty
+	res.clean = !e.dirty
 	res.frozen = e.frozen
 	res.path = CreatePathFromNibbles(e.path)
 	res.next, _ = ctx.Build(e.next)

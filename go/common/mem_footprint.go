@@ -81,7 +81,7 @@ func (mf *MemoryFootprint) ToString(name string) string {
 	return sb.String()
 }
 
-// Allow memory footprints to be used in format strings.
+// String allows memory footprints to be used in format strings.
 func (mf *MemoryFootprint) String() string {
 	return mf.ToString(".")
 }

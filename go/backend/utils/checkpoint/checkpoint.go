@@ -23,7 +23,7 @@ import (
 
 //go:generate mockgen -source checkpoint.go -destination checkpoint_mocks.go -package checkpoint
 
-// A checkpoint is a monotonically increasing number that is used to identify
+// Checkpoint is a monotonically increasing number that is used to identify
 // a backup state of a data structure that can be created in coordination with
 // multiple participants. The checkpoint is used to ensure that all participants
 // have a consistent view of the overall state they are part of.
