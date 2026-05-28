@@ -393,29 +393,8 @@ func (u *Update) Check() error {
 		return fmt.Errorf("storage updates are not in order or unique")
 	}
 
-	// Find all created accounts by looking at all balance, nonce, and code updates
-	createdAccounts := make([]Address, 0, len(u.Balances)+len(u.Nonces)+len(u.Codes))
-	for _, change := range u.Balances {
-		createdAccounts = append(createdAccounts, change.Account)
-	}
-	for _, change := range u.Nonces {
-		createdAccounts = insertOrdered(createdAccounts, change.Account)
-	}
-	for _, change := range u.Codes {
-		createdAccounts = insertOrdered(createdAccounts, change.Account)
-	}
-
-	// Make sure that there is no account created and deleted.
-	for i, j := 0, 0; i < len(createdAccounts) && j < len(u.DeletedAccounts); {
-		cmp := createdAccounts[i].Compare(&u.DeletedAccounts[j])
-		if cmp == 0 {
-			return fmt.Errorf("unable to create and delete same address in update: %v", createdAccounts[i])
-		}
-		if cmp < 0 {
-			i++
-		} else {
-			j++
-		}
+	if len(u.DeletedAccounts) > 0 {
+		return fmt.Errorf("deleted accounts should be empty")
 	}
 
 	return nil

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -250,12 +251,6 @@ var updateValueCase = []struct {
 	appendThird  func(u *Update)
 }{
 	{
-		"DeleteAccount",
-		func(u *Update) { u.AppendDeleteAccount(Address{0x01}) },
-		func(u *Update) { u.AppendDeleteAccount(Address{0x02}) },
-		func(u *Update) { u.AppendDeleteAccount(Address{0x03}) },
-	},
-	{
 		"UpdateBalance",
 		func(u *Update) { u.AppendBalanceUpdate(Address{0x01}, amount.New()) },
 		func(u *Update) { u.AppendBalanceUpdate(Address{0x02}, amount.New()) },
@@ -361,6 +356,12 @@ func TestUpdateEmptyUpdateCanBeSerializedAndDeserialized(t *testing.T) {
 	if !reflect.DeepEqual(update, restored) {
 		t.Errorf("restored update is not the same as original\noriginal: %+v\nrestored: %+v", update, restored)
 	}
+}
+
+func TestCheck_FailsIfDeletedAccountsAreNotEmpty(t *testing.T) {
+	update := Update{}
+	update.AppendDeleteAccount(Address{0x01})
+	require.Error(t, update.Check())
 }
 
 func getExampleUpdate() Update {
