@@ -83,12 +83,12 @@ func TestBenchmark_RunExampleBenchmark(t *testing.T) {
 		}
 	}
 
-	filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+	require.NoError(t, filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), "mpt_") {
 			t.Errorf("temporary DB was not deleted")
 		}
 		return nil
-	})
+	}))
 }
 
 func TestBenchmark_KeepStateRetainsState(t *testing.T) {
@@ -107,12 +107,12 @@ func TestBenchmark_KeepStateRetainsState(t *testing.T) {
 	}
 
 	found := false
-	filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+	require.NoError(t, filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), "state_") {
 			found = true
 		}
 		return nil
-	})
+	}))
 
 	if !found {
 		t.Errorf("temporary MPT was not retained")
@@ -140,12 +140,12 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 			}
 
 			found := false
-			filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+			require.NoError(t, filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 				if strings.HasPrefix(info.Name(), "archive") {
 					found = true
 				}
 				return nil
-			})
+			}))
 
 			if found != mode {
 				t.Errorf("unexpected presence of archive, wanted %t, got %t", mode, found)

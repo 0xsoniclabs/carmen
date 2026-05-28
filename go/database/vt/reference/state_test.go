@@ -325,7 +325,10 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
 	state := newState()
 	require.Panics(
-		func() { state.Export(t.Context(), nil) },
+		func() {
+			_, err := state.Export(t.Context(), nil)
+			require.NoError(err)
+		},
 		"Export should panic as it is not implemented",
 	)
 }
@@ -363,14 +366,16 @@ func TestState_StateWithContentHasExpectedCommitment(t *testing.T) {
 	}
 
 	state := newState()
-	state.Apply(0, update)
+	_, err := state.Apply(0, update)
+	require.NoError(err)
 
 	hash, err := state.GetCommitment().Await().Get()
 	require.NoError(err)
 
 	reference, err := newRefState(t)
 	require.NoError(err)
-	reference.Apply(0, update)
+	_, err = reference.Apply(0, update)
+	require.NoError(err)
 	want, err := reference.GetCommitment().Await().Get()
 	require.NoError(err)
 
@@ -457,11 +462,13 @@ func TestState_IncrementalStateUpdatesResultInSameCommitments(t *testing.T) {
 	require.NoError(err)
 
 	for _, update := range updates {
-		state.Apply(0, update)
+		_, err = state.Apply(0, update)
+		require.NoError(err)
 		hash, err := state.GetCommitment().Await().Get()
 		require.NoError(err)
 
-		reference.Apply(0, update)
+		_, err = reference.Apply(0, update)
+		require.NoError(err)
 		want, err := reference.GetCommitment().Await().Get()
 		require.NoError(err)
 

@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadJsonFile_CanReadJsonData(t *testing.T) {
@@ -48,7 +50,7 @@ func TestReadJsonFile_DetectsIoError(t *testing.T) {
 	if err := os.Chmod(file, 0); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(file, 0600)
+	defer func() { require.NoError(t, os.Chmod(file, 0600)) }()
 
 	_, err := ReadJsonFile[chan bool](file)
 	if err == nil {
@@ -99,7 +101,7 @@ func TestWriteJsonFile_DetectsIoError(t *testing.T) {
 	if err := os.Chmod(file, 0); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(file, 0600)
+	defer func() { require.NoError(t, os.Chmod(file, 0600)) }()
 
 	err := WriteJsonFile(file, "test")
 	if err == nil {

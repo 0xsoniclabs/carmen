@@ -185,7 +185,7 @@ func BenchmarkStorageChanges(b *testing.B) {
 				}()
 
 				address := common.Address{}
-				state.SetNonce(address, common.ToNonce(12))
+				_ = state.SetNonce(address, common.ToNonce(12))
 
 				key := common.Key{}
 				value := common.Value{}
@@ -193,9 +193,9 @@ func BenchmarkStorageChanges(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					binary.BigEndian.PutUint64(key[:], uint64(i%1024))
 					binary.BigEndian.PutUint64(value[:], uint64(i))
-					state.SetStorage(address, key, value)
+					_ = state.SetStorage(address, key, value)
 					if withHashing {
-						state.GetHash()
+						_, _ = state.GetHash()
 					}
 				}
 			})

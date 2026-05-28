@@ -11,12 +11,12 @@
 package state
 
 import (
+	"testing"
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
-
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
 // To run this benchmarks, use the following command:
@@ -34,7 +34,7 @@ func BenchmarkFlushGoState(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer state.Close()
+	defer func() { require.NoError(b, state.Close()) }()
 
 	for n := uint64(0); n < uint64(b.N); n++ {
 		update := common.Update{}

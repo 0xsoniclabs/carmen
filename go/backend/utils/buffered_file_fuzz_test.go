@@ -13,9 +13,11 @@ package utils
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/0xsoniclabs/carmen/go/fuzzing"
 	"strings"
 	"testing"
+
+	"github.com/0xsoniclabs/carmen/go/fuzzing"
+	"github.com/stretchr/testify/require"
 )
 
 func FuzzBufferedFile_RandomOps(f *testing.F) {
@@ -56,7 +58,7 @@ func FuzzBufferedFile_ReadWrite(f *testing.F) {
 		if err != nil {
 			t.Fatalf("failed to open buffered file: %v", err)
 		}
-		defer file.Close()
+		defer func() { require.NoError(t, file.Close()) }()
 
 		ops := parseUpdates(rawData)
 		for _, op := range ops {

@@ -21,6 +21,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIO_ExportAndImportAsLiveDb(t *testing.T) {
@@ -40,7 +41,7 @@ func TestIO_ExportAndImportAsLiveDb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { require.NoError(t, db.Close()) }()
 
 	if exists, err := db.Exists(common.Address{1}); err != nil || !exists {
 		t.Fatalf("restored DB does not contain account 1")
@@ -72,7 +73,7 @@ func TestIO_ExportAndImportAsArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open recovered DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { require.NoError(t, db.Close()) }()
 
 	height, empty, err := db.GetBlockHeight()
 	if err != nil || empty || height != genesisBlock {
@@ -121,8 +122,8 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 			t.Fatalf("failed to fetch code: %v", err)
 		}
 		modified := append(code, []byte("extra_code")...)
-		s.SetCode(addr1, modified)
-		s.SetCode(addr1, code)
+		require.NoError(t, s.SetCode(addr1, modified))
+		require.NoError(t, s.SetCode(addr1, code))
 		codesAfter := s.GetCodes()
 		if before, after := len(codesBefore), len(codesAfter); before+1 != after {
 			t.Fatalf("modification did not had expected code-altering effect: %d -> %d", before, after)

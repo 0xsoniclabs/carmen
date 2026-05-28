@@ -21,6 +21,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 )
 
 type archiveFactory struct {
@@ -69,7 +70,7 @@ func TestAddGet(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(1, common.Update{
 				Balances: []common.BalanceUpdate{
@@ -158,7 +159,7 @@ func TestAccountDeleteCreate(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(1, common.Update{
 				Balances: []common.BalanceUpdate{
@@ -345,7 +346,7 @@ func TestAccountStatusOnly(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(1, common.Update{
 				Balances: []common.BalanceUpdate{{Account: addr1, Balance: balance1}},
@@ -370,7 +371,7 @@ func TestBalanceOnly(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(1, common.Update{
 				Balances: []common.BalanceUpdate{
@@ -407,7 +408,7 @@ func TestStorageOnly(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(1, common.Update{
 				Balances: []common.BalanceUpdate{
@@ -446,7 +447,7 @@ func TestPreventingBlockOverrides(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(1, common.Update{}, nil); err != nil {
 				t.Fatalf("failed to add block 1; %s", err)
@@ -472,7 +473,7 @@ func TestPreventingBlockOutOfOrder(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(2, common.Update{
 				Balances: []common.BalanceUpdate{
@@ -501,7 +502,7 @@ func TestEmptyBlockHash(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(0, common.Update{}, nil); err != nil {
 				t.Fatalf("failed to add empty block 0; %v", err)
@@ -548,7 +549,7 @@ func TestZeroBlock(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(0, common.Update{
 				Balances: []common.BalanceUpdate{
@@ -586,7 +587,7 @@ func TestTwinProtection(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			if err := a.Add(0, common.Update{}, nil); err != nil {
 				t.Fatalf("failed to add empty block 0; %s", err)
@@ -621,7 +622,7 @@ func TestBlockHeight(t *testing.T) {
 	for _, factory := range getArchiveFactories(t) {
 		t.Run(factory.label, func(t *testing.T) {
 			a := factory.getArchive(t.TempDir())
-			defer a.Close()
+			defer func() { require.NoError(t, a.Close()) }()
 
 			// Initially, the block height should be indicated as empty.
 			if _, empty, err := a.GetBlockHeight(); !empty || err != nil {
