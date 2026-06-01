@@ -33,7 +33,7 @@ func NewValue(value uint64) Value {
 	return Value{scalar: scalar}
 }
 
-// NewValuesFromLittleEndianBytes creates a new value from a 32-byte little-endian
+// NewValueFromLittleEndianBytes creates a new value from a 32-byte little-endian
 // byte slice. The value is expanded with zeros to 32 bytes if the input is
 // shorter. Inputs longer than 32 bytes are truncated to 32 bytes.
 func NewValueFromLittleEndianBytes(data []byte) Value {
@@ -53,7 +53,7 @@ func (v *Value) SetBit128() {
 	v.scalar.SetBytes(bytes[:])
 }
 
-// Subtracts another value from this value and returns the result as a new value.
+// Sub subtracts another value from this value and returns the result as a new value.
 func (v *Value) Sub(other Value) *Value {
 	var result Value
 	result.scalar.Sub(&v.scalar, &other.scalar)

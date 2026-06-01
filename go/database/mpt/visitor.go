@@ -13,6 +13,7 @@ package mpt
 //go:generate mockgen -source visitor.go -destination visitor_mocks.go -package mpt
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -55,7 +56,7 @@ const (
 // VisitForestNodes load the nodes of the forest stored in the given directory and
 // applies the visitor on each of those.
 func VisitForestNodes(directory string, config MptConfig, visitor NodeVisitor) error {
-	source, err := openVerificationNodeSource(nil, directory, config)
+	source, err := openVerificationNodeSource(context.TODO(), directory, config)
 	if err != nil {
 		return err
 	}
@@ -120,21 +121,21 @@ type NodeStatistic struct {
 func (s *NodeStatistic) String() string {
 	builder := strings.Builder{}
 
-	builder.WriteString("Node types:\n")
-	builder.WriteString(fmt.Sprintf("Accounts, %d\n", s.numAccounts))
-	builder.WriteString(fmt.Sprintf("Branches, %d\n", s.numBranches))
-	builder.WriteString(fmt.Sprintf("Extensions, %d\n", s.numExtensions))
-	builder.WriteString(fmt.Sprintf("Values, %d\n", s.numValues))
+	fmt.Fprintf(&builder, "Node types:\n")
+	fmt.Fprintf(&builder, "Accounts, %d\n", s.numAccounts)
+	fmt.Fprintf(&builder, "Branches, %d\n", s.numBranches)
+	fmt.Fprintf(&builder, "Extensions, %d\n", s.numExtensions)
+	fmt.Fprintf(&builder, "Values, %d\n", s.numValues)
 
-	builder.WriteString("Branch-Node-Size Distribution:\n")
+	fmt.Fprintf(&builder, "Branch-Node-Size Distribution:\n")
 	for i, count := range s.numChildren {
-		builder.WriteString(fmt.Sprintf("%d, %d\n", i, count))
+		fmt.Fprintf(&builder, "%d, %d\n", i, count)
 	}
 
 	if len(s.depths) > 0 {
-		builder.WriteString("Node depth distribution:\n")
+		fmt.Fprintf(&builder, "Node depth distribution:\n")
 		for i, count := range s.depths {
-			builder.WriteString(fmt.Sprintf("%d, %d\n", i, count))
+			fmt.Fprintf(&builder, "%d, %d\n", i, count)
 		}
 	}
 

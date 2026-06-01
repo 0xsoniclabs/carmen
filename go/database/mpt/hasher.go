@@ -853,7 +853,7 @@ func getLowerBoundForEncodedSizeBranch(node *BranchNode, limit int, nodes NodeSo
 		if sum >= limit {
 			return limit, nil
 		}
-		if child.Id().IsEmpty() || !(node.isChildHashDirty(byte(i)) || node.isEmbedded(byte(i))) {
+		if child.Id().IsEmpty() || (!node.isChildHashDirty(byte(i)) && !node.isEmbedded(byte(i))) {
 			continue
 		}
 

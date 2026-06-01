@@ -45,19 +45,19 @@ func (d Diff) String() string {
 	builder := strings.Builder{}
 	builder.WriteString("Diff {\n")
 	for _, address := range addresses {
-		builder.WriteString(fmt.Sprintf("\t%x: \n", address[:]))
+		fmt.Fprintf(&builder, "\t%x: \n", address[:])
 		diff := d[address]
 		if diff.Reset {
-			builder.WriteString(fmt.Sprintf("\t\tReset:   %t\n", diff.Reset))
+			fmt.Fprintf(&builder, "\t\tReset:   %t\n", diff.Reset)
 		}
 		if diff.Balance != nil {
-			builder.WriteString(fmt.Sprintf("\t\tBalance: %x\n", *diff.Balance))
+			fmt.Fprintf(&builder, "\t\tBalance: %x\n", *diff.Balance)
 		}
 		if diff.Nonce != nil {
-			builder.WriteString(fmt.Sprintf("\t\tNonce:   %x\n", *diff.Nonce))
+			fmt.Fprintf(&builder, "\t\tNonce:   %x\n", *diff.Nonce)
 		}
 		if diff.Code != nil {
-			builder.WriteString(fmt.Sprintf("\t\tCode:    %x\n", *diff.Code))
+			fmt.Fprintf(&builder, "\t\tCode:    %x\n", *diff.Code)
 		}
 
 		if len(diff.Storage) > 0 {
@@ -67,7 +67,7 @@ func (d Diff) String() string {
 			})
 			for _, key := range keys {
 				value := diff.Storage[key]
-				builder.WriteString(fmt.Sprintf("\t\t\t%x: %x\n", key[:], value[:]))
+				fmt.Fprintf(&builder, "\t\t\t%x: %x\n", key[:], value[:])
 			}
 		}
 	}

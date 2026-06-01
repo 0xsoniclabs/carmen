@@ -48,38 +48,38 @@ func Commit(values [VectorSize]Value) Commitment {
 // IsValid checks if the commitment is valid, i.e., if it is a point on the
 // curve. Not all possible instances of Commitment are valid. If instances are
 // fetched from an untrusted source, they should be checked for validity.
-func (p Commitment) IsValid() bool {
-	return p.point.IsOnCurve()
+func (c Commitment) IsValid() bool {
+	return c.point.IsOnCurve()
 }
 
 // Equal checks if two commitments are equal. This is a point equality check on
 // the Banderwagon curve.
-func (p Commitment) Equal(other Commitment) bool {
-	return p.point.Equal(&other.point)
+func (c Commitment) Equal(other Commitment) bool {
+	return c.point.Equal(&other.point)
 }
 
 // ToValue converts the commitment to a value. The result is a scalar field value
 // that can be used recursively in other commitments -- as it is required for
 // the Verkle trie.
-func (p Commitment) ToValue() Value {
+func (c Commitment) ToValue() Value {
 	var res banderwagon.Fr
-	p.point.MapToScalarField(&res)
+	c.point.MapToScalarField(&res)
 	return Value{scalar: res}
 }
 
 // Hash returns the hash of the commitment, which is used when utilizing the
 // Pedersen commitment scheme as a hash function. The primary use case in the
 // Verkle trie is when computing keys during the state tree embedding.
-func (p Commitment) Hash() common.Hash {
-	value := p.ToValue()
+func (c Commitment) Hash() common.Hash {
+	value := c.ToValue()
 	return value.scalar.BytesLE()
 }
 
 // Compress returns the compressed representation of the commitment. The result
 // can be used as a unique identifier for summarizing the root commitment of a
 // Verkle trie.
-func (p Commitment) Compress() [32]byte {
-	return p.point.Bytes()
+func (c Commitment) Compress() [32]byte {
+	return c.point.Bytes()
 }
 
 // Update creates a new commitment that is the same as the original, except

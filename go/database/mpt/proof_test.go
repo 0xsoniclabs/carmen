@@ -1273,7 +1273,7 @@ func TestCreateWitnessProof_GetStorageElementsOfEmptyAccount_IsZerosHash(t *test
 		t.Errorf("unexpected storage root: got %v, want %v", storageRoot, common.Hash{})
 	}
 
-	elements, complete := proof.GetStorageElements(rootHash, address, common.Key{})
+	elements, _ := proof.GetStorageElements(rootHash, address, common.Key{})
 	if len(elements) != 1 {
 		t.Fatalf("unexpected number of elements: got %d, want 1", len(elements))
 	}

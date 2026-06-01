@@ -16,7 +16,7 @@ import (
 	"github.com/crate-crypto/go-ipa/ipa"
 )
 
-// Open is a bit of information that is used to verify that a commitment
+// Opening is a bit of information that is used to verify that a commitment
 // contains a specific value at a specific position. It is an Inner Product
 // Argument (IPA) proof.
 // Details: https://dankradfeist.de/ethereum/2021/07/27/inner-product-arguments.html

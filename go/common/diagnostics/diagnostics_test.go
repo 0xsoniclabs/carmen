@@ -64,7 +64,7 @@ func TestAddPerformanceDiagnosticsAction(t *testing.T) {
 
 	set := []string{"cmd", "--diagnostics", "6060", "--cpu-profile", path.Join(dir, "cpu.profile"), "--trace", path.Join(dir, "tracer.out")}
 	err := app.RunContext(
-		nil,
+		t.Context(),
 		set,
 	)
 	require.NoError(t, err)
