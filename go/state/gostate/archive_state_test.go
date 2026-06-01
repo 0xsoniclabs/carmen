@@ -228,10 +228,10 @@ func TestArchiveState_Export(t *testing.T) {
 
 	update := common.Update{
 		CreatedAccounts: []common.Address{newAddr},
-		Balances:        []common.BalanceUpdate{{newAddr, newAmount}},
-		Nonces:          []common.NonceUpdate{{newAddr, common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{newAddr, []byte{0x1}}},
-		Slots:           []common.SlotUpdate{{newAddr, common.Key{byte(1)}, common.Value{byte(1)}}},
+		Balances:        []common.BalanceUpdate{{Account: newAddr, Balance: newAmount}},
+		Nonces:          []common.NonceUpdate{{Account: newAddr, Nonce: common.ToNonce(1)}},
+		Codes:           []common.CodeUpdate{{Account: newAddr, Code: []byte{0x1}}},
+		Slots:           []common.SlotUpdate{{Account: newAddr, Key: common.Key{byte(1)}, Value: common.Value{byte(1)}}},
 	}
 
 	err = trie.Add(2, update, nil)
@@ -271,10 +271,10 @@ func TestArchiveState_Export_CanBeCancelled(t *testing.T) {
 
 	update := common.Update{
 		CreatedAccounts: []common.Address{newAddr},
-		Balances:        []common.BalanceUpdate{{newAddr, newAmount}},
-		Nonces:          []common.NonceUpdate{{newAddr, common.ToNonce(1)}},
-		Codes:           []common.CodeUpdate{{newAddr, []byte{0x1}}},
-		Slots:           []common.SlotUpdate{{newAddr, common.Key{byte(1)}, common.Value{byte(1)}}},
+		Balances:        []common.BalanceUpdate{{Account: newAddr, Balance: newAmount}},
+		Nonces:          []common.NonceUpdate{{Account: newAddr, Nonce: common.ToNonce(1)}},
+		Codes:           []common.CodeUpdate{{Account: newAddr, Code: []byte{0x1}}},
+		Slots:           []common.SlotUpdate{{Account: newAddr, Key: common.Key{byte(1)}, Value: common.Value{byte(1)}}},
 	}
 
 	err = trie.Add(2, update, nil)
