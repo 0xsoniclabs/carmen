@@ -14,6 +14,7 @@ package mpt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -55,12 +56,12 @@ const (
 
 // VisitForestNodes load the nodes of the forest stored in the given directory and
 // applies the visitor on each of those.
-func VisitForestNodes(directory string, config MptConfig, visitor NodeVisitor) error {
+func VisitForestNodes(directory string, config MptConfig, visitor NodeVisitor) (retErr error) {
 	source, err := openVerificationNodeSource(context.TODO(), directory, config)
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { retErr = errors.Join(retErr, source.Close()) }()
 	return source.forAllNodes(func(id NodeId, node Node) error {
 		visitor.Visit(node, NodeInfo{Id: id})
 		return nil

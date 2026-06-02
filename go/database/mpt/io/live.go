@@ -140,7 +140,7 @@ func (e *exportableLiveTrie) GetCodeForHash(hash common.Hash) []byte {
 // its content to the given output writer. The result contains all the
 // information required by the Import function below to reconstruct the full
 // state of the LiveDB.
-func Export(ctx context.Context, logger *Log, directory string, out io.Writer) error {
+func Export(ctx context.Context, logger *Log, directory string, out io.Writer) (retErr error) {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -155,7 +155,7 @@ func Export(ctx context.Context, logger *Log, directory string, out io.Writer) e
 	if err != nil {
 		return fmt.Errorf("failed to open LiveDB: %v", err)
 	}
-	defer db.Close()
+	defer func() { retErr = errors.Join(retErr, db.Close()) }()
 
 	_, err = ExportLive(ctx, logger, &exportableLiveTrie{db: db, directory: directory}, out)
 	return err
@@ -163,7 +163,7 @@ func Export(ctx context.Context, logger *Log, directory string, out io.Writer) e
 
 // ExportBlockFromArchive exports LiveDB genesis for a single given block from an Archive.
 // Note: block must be <= of Archive block height.
-func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, out io.Writer, block uint64) error {
+func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, out io.Writer, block uint64) (retErr error) {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -178,7 +178,7 @@ func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, 
 		return err
 	}
 
-	defer archive.Close()
+	defer func() { retErr = errors.Join(retErr, archive.Close()) }()
 	_, err = ExportLive(ctx, logger, exportableArchiveTrie{trie: archive, block: block}, out)
 	return err
 }
@@ -517,12 +517,12 @@ func (e *exportVisitor) Visit(node mpt.Node, _ mpt.NodeInfo) error {
 	return nil
 }
 
-func checkEmptyDirectory(directory string) error {
+func checkEmptyDirectory(directory string) (retErr error) {
 	file, err := os.Open(directory)
 	if err != nil {
 		return fmt.Errorf("failed to open directory %s: %w", directory, err)
 	}
-	defer file.Close()
+	defer func() { retErr = errors.Join(retErr, file.Close()) }()
 	state, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to open file information for %s: %w", directory, err)

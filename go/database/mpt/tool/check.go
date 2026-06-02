@@ -11,6 +11,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
@@ -53,20 +54,20 @@ func check(context *cli.Context) error {
 	return err
 }
 
-func checkLiveDB(dir string, info io.MptInfo) error {
+func checkLiveDB(dir string, info io.MptInfo) (retErr error) {
 	live, err := mpt.OpenFileLiveTrie(dir, info.Config, mpt.NodeCacheConfig{})
 	if err != nil {
 		return err
 	}
-	defer live.Close()
+	defer func() { retErr = errors.Join(retErr, live.Close()) }()
 	return live.Check()
 }
 
-func checkArchive(dir string, info io.MptInfo) error {
+func checkArchive(dir string, info io.MptInfo) (retErr error) {
 	archive, err := mpt.OpenArchiveTrie(dir, info.Config, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 	if err != nil {
 		return err
 	}
-	defer archive.Close()
+	defer func() { retErr = errors.Join(retErr, archive.Close()) }()
 	return archive.Check()
 }

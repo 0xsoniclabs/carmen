@@ -26,7 +26,10 @@ func TestKeccakC_ProducesSameHashAsGo(t *testing.T) {
 		make([]byte, 1024),
 	}
 	for _, test := range tests {
-		want := keccak256_Go(test)
+		want, err := keccak256_Go(test)
+		if err != nil {
+			t.Fatal(err)
+		}
 		got := keccak256_C(test)
 		if want != got {
 			t.Errorf("unexpected hash for %v, wanted %v, got %v", test, want, got)
@@ -58,7 +61,10 @@ func TestKeccakC_AddressSpecializationProducesSameHashAsGenericVersion(t *testin
 	t.Run("keccak256_C_Address", func(t *testing.T) {
 		t.Parallel()
 		for _, test := range tests {
-			want := keccak256_Go(test[:])
+			want, err := keccak256_Go(test[:])
+			if err != nil {
+				t.Fatal(err)
+			}
 			got := keccak256_C_Address(test)
 			if want != got {
 				t.Errorf("unexpected hash for %v, wanted %v, got %v", test, want, got)
@@ -69,7 +75,10 @@ func TestKeccakC_AddressSpecializationProducesSameHashAsGenericVersion(t *testin
 	t.Run("Keccak256ForAddress", func(t *testing.T) {
 		t.Parallel()
 		for _, test := range tests {
-			want := keccak256_Go(test[:])
+			want, err := keccak256_Go(test[:])
+			if err != nil {
+				t.Fatal(err)
+			}
 			got := Keccak256ForAddress(test)
 			if want != got {
 				t.Errorf("unexpected hash for %v, wanted %v, got %v", test, want, got)
@@ -102,7 +111,10 @@ func TestKeccakC_KeySpecializationProducesSameHashAsGenericVersion(t *testing.T)
 	t.Run("keccak256_C_Key", func(t *testing.T) {
 		t.Parallel()
 		for _, test := range tests {
-			want := keccak256_Go(test[:])
+			want, err := keccak256_Go(test[:])
+			if err != nil {
+				t.Fatal(err)
+			}
 			got := keccak256_C_Key(test)
 			if want != got {
 				t.Errorf("unexpected hash for %v, wanted %v, got %v", test, want, got)
@@ -113,7 +125,10 @@ func TestKeccakC_KeySpecializationProducesSameHashAsGenericVersion(t *testing.T)
 	t.Run("Keccak256ForKey", func(t *testing.T) {
 		t.Parallel()
 		for _, test := range tests {
-			want := keccak256_Go(test[:])
+			want, err := keccak256_Go(test[:])
+			if err != nil {
+				t.Fatal(err)
+			}
 			got := Keccak256ForKey(test)
 			if want != got {
 				t.Errorf("unexpected hash for %v, wanted %v, got %v", test, want, got)

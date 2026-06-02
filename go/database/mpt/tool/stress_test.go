@@ -33,7 +33,8 @@ func TestGetDirectorySize(t *testing.T) {
 	err := os.WriteFile(file, data, 0644)
 	require.NoError(t, err)
 
-	size := getDirectorySize(dir)
+	size, err := getDirectorySize(dir)
+	require.NoError(t, err)
 	require.Equal(t, int64(len(data)), size, "directory size should match file size")
 }
 
@@ -88,7 +89,7 @@ func TestStressTest_ZeroBlocks(t *testing.T) {
 }
 
 func TestGetDirectorySize_NonExistentDirectory(t *testing.T) {
-	size := getDirectorySize("/path/does/not/exist")
+	size, _ := getDirectorySize("/path/does/not/exist")
 	require.Equal(t, int64(0), size, "size should be zero for non-existent directory")
 }
 
@@ -97,7 +98,8 @@ func TestGetDirectorySize_FilePath(t *testing.T) {
 	data := []byte("data")
 	err := os.WriteFile(file, data, 0644)
 	require.NoError(t, err)
-	size := getDirectorySize(file)
+	size, err := getDirectorySize(file)
+	require.NoError(t, err)
 	require.Equal(t, len(data), int(size), "size should match file size")
 }
 

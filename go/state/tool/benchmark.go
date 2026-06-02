@@ -169,7 +169,8 @@ func runBenchmark(
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for range c {
-			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			// Error is ignored because the process is about to exit immediately.
+			_ = pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 			fmt.Printf("signal: interrupt")
 			os.Exit(1)
 		}
@@ -218,7 +219,11 @@ func runBenchmark(
 			observer("Failed to close state: %v", err)
 		}
 		observer("Closing state took %v", time.Since(start))
-		observer("Final disk usage: %d", getDirectorySize(path))
+		if size, err := getDirectorySize(path); err != nil {
+			observer("Failed to get disk usage: %v", err)
+		} else {
+			observer("Final disk usage: %d", size)
+		}
 	}()
 
 	return runBenchmarkState(state, path, params, observer)
@@ -277,7 +282,10 @@ func runBenchmarkState(
 
 			throughput := float64(reportingInterval*numInsertsPerBlock) / startReporting.Sub(lastReportTime).Seconds()
 			memory := state.GetMemoryFootprint().Total()
-			disk := getDirectorySize(path)
+			disk, err := getDirectorySize(path)
+			if err != nil {
+				observer("Failed to get disk usage: %v", err)
+			}
 			observer(
 				"Reached block %d, memory %.2f GB, disk %.2f GB, %.2f inserts/second",
 				i+1,
@@ -313,10 +321,10 @@ func runBenchmarkState(
 	return res, nil
 }
 
-// GetDirectorySize computes the size of all files in the given directory in bytes.
-func getDirectorySize(directory string) int64 {
+// getDirectorySize computes the size of all files in the given directory in bytes.
+func getDirectorySize(directory string) (int64, error) {
 	var sum int64 = 0
-	filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
+	err := filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -325,5 +333,5 @@ func getDirectorySize(directory string) int64 {
 		}
 		return nil
 	})
-	return sum
+	return sum, err
 }

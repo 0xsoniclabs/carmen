@@ -6426,6 +6426,40 @@ func TestTransitions_StatesAreDumpable(t *testing.T) {
 	}
 }
 
+func TestTransitions_DumpPropagatesWriterErrors(t *testing.T) {
+	injectedErr := errors.New("injected write error")
+	writer := &errWriter{err: injectedErr}
+
+	tests := map[string]NodeDesc{
+		"Empty":               Empty{},
+		"Value":               &Value{key: common.Key{1}, value: common.Value{2}},
+		"Branch":              &Branch{children: Children{1: &Value{key: common.Key{1}, value: common.Value{2}}}},
+		"Extension":           &Extension{path: []Nibble{1, 2}, next: &Value{key: common.Key{1}, value: common.Value{2}}},
+		"Account":             &Account{address: common.Address{1}, info: AccountInfo{Nonce: common.ToNonce(1)}, storage: &Value{key: common.Key{1}, value: common.Value{2}}},
+		"AccountEmptyStorage": &Account{address: common.Address{1}, info: AccountInfo{Nonce: common.ToNonce(1)}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ctxt := newNiceNodeContext(t, ctrl)
+
+			ref, node := ctxt.Build(tc)
+			handle := node.GetViewHandle()
+			err := handle.Get().Dump(writer, ctxt, &ref, "")
+			handle.Release()
+
+			require.Error(t, err)
+			require.ErrorIs(t, err, injectedErr)
+		})
+	}
+}
+
+// errWriter is an io.Writer that always returns an error.
+type errWriter struct{ err error }
+
+func (w *errWriter) Write([]byte) (int, error) { return 0, w.err }
+
 func TestTransitions_MutableTransitionHaveExpectedEffect(t *testing.T) {
 	testTransitions_MutableTransitionHaveExpectedEffect(t, S4LiveConfig)
 }

@@ -147,7 +147,7 @@ func verifyStockInternal[I stock.Index, V any](encoder stock.ValueEncoder[V], di
 	return verifyStockFilesInternal[I](encoder, metafile, valuefile, freelistfile)
 }
 
-func verifyStockFilesInternal[I stock.Index, V any](encoder stock.ValueEncoder[V], metafile, valuefile, freelistfile string) (metadata, error) {
+func verifyStockFilesInternal[I stock.Index, V any](encoder stock.ValueEncoder[V], metafile, valuefile, freelistfile string) (m metadata, err error) {
 	// Attempt to parse the meta-data.
 	meta, err := utils.ReadJsonFile[metadata](metafile)
 	if err != nil {
@@ -184,7 +184,7 @@ func verifyStockFilesInternal[I stock.Index, V any](encoder stock.ValueEncoder[V
 	if err != nil {
 		return meta, err
 	}
-	defer freelist.Close()
+	defer func() { err = errors.Join(err, freelist.Close()) }()
 	if err := verifyStackInternal[I](meta, freelist); err != nil {
 		return meta, err
 	}
@@ -211,7 +211,7 @@ func verifyStackInternal[I stock.Index](meta metadata, freelistfile utils.OsFile
 		if err != nil {
 			return err
 		}
-		defer stack.Close()
+		defer func() { err = errors.Join(err, stack.Close()) }()
 		list, err := stack.GetAll()
 		if err != nil {
 			return err

@@ -192,7 +192,11 @@ func createTestState(db *mpt.MptState, directory string) *stressTestState {
 
 func (s *stressTestState) ReportProgress() {
 	memUsage := getMemoryUsage()
-	used := getDirectorySize(s.directory)
+	used, err := getDirectorySize(s.directory)
+	if err != nil {
+		log.Printf("failed to get directory size: %v\n", err)
+		return
+	}
 	free, err := getFreeSpace(s.directory)
 	if err != nil {
 		log.Printf("failed to get free space: %v\n", err)
@@ -383,9 +387,9 @@ func getMemoryUsage() uint64 {
 }
 
 // getDirectorySize computes the size of all files in the given directory in bytes.
-func getDirectorySize(directory string) int64 {
+func getDirectorySize(directory string) (int64, error) {
 	var sum int64 = 0
-	filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
+	err := filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -394,5 +398,5 @@ func getDirectorySize(directory string) int64 {
 		}
 		return nil
 	})
-	return sum
+	return sum, err
 }

@@ -49,15 +49,14 @@ func OpenBufferedFile(path string) (*BufferedFile, error) {
 	return openBufferedFile(f)
 }
 
-func openBufferedFile(f OsFile) (*BufferedFile, error) {
+func openBufferedFile(f OsFile) (b *BufferedFile, retErr error) {
 	stats, err := f.Stat()
 	if err != nil {
-		f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
+	defer func() { retErr = errors.Join(retErr, f.Close()) }()
 	size := stats.Size()
 	if size%bufferSize != 0 {
-		f.Close()
 		return nil, fmt.Errorf("invalid file size, got %d, expected multiple of %d", size, bufferSize)
 	}
 	res := &BufferedFile{
@@ -66,8 +65,7 @@ func openBufferedFile(f OsFile) (*BufferedFile, error) {
 	}
 
 	if err := res.readFile(0, res.buffer[:]); err != nil {
-		f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
 
 	return res, nil

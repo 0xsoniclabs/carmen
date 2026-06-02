@@ -12,14 +12,16 @@ package io
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/holiman/uint256"
 )
 
-func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string) error {
+func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string) (retErr error) {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -33,7 +35,7 @@ func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string
 	if err != nil {
 		return fmt.Errorf("failed to open LiveDB: %v", err)
 	}
-	defer mptState.Close()
+	defer func() { retErr = errors.Join(retErr, mptState.Close()) }()
 
 	hash, err := mptState.GetHash()
 	if err != nil {
@@ -63,7 +65,7 @@ func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string
 	return nil
 }
 
-func CalculateArchiveTotalSupply(ctx context.Context, logger *Log, directory string, block uint64) error {
+func CalculateArchiveTotalSupply(ctx context.Context, logger *Log, directory string, block uint64) (retErr error) {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -77,7 +79,7 @@ func CalculateArchiveTotalSupply(ctx context.Context, logger *Log, directory str
 	if err != nil {
 		return err
 	}
-	defer archive.Close()
+	defer func() { retErr = errors.Join(retErr, archive.Close()) }()
 
 	hash, err := archive.GetHash(block)
 	if err != nil {

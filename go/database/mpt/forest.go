@@ -663,7 +663,9 @@ func (s *Forest) Dump(rootRef *NodeReference) {
 		return
 	}
 	defer root.Release()
-	root.Get().Dump(os.Stdout, s, rootRef, "")
+	if err := root.Get().Dump(os.Stdout, s, rootRef, ""); err != nil {
+		fmt.Printf("Failed to dump trie: %v", err)
+	}
 }
 
 // Check verifies internal invariants of the Trie instance. If the trie is

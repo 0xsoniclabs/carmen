@@ -160,12 +160,13 @@ func TestGetDirectorySize_Normal(t *testing.T) {
 	data := []byte("abcde")
 	require.NoError(t, os.WriteFile(file, data, 0644))
 
-	size := getDirectorySize(dir)
+	size, err := getDirectorySize(dir)
+	require.NoError(t, err)
 	require.Equal(t, int64(len(data)), size)
 }
 
 func TestGetDirectorySize_NonExistentDir(t *testing.T) {
-	size := getDirectorySize("/path/does/not/exist")
+	size, _ := getDirectorySize("/path/does/not/exist")
 	require.Equal(t, int64(0), size)
 }
 
@@ -175,7 +176,8 @@ func TestGetDirectorySize_UnreadableFile(t *testing.T) {
 	data := []byte("xyz")
 	require.NoError(t, os.WriteFile(file, data, 0000)) // No permissions
 
-	size := getDirectorySize(dir)
+	size, err := getDirectorySize(dir)
+	require.NoError(t, err)
 	// Should skip unreadable file and not panic
 	require.GreaterOrEqual(t, size, int64(0))
 }

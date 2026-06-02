@@ -11,10 +11,12 @@
 package memory
 
 import (
+	"errors"
 	"testing"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestInMemoryStock(t *testing.T) {
@@ -50,3 +52,28 @@ func FuzzMemoryStock_RandomOps(f *testing.F) {
 
 	stock.FuzzStockRandomOps(f, open, false)
 }
+
+func TestFlush_PropagatesEncoderStoreError(t *testing.T) {
+	injectedErr := errors.New("store failed")
+	encoder := &failingStoreEncoder{err: injectedErr}
+
+	dir := t.TempDir()
+	s, err := OpenStock[int](encoder, dir)
+	require.NoError(t, err)
+
+	// Add a value so that Flush has something to encode.
+	_, err = s.New()
+	require.NoError(t, err)
+
+	err = s.Flush()
+	require.ErrorIs(t, err, injectedErr)
+}
+
+// failingStoreEncoder is a ValueEncoder that returns an error from Store.
+type failingStoreEncoder struct {
+	err error
+}
+
+func (e *failingStoreEncoder) GetEncodedSize() int           { return stock.IntEncoder{}.GetEncodedSize() }
+func (e *failingStoreEncoder) Load(src []byte, v *int) error { return stock.IntEncoder{}.Load(src, v) }
+func (e *failingStoreEncoder) Store([]byte, *int) error      { return e.err }
