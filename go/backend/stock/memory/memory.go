@@ -246,10 +246,10 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) (retErr error) {
 	}
 
 	// Write list of values.
-	if f, err := os.Create(filepath.Join(dir, fileNameValues)); err != nil {
+	if valueList, err := os.Create(filepath.Join(dir, fileNameValues)); err != nil {
 		return err
 	} else {
-		defer func() { retErr = errors.Join(retErr, f.Close()) }()
+		defer func() { retErr = errors.Join(retErr, valueList.Close()) }()
 
 		buffer := make([]byte, s.encoder.GetEncodedSize())
 		for _, v := range s.values {
@@ -257,33 +257,25 @@ func (s *inMemoryStock[I, V]) writeTo(dir string) (retErr error) {
 			if err != nil {
 				return err
 			}
-			_, err := f.Write(buffer)
+			_, err := valueList.Write(buffer)
 			if err != nil {
 				return err
 			}
 		}
-
-		if err := f.Close(); err != nil {
-			return err
-		}
 	}
 
 	// Write free list.
-	if f, err := os.Create(filepath.Join(dir, fileNameFreeList)); err != nil {
+	if freeList, err := os.Create(filepath.Join(dir, fileNameFreeList)); err != nil {
 		return err
 	} else {
-		defer func() { retErr = errors.Join(retErr, f.Close()) }()
+		defer func() { retErr = errors.Join(retErr, freeList.Close()) }()
 
 		buffer := make([]byte, indexSize)
 		for _, i := range s.freeList {
 			stock.EncodeIndex(i, buffer)
-			if _, err := f.Write(buffer); err != nil {
+			if _, err := freeList.Write(buffer); err != nil {
 				return err
 			}
-		}
-
-		if err := f.Close(); err != nil {
-			return err
 		}
 	}
 

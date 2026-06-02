@@ -54,10 +54,9 @@ func openBufferedFile(f OsFile) (b *BufferedFile, retErr error) {
 	if err != nil {
 		return nil, errors.Join(err, f.Close())
 	}
-	defer func() { retErr = errors.Join(retErr, f.Close()) }()
 	size := stats.Size()
 	if size%bufferSize != 0 {
-		return nil, fmt.Errorf("invalid file size, got %d, expected multiple of %d", size, bufferSize)
+		return nil, errors.Join(fmt.Errorf("invalid file size, got %d, expected multiple of %d", size, bufferSize), f.Close())
 	}
 	res := &BufferedFile{
 		file:     f,

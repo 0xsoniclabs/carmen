@@ -47,7 +47,7 @@ type NamedStockFactory struct {
 func RunStockTests(t *testing.T, factory NamedStockFactory) {
 	wrap := func(test func(*testing.T, NamedStockFactory)) func(*testing.T) {
 		return func(t *testing.T) {
-			t.Parallel()
+			// t.Parallel()
 			test(t, factory)
 		}
 	}

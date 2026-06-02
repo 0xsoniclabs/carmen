@@ -184,7 +184,6 @@ func verifyStockFilesInternal[I stock.Index, V any](encoder stock.ValueEncoder[V
 	if err != nil {
 		return meta, err
 	}
-	defer func() { err = errors.Join(err, freelist.Close()) }()
 	if err := verifyStackInternal[I](meta, freelist); err != nil {
 		return meta, err
 	}
