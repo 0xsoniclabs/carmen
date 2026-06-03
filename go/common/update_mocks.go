@@ -40,20 +40,6 @@ func (m *MockUpdateTarget) EXPECT() *MockUpdateTargetMockRecorder {
 	return m.recorder
 }
 
-// CreateAccount mocks base method.
-func (m *MockUpdateTarget) CreateAccount(address Address) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateAccount", address)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CreateAccount indicates an expected call of CreateAccount.
-func (mr *MockUpdateTargetMockRecorder) CreateAccount(address any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAccount", reflect.TypeOf((*MockUpdateTarget)(nil).CreateAccount), address)
-}
-
 // DeleteAccount mocks base method.
 func (m *MockUpdateTarget) DeleteAccount(address Address) error {
 	m.ctrl.T.Helper()

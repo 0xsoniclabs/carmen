@@ -25,7 +25,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/vt/commit"
 	"github.com/0xsoniclabs/carmen/go/database/vt/reference/trie"
 	"github.com/0xsoniclabs/carmen/go/state"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 //go:generate mockgen -source state.go -destination state_mock.go -package reference
@@ -113,19 +112,6 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 }
 
 func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) {
-
-	// init potentially empty accounts with empty code hash,
-	for _, address := range update.CreatedAccounts {
-		accountKey := s.embedding.getBasicDataKey(address)
-		value := s.trie.Get(accountKey)
-		var empty [28]byte
-		// empty accnout has empty code size, nonce, and balance
-		if bytes.Equal(value[4:32], empty[:]) {
-			codeHashKey := s.embedding.getCodeHashKey(address)
-			s.trie.Set(accountKey, value) // must be initialized to empty account
-			s.trie.Set(codeHashKey, trie.Value(types.EmptyCodeHash))
-		}
-	}
 
 	for _, update := range update.Nonces {
 		key := s.embedding.getBasicDataKey(update.Account)

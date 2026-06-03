@@ -32,7 +32,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/0xsoniclabs/tracy"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // State is an in-memory flat representation of the blockchain state, wrapping
@@ -222,14 +221,6 @@ func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 
 	for _, address := range data.DeletedAccounts {
 		delete(s.accounts, address)
-	}
-
-	// init potentially empty accounts with empty code hash,
-	for _, address := range data.CreatedAccounts {
-		// empty account has empty code size, nonce, and balance
-		s.accounts[address] = account{
-			codeHash: common.Hash(types.EmptyCodeHash),
-		}
 	}
 
 	for _, update := range data.Nonces {

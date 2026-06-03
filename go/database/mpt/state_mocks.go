@@ -547,20 +547,6 @@ func (mr *MockLiveStateMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockLiveState)(nil).Close))
 }
 
-// CreateAccount mocks base method.
-func (m *MockLiveState) CreateAccount(address common.Address) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateAccount", address)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CreateAccount indicates an expected call of CreateAccount.
-func (mr *MockLiveStateMockRecorder) CreateAccount(address any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAccount", reflect.TypeOf((*MockLiveState)(nil).CreateAccount), address)
-}
-
 // DeleteAccount mocks base method.
 func (m *MockLiveState) DeleteAccount(address common.Address) error {
 	m.ctrl.T.Helper()

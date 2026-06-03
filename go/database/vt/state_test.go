@@ -27,35 +27,6 @@ import (
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
-func TestState_CreateAccount_Hash_Matches(t *testing.T) {
-	stateFactories, err := initTestedStates()
-	require.NoError(t, err, "failed to initialize tested states")
-
-	for _, factory := range stateFactories {
-		t.Run(fmt.Sprintf("state_%d_%s", factory.config.Schema, factory.config.Variant), func(t *testing.T) {
-			t.Parallel()
-			state, err := factory.newState(t)
-			require.NoError(t, err, "failed to initialize tested state")
-
-			defer func() {
-				require.NoError(t, state.Close(), "failed to close state")
-			}()
-
-			addr := common.Address{1}
-			update := common.Update{}
-			update.CreatedAccounts = append(update.CreatedAccounts, addr)
-
-			_, err = state.Apply(0, update)
-			require.NoError(t, err, "failed to apply update")
-
-			// check hash consistency
-			hash, err := state.GetHash()
-			require.NoError(t, err, "failed to get hash")
-			require.NotEmpty(t, hash, "hash should not be empty")
-		})
-	}
-}
-
 func TestState_Insert_Single_Values_One_Account_One_Storage(t *testing.T) {
 	stateFactories, err := initTestedStates()
 	require.NoError(t, err, "failed to initialize tested states")
@@ -75,8 +46,8 @@ func TestState_Insert_Single_Values_One_Account_One_Storage(t *testing.T) {
 			key := common.Key{1}
 			value := common.Value{1}
 
-			update.CreatedAccounts = append(update.CreatedAccounts, addr)
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
+			update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: []byte{1, 2, 3}})
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(1)})
 			update.Slots = append(update.Slots, common.SlotUpdate{Account: addr, Key: key, Value: value})
 
@@ -125,9 +96,9 @@ func TestState_CreateAccounts_In_Blocks_Accounts_Updated(t *testing.T) {
 				update := common.Update{}
 				for j := 0; j < numInsertsPerBlock; j++ {
 					addr := common.Address{byte(j), byte(j >> 8)}
-					update.CreatedAccounts = append(update.CreatedAccounts, addr)
 					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(uint64(i * j))})
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
+					update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: []byte{}})
 				}
 				_, err = state.Apply(uint64(i), update)
 				require.NoError(t, err, "failed to apply block %d", i)
@@ -286,9 +257,11 @@ func TestState_Storage_Leading_Zeros_HashesMatch(t *testing.T) {
 	value := common.Value{0, 0, 0, 1}
 
 	update := common.Update{
-		CreatedAccounts: []common.Address{addr1},
 		Balances: []common.BalanceUpdate{
 			{Account: addr1, Balance: amount.New(1)},
+		},
+		Codes: []common.CodeUpdate{
+			{Account: addr1, Code: []byte{}},
 		},
 		Slots: []common.SlotUpdate{
 			{Account: addr1, Key: common.Key{0, 0, 0, 1}, Value: value},

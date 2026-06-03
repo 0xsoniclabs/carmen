@@ -304,7 +304,6 @@ func TestIO_ExportBlockFromArchive(t *testing.T) {
 		for j := 0; j < Accounts; j++ {
 			newAddr := common.AddressFromNumber(j)
 
-			update.CreatedAccounts = append(update.CreatedAccounts, newAddr)
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: newAddr, Balance: amount.New(u + 1)})
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: newAddr, Nonce: common.ToNonce(u + 1)})
 			update.Codes = append(update.Codes, common.CodeUpdate{Account: newAddr, Code: code})
@@ -389,7 +388,6 @@ func TestIO_ExportBlockFromOnlineArchive(t *testing.T) {
 		for j := 0; j < Accounts; j++ {
 			newAddr := common.AddressFromNumber(j)
 
-			update.CreatedAccounts = append(update.CreatedAccounts, newAddr)
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: newAddr, Balance: amount.New(u + 1)})
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: newAddr, Nonce: common.ToNonce(u + 1)})
 			update.Codes = append(update.Codes, common.CodeUpdate{Account: newAddr, Code: code})

@@ -33,7 +33,6 @@ func BenchmarkAdding(b *testing.B) {
 		// initialize
 		var update common.Update
 		for i := byte(0); i < byte(bmAddressToCreate); i++ {
-			update.AppendCreateAccount(common.Address{i})
 			update.AppendBalanceUpdate(common.Address{i}, amount.New(uint64(i)))
 		}
 		if err := a.Add(1, update, nil); err != nil {
