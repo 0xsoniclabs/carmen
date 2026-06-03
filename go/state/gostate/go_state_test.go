@@ -34,7 +34,6 @@ var (
 	address1 = common.Address{0x01}
 	address2 = common.Address{0x02}
 	address3 = common.Address{0x03}
-	address4 = common.Address{0x04}
 
 	key1 = common.Key{0x01}
 	key2 = common.Key{0x02}
@@ -46,12 +45,8 @@ var (
 	val3 = common.Value{0x03}
 
 	balance1 = amount.New(1)
-	balance2 = amount.New(2)
-	balance3 = amount.New(3)
 
 	nonce1 = common.Nonce{0x01}
-	nonce2 = common.Nonce{0x02}
-	nonce3 = common.Nonce{0x03}
 )
 
 type namedStateConfig struct {

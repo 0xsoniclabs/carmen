@@ -14,7 +14,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1220,14 +1219,4 @@ func TestMemoryFootprintOfMap_GivesApproximationBasedOnKeyValueTypes(t *testing.
 	}
 	footprint = memoryFootprintOfMap(int16ToByteMap)
 	require.EqualValues(t, footprint.Total(), (2+1)*3)
-}
-
-// -- Interfaces to generate mock implementations ---
-
-type _Reader interface {
-	io.Reader
-}
-
-type _Writer interface {
-	io.Writer
 }
