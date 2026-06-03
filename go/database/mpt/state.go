@@ -205,7 +205,7 @@ func (s *MptState) CreateAccount(address common.Address) (err error) {
 	}
 	if exists {
 		// For existing accounts, only clear the storage, preserve the rest.
-		return s.trie.ClearStorage(address)
+		// return s.trie.ClearStorage(address)
 	}
 	// Create account with hash of empty code.
 	return s.trie.SetAccountInfo(address, AccountInfo{

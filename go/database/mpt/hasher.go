@@ -829,6 +829,7 @@ func getLowerBoundForEncodedSizeAccount(node *AccountNode, limit int, nodes Node
 
 func getLowerBoundForEncodedSizeBranch(node *BranchNode, limit int, nodes NodeSource) (int, error) {
 	var emptySize = len(emptyStringRlpEncoded)
+	//nolint:ineffassign
 	sum := 1        // children are encoded as elements of a list and the list adds at least 1 byte for the size
 	sum = emptySize // the 17th element.
 
