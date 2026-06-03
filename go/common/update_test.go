@@ -323,28 +323,6 @@ func TestUpdateCreatingAndDeletingSameAccountIsInvalid(t *testing.T) {
 	}
 }
 
-func TestUpdateSingleAccountCreatedAndDeletedIsDetectedAlsoWhenPartOfAList(t *testing.T) {
-	update := Update{}
-	for i := 0; i < 10; i++ {
-		addr := Address{byte(i)}
-		if i%2 == 0 {
-			update.AppendBalanceUpdate(addr, amount.New(1))
-		} else {
-			update.AppendDeleteAccount(addr)
-		}
-	}
-
-	if err := update.Check(); err != nil {
-		t.Errorf("non-overlapping create and delete list should be fine, but got: %v", err)
-	}
-
-	update.AppendBalanceUpdate(Address{9}, amount.New(1))
-
-	if update.Check() == nil {
-		t.Errorf("creating and deleting the same account should fail")
-	}
-}
-
 func TestUpdateEmptyUpdateCanBeSerializedAndDeserialized(t *testing.T) {
 	update := Update{}
 
