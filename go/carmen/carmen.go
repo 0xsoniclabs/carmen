@@ -187,7 +187,7 @@ type HeadBlockContext interface {
 
 // HistoricBlockContext provides access to the world state of a block of a blockchain.
 // This context allows the caller to open a transaction
-// and query state of the blockchain as it was for this particular block withing the history.
+// and query state of the blockchain as it was for this particular block within the history.
 // The caller can as well modify the context via a transaction, i.e. simulating
 // an alternative history.
 // These changes cannot be, however, committed as this context can not be committed, only be closed.

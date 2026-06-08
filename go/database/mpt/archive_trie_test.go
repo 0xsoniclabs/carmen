@@ -523,7 +523,6 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			)
 
 			// insert growing number of keys in several accounts
-			accounts := make([]common.Address, 0, Addresses)
 			nonces := make([]common.NonceUpdate, 0, Addresses)
 			slotUpdates := make([]common.SlotUpdate, 0, Addresses*Addresses)
 			for i := 0; i < Addresses; i++ {
@@ -532,7 +531,6 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 				for j := 0; j < i+1; j++ {
 					slots = append(slots, common.SlotUpdate{Account: addr, Key: common.Key{byte(j)}, Value: common.Value{byte(j)}})
 				}
-				accounts = append(accounts, addr)
 				nonces = append(nonces, common.NonceUpdate{Account: addr, Nonce: common.Nonce{1}})
 				slotUpdates = append(slotUpdates, slots...)
 			}

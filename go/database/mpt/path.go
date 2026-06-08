@@ -82,7 +82,7 @@ func (p *Path) Get(pos int) Nibble {
 }
 
 // Set updates the value of a Nibble on this path or ignores the call if
-// the position is not on the path, thus not in the range [0,Lenght()-1].
+// the position is not on the path, thus not in the range [0,Length()-1].
 func (p *Path) Set(pos int, val Nibble) {
 	if pos < 0 || pos >= int(p.length) {
 		panic(fmt.Sprintf("out-of-range path update at %d in range [%d,%d)", pos, 0, p.length))

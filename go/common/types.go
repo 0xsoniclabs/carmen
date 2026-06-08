@@ -239,7 +239,7 @@ func (a Key) String() string {
 	return fmt.Sprintf("%x", a[:])
 }
 
-// HashFromString converst a 64-character long hex string into a hash.
+// HashFromString converts a 64-character long hex string into a hash.
 // The operation is slow and mainly intended for producing readable test
 // cases. The operation will panic if the provided hash is mailformed.
 func HashFromString(str string) Hash {

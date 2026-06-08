@@ -176,9 +176,7 @@ func TestDecoder_DecodeEmbeddedNode_CanDecode(t *testing.T) {
 	}
 
 	expectedValueNode := ValueNode{key: common.Key{0x12, 0x34}, value: commonValue, pathLength: 4}
-	if matchNodesRlpDecoded(t, &expectedValueNode, got); err != nil {
-		t.Fatalf("failed to match nodes: %v", err)
-	}
+	matchNodesRlpDecoded(t, &expectedValueNode, got)
 }
 
 func TestDecoder_CorruptedRlp(t *testing.T) {
