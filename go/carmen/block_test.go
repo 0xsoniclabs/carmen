@@ -205,7 +205,7 @@ func TestHeadBlockContext_CannotCommit_WhenTransactionRunning(t *testing.T) {
 	}
 
 	if err := block.Commit(); !errors.Is(err, errTransactionRunning) {
-		t.Errorf("commit should fail when transaction is not commited")
+		t.Errorf("commit should fail when transaction is not committed")
 	}
 
 	if err := tx.Abort(); err != nil {

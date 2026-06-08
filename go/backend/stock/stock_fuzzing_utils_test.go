@@ -257,7 +257,7 @@ func TestFuzzing_Deserialize_Expensive_ops_Skipped(t *testing.T) {
 		stream = append(stream, item.Serialize()...)
 	}
 
-	// three expensive ops in row will be skipped, and all expensive after 20 occurances
+	// three expensive ops in row will be skipped, and all expensive after 20 occurrences
 	want := []fuzzing.Operation[stockFuzzContext]{
 		&opNewId{}, &opGetIds{}, &opGetIds{}, &opGetIds{}, &opGet{0}}
 

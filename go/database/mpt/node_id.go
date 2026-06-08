@@ -31,7 +31,7 @@ import (
 //   - the value has a binary suffix of 111 ... extension node
 //
 // This allows to address 2^63 different branch nodes, 2^62 different values
-// and 2^61 account and extension nodes, sufficient for any forseeable future.
+// and 2^61 account and extension nodes, sufficient for any foreseeable future.
 type NodeId uint64
 
 // EmptyId returns the node ID representing the empty node.

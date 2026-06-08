@@ -63,7 +63,7 @@ func (s *State) TrieConfig() any {
 func (s *State) Exists(address common.Address) (bool, error) {
 	key := s.embedding.getBasicDataKey(address)
 	value := s.trie.Get(key)
-	var empty [24]byte // nonce and balance are layed out in bytes 8-32
+	var empty [24]byte // nonce and balance are laid out in bytes 8-32
 	return !bytes.Equal(value[8:32], empty[:]), nil
 
 }

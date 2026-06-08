@@ -23,7 +23,7 @@ const (
 	Exponential distribution = 2
 )
 
-// Distribution wraps a Label of the distribution and a function to get a next value withing the given distribution
+// Distribution wraps a Label of the distribution and a function to get a next value within the given distribution
 type Distribution struct {
 	Label   string
 	GetNext func() uint32
