@@ -389,8 +389,8 @@ func getMemoryUsage() uint64 {
 // getDirectorySize computes the size of all files in the given directory in bytes.
 func getDirectorySize(directory string) (int64, error) {
 	var sum int64 = 0
-	err := filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
+	err := filepath.Walk(directory, func(path string, info fs.FileInfo, retErr error) error {
+		if retErr != nil {
 			return nil
 		}
 		if !info.IsDir() {

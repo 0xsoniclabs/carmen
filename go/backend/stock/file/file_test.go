@@ -1086,7 +1086,7 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 	}
 }
 
-func copyDirectory(src, dst string) (err error) {
+func copyDirectory(src, dst string) (retErr error) {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -1103,12 +1103,12 @@ func copyDirectory(src, dst string) (err error) {
 		if err != nil {
 			return err
 		}
-		defer func() { err = errors.Join(err, srcFile.Close()) }()
+		defer func() { retErr = errors.Join(retErr, srcFile.Close()) }()
 		dstFile, err := os.Create(dstPath)
 		if err != nil {
 			return err
 		}
-		defer func() { err = errors.Join(err, dstFile.Close()) }()
+		defer func() { retErr = errors.Join(retErr, dstFile.Close()) }()
 		_, err = io.Copy(dstFile, srcFile)
 		return err
 	})
