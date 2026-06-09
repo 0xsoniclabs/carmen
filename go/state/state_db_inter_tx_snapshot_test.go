@@ -376,11 +376,11 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 func testCaseName(s [][]StateDBOperation) string {
 	var nameParts []string
 	for _, opList := range s {
-		name := ""
+		var name strings.Builder
 		for _, op := range opList {
-			name += op.name + " AND "
+			name.WriteString(op.name + " AND ")
 		}
-		nameParts = append(nameParts, name[:len(name)-5])
+		nameParts = append(nameParts, name.String()[:len(name.String())-5])
 	}
 	return strings.Join(nameParts, " THEN ")
 }

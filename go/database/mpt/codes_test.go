@@ -886,7 +886,7 @@ func TestCodes_parseCodes_ReadFailures(t *testing.T) {
 	var h common.Hash
 	sizes := []int{len(h), 4, 100}
 	// execute three times - parseCode calls io.Reader three times to get [<key>, <length>, <code>]
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		calls := make([]*gomock.Call, 0, i+1)
 		for j := 0; j < i; j++ {
 			pos := j

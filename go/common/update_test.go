@@ -396,7 +396,7 @@ func TestUpdateParsingTruncatedDataShouldFailWithError(t *testing.T) {
 	update := getExampleUpdate()
 	data := update.ToBytes()
 	// Test that no panic is triggered.
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		if _, err := UpdateFromBytes(data[0:i]); err == nil {
 			t.Errorf("parsing of truncated data should fail")
 		}
@@ -433,7 +433,7 @@ func TestUpdate_ApplyTo(t *testing.T) {
 
 func TestUpdate_ApplyTo_Failures(t *testing.T) {
 	const calls = 5
-	for i := 0; i < calls; i++ {
+	for i := range calls {
 		i := i
 		t.Run(fmt.Sprintf("applyTo_failure_at_%d", i), func(t *testing.T) {
 			t.Parallel()

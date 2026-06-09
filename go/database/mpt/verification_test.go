@@ -131,7 +131,7 @@ func TestVerification_ModifiedRootIsDetected(t *testing.T) {
 		_, encoder, _, _ := config.GetEncoders()
 
 		root := NewNodeReference(EmptyId())
-		for i := 0; i < len(roots); i++ {
+		for i := range roots {
 			if roots[i].NodeRef.Id().IsBranch() {
 				root = roots[i].NodeRef
 				break
@@ -745,7 +745,6 @@ func (c *countingWhenDoneContext) Done() <-chan struct{} {
 func runVerificationTest(t *testing.T, verify func(t *testing.T, dir string, config MptConfig, roots []Root)) {
 	t.Helper()
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 			t.Helper()
@@ -813,13 +812,13 @@ func fillTestForest(dir string, config MptConfig) (roots []Root, err error) {
 	}
 
 	root := NewNodeReference(EmptyId())
-	for i := 0; i < N; i++ {
+	for i := range N {
 		addr := common.Address{byte(i)}
 		root, err = forest.SetAccountInfo(&root, addr, AccountInfo{Nonce: common.ToNonce(1), CodeHash: common.Keccak256([]byte{1})})
 		if err != nil {
 			return nil, err
 		}
-		for j := 0; j < N; j++ {
+		for j := range N {
 			root, err = forest.SetValue(&root, addr, common.Key{byte(j)}, common.Value{byte(i + j + 1)})
 			if err != nil {
 				return nil, err

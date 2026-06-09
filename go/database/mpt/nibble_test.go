@@ -163,7 +163,7 @@ func TestNibbles_keyToHashedPath(t *testing.T) {
 func hashAndConvertToNibbles(src []byte) []Nibble {
 	hashed := common.Keccak256(src)
 	res := make([]Nibble, len(hashed)*2)
-	for i := 0; i < len(hashed); i++ {
+	for i := range len(hashed) {
 		res[2*i] = Nibble(hashed[i] >> 4)
 		res[2*i+1] = Nibble(hashed[i] & 0xF)
 	}

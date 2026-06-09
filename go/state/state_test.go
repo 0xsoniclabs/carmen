@@ -291,9 +291,9 @@ func TestMultipleCodeUpdateHashes(t *testing.T) {
 func TestLargeStateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		update := common.Update{}
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			address := common.Address{byte(i)}
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				key := common.Key{byte(j)}
 				update.Slots = append(update.Slots, common.SlotUpdate{Account: address, Key: key, Value: common.Value{byte(i), 0, 0, byte(j)}})
 			}

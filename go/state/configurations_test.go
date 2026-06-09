@@ -36,8 +36,6 @@ func TestStateConfigs_AllSetupsCreateDataInCorrectDirectories(t *testing.T) {
 	// in the correct sub-directories (live/ and archive/) and do not store
 	// any data in the root directory.
 	for config, factory := range state.GetAllRegisteredStateFactories() {
-		config := config
-		factory := factory
 		t.Run(config.String(), func(t *testing.T) {
 			if config.Schema == 0 || config.Schema == 6 {
 				switch strings.TrimSuffix(string(config.Variant), "-flat") {

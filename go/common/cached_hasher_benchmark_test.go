@@ -42,7 +42,7 @@ func BenchmarkAddressHitLatency(b *testing.B) {
 	cacheSize := 1000
 	hasher := NewCachedHasher[Address](cacheSize, AddressSerializer{})
 	addresses := make([]Address, 0, cacheSize)
-	for i := 0; i < cacheSize; i++ {
+	for i := range cacheSize {
 		arr := binary.BigEndian.AppendUint32([]byte{}, uint32(i))
 		var addr Address
 		copy(addr[:], arr)
@@ -71,7 +71,7 @@ func BenchmarkKeyHitLatency(b *testing.B) {
 	cacheSize := 1000
 	hasher := NewCachedHasher[Key](cacheSize, KeySerializer{})
 	keys := make([]Key, 0, cacheSize)
-	for i := 0; i < cacheSize; i++ {
+	for i := range cacheSize {
 		arr := binary.BigEndian.AppendUint32([]byte{}, uint32(i))
 		var key Key
 		copy(key[:], arr)

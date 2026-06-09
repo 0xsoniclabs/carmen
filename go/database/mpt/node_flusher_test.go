@@ -55,7 +55,7 @@ func TestNodeFlusher_UsesTickerToTriggerFlushes(t *testing.T) {
 	}).Return()
 
 	tickerC := make(chan time.Time, loops)
-	for i := 0; i < loops; i++ {
+	for range loops {
 		tickerC <- time.Now()
 	}
 
@@ -70,7 +70,7 @@ func TestNodeFlusher_UsesTickerToTriggerFlushes(t *testing.T) {
 	})
 
 	var numTicks int
-	for i := 0; i < loops; i++ {
+	for range loops {
 		select {
 		case <-flushSignal:
 			numTicks++

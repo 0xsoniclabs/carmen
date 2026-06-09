@@ -59,7 +59,7 @@ func TestMemoryFootprint(t *testing.T) {
 
 	// fully utilised cache
 	var adr Address
-	for i := 0; i < cacheSize; i++ {
+	for i := range cacheSize {
 		if got, want := hasher.Hash(adr), GetHash(sha3.NewLegacyKeccak256(), adr[:]); got != want {
 			t.Errorf("hashes do not match: %v != %v", got, want)
 		}

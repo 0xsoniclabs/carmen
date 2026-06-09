@@ -91,7 +91,7 @@ func TestIO_ExportAndImportAsArchive(t *testing.T) {
 		t.Fatalf("restored DB failed to reproduce same hash\nwanted %x\n   got %x\n   err %v", hash, got, err)
 	}
 
-	for i := uint64(0); i < genesisBlock; i++ {
+	for i := range genesisBlock {
 		if got, err := db.GetHash(i); err != nil || got != mpt.EmptyNodeEthereumHash {
 			t.Fatalf("invalid hash for pre-genesis block %d\nwanted %x\n   got %x\n   err %v", i, mpt.EmptyNodeEthereumHash, got, err)
 		}
@@ -100,7 +100,7 @@ func TestIO_ExportAndImportAsArchive(t *testing.T) {
 
 func TestIO_ExportedDataIsDeterministic(t *testing.T) {
 	reference, _ := exportExampleState(t)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, _ := exportExampleState(t)
 		if !bytes.Equal(data, reference) {
 			t.Fatalf("exported data is not deterministic")
@@ -298,11 +298,11 @@ func TestIO_ExportBlockFromArchive(t *testing.T) {
 
 	var expectedHashes []common.Hash
 
-	for i := 0; i < Blocks; i++ {
+	for i := range Blocks {
 		code := []byte{1, 2, 3, byte(i)}
 		u := uint64(i)
 		update := common.Update{}
-		for j := 0; j < Accounts; j++ {
+		for j := range Accounts {
 			newAddr := common.AddressFromNumber(j)
 
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: newAddr, Balance: amount.New(u + 1)})
@@ -327,7 +327,7 @@ func TestIO_ExportBlockFromArchive(t *testing.T) {
 		t.Fatalf("failed to close archive archive: %v", err)
 	}
 
-	for i := 0; i < Blocks; i++ {
+	for i := range Blocks {
 		// Export live database from archive.
 		buffer := new(bytes.Buffer)
 		if err := ExportBlockFromArchive(context.Background(), NewLog(), sourceDir, buffer, uint64(i)); err != nil {
@@ -382,11 +382,11 @@ func TestIO_ExportBlockFromOnlineArchive(t *testing.T) {
 		Accounts = 3
 	)
 
-	for i := 0; i < Blocks; i++ {
+	for i := range Blocks {
 		code := []byte{1, 2, 3, byte(i)}
 		u := uint64(i)
 		update := common.Update{}
-		for j := 0; j < Accounts; j++ {
+		for j := range Accounts {
 			newAddr := common.AddressFromNumber(j)
 
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: newAddr, Balance: amount.New(u + 1)})

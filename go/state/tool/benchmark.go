@@ -255,8 +255,8 @@ func runBenchmarkState(
 		"Simulating %d blocks with %d reads and %d inserts each",
 		numBlocks, numReadsPerBlock, numInsertsPerBlock,
 	)
-	for i := 0; i < numBlocks; i++ {
-		for j := 0; j < numReadsPerBlock; j++ {
+	for i := range numBlocks {
+		for range numReadsPerBlock {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
 			if _, err := state.GetBalance(addr); err != nil {
 				return res, fmt.Errorf("error reading balance for account %x at block %d: %v", addr, i, err)
@@ -264,7 +264,7 @@ func runBenchmarkState(
 			counter++
 		}
 		update := common.Update{}
-		for j := 0; j < numInsertsPerBlock; j++ {
+		for range numInsertsPerBlock {
 			addr := common.Address{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), byte(counter >> 32)}
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++

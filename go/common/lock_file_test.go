@@ -135,10 +135,10 @@ func TestLockFile_GovernsExclusiveAccessForSingleProcess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 100; j++ {
+			for range 100 {
 				lock, err := CreateLockFile(path)
 				if err != nil {
 					continue
@@ -176,10 +176,10 @@ func TestLockFile_GovernsExclusiveAccessForMultipleProcesses(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 100; j++ {
+			for range 100 {
 				execFileLockAcquireInSubProcess(t, path, resource)
 			}
 		}(i)

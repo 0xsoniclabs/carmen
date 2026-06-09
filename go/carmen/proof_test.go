@@ -22,7 +22,7 @@ func TestProof_CreateWitnessProofFromNodes(t *testing.T) {
 
 	wantElements := make([]Bytes, 0, N)
 	b := make([]byte, 0, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		b = append(b, byte(i))
 		wantElements = append(wantElements, immutable.NewBytes(b))
 	}

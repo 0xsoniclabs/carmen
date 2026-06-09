@@ -21,7 +21,7 @@ func TestHeap_ElementsAreSorted(t *testing.T) {
 
 	// Create a shuffled list of entries and add them to the queue.
 	entries := make([]int, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		entries[i] = i
 	}
 	rand.Shuffle(len(entries), func(i, j int) {
@@ -65,7 +65,7 @@ func TestHeap_ElementsAreSorted(t *testing.T) {
 func TestHeap_ZeroHeapCanBeUsedToStoreAndRetrieveElements(t *testing.T) {
 	queue := Heap[int]{}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		queue.Add(i)
 	}
 
@@ -89,11 +89,11 @@ func TestHeap_ZeroHeapCanBeUsedToStoreAndRetrieveElements(t *testing.T) {
 func TestHeap_ContainsCanLocateElements(t *testing.T) {
 	queue := Heap[int]{}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		queue.Add(i)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if !queue.ContainsFunc(func(cur int) bool { return cur == i }) {
 			t.Fatalf("expected to find element %d", i)
 		}

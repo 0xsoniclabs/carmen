@@ -2415,7 +2415,7 @@ func TestStateDB_CodeCanBeUpdated_In_Each_Block(t *testing.T) {
 	gomock.InOrder(getCodeCalls...)
 	gomock.InOrder(getCodeHashCalls...)
 
-	for i := 0; i < len(codes); i++ {
+	for i := range codes {
 		db.BeginBlock()
 		db.BeginTransaction()
 		db.SetCode(address1, codes[i])
@@ -2449,7 +2449,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Block(t *testing.T) {
 	mock.EXPECT().GetCode(address1).Return(codes[len(codes)-1], nil)
 
 	db.BeginBlock()
-	for i := 0; i < len(codes); i++ {
+	for i := range codes {
 		db.BeginTransaction()
 		db.SetCode(address1, codes[i])
 		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
@@ -2484,7 +2484,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Transaction(t *testing.T) {
 
 	db.BeginBlock()
 	db.BeginTransaction()
-	for i := 0; i < len(codes); i++ {
+	for i := range codes {
 		db.SetCode(address1, codes[i])
 		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
 	}
@@ -3834,7 +3834,7 @@ func TestStateDB_GetArchiveStateDbRecyclesNonCommittableStateDbInstances(t *test
 	// This test aims to verify that a released StateDB is recycled.
 	reuseSeen := false
 	seen := map[*stateDB]struct{}{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		history, err := db.GetArchiveStateDB(12)
 		if err != nil {
 			t.Fatalf("Unexpected error during archive lookup: %v", err)
@@ -4093,7 +4093,7 @@ func TestStateDB_ThereCanBeMultipleBulkLoadPhases(t *testing.T) {
 		return future.Immediate(result.Ok(common.Hash{}))
 	})
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		load := db.StartBulkLoad(uint64(i))
 		load.CreateAccount(address1)
 		load.SetNonce(address1, uint64(i))
@@ -4631,7 +4631,7 @@ func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing
 		storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](limit),
 	}
 
-	for i := 0; i < limit; i++ {
+	for i := range limit {
 		s.reincarnation[common.Address{byte(i)}] = uint64(i)
 		s.storedDataCache.Set(
 			slotId{common.Address{byte(i)}, common.Key{byte(i)}},
@@ -4670,7 +4670,7 @@ func TestStateDB_resetReincarnationWhenExceeds_ResetAboveLimit(t *testing.T) {
 				storedDataCache: common.NewLruCache[slotId, storedDataCacheValue](limit),
 			}
 
-			for i := 0; i < limit; i++ {
+			for i := range limit {
 				s.reincarnation[common.Address{byte(i)}] = uint64(i)
 				s.storedDataCache.Set(
 					slotId{common.Address{byte(i)}, common.Key{byte(i)}},

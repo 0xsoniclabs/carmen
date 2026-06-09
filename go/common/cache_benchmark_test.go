@@ -23,7 +23,7 @@ func BenchmarkCacheMissLatency(b *testing.B) {
 	for name, c := range initCaches(cacheSize) {
 		b.Run(fmt.Sprintf("cache %s", name), func(b *testing.B) {
 			b.StopTimer()
-			for i := 0; i < cacheSize; i++ {
+			for i := range cacheSize {
 				c.Set(i, i)
 			}
 			b.StartTimer()
@@ -43,7 +43,7 @@ func BenchmarkCacheHitLatency(b *testing.B) {
 	for name, c := range initCaches(cacheSize) {
 		b.Run(fmt.Sprintf("cache %s", name), func(b *testing.B) {
 			b.StopTimer()
-			for i := 0; i < cacheSize; i++ {
+			for i := range cacheSize {
 				c.Set(i, i)
 			}
 			b.StartTimer()
@@ -94,7 +94,7 @@ func BenchmarkCacheSingleThreadReads(b *testing.B) {
 
 	for name, c := range initCaches(N) {
 		b.StopTimer()
-		for i := 0; i < N; i++ {
+		for i := range N {
 			c.Set(keys[i], i)
 		}
 		b.StartTimer()
@@ -108,7 +108,7 @@ func BenchmarkCacheSingleThreadReads(b *testing.B) {
 
 func generateRandomKeys(count int) []int {
 	keys := make([]int, 0, count)
-	for i := 0; i < count; i++ {
+	for range count {
 		keys = append(keys, rand.Intn(1024*count))
 	}
 	return keys

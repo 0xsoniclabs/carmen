@@ -45,7 +45,7 @@ func initFileStock(directory string, items int) (*fileStock[int, int], error) {
 		return nil, err
 	}
 
-	for i := 0; i < items; i++ {
+	for i := range items {
 		id, err := s.New()
 		if err != nil {
 			return nil, err
@@ -941,7 +941,7 @@ func TestRestore_CorruptedStockCanBeRestored(t *testing.T) {
 			}
 
 			// Fill the stock with some data (more than a single buffer size).
-			for i := 0; i < N; i++ {
+			for i := range N {
 				id, err := stock.New()
 				if err != nil {
 					t.Fatalf("failed to create item in stock: %v", err)
@@ -1223,7 +1223,7 @@ func BenchmarkFileStock_Commit(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to open stock")
 	}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		id, err := stock.New()
 		if err != nil {
 			b.Fatalf("failed to create item in stock")

@@ -133,7 +133,7 @@ func TestNodeID_ValueIDOfZeroNodeIsNotEmptyId(t *testing.T) {
 func TestNodeID_EncodingAndDecoding(t *testing.T) {
 	var buffer [6]byte
 	encoder := NodeIdEncoder{}
-	for i := uint64(0); i < 100; i++ {
+	for i := range uint64(100) {
 		for _, id := range []NodeId{NodeId(0), ValueId(i), AccountId(i), BranchId(i), ExtensionId(i)} {
 			encoder.Store(buffer[:], &id)
 			restored := NodeId(12345)
@@ -147,7 +147,7 @@ func TestNodeID_EncodingAndDecoding(t *testing.T) {
 func TestNodeID_EncodingAndDecodingPowerOfTwos(t *testing.T) {
 	var buffer [6]byte
 	encoder := NodeIdEncoder{}
-	for i := 0; i < 6*8; i++ {
+	for i := range 6 * 8 {
 		id := NodeId(uint64(1) << i)
 		encoder.Store(buffer[:], &id)
 		restored := NodeId(12345)

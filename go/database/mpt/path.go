@@ -108,10 +108,7 @@ func (p *Path) IsEqualTo(list []Nibble) bool {
 // GetCommonPrefixLength determines the common prefix of the given Nibble
 // slice and this path.
 func (p *Path) GetCommonPrefixLength(list []Nibble) int {
-	max := int(p.length)
-	if max > len(list) {
-		max = len(list)
-	}
+	max := min(int(p.length), len(list))
 	for i := 0; i < max; i++ {
 		if p.Get(i) != list[i] {
 			return i
@@ -181,7 +178,7 @@ func (p *Path) ShiftLeft(steps int) *Path {
 			p.Set(j, p.Get(i+steps))
 			j++
 		}
-		for i := 0; i < steps; i++ {
+		for range steps {
 			p.Set(j, 0)
 			j++
 		}

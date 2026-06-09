@@ -38,7 +38,7 @@ func BenchmarkFlushGoState(b *testing.B) {
 
 	for n := uint64(0); n < uint64(b.N); n++ {
 		update := common.Update{}
-		for i := 0; i < 10_000; i++ {
+		for i := range 10_000 {
 			update.AppendBalanceUpdate(common.Address{
 				byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n),
 				byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i),

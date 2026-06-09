@@ -25,7 +25,7 @@ func TestDistribution_ReturnRandValues(t *testing.T) {
 				dis := dis
 				t.Parallel()
 				data := make([]uint32, 0, nums)
-				for i := 0; i < nums; i++ {
+				for range nums {
 					data = append(data, dis.GetNext())
 				}
 				// test that at least 30% of values is not the same

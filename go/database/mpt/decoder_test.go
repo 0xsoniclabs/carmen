@@ -56,7 +56,7 @@ func TestDecoder_CanDecodeNodes(t *testing.T) {
 	embeddedChildrenSizes := [16]uint16{}
 
 	childrenRlp := make([]rlp.Item, 17)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		childrenRlp[i] = rlp.String{Str: childrenHashes[i][:]}
 		if childrenHashes[i] == valueNodeRlpAsHash {
 			childrenRlp[i] = valueNode // inject real size slice, not a 32bit hash
@@ -207,12 +207,12 @@ func TestDecoder_CorruptedRlp(t *testing.T) {
 	codeHashTooLong := rlp.String{Str: rlp.Encode(rlp.List{Items: []rlp.Item{str, str, longStr, strLongerThan32}})}
 
 	childrenTooLongHashes := make([]rlp.Item, 17)
-	for i := 0; i < len(childrenTooLongHashes); i++ {
+	for i := range childrenTooLongHashes {
 		childrenTooLongHashes[i] = strLongerThan32
 	}
 
 	childrenNotStrings := make([]rlp.Item, 17)
-	for i := 0; i < len(childrenNotStrings); i++ {
+	for i := range childrenNotStrings {
 		childrenNotStrings[i] = list
 	}
 
@@ -257,7 +257,7 @@ func Test_isCompactPathLeafNode(t *testing.T) {
 		isLeaf bool
 	}, 0, 0xFF)
 
-	for i := 0; i < 0xFF; i++ {
+	for i := range 0xFF {
 		tests = append(tests, struct {
 			path   []byte
 			isLeaf bool
@@ -307,7 +307,7 @@ func TestDecoder_Decode_Node_Instances(t *testing.T) {
 	ctxt := newNodeContextWithConfig(t, ctrl, S5LiveConfig)
 
 	childHashes := ChildHashes{}
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if i == 0xA {
 			continue
 		}
@@ -439,7 +439,7 @@ func TestDecoder_Decode_AccountNode_Instances_Above20bytesPaths(t *testing.T) {
 	nibbles := AddressToNibblePath(address, ctxt)
 
 	childHashes := ChildHashes{}
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if Nibble(i) == nibbles[0] {
 			continue
 		}

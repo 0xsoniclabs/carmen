@@ -198,7 +198,7 @@ func collectDiff(
 		return collectDiffFromLeafs(context, before, after)
 	}
 
-	for i := Nibble(0); i < Nibble(16); i++ {
+	for i := range Nibble(16) {
 		lhs, err := before.getChild(context.source, i)
 		if err != nil {
 			return err

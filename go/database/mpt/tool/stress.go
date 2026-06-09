@@ -236,7 +236,7 @@ func (s *stressTestState) AddBlock(rand *rand.Rand) error {
 	)
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	for j := 0; j < changesPerBlock; j++ {
+	for range changesPerBlock {
 		// Select between insert, update, and delete operations.
 		// The proportions have been adjusted to produce a slow
 		// growth of the database and to have good chances of

@@ -588,7 +588,7 @@ func TestForest_getAccess_Fails(t *testing.T) {
 					accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 					// only the second call must fail - repeats four times for four calls
 					calls := make([]*gomock.Call, 0, 8)
-					for i := 0; i < 4; i++ {
+					for range 4 {
 						calls = append(calls, accounts.EXPECT().Get(gomock.Any()).Return(AccountNode{}, nil))
 						calls = append(calls, accounts.EXPECT().Get(gomock.Any()).Return(AccountNode{}, injectedErr))
 					}
@@ -1303,7 +1303,7 @@ func TestForest_ConcurrentReadsAreRaceFree(t *testing.T) {
 
 					// Fill in some data (sequentially).
 					root := NewNodeReference(EmptyId())
-					for i := 0; i < N; i++ {
+					for i := range N {
 						root, err = forest.SetAccountInfo(&root, common.Address{byte(i)}, AccountInfo{Nonce: common.ToNonce(uint64(i + 1))})
 						if err != nil {
 							t.Fatalf("failed to insert account %d: %v", i, err)
@@ -1314,10 +1314,10 @@ func TestForest_ConcurrentReadsAreRaceFree(t *testing.T) {
 					var errors [N]error
 					var wg sync.WaitGroup
 					wg.Add(N)
-					for i := 0; i < N; i++ {
+					for range N {
 						go func() {
 							defer wg.Done()
-							for i := 0; i < N; i++ {
+							for i := range N {
 								info, _, err := forest.GetAccountInfo(&root, common.Address{byte(i)})
 								if err != nil {
 									errors[i] = err
@@ -1364,7 +1364,7 @@ func TestForest_ConcurrentWritesAreRaceFree(t *testing.T) {
 
 					// Fill in some data (sequentially).
 					root := NewNodeReference(EmptyId())
-					for i := 0; i < N; i++ {
+					for i := range N {
 						root, err = forest.SetAccountInfo(&root, common.Address{byte(i)}, AccountInfo{Nonce: common.ToNonce(uint64(i + 1))})
 						if err != nil {
 							t.Fatalf("failed to insert account %d: %v", i, err)
@@ -1375,10 +1375,10 @@ func TestForest_ConcurrentWritesAreRaceFree(t *testing.T) {
 					var errors [N]error
 					var wg sync.WaitGroup
 					wg.Add(N)
-					for i := 0; i < N; i++ {
+					for range N {
 						go func() {
 							defer wg.Done()
-							for i := 0; i < N; i++ {
+							for i := range N {
 								_, err := forest.SetAccountInfo(&root, common.Address{byte(i)}, AccountInfo{Nonce: common.ToNonce(uint64(i + 2))})
 								if err != nil {
 									errors[i] = err
@@ -1396,7 +1396,7 @@ func TestForest_ConcurrentWritesAreRaceFree(t *testing.T) {
 					}
 
 					// Check that the resulting nonce is i + 2
-					for i := 0; i < N; i++ {
+					for i := range N {
 						info, exits, err := forest.GetAccountInfo(&root, common.Address{byte(i)})
 						if err != nil {
 							t.Fatalf("failed to read account %d: %v", i, err)
@@ -1567,10 +1567,8 @@ func testForest_WriteBufferRecoveryIsThreadSafe(t *testing.T, withConcurrentNode
 	if withConcurrentNodeGeneration {
 		// Optionally new nodes are generated in parallel to the reloading of
 		// the root nodes of the forest.
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < M; i++ {
+		wg.Go(func() {
+			for range M {
 				_, handle, err := forest.createAccount()
 				if err != nil {
 					t.Errorf("failed to create new node: %v", err)
@@ -1578,13 +1576,13 @@ func testForest_WriteBufferRecoveryIsThreadSafe(t *testing.T, withConcurrentNode
 					handle.Release()
 				}
 			}
-		}()
+		})
 	}
 
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < M; i++ {
+			for i := range M {
 				tree := treeA
 				if i%2 > 0 {
 					tree = treeB
@@ -1723,10 +1721,10 @@ func TestForest_NodeHandlingDoesNotDeadlock(t *testing.T) {
 	const N = 10
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 1000; i++ {
+			for i := range 1000 {
 				tree := treeA
 				if i%2 > 0 {
 					tree = treeB
@@ -1766,13 +1764,13 @@ func TestForest_CheckPassesAfterReopeningDirectory(t *testing.T) {
 					// Fill the forest with some data.
 					const N = 10
 					root := NewNodeReference(EmptyId())
-					for a := 0; a < N; a++ {
+					for a := range N {
 						addr := common.Address{byte(a)}
 						root, err = forest.SetAccountInfo(&root, addr, AccountInfo{Nonce: common.Nonce{1}})
 						if err != nil {
 							t.Fatalf("failed to create account %v: %v", addr, err)
 						}
-						for k := 0; k < N; k++ {
+						for k := range N {
 							root, err = forest.SetValue(&root, addr, common.Key{byte(k)}, common.Value{byte(k)})
 							if err != nil {
 								t.Fatalf("failed to update value %v: %v", addr, err)
@@ -2271,7 +2269,6 @@ func TestForest_AsyncDelete_CacheIsNotExhausted(t *testing.T) {
 		// test for live configs only as archive configs even write deleted
 		// nodes and cache needs to be allocated for those nodes as well.
 		for _, config := range []MptConfig{S5LiveConfig, S4LiveConfig} {
-			config := config
 			t.Run(config.Name, func(t *testing.T) {
 				t.Parallel()
 

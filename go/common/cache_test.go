@@ -133,7 +133,7 @@ func TestCache_Clear_FullCache(t *testing.T) {
 		t.Run(fmt.Sprintf("cache %s", name), func(t *testing.T) {
 			// insert test data
 			inserted := make(map[int]int)
-			for i := 0; i < 255; i++ {
+			for i := range 255 {
 				inserted[i] = i * 100
 				c.Set(i, i*100)
 			}
@@ -403,7 +403,7 @@ func TestCache_Iterate_FullCache(t *testing.T) {
 		t.Run(fmt.Sprintf("cache %s", name), func(t *testing.T) {
 			// insert test data
 			expected := make(map[int]int)
-			for i := 0; i < 255; i++ {
+			for i := range 255 {
 				expected[i] = i * 100
 				evictedKey, _, evicted := c.Set(i, i*100)
 				if evicted {
@@ -443,7 +443,7 @@ func EvalPrintNumberOfEvictions() {
 
 	for name, c := range initCaches(CAPACITY) {
 		evictions[name] = 0
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if _, _, evicted := c.Set(keys[i], i); evicted {
 				evictions[name]++
 			}

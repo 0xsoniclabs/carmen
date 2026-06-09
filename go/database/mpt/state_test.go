@@ -85,7 +85,7 @@ func TestState_CanBeReOpened(t *testing.T) {
 	for name, open := range stateFactories {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			for i := 0; i < 5; i++ {
+			for range 5 {
 				state, err := open(dir)
 				if err != nil {
 					t.Fatalf("failed to open test state: %v", err)
@@ -730,7 +730,7 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 	}
 
 	// Add some codes to be flushed.
-	for i := 0; i < numAccounts; i++ {
+	for i := range numAccounts {
 		state.codes.codes[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
 	}
 

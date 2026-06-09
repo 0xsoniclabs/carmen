@@ -215,8 +215,8 @@ func TestMapInsertedIsContainedExhaustive(t *testing.T) {
 		data := config.get()
 		t.Run(config.name, func(t *testing.T) {
 			key := Key{}
-			for i := 0; i < N; i++ {
-				for j := 0; j < N; j++ {
+			for i := range N {
+				for j := range N {
 					key[30] = byte(j >> 8)
 					key[31] = byte(j)
 					want := j < i
@@ -268,7 +268,7 @@ func TestMapDeleteRemovesSelectedKeyFromBucket(t *testing.T) {
 				t.Errorf("Failed to delete key 10")
 			}
 
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				// all other keys should still be there
 				key := Key{byte(i)}
 				if _, exists := data.Get(key); !exists {
@@ -333,12 +333,12 @@ func TestMapClearRemovesAllContent(t *testing.T) {
 		data := config.get()
 		t.Run(config.name, func(t *testing.T) {
 			key := Key{}
-			for i := 0; i < N; i++ {
+			for i := range N {
 				key[30] = byte(i >> 8)
 				key[31] = byte(i)
 				data.Put(key, i)
 			}
-			for i := 0; i < N; i++ {
+			for i := range N {
 				key[30] = byte(i >> 8)
 				key[31] = byte(i)
 				if value, exists := data.Get(key); !exists || value != i {
@@ -346,7 +346,7 @@ func TestMapClearRemovesAllContent(t *testing.T) {
 				}
 			}
 			data.Clear()
-			for i := 0; i < N; i++ {
+			for i := range N {
 				key[30] = byte(i >> 8)
 				key[31] = byte(i)
 				if _, exists := data.Get(key); exists {
@@ -439,7 +439,7 @@ func TestMapForEachVisitsAllElements(t *testing.T) {
 		t.Run(config.name, func(t *testing.T) {
 			data := config.get()
 
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				elements := map[Key]int{}
 				data.ForEach(func(key Key, value int) {
 					_, exists := elements[key]
@@ -474,7 +474,7 @@ func TestMap_Fill_All_Generations(t *testing.T) {
 
 	// fill in data
 	var k Key
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		m.Put(k, i)
 		k[i%32]++
 	}
@@ -493,7 +493,7 @@ func TestMap_Fill_All_Generations(t *testing.T) {
 	}
 
 	// have to use all generations
-	for i := 0; i < 1<<16; i++ {
+	for range 1 << 16 {
 		m.Clear()
 	}
 
@@ -516,7 +516,7 @@ func TestFastMap_CopyTo(t *testing.T) {
 
 	// fill in data
 	var k Key
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		m.Put(k, i)
 		k[i%32]++
 	}
@@ -640,7 +640,7 @@ func TestFastMap_DeepEqual(t *testing.T) {
 func TestMap_Internal_Negative_Position(t *testing.T) {
 	m := NewFastMap[Key, int](KeyShortHasher{})
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		num := uint64(rand.Int63()) | uint64(1<<63) // always negative num
 		if got, want := m.toPtr(int64(num)), num; got != fmPtr(want) {
 			t.Errorf("negative value should be returned unchanged: %d != %d", got, want)
@@ -656,7 +656,7 @@ func BenchmarkMapInsertAndClear(b *testing.B) {
 		b.Run(config.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				key[31] = byte(rand.Intn(256))
-				for j := 0; j < 100; j++ {
+				for j := range 100 {
 					key[31] *= 7
 					data.Put(key, j)
 				}
@@ -792,17 +792,17 @@ func FuzzMapOperations(f *testing.F) {
 
 	// Test a full map
 	cmds := make([]command, 0, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		cmds = append(cmds, put{byte(i), ^byte(i)})
 	}
 	f.Add(toBytes(cmds))
 
 	// A case where all elements are added and removed.
 	cmds = cmds[0:0]
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		cmds = append(cmds, put{byte(i), ^byte(i)})
 	}
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		cmds = append(cmds, remove{byte(i)})
 	}
 	f.Add(toBytes(cmds))
@@ -824,7 +824,7 @@ func FuzzMapOperations(f *testing.F) {
 				return
 			}
 
-			for i := 0; i < 256; i++ {
+			for i := range 256 {
 				want_value, want_exists := ref[byte(i)]
 				have_value, have_exists := trg.Get(byte(i))
 				if want_exists != have_exists {

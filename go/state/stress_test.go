@@ -9,7 +9,6 @@
 // this software will be governed by the GNU Lesser General Public License v3.
 
 //go:build stress_test
-// +build stress_test
 
 package state_test
 

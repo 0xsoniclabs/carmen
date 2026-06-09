@@ -61,11 +61,11 @@ type cacheFuzzingCampaign struct {
 
 func (c *cacheFuzzingCampaign) Init() []fuzzing.OperationSequence[cacheFuzzingContext] {
 	setMany := make([]fuzzing.Operation[cacheFuzzingContext], 0, 255)
-	for i := 0; i < 255; i++ {
+	for i := range 255 {
 		setMany = append(setMany, &opSet{int8(i), int16(i * 100)})
 	}
 	getMany := make([]fuzzing.Operation[cacheFuzzingContext], 0, 255)
-	for i := 0; i < 255; i++ {
+	for i := range 255 {
 		getMany = append(getMany, &opGet{int8(i)})
 	}
 

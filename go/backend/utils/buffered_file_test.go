@@ -121,7 +121,7 @@ func TestBufferedFile_ReadPartlyBeyondSize(t *testing.T) {
 		t.Fatalf("openning file should not produce error, %s", err)
 	}
 
-	for i := 0; i < bufferSize; i++ {
+	for i := range bufferSize {
 		bf.buffer[i] = byte(i)
 	}
 
@@ -185,7 +185,7 @@ func TestBufferedFile_ReadSplit(t *testing.T) {
 		t.Fatalf("openning file should not produce error, %s", err)
 	}
 
-	for i := 0; i < bufferSize; i++ {
+	for i := range bufferSize {
 		bf.buffer[i] = byte(i)
 	}
 
@@ -355,13 +355,13 @@ func TestBufferedFile_WrittenDataCanBeRead(t *testing.T) {
 				t.Fatalf("failed to open buffered file: %v", err)
 			}
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				if _, err := file.WriteAt([]byte{byte(i)}, int64(i)); err != nil {
 					t.Fatalf("failed to write at position %d: %v", i, err)
 				}
 			}
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				dst := []byte{0}
 				if _, err := file.ReadAt(dst, int64(i)); err != nil {
 					t.Fatalf("failed to read at position %d: %v", i, err)
@@ -387,7 +387,7 @@ func TestBufferedFile_DataIsPersistent(t *testing.T) {
 				t.Fatalf("failed to open buffered file: %v", err)
 			}
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				if _, err := file.WriteAt([]byte{byte(i + 1)}, int64(i)); err != nil {
 					t.Fatalf("failed to write at position %d: %v", i, err)
 				}
@@ -403,7 +403,7 @@ func TestBufferedFile_DataIsPersistent(t *testing.T) {
 				t.Fatalf("failed to reopen buffered file: %v", err)
 			}
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				dst := []byte{0}
 				if _, err := file.ReadAt(dst, int64(i)); err != nil {
 					t.Fatalf("failed to read at position %d: %v", i, err)
@@ -429,13 +429,13 @@ func TestBufferedFile_ReadAndWriteCanHandleUnalignedData(t *testing.T) {
 
 	// By writing data of length 3 we are sometimes writing data crossing
 	// the internal aligned buffer-page boundary.
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		if _, err := file.WriteAt([]byte{byte(i), byte(i + 1), byte(i + 2)}, int64(i)*3); err != nil {
 			t.Fatalf("failed to write at position %d: %v", i, err)
 		}
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		dst := []byte{0, 0, 0}
 		if _, err := file.ReadAt(dst, int64(i)*3); err != nil {
 			t.Fatalf("failed to read at position %d: %v", i, err)

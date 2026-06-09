@@ -21,7 +21,7 @@ func TestTicker_Ticks(t *testing.T) {
 	ticker := NewTimeTicker(10 * time.Millisecond)
 
 	const loops = 100
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		tick := <-ticker.C()
 		if tick.Before(last) {
 			t.Errorf("tick %d is before last tick: %v < %v", i, last, tick)

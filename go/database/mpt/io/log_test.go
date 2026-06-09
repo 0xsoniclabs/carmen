@@ -62,7 +62,7 @@ func TestLog_CanBeNil(t *testing.T) {
 	logger.Print("Test message")
 	logger.Printf("%d", 1)
 	progress := logger.NewProgressTracker("Progress: %d steps, %.2f steps/sec", 10)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		progress.Step(1)
 	}
 

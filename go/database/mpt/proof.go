@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
-	"golang.org/x/exp/maps"
 )
 
 //go:generate mockgen -source proof.go -destination proof_mocks.go -package mpt
@@ -104,9 +104,7 @@ func MergeProofs(others ...WitnessProof) WitnessProof {
 
 // Add merges the input witness proof into the current witness proof.
 func (p WitnessProof) Add(other WitnessProof) {
-	for k, v := range other.proofDb {
-		p.proofDb[k] = v
-	}
+	maps.Copy(p.proofDb, other.proofDb)
 }
 
 // Extract extracts a sub-proof for a given account and selected storage locations from this proof.
@@ -246,7 +244,7 @@ func (p WitnessProof) Equals(other witness.Proof) bool {
 // The representation contains all nodes sorted by their hash.
 func (p WitnessProof) String() string {
 	// Extract keys and sort them
-	keys := maps.Keys(p.proofDb)
+	keys := slices.Collect(maps.Keys(p.proofDb))
 	cmp := common.HashComparator{}
 	sort.Slice(keys, func(i, j int) bool {
 		return cmp.Compare(&keys[i], &keys[j]) <= 0
@@ -343,7 +341,7 @@ func (p *proofExtractionVisitor) Visit(node Node, info NodeInfo) VisitResponse {
 	case *BranchNode:
 		if n.dirtyHashes != 0 {
 			embeddedChildren := make(map[NodeId]bool, 16)
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				if n.isChildHashDirty(byte(i)) {
 					childHandle, err := p.nodeSource.getViewAccess(&n.children[i])
 					if err != nil {

@@ -282,7 +282,7 @@ func InitializeArchive(logger *Log, directory string, in io.Reader, block uint64
 
 	// Create a root file listing block roots.
 	roots := make([]mpt.Root, block+1)
-	for i := uint64(0); i < block; i++ {
+	for i := range block {
 		roots[i] = mpt.Root{
 			NodeRef: mpt.NewNodeReference(mpt.EmptyId()),
 			Hash:    mpt.EmptyNodeEthereumHash,

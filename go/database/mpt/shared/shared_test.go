@@ -252,7 +252,7 @@ func TestShared_ConcurrentRead(t *testing.T) {
 	shared := MakeShared(10)
 	var wg sync.WaitGroup
 	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			defer wg.Done()
 			read := shared.GetReadHandle()
@@ -269,7 +269,7 @@ func TestShared_ConcurrentWrite(t *testing.T) {
 	shared := MakeShared(10)
 	var wg sync.WaitGroup
 	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		i := i
 		go func() {
 			defer wg.Done()
@@ -289,10 +289,10 @@ func TestShared_WriteHandleSynchronizesAccess(t *testing.T) {
 	shared := MakeShared(0)
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < M; i++ {
+			for range M {
 				write := shared.GetWriteHandle()
 				cur := write.Get()
 				write.Set(cur + 1)

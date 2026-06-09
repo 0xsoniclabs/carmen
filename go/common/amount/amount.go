@@ -34,7 +34,7 @@ func New(args ...uint64) Amount {
 	}
 	result := Amount{}
 	offset := 4 - len(args)
-	for i := 0; i < len(args); i++ {
+	for i := range args {
 		result.internal[3-i-offset] = args[i]
 	}
 	return result

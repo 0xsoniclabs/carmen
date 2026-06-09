@@ -46,7 +46,7 @@ func TestAddressHasher_AccessesAreRaceConditionFree(t *testing.T) {
 	hasher := NewAddressHasher()
 	var wg sync.WaitGroup
 	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			defer wg.Done()
 			for _, test := range tests {
@@ -86,7 +86,7 @@ func TestKeyHasher_AccessesAreRaceConditionFree(t *testing.T) {
 	hasher := NewKeyHasher()
 	var wg sync.WaitGroup
 	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			defer wg.Done()
 			for _, test := range tests {
@@ -125,7 +125,7 @@ func TestNewHitMissTrackingCache_AccessesAreRaceConditionFree(t *testing.T) {
 	hasher := NewHitMissTrackingCache(NewKeyHasher())
 	var wg sync.WaitGroup
 	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			defer wg.Done()
 			for _, test := range tests {
@@ -192,7 +192,7 @@ func TestNewHitMissTrackingCache_CountsHitsAndMissesCorrectly(t *testing.T) {
 func getRandomAddresses(number int) []common.Address {
 	r := rand.New(rand.NewSource(99))
 	list := []common.Address{}
-	for i := 0; i < number; i++ {
+	for range number {
 		cur := common.Address{}
 		r.Read(cur[:])
 		list = append(list, cur)
@@ -203,7 +203,7 @@ func getRandomAddresses(number int) []common.Address {
 func getRandomKeys(number int) []common.Key {
 	r := rand.New(rand.NewSource(99))
 	list := []common.Key{}
-	for i := 0; i < number; i++ {
+	for range number {
 		cur := common.Key{}
 		r.Read(cur[:])
 		list = append(list, cur)

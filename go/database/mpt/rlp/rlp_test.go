@@ -380,7 +380,7 @@ func forEachRlpHashTest(t *testing.T, action func(t *testing.T, rlp []byte, item
 	const size = 32
 	tests := make([]test, 0, size)
 	var hash common.Hash
-	for i := 0; i < size; i++ {
+	for i := range size {
 		hash[i] = byte(i)
 		tests = append(tests, test{hash, append([]byte{0xA0}, hash[:]...)})
 	}
