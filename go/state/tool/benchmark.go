@@ -12,11 +12,9 @@ package main
 
 import (
 	"fmt"
-	"io/fs"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"time"
@@ -219,7 +217,7 @@ func runBenchmark(
 			observer("Failed to close state: %v", err)
 		}
 		observer("Closing state took %v", time.Since(start))
-		if size, err := getDirectorySize(path); err != nil {
+		if size, err := common.GetDirectorySize(path); err != nil {
 			observer("Failed to get disk usage: %v", err)
 		} else {
 			observer("Final disk usage: %d", size)
@@ -282,9 +280,9 @@ func runBenchmarkState(
 
 			throughput := float64(reportingInterval*numInsertsPerBlock) / startReporting.Sub(lastReportTime).Seconds()
 			memory := state.GetMemoryFootprint().Total()
-			disk, err := getDirectorySize(path)
+			disk, err := common.GetDirectorySize(path)
 			if err != nil {
-				observer("Failed to get disk usage: %v", err)
+				return res, fmt.Errorf("failed to get disk usage: %v", err)
 			}
 			observer(
 				"Reached block %d, memory %.2f GB, disk %.2f GB, %.2f inserts/second",
@@ -319,19 +317,4 @@ func runBenchmarkState(
 	res.reportTime = reportingTime
 
 	return res, nil
-}
-
-// getDirectorySize computes the size of all files in the given directory in bytes.
-func getDirectorySize(directory string) (int64, error) {
-	var sum int64 = 0
-	err := filepath.Walk(directory, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			sum += info.Size()
-		}
-		return nil
-	})
-	return sum, err
 }

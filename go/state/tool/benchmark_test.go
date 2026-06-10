@@ -154,34 +154,6 @@ func TestBenchmark_SupportsDifferentModes(t *testing.T) {
 	}
 }
 
-func TestGetDirectorySize_Normal(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "file1")
-	data := []byte("abcde")
-	require.NoError(t, os.WriteFile(file, data, 0644))
-
-	size, err := getDirectorySize(dir)
-	require.NoError(t, err)
-	require.Equal(t, int64(len(data)), size)
-}
-
-func TestGetDirectorySize_NonExistentDir(t *testing.T) {
-	size, _ := getDirectorySize("/path/does/not/exist")
-	require.Equal(t, int64(0), size)
-}
-
-func TestGetDirectorySize_UnreadableFile(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "file2")
-	data := []byte("xyz")
-	require.NoError(t, os.WriteFile(file, data, 0000)) // No permissions
-
-	size, err := getDirectorySize(dir)
-	require.NoError(t, err)
-	// Should skip unreadable file and not panic
-	require.GreaterOrEqual(t, size, int64(0))
-}
-
 func TestBenchmark_CLIAction(t *testing.T) {
 	tmpDirs := map[string]struct {
 		tmpdir     func() string

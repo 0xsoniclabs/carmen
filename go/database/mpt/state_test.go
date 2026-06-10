@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
 	"golang.org/x/exp/maps"
@@ -174,6 +175,7 @@ func BenchmarkStorageChanges(b *testing.B) {
 				mode = "with_hashing"
 			}
 			b.Run(fmt.Sprintf("%s/%s", config.Name, mode), func(b *testing.B) {
+				require := require.New(b)
 				state, err := OpenGoMemoryState(b.TempDir(), config, NodeCacheConfig{Capacity: 1024})
 				if err != nil {
 					b.Fail()
@@ -185,7 +187,7 @@ func BenchmarkStorageChanges(b *testing.B) {
 				}()
 
 				address := common.Address{}
-				_ = state.SetNonce(address, common.ToNonce(12))
+				require.NoError(state.SetNonce(address, common.ToNonce(12)))
 
 				key := common.Key{}
 				value := common.Value{}
@@ -193,9 +195,10 @@ func BenchmarkStorageChanges(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					binary.BigEndian.PutUint64(key[:], uint64(i%1024))
 					binary.BigEndian.PutUint64(value[:], uint64(i))
-					_ = state.SetStorage(address, key, value)
+					require.NoError(state.SetStorage(address, key, value))
 					if withHashing {
-						_, _ = state.GetHash()
+						_, err = state.GetHash()
+						require.NoError(err)
 					}
 				}
 			})

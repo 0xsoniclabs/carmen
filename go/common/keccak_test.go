@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestKeccakC_ProducesSameHashAsGo(t *testing.T) {
@@ -150,7 +152,8 @@ func benchmark(b *testing.B, hasher func([]byte)) {
 
 func BenchmarkKeccakGo(b *testing.B) {
 	benchmark(b, func(data []byte) {
-		_, _ = keccak256_Go(data)
+		_, err := keccak256_Go(data)
+		require.NoError(b, err)
 	})
 }
 
@@ -163,7 +166,8 @@ func BenchmarkKeccakC(b *testing.B) {
 func BenchmarkKeccakGoAddressGeneric(b *testing.B) {
 	addr := Address{}
 	for i := 0; i < b.N; i++ {
-		_, _ = keccak256_Go(addr[:])
+		_, err := keccak256_Go(addr[:])
+		require.NoError(b, err)
 	}
 }
 
@@ -184,7 +188,8 @@ func BenchmarkKeccakCAddressSpecialized(b *testing.B) {
 func BenchmarkKeccakGoKeyGeneric(b *testing.B) {
 	key := Key{}
 	for i := 0; i < b.N; i++ {
-		_, _ = keccak256_Go(key[:])
+		_, err := keccak256_Go(key[:])
+		require.NoError(b, err)
 	}
 }
 

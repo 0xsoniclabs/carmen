@@ -11,8 +11,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -24,18 +22,6 @@ import (
 func TestGetMemoryUsage(t *testing.T) {
 	mem := getMemoryUsage()
 	require.Greater(t, mem, uint64(0), "memory usage should be greater than zero")
-}
-
-func TestGetDirectorySize(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "testfile")
-	data := []byte("hello world")
-	err := os.WriteFile(file, data, 0644)
-	require.NoError(t, err)
-
-	size, err := getDirectorySize(dir)
-	require.NoError(t, err)
-	require.Equal(t, int64(len(data)), size, "directory size should match file size")
 }
 
 func TestStressTest_BasicRun(t *testing.T) {
@@ -86,21 +72,6 @@ func TestStressTest_ZeroBlocks(t *testing.T) {
 		"--num-blocks=0",
 	})
 	require.NoError(t, err, "should not error with zero blocks")
-}
-
-func TestGetDirectorySize_NonExistentDirectory(t *testing.T) {
-	size, _ := getDirectorySize("/path/does/not/exist")
-	require.Equal(t, int64(0), size, "size should be zero for non-existent directory")
-}
-
-func TestGetDirectorySize_FilePath(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "testfile")
-	data := []byte("data")
-	err := os.WriteFile(file, data, 0644)
-	require.NoError(t, err)
-	size, err := getDirectorySize(file)
-	require.NoError(t, err)
-	require.Equal(t, len(data), int(size), "size should match file size")
 }
 
 func TestGetFreeSpace_ValidPath(t *testing.T) {
