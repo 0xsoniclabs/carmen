@@ -67,10 +67,6 @@ func (r rustBindings) GetArchiveBlockHeight(database unsafe.Pointer, outHeight *
 	return C.Carmen_Rust_GetArchiveBlockHeight(database, outHeight)
 }
 
-func (r rustBindings) AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result {
-	return C.Carmen_Rust_AccountExists(state, address, outExists)
-}
-
 func (r rustBindings) GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result {
 	return C.Carmen_Rust_GetBalance(state, address, outBalance)
 }

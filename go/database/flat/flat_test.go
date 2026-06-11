@@ -190,23 +190,6 @@ func TestState_Close_IssueDuringCloseIsReported(t *testing.T) {
 	require.ErrorIs(t, err, issue)
 }
 
-func TestState_Exists_ReturnsFromLocalMap(t *testing.T) {
-	require := require.New(t)
-	addr := common.Address{0x01}
-	state := &State{
-		accounts: map[common.Address]account{
-			addr: {},
-		},
-	}
-
-	exists, err := state.Exists(addr)
-	require.NoError(err)
-	require.True(exists)
-	exists, err = state.Exists(common.Address{0x03})
-	require.NoError(err)
-	require.False(exists)
-}
-
 func TestState_GetBalance_ReturnsFromLocalMap(t *testing.T) {
 	require := require.New(t)
 	addr := common.Address{0x01}
@@ -388,25 +371,25 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 	backend.EXPECT().Close().Return(nil)
 
 	address := common.Address{0x01}
-	state, err := NewState(t.TempDir(), backend)
+	s, err := NewState(t.TempDir(), backend)
 	require.NoError(err)
 
-	require.False(state.Exists(address))
+	require.True(state.IsEmptyAccount(s, address))
 
-	_, err = state.Apply(1, common.Update{
+	_, err = s.Apply(1, common.Update{
 		Balances: []common.BalanceUpdate{{Account: address, Balance: amount.New(10)}},
 	})
 	require.NoError(err)
 
-	require.True(state.Exists(address))
+	require.False(state.IsEmptyAccount(s, address))
 
-	_, err = state.Apply(2, common.Update{
+	_, err = s.Apply(2, common.Update{
 		DeletedAccounts: []common.Address{address},
 	})
 	require.NoError(err)
 
-	require.False(state.Exists(address))
-	require.NoError(state.Close())
+	require.True(state.IsEmptyAccount(s, address))
+	require.NoError(s.Close())
 }
 
 func TestState_Apply_IsForwardedToBackend(t *testing.T) {

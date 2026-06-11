@@ -21,6 +21,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
+	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,10 +44,10 @@ func TestIO_ExportAndImportAsLiveDb(t *testing.T) {
 	}
 	defer func() { require.NoError(t, db.Close()) }()
 
-	if exists, err := db.Exists(common.Address{1}); err != nil || !exists {
+	if empty := isEmptyAccount(t, db, common.Address{1}); empty {
 		t.Fatalf("restored DB does not contain account 1")
 	}
-	if exists, err := db.Exists(common.Address{2}); err != nil || !exists {
+	if empty := isEmptyAccount(t, db, common.Address{2}); empty {
 		t.Fatalf("restored DB does not contain account 2")
 	}
 
@@ -457,4 +458,21 @@ func TestIO_Live_Import_IncorrectMagicNumberIsNoticed(t *testing.T) {
 	if !strings.EqualFold(got, want) {
 		t.Errorf("unexpected error message\ngot: %v\nwant:%v", got, want)
 	}
+}
+
+func isEmptyAccount(t *testing.T, db state.LiveDB, addr common.Address) bool {
+	t.Helper()
+	balance, err := db.GetBalance(addr)
+	if err != nil {
+		t.Fatalf("failed to get balance: %v", err)
+	}
+	nonce, err := db.GetNonce(addr)
+	if err != nil {
+		t.Fatalf("failed to get nonce: %v", err)
+	}
+	code, err := db.GetCode(addr)
+	if err != nil {
+		t.Fatalf("failed to get code: %v", err)
+	}
+	return balance == (amount.Amount{}) && nonce == (common.Nonce{}) && len(code) == 0
 }

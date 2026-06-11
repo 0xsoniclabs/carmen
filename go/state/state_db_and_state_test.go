@@ -843,8 +843,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.EndTransaction()
 			statedb.EndBlock(1)
 
-			exists, err := s.Exists(address1)
-			require.NoError(err)
+			exists := statedb.Exist(address1)
 			require.False(exists)
 
 			// Case 2: deleted account because of suicide
@@ -855,8 +854,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.EndTransaction()
 			statedb.EndBlock(3)
 
-			exists, err = s.Exists(address1)
-			require.NoError(err)
+			exists = statedb.Exist(address1)
 			require.False(exists)
 		})
 	}

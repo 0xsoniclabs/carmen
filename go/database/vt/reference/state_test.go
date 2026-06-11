@@ -55,13 +55,6 @@ func TestState_TrieConfig_ReturnsTheUnderlyingTrieConfig(t *testing.T) {
 	require.Equal(want, got)
 }
 
-func TestState_Exists(t *testing.T) {
-	state := newState()
-	exists, err := state.Exists(common.Address{1})
-	require.NoError(t, err)
-	require.False(t, exists, "Expected Exists to return false for non-existing address")
-}
-
 func TestState_CanStoreAndRestoreNonces(t *testing.T) {
 	require := require.New(t)
 

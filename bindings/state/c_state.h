@@ -109,11 +109,6 @@ DUPLICATE_FOR_LANGS(enum Result,
 DUPLICATE_FOR_LANGS(enum Result, GetArchiveBlockHeight(C_Database database,
                                                        int64_t* out_block));
 
-// ------------------------------- Accounts -----------------------------------
-
-// Checks if the given account exists.
-DUPLICATE_FOR_LANGS(enum Result, AccountExists(C_State state, C_Address addr,
-                                               C_AccountState out_state));
 
 // -------------------------------- Balance -----------------------------------
 

@@ -58,20 +58,6 @@ func (m *MockexternalBindings) EXPECT() *MockexternalBindingsMockRecorder {
 	return m.recorder
 }
 
-// AccountExists mocks base method.
-func (m *MockexternalBindings) AccountExists(state, address, outExists unsafe.Pointer) C.enum_Result {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AccountExists", state, address, outExists)
-	ret0, _ := ret[0].(C.enum_Result)
-	return ret0
-}
-
-// AccountExists indicates an expected call of AccountExists.
-func (mr *MockexternalBindingsMockRecorder) AccountExists(state, address, outExists any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccountExists", reflect.TypeOf((*MockexternalBindings)(nil).AccountExists), state, address, outExists)
-}
-
 // Apply mocks base method.
 func (m *MockexternalBindings) Apply(state unsafe.Pointer, block C.uint64_t, update unsafe.Pointer, updateLength C.uint64_t) C.enum_Result {
 	m.ctrl.T.Helper()

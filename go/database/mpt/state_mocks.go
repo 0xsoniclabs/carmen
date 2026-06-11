@@ -561,21 +561,6 @@ func (mr *MockLiveStateMockRecorder) DeleteAccount(address any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAccount", reflect.TypeOf((*MockLiveState)(nil).DeleteAccount), address)
 }
 
-// Exists mocks base method.
-func (m *MockLiveState) Exists(address common.Address) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Exists", address)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Exists indicates an expected call of Exists.
-func (mr *MockLiveStateMockRecorder) Exists(address any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockLiveState)(nil).Exists), address)
-}
-
 // Flush mocks base method.
 func (m *MockLiveState) Flush() error {
 	m.ctrl.T.Helper()

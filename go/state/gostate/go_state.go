@@ -110,18 +110,6 @@ type archiveUpdate = struct {
 	done        chan<- error    // a channel for the archive to signal when the update was processed
 }
 
-func (s *GoState) Exists(address common.Address) (bool, error) {
-	if err := s.getStateError(); err != nil {
-		return false, err
-	}
-
-	exist, err := s.live.Exists(address)
-	if err != nil {
-		s.addStateError(err)
-	}
-	return exist, s.getStateError()
-}
-
 func (s *GoState) GetBalance(address common.Address) (amount.Amount, error) {
 	if err := s.getStateError(); err != nil {
 		return amount.New(), err

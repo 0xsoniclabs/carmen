@@ -126,12 +126,6 @@ impl<T: VerkleTrie> IsArchive for VerkleTrieCarmenState<T> {
 }
 
 impl<T: VerkleTrie> CarmenState for VerkleTrieCarmenState<T> {
-    fn account_exists(&self, addr: &Address) -> BTResult<bool, Error> {
-        Ok(self.get_code_hash(addr)? != Hash::default()
-            || self.get_balance(addr)? != U256::default()
-            || self.get_nonce(addr)? != Nonce::default())
-    }
-
     fn get_balance(&self, addr: &Address) -> BTResult<U256, Error> {
         let key = self.embedding.get_basic_data_key(addr);
         let value = self.trie.lookup(&key)?;
@@ -318,47 +312,6 @@ mod tests {
 
         let result = state.apply_block_update(1, Update::default());
         assert!(result.is_ok());
-    }
-
-    #[rstest_reuse::apply(all_state_impls)]
-    fn account_exists_checks_whether_account_has_non_zero_code_hash(
-        #[case] state: Box<dyn CarmenState>,
-    ) {
-        let addr = Address::default();
-        assert!(!state.account_exists(&addr).unwrap());
-        assert_eq!(state.get_code_hash(&addr).unwrap(), Hash::default());
-
-        set_code(&*state, addr, &[0x01, 0x02, 0x03], 0);
-        assert!(state.account_exists(&addr).unwrap());
-    }
-
-    #[rstest_reuse::apply(all_state_impls)]
-    fn account_exists_checks_whether_account_has_non_zero_balance(
-        #[case] state: Box<dyn CarmenState>,
-    ) {
-        let addr = Address::default();
-        assert!(!state.account_exists(&addr).unwrap());
-        assert_eq!(state.get_balance(&addr).unwrap(), U256::default());
-
-        set_balance(
-            &*state,
-            addr,
-            crypto_bigint::U256::from_u32(42).to_be_bytes(),
-            0,
-        );
-        assert!(state.account_exists(&addr).unwrap());
-    }
-
-    #[rstest_reuse::apply(all_state_impls)]
-    fn account_exists_checks_whether_account_has_non_zero_nonce(
-        #[case] state: Box<dyn CarmenState>,
-    ) {
-        let addr = Address::default();
-        assert!(!state.account_exists(&addr).unwrap());
-        assert_eq!(state.get_nonce(&addr).unwrap(), Nonce::default());
-
-        set_nonce(&*state, addr, 7u64.to_be_bytes(), 0);
-        assert!(state.account_exists(&addr).unwrap());
     }
 
     #[rstest_reuse::apply(all_state_impls)]

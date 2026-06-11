@@ -449,10 +449,10 @@ func TestDeleteNotExistingAccount(t *testing.T) {
 			t.Fatalf("Error: %s", err)
 		}
 
-		if newState, err := s.Exists(address1); err != nil || newState != true {
+		if newState, err := state.IsEmptyAccount(s, address1); err != nil || newState != false {
 			t.Errorf("Unrelated existing state: %t, Error: %s", newState, err)
 		}
-		if newState, err := s.Exists(address2); err != nil || newState != false {
+		if newState, err := state.IsEmptyAccount(s, address2); err != nil || newState != true {
 			t.Errorf("Delete never-existing state: %t, Error: %s", newState, err)
 		}
 	})
@@ -568,10 +568,10 @@ func TestArchive(t *testing.T) {
 			}
 			defer func() { require.NoError(t, state2.Close()) }()
 
-			if as, err := state1.Exists(address1); err != nil || as != true {
+			if as, err := state.IsEmptyAccount(state1, address1); err != nil || as != false {
 				t.Errorf("invalid account state at block 0: %t, %v", as, err)
 			}
-			if as, err := state2.Exists(address1); err != nil || as != true {
+			if as, err := state.IsEmptyAccount(state2, address1); err != nil || as != false {
 				t.Errorf("invalid account state at block 1: %t, %v", as, err)
 			}
 			if balance, err := state1.GetBalance(address1); err != nil || balance != balance12 {
@@ -674,10 +674,10 @@ func TestLastArchiveBlock(t *testing.T) {
 				require.NoError(t, state2.Close())
 			}()
 
-			if as, err := state2.Exists(address1); err != nil || as != true {
+			if as, err := state.IsEmptyAccount(state2, address1); err != nil || as != false {
 				t.Errorf("invalid account state at the last block: %t, %v", as, err)
 			}
-			if as, err := state2.Exists(address2); err != nil || as != true {
+			if as, err := state.IsEmptyAccount(state2, address2); err != nil || as != false {
 				t.Errorf("invalid account state at the last block: %t, %v", as, err)
 			}
 
@@ -755,9 +755,6 @@ func TestStateRead(t *testing.T) {
 		_ = s.Close()
 	}()
 
-	if state, err := s.Exists(address1); err != nil || state != true {
-		t.Errorf("Unexpected value or err, val: %v != %v, err:  %v", state, true, err)
-	}
 	if balance, err := s.GetBalance(address1); err != nil || balance != balance1 {
 		t.Errorf("Unexpected value or err, val: %v != %v, err:  %v", balance, balance1, err)
 	}
@@ -774,9 +771,6 @@ func TestStateRead(t *testing.T) {
 	as, err := s.GetArchiveState(0)
 	if as == nil || err != nil {
 		t.Fatalf("Unable to get archive state, err: %v", err)
-	}
-	if state, err := as.Exists(address1); err != nil || state != true {
-		t.Errorf("Unexpected value or err, val: %v != %v, err:  %v", state, true, err)
 	}
 	if balance, err := as.GetBalance(address1); err != nil || balance != balance1 {
 		t.Errorf("Unexpected value or err, val: %v != %v, err:  %v", balance, balance1, err)

@@ -315,9 +315,6 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		}
 	}()
 
-	if _, err := state.Exists(common.Address{1}); !errors.Is(err, injectedErr) {
-		t.Errorf("accessing data should fail")
-	}
 	if err := state.DeleteAccount(common.Address{1}); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}
@@ -415,9 +412,6 @@ func TestState_StateModificationsWithoutErrorHaveExpectedEffects(t *testing.T) {
 			if err := state.SetBalance(common.Address{1}, balance); err != nil {
 				t.Errorf("error to set balance: %s", err)
 			}
-			if exists, err := state.Exists(common.Address{1}); err != nil || !exists {
-				t.Errorf("account should exist: %v err: %s", exists, err)
-			}
 			if got, err := state.GetBalance(common.Address{1}); err != nil || balance != got {
 				t.Errorf("wrong balance: %v != %v err: %s", got, balance, err)
 			}
@@ -459,10 +453,6 @@ func TestState_StateModificationsWithoutErrorHaveExpectedEffects(t *testing.T) {
 			if err := state.DeleteAccount(common.Address{1}); err != nil {
 				t.Errorf("error to access data: %s", err)
 			}
-			if exists, err := state.Exists(common.Address{1}); err != nil || exists {
-				t.Errorf("account should not exist: %v err: %s", exists, err)
-			}
-
 			emptyBalance := amount.New()
 			if got, err := state.GetBalance(common.Address{1}); err != nil || got != emptyBalance {
 				t.Errorf("wrong balance: %v != %v err: %s", got, emptyBalance, err)

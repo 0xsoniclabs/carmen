@@ -37,15 +37,6 @@ func TestState_ArchiveState_FailingOperation_InvalidatesArchive(t *testing.T) {
 		setup  func(archive *archive.MockArchive, injectedErr error)
 		action func(stateArchive state.State) error
 	}{
-		"exists": {
-			func(archive *archive.MockArchive, injectedErr error) {
-				archive.EXPECT().Exists(gomock.Any(), gomock.Any()).Return(false, injectedErr)
-			},
-			func(stateArchive state.State) error {
-				_, err := stateArchive.Exists(common.Address{})
-				return err
-			},
-		},
 		"balance": {
 			func(archive *archive.MockArchive, injectedErr error) {
 				archive.EXPECT().GetBalance(gomock.Any(), gomock.Any()).Return(amount.New(), injectedErr)

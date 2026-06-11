@@ -33,7 +33,9 @@ func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	db := NewMockState(ctrl)
-	db.EXPECT().Exists(gomock.Any()).Return(false, nil).AnyTimes()
+	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
+	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
 	db.EXPECT().Check().Return(nil).AnyTimes()
 	state := createStateDBWith(db, 1, true)
 
@@ -50,7 +52,7 @@ func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
 	state.SetCode(common.Address{}, []byte{0x1})
 	state.EndTransaction()
 	snapshotID3 := state.InterTxSnapshot()
-	require.Equal(InterTxSnapshotID(3), snapshotID3)
+	require.Equal(InterTxSnapshotID(2), snapshotID3)
 }
 
 func TestStateDB_RevertToInterTxSnapshot_RecordsErrorIfInvalidSnapshotID(t *testing.T) {
@@ -58,7 +60,9 @@ func TestStateDB_RevertToInterTxSnapshot_RecordsErrorIfInvalidSnapshotID(t *test
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	db := NewMockState(ctrl)
-	db.EXPECT().Exists(gomock.Any()).Return(false, nil).AnyTimes()
+	db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
+	db.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
 	db.EXPECT().Check().Return(nil).AnyTimes()
 	state := createStateDBWith(db, 1, true)
 
@@ -92,7 +96,6 @@ func TestStateDB_EndTransaction_AddsUndoForRestoreWhen(t *testing.T) {
 				db := NewMockState(ctrl)
 				db.EXPECT().Check().Return(nil).AnyTimes()
 				db.EXPECT().Check().Return(nil).AnyTimes()
-				db.EXPECT().Exists(gomock.Any()).Return(true, nil).AnyTimes()
 				db.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
 				db.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{0}, nil).AnyTimes()
 				db.EXPECT().GetCode(gomock.Any()).Return(nil, nil).AnyTimes()
@@ -427,7 +430,6 @@ func NewStateDBContext(t *testing.T) *StateDBContext {
 	state := createStateDBWith(db, 1, true)
 
 	// Set expectation in case values are not cached, i.e. they are untouched.
-	db.EXPECT().Exists(any).Return(true, nil).AnyTimes()
 	db.EXPECT().GetBalance(any).Return(defaultBalance, nil).AnyTimes()
 	db.EXPECT().GetNonce(any).Return(defaultNonce, nil).AnyTimes()
 	db.EXPECT().GetCode(any).Return(defaultCode, nil).AnyTimes()
