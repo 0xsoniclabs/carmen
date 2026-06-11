@@ -374,21 +374,27 @@ func TestState_Apply_DeletesAccounts(t *testing.T) {
 	s, err := NewState(t.TempDir(), backend)
 	require.NoError(err)
 
-	require.True(state.IsEmptyAccount(s, address))
+	isEmpty, err := state.IsEmptyAccount(s, address)
+	require.NoError(err)
+	require.True(isEmpty)
 
 	_, err = s.Apply(1, common.Update{
 		Balances: []common.BalanceUpdate{{Account: address, Balance: amount.New(10)}},
 	})
 	require.NoError(err)
 
-	require.False(state.IsEmptyAccount(s, address))
+	isEmpty, err = state.IsEmptyAccount(s, address)
+	require.NoError(err)
+	require.False(isEmpty)
 
 	_, err = s.Apply(2, common.Update{
 		DeletedAccounts: []common.Address{address},
 	})
 	require.NoError(err)
 
-	require.True(state.IsEmptyAccount(s, address))
+	isEmpty, err = state.IsEmptyAccount(s, address)
+	require.NoError(err)
+	require.True(isEmpty)
 	require.NoError(s.Close())
 }
 

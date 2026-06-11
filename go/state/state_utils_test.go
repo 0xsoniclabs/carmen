@@ -28,7 +28,7 @@ func TestIsEmptyAccount(t *testing.T) {
 			set_expectations: func(s *MockState) {
 				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil)
 				s.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil)
-				s.EXPECT().GetCode(gomock.Any()).Return([]byte{}, nil)
+				s.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil)
 			},
 			expected: true,
 		},
@@ -36,7 +36,7 @@ func TestIsEmptyAccount(t *testing.T) {
 			set_expectations: func(s *MockState) {
 				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(100), nil)
 				s.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil)
-				s.EXPECT().GetCode(gomock.Any()).Return([]byte{}, nil)
+				s.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil)
 			},
 			expected: false,
 		},
@@ -44,7 +44,7 @@ func TestIsEmptyAccount(t *testing.T) {
 			set_expectations: func(s *MockState) {
 				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil)
 				s.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{1}, nil)
-				s.EXPECT().GetCode(gomock.Any()).Return([]byte{}, nil)
+				s.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil)
 			},
 			expected: false,
 		},
@@ -52,7 +52,7 @@ func TestIsEmptyAccount(t *testing.T) {
 			set_expectations: func(s *MockState) {
 				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil)
 				s.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil)
-				s.EXPECT().GetCode(gomock.Any()).Return([]byte{0x60, 0x00}, nil) // PUSH1 0x00
+				s.EXPECT().GetCodeSize(gomock.Any()).Return(2, nil) // PUSH1 0x00
 			},
 			expected: false,
 		},

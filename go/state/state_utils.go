@@ -25,9 +25,9 @@ func IsEmptyAccount(s State, addr common.Address) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	code, err := s.GetCode(addr)
+	code, err := s.GetCodeSize(addr)
 	if err != nil {
 		return false, err
 	}
-	return balance == (amount.Amount{}) && nonce == (common.Nonce{}) && len(code) == 0, nil
+	return balance == (amount.Amount{}) && nonce == (common.Nonce{}) && code == 0, nil
 }
