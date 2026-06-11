@@ -1612,7 +1612,6 @@ func TestStateDB_NoncesCanBeWrittenAndReadWithoutStateAccess(t *testing.T) {
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	// SetNonce creates the account if it does not exist
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
 	var want uint64 = 12
