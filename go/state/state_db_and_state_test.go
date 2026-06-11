@@ -966,9 +966,6 @@ func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
 
 func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *testing.T) {
 	for _, config := range initStates() {
-		if config.config.Schema < 4 {
-			continue
-		}
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
