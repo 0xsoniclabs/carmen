@@ -4949,6 +4949,45 @@ func TestStateDB_EndBlock_ClearsUndoList(t *testing.T) {
 	require.Empty(t, stateDB.undo)
 }
 
+func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
+	testCases := map[string]struct {
+		op func(db StateDB, address common.Address)
+	}{
+		"NonZeroBalance": {op: func(db StateDB, address common.Address) {
+			db.AddBalance(address, amount.New(1))
+		}},
+		"NonZeroNonce": {op: func(db StateDB, address common.Address) {
+			db.SetNonce(address, 1)
+		}},
+		"NonEmptyCode": {op: func(db StateDB, address common.Address) {
+			db.SetCode(address, []byte{1})
+		}},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mock := NewMockState(ctrl)
+			db := CreateStateDBUsing(mock)
+			setExpectationForEmptyAccount(t, mock, address1)
+
+			testCase.op(db, address1)
+
+			require.True(t, db.Exist(address1))
+		})
+	}
+}
+
+func TestStateDB_Exist_ReturnsFalseForEmptyAccount(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	setExpectationForEmptyAccount(t, mock, address1)
+
+	require.False(t, db.Exist(address1))
+}
+
 func setExpectationForEmptyAccount(t *testing.T, mock *MockState, address common.Address) {
 	t.Helper()
 	mock.EXPECT().GetBalance(address).Return(amount.New(), nil)
