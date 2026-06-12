@@ -33,6 +33,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/exp/maps"
 )
@@ -383,7 +384,9 @@ func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 				t.Errorf("archive should be initially empty, got %t, %d", empty, block)
 			}
 
-			archive.Add(1, common.Update{}, nil)
+			if err := archive.Add(1, common.Update{}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
 			block, empty, err = archive.GetBlockHeight()
 			if err != nil {
@@ -393,7 +396,9 @@ func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 				t.Errorf("archive should be have height 1, got %t, %d", empty, block)
 			}
 
-			archive.Add(3, common.Update{}, nil)
+			if err := archive.Add(3, common.Update{}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
 			block, empty, err = archive.GetBlockHeight()
 			if err != nil {
@@ -424,17 +429,21 @@ func TestArchiveTrie_CanHandleMultipleBlocks(t *testing.T) {
 			blc1 := amount.New(1)
 			blc2 := amount.New(2)
 
-			archive.Add(1, common.Update{
+			if err := archive.Add(1, common.Update{
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: blc1},
 				},
-			}, nil)
+			}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
-			archive.Add(3, common.Update{
+			if err := archive.Add(3, common.Update{
 				Balances: []common.BalanceUpdate{
 					{Account: addr1, Balance: blc2},
 				},
-			}, nil)
+			}, nil); err != nil {
+				t.Fatalf("failed to add block: %v", err)
+			}
 
 			want := []amount.Amount{blc0, blc1, blc1, blc2}
 			for i, want := range want {
@@ -1836,8 +1845,8 @@ func TestArchiveTrie_CanLoadRootsFromJunkySource(t *testing.T) {
 
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
-	storeRootsTo(writer, roots)
-	writer.Flush()
+	require.NoError(t, storeRootsTo(writer, roots))
+	require.NoError(t, writer.Flush())
 
 	for _, size := range []int{1, 2, 4, 1024} {
 		reader := utils.NewChunkReader(b.Bytes(), size)
@@ -2518,7 +2527,7 @@ func TestArchiveTrie_createCheckpoint_forwardsErrors(t *testing.T) {
 	tests := map[string]func(archive *ArchiveTrie) error{
 		"failing flush": func(archive *ArchiveTrie) error {
 			// Registering a pre-observed error causes the flush operation to fail.
-			archive.addError(fmt.Errorf("injected error"))
+			_ = archive.addError(fmt.Errorf("injected error"))
 			return nil
 		},
 		"out-of-sync components": func(archive *ArchiveTrie) error {
@@ -3072,7 +3081,7 @@ func TestRootList_LoadRoots_ForwardsIoIssues(t *testing.T) {
 				return err
 			}
 			t.Cleanup(func() {
-				os.Remove(dir)
+				require.NoError(t, os.Remove(dir))
 			})
 			return os.WriteFile(dir, []byte{}, 0700)
 		},
@@ -3505,7 +3514,7 @@ func TestRootList_Restore_FailsIfPendingCheckpointFileCanNotBeRenamed(t *testing
 	if err := os.Chmod(roots.directory, 0500); err != nil {
 		t.Fatalf("failed to make directory read-only: %v", err)
 	}
-	defer os.Chmod(roots.directory, 0700)
+	defer func() { require.NoError(t, os.Chmod(roots.directory, 0700)) }()
 
 	if err := getRootListRestorer(dir).Restore(cp); err == nil {
 		t.Errorf("expected recovery error due to read-only directory")
@@ -3684,7 +3693,7 @@ func BenchmarkArchiveFlush_Roots(b *testing.B) {
 			b.Errorf("failed to close archive: %v", err)
 		}
 	}()
-	archive.Add(1_000_000, common.Update{}, nil)
+	require.NoError(b, archive.Add(1_000_000, common.Update{}, nil))
 	for i := 0; i < b.N; i++ {
 		if err := archive.Flush(); err != nil {
 			b.Fatalf("failed to flush archive: %v", err)

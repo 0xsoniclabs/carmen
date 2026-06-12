@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -184,7 +185,7 @@ func TestCheckpointCoordinator_CreationFailsIfTheProvidedDirectoryLacksWritePerm
 	if err != nil {
 		t.Fatalf("failed to get directory info: %v", err)
 	}
-	defer os.Chmod(dir, info.Mode())
+	defer func() { require.NoError(t, os.Chmod(dir, info.Mode())) }()
 
 	if err := os.Chmod(dir, 0500); err != nil {
 		t.Fatalf("failed to change permissions: %v", err)

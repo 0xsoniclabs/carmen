@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -56,7 +57,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change directory permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(dir, stat.Mode())
+				require.NoError(t, os.Chmod(dir, stat.Mode()))
 			})
 			return dir
 		},
@@ -74,7 +75,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change directory permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(dir, stat.Mode())
+				require.NoError(t, os.Chmod(dir, stat.Mode()))
 			})
 			return dir
 		},
@@ -88,7 +89,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change file permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(file, 0600)
+				require.NoError(t, os.Chmod(file, 0600))
 			})
 			return dir
 		},
@@ -106,7 +107,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 				t.Fatalf("failed to change file permissions: %v", err)
 			}
 			t.Cleanup(func() {
-				os.Chmod(file, 0600)
+				require.NoError(t, os.Chmod(file, 0600))
 			})
 			return dir
 		},
@@ -356,8 +357,8 @@ func TestCodes_Prepare_FailsIfFlushFails(t *testing.T) {
 
 	codes.add([]byte("code1"))
 
-	os.Chmod(codes.file, 0400) // make the file read-only
-	defer os.Chmod(codes.file, 0600)
+	require.NoError(t, os.Chmod(codes.file, 0400)) // make the file read-only
+	defer func() { require.NoError(t, os.Chmod(codes.file, 0600)) }()
 
 	cp1 := checkpoint.Checkpoint(1)
 	if err := codes.Prepare(cp1); err == nil {
@@ -379,7 +380,7 @@ func TestCodes_Commit_HandlesIoIssues(t *testing.T) {
 				return err
 			}
 			t.Cleanup(func() {
-				os.Chmod(subDir, 0700)
+				require.NoError(t, os.Chmod(subDir, 0700))
 			})
 			return nil
 		},
@@ -858,7 +859,7 @@ func TestCodes_readCodesAndSize_PermissionErrorsAreDetected(t *testing.T) {
 	if err := os.Chmod(dir, 0000); err != nil {
 		t.Fatalf("failed to change directory permissions: %v", err)
 	}
-	defer os.Chmod(dir, 0700)
+	defer func() { require.NoError(t, os.Chmod(dir, 0700)) }()
 
 	_, _, err := readCodesAndSize(path)
 	if err == nil {

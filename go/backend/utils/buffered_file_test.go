@@ -13,10 +13,12 @@ package utils
 import (
 	"bytes"
 	"fmt"
-	"go.uber.org/mock/gomock"
-	"golang.org/x/exp/slices"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/exp/slices"
 )
 
 func TestBufferedFile_Open_NonExisting(t *testing.T) {
@@ -450,6 +452,7 @@ func TestBufferedFile_ReadAndWriteCanHandleUnalignedData(t *testing.T) {
 }
 
 func TestBufferedFile_WriteAndReadAddBufferBoundary(t *testing.T) {
+	require := require.New(t)
 	path := t.TempDir() + "/test.dat"
 	file, err := OpenBufferedFile(path)
 	if err != nil {
@@ -457,10 +460,12 @@ func TestBufferedFile_WriteAndReadAddBufferBoundary(t *testing.T) {
 	}
 
 	src := []byte{1, 2, 3, 4, 5}
-	file.WriteAt(src, 5*bufferSize-2)
+	_, err = file.WriteAt(src, 5*bufferSize-2)
+	require.NoError(err)
 
 	dst := []byte{0, 0, 0, 0, 0}
-	file.ReadAt(dst, 5*bufferSize-2)
+	_, err = file.ReadAt(dst, 5*bufferSize-2)
+	require.NoError(err)
 
 	if !bytes.Equal(src, dst) {
 		t.Errorf("failed to read data written across buffer boundary, wanted %v, got %v", src, dst)

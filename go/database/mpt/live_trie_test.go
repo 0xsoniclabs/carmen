@@ -28,6 +28,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLiveTrie_EmptyTrieIsConsistent(t *testing.T) {
@@ -580,8 +581,8 @@ func TestLiveTrie_SameContentProducesSameHash(t *testing.T) {
 
 			info1 := AccountInfo{Nonce: common.ToNonce(1)}
 			info2 := AccountInfo{Nonce: common.ToNonce(2)}
-			trie1.SetAccountInfo(common.Address{1}, info1)
-			trie2.SetAccountInfo(common.Address{2}, info2)
+			require.NoError(t, trie1.SetAccountInfo(common.Address{1}, info1))
+			require.NoError(t, trie2.SetAccountInfo(common.Address{2}, info2))
 
 			hash1, _, err = trie1.UpdateHashes()
 			if err != nil {
@@ -596,8 +597,8 @@ func TestLiveTrie_SameContentProducesSameHash(t *testing.T) {
 			}
 
 			// Update tries to contain same data.
-			trie1.SetAccountInfo(common.Address{2}, info2)
-			trie2.SetAccountInfo(common.Address{1}, info1)
+			require.NoError(t, trie1.SetAccountInfo(common.Address{2}, info2))
+			require.NoError(t, trie2.SetAccountInfo(common.Address{1}, info1))
 
 			hash1, _, err = trie1.UpdateHashes()
 			if err != nil {
@@ -629,8 +630,8 @@ func TestLiveTrie_ChangeInTrieSubstructureUpdatesHash(t *testing.T) {
 
 			info1 := AccountInfo{Nonce: common.ToNonce(1)}
 			info2 := AccountInfo{Nonce: common.ToNonce(2)}
-			trie.SetAccountInfo(common.Address{1}, info1)
-			trie.SetAccountInfo(common.Address{2}, info2)
+			require.NoError(t, trie.SetAccountInfo(common.Address{1}, info1))
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, info2))
 
 			hash1, _, err := trie.UpdateHashes()
 			if err != nil {
@@ -639,7 +640,7 @@ func TestLiveTrie_ChangeInTrieSubstructureUpdatesHash(t *testing.T) {
 
 			// The next update does not change anything in the root node, but the hash should
 			// still be updated.
-			trie.SetAccountInfo(common.Address{1}, info2)
+			require.NoError(t, trie.SetAccountInfo(common.Address{1}, info2))
 
 			hash2, _, err := trie.UpdateHashes()
 			if err != nil {
@@ -942,21 +943,21 @@ func TestLiveTrie_VerificationOfFreshArchivePasses(t *testing.T) {
 			}
 
 			// Add some data.
-			trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1), CodeHash: emptyCodeHash})
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2), CodeHash: emptyCodeHash})
-			trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3), CodeHash: emptyCodeHash})
+			require.NoError(t, trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1), CodeHash: emptyCodeHash}))
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2), CodeHash: emptyCodeHash}))
+			require.NoError(t, trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3), CodeHash: emptyCodeHash}))
 
-			trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1}))
 
-			trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1}))
 
-			trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1}))
 
 			// Delete some data.
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{})
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, AccountInfo{}))
 
 			if err := trie.Close(); err != nil {
 				t.Fatalf("failed to close trie: %v", err)
@@ -979,21 +980,21 @@ func TestLiveTrie_VerificationOfLiveTrieWithMissingFileFails(t *testing.T) {
 			}
 
 			// Add some data.
-			trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1)})
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2)})
-			trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3)})
+			require.NoError(t, trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1)}))
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2)}))
+			require.NoError(t, trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3)}))
 
-			trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1}))
 
-			trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1}))
 
-			trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1}))
 
 			// Delete some data.
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{})
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, AccountInfo{}))
 
 			if err := trie.Close(); err != nil {
 				t.Fatalf("failed to close trie: %v", err)
@@ -1020,21 +1021,21 @@ func TestLiveTrie_VerificationOfLiveTrieWithCorruptedFileFails(t *testing.T) {
 			}
 
 			// Add some data.
-			trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1)})
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2)})
-			trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3)})
+			require.NoError(t, trie.SetAccountInfo(common.Address{1}, AccountInfo{Nonce: common.ToNonce(1)}))
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, AccountInfo{Nonce: common.ToNonce(2)}))
+			require.NoError(t, trie.SetAccountInfo(common.Address{3}, AccountInfo{Nonce: common.ToNonce(3)}))
 
-			trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{1}, common.Key{1}, common.Value{1}))
 
-			trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{2}, common.Key{1}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{2}, common.Key{2}, common.Value{1}))
 
-			trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1})
-			trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1})
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{1}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{2}, common.Value{1}))
+			require.NoError(t, trie.SetValue(common.Address{3}, common.Key{3}, common.Value{1}))
 
 			// Delete some data.
-			trie.SetAccountInfo(common.Address{2}, AccountInfo{})
+			require.NoError(t, trie.SetAccountInfo(common.Address{2}, AccountInfo{}))
 
 			if err := trie.Close(); err != nil {
 				t.Fatalf("failed to close trie: %v", err)

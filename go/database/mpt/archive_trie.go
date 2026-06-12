@@ -508,14 +508,14 @@ func GetCheckpointBlock(dir string) (uint64, error) {
 	return uint64(numRoots - 1), err
 }
 
-func RestoreBlockHeight(directory string, config MptConfig, block uint64) (err error) {
+func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retErr error) {
 
 	// Make sure access to the directory is exclusive.
 	lock, err := LockDirectory(directory)
 	if err != nil {
 		return fmt.Errorf("failed to get exclusive access to directory: %v", err)
 	}
-	defer lock.Release()
+	defer func() { retErr = errors.Join(retErr, lock.Release()) }()
 
 	// Check available block height -- stop recovery if there are not enough blocks.
 	checkpointHeight, err := GetCheckpointBlock(directory)
@@ -532,8 +532,8 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (err e
 	}
 	defer func() {
 		// Only remove dirty flag is the recovery was successful.
-		if err == nil {
-			err = markClean(directory)
+		if retErr == nil {
+			retErr = markClean(directory)
 		}
 	}()
 
@@ -636,7 +636,7 @@ func (l *rootList) append(r Root) {
 	l.roots = append(l.roots, r)
 }
 
-func loadRoots(archiveDirectory string) (*rootList, error) {
+func loadRoots(archiveDirectory string) (_ *rootList, retErr error) {
 	filename := filepath.Join(archiveDirectory, fileNameArchiveRoots)
 	directory := filepath.Join(archiveDirectory, fileNameArchiveRootsCheckpointDirectory)
 
@@ -662,7 +662,7 @@ func loadRoots(archiveDirectory string) (*rootList, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, f.Close()) }()
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err

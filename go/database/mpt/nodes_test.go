@@ -24,6 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -4617,9 +4618,9 @@ func TestAccountNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := AccountNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := AccountNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.storageHashDirty = true
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4638,9 +4639,9 @@ func TestAccountNodeEncoderWithChildHash(t *testing.T) {
 	}
 	encoder := AccountNodeEncoderWithChildHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := AccountNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4662,9 +4663,9 @@ func TestAccountNodeWithPathLengthEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := AccountNodeWithPathLengthEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := AccountNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.storageHashDirty = true
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4696,9 +4697,9 @@ func TestBranchNodeEncoderWithChildHashes(t *testing.T) {
 	}
 	encoder := BranchNodeEncoderWithChildHashes{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := BranchNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4733,9 +4734,9 @@ func TestBranchNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := BranchNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := BranchNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.dirtyHashes = ^uint16(0)
 	node.embeddedChildren = 0
 	if !reflect.DeepEqual(node, recovered) {
@@ -4755,9 +4756,9 @@ func TestExtensionNodeEncoderWithChildHash(t *testing.T) {
 	}
 	encoder := ExtensionNodeEncoderWithChildHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := ExtensionNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4778,9 +4779,9 @@ func TestExtensionNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := ExtensionNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := ExtensionNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.nextHashDirty = true
 	node.nextIsEmbedded = false
 	if !reflect.DeepEqual(node, recovered) {
@@ -4795,9 +4796,9 @@ func TestValueNodeEncoderWithoutNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeEncoderWithoutNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4815,9 +4816,9 @@ func TestValueNodeEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
 	}
@@ -4831,9 +4832,9 @@ func TestValueNodeWithPathLengthEncoderWithoutNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeWithPathLengthEncoderWithoutNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	node.hashStatus = hashStatusUnknown
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
@@ -4852,9 +4853,9 @@ func TestValueNodeWithPathLengthEncoderWithNodeHash(t *testing.T) {
 	}
 	encoder := ValueNodeWithPathLengthEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
-	encoder.Store(buffer, &node)
+	require.NoError(t, encoder.Store(buffer, &node))
 	recovered := ValueNode{}
-	encoder.Load(buffer, &recovered)
+	require.NoError(t, encoder.Load(buffer, &recovered))
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
 	}
@@ -6425,6 +6426,40 @@ func TestTransitions_StatesAreDumpable(t *testing.T) {
 	}
 }
 
+func TestTransitions_DumpPropagatesWriterErrors(t *testing.T) {
+	injectedErr := errors.New("injected write error")
+	writer := &errWriter{err: injectedErr}
+
+	tests := map[string]NodeDesc{
+		"Empty":               Empty{},
+		"Value":               &Value{key: common.Key{1}, value: common.Value{2}},
+		"Branch":              &Branch{children: Children{1: &Value{key: common.Key{1}, value: common.Value{2}}}},
+		"Extension":           &Extension{path: []Nibble{1, 2}, next: &Value{key: common.Key{1}, value: common.Value{2}}},
+		"Account":             &Account{address: common.Address{1}, info: AccountInfo{Nonce: common.ToNonce(1)}, storage: &Value{key: common.Key{1}, value: common.Value{2}}},
+		"AccountEmptyStorage": &Account{address: common.Address{1}, info: AccountInfo{Nonce: common.ToNonce(1)}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ctxt := newNiceNodeContext(t, ctrl)
+
+			ref, node := ctxt.Build(tc)
+			handle := node.GetViewHandle()
+			err := handle.Get().Dump(writer, ctxt, &ref, "")
+			handle.Release()
+
+			require.Error(t, err)
+			require.ErrorIs(t, err, injectedErr)
+		})
+	}
+}
+
+// errWriter is an io.Writer that always returns an error.
+type errWriter struct{ err error }
+
+func (w *errWriter) Write([]byte) (int, error) { return 0, w.err }
+
 func TestTransitions_MutableTransitionHaveExpectedEffect(t *testing.T) {
 	testTransitions_MutableTransitionHaveExpectedEffect(t, S4LiveConfig)
 }
@@ -6521,7 +6556,7 @@ func markModifiedAsDirty(t *testing.T, ctxt *nodeContext, before, after NodeRefe
 	}
 
 	handle, _ := ctxt.getViewAccess(&after)
-	handle.Get().Visit(ctxt, &after, 0, WriteAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	abort, err := handle.Get().Visit(ctxt, &after, 0, WriteAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		// If the current node is not equivalent to a node that was present before,
 		// then it is a new node and should have a dirty hash.
 		if !isReused(n) {
@@ -6575,6 +6610,8 @@ func markModifiedAsDirty(t *testing.T, ctxt *nodeContext, before, after NodeRefe
 		}
 		return VisitResponseContinue
 	}))
+	require.False(t, abort)
+	require.NoError(t, err)
 	handle.Release()
 }
 
@@ -7066,7 +7103,7 @@ func markReusedAsFrozen(t *testing.T, ctxt *nodeContext, before, after NodeRefer
 	}
 
 	handle, _ := ctxt.getViewAccess(&after)
-	handle.Get().Visit(ctxt, &after, 0, WriteAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
+	abort, err := handle.Get().Visit(ctxt, &after, 0, WriteAccess{}, MakeVisitor(func(n Node, i NodeInfo) VisitResponse {
 		// Update the wanted node expected to be frozen.
 		if isReused(n) {
 			n.MarkFrozen()
@@ -7087,6 +7124,8 @@ func markReusedAsFrozen(t *testing.T, ctxt *nodeContext, before, after NodeRefer
 		}
 		return VisitResponseContinue
 	}))
+	require.False(t, abort)
+	require.NoError(t, err)
 	handle.Release()
 }
 
@@ -8268,7 +8307,7 @@ func (c *nodeContext) Check(t *testing.T, ref NodeReference) {
 		handle := c.tryGetNode(t, ref.Id())
 		defer handle.Release()
 		out := &bytes.Buffer{}
-		handle.Get().Dump(out, c, &ref, "")
+		_ = handle.Get().Dump(out, c, &ref, "")
 		t.Fatalf("inconsistent node structure encountered:\n%v\n%s", err, out.String())
 	}
 }
@@ -8276,7 +8315,7 @@ func (c *nodeContext) Check(t *testing.T, ref NodeReference) {
 func (c *nodeContext) Print(ref NodeReference) string {
 	out := &bytes.Buffer{}
 	handle, _ := c.getReadAccess(&ref)
-	handle.Get().Dump(out, c, &ref, "")
+	_ = handle.Get().Dump(out, c, &ref, "")
 	handle.Release()
 	return out.String()
 }
@@ -8284,7 +8323,7 @@ func (c *nodeContext) Print(ref NodeReference) string {
 func (c *nodeContext) Freeze(ref NodeReference) {
 	handle, _ := c.getWriteAccess(&ref)
 	defer handle.Release()
-	handle.Get().Freeze(c, handle)
+	_ = handle.Get().Freeze(c, handle)
 }
 
 func (c *nodeContext) tryGetNode(t *testing.T, id NodeId) shared.ReadHandle[Node] {
@@ -8322,10 +8361,10 @@ func (c *nodeContext) ExpectEqualTries(t *testing.T, want, got NodeReference) {
 	}
 	if len(diffs) > 0 {
 		print := &bytes.Buffer{}
-		wantHandle.Get().Dump(print, c, &want, "")
+		_ = wantHandle.Get().Dump(print, c, &want, "")
 		t.Errorf("Want:\n%s", print.String())
 		have := &bytes.Buffer{}
-		gotHandle.Get().Dump(have, c, &got, "")
+		_ = gotHandle.Get().Dump(have, c, &got, "")
 		t.Errorf("Have:\n%s", have.String())
 		t.Errorf("unexpected resulting node structure")
 		t.Errorf("differences:\n")

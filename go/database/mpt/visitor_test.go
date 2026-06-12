@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNodeStatistics_CollectTrieStatisticsWorks(t *testing.T) {
@@ -21,7 +22,7 @@ func TestNodeStatistics_CollectTrieStatisticsWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create empty trie: %v", err)
 	}
-	defer trie.Close()
+	defer func() { require.NoError(t, trie.Close()) }()
 
 	stats, err := GetTrieNodeStatistics(trie)
 	if err != nil {
@@ -31,9 +32,9 @@ func TestNodeStatistics_CollectTrieStatisticsWorks(t *testing.T) {
 		t.Errorf("invalid stats for empty trie: %v", stats)
 	}
 
-	trie.SetAccountInfo(common.Address{}, AccountInfo{Nonce: common.ToNonce(12)})
-	trie.SetValue(common.Address{}, common.Key{1}, common.Value{1})
-	trie.SetValue(common.Address{}, common.Key{2}, common.Value{2})
+	require.NoError(t, trie.SetAccountInfo(common.Address{}, AccountInfo{Nonce: common.ToNonce(12)}))
+	require.NoError(t, trie.SetValue(common.Address{}, common.Key{1}, common.Value{1}))
+	require.NoError(t, trie.SetValue(common.Address{}, common.Key{2}, common.Value{2}))
 
 	stats, err = GetTrieNodeStatistics(trie)
 	if err != nil {
@@ -67,7 +68,7 @@ func TestNodeStatistics_CollectForestStatisticsWorks(t *testing.T) {
 		t.Fatalf("failed to re-open empty archive: %v", err)
 	}
 
-	archive.Add(2, common.Update{
+	require.NoError(t, archive.Add(2, common.Update{
 		Nonces: []common.NonceUpdate{
 			{Account: common.Address{1}, Nonce: common.ToNonce(12)},
 		},
@@ -75,7 +76,7 @@ func TestNodeStatistics_CollectForestStatisticsWorks(t *testing.T) {
 			{Account: common.Address{1}, Key: common.Key{1}, Value: common.Value{1}},
 			{Account: common.Address{1}, Key: common.Key{2}, Value: common.Value{2}},
 		},
-	}, nil)
+	}, nil))
 
 	if err := archive.Close(); err != nil {
 		t.Fatalf("failed to close archive: %v", err)

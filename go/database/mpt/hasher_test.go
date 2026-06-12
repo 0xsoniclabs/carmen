@@ -380,8 +380,14 @@ func TestEthereumLikeHasher_BranchNode_RecomputesEmbeddedFlagsForHashInNodeMode(
 	// In those cases, embedded flags in branch nodes have not been updated
 	// if the hashes of the child nodes have been valid.
 
-	key1 := hexToKey("c76547ce3912f8c25a9943819c2992169865dfd500bed5213c8a92ceff5db5e3")
-	key2 := hexToKey("2968f9295ca3ab4960ae553a18f47567e56f2777ad762ee1d639421728926a37")
+	key1, err := hexToKey("c76547ce3912f8c25a9943819c2992169865dfd500bed5213c8a92ceff5db5e3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key2, err := hexToKey("2968f9295ca3ab4960ae553a18f47567e56f2777ad762ee1d639421728926a37")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	val1 := common.Value{}
 	val1[len(val1)-1] = 1
@@ -405,7 +411,7 @@ func TestEthereumLikeHasher_BranchNode_RecomputesEmbeddedFlagsForHashInNodeMode(
 	}
 
 	hasher := makeEthereumLikeHasher()
-	_, _, err := hasher.updateHashes(&ref, ctxt)
+	_, _, err = hasher.updateHashes(&ref, ctxt)
 	if err != nil {
 		t.Fatalf("failed to compute hash for node: %v", err)
 	}

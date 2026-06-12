@@ -16,6 +16,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -28,7 +29,7 @@ const (
 func BenchmarkAdding(b *testing.B) {
 	for _, factory := range getArchiveFactories(b) {
 		a := factory.getArchive(b.TempDir())
-		defer a.Close()
+		defer func() { require.NoError(b, a.Close()) }()
 
 		// initialize
 		var update common.Update

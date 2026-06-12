@@ -28,6 +28,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
 	"github.com/0xsoniclabs/carmen/go/state/gostate"
+	"github.com/stretchr/testify/require"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
@@ -2188,13 +2189,15 @@ func TestDatabase_ActiveHeadQueryBlockDataBaseClose(t *testing.T) {
 
 	queryStarted := make(chan bool)
 	done := &atomic.Bool{}
-	go db.QueryHeadState(func(QueryContext) {
-		defer wg.Done()
-		queryStarted <- true
-		// keep this alive to block the closing of the database
-		time.Sleep(time.Second)
-		done.Store(true)
-	})
+	go func() {
+		require.NoError(t, db.QueryHeadState(func(QueryContext) {
+			defer wg.Done()
+			queryStarted <- true
+			// keep this alive to block the closing of the database
+			time.Sleep(time.Second)
+			done.Store(true)
+		}))
+	}()
 
 	go func() {
 		defer wg.Done()

@@ -73,7 +73,7 @@ func VerifyMptState(ctx context.Context, directory string, config MptConfig, roo
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { res = errors.Join(res, source.Close()) }()
 
 	err = verifyContractCodes(directory, source, observer)
 	if err != nil {
@@ -109,7 +109,7 @@ func verifyFileForest(ctx context.Context, directory string, config MptConfig, r
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { res = errors.Join(res, source.Close()) }()
 	return verifyForest(directory, config, roots, source, observer)
 }
 
@@ -687,7 +687,7 @@ type verificationNodeSource struct {
 	numberOfNodesIterated uint64
 }
 
-func openVerificationNodeSource(ctx context.Context, directory string, config MptConfig) (*verificationNodeSource, error) {
+func openVerificationNodeSource(ctx context.Context, directory string, config MptConfig) (_ *verificationNodeSource, retErr error) {
 	lock, err := openStateDirectory(directory)
 	if err != nil {
 		return nil, err
@@ -701,7 +701,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 	defer func() {
 		if !success {
-			branches.Close()
+			retErr = errors.Join(retErr, branches.Close())
 		}
 	}()
 	extensions, err := file.OpenStock[uint64, ExtensionNode](extensionEncoder, directory+"/extensions")
@@ -710,7 +710,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 	defer func() {
 		if !success {
-			extensions.Close()
+			retErr = errors.Join(retErr, extensions.Close())
 		}
 	}()
 	accounts, err := file.OpenStock[uint64, AccountNode](accountEncoder, directory+"/accounts")
@@ -719,7 +719,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 	defer func() {
 		if !success {
-			accounts.Close()
+			retErr = errors.Join(retErr, accounts.Close())
 		}
 	}()
 	values, err := file.OpenStock[uint64, ValueNode](valueEncoder, directory+"/values")
@@ -728,7 +728,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 	defer func() {
 		if !success {
-			values.Close()
+			retErr = errors.Join(retErr, values.Close())
 		}
 	}()
 	accountIds, err := accounts.GetIds()

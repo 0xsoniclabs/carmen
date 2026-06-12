@@ -184,7 +184,6 @@ func verifyStockFilesInternal[I stock.Index, V any](encoder stock.ValueEncoder[V
 	if err != nil {
 		return meta, err
 	}
-	defer freelist.Close()
 	if err := verifyStackInternal[I](meta, freelist); err != nil {
 		return meta, err
 	}
@@ -192,7 +191,7 @@ func verifyStockFilesInternal[I stock.Index, V any](encoder stock.ValueEncoder[V
 	return meta, nil
 }
 
-func verifyStackInternal[I stock.Index](meta metadata, freelistfile utils.OsFile) error {
+func verifyStackInternal[I stock.Index](meta metadata, freelistfile utils.OsFile) (retErr error) {
 	// Check size of the free-list file.
 	{
 		indexSize := int(unsafe.Sizeof(I(0)))
@@ -211,7 +210,7 @@ func verifyStackInternal[I stock.Index](meta metadata, freelistfile utils.OsFile
 		if err != nil {
 			return err
 		}
-		defer stack.Close()
+		defer func() { retErr = errors.Join(retErr, stack.Close()) }()
 		list, err := stack.GetAll()
 		if err != nil {
 			return err

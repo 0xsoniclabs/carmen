@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -332,7 +333,7 @@ func TestBlockContext_PanickingCommitsReleaseQueryLock(t *testing.T) {
 		}
 	}()
 
-	context.Commit()
+	require.NoError(t, context.Commit())
 }
 
 func initBlockContexts() map[string]func(t *testing.T) blockContext {

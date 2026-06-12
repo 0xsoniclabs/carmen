@@ -36,14 +36,22 @@ func Keccak256ForKey(key Key) Hash {
 
 var keccakHasherPool = sync.Pool{New: func() any { return sha3.NewLegacyKeccak256() }}
 
-func keccak256_Go(data []byte) Hash {
+func keccak256_Go(data []byte) (Hash, error) {
 	hasher := keccakHasherPool.Get().(keccakHasher)
 	hasher.Reset()
-	hasher.Write(data)
+	_, err := hasher.Write(data)
+	if err != nil {
+		keccakHasherPool.Put(hasher)
+		return Hash{}, err
+	}
 	var res Hash
-	hasher.Read(res[:])
+	_, err = hasher.Read(res[:])
+	if err != nil {
+		keccakHasherPool.Put(hasher)
+		return Hash{}, err
+	}
 	keccakHasherPool.Put(hasher)
-	return res
+	return res, nil
 }
 
 type keccakHasher interface {
@@ -52,7 +60,12 @@ type keccakHasher interface {
 	Read(out []byte) (int, error)
 }
 
-var emptyKeccak256Hash = keccak256_Go([]byte{})
+var emptyKeccak256Hash Hash
+
+func init() {
+	// keccak256 of empty input cannot fail: the sha3 hasher always accepts Write/Read on valid buffers.
+	emptyKeccak256Hash, _ = keccak256_Go([]byte{})
+}
 
 func keccak256_C(data []byte) Hash {
 	if len(data) == 0 {

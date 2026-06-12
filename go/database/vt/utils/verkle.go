@@ -123,8 +123,9 @@ func GetTreeKey(address []byte, treeIndex *uint256.Int, subIndex byte) []byte {
 
 	// 32-byte address, interpreted as two little endian
 	// 16-byte numbers.
-	verkle.FromLEBytes(&poly[1], address[:16])
-	verkle.FromLEBytes(&poly[2], address[16:])
+	// FromLEBytes cannot fail: 16-byte inputs are always smaller than the 256-bit field modulus.
+	_ = verkle.FromLEBytes(&poly[1], address[:16])
+	_ = verkle.FromLEBytes(&poly[2], address[16:])
 
 	// treeIndex must be interpreted as a 32-byte aligned little-endian integer.
 	// e.g: if treeIndex is 0xAABBCC, we need the byte representation to be 0xCCBBAA00...00.
@@ -161,8 +162,9 @@ func GetTreeKeyWithEvaluatedAddress(evaluated *verkle.Point, treeIndex *uint256.
 	for i := 0; i < len(treeIndex); i++ {
 		binary.LittleEndian.PutUint64(index[i*8:(i+1)*8], treeIndex[i])
 	}
-	verkle.FromLEBytes(&poly[3], index[:16])
-	verkle.FromLEBytes(&poly[4], index[16:])
+	// FromLEBytes cannot fail: 16-byte inputs are always smaller than the 256-bit field modulus.
+	_ = verkle.FromLEBytes(&poly[3], index[:16])
+	_ = verkle.FromLEBytes(&poly[4], index[16:])
 
 	cfg := verkle.GetConfig()
 	ret := cfg.CommitToPoly(poly[:], 0)
@@ -287,8 +289,9 @@ func evaluateAddressPoint(address []byte) *verkle.Point {
 
 	// 32-byte address, interpreted as two little endian
 	// 16-byte numbers.
-	verkle.FromLEBytes(&poly[1], address[:16])
-	verkle.FromLEBytes(&poly[2], address[16:])
+	// FromLEBytes cannot fail: 16-byte inputs are always smaller than the 256-bit field modulus.
+	_ = verkle.FromLEBytes(&poly[1], address[:16])
+	_ = verkle.FromLEBytes(&poly[2], address[16:])
 
 	cfg := verkle.GetConfig()
 	ret := cfg.CommitToPoly(poly[:], 0)

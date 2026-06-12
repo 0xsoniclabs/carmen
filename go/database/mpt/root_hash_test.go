@@ -21,6 +21,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 )
 
 // The reference hashes in this file have been generated using Geth's MPT.
@@ -60,8 +61,8 @@ func TestS5RootHash_SingleAccount(t *testing.T) {
 	}()
 
 	balance := amount.New(12)
-	state.SetNonce(common.Address{1}, common.ToNonce(10))
-	state.SetBalance(common.Address{1}, balance)
+	require.NoError(t, state.SetNonce(common.Address{1}, common.ToNonce(10)))
+	require.NoError(t, state.SetBalance(common.Address{1}, balance))
 	hash, err := state.GetHash()
 	if err != nil {
 		t.Fatalf("failed to get hash for empty state: %v", err)
@@ -86,9 +87,9 @@ func TestS5RootHash_SingleAccountWithSingleValue(t *testing.T) {
 	}()
 
 	balance := amount.New(12)
-	state.SetNonce(common.Address{1}, common.ToNonce(10))
-	state.SetBalance(common.Address{1}, balance)
-	state.SetStorage(common.Address{1}, common.Key{1}, common.Value{2})
+	require.NoError(t, state.SetNonce(common.Address{1}, common.ToNonce(10)))
+	require.NoError(t, state.SetBalance(common.Address{1}, balance))
+	require.NoError(t, state.SetStorage(common.Address{1}, common.Key{1}, common.Value{2}))
 	hash, err := state.GetHash()
 	if err != nil {
 		t.Fatalf("failed to get hash for empty state: %v", err)
@@ -113,8 +114,8 @@ func TestS5RootHash_TwoAccounts(t *testing.T) {
 	}()
 
 	balance := amount.New(12)
-	state.SetNonce(common.Address{1}, common.ToNonce(10))
-	state.SetBalance(common.Address{2}, balance)
+	require.NoError(t, state.SetNonce(common.Address{1}, common.ToNonce(10)))
+	require.NoError(t, state.SetBalance(common.Address{2}, balance))
 	hash, err := state.GetHash()
 	if err != nil {
 		t.Fatalf("failed to get hash for empty state: %v", err)
@@ -139,13 +140,13 @@ func TestS5RootHash_TwoAccountsWithValues(t *testing.T) {
 	}()
 
 	balance := amount.New(12)
-	state.SetNonce(common.Address{1}, common.ToNonce(10))
-	state.trie.SetValue(common.Address{1}, common.Key{1}, common.Value{0, 0, 1})
-	state.trie.SetValue(common.Address{1}, common.Key{2}, common.Value{2})
+	require.NoError(t, state.SetNonce(common.Address{1}, common.ToNonce(10)))
+	require.NoError(t, state.trie.SetValue(common.Address{1}, common.Key{1}, common.Value{0, 0, 1}))
+	require.NoError(t, state.trie.SetValue(common.Address{1}, common.Key{2}, common.Value{2}))
 
-	state.SetBalance(common.Address{2}, balance)
-	state.trie.SetValue(common.Address{2}, common.Key{1}, common.Value{0, 0, 1})
-	state.trie.SetValue(common.Address{2}, common.Key{2}, common.Value{2})
+	require.NoError(t, state.SetBalance(common.Address{2}, balance))
+	require.NoError(t, state.trie.SetValue(common.Address{2}, common.Key{1}, common.Value{0, 0, 1}))
+	require.NoError(t, state.trie.SetValue(common.Address{2}, common.Key{2}, common.Value{2}))
 	hash, err := state.GetHash()
 	if err != nil {
 		t.Fatalf("failed to get hash for empty state: %v", err)
@@ -177,8 +178,8 @@ func TestS5RootHash_TwoAccountsWithExtensionNodeWithEvenLength(t *testing.T) {
 	}()
 
 	balance := amount.New(12)
-	state.SetNonce(addr1, common.ToNonce(10))
-	state.SetBalance(addr2, balance)
+	require.NoError(t, state.SetNonce(addr1, common.ToNonce(10)))
+	require.NoError(t, state.SetBalance(addr2, balance))
 	hash, err := state.GetHash()
 	if err != nil {
 		t.Fatalf("failed to get hash for empty state: %v", err)
@@ -210,8 +211,8 @@ func TestS5RootHash_TwoAccountsWithExtensionNodeWithOddLength(t *testing.T) {
 	}()
 
 	balance := amount.New(12)
-	state.SetNonce(addr1, common.ToNonce(10))
-	state.SetBalance(addr2, balance)
+	require.NoError(t, state.SetNonce(addr1, common.ToNonce(10)))
+	require.NoError(t, state.SetBalance(addr2, balance))
 	hash, err := state.GetHash()
 	if err != nil {
 		t.Fatalf("failed to get hash for empty state: %v", err)
@@ -372,8 +373,8 @@ func TestHashing_S5EmbeddedValuesAreHandledCorrectly(t *testing.T) {
 	// These keys have a common hash prefix of 4 bytes. Thus, there are only 28 bytes
 	// to be encoded in value nodes if they are stored in a branch node, causing the
 	// values to be small enough to be embedded.
-	key1 := hexToKey("c76547ce3912f8c25a9943819c2992169865dfd500bed5213c8a92ceff5db5e3")
-	key2 := hexToKey("2968f9295ca3ab4960ae553a18f47567e56f2777ad762ee1d639421728926a37")
+	key1, _ := hexToKey("c76547ce3912f8c25a9943819c2992169865dfd500bed5213c8a92ceff5db5e3")
+	key2, _ := hexToKey("2968f9295ca3ab4960ae553a18f47567e56f2777ad762ee1d639421728926a37")
 
 	hash1 := common.Keccak256ForKey(key1)
 	hash2 := common.Keccak256ForKey(key2)
@@ -401,9 +402,9 @@ func TestHashing_S5EmbeddedValuesAreHandledCorrectly(t *testing.T) {
 		}
 
 		addr := common.Address{}
-		state.SetNonce(addr, common.Nonce{1})
-		state.SetStorage(addr, key1, val1)
-		state.SetStorage(addr, key2, val1)
+		require.NoError(t, state.SetNonce(addr, common.Nonce{1}))
+		require.NoError(t, state.SetStorage(addr, key1, val1))
+		require.NoError(t, state.SetStorage(addr, key2, val1))
 
 		hash, _, err := state.UpdateHashes()
 		if err != nil {
@@ -434,7 +435,7 @@ func TestHashing_S5EmbeddedValuesAreHandledCorrectly(t *testing.T) {
 		// Only one value is updated, the other remains untouched. The bug was
 		// that the untouched value was incorrectly considered non-embedded as a
 		// side-effect.
-		state.SetStorage(addr, key1, val2)
+		require.NoError(t, state.SetStorage(addr, key1, val2))
 
 		hash, _, err = state.UpdateHashes()
 		if err != nil {
@@ -453,8 +454,8 @@ func TestHashing_S5EmbeddedValuesAreHandledCorrectly(t *testing.T) {
 	}
 }
 
-func hexToKey(s string) common.Key {
+func hexToKey(s string) (common.Key, error) {
 	var key common.Key
-	hex.Decode(key[:], []byte(s))
-	return key
+	_, err := hex.Decode(key[:], []byte(s))
+	return key, err
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/memory"
+	"github.com/stretchr/testify/require"
 )
 
 var configs = []stock.NamedStockFactory{
@@ -59,7 +60,7 @@ func testCanBeAccessedConcurrently(t *testing.T, factory stock.NamedStockFactory
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 
 	var wg sync.WaitGroup
 	var errors [N]error

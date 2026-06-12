@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -27,7 +28,7 @@ func TestWriteBuffer_CanBeFlushedWhenEmpty(t *testing.T) {
 	sink := NewMockNodeSink(ctrl)
 
 	buffer := MakeWriteBuffer(sink)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	if err := buffer.Flush(); err != nil {
 		t.Errorf("failed to flush buffer: %v", err)
@@ -45,7 +46,7 @@ func TestWriteBuffer_CanFlushASingleElement(t *testing.T) {
 	view.Release()
 
 	buffer := MakeWriteBuffer(sink)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	buffer.Add(id, node)
 	if err := buffer.Flush(); err != nil {
@@ -58,8 +59,8 @@ func TestWriteBuffer_CanBeClosedMultipleTimes(t *testing.T) {
 	sink := NewMockNodeSink(ctrl)
 
 	buffer := MakeWriteBuffer(sink)
-	buffer.Close()
-	buffer.Close()
+	require.NoError(t, buffer.Close())
+	require.NoError(t, buffer.Close())
 }
 
 func TestWriteBuffer_EnqueuedElementCanBeCanceled(t *testing.T) {
@@ -73,7 +74,7 @@ func TestWriteBuffer_EnqueuedElementCanBeCanceled(t *testing.T) {
 	sink.EXPECT().Write(id, gomock.Any()).MaxTimes(1)
 
 	buffer := MakeWriteBuffer(sink)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	buffer.Add(id, node)
 
@@ -98,7 +99,7 @@ func TestWriteBuffer_CanFlushLargeNumberOfElements(t *testing.T) {
 	}
 
 	buffer := makeWriteBuffer(sink, N/10)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	// Send in N nodes to be written to the sink.
 	for i := 0; i < N; i++ {
@@ -116,7 +117,7 @@ func TestWriteBuffer_AllQueuedEntriesArePresentUntilWritten(t *testing.T) {
 
 	N := 1000
 	buffer := makeWriteBuffer(sink, N/10).(*writeBuffer)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	enqueued := map[NodeId]bool{}
 	enqueuedLock := sync.Mutex{}
@@ -169,7 +170,7 @@ func TestWriteBuffer_CheckThatLockedNodesAreWaitedFor(t *testing.T) {
 	view2.Release()
 
 	buffer := makeWriteBuffer(sink, 100)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	write := value2.GetWriteHandle()
 	done := false
@@ -202,7 +203,7 @@ func TestWriteBuffer_AFailedFlushIsReported(t *testing.T) {
 	view.Release()
 
 	buffer := MakeWriteBuffer(sink)
-	defer buffer.Close()
+	defer func() { require.Error(t, buffer.Close()) }()
 
 	buffer.Add(id, node)
 	if got := buffer.Flush(); !errors.Is(got, err) {
@@ -223,7 +224,7 @@ func TestWriteBuffer_ElementsCanBeAddedInParallel(t *testing.T) {
 	}
 
 	buffer := makeWriteBuffer(sink, N/10)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	// Send in N nodes in parallel.
 	var wg sync.WaitGroup
@@ -253,7 +254,7 @@ func TestWriteBuffer_ElementsCanBeAddedAndCanceledInParallel(t *testing.T) {
 	sink.EXPECT().Write(gomock.Any(), gomock.Any()).AnyTimes()
 
 	buffer := makeWriteBuffer(sink, N/10)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	// Send in N nodes in parallel.
 	var wg sync.WaitGroup
@@ -292,7 +293,7 @@ func TestWriteBuffer_FlushedElementsAreMarkedAsClean(t *testing.T) {
 	view.Release()
 
 	buffer := MakeWriteBuffer(sink)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	buffer.Add(id, node)
 	if err := buffer.Flush(); err != nil {
@@ -313,7 +314,7 @@ func TestWriteBuffer_CleanNodesAreNotWritten(t *testing.T) {
 	// Note: no write to the sink is expected.
 
 	buffer := MakeWriteBuffer(sink)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	buffer.Add(id, node)
 	if err := buffer.Flush(); err != nil {
@@ -326,7 +327,7 @@ func TestWriteBuffer_ZeroCap(t *testing.T) {
 	sink := NewMockNodeSink(ctrl)
 
 	buffer := makeWriteBuffer(sink, 0)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	if got, want := buffer.(*writeBuffer).capacity, 1; got != want {
 		t.Errorf("default capacity does not match: %d != %d", got, want)
@@ -338,7 +339,7 @@ func TestWriteBuffer_contains(t *testing.T) {
 	sink := NewMockNodeSink(ctrl)
 
 	buffer := makeWriteBuffer(sink, 0)
-	defer buffer.Close()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	buffer.Add(BranchId(123), nil)
 	if got, want := buffer.(*writeBuffer).contains(BranchId(123)), true; got != want {

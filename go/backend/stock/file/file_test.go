@@ -24,6 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -573,7 +574,7 @@ func TestFile_SetValue_FailingEncoder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create stock: %v", err)
 	}
-	defer s.Close()
+	defer func() { require.NoError(t, s.Close()) }()
 	id, err := s.New()
 	if err != nil {
 		t.Fatalf("cannot generate ID: %s", err)
@@ -599,7 +600,7 @@ func TestFile_GetValue_FailingEncoder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create stock: %v", err)
 	}
-	defer s.Close()
+	defer func() { require.NoError(t, s.Close()) }()
 
 	id, err := s.New()
 	if err != nil {
@@ -705,7 +706,7 @@ func TestStock_Commit_FailsOnIoIssues(t *testing.T) {
 				t.Fatalf("prepare should succeed, got %v", err)
 			}
 
-			modify(t, dir)
+			require.NoError(t, modify(t, dir))
 
 			if s.Commit(checkpoint.Checkpoint(1)) == nil {
 				t.Errorf("commit should fail")
@@ -745,7 +746,7 @@ func TestStock_Abort_FailsOnIoIssues(t *testing.T) {
 				t.Fatalf("prepare should succeed, got %v", err)
 			}
 
-			modify(t, dir)
+			require.NoError(t, modify(t, dir))
 
 			if s.Abort(checkpoint.Checkpoint(1)) == nil {
 				t.Errorf("abort should fail")
@@ -1076,7 +1077,7 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 				t.Fatalf("failed to checkpoint and close stock: %v", err)
 			}
 
-			modify(t, dir)
+			require.NoError(t, modify(t, dir))
 
 			if err := GetRestorer(dir).Restore(checkpoint); err == nil {
 				t.Errorf("restoration should fail")
@@ -1085,7 +1086,7 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 	}
 }
 
-func copyDirectory(src, dst string) error {
+func copyDirectory(src, dst string) (retErr error) {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -1102,12 +1103,12 @@ func copyDirectory(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer srcFile.Close()
+		defer func() { retErr = errors.Join(retErr, srcFile.Close()) }()
 		dstFile, err := os.Create(dstPath)
 		if err != nil {
 			return err
 		}
-		defer dstFile.Close()
+		defer func() { retErr = errors.Join(retErr, dstFile.Close()) }()
 		_, err = io.Copy(dstFile, srcFile)
 		return err
 	})
@@ -1180,7 +1181,7 @@ func BenchmarkFileStock_Get(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to open stock")
 	}
-	defer stock.Close()
+	defer func() { require.NoError(b, stock.Close()) }()
 
 	id, err := stock.New()
 	if err != nil {
@@ -1203,7 +1204,7 @@ func BenchmarkFileStock_Set(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to open stock")
 	}
-	defer stock.Close()
+	defer func() { require.NoError(b, stock.Close()) }()
 
 	id, err := stock.New()
 	if err != nil {
@@ -1231,7 +1232,7 @@ func BenchmarkFileStock_Commit(b *testing.B) {
 			b.Fatalf("failed to set value in stock")
 		}
 	}
-	defer stock.Close()
+	defer func() { require.NoError(b, stock.Close()) }()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

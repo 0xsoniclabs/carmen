@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/stretchr/testify/require"
 )
 
 type IntEncoder struct{}
@@ -79,7 +80,7 @@ func testNewCreatesFreshIndexValues(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 	index1, err := stock.New()
 	if err != nil {
 		t.Fatalf("failed to create new element: %v", err)
@@ -99,7 +100,7 @@ func testLookUpsRetrieveTheSameValue(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 	index1, err := stock.New()
 	if err != nil {
 		t.Fatalf("failed to create new element: %v", err)
@@ -138,7 +139,7 @@ func testDeletedElementsAreReused(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 
 	seen := map[int]bool{}
 	for i := 0; i < 1_000_000; i++ {
@@ -162,7 +163,7 @@ func testReusedElementsAreCleared(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 
 	seen := map[int]bool{}
 	for i := 0; i < 1_000_000; i++ {
@@ -190,7 +191,7 @@ func testLargeNumberOfElements(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 	indexes := map[int]int{}
 	for i := 0; i < N; i++ {
 		index, err := stock.New()
@@ -219,7 +220,7 @@ func testProvidesMemoryFootprint(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 	if _, err := stock.New(); err != nil {
 		t.Fatalf("failed to insert single element into empty stock: %v", err)
 	}
@@ -238,7 +239,7 @@ func testCreatesMissingDirectories(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 	if _, err := os.Stat(directory); err != nil {
 		t.Errorf("failed to create output directory: %v", err)
 	}
@@ -249,7 +250,7 @@ func testCanBeFlushed(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 	if err := stock.Flush(); err != nil {
 		t.Fatalf("failed to flush empty stock: %v", err)
 	}
@@ -266,7 +267,6 @@ func testCanBeClosed(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
 	if _, err := stock.New(); err != nil {
 		t.Fatalf("failed to insert single element into empty stock: %v", err)
 	}
@@ -281,7 +281,7 @@ func testCanBeClosedAndReopened(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 
 	// The first element shall be a deleted element.
 	key1, err := stock.New()
@@ -348,7 +348,7 @@ func testGetIdsProducesAllIdsInTheStock(t *testing.T, factory NamedStockFactory)
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 
 	const N = 100
 	ids := map[int]struct{}{}
@@ -398,7 +398,7 @@ func testDeleteIndexOutOfRange(t *testing.T, factory NamedStockFactory) {
 	if err != nil {
 		t.Fatalf("failed to create empty stock: %v", err)
 	}
-	defer stock.Close()
+	defer func() { require.NoError(t, stock.Close()) }()
 
 	if err := stock.Delete(-1); err != nil {
 		t.Errorf("deleting negative index should be no-op")
