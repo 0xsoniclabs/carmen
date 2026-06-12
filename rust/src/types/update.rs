@@ -53,7 +53,6 @@ pub struct SlotUpdate {
 /// that happened in a single block.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Update<'d> {
-    pub deleted_accounts: &'d [Address],
     pub balances: &'d [BalanceUpdate],
     pub codes: Vec<CodeUpdate<'d>>,
     pub nonces: &'d [NonceUpdate],
@@ -67,9 +66,9 @@ const VERSION_0: u8 = 0;
 impl<'d> Update<'d> {
     /// Parses an update from its encoded form.
     pub fn from_encoded(mut bytes: &'d [u8]) -> BTResult<Self, String> {
-        if bytes.len() < 1 + 5 * 4 {
+        if bytes.len() < 1 + 4 * 4 {
             return Err(format!(
-                "encoded update has length {}, but minimum length is 1 + 5 * 4 = 21",
+                "encoded update has length {}, but minimum length is 1 + 4 * 4 = 17",
                 bytes.len()
             )
             .into());
@@ -82,16 +81,11 @@ impl<'d> Update<'d> {
             return Err(format!("invalid version number: {version}").into());
         }
 
-        let deleted_accounts_len = u32::from_be_bytes(read_array(bytes)?) as usize;
         let balances_len = u32::from_be_bytes(read_array(bytes)?) as usize;
         let codes_len = u32::from_be_bytes(read_array(bytes)?) as usize;
         let nonces_len = u32::from_be_bytes(read_array(bytes)?) as usize;
         let slots_len = u32::from_be_bytes(read_array(bytes)?) as usize;
 
-        let deleted_accounts = transmute_ref!(read_slice_of_arrays::<{ size_of::<Address>() }>(
-            bytes,
-            deleted_accounts_len
-        )?);
         let balances = transmute_ref!(read_slice_of_arrays::<{ size_of::<BalanceUpdate>() }>(
             bytes,
             balances_len
@@ -111,7 +105,6 @@ impl<'d> Update<'d> {
         )?);
 
         Ok(Self {
-            deleted_accounts,
             balances,
             codes,
             nonces,
@@ -214,7 +207,6 @@ mod tests {
     #[test]
     fn update_from_encoded_can_decode_empty_update() {
         let update = Update {
-            deleted_accounts: &[],
             balances: &[],
             codes: Vec::new(),
             nonces: &[],
@@ -223,7 +215,6 @@ mod tests {
 
         let mut encoded_update = Vec::new();
         encoded_update.push(VERSION_0);
-        encoded_update.extend_from_slice(&(update.deleted_accounts.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.balances.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.codes.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.nonces.len() as u32).to_be_bytes());
@@ -236,7 +227,6 @@ mod tests {
     #[test]
     fn update_from_encoded_can_decode_non_empty_update() {
         let update = Update {
-            deleted_accounts: &[[1; 20], [2; 20]],
             balances: &[
                 BalanceUpdate {
                     addr: [5; 20],
@@ -283,13 +273,11 @@ mod tests {
 
         let mut encoded_update = Vec::new();
         encoded_update.push(VERSION_0);
-        encoded_update.extend_from_slice(&(update.deleted_accounts.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.balances.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.codes.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.nonces.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.slots.len() as u32).to_be_bytes());
 
-        encoded_update.extend_from_slice(update.deleted_accounts.concat().as_slice());
         encoded_update.extend_from_slice(
             update
                 .balances
@@ -337,7 +325,6 @@ mod tests {
     #[test]
     fn update_from_encoded_returns_error_for_invalid_version() {
         let update = Update {
-            deleted_accounts: &[],
             balances: &[],
             codes: Vec::new(),
             nonces: &[],
@@ -346,7 +333,6 @@ mod tests {
 
         let mut encoded_update = Vec::new();
         encoded_update.push(1); // Invalid version
-        encoded_update.extend_from_slice(&(update.deleted_accounts.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.balances.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.codes.len() as u32).to_be_bytes());
         encoded_update.extend_from_slice(&(update.nonces.len() as u32).to_be_bytes());
@@ -364,7 +350,6 @@ mod tests {
     #[test]
     fn update_from_encoded_returns_error_when_buffer_too_short() {
         let update = Update {
-            deleted_accounts: &[[1; 20], [2; 20]],
             balances: &[
                 BalanceUpdate {
                     addr: [5; 20],
@@ -414,10 +399,6 @@ mod tests {
             (|encoded_update: &mut Vec<u8>, _update| encoded_update.push(VERSION_0))
                 as fn(&mut Vec<u8>, &Update<'_>),
             |encoded_update: &mut Vec<u8>, update| {
-                encoded_update
-                    .extend_from_slice(&(update.deleted_accounts.len() as u32).to_be_bytes());
-            },
-            |encoded_update: &mut Vec<u8>, update| {
                 encoded_update.extend_from_slice(&(update.balances.len() as u32).to_be_bytes());
             },
             |encoded_update: &mut Vec<u8>, update| {
@@ -428,9 +409,6 @@ mod tests {
             },
             |encoded_update: &mut Vec<u8>, update| {
                 encoded_update.extend_from_slice(&(update.slots.len() as u32).to_be_bytes());
-            },
-            |encoded_update: &mut Vec<u8>, update| {
-                encoded_update.extend_from_slice(update.deleted_accounts.concat().as_slice());
             },
             |encoded_update: &mut Vec<u8>, update| {
                 encoded_update.extend_from_slice(

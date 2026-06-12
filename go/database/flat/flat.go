@@ -214,10 +214,6 @@ func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
 
-	for _, address := range data.DeletedAccounts {
-		delete(s.accounts, address)
-	}
-
 	for _, update := range data.Nonces {
 		data := s.accounts[update.Account]
 		data.nonce = update.Nonce

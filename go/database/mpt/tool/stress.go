@@ -244,10 +244,8 @@ func (s *stressTestState) AddBlock(rand *rand.Rand) error {
 		switch c := rand.Float32(); {
 		case c < 0.65:
 			err = s.addSlot()
-		case c < 0.995:
-			err = s.updateSlot()
 		default:
-			err = s.deleteAccount()
+			err = s.updateSlot()
 		}
 		if err != nil {
 			return err
@@ -331,19 +329,6 @@ func (s *stressTestState) updateSlot() error {
 		return fmt.Errorf("failed to set value: %w", err)
 	}
 	storage[keyIndex] = newValue
-	return nil
-}
-
-func (s *stressTestState) deleteAccount() error {
-	if len(s.state) == 0 {
-		return nil
-	}
-	addrIndex := s.getRandomAccountIndex()
-	addr := intToAddress(addrIndex)
-	if err := s.db.DeleteAccount(addr); err != nil {
-		return fmt.Errorf("failed to remove account: %w", err)
-	}
-	delete(s.state, addrIndex)
 	return nil
 }
 

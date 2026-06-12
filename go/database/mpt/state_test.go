@@ -315,9 +315,6 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		}
 	}()
 
-	if err := state.DeleteAccount(common.Address{1}); !errors.Is(err, injectedErr) {
-		t.Errorf("accessing data should fail")
-	}
 	if _, err := state.GetBalance(common.Address{1}); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}
@@ -448,35 +445,6 @@ func TestState_StateModificationsWithoutErrorHaveExpectedEffects(t *testing.T) {
 			}
 			if got, err := state.GetCodeHash(common.Address{1}); err != nil || got != common.Keccak256(code) {
 				t.Errorf("wrong code hash: %v != %v err: %s", got, common.Keccak256(code), err)
-			}
-
-			if err := state.DeleteAccount(common.Address{1}); err != nil {
-				t.Errorf("error to access data: %s", err)
-			}
-			emptyBalance := amount.New()
-			if got, err := state.GetBalance(common.Address{1}); err != nil || got != emptyBalance {
-				t.Errorf("wrong balance: %v != %v err: %s", got, emptyBalance, err)
-			}
-			var emptyNonce common.Nonce
-			if got, err := state.GetNonce(common.Address{1}); err != nil || got != emptyNonce {
-				t.Errorf("wrong nonce: %v != %v err: %s", got, emptyNonce, err)
-			}
-			var emptyValue common.Value
-			if got, err := state.GetStorage(common.Address{1}, common.Key{1}); err != nil || got != emptyValue {
-				t.Errorf("wrong value: %v != %v err: %s", got, emptyValue, err)
-			}
-			if got, err := state.GetCode(common.Address{1}); err != nil || got != nil {
-				t.Errorf("wrong code: %v != nil, err: %s", got, err)
-			}
-			if got, err := state.GetCodeSize(common.Address{1}); err != nil || got != 0 {
-				t.Errorf("wrong code size: %v != 0, err: %s", got, err)
-			}
-			if got, err := state.GetCodeHash(common.Address{1}); err != nil || got != emptyCodeHash {
-				t.Errorf("wrong code hash: %v != %v err: %s", got, emptyCodeHash, err)
-			}
-			// set non-existing empty code is noop
-			if err := state.SetCode(common.Address{1}, make([]byte, 0)); err != nil {
-				t.Errorf("error to set code: %s", err)
 			}
 
 			if _, err := state.GetHash(); err != nil {

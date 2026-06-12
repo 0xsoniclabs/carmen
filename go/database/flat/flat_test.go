@@ -363,41 +363,6 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 	}
 }
 
-func TestState_Apply_DeletesAccounts(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	backend := state.NewMockState(ctrl)
-	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
-	backend.EXPECT().Close().Return(nil)
-
-	address := common.Address{0x01}
-	s, err := NewState(t.TempDir(), backend)
-	require.NoError(err)
-
-	isEmpty, err := state.IsEmptyAccount(s, address)
-	require.NoError(err)
-	require.True(isEmpty)
-
-	_, err = s.Apply(1, common.Update{
-		Balances: []common.BalanceUpdate{{Account: address, Balance: amount.New(10)}},
-	})
-	require.NoError(err)
-
-	isEmpty, err = state.IsEmptyAccount(s, address)
-	require.NoError(err)
-	require.False(isEmpty)
-
-	_, err = s.Apply(2, common.Update{
-		DeletedAccounts: []common.Address{address},
-	})
-	require.NoError(err)
-
-	isEmpty, err = state.IsEmptyAccount(s, address)
-	require.NoError(err)
-	require.True(isEmpty)
-	require.NoError(s.Close())
-}
-
 func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)

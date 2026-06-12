@@ -21,6 +21,13 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+var emptyAccountDiff = &AccountDiff{
+	Balance: &amount.Amount{},
+	Nonce:   &common.Nonce{},
+	Code:    &common.Hash{},
+	// Storage: map[common.Key]common.Value{},
+}
+
 // TODO [cleanup]:
 //  - rewrite to use a node source instead of an archive (using node test infrastructure)
 
@@ -113,9 +120,7 @@ func getDiffScenarios() map[string]diffScenario {
 		},
 		after: &Empty{},
 		diff: Diff{
-			common.Address{0x12}: &AccountDiff{
-				Reset: true,
-			},
+			common.Address{0x12}: emptyAccountDiff,
 		},
 	}
 
@@ -141,7 +146,6 @@ func getDiffScenarios() map[string]diffScenario {
 		},
 		diff: Diff{
 			common.Address{0x12}: &AccountDiff{
-				Reset:   false,
 				Balance: &avadb,
 				Nonce:   &common.Nonce{32, 42},
 				Code:    &common.Hash{53, 63},
@@ -175,10 +179,14 @@ func getDiffScenarios() map[string]diffScenario {
 		},
 		diff: Diff{
 			common.Address{0x12}: &AccountDiff{
-				Reset: true,
+				Balance: &amount.Amount{},
+				Nonce:   &common.Nonce{},
+				Code:    &common.Hash{},
+				Storage: map[common.Key]common.Value{
+					{0x12}: {},
+				},
 			},
 			common.Address{0x14}: &AccountDiff{
-				Reset:   false,
 				Balance: &avdadb,
 				Nonce:   &common.Nonce{32, 42},
 				Code:    &common.Hash{53, 63},
@@ -248,8 +256,8 @@ func getDiffScenarios() map[string]diffScenario {
 		}},
 		after: &Empty{},
 		diff: Diff{
-			common.Address{0x12}: &AccountDiff{Reset: true},
-			common.Address{0x27}: &AccountDiff{Reset: true},
+			common.Address{0x12}: emptyAccountDiff,
+			common.Address{0x27}: emptyAccountDiff,
 		},
 	}
 
@@ -269,7 +277,7 @@ func getDiffScenarios() map[string]diffScenario {
 			info:    AccountInfo{Nonce: common.Nonce{0x18}},
 		},
 		diff: Diff{
-			common.Address{0x27}: &AccountDiff{Reset: true},
+			common.Address{0x27}: emptyAccountDiff,
 		},
 	}
 
@@ -303,7 +311,7 @@ func getDiffScenarios() map[string]diffScenario {
 			},
 		}},
 		diff: Diff{
-			common.Address{0x12}: &AccountDiff{Reset: true},
+			common.Address{0x12}: emptyAccountDiff,
 			common.Address{0x31}: &AccountDiff{
 				Nonce: &common.Nonce{0x42},
 			},
@@ -338,7 +346,7 @@ func getDiffScenarios() map[string]diffScenario {
 			common.Address{0x17}: &AccountDiff{
 				Nonce: &common.Nonce{0x22},
 			},
-			common.Address{0x27}: &AccountDiff{Reset: true},
+			common.Address{0x27}: emptyAccountDiff,
 		},
 	}
 

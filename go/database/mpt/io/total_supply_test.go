@@ -13,12 +13,13 @@ package io
 import (
 	"bytes"
 	"context"
-	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"log"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
 
 func TestIO_GetLiveDbTotalSupply(t *testing.T) {
@@ -54,7 +55,7 @@ func TestIO_GetArchiveTotalSupply(t *testing.T) {
 	var buf bytes.Buffer
 	logger := Log{logger: log.New(&buf, "", 0), start: time.Now()}
 
-	err := CalculateArchiveTotalSupply(context.Background(), &logger, sourceDir, 5)
+	err := CalculateArchiveTotalSupply(context.Background(), &logger, sourceDir, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
