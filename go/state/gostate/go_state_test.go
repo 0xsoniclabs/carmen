@@ -79,33 +79,33 @@ func initGoStates() []namedStateConfig {
 func TestMissingKeys(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
-			state, err := config.createState(t.TempDir())
+			s, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer func() { require.NoError(t, state.Close()) }()
+			defer func() { require.NoError(t, s.Close()) }()
 
-			accountState, err := state.Exists(address1)
-			if err != nil || accountState != false {
+			accountState, err := state.IsEmptyAccount(s, address1)
+			if err != nil || accountState != true {
 				t.Errorf("Account must not exist in the initial state, but it exists. err: %s", err)
 			}
-			balance, err := state.GetBalance(address1)
+			balance, err := s.GetBalance(address1)
 			if err != nil || !balance.IsZero() {
 				t.Errorf("Balance must be empty. It is: %s, err: %s", balance, err)
 			}
-			nonce, err := state.GetNonce(address1)
+			nonce, err := s.GetNonce(address1)
 			if (err != nil || nonce != common.Nonce{}) {
 				t.Errorf("Nonce must be empty. It is: %s, err: %s", nonce, err)
 			}
-			value, err := state.GetStorage(address1, key1)
+			value, err := s.GetStorage(address1, key1)
 			if (err != nil || value != common.Value{}) {
 				t.Errorf("Value must be empty. It is: %s, err: %s", value, err)
 			}
-			code, err := state.GetCode(address1)
+			code, err := s.GetCode(address1)
 			if err != nil || len(code) != 0 {
 				t.Errorf("Value must be empty. It is: %s, err: %s", value, err)
 			}
-			size, err := state.GetCodeSize(address1)
+			size, err := s.GetCodeSize(address1)
 			if err != nil || size != 0 {
 				t.Errorf("Value must be 0. It is: %d, err: %s", value, err)
 			}
@@ -116,14 +116,14 @@ func TestMissingKeys(t *testing.T) {
 func TestBasicOperations(t *testing.T) {
 	for _, config := range initGoStates() {
 		t.Run(config.name(), func(t *testing.T) {
-			state, err := config.createState(t.TempDir())
+			s, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer func() { require.NoError(t, state.Close()) }()
+			defer func() { require.NoError(t, s.Close()) }()
 
 			// fill-in values
-			_, err = state.Apply(12, common.Update{
+			_, err = s.Apply(12, common.Update{
 				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
 				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
 				Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{67}}},
@@ -134,22 +134,19 @@ func TestBasicOperations(t *testing.T) {
 			}
 
 			// fetch values
-			if val, err := state.Exists(address1); err != nil || val != true {
-				t.Errorf("Created account does not exists: Val: %t, Err: %v", val, err)
-			}
-			if val, err := state.GetNonce(address1); (err != nil || val != common.Nonce{123}) {
+			if val, err := s.GetNonce(address1); (err != nil || val != common.Nonce{123}) {
 				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
 			}
-			if val, err := state.GetBalance(address2); err != nil || val != amount.New(45) {
+			if val, err := s.GetBalance(address2); err != nil || val != amount.New(45) {
 				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
 			}
-			if val, err := state.GetStorage(address1, key1); (err != nil || val != common.Value{67}) {
+			if val, err := s.GetStorage(address1, key1); (err != nil || val != common.Value{67}) {
 				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
 			}
-			if val, err := state.GetCode(address1); err != nil || !bytes.Equal(val, []byte{0x12, 0x34}) {
+			if val, err := s.GetCode(address1); err != nil || !bytes.Equal(val, []byte{0x12, 0x34}) {
 				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
 			}
-			if val, err := state.GetCodeSize(address1); err != nil || val != 2 {
+			if val, err := s.GetCodeSize(address1); err != nil || val != 2 {
 				t.Errorf("Invalid code size or error returned: Val: %d, Err: %v", val, err)
 			}
 
@@ -161,16 +158,16 @@ func TestBasicOperations(t *testing.T) {
 			}
 
 			// delete account
-			_, err = state.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
+			_, err = s.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
 			if err != nil {
 				t.Errorf("Error: %s", err)
 			}
-			if val, err := state.Exists(address1); err != nil || val != false {
+			if val, err := state.IsEmptyAccount(s, address1); err != nil || val != true {
 				t.Errorf("Deleted account is not deleted: Val: %t, Err: %s", val, err)
 			}
 
 			// fetch wrong combinations
-			if val, err := state.GetStorage(address1, key1); (err != nil || val != common.Value{}) {
+			if val, err := s.GetStorage(address1, key1); (err != nil || val != common.Value{}) {
 				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
 			}
 		})
@@ -184,11 +181,11 @@ func TestDeletingAccounts(t *testing.T) {
 				t.Skipf("scheme %d not supported", config.config.Schema)
 			}
 
-			state, err := config.createState(t.TempDir())
+			s, err := config.createState(t.TempDir())
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			defer func() { require.NoError(t, state.Close()) }()
+			defer func() { require.NoError(t, s.Close()) }()
 
 			// fill-in values
 			update := common.Update{
@@ -196,12 +193,12 @@ func TestDeletingAccounts(t *testing.T) {
 				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
 				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			}
-			if _, err := state.Apply(1, update); err != nil {
+			if _, err := s.Apply(1, update); err != nil {
 				t.Errorf("failed to update state: %v", err)
 			}
 
 			// fetch values
-			if val, err := state.Exists(address1); err != nil || val != true {
+			if val, err := state.IsEmptyAccount(s, address1); err != nil || val != false {
 				t.Errorf("Created account does not exists: Val: %t, Err: %v", val, err)
 			}
 
@@ -209,10 +206,10 @@ func TestDeletingAccounts(t *testing.T) {
 			update = common.Update{
 				DeletedAccounts: []common.Address{address1},
 			}
-			if _, err := state.Apply(2, update); err != nil {
+			if _, err := s.Apply(2, update); err != nil {
 				t.Errorf("failed to apply update: %v", err)
 			}
-			if val, err := state.Exists(address1); err != nil || val != false {
+			if val, err := state.IsEmptyAccount(s, address1); err != nil || val != true {
 				t.Errorf("Deleted account is not deleted: Val: %t, Err: %s", val, err)
 			}
 		})
@@ -407,8 +404,6 @@ func TestStateDB_AddBlock_Errors_Propagated_MultipleStateInstances(t *testing.T)
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 
-	liveDB.EXPECT().Exists(gomock.Any()).AnyTimes()
-
 	injectedErr := fmt.Errorf("injectedError")
 	// The First attempt to call Apply() will fail
 	// while next calls will not happen at all.
@@ -417,6 +412,9 @@ func TestStateDB_AddBlock_Errors_Propagated_MultipleStateInstances(t *testing.T)
 	// will not be executed because the
 	// state is already corrupted.
 	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
+	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
+	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -438,8 +436,10 @@ func TestStateDB_AddBlock_Errors_Propagated_From_Archive_MultipleStateInstances(
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
 
-	liveDB.EXPECT().Exists(gomock.Any()).AnyTimes()
 	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any())
+	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
+	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
+	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
 
 	archiveDB.EXPECT().Flush().AnyTimes()
 
@@ -478,12 +478,13 @@ func TestStateDB_AddBlock_CannotCallRepeatedly_OnError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 
-	liveDB.EXPECT().Exists(gomock.Any()).AnyTimes()
-
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
 	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
+	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
+	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -500,7 +501,6 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 
-	liveDB.EXPECT().Exists(gomock.Any()).AnyTimes()
 	liveDB.EXPECT().Flush().AnyTimes()
 	liveDB.EXPECT().Close().AnyTimes()
 
@@ -562,8 +562,6 @@ func TestState_Flush_Or_Close_Corrupted_Archive_Detected(t *testing.T) {
 func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
-
-	liveDB.EXPECT().Exists(gomock.Any()).AnyTimes()
 
 	injectedErr := fmt.Errorf("injectedError")
 
@@ -751,7 +749,7 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 	key := common.Key{0xB}
 	injectedErr := fmt.Errorf("injectedError")
 
-	const loops = 11
+	const loops = 10
 	for i := 0; i < loops; i++ {
 		i := i
 		t.Run(fmt.Sprintf("operation_%d", i), func(t *testing.T) {
@@ -761,17 +759,16 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			liveDB := state.NewMockLiveDB(ctrl)
-			liveDB.EXPECT().Exists(addr).Return(false, results[0]).AnyTimes()
-			liveDB.EXPECT().GetBalance(addr).Return(amount.New(), results[1]).AnyTimes()
-			liveDB.EXPECT().GetNonce(addr).Return(common.Nonce{}, results[2]).AnyTimes()
-			liveDB.EXPECT().GetStorage(addr, key).Return(common.Value{}, results[3]).AnyTimes()
-			liveDB.EXPECT().GetCode(addr).Return(make([]byte, 0), results[4]).AnyTimes()
-			liveDB.EXPECT().GetCodeSize(addr).Return(0, results[5]).AnyTimes()
-			liveDB.EXPECT().GetCodeHash(addr).Return(common.Hash{}, results[6]).AnyTimes()
-			liveDB.EXPECT().GetHash().Return(common.Hash{}, results[7]).AnyTimes()
-			liveDB.EXPECT().HasEmptyStorage(gomock.Any()).Return(false, results[8]).AnyTimes()
-			liveDB.EXPECT().Flush().Return(results[9]).AnyTimes()
-			liveDB.EXPECT().Close().Return(results[10]).AnyTimes()
+			liveDB.EXPECT().GetBalance(addr).Return(amount.New(), results[0]).AnyTimes()
+			liveDB.EXPECT().GetNonce(addr).Return(common.Nonce{}, results[1]).AnyTimes()
+			liveDB.EXPECT().GetStorage(addr, key).Return(common.Value{}, results[2]).AnyTimes()
+			liveDB.EXPECT().GetCode(addr).Return(make([]byte, 0), results[3]).AnyTimes()
+			liveDB.EXPECT().GetCodeSize(addr).Return(0, results[4]).AnyTimes()
+			liveDB.EXPECT().GetCodeHash(addr).Return(common.Hash{}, results[5]).AnyTimes()
+			liveDB.EXPECT().GetHash().Return(common.Hash{}, results[6]).AnyTimes()
+			liveDB.EXPECT().HasEmptyStorage(gomock.Any()).Return(false, results[7]).AnyTimes()
+			liveDB.EXPECT().Flush().Return(results[8]).AnyTimes()
+			liveDB.EXPECT().Close().Return(results[9]).AnyTimes()
 
 			db := newGoState(liveDB, nil, []func(){})
 			// calls must succeed until the first failure,
@@ -779,42 +776,38 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 			var shouldFail bool
 			for i := 0; i < 2; i++ {
 				shouldFail = shouldFail || errors.Is(results[0], injectedErr)
-				if _, err := db.Exists(addr); shouldFail && !errors.Is(err, injectedErr) {
-					t.Errorf("operation should fail")
-				}
-				shouldFail = shouldFail || errors.Is(results[1], injectedErr)
 				if _, err := db.GetBalance(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[2], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[1], injectedErr)
 				if _, err := db.GetNonce(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[3], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[2], injectedErr)
 				if _, err := db.GetStorage(addr, key); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[4], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[3], injectedErr)
 				if _, err := db.GetCode(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[5], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[4], injectedErr)
 				if _, err := db.GetCodeSize(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[6], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[5], injectedErr)
 				if _, err := db.GetCodeHash(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[7], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[6], injectedErr)
 				if _, err := db.GetCommitment().Await().Get(); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[8], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[7], injectedErr)
 				if _, err := db.HasEmptyStorage(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}
-				shouldFail = shouldFail || errors.Is(results[9], injectedErr)
+				shouldFail = shouldFail || errors.Is(results[8], injectedErr)
 				if err := db.Flush(); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
 				}

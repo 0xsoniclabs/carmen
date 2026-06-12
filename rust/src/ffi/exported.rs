@@ -389,58 +389,6 @@ unsafe extern "C" fn Carmen_Rust_GetArchiveBlockHeight(
     }
 }
 
-/// Checks if the given account exists.
-///
-/// # Safety
-/// - `state` must be a valid pointer to a `StateWrapper` object which holds a pointer to a `dyn
-///   CarmenState` object
-/// - `state` must be valid for reads for the duration of the call
-/// - `state` must not be mutated for the duration of the call
-/// - `state.inner` must be a valid pointer to a `dyn CarmenState`
-/// - `state.inner` must be valid for reads for the duration of the lifetime of `token`
-/// - `state.inner` must not be mutated for the duration of the lifetime of `token`
-/// - `addr` must be a valid pointer to a byte array of length 20
-/// - `addr` must be valid for reads for the duration of the call
-/// - `addr` must not be mutated for the duration of the call
-/// - `out_state` must be a valid pointer to a `u8`
-/// - `out_state` must be valid for writes for the duration of the call
-#[unsafe(no_mangle)]
-unsafe extern "C" fn Carmen_Rust_AccountExists(
-    state: *mut c_void,
-    addr: *mut c_void,
-    out_state: *mut c_void,
-) -> bindings::Result {
-    let token = LifetimeToken;
-    if state.is_null() || addr.is_null() || out_state.is_null() {
-        return bindings::Result_kResult_InvalidArguments;
-    }
-    // SAFETY:
-    // - `state` is a valid pointer to a `StateWrapper` object (precondition)
-    // - `state` is valid for reads for the duration of the call (precondition)
-    // - `state` is not mutated for the duration of the call (precondition)
-    let state = unsafe { ref_from_ptr_scoped(state as *const StateWrapper, &token) };
-    // SAFETY:
-    // - `state.inner` is a valid pointer to a `dyn CarmenState` (precondition)
-    // - `state.inner` is valid for reads for the duration of the lifetime of `token` (precondition)
-    // - `state.inner` is not mutated for the duration of the lifetime of `token`(precondition)
-    let state = unsafe { state.inner_to_ref_scoped(&token) };
-    // SAFETY:
-    // - `addr` is a valid pointer to a byte array of length 20 (precondition)
-    // - `addr` is valid for reads for the duration of the call (precondition)
-    // - `addr` is not mutated for the duration of the call (precondition)
-    let addr = unsafe { ref_from_ptr_scoped(addr as *mut Address, &token) };
-    match state.account_exists(addr) {
-        Ok(exists) => {
-            // SAFETY:
-            // - `out_state` is a valid pointer to a `u8` (precondition)
-            // - `out_state` is valid for writes for the duration of the call (precondition)
-            unsafe { std::ptr::write(out_state as *mut u8, exists as u8) };
-            bindings::Result_kResult_Success
-        }
-        Err(err) => err.into(),
-    }
-}
-
 /// Retrieves the balance of the given account.
 ///
 /// # Safety
@@ -1093,10 +1041,6 @@ const COMPILE_TIME_CHECK_THAT_SIGNATURES_MATCH_SIGNATURES_GENERATED_FROM_C_HEADE
         bindings::Carmen_Rust_ReleaseState,
     );
     assert_same_signature(
-        Carmen_Rust_AccountExists as unsafe extern "C" fn(_, _, _) -> _,
-        bindings::Carmen_Rust_AccountExists,
-    );
-    assert_same_signature(
         Carmen_Rust_GetBalance as unsafe extern "C" fn(_, _, _) -> _,
         bindings::Carmen_Rust_GetBalance,
     );
@@ -1468,91 +1412,6 @@ mod tests {
     fn carmen_rust_release_state_checks_that_arguments_are_valid() {
         let result = unsafe { Carmen_Rust_ReleaseState(std::ptr::null_mut()) };
         assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-    }
-
-    #[test]
-    fn carmen_rust_account_exists_returns_value_from_carmen_db() {
-        let addr = [1; 20];
-        let expected_account_state = true;
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_account_exists()
-                    .with(eq(addr))
-                    .returning(move |_| Ok(expected_account_state));
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_state = 0u8;
-                unsafe {
-                    Carmen_Rust_AccountExists(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut out_state as *mut u8 as *mut c_void,
-                    );
-                }
-                assert_eq!(out_state, expected_account_state as u8);
-            },
-        );
-    }
-
-    #[test]
-    fn carmen_rust_account_exists_checks_that_arguments_are_valid() {
-        let addr = [1u8; 20];
-        let mut out_state = 0u8;
-        let result = unsafe {
-            Carmen_Rust_AccountExists(
-                std::ptr::null_mut(), // invalid
-                &addr as *const Address as *mut c_void,
-                &mut out_state as *mut u8 as *mut c_void,
-            )
-        };
-        assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-
-        let result = unsafe {
-            Carmen_Rust_AccountExists(
-                &mut 0u8 as *mut u8 as *mut c_void,
-                std::ptr::null_mut(), // invalid
-                &mut out_state as *mut u8 as *mut c_void,
-            )
-        };
-        assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-
-        let result = unsafe {
-            Carmen_Rust_AccountExists(
-                &mut 0u8 as *mut u8 as *mut c_void,
-                &addr as *const Address as *mut c_void,
-                std::ptr::null_mut(), // invalid
-            )
-        };
-        assert_eq!(result, bindings::Result_kResult_InvalidArguments);
-    }
-
-    #[test]
-    fn carmen_rust_account_exists_returns_error_as_int() {
-        let addr = [1; 20];
-        create_state_then_call_fn_then_release_state(
-            move |mock_db| {
-                mock_db
-                    .expect_account_exists()
-                    .with(eq(addr))
-                    .returning(|_| {
-                        Err(crate::Error::UnsupportedOperation("some error".into()).into())
-                    });
-            },
-            move |state| {
-                let mut addr = addr;
-                let mut out_state = 0u8;
-                let result = unsafe {
-                    Carmen_Rust_AccountExists(
-                        state,
-                        &mut addr as *mut Address as *mut c_void,
-                        &mut out_state as *mut u8 as *mut c_void,
-                    )
-                };
-                assert_eq!(result, bindings::Result_kResult_UnsupportedOperation);
-            },
-        );
     }
 
     #[test]

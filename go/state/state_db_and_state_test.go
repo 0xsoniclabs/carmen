@@ -843,8 +843,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.EndTransaction()
 			statedb.EndBlock(1)
 
-			exists, err := s.Exists(address1)
-			require.NoError(err)
+			exists := statedb.Exist(address1)
 			require.False(exists)
 
 			// Case 2: deleted account because of suicide
@@ -855,8 +854,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.EndTransaction()
 			statedb.EndBlock(3)
 
-			exists, err = s.Exists(address1)
-			require.NoError(err)
+			exists = statedb.Exist(address1)
 			require.False(exists)
 		})
 	}
@@ -968,9 +966,6 @@ func TestStateDB_AccountsAreCreatedImplicitlyWhenSettingState(t *testing.T) {
 
 func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *testing.T) {
 	for _, config := range initStates() {
-		if config.config.Schema < 4 {
-			continue
-		}
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
@@ -987,6 +982,57 @@ func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *test
 			})
 			require.Equal(explicitCreation, implicitCreation)
 			require.Equal(explicitCreation, emptyState)
+		})
+	}
+}
+
+func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
+	ops := map[string]func(s state.StateDB){
+		"Balance": func(s state.StateDB) {
+			s.AddBalance(address1, amount.New(10))
+		},
+		"Nonce": func(s state.StateDB) {
+			s.SetNonce(address1, 10)
+		},
+		"Code": func(s state.StateDB) {
+			s.SetCode(address1, []byte{0xAC})
+		},
+	}
+	for _, config := range initStates() {
+		for name, op := range ops {
+			t.Run(config.name()+"_"+name, func(t *testing.T) {
+				t.Parallel()
+				require := require.New(t)
+				dir := t.TempDir()
+				s, err := config.createState(dir)
+				require.NoError(err)
+				defer func() {
+					require.NoError(s.Close())
+				}()
+
+				db := state.CreateStateDBUsing(s)
+				db.BeginBlock()
+				db.BeginTransaction()
+				op(db)
+				db.EndTransaction()
+				db.EndBlock(0)
+
+				db.BeginBlock()
+				db.BeginTransaction()
+				require.True(db.Exist(address1))
+				db.EndTransaction()
+				db.EndBlock(1)
+			})
+		}
+	}
+}
+
+func TestStateDB_Exist_ReturnsFalseForEmptyAccount(t *testing.T) {
+	for _, config := range initStates() {
+		t.Run(config.name(), func(t *testing.T) {
+			executeOpOnCleanStateDB(t, config, func(sd state.StateDB) {
+				require.False(t, sd.Exist(address1))
+			})
 		})
 	}
 }

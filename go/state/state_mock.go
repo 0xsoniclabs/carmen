@@ -109,21 +109,6 @@ func (mr *MockStateMockRecorder) CreateWitnessProof(address any, keys ...any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateWitnessProof", reflect.TypeOf((*MockState)(nil).CreateWitnessProof), varargs...)
 }
 
-// Exists mocks base method.
-func (m *MockState) Exists(address common.Address) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Exists", address)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Exists indicates an expected call of Exists.
-func (mr *MockStateMockRecorder) Exists(address any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockState)(nil).Exists), address)
-}
-
 // Export mocks base method.
 func (m *MockState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
 	m.ctrl.T.Helper()
@@ -383,21 +368,6 @@ func (m *MockLiveDB) Close() error {
 func (mr *MockLiveDBMockRecorder) Close() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockLiveDB)(nil).Close))
-}
-
-// Exists mocks base method.
-func (m *MockLiveDB) Exists(address common.Address) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Exists", address)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Exists indicates an expected call of Exists.
-func (mr *MockLiveDBMockRecorder) Exists(address any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockLiveDB)(nil).Exists), address)
 }
 
 // Flush mocks base method.

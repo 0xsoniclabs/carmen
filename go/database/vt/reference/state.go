@@ -11,7 +11,6 @@
 package reference
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -58,14 +57,6 @@ func NewStateUsing(trie Trie) state.State {
 
 func (s *State) TrieConfig() any {
 	return s.trie.Config()
-}
-
-func (s *State) Exists(address common.Address) (bool, error) {
-	key := s.embedding.getBasicDataKey(address)
-	value := s.trie.Get(key)
-	var empty [24]byte // nonce and balance are laid out in bytes 8-32
-	return !bytes.Equal(value[8:32], empty[:]), nil
-
 }
 
 func (s *State) GetBalance(address common.Address) (amount.Amount, error) {

@@ -51,7 +51,6 @@ type externalBindings interface {
 	GetLiveState(database unsafe.Pointer, outState *unsafe.Pointer) C.enum_Result
 	GetArchiveState(database unsafe.Pointer, block C.uint64_t, outState *unsafe.Pointer) C.enum_Result
 	GetArchiveBlockHeight(database unsafe.Pointer, outBlock *C.int64_t) C.enum_Result
-	AccountExists(state unsafe.Pointer, address unsafe.Pointer, outExists unsafe.Pointer) C.enum_Result
 	GetBalance(state unsafe.Pointer, address unsafe.Pointer, outBalance unsafe.Pointer) C.enum_Result
 	GetNonce(state unsafe.Pointer, address unsafe.Pointer, outNonce unsafe.Pointer) C.enum_Result
 	GetStorageValue(state unsafe.Pointer, address unsafe.Pointer, key unsafe.Pointer, outValue unsafe.Pointer) C.enum_Result
@@ -122,15 +121,6 @@ func (s *ExternalState) CreateAccount(address common.Address) error {
 	update := common.Update{}
 	_, err := s.Apply(0, update)
 	return err
-}
-
-func (s *ExternalState) Exists(address common.Address) (bool, error) {
-	var res common.AccountState
-	result := s.bindings.AccountExists(s.state, unsafe.Pointer(&address[0]), unsafe.Pointer(&res))
-	if result != C.kResult_Success {
-		return false, fmt.Errorf("failed to check if account exists (error code %v)", result)
-	}
-	return res == common.Exists, nil
 }
 
 func (s *ExternalState) DeleteAccount(address common.Address) error {

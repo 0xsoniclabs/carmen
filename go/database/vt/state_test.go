@@ -371,13 +371,6 @@ type comparingState struct {
 	t           *testing.T
 }
 
-func (s *comparingState) Exists(address common.Address) (bool, error) {
-	s.t.Helper()
-	return getCmpStateValue(s, func(state state.State) (bool, error) {
-		return state.Exists(address)
-	})
-}
-
 func (s *comparingState) GetNonce(address common.Address) (common.Nonce, error) {
 	s.t.Helper()
 	return getCmpStateValue(s, func(state state.State) (common.Nonce, error) {

@@ -160,9 +160,6 @@ pub trait CarmenDb: Send + Sync {
 /// This is the safe interface which gets called from the exported FFI functions.
 #[cfg_attr(test, mockall::automock, allow(clippy::disallowed_types))]
 pub trait CarmenState: Send + Sync {
-    /// Checks if the given account exists.
-    fn account_exists(&self, addr: &Address) -> BTResult<bool, Error>;
-
     /// Returns the balance of the given account.
     fn get_balance(&self, addr: &Address) -> BTResult<U256, Error>;
 
@@ -199,10 +196,6 @@ pub trait IsArchive {
 /// required so we can hand out multiple references to a single state instance
 /// on [`CarmenDb::get_live_state`].
 impl<T: CarmenState> CarmenState for Arc<T> {
-    fn account_exists(&self, addr: &Address) -> BTResult<bool, Error> {
-        self.deref().account_exists(addr)
-    }
-
     fn get_balance(&self, addr: &Address) -> BTResult<U256, Error> {
         self.deref().get_balance(addr)
     }

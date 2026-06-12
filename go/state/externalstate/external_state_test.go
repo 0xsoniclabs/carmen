@@ -33,26 +33,25 @@ var (
 )
 
 func TestAccountsAreInitiallyUnknown(t *testing.T) {
-	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
-		account_state, _ := state.Exists(address1)
-		if account_state != false {
-			t.Errorf("Initial account is not unknown, got %v", account_state)
-		}
+	runForEachExternalConfig(t, func(t *testing.T, s state.State, config state.Configuration) {
+		empty, err := state.IsEmptyAccount(s, address1)
+		require.NoError(t, err)
+		require.True(t, empty)
 	})
 }
 
 func TestAccountsCanBeDeleted(t *testing.T) {
-	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
+	runForEachExternalConfig(t, func(t *testing.T, s state.State, config state.Configuration) {
 		if config.Schema == 6 {
 			t.Skip("Schema 6 does not support account existence checks")
 		}
 
-		state.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
-		state.Apply(1, common.Update{DeletedAccounts: []common.Address{address1}})
-		account_state, _ := state.Exists(address1)
-		if account_state != false {
-			t.Errorf("Deleted account is not deleted, got %v", account_state)
-		}
+		require := require.New(t)
+		s.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
+		s.Apply(1, common.Update{DeletedAccounts: []common.Address{address1}})
+		empty, err := state.IsEmptyAccount(s, address1)
+		require.NoError(err)
+		require.True(empty)
 	})
 }
 

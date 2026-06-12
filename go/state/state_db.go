@@ -503,11 +503,8 @@ func (s *stateDB) Exist(addr common.Address) bool {
 	if val, exists := s.accounts[addr]; exists {
 		return val.current == accountExists || val.current == accountSelfDestructed // self-destructed accounts still exist till the end of the transaction.
 	}
-	exists, err := s.state.Exists(addr)
-	if err != nil {
-		s.trackErrors(fmt.Errorf("failed to get account state for %v: %w", addr, err))
-		return false
-	}
+	exists := !s.Empty(addr)
+
 	state := accountNonExisting
 	if exists {
 		state = accountExists
@@ -743,10 +740,10 @@ func (s *stateDB) GetNonce(addr common.Address) uint64 {
 }
 
 func (s *stateDB) SetNonce(addr common.Address, nonce uint64) {
-	s.setNonceInternal(addr, nonce)
 	if s.createAccountIfNotExists(addr) && nonce == 0 {
 		s.emptyCandidates = append(s.emptyCandidates, addr)
 	}
+	s.setNonceInternal(addr, nonce)
 }
 
 func (s *stateDB) setNonceInternal(addr common.Address, nonce uint64) {
