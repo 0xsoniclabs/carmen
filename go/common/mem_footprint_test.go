@@ -95,7 +95,7 @@ func TestMemoryFootprintPrintsDataInPostfixOrder(t *testing.T) {
 		t.Fatalf("Failed to match regex: %v", err)
 	}
 	if !match {
-		t.Errorf("Parent is not after componentes:\n%v", print)
+		t.Errorf("Parent is not after components:\n%v", print)
 	}
 }
 func TestMemoryFootprintPrintIsAligned(t *testing.T) {

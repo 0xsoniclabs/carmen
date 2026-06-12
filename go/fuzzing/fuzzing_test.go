@@ -242,6 +242,6 @@ func applyAndMatch(input, expected OperationSequence[testContext], apply func(ra
 	}
 
 	if !slices.Equal(*got, want) {
-		t.Errorf("exectued operations do not match: got: %v != want: %v", *got, want)
+		t.Errorf("executed operations do not match: got: %v != want: %v", *got, want)
 	}
 }

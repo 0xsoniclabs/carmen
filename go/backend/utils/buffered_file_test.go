@@ -367,7 +367,7 @@ func TestBufferedFile_WrittenDataCanBeRead(t *testing.T) {
 					t.Fatalf("failed to read at position %d: %v", i, err)
 				}
 				if dst[0] != byte(i) {
-					t.Errorf("invalid data read at postion %d, wanted %d, got %d", i, byte(i), dst[0])
+					t.Errorf("invalid data read at position %d, wanted %d, got %d", i, byte(i), dst[0])
 				}
 			}
 
@@ -409,7 +409,7 @@ func TestBufferedFile_DataIsPersistent(t *testing.T) {
 					t.Fatalf("failed to read at position %d: %v", i, err)
 				}
 				if dst[0] != byte(i+1) {
-					t.Errorf("invalid data read at postion %d, wanted %d, got %d", i, byte(i+1), dst[0])
+					t.Errorf("invalid data read at position %d, wanted %d, got %d", i, byte(i+1), dst[0])
 				}
 			}
 
@@ -427,7 +427,7 @@ func TestBufferedFile_ReadAndWriteCanHandleUnalignedData(t *testing.T) {
 		t.Fatalf("failed to open buffered file: %v", err)
 	}
 
-	// By writting data of length 3 we are sometimes writing data crossing
+	// By writing data of length 3 we are sometimes writing data crossing
 	// the internal aligned buffer-page boundary.
 	for i := 0; i < 1000; i++ {
 		if _, err := file.WriteAt([]byte{byte(i), byte(i + 1), byte(i + 2)}, int64(i)*3); err != nil {
@@ -442,7 +442,7 @@ func TestBufferedFile_ReadAndWriteCanHandleUnalignedData(t *testing.T) {
 		}
 		want := []byte{byte(i), byte(i + 1), byte(i + 2)}
 		if !bytes.Equal(dst, want) {
-			t.Errorf("invalid data read at postion %d, wanted %d, got %d", i, want, dst)
+			t.Errorf("invalid data read at position %d, wanted %d, got %d", i, want, dst)
 		}
 	}
 

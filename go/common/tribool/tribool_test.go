@@ -104,7 +104,7 @@ func TestTribool_All_Elements_Are_Comparable(t *testing.T) {
 	for i, a := range items {
 		for j, b := range items {
 			if got, want := a == b, i == j; got != want {
-				t.Errorf("unexpected tribool [%v, %v] comparision: got: %v, want %v", a, b, got, want)
+				t.Errorf("unexpected tribool [%v, %v] comparison: got: %v, want %v", a, b, got, want)
 			}
 		}
 	}

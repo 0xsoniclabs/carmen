@@ -78,7 +78,7 @@ func Benchmark_VerkleTrie_Commit_To_LeafNode_Update_All_Values(b *testing.B) {
 		b.Fatalf("failed to create test node: %v", err)
 	}
 
-	// tree is commited at the beginning
+	// tree is committed at the beginning
 	root.Commit()
 
 	var counter int
@@ -103,7 +103,7 @@ func Benchmark_VerkleTrie_Commit_To_LeafNode_Update_Single_Value(b *testing.B) {
 		b.Fatalf("failed to create test node: %v", err)
 	}
 
-	// tree is commited at the beginning
+	// tree is committed at the beginning
 	root.Commit()
 
 	var counter int

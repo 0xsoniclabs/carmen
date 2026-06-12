@@ -39,15 +39,12 @@ var (
 	key2 = common.Key{0x02}
 	key3 = common.Key{0x03}
 
-	val0 = common.Value{0x00}
 	val1 = common.Value{0x01}
 	val2 = common.Value{0x02}
 	val3 = common.Value{0x03}
 
 	balance1 = amount.New(1)
 	balance2 = amount.New(2)
-
-	nonce1 = common.Nonce{0x01}
 )
 
 type namedStateConfig struct {
