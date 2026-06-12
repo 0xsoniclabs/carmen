@@ -11,6 +11,7 @@
 package state
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -19,7 +20,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestIsEmptyAccount(t *testing.T) {
+func TestIsEmptyAccount_BehavesCorrectly(t *testing.T) {
 	testCases := map[string]struct {
 		set_expectations func(s *MockState)
 		expected         bool
@@ -70,6 +71,47 @@ func TestIsEmptyAccount(t *testing.T) {
 			result, err := IsEmptyAccount(mockState, common.Address{})
 			require.NoError(err)
 			require.Equal(tc.expected, result)
+		})
+	}
+}
+
+func TestIsEmptyAccount_PropagatesErrors(t *testing.T) {
+	errTest := errors.New("test error")
+	testCases := map[string]struct {
+		set_expectations func(s *MockState)
+	}{
+		"GetBalance error": {
+			set_expectations: func(s *MockState) {
+				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), errTest)
+			},
+		},
+		"GetNonce error": {
+			set_expectations: func(s *MockState) {
+				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil)
+				s.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, errTest)
+			},
+		},
+		"GetCodeSize error": {
+			set_expectations: func(s *MockState) {
+				s.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil)
+				s.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil)
+				s.EXPECT().GetCodeSize(gomock.Any()).Return(0, errTest)
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockState := NewMockState(ctrl)
+			tc.set_expectations(mockState)
+
+			result, err := IsEmptyAccount(mockState, common.Address{})
+			require.ErrorIs(err, errTest)
+			require.False(result)
 		})
 	}
 }
