@@ -460,6 +460,50 @@ func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues
 
 }
 
+func TestStateDB_StorageDataOfDestroyedAccountIsNotVisibleInNextTransactionOrBlock(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	require := require.New(t)
+	db := createStateDBWith(mock, 100, true)
+
+	addr := common.Address{0x01}
+	key := common.Key{0x01}
+	val := common.Value{0x01}
+
+	mock.EXPECT().GetBalance(addr).AnyTimes()
+	mock.EXPECT().GetNonce(addr).AnyTimes()
+	mock.EXPECT().GetCodeSize(addr).AnyTimes()
+	mock.EXPECT().GetStorage(addr, key).AnyTimes()
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(gomock.Any(), common.Update{}).AnyTimes()
+
+	for range 5 {
+		// Create a contract in a transaction, add data, and destroy the contract.
+		db.BeginBlock()
+		db.BeginTransaction()
+		db.CreateContract(addr)
+		require.Zero(db.GetState(addr, key))
+		db.SetState(addr, key, val)
+		require.Equal(val, db.GetState(addr, key))
+		db.Suicide(addr)
+		db.EndTransaction()
+
+		// The modified state should be deleted.
+		db.BeginTransaction()
+		require.Zero(db.GetState(addr, key))
+		db.EndTransaction()
+
+		// The modified state should also be deleted in the next block.
+		db.EndBlock(12)
+
+		db.BeginBlock()
+		db.BeginTransaction()
+		require.Zero(db.GetState(addr, key))
+		db.EndTransaction()
+		db.EndBlock(14)
+	}
+}
+
 func TestStateDB_RollbackToKnownCommittedStateProducesCorrectResult(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
