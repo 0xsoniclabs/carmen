@@ -132,20 +132,8 @@ func fuzzArchiveTrieRandomAccountOps(f *testing.F) {
 		}
 	}
 
-	var opDelete = func(_ accountOpType, value archiveAccountPayload, t fuzzing.TestingT, c *archiveTrieAccountFuzzingContext) {
-		update := common.Update{}
-		update.AppendDeleteAccount(value.address.GetAddress())
-		if err := c.archiveTrie.Add(uint64(c.GetNextBlock()), update, nil); err != nil {
-			t.Errorf("error to delete account: %v,  block: %d", value.address, c.GetNextBlock())
-		}
-		c.DeleteAccount(value.address)
-	}
-
 	serialiseAddressInfo := func(payload archiveAccountPayload) []byte {
 		return payload.SerialiseAddressChange()
-	}
-	serialiseAddress := func(payload archiveAccountPayload) []byte {
-		return payload.SerialiseAddress()
 	}
 	serialiseBlockAddress := func(payload archiveAccountPayload) []byte {
 		return payload.SerialiseBlockAddress()
@@ -182,16 +170,6 @@ func fuzzArchiveTrieRandomAccountOps(f *testing.F) {
 		return archiveAccountPayload{0, addr, changeType, change}
 	}
 
-	deserialiseAddress := func(b *[]byte) archiveAccountPayload {
-		var addr tinyAddress
-		if len(*b) >= 1 {
-			addr = tinyAddress((*b)[0])
-			*b = (*b)[1:]
-		}
-		var emptyChange []byte
-		return archiveAccountPayload{0, addr, 0, emptyChange}
-	}
-
 	deserialiseBlockAddress := func(b *[]byte) archiveAccountPayload {
 		var blockNumber uint
 		var addr tinyAddress
@@ -210,7 +188,6 @@ func fuzzArchiveTrieRandomAccountOps(f *testing.F) {
 	registry := fuzzing.NewRegistry[accountOpType, archiveTrieAccountFuzzingContext]()
 	fuzzing.RegisterDataOp(registry, setAccount, serialiseAddressInfo, deserialiseAddressInfo, opSet)
 	fuzzing.RegisterDataOp(registry, getAccount, serialiseBlockAddress, deserialiseBlockAddress, opGet)
-	fuzzing.RegisterDataOp(registry, deleteAccount, serialiseAddress, deserialiseAddress, opDelete)
 
 	init := func(registry fuzzing.OpsFactoryRegistry[accountOpType, archiveTrieAccountFuzzingContext]) []fuzzing.OperationSequence[archiveTrieAccountFuzzingContext] {
 		var nonce1 common.Nonce
@@ -267,15 +244,6 @@ func fuzzArchiveTrieRandomAccountOps(f *testing.F) {
 				for _, balance := range [][amount.BytesLength]byte{balance1, balance2, balance3} {
 					sequence = append(sequence, registry.CreateDataOp(setAccount, archiveAccountPayload{0, addr, changeBalance, balance[:]}))
 				}
-			}
-			seed = append(seed, sequence)
-		}
-
-		{
-			var sequence fuzzing.OperationSequence[archiveTrieAccountFuzzingContext]
-			var emptyChange []byte
-			for _, addr := range []tinyAddress{0, 1, 2, 5, 10, 255} {
-				sequence = append(sequence, registry.CreateDataOp(deleteAccount, archiveAccountPayload{0, addr, 0, emptyChange}))
 			}
 			seed = append(seed, sequence)
 		}
@@ -543,19 +511,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 		c.DeleteAccountStorage(value.address, value.key)
 	}
 
-	var opDeleteAccount = func(_ archiveStorageOpType, value archiveAccountStoragePayload, t fuzzing.TestingT, c *archiveTrieAccountStorageFuzzingContext) {
-		update := common.Update{}
-		update.AppendDeleteAccount(value.address.GetAddress())
-		if err := c.archiveTrie.Add(uint64(c.GetNextBlock()), update, nil); err != nil {
-			t.Errorf("error to delete account: %v,  block: %d", value.address, c.GetCurrentBlock())
-		}
-		c.DeleteAccount(value.address)
-	}
-
-	serialiseAddress := func(payload archiveAccountStoragePayload) []byte {
-		return payload.SerialiseAddress()
-	}
-
 	serialiseBlockAddressKey := func(payload archiveAccountStoragePayload) []byte {
 		return payload.SerialiseBlockAddressKey()
 	}
@@ -627,7 +582,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 	fuzzing.RegisterDataOp(registry, setStorageArchive, serialiseAddressKeyValue, deserialiseAddressKeyValue, opSet)
 	fuzzing.RegisterDataOp(registry, deleteStorageArchive, serialiseAddressKey, deserialiseAddressKey, opDelete)
 	fuzzing.RegisterDataOp(registry, getStorageArchive, serialiseBlockAddressKey, deserialiseBlockAddressKey, opGet)
-	fuzzing.RegisterDataOp(registry, deleteAccountArchive, serialiseAddress, deserialiseAddress, opDeleteAccount)
 
 	init := func(registry fuzzing.OpsFactoryRegistry[archiveStorageOpType, archiveTrieAccountStorageFuzzingContext]) []fuzzing.OperationSequence[archiveTrieAccountStorageFuzzingContext] {
 		var value1 common.Value
@@ -649,15 +603,6 @@ func fuzzArchiveTrieRandomAccountStorageOps(f *testing.F) {
 					}
 				}
 
-			}
-			seed = append(seed, sequence)
-		}
-
-		{
-			var sequence fuzzing.OperationSequence[archiveTrieAccountStorageFuzzingContext]
-			for _, addr := range []tinyAddress{0, 1, 2, 5, 10, 255} {
-				var empty common.Value
-				sequence = append(sequence, registry.CreateDataOp(deleteAccountArchive, archiveAccountStoragePayload{0, addr, 0, empty}))
 			}
 			seed = append(seed, sequence)
 		}
@@ -770,10 +715,8 @@ func (a *archiveAccountStoragePayload) SerialiseAddress() []byte {
 type archiveStorageOpType byte
 
 const (
-	// deleteAccountArchive causes deletion of an account with its storage from the tip of the chain.
-	deleteAccountArchive archiveStorageOpType = iota
 	// setStorageArchive updates the storage in the tip of the chain.
-	setStorageArchive
+	setStorageArchive archiveStorageOpType = iota
 	// deleteStorageArchive deletes the storage from the tip of the chain.
 	deleteStorageArchive
 	// getStorageArchive gets the value of the storage for a block number.

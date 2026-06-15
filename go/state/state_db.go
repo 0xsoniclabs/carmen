@@ -1252,20 +1252,11 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 	update := common.Update{}
 
 	// Clear all accounts that have been deleted at some point during this block.
-	// This will cause all storage slots of that accounts to be reset before new
-	// values may be written in the subsequent updates.
+	// Only accounts that have been created in this block can be deleted.
 	nonExistingAccounts := map[common.Address]bool{}
 	for addr, clearingState := range s.clearedAccounts {
 		if clearingState == cleared || clearingState == clearedAndTainted {
-			if s.accounts[addr].original == accountExists {
-				// Pretend this account was originally deleted, such that in the loop below
-				// it would be detected as re-created in case its new state is Existing.
-				s.accounts[addr].original = accountNonExisting
-				// If the account was not later re-created, we mark it for deletion.
-				if s.accounts[addr].current != accountExists {
-					update.AppendDeleteAccount(addr)
-				}
-			} else {
+			if s.accounts[addr].original != accountExists {
 				nonExistingAccounts[addr] = true
 			}
 			// Increment the reincarnation counter of cleared addresses to invalidate

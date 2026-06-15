@@ -597,7 +597,6 @@ mod tests {
                     value: Value::from_index_values(0, &[(0, 0x06)]),
                 },
             ],
-            ..Default::default()
         };
 
         state.apply_block_update(0, update.clone()).unwrap();
@@ -719,7 +718,6 @@ mod tests {
                         value: Value::from_index_values(0, &[(0, 0x07)]),
                     },
                 ],
-                ..Default::default()
             },
             // Set data to zero.
             Update {
@@ -740,7 +738,6 @@ mod tests {
                     key: Key::from_index_values(0, &[(0, 1)]),
                     value: Value::from_index_values(0, &[]),
                 }],
-                ..Default::default()
             },
             // Grow code size.
             Update {

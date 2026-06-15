@@ -1540,11 +1540,23 @@ func TestArchiveTrie_GetDiffProducesValidResults(t *testing.T) {
 
 				// The source can also be after the target.
 				{3, 1, Diff{
-					addr2: &AccountDiff{Reset: true},
+					addr2: &AccountDiff{
+						Balance: &amount.Amount{},
+						Nonce:   &common.Nonce{},
+						Code:    &common.Hash{},
+					},
 				}},
 				{3, 0, Diff{
-					addr1: &AccountDiff{Reset: true},
-					addr2: &AccountDiff{Reset: true},
+					addr1: &AccountDiff{
+						Balance: &amount.Amount{},
+						Nonce:   &common.Nonce{},
+						Code:    &common.Hash{},
+					},
+					addr2: &AccountDiff{
+						Balance: &amount.Amount{},
+						Nonce:   &common.Nonce{},
+						Code:    &common.Hash{},
+					},
 				}},
 			}
 
@@ -2253,10 +2265,7 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 	liveStateOps := []struct {
 		name            string
 		addExpectations func(db *MockLiveState, injectedErr error)
-	}{{"DeleteAccount", func(db *MockLiveState, injectedErr error) {
-		db.EXPECT().DeleteAccount(gomock.Any()).Return(injectedErr)
-	},
-	}, {"SetBalance", func(db *MockLiveState, injectedErr error) {
+	}{{"SetBalance", func(db *MockLiveState, injectedErr error) {
 		db.EXPECT().SetBalance(gomock.Any(), gomock.Any()).Return(injectedErr)
 	},
 	}, {"SetNonce", func(db *MockLiveState, injectedErr error) {
@@ -2312,11 +2321,10 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 
 			// trigger error from the livedb
 			update := common.Update{
-				DeletedAccounts: []common.Address{{0xA}},
-				Balances:        []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(1)}},
-				Nonces:          []common.NonceUpdate{{Account: common.Address{0xA}, Nonce: common.Nonce{0x1}}},
-				Codes:           []common.CodeUpdate{{Account: common.Address{0xA}, Code: []byte{0x1}}},
-				Slots:           []common.SlotUpdate{{Account: common.Address{0xA}, Key: common.Key{0xB}, Value: common.Value{0x1}}},
+				Balances: []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(1)}},
+				Nonces:   []common.NonceUpdate{{Account: common.Address{0xA}, Nonce: common.Nonce{0x1}}},
+				Codes:    []common.CodeUpdate{{Account: common.Address{0xA}, Code: []byte{0x1}}},
+				Slots:    []common.SlotUpdate{{Account: common.Address{0xA}, Key: common.Key{0xB}, Value: common.Value{0x1}}},
 			}
 			if err := archive.Add(1, update, nil); !errors.Is(err, injectedErr) {
 				t.Errorf("expected failure did not happen: got: %v != want: %v", err, injectedErr)

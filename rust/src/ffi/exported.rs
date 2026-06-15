@@ -1989,7 +1989,7 @@ mod tests {
     #[test]
     fn carmen_rust_apply_checks_that_arguments_are_valid() {
         let block: u64 = 1;
-        let mut update_data = [0; 25];
+        let mut update_data = [0; 21];
         let result = unsafe {
             Carmen_Rust_Apply(
                 std::ptr::null_mut(), // invalid
@@ -2023,7 +2023,7 @@ mod tests {
         create_state_then_call_fn_then_release_state(
             |_| {},
             move |state| {
-                let mut update_data = [0; 20];
+                let mut update_data = [0; 16];
                 let result = unsafe {
                     Carmen_Rust_Apply(
                         state,

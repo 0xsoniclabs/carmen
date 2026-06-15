@@ -181,19 +181,6 @@ func TestMultipleAddressHashes(t *testing.T) {
 	})
 }
 
-func TestDeletedAddressHashes(t *testing.T) {
-	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		if t != nil && schema == 6 {
-			t.Skipf("schema %d not supported", schema)
-		}
-		_, err := s.Apply(0, common.Update{
-			Balances:        []common.BalanceUpdate{{Account: address1, Balance: balance1}},
-			DeletedAccounts: []common.Address{address1, address2},
-		})
-		require.NoError(t, err)
-	})
-}
-
 func TestStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
 		_, err := s.Apply(0, common.Update{
@@ -296,9 +283,6 @@ func TestLargeStateHashes(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				key := common.Key{byte(j)}
 				update.Slots = append(update.Slots, common.SlotUpdate{Account: address, Key: key, Value: common.Value{byte(i), 0, 0, byte(j)}})
-			}
-			if i%21 == 0 && schema < 6 { // deletion not supported in schema 6
-				update.DeletedAccounts = append(update.DeletedAccounts, address)
 			}
 			update.Balances = append(update.Balances, common.BalanceUpdate{Account: address, Balance: amount.New(uint64(i))})
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: address, Nonce: common.Nonce{byte(i + 1)}})
@@ -433,67 +417,6 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		}
 		if hash != hashOfEmptyCode {
 			t.Errorf("Invalid hash, wanted %v, got %v", hashOfEmptyCode, hash)
-		}
-	})
-}
-
-func TestDeleteNotExistingAccount(t *testing.T) {
-	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
-		if config.config.Schema == 6 {
-			t.Skipf("scheme %d not supported", config.config.Schema)
-		}
-		if _, err := s.Apply(0, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{1, 2, 3}}}}); err != nil {
-			t.Fatalf("Error: %s", err)
-		}
-		if _, err := s.Apply(1, common.Update{DeletedAccounts: []common.Address{address2}}); err != nil { // deleting never-existed account
-			t.Fatalf("Error: %s", err)
-		}
-
-		if newState, err := state.IsEmptyAccount(s, address1); err != nil || newState != false {
-			t.Errorf("Unrelated existing state: %t, Error: %s", newState, err)
-		}
-		if newState, err := state.IsEmptyAccount(s, address2); err != nil || newState != true {
-			t.Errorf("Delete never-existing state: %t, Error: %s", newState, err)
-		}
-	})
-}
-
-func TestDeletingAccountsClearsStorage(t *testing.T) {
-	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
-		if config.config.Schema == 0 || config.config.Schema == 6 {
-			t.Skipf("scheme %d not supported", config.config.Schema)
-		}
-		if strings.Contains(config.name(), "flat") {
-			t.Skipf("schema with flat variant does not support deletions")
-		}
-
-		zero := common.Value{}
-		if _, err := s.Apply(0, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{1, 2, 3}}}}); err != nil {
-			t.Errorf("failed to create account: %v", err)
-		}
-
-		if _, err := s.Apply(1, common.Update{Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}}}); err != nil {
-			t.Errorf("failed to update storage slot: %v", err)
-		}
-
-		val, err := s.GetStorage(address1, key1)
-		if err != nil {
-			t.Errorf("failed to fetch storage value: %v", err)
-		}
-		if val != val1 {
-			t.Errorf("storage slot update did not take effect")
-		}
-
-		if _, err := s.Apply(2, common.Update{DeletedAccounts: []common.Address{address1}}); err != nil {
-			t.Fatalf("Error: %s", err)
-		}
-
-		val, err = s.GetStorage(address1, key1)
-		if err != nil {
-			t.Errorf("failed to fetch storage value: %v", err)
-		}
-		if val != zero {
-			t.Errorf("account deletion did not clear storage slots")
 		}
 	})
 }

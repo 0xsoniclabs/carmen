@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -33,31 +32,6 @@ func TestUpdateEmptyUpdateCheckReportsNoErrors(t *testing.T) {
 	update := Update{}
 	if err := update.Check(); err != nil {
 		t.Errorf("Empty update should not report an error, but got: %v", err)
-	}
-}
-
-func TestUpdateDeletedAccountsAreSortedAndMadeUniqueByNormalizer(t *testing.T) {
-	addr1 := Address{0x01}
-	addr2 := Address{0x02}
-	addr3 := Address{0x03}
-
-	update := Update{}
-	update.AppendDeleteAccount(addr2)
-	update.AppendDeleteAccount(addr1)
-	update.AppendDeleteAccount(addr3)
-	update.AppendDeleteAccount(addr1)
-
-	if err := update.Normalize(); err != nil {
-		t.Errorf("failed to normalize update: %v", err)
-	}
-
-	want := Update{}
-	want.AppendDeleteAccount(addr1)
-	want.AppendDeleteAccount(addr2)
-	want.AppendDeleteAccount(addr3)
-
-	if !reflect.DeepEqual(want, update) {
-		t.Errorf("failed to normalize deleted-account list, wanted %v, got %v", want.DeletedAccounts, update.DeletedAccounts)
 	}
 }
 
@@ -309,20 +283,6 @@ func TestUpdateOutOfOrderUpdatesAreDetected(t *testing.T) {
 	}
 }
 
-func TestUpdateCreatingAndDeletingSameAccountIsInvalid(t *testing.T) {
-	addr := Address{0x01}
-
-	update := Update{}
-	update.AppendBalanceUpdate(addr, amount.New(1))
-	if update.Check() != nil {
-		t.Errorf("just creating an account should be fine")
-	}
-	update.AppendDeleteAccount(addr)
-	if update.Check() == nil {
-		t.Errorf("creating and deleting the same account should fail")
-	}
-}
-
 func TestUpdateEmptyUpdateCanBeSerializedAndDeserialized(t *testing.T) {
 	update := Update{}
 
@@ -336,17 +296,8 @@ func TestUpdateEmptyUpdateCanBeSerializedAndDeserialized(t *testing.T) {
 	}
 }
 
-func TestCheck_FailsIfDeletedAccountsAreNotEmpty(t *testing.T) {
-	update := Update{}
-	update.AppendDeleteAccount(Address{0x01})
-	require.Error(t, update.Check())
-}
-
 func getExampleUpdate() Update {
 	update := Update{}
-
-	update.AppendDeleteAccount(Address{0xA1})
-	update.AppendDeleteAccount(Address{0xA2})
 
 	update.AppendBalanceUpdate(Address{0xC1}, amount.New(1<<56, 0, 0, 0))
 	update.AppendBalanceUpdate(Address{0xC2}, amount.New(2<<56, 0, 0, 0))
@@ -411,8 +362,6 @@ func TestUpdate_ApplyTo(t *testing.T) {
 
 	target := NewMockUpdateTarget(ctrl)
 	gomock.InOrder(
-		target.EXPECT().DeleteAccount(Address{0xA1}),
-		target.EXPECT().DeleteAccount(Address{0xA2}),
 		target.EXPECT().SetBalance(Address{0xC1}, amount.New(1<<56, 0, 0, 0)),
 		target.EXPECT().SetBalance(Address{0xC2}, amount.New(2<<56, 0, 0, 0)),
 		target.EXPECT().SetNonce(Address{0xD1}, Nonce{0x03}),
@@ -432,7 +381,7 @@ func TestUpdate_ApplyTo(t *testing.T) {
 }
 
 func TestUpdate_ApplyTo_Failures(t *testing.T) {
-	const calls = 5
+	const calls = 4
 	for i := 0; i < calls; i++ {
 		i := i
 		t.Run(fmt.Sprintf("applyTo_failure_at_%d", i), func(t *testing.T) {
@@ -442,11 +391,10 @@ func TestUpdate_ApplyTo_Failures(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			target := NewMockUpdateTarget(ctrl)
-			target.EXPECT().DeleteAccount(gomock.Any()).AnyTimes().Return(returns[0])
-			target.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[1])
-			target.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[2])
-			target.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[3])
-			target.EXPECT().SetStorage(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(returns[4])
+			target.EXPECT().SetBalance(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[0])
+			target.EXPECT().SetNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[1])
+			target.EXPECT().SetCode(gomock.Any(), gomock.Any()).AnyTimes().Return(returns[2])
+			target.EXPECT().SetStorage(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(returns[3])
 
 			update := getExampleUpdate()
 			if err := update.ApplyTo(target); !errors.Is(err, returns[i]) {
@@ -463,7 +411,6 @@ func TestUpdate_Print(t *testing.T) {
 		t.Errorf("Unexpected print of empty update, wanted %s, got %s", want, got)
 	}
 
-	update.AppendDeleteAccount(Address{1})
 	update.AppendBalanceUpdate(Address{3}, amount.New(1))
 	update.AppendNonceUpdate(Address{4}, ToNonce(2))
 	update.AppendCodeUpdate(Address{5}, []byte{1, 2, 3})
@@ -472,7 +419,6 @@ func TestUpdate_Print(t *testing.T) {
 	print := update.String()
 
 	expectations := []string{
-		"Deleted Accounts:",
 		"Balances:",
 		"Nonces:",
 		"Slots:",

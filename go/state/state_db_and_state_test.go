@@ -813,7 +813,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 	for _, config := range initStates() {
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
-			if strings.Contains(config.name(), "-flat") || config.config.Schema == 0 || config.config.Schema == 6 {
+			if strings.Contains(config.name(), "-flat") || config.config.Schema == 0 {
 				t.Skip()
 			}
 			require := require.New(t)
@@ -843,19 +843,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.EndTransaction()
 			statedb.EndBlock(1)
 
-			exists := statedb.Exist(address1)
-			require.False(exists)
-
-			// Case 2: deleted account because of suicide
-			createAccountWithBalance(address1, balance1, 2)
-			statedb.BeginBlock()
-			statedb.BeginTransaction()
-			require.True(statedb.Suicide(address1))
-			statedb.EndTransaction()
-			statedb.EndBlock(3)
-
-			exists = statedb.Exist(address1)
-			require.False(exists)
+			require.False(statedb.Exist(address1))
 		})
 	}
 }

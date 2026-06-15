@@ -156,62 +156,6 @@ func TestBasicOperations(t *testing.T) {
 			if strings.Contains(config.name(), "flat") {
 				t.Skipf("flat variants not supported")
 			}
-
-			// delete account
-			_, err = s.Apply(14, common.Update{DeletedAccounts: []common.Address{address1}})
-			if err != nil {
-				t.Errorf("Error: %s", err)
-			}
-			if val, err := state.IsEmptyAccount(s, address1); err != nil || val != true {
-				t.Errorf("Deleted account is not deleted: Val: %t, Err: %s", val, err)
-			}
-
-			// fetch wrong combinations
-			if val, err := s.GetStorage(address1, key1); (err != nil || val != common.Value{}) {
-				t.Errorf("Invalid value or error returned: Val: %v, Err: %v", val, err)
-			}
-		})
-	}
-}
-
-func TestDeletingAccounts(t *testing.T) {
-	for _, config := range initGoStates() {
-		t.Run(config.name(), func(t *testing.T) {
-			if config.config.Schema == 6 {
-				t.Skipf("scheme %d not supported", config.config.Schema)
-			}
-
-			s, err := config.createState(t.TempDir())
-			if err != nil {
-				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
-			}
-			defer func() { require.NoError(t, s.Close()) }()
-
-			// fill-in values
-			update := common.Update{
-				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
-				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
-				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
-			}
-			if _, err := s.Apply(1, update); err != nil {
-				t.Errorf("failed to update state: %v", err)
-			}
-
-			// fetch values
-			if val, err := state.IsEmptyAccount(s, address1); err != nil || val != false {
-				t.Errorf("Created account does not exists: Val: %t, Err: %v", val, err)
-			}
-
-			// delete account
-			update = common.Update{
-				DeletedAccounts: []common.Address{address1},
-			}
-			if _, err := s.Apply(2, update); err != nil {
-				t.Errorf("failed to apply update: %v", err)
-			}
-			if val, err := state.IsEmptyAccount(s, address1); err != nil || val != true {
-				t.Errorf("Deleted account is not deleted: Val: %t, Err: %s", val, err)
-			}
 		})
 	}
 }

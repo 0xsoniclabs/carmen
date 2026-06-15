@@ -40,21 +40,6 @@ func TestAccountsAreInitiallyUnknown(t *testing.T) {
 	})
 }
 
-func TestAccountsCanBeDeleted(t *testing.T) {
-	runForEachExternalConfig(t, func(t *testing.T, s state.State, config state.Configuration) {
-		if config.Schema == 6 {
-			t.Skip("Schema 6 does not support account existence checks")
-		}
-
-		require := require.New(t)
-		s.Apply(0, common.Update{Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}}})
-		s.Apply(1, common.Update{DeletedAccounts: []common.Address{address1}})
-		empty, err := state.IsEmptyAccount(s, address1)
-		require.NoError(err)
-		require.True(empty)
-	})
-}
-
 func TestReadUninitializedBalance(t *testing.T) {
 	runForEachExternalConfig(t, func(t *testing.T, state state.State, config state.Configuration) {
 		balance, err := state.GetBalance(address1)

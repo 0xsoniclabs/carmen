@@ -69,13 +69,6 @@ func fuzzLiveTrieRandomAccountOps(f *testing.F) {
 		}
 	}
 
-	var opDelete = func(_ accountOpType, value accountPayload, t fuzzing.TestingT, c *liveTrieAccountFuzzingContext) {
-		if err := c.liveTrie.SetAccountInfo(value.address.GetAddress(), AccountInfo{}); err != nil {
-			t.Errorf("error to set account: %s", err)
-		}
-		c.shadow[value.address] = AccountInfo{}
-	}
-
 	serialise := func(payload accountPayload) []byte {
 		return payload.Serialise()
 	}
@@ -116,7 +109,6 @@ func fuzzLiveTrieRandomAccountOps(f *testing.F) {
 	registry := fuzzing.NewRegistry[accountOpType, liveTrieAccountFuzzingContext]()
 	fuzzing.RegisterDataOp(registry, setAccount, serialise, deserialise, opSet)
 	fuzzing.RegisterDataOp(registry, getAccount, serialiseAddrOnly, deserialiseAddrOnly, opGet)
-	fuzzing.RegisterDataOp(registry, deleteAccount, serialiseAddrOnly, deserialiseAddrOnly, opDelete)
 
 	init := func(registry fuzzing.OpsFactoryRegistry[accountOpType, liveTrieAccountFuzzingContext]) []fuzzing.OperationSequence[liveTrieAccountFuzzingContext] {
 		var nonce1 common.Nonce
@@ -166,15 +158,6 @@ func fuzzLiveTrieRandomAccountOps(f *testing.F) {
 			var sequence fuzzing.OperationSequence[liveTrieAccountFuzzingContext]
 			for _, addr := range []tinyAddress{0, 1, 2, 5, 10, 255} {
 				info := AccountInfo{}
-				sequence = append(sequence, registry.CreateDataOp(deleteAccount, accountPayload{addr, info}))
-			}
-			seed = append(seed, sequence)
-		}
-
-		{
-			var sequence fuzzing.OperationSequence[liveTrieAccountFuzzingContext]
-			for _, addr := range []tinyAddress{0, 1, 2, 5, 10, 255} {
-				info := AccountInfo{}
 				sequence = append(sequence, registry.CreateDataOp(getAccount, accountPayload{addr, info}))
 			}
 			seed = append(seed, sequence)
@@ -197,7 +180,6 @@ type accountOpType byte
 const (
 	setAccount accountOpType = iota
 	getAccount
-	deleteAccount
 )
 
 // liveTrieAccountFuzzingCampaign defines each campaign.
