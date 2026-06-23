@@ -27,7 +27,7 @@ type AccountInfo struct {
 // default value. All accounts not present in an MPT are implicitly empty. Also
 // no empty accounts may be explicitly stored.
 func (a *AccountInfo) IsEmpty() bool {
-	return *a == AccountInfo{}
+	return *a == AccountInfo{} || *a == AccountInfo{CodeHash: emptyCodeHash}
 }
 
 // ----------------------------------------------------------------------------
