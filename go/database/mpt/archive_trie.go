@@ -307,7 +307,7 @@ func (a *ArchiveTrie) GetCodeForHash(hash common.Hash) []byte {
 	return a.head.GetCodeForHash(hash)
 }
 
-func (a *ArchiveTrie) GetCodes() map[common.Hash][]byte {
+func (a *ArchiveTrie) GetCodes() (map[common.Hash][]byte, error) {
 	return a.head.GetCodes()
 }
 

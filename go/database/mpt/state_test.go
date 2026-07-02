@@ -229,7 +229,7 @@ func TestReadCodes(t *testing.T) {
 	data = append(data, append(binary.BigEndian.AppendUint32(h3[:], uint32(len(code3))), code3...)...)
 
 	reader := utils.NewChunkReader(data, 3)
-	res, err := parseCodes(reader)
+	res, err := readCodesFromReader(reader)
 	if err != nil {
 		t.Fatalf("should not fail: %s", err)
 	}
@@ -527,7 +527,8 @@ func TestState_GetCodes(t *testing.T) {
 				}
 			}
 
-			codes := state.GetCodes()
+			codes, err := state.GetCodes()
+			require.NoError(t, err)
 			if got, want := len(codes), size-1; got != want {
 				t.Errorf("sizes do not much: got: %d != want: %d", got, want)
 			}
@@ -691,9 +692,11 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 	}
 
 	// Add some codes to be flushed.
+	codesToFlush := map[common.Hash][]byte{}
 	for i := 0; i < numAccounts; i++ {
-		state.codes.codes[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
+		codesToFlush[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
 	}
+	state.codes.pending = maps.Clone(codesToFlush)
 
 	if err = state.Flush(); err != nil {
 		b.Fatalf("failed to flush state: %v", err)
@@ -719,7 +722,7 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 			if err := os.Remove(state.codes.file); err != nil {
 				b.Fatalf("failed to remove codes file: %v", err)
 			}
-			state.codes.pending = maps.Keys(state.codes.codes)
+			state.codes.pending = maps.Clone(codesToFlush)
 		}
 		if err = state.Flush(); err != nil {
 			b.Fatalf("failed to flush state: %v", err)
