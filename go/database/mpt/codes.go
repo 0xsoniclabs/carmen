@@ -79,7 +79,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 	}
 
 	return &codes{
-		cache:      common.NewLruCache[common.Hash, []byte](100_000), // TODO: make this configurable
+		cache:      common.NewLruCache[common.Hash, []byte](20_000), // TODO: make this configurable
 		codes:      data,
 		pending:    make(map[common.Hash][]byte),
 		file:       file,
