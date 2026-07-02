@@ -33,6 +33,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/exp/maps"
 )
@@ -1220,7 +1221,8 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 				t.Fatalf("failed to create empty archive, err %v", err)
 			}
 
-			codes := archive.GetCodes()
+			codes, err := archive.GetCodes()
+			require.NoError(t, err)
 			if len(codes) != 0 {
 				t.Errorf("unexpected number of codes in archive, expected 0, got %d", len(codes))
 			}
@@ -1239,7 +1241,8 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 				t.Fatalf("cannot apply update: %s", err)
 			}
 
-			codes = archive.GetCodes()
+			codes, err = archive.GetCodes()
+			require.NoError(t, err)
 			if len(codes) != 2 {
 				t.Errorf("unexpected number of codes in archive, wanted 2, got %d", len(codes))
 			}

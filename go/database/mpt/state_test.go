@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
 	"golang.org/x/exp/maps"
@@ -226,7 +227,7 @@ func TestReadCodes(t *testing.T) {
 	data = append(data, append(binary.BigEndian.AppendUint32(h3[:], uint32(len(code3))), code3...)...)
 
 	reader := utils.NewChunkReader(data, 3)
-	res, err := parseCodes(reader)
+	res, err := readCodesFromReader(reader)
 	if err != nil {
 		t.Fatalf("should not fail: %s", err)
 	}
@@ -305,7 +306,12 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{
+		cache:   common.NewLruCache[common.Hash, []byte](100),
+		codes:   make(map[common.Hash]uint64),
+		pending: make(map[common.Hash][]byte),
+		hasher:  sha3.NewLegacyKeccak256(),
+	}, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedErr) {
 			t.Errorf("unexpected error: %v != %v", err, injectedErr)
@@ -381,7 +387,12 @@ func TestState_HasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to mark directory dirty: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{}, lock: lock, directory: dir}
+	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{
+		cache:   common.NewLruCache[common.Hash, []byte](100),
+		codes:   make(map[common.Hash]uint64),
+		pending: make(map[common.Hash][]byte),
+		hasher:  sha3.NewLegacyKeccak256(),
+	}, lock: lock, directory: dir}
 	defer func() {
 		if err := state.Close(); err != nil {
 			t.Fatalf("failed to close the state: %v", err)
@@ -566,7 +577,8 @@ func TestState_GetCodes(t *testing.T) {
 				}
 			}
 
-			codes := state.GetCodes()
+			codes, err := state.GetCodes()
+			require.NoError(t, err)
 			if got, want := len(codes), size-1; got != want {
 				t.Errorf("sizes do not much: got: %d != want: %d", got, want)
 			}
@@ -595,7 +607,12 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{
+		cache:   common.NewLruCache[common.Hash, []byte](100),
+		codes:   make(map[common.Hash]uint64),
+		pending: make(map[common.Hash][]byte),
+		hasher:  sha3.NewLegacyKeccak256(),
+	}, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedError) {
 			t.Fatalf("unexpected error: %v != %v", err, injectedError)
@@ -730,9 +747,11 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 	}
 
 	// Add some codes to be flushed.
+	codesToFlush := map[common.Hash][]byte{}
 	for i := 0; i < numAccounts; i++ {
-		state.codes.codes[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
+		codesToFlush[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
 	}
+	state.codes.pending = maps.Clone(codesToFlush)
 
 	if err = state.Flush(); err != nil {
 		b.Fatalf("failed to flush state: %v", err)
@@ -758,7 +777,7 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 			if err := os.Remove(state.codes.file); err != nil {
 				b.Fatalf("failed to remove codes file: %v", err)
 			}
-			state.codes.pending = maps.Keys(state.codes.codes)
+			state.codes.pending = maps.Clone(codesToFlush)
 		}
 		if err = state.Flush(); err != nil {
 			b.Fatalf("failed to flush state: %v", err)

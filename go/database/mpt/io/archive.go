@@ -89,7 +89,10 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 
 	// Write out codes.
 	logger.Printf("exporting codes")
-	codes := archive.GetCodes()
+	codes, err := archive.GetCodes()
+	if err != nil {
+		return fmt.Errorf("failed to get codes: %w", err)
+	}
 	if err = writeCodes(codes, out); err != nil {
 		return err
 	}
