@@ -95,11 +95,7 @@ func (c *codes) add(code []byte) common.Hash {
 	c.mutex.Lock()
 	if _, onDisk := c.codes[hash]; !onDisk {
 		if _, inPending := c.pending[hash]; !inPending {
-			c.cache.Set(hash, code)
-			c.pending[hash] = code
-			if len(c.pending) >= pendingFlushThreshold {
-				c.flushPending()
-			}
+			c.handleCacheSet(hash, code)
 		}
 	}
 	c.mutex.Unlock()
@@ -115,7 +111,8 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 	}
 	// Check pending (may have been evicted from cache but not yet flushed)
 	if code, found := c.pending[hash]; found {
-		c.cache.Set(hash, code)
+		delete(c.pending, hash)
+		c.handleCacheSet(hash, code)
 		return code
 	}
 	// Fall back to disk
@@ -127,8 +124,24 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 	if err != nil {
 		return nil
 	}
-	c.cache.Set(hash, code)
+	c.handleCacheSet(hash, code)
 	return code
+}
+
+// handleCacheSet inserts a key/value into the cache and moves evicted entries
+// to pending if they are not already persisted on disk. If pending grows above
+// the threshold it is flushed.
+// Must be called with c.mutex held.
+func (c *codes) handleCacheSet(key common.Hash, value []byte) {
+	evictedKey, evictedValue, evicted := c.cache.Set(key, value)
+	if evicted {
+		if _, onDisk := c.codes[evictedKey]; !onDisk {
+			c.pending[evictedKey] = evictedValue
+		}
+	}
+	if len(c.pending) >= pendingFlushThreshold {
+		c.flushPending()
+	}
 }
 
 // readCodeFromDisk reads a code at the given offset from the codes file.
@@ -157,6 +170,13 @@ func (c *codes) readCodeFromDisk(offset uint64) ([]byte, error) {
 func (c *codes) Flush() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+	// Move cache entries not yet on disk into pending before flushing.
+	c.cache.Iterate(func(key common.Hash, value []byte) bool {
+		if _, onDisk := c.codes[key]; !onDisk {
+			c.pending[key] = value
+		}
+		return true
+	})
 	return c.flushPending()
 }
 
@@ -458,9 +478,6 @@ func (c *codes) getCodes() (map[common.Hash][]byte, error) {
 	}
 
 	c.mutex.Unlock()
-	if err != nil {
-		return map[common.Hash][]byte{}, err
-	}
 	return res, nil
 }
 

@@ -181,7 +181,8 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	codes.add(code1)
 	codes.add(code2)
 
-	if want, got := 2, len(codes.pending); want != got {
+	// After add, codes are in cache (not pending) until flush or eviction.
+	if want, got := 0, len(codes.pending); want != got {
 		t.Fatalf("expected %d pending codes, got %d", want, got)
 	}
 
@@ -189,6 +190,10 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 		t.Fatalf("failed to flush: %v", err)
 	}
 
+	// After flush, everything is on disk.
+	if want, got := 2, len(codes.codes); want != got {
+		t.Fatalf("expected %d codes on disk, got %d", want, got)
+	}
 	if want, got := 0, len(codes.pending); want != got {
 		t.Fatalf("expected %d pending codes, got %d", want, got)
 	}
@@ -205,14 +210,13 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	// The next step is incremental.
 	codes.add(code3)
 
-	if want, got := 1, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
-
 	if err := codes.Flush(); err != nil {
 		t.Fatalf("failed to flush: %v", err)
 	}
 
+	if want, got := 3, len(codes.codes); want != got {
+		t.Fatalf("expected %d codes on disk, got %d", want, got)
+	}
 	if want, got := 0, len(codes.pending); want != got {
 		t.Fatalf("expected %d pending codes, got %d", want, got)
 	}
@@ -233,47 +237,47 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 
 func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	require := require.New(t)
-	codes, err := openCodes(t.TempDir())
+	c, err := openCodes(t.TempDir())
 	require.NoError(err)
+
+	// Use a small cache to force eviction into pending.
+	c.cache = common.NewLruCache[common.Hash, []byte](2)
 
 	code1 := []byte("code1")
 	code2 := []byte("code2")
 	code3 := []byte("code3")
 
-	hash1 := codes.add(code1)
-	require.NoError(codes.Flush()) // Insert in code offset struct
-	codes.cache.Clear()
-	hash2 := codes.add(code2)
-	codes.cache.Remove(hash2) // Simulate eviction
-	hash3 := codes.add(code3)
-	delete(codes.pending, hash3) // Leave it only in cache
+	hash1 := c.add(code1)
+	require.NoError(c.Flush()) // flush to disk
+	hash2 := c.add(code2)
+	hash3 := c.add(code3) // evicts hash1 from cache (already on disk, no pending)
 
-	// Check code positions
-	// - Offsets
-	require.Equal(len(codes.codes), 1)
-	_, v := codes.codes[hash1]
-	require.True(v)
-	// - Pending
-	require.Equal(len(codes.pending), 1)
-	_, v = codes.pending[hash2]
-	require.True(v)
-	// - Cache
-	cacheSize := 0
-	codes.cache.Iterate(func(h common.Hash, b []byte) bool {
-		cacheSize++
-		return true
-	})
-	require.Equal(cacheSize, 1)
-	_, v = codes.cache.Get(hash3)
-	require.True(v)
+	// Evict hash2 into pending by adding another code.
+	code4 := []byte("code4")
+	hash4 := c.add(code4) // evicts hash2 from cache into pending
+	_ = hash4
 
-	got, err := codes.getCodes()
+	// Check code positions:
+	// - hash1 is on disk
+	_, onDisk := c.codes[hash1]
+	require.True(onDisk)
+	// - hash2 is in pending (evicted from cache, not on disk)
+	_, inPending := c.pending[hash2]
+	require.True(inPending)
+	// - hash3, hash4 are in cache
+	_, inCache := c.cache.Get(hash3)
+	require.True(inCache)
+	_, inCache = c.cache.Get(hash4)
+	require.True(inCache)
+
+	got, err := c.getCodes()
 	require.NoError(err)
 
-	require.Equal(len(got), 3)
+	require.Equal(4, len(got))
 	require.Equal(code1, got[hash1])
 	require.Equal(code2, got[hash2])
 	require.Equal(code3, got[hash3])
+	require.Equal(code4, got[hash4])
 }
 
 func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
@@ -293,7 +297,8 @@ func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
 	cacheFootprint := codes.cache.GetDynamicMemoryFootprint(func(v []byte) uintptr {
 		return uintptr(len(v))
 	})
-	want := unsafe.Sizeof(*codes) + uintptr(len(code1)+len(code2)+2*32) + cacheFootprint.Total()
+	// After add, codes are in cache only (no pending, no disk offsets).
+	want := unsafe.Sizeof(*codes) + cacheFootprint.Total()
 
 	got := footprint.Total()
 	if want != got {
@@ -975,15 +980,18 @@ func TestCodes_getCodeForHash(t *testing.T) {
 			setup: func(t *testing.T, c *codes) (common.Hash, []byte) {
 				want := []byte("cache-code")
 				h := c.add(want)
-				delete(c.pending, h) // keep it cache-only
 				return h, want
 			},
 		},
 		"returns from pending when evicted from cache": {
 			setup: func(t *testing.T, c *codes) (common.Hash, []byte) {
+				// Use a tiny cache so we can force eviction.
+				c.cache = common.NewLruCache[common.Hash, []byte](2)
 				want := []byte("pending-code")
 				h := c.add(want)
-				c.cache.Remove(h)
+				// Fill the cache to evict the target into pending.
+				c.add([]byte("filler-1"))
+				c.add([]byte("filler-2"))
 				return h, want
 			},
 		},
@@ -1072,6 +1080,49 @@ func TestCodes_getCodeForHash_ReturnsNilOnDiskReadError(t *testing.T) {
 
 	got := c.getCodeForHash(h)
 	require.Nil(got)
+}
+
+func TestCodes_getCodeForHash_PendingPromotionEvictsIntoPending(t *testing.T) {
+	require := require.New(t)
+	c, err := openCodes(t.TempDir())
+	require.NoError(err)
+
+	// Use a cache of size 2 so promoting from pending causes an eviction.
+	c.cache = common.NewLruCache[common.Hash, []byte](2)
+
+	// Add 3 codes: first two stay in cache, third evicts the first into pending.
+	code1 := []byte("code-one")
+	code2 := []byte("code-two")
+	code3 := []byte("code-three")
+
+	h1 := c.add(code1)
+	h2 := c.add(code2)
+	h3 := c.add(code3) // evicts code1 into pending
+
+	// Verify state: h1 is in pending, h2 and h3 are in cache.
+	_, inPending := c.pending[h1]
+	require.True(inPending)
+	_, inCache := c.cache.Get(h2)
+	require.True(inCache)
+	_, inCache = c.cache.Get(h3)
+	require.True(inCache)
+
+	// Now request h1: it will be promoted from pending back to cache,
+	// which must evict another entry (h2) into pending.
+	got := c.getCodeForHash(h1)
+	require.Equal(code1, got)
+
+	// h1 should no longer be in pending (was deleted before handleCacheSet).
+	_, inPending = c.pending[h1]
+	require.False(inPending)
+
+	// h2 should have been evicted into pending by the promotion.
+	_, inPending = c.pending[h2]
+	require.True(inPending)
+
+	// h2 is still retrievable.
+	got2 := c.getCodeForHash(h2)
+	require.Equal(code2, got2)
 }
 
 func TestCodes_appendCodes(t *testing.T) {
@@ -1177,6 +1228,83 @@ func TestCodes_appendCodes_ErrorCases(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestCodes_handleCacheSet_InsertsIntoCache(t *testing.T) {
+	require := require.New(t)
+	c, err := openCodes(t.TempDir())
+	require.NoError(err)
+	c.cache = common.NewLruCache[common.Hash, []byte](5)
+
+	key := common.Hash{1}
+	value := []byte{0xAA}
+	c.handleCacheSet(key, value)
+
+	got, found := c.cache.Get(key)
+	require.True(found)
+	require.Equal(value, got)
+	require.Empty(c.pending)
+}
+
+func TestCodes_handleCacheSet_EvictedEntryGoesToPending(t *testing.T) {
+	require := require.New(t)
+	c, err := openCodes(t.TempDir())
+	require.NoError(err)
+	c.cache = common.NewLruCache[common.Hash, []byte](2)
+
+	// Fill cache: {10} is LRU, {11} is MRU.
+	c.cache.Set(common.Hash{10}, []byte{1})
+	c.cache.Set(common.Hash{11}, []byte{2})
+
+	// Insert a new key — evicts {10} into pending.
+	c.handleCacheSet(common.Hash{99}, []byte{0xFF})
+
+	_, found := c.pending[common.Hash{10}]
+	require.True(found, "evicted entry should be in pending")
+}
+
+func TestCodes_handleCacheSet_EvictedEntryDiscardedWhenOnDisk(t *testing.T) {
+	require := require.New(t)
+	c, err := openCodes(t.TempDir())
+	require.NoError(err)
+	c.cache = common.NewLruCache[common.Hash, []byte](2)
+
+	// Fill cache and mark {10} as already on disk.
+	c.cache.Set(common.Hash{10}, []byte{1})
+	c.cache.Set(common.Hash{11}, []byte{2})
+	c.codes[common.Hash{10}] = 0
+
+	// Insert a new key — evicts {10}, but it's on disk so not added to pending.
+	c.handleCacheSet(common.Hash{99}, []byte{0xFF})
+
+	_, found := c.pending[common.Hash{10}]
+	require.False(found, "on-disk entry should not go to pending")
+	require.Empty(c.pending)
+}
+
+func TestCodes_handleCacheSet_FlushesWhenPendingReachesThreshold(t *testing.T) {
+	require := require.New(t)
+	c, err := openCodes(t.TempDir())
+	require.NoError(err)
+	c.cache = common.NewLruCache[common.Hash, []byte](2)
+
+	// Fill pending to threshold - 1.
+	for i := 0; i < pendingFlushThreshold-1; i++ {
+		h := common.Hash{byte(i), byte(i >> 8), byte(i >> 16), 0xAA}
+		c.pending[h] = []byte{byte(i)}
+	}
+	require.Equal(pendingFlushThreshold-1, len(c.pending))
+
+	// Fill cache so next insert evicts into pending, reaching threshold.
+	c.cache.Set(common.Hash{0xFF, 0x01}, []byte{1})
+	c.cache.Set(common.Hash{0xFF, 0x02}, []byte{2})
+
+	c.handleCacheSet(common.Hash{0xFF, 0x03}, []byte{3})
+
+	// Flush should have been triggered, clearing pending.
+	require.Empty(c.pending)
+	// All flushed entries should now be in c.codes (on disk).
+	require.Equal(pendingFlushThreshold, len(c.codes))
 }
 
 func TestCodes_writeCode_ReturnsError(t *testing.T) {

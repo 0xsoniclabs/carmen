@@ -308,7 +308,12 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{
+		cache:   common.NewLruCache[common.Hash, []byte](100),
+		codes:   make(map[common.Hash]uint64),
+		pending: make(map[common.Hash][]byte),
+		hasher:  sha3.NewLegacyKeccak256(),
+	}, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedErr) {
 			t.Errorf("unexpected error: %v != %v", err, injectedErr)
@@ -378,7 +383,12 @@ func TestState_HasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to mark directory dirty: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{}, lock: lock, directory: dir}
+	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{
+		cache:   common.NewLruCache[common.Hash, []byte](100),
+		codes:   make(map[common.Hash]uint64),
+		pending: make(map[common.Hash][]byte),
+		hasher:  sha3.NewLegacyKeccak256(),
+	}, lock: lock, directory: dir}
 	defer func() {
 		if err := state.Close(); err != nil {
 			t.Fatalf("failed to close the state: %v", err)
@@ -557,7 +567,12 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{
+		cache:   common.NewLruCache[common.Hash, []byte](100),
+		codes:   make(map[common.Hash]uint64),
+		pending: make(map[common.Hash][]byte),
+		hasher:  sha3.NewLegacyKeccak256(),
+	}, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedError) {
 			t.Fatalf("unexpected error: %v != %v", err, injectedError)
