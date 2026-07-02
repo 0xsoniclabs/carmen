@@ -1227,7 +1227,8 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 				t.Fatalf("failed to create empty archive, err %v", err)
 			}
 
-			codes := archive.GetCodes()
+			codes, err := archive.GetCodes()
+			require.NoError(t, err)
 			if len(codes) != 0 {
 				t.Errorf("unexpected number of codes in archive, expected 0, got %d", len(codes))
 			}
@@ -1245,7 +1246,8 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 				t.Fatalf("cannot apply update: %s", err)
 			}
 
-			codes = archive.GetCodes()
+			codes, err = archive.GetCodes()
+			require.NoError(t, err)
 			if len(codes) != 2 {
 				t.Errorf("unexpected number of codes in archive, wanted 2, got %d", len(codes))
 			}

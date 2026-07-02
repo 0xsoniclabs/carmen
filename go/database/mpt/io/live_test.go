@@ -110,12 +110,14 @@ func TestIO_ExportedDataIsDeterministic(t *testing.T) {
 }
 
 func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
+	require := require.New(t)
 	reference, referenceHash := exportExampleState(t)
 
 	// Modify the state by adding and removing code from an account.
 	// This temporary code should not be included in the resulting exported data.
 	modified, modifiedHash := exportExampleStateWithModification(t, func(s *mpt.MptState) {
-		codesBefore := s.GetCodes()
+		codesBefore, err := s.GetCodes()
+		require.NoError(err)
 
 		addr1 := common.Address{1}
 		code, err := s.GetCode(addr1)
@@ -123,9 +125,10 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 			t.Fatalf("failed to fetch code: %v", err)
 		}
 		modified := append(code, []byte("extra_code")...)
-		require.NoError(t, s.SetCode(addr1, modified))
-		require.NoError(t, s.SetCode(addr1, code))
-		codesAfter := s.GetCodes()
+		require.NoError(s.SetCode(addr1, modified))
+		require.NoError(s.SetCode(addr1, code))
+		codesAfter, err := s.GetCodes()
+		require.NoError(err)
 		if before, after := len(codesBefore), len(codesAfter); before+1 != after {
 			t.Fatalf("modification did not had expected code-altering effect: %d -> %d", before, after)
 		}
