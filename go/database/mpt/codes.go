@@ -51,7 +51,7 @@ const (
 	fileNameCodesCheckpointDirectory = "codes"
 	fileNameCodesCommittedCheckpoint = "committed.json"
 	fileNameCodesPrepareCheckpoint   = "prepare.json"
-	pendingFlushThreshold            = 10_000
+	pendingFlushThreshold            = 1000
 )
 
 func openCodes(stateDirectory string) (*codes, error) {
@@ -79,7 +79,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 	}
 
 	return &codes{
-		cache:      common.NewLruCache[common.Hash, []byte](100_000), // TODO: make this configurable
+		cache:      common.NewLruCache[common.Hash, []byte](5000), // TODO: make this configurable
 		codes:      data,
 		pending:    make(map[common.Hash][]byte),
 		file:       file,
