@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,10 +32,11 @@ import (
 // All codes are retained in memory, incrementally backed up to disk during
 // checkpoint and flush operations.
 type codes struct {
-	codes    map[common.Hash][]byte // < all managed codes
-	pending  []common.Hash          // < the hashes of codes not written to disk yet
-	file     string                 // < the file to store the codes
-	fileSize uint64                 // < the current file size
+	cache *common.LruCache[common.Hash, []byte] // < a cache for the most recently used codes
+	codes map[common.Hash]uint64                // < all managed codes
+	// pending  []common.Hash                         // < the hashes of codes not written to disk yet
+	file     string // < the file to store the codes
+	fileSize uint64 // < the current file size
 	mutex    sync.Mutex
 	hasher   hash.Hash
 
@@ -51,6 +51,7 @@ const (
 	fileNameCodesCheckpointDirectory = "codes"
 	fileNameCodesCommittedCheckpoint = "committed.json"
 	fileNameCodesPrepareCheckpoint   = "prepare.json"
+	cacheSize                        = 10000
 )
 
 func openCodes(stateDirectory string) (*codes, error) {
@@ -66,7 +67,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 		}
 	}
 
-	data, size, err := readCodesAndSize(file)
+	data, size, err := readCodeOffsetsAndSize(file)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +79,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 	}
 
 	return &codes{
+		cache:      common.NewLruCache[common.Hash, []byte](cacheSize),
 		codes:      data,
 		file:       file,
 		fileSize:   size,
@@ -90,25 +92,54 @@ func openCodes(stateDirectory string) (*codes, error) {
 func (c *codes) add(code []byte) common.Hash {
 	hash := common.GetHash(c.hasher, code)
 	c.mutex.Lock()
-	if _, found := c.codes[hash]; !found {
-		c.codes[hash] = code
-		c.pending = append(c.pending, hash)
+	if _, inCache := c.cache.Get(hash); !inCache {
+		if _, found := c.codes[hash]; !found {
+			c.addToCache(hash, code)
+		}
 	}
 	c.mutex.Unlock()
 	return hash
 }
 
+func (c *codes) addToCache(hash common.Hash, code []byte) {
+	evictedHash, evictedCode, evicted := c.cache.Set(hash, code)
+	if evicted {
+		if _, onDisk := c.codes[evictedHash]; !onDisk {
+			// TODO: Handle error
+			fileSize, _ := appendCodes(map[common.Hash][]byte{evictedHash: evictedCode}, c.file)
+			c.fileSize = fileSize
+			c.codes[evictedHash] = c.fileSize - uint64(len(evictedCode)) - 32 - 4
+		}
+	}
+}
+
 func (c *codes) getCodeForHash(hash common.Hash) []byte {
 	c.mutex.Lock()
-	res := c.codes[hash]
+	if code, inCache := c.cache.Get(hash); inCache {
+		c.mutex.Unlock()
+		return code
+	}
+	if offset, found := c.codes[hash]; found {
+		code, err := readCodeAtOffset(c.file, offset)
+		if err != nil {
+			c.mutex.Unlock()
+			return nil
+		}
+		c.addToCache(hash, code)
+		c.mutex.Unlock()
+		return code
+	}
 	c.mutex.Unlock()
-	return res
+	return nil
 }
 
 func (c *codes) getCodes() map[common.Hash][]byte {
 	c.mutex.Lock()
-	res := maps.Clone(c.codes)
+	res, err := readCodes(c.file)
 	c.mutex.Unlock()
+	if err != nil {
+		return nil
+	}
 	return res
 }
 
@@ -116,28 +147,27 @@ func (c *codes) Flush() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if len(c.pending) == 0 {
-		return nil
-	}
-	codes := make(map[common.Hash][]byte, len(c.pending))
-	for _, hash := range c.pending {
-		codes[hash] = c.codes[hash]
-	}
-
+	codes := make(map[common.Hash][]byte)
+	c.cache.Iterate(func(hash common.Hash, code []byte) bool {
+		if _, onDisk := c.codes[hash]; !onDisk {
+			codes[hash] = code
+		}
+		return true
+	})
 	size, err := appendCodes(codes, c.file)
-	if err == nil {
-		c.pending = c.pending[:0]
+	if err != nil {
+		return err
 	}
 	c.fileSize = size
-	return err
+	return nil
 }
 
 func (c *codes) GetMemoryFootprint() *common.MemoryFootprint {
 	var sizeCodes uint
 	c.mutex.Lock()
-	for k, v := range c.codes {
-		sizeCodes += uint(len(k) + len(v))
-	}
+	// for k, v := range c.codes {
+	// 	sizeCodes += uint(len(k) + len(v))
+	// }
 	c.mutex.Unlock()
 	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + uintptr(sizeCodes))
 }
@@ -262,6 +292,75 @@ func readCodesAndSize(path string) (_ map[common.Hash][]byte, _ uint64, retErr e
 	reader := bufio.NewReader(file)
 	data, err := parseCodes(reader)
 	return data, uint64(info.Size()), err
+}
+
+func readCodeOffsetsAndSize(path string) (map[common.Hash]uint64, uint64, error) {
+	// If there is no file, initialize and return an empty code collection.
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return map[common.Hash]uint64{}, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+	reader := bufio.NewReader(file)
+	data, err := parseCodeOffsets(reader)
+	return data, uint64(info.Size()), err
+}
+
+func readCodeAtOffset(path string, offset uint64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	if _, err := file.Seek(int64(offset)+32, io.SeekStart); err != nil {
+		return nil, err
+	}
+	var length [4]byte
+	if _, err := io.ReadFull(file, length[:]); err != nil {
+		return nil, err
+	}
+	size := binary.BigEndian.Uint32(length[:])
+	code := make([]byte, size)
+	if _, err := io.ReadFull(file, code[:]); err != nil {
+		return nil, err
+	}
+	return code, nil
+}
+
+func parseCodeOffsets(reader io.Reader) (map[common.Hash]uint64, error) {
+	// If the file exists, parse it and return its content.
+	res := map[common.Hash]uint64{}
+	// The format is simple: [<key>, <length>, <code>]*
+	var hash common.Hash
+	var length [4]byte
+	pos := uint64(0)
+	for {
+		if _, err := io.ReadFull(reader, hash[:]); err != nil {
+			if err == io.EOF {
+				return res, nil
+			}
+			return nil, err
+		}
+		if _, err := io.ReadFull(reader, length[:]); err != nil {
+			return nil, err
+		}
+		size := binary.BigEndian.Uint32(length[:])
+		code := make([]byte, size)
+		if _, err := io.ReadFull(reader, code[:]); err != nil {
+			return nil, err
+		}
+		res[hash] = pos
+		pos += uint64(size) + 32 + 4 // 32 bytes for the hash, 4 bytes for the length
+	}
 }
 
 func parseCodes(reader io.Reader) (map[common.Hash][]byte, error) {
