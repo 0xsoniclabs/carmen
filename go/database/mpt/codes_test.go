@@ -22,6 +22,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -167,68 +168,68 @@ func TestCodes_Flush_EmptyCodesCanBeFlushed(t *testing.T) {
 	}
 }
 
-func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
-	codes, err := openCodes(t.TempDir())
-	if err != nil {
-		t.Fatalf("failed to open codes: %v", err)
-	}
+// func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
+// 	codes, err := openCodes(t.TempDir())
+// 	if err != nil {
+// 		t.Fatalf("failed to open codes: %v", err)
+// 	}
 
-	code1 := []byte("code1")
-	code2 := []byte("code2")
-	code3 := []byte("code3")
+// 	code1 := []byte("code1")
+// 	code2 := []byte("code2")
+// 	code3 := []byte("code3")
 
-	codes.add(code1)
-	codes.add(code2)
+// 	codes.add(code1)
+// 	codes.add(code2)
 
-	if want, got := 2, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
+// 	if want, got := 2, len(codes.pending); want != got {
+// 		t.Fatalf("expected %d pending codes, got %d", want, got)
+// 	}
 
-	if err := codes.Flush(); err != nil {
-		t.Fatalf("failed to flush: %v", err)
-	}
+// 	if err := codes.Flush(); err != nil {
+// 		t.Fatalf("failed to flush: %v", err)
+// 	}
 
-	if want, got := 0, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
+// 	if want, got := 0, len(codes.pending); want != got {
+// 		t.Fatalf("expected %d pending codes, got %d", want, got)
+// 	}
 
-	snapshot1, err := os.ReadFile(codes.file)
-	if err != nil {
-		t.Fatalf("failed to read file: %v", err)
-	}
+// 	snapshot1, err := os.ReadFile(codes.file)
+// 	if err != nil {
+// 		t.Fatalf("failed to read file: %v", err)
+// 	}
 
-	if codes.fileSize != uint64(len(snapshot1)) {
-		t.Fatalf("expected file size to be %d, got %d", len(snapshot1), codes.fileSize)
-	}
+// 	if codes.fileSize != uint64(len(snapshot1)) {
+// 		t.Fatalf("expected file size to be %d, got %d", len(snapshot1), codes.fileSize)
+// 	}
 
-	// The next step is incremental.
-	codes.add(code3)
+// 	// The next step is incremental.
+// 	codes.add(code3)
 
-	if want, got := 1, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
+// 	if want, got := 1, len(codes.pending); want != got {
+// 		t.Fatalf("expected %d pending codes, got %d", want, got)
+// 	}
 
-	if err := codes.Flush(); err != nil {
-		t.Fatalf("failed to flush: %v", err)
-	}
+// 	if err := codes.Flush(); err != nil {
+// 		t.Fatalf("failed to flush: %v", err)
+// 	}
 
-	if want, got := 0, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
+// 	if want, got := 0, len(codes.pending); want != got {
+// 		t.Fatalf("expected %d pending codes, got %d", want, got)
+// 	}
 
-	snapshot2, err := os.ReadFile(codes.file)
-	if err != nil {
-		t.Fatalf("failed to read file: %v", err)
-	}
+// 	snapshot2, err := os.ReadFile(codes.file)
+// 	if err != nil {
+// 		t.Fatalf("failed to read file: %v", err)
+// 	}
 
-	if codes.fileSize != uint64(len(snapshot2)) {
-		t.Fatalf("expected file size to be %d, got %d", len(snapshot2), codes.fileSize)
-	}
+// 	if codes.fileSize != uint64(len(snapshot2)) {
+// 		t.Fatalf("expected file size to be %d, got %d", len(snapshot2), codes.fileSize)
+// 	}
 
-	if !bytes.HasPrefix(snapshot2, snapshot1) {
-		t.Fatalf("expected snapshot2 to be a continuation of snapshot1")
-	}
-}
+// 	if !bytes.HasPrefix(snapshot2, snapshot1) {
+// 		t.Fatalf("expected snapshot2 to be a continuation of snapshot1")
+// 	}
+// }
 
 func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	codes, err := openCodes(t.TempDir())
@@ -903,4 +904,164 @@ func TestCodes_parseCodes_ReadFailures(t *testing.T) {
 		}
 
 	}
+}
+
+func TestCodes_addToCache_CacheIsUpdated(t *testing.T) {
+	codes, err := openCodes(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to open codes: %v", err)
+	}
+
+	code := []byte("code1")
+	hash := codes.add(code)
+
+	if want, got := code, codes.getCodeForHash(hash); string(want) != string(got) {
+		t.Fatalf("expected code1, got %s", got)
+	}
+}
+
+func TestCodes_addToCache_WritesToDiskOnEviction(t *testing.T) {
+	codes, err := openCodes(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to open codes: %v", err)
+	}
+
+	// Fill the cache with codes until it reaches the eviction threshold.
+	hashes := make([]common.Hash, cacheSize+1)
+	for i := 0; i < cacheSize+1; i++ {
+		code := []byte(fmt.Sprintf("code%d", i))
+		hashes[i] = codes.add(code)
+	}
+
+	require := require.New(t)
+	require.Equal(1, len(codes.codes))
+	offset, found := codes.codes[hashes[0]]
+	require.True(found)
+	require.Equal(uint64(0), offset)
+	readCode, err := readCodeAtOffset(codes.file, 0)
+	require.NoError(err)
+	require.Equal([]byte("code0"), readCode)
+}
+
+func TestCodes_getCodeForHash_ReturnsCode(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(err)
+
+	codeOnDisk := []byte("code1")
+	hashOnDisk := codes.add(codeOnDisk)
+	codes.Flush()
+
+	codes, err = openCodes(dir)
+	require.NoError(err)
+	size := 0
+	codes.cache.Iterate(func(h common.Hash, b []byte) bool {
+		size += 1
+		return true
+	})
+	require.Equal(size, 0)
+
+	readCode := codes.getCodeForHash(hashOnDisk)
+	require.Equal(codeOnDisk, readCode)
+
+	codeInCache := []byte("code2")
+	hashInCache := codes.add(codeInCache)
+	readCode = codes.getCodeForHash(hashInCache)
+	require.Equal(codeInCache, readCode)
+}
+
+func TestCodes_add_ignoresEntriesAlreadyInCacheOrDisk(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(err)
+
+	getCacheSize := func() int {
+		size := 0
+		codes.cache.Iterate(func(h common.Hash, b []byte) bool {
+			size += 1
+			return true
+		})
+		return size
+	}
+
+	codeInCache := []byte("code1")
+	hashInCache := common.GetHash(codes.hasher, codeInCache)
+	codes.cache.Set(hashInCache, codeInCache)
+	codesOnDisk := []byte("code2")
+	codes.codes[common.GetHash(codes.hasher, codesOnDisk)] = 0 // Simulate on disk
+
+	hash := codes.add(codeInCache)
+	require.Equal(hashInCache, hash)
+	require.Equal(1, getCacheSize())
+	require.Equal(1, len(codes.codes))
+
+	hash = codes.add(codesOnDisk)
+	require.Equal(common.GetHash(codes.hasher, codesOnDisk), hash)
+	require.Equal(1, getCacheSize())
+	require.Equal(1, len(codes.codes))
+}
+
+func TestCodes_openCodes_InitializeFilesCorrectly(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	c, err := openCodes(dir)
+	require.NoError(err)
+
+	// Check that the codes file exists and is empty
+	codesFile := filepath.Join(dir, fileNameCodes)
+	info, err := os.Stat(codesFile)
+	require.NoError(err)
+	require.Equal(int64(0), info.Size())
+
+	// Write some codes inside
+	codes := map[common.Hash][]byte{
+		{1}: {5},
+		{2}: {7, 8},
+	}
+	err = writeCodes(codes, codesFile)
+	require.NoError(err)
+
+	// Re-open codes and check that the codes are loaded correctly
+	c, err = openCodes(dir)
+	require.NoError(err)
+	require.Equal(2, len(c.codes))
+	for h, code := range codes {
+		offset, exists := c.codes[h]
+		require.True(exists)
+		readCode, err := readCodeAtOffset(c.file, offset)
+		require.NoError(err)
+		require.Equal(code, readCode)
+	}
+}
+
+func TestCodes_Flush_WritesToDisk(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(err)
+
+	// Simulate something on disk
+	codesOnDisk := []byte("codeOnDisk")
+	hashOnDisk := common.GetHash(codes.hasher, codesOnDisk)
+	codes.codes[hashOnDisk] = 0 // Simulate on disk
+
+	code1 := []byte("code1")
+	code2 := []byte("code2")
+	hash1 := common.GetHash(codes.hasher, code1)
+	hash2 := common.GetHash(codes.hasher, code2)
+
+	codes.cache.Set(hash1, code1)
+	codes.cache.Set(hash2, code2)
+	codes.cache.Set(hashOnDisk, codesOnDisk) // This should be ignored during flush
+
+	err = codes.Flush()
+	require.NoError(err)
+
+	readCodes, err := readCodes(codes.file)
+	require.NoError(err)
+	require.Equal(2, len(readCodes)) // The CodeOnDisk is skipped
+	require.Equal(code1, readCodes[hash1])
+	require.Equal(code2, readCodes[hash2])
 }

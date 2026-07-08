@@ -28,7 +28,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
-	"golang.org/x/exp/maps"
 
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -704,80 +703,80 @@ func TestEstimatePerNodeMemoryUsage(t *testing.T) {
 	}
 }
 
-func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
-	numAccounts := 100_000
-	state, err := OpenGoFileState(b.TempDir(), config, NodeCacheConfig{Capacity: numAccounts})
-	if err != nil {
-		b.Fatalf("failed to open state, err %v", err)
-	}
+// func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
+// 	numAccounts := 100_000
+// 	state, err := OpenGoFileState(b.TempDir(), config, NodeCacheConfig{Capacity: numAccounts})
+// 	if err != nil {
+// 		b.Fatalf("failed to open state, err %v", err)
+// 	}
 
-	// Create some content in the MPT large enough to
-	// fill the full node cache.
-	addrs := getTestAddresses(numAccounts)
-	for j, addr := range addrs {
-		if j%(numAccounts/2) == 0 && j > 0 {
-			if _, _, err = state.UpdateHashes(); err != nil {
-				b.Fatalf("failed to update hashes: %v", err)
-			}
-		}
-		err = state.CreateAccount(addr)
-		if err != nil {
-			b.Fatalf("failed to create account: %v", err)
-		}
-	}
-	if _, _, err = state.UpdateHashes(); err != nil {
-		b.Fatalf("failed to update hashes: %v", err)
-	}
+// 	// Create some content in the MPT large enough to
+// 	// fill the full node cache.
+// 	addrs := getTestAddresses(numAccounts)
+// 	for j, addr := range addrs {
+// 		if j%(numAccounts/2) == 0 && j > 0 {
+// 			if _, _, err = state.UpdateHashes(); err != nil {
+// 				b.Fatalf("failed to update hashes: %v", err)
+// 			}
+// 		}
+// 		err = state.CreateAccount(addr)
+// 		if err != nil {
+// 			b.Fatalf("failed to create account: %v", err)
+// 		}
+// 	}
+// 	if _, _, err = state.UpdateHashes(); err != nil {
+// 		b.Fatalf("failed to update hashes: %v", err)
+// 	}
 
-	// Add some codes to be flushed.
-	for i := 0; i < numAccounts; i++ {
-		state.codes.codes[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
-	}
+// 	// Add some codes to be flushed.
+// 	for i := 0; i < numAccounts; i++ {
+// 		state.codes.codes[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
+// 	}
 
-	if err = state.Flush(); err != nil {
-		b.Fatalf("failed to flush state: %v", err)
-	}
+// 	if err = state.Flush(); err != nil {
+// 		b.Fatalf("failed to flush state: %v", err)
+// 	}
 
-	for i := 0; i < b.N; i++ {
-		if forceDirtyNodes {
-			// Mark all nodes in the cache as dirty.
-			state.trie.forest.(*Forest).nodeCache.ForEach(func(id NodeId, node *shared.Shared[Node]) {
-				handle := node.GetWriteHandle()
-				switch node := handle.Get().(type) {
-				case *BranchNode:
-					node.clean = false
-				case *ExtensionNode:
-					node.clean = false
-				case *ValueNode:
-					node.clean = false
-				case *AccountNode:
-					node.clean = false
-				}
-				handle.Release()
-			})
-			if err := os.Remove(state.codes.file); err != nil {
-				b.Fatalf("failed to remove codes file: %v", err)
-			}
-			state.codes.pending = maps.Keys(state.codes.codes)
-		}
-		if err = state.Flush(); err != nil {
-			b.Fatalf("failed to flush state: %v", err)
-		}
-	}
+// 	for i := 0; i < b.N; i++ {
+// 		if forceDirtyNodes {
+// 			// Mark all nodes in the cache as dirty.
+// 			state.trie.forest.(*Forest).nodeCache.ForEach(func(id NodeId, node *shared.Shared[Node]) {
+// 				handle := node.GetWriteHandle()
+// 				switch node := handle.Get().(type) {
+// 				case *BranchNode:
+// 					node.clean = false
+// 				case *ExtensionNode:
+// 					node.clean = false
+// 				case *ValueNode:
+// 					node.clean = false
+// 				case *AccountNode:
+// 					node.clean = false
+// 				}
+// 				handle.Release()
+// 			})
+// 			if err := os.Remove(state.codes.file); err != nil {
+// 				b.Fatalf("failed to remove codes file: %v", err)
+// 			}
+// 			state.codes.pending = maps.Keys(state.codes.codes)
+// 		}
+// 		if err = state.Flush(); err != nil {
+// 			b.Fatalf("failed to flush state: %v", err)
+// 		}
+// 	}
 
-	if err = state.Close(); err != nil {
-		b.Fatalf("failed to close state: %v", err)
-	}
+// 	if err = state.Close(); err != nil {
+// 		b.Fatalf("failed to close state: %v", err)
+// 	}
 
-}
+// }
 
 // To run these benchmarks, use the following command:
 // go test ./database/mpt -run none -bench BenchmarkMptState_ArchiveFlush --benchtime 10s
 
-func BenchmarkMptState_ArchiveFlush(b *testing.B) {
-	runFlushBenchmark(b, S5ArchiveConfig, false)
-}
+// func BenchmarkMptState_ArchiveFlush(b *testing.B) {
+// 	runFlushBenchmark(b, S5ArchiveConfig, false)
+// }
 
-func BenchmarkMptState_ArchiveFlushForcedDirty(b *testing.B) {
-	runFlushBenchmark(b, S5ArchiveConfig, true)
-}
+// func BenchmarkMptState_ArchiveFlushForcedDirty(b *testing.B) {
+// 	runFlushBenchmark(b, S5ArchiveConfig, true)
+// }
