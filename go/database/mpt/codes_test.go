@@ -32,7 +32,7 @@ func TestCodes_OpenCodes(t *testing.T) {
 		t.Fatalf("failed to open codes: %v", err)
 	}
 
-	if want, got := 0, len(codes.codes); want != got {
+	if want, got := 0, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to be empty, got %d", got)
 	}
 }
@@ -136,7 +136,7 @@ func TestCodes_CodesCanBeAddedAndRetrieved(t *testing.T) {
 	hash1 := codes.add(code1)
 	hash2 := codes.add(code2)
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have 2 entries, got %d", got)
 	}
 
@@ -443,7 +443,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open original codes: %v", err)
 			}
 
-			if want, got := 2, len(codes.codes); want != got {
+			if want, got := 2, len(codes.offsets); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 
@@ -456,7 +456,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open recovered codes: %v", err)
 			}
 
-			if want, got := 1, len(codes.codes); want != got {
+			if want, got := 1, len(codes.offsets); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 		})
@@ -587,7 +587,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 	}
 
 	codes.add([]byte("code3"))
-	if want, got := 3, len(codes.codes); want != got {
+	if want, got := 3, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -622,7 +622,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -646,7 +646,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to commit checkpoint: %v", err)
 	}
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -660,7 +660,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 0, len(codes.codes); want != got {
+	if want, got := 0, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -694,7 +694,7 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 1, len(codes.codes); want != got {
+	if want, got := 1, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -982,7 +982,7 @@ func TestCodes_addToCache_WritesToDiskWhenBufferIsFull(t *testing.T) {
 	// FLush buffer is now empty
 	require.Equal(0, len(codes.flushBuffer))
 	// Flush buffer codes are on disk now
-	require.Equal(flushBufferThreshold, len(codes.codes))
+	require.Equal(flushBufferThreshold, len(codes.offsets))
 
 	codeRead, err := readCodes(codes.file)
 	require.NoError(err)
@@ -1056,22 +1056,22 @@ func TestCodes_add_ignoresAlreadyExistingEntries(t *testing.T) {
 	hashInBuffer := common.GetHash(codes.hasher, codeInBuffer)
 	codes.flushBuffer[hashInBuffer] = codeInBuffer
 	codesOnDisk := []byte("code2")
-	codes.codes[common.GetHash(codes.hasher, codesOnDisk)] = 0 // Simulate on disk
+	codes.offsets[common.GetHash(codes.hasher, codesOnDisk)] = 0 // Simulate on disk
 
 	hash := codes.add(codeInCache)
 	require.Equal(hashInCache, hash)
 	require.Equal(1, getCacheSize(codes.cache))
-	require.Equal(1, len(codes.codes))
+	require.Equal(1, len(codes.offsets))
 
 	hash = codes.add(codeInBuffer)
 	require.Equal(hashInBuffer, hash)
 	require.Equal(1, getCacheSize(codes.cache))
-	require.Equal(1, len(codes.codes))
+	require.Equal(1, len(codes.offsets))
 
 	hash = codes.add(codesOnDisk)
 	require.Equal(common.GetHash(codes.hasher, codesOnDisk), hash)
 	require.Equal(1, getCacheSize(codes.cache))
-	require.Equal(1, len(codes.codes))
+	require.Equal(1, len(codes.offsets))
 }
 
 func TestCodes_openCodes_InitializeFilesCorrectly(t *testing.T) {
@@ -1097,9 +1097,9 @@ func TestCodes_openCodes_InitializeFilesCorrectly(t *testing.T) {
 	// Re-open codes and check that the codes are loaded correctly
 	c, err = openCodes(dir)
 	require.NoError(err)
-	require.Equal(2, len(c.codes))
+	require.Equal(2, len(c.offsets))
 	for h, code := range codes {
-		offset, exists := c.codes[h]
+		offset, exists := c.offsets[h]
 		require.True(exists)
 		readCode, err := readCodeAtOffset(c.file, offset)
 		require.NoError(err)
@@ -1116,7 +1116,7 @@ func TestCodes_Flush_WritesToDisk(t *testing.T) {
 	// Simulate something on disk
 	codesOnDisk := []byte("codeOnDisk")
 	hashOnDisk := common.GetHash(codes.hasher, codesOnDisk)
-	codes.codes[hashOnDisk] = 0 // Simulate on disk
+	codes.offsets[hashOnDisk] = 0 // Simulate on disk
 
 	codeInFlush := []byte("codeInFlush")
 	hashInFlush := common.GetHash(codes.hasher, codeInFlush)
@@ -1170,13 +1170,13 @@ func TestCodes_flushPending_WritesPendingCodesToDiskAndUpdatesOffsets(t *testing
 	require.Equal(2, len(readCodes))
 
 	// Read from file using offsets
-	offset1, exists1 := codes.codes[hash1]
+	offset1, exists1 := codes.offsets[hash1]
 	require.True(exists1)
 	readCode1, err := readCodeAtOffset(codes.file, offset1)
 	require.NoError(err)
 	require.Equal(code1, readCode1)
 
-	offset2, exists2 := codes.codes[hash2]
+	offset2, exists2 := codes.offsets[hash2]
 	require.True(exists2)
 	readCode2, err := readCodeAtOffset(codes.file, offset2)
 	require.NoError(err)
