@@ -32,13 +32,13 @@ import (
 // All codes are retained in memory, incrementally backed up to disk during
 // checkpoint and flush operations.
 type codes struct {
-	cache *common.LruCache[common.Hash, []byte] // < a cache for the most recently used codes
-	codes map[common.Hash]uint64                // < all managed codes
-	// pending  []common.Hash                         // < the hashes of codes not written to disk yet
-	file     string // < the file to store the codes
-	fileSize uint64 // < the current file size
-	mutex    sync.Mutex
-	hasher   hash.Hash
+	cache       *common.LruCache[common.Hash, []byte] // < a cache for the most recently used codes
+	codes       map[common.Hash]uint64                // < all managed codes
+	flushBuffer map[common.Hash][]byte
+	file        string // < the file to store the codes
+	fileSize    uint64 // < the current file size
+	mutex       sync.Mutex
+	hasher      hash.Hash
 
 	directory  string                // < a directory for placing checkpoint data
 	checkpoint checkpoint.Checkpoint // < the last checkpoint
@@ -52,6 +52,7 @@ const (
 	fileNameCodesCommittedCheckpoint = "committed.json"
 	fileNameCodesPrepareCheckpoint   = "prepare.json"
 	cacheSize                        = 10000
+	flushBufferThreshold             = 1000
 )
 
 func openCodes(stateDirectory string) (*codes, error) {
@@ -79,13 +80,14 @@ func openCodes(stateDirectory string) (*codes, error) {
 	}
 
 	return &codes{
-		cache:      common.NewLruCache[common.Hash, []byte](cacheSize),
-		codes:      data,
-		file:       file,
-		fileSize:   size,
-		directory:  directory,
-		hasher:     sha3.NewLegacyKeccak256(),
-		checkpoint: meta.Checkpoint,
+		cache:       common.NewLruCache[common.Hash, []byte](cacheSize),
+		codes:       data,
+		flushBuffer: make(map[common.Hash][]byte),
+		file:        file,
+		fileSize:    size,
+		directory:   directory,
+		hasher:      sha3.NewLegacyKeccak256(),
+		checkpoint:  meta.Checkpoint,
 	}, nil
 }
 
@@ -93,8 +95,10 @@ func (c *codes) add(code []byte) common.Hash {
 	hash := common.GetHash(c.hasher, code)
 	c.mutex.Lock()
 	if _, inCache := c.cache.Get(hash); !inCache {
-		if _, found := c.codes[hash]; !found {
-			c.addToCache(hash, code)
+		if _, inFlushBuffer := c.flushBuffer[hash]; !inFlushBuffer {
+			if _, found := c.codes[hash]; !found {
+				c.addToCache(hash, code)
+			}
 		}
 	}
 	c.mutex.Unlock()
@@ -105,10 +109,16 @@ func (c *codes) addToCache(hash common.Hash, code []byte) {
 	evictedHash, evictedCode, evicted := c.cache.Set(hash, code)
 	if evicted {
 		if _, onDisk := c.codes[evictedHash]; !onDisk {
-			// TODO: Handle error
-			fileSize, _ := appendCodes(map[common.Hash][]byte{evictedHash: evictedCode}, c.file)
-			c.fileSize = fileSize
-			c.codes[evictedHash] = c.fileSize - uint64(len(evictedCode)) - 32 - 4
+			if _, found := c.flushBuffer[evictedHash]; !found {
+				c.flushBuffer[evictedHash] = evictedCode
+			}
+			if len(c.flushBuffer) >= flushBufferThreshold {
+				//TODO: Handle error
+				fileSize, _ := appendCodes(c.flushBuffer, c.file)
+				c.codes, _, _ = readCodeOffsetsAndSize(c.file)
+				c.fileSize = fileSize
+				c.flushBuffer = make(map[common.Hash][]byte)
+			}
 		}
 	}
 }
@@ -117,6 +127,12 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 	c.mutex.Lock()
 	if code, inCache := c.cache.Get(hash); inCache {
 		c.mutex.Unlock()
+		return code
+	}
+	if code, inFlushBuffer := c.flushBuffer[hash]; inFlushBuffer {
+		c.mutex.Unlock()
+		delete(c.flushBuffer, hash)
+		c.addToCache(hash, code)
 		return code
 	}
 	if offset, found := c.codes[hash]; found {
@@ -147,18 +163,19 @@ func (c *codes) Flush() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	codes := make(map[common.Hash][]byte)
 	c.cache.Iterate(func(hash common.Hash, code []byte) bool {
 		if _, onDisk := c.codes[hash]; !onDisk {
-			codes[hash] = code
+			c.flushBuffer[hash] = code
 		}
 		return true
 	})
-	size, err := appendCodes(codes, c.file)
+	size, err := appendCodes(c.flushBuffer, c.file)
 	if err != nil {
 		return err
 	}
 	c.fileSize = size
+	c.flushBuffer = make(map[common.Hash][]byte)
+	c.codes, _, _ = readCodeOffsetsAndSize(c.file) // Init the codes again
 	return nil
 }
 

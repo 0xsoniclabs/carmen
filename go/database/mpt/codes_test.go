@@ -920,7 +920,7 @@ func TestCodes_addToCache_CacheIsUpdated(t *testing.T) {
 	}
 }
 
-func TestCodes_addToCache_WritesToDiskOnEviction(t *testing.T) {
+func TestCodes_addToCache_WritesToBufferOnEviction(t *testing.T) {
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
@@ -934,13 +934,62 @@ func TestCodes_addToCache_WritesToDiskOnEviction(t *testing.T) {
 	}
 
 	require := require.New(t)
-	require.Equal(1, len(codes.codes))
-	offset, found := codes.codes[hashes[0]]
+	require.Equal(1, len(codes.flushBuffer))
+	code, found := codes.flushBuffer[hashes[0]]
 	require.True(found)
-	require.Equal(uint64(0), offset)
-	readCode, err := readCodeAtOffset(codes.file, 0)
+	require.Equal([]byte("code0"), code)
+}
+
+func TestCodes_addToCache_WritesToDiskWhenBufferIsFull(t *testing.T) {
+	codes, err := openCodes(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to open codes: %v", err)
+	}
+
+	// Fill the cache with codes until it reaches the eviction threshold.
+	hashes := make([]common.Hash, cacheSize+flushBufferThreshold-1)
+	for i := range cacheSize + flushBufferThreshold - 1 {
+		code := fmt.Appendf(nil, "code%d", i)
+		hashes[i] = codes.add(code)
+	}
+
+	// Check the first flushBufferThreshold-1 entries are in the flush buffer.
+	require := require.New(t)
+	for i := range flushBufferThreshold - 1 {
+		code, found := codes.flushBuffer[hashes[i]]
+		require.True(found)
+		require.Equal([]byte(fmt.Sprintf("code%d", i)), code)
+	}
+
+	// Check that the other ones are in the cache
+	for i := flushBufferThreshold - 1; i < len(hashes); i++ {
+		code, found := codes.cache.Get(hashes[i])
+		require.True(found)
+		require.Equal(fmt.Appendf(nil, "code%d", i), code)
+	}
+
+	// Add one more code to trigger flush to disk.
+	lastCode := fmt.Appendf(nil, "code%d", len(hashes))
+	lastHash := codes.add(lastCode)
+
+	// Check that the last code is in the cache.
+	code, found := codes.cache.Get(lastHash)
+	require.True(found)
+	require.Equal(lastCode, code)
+
+	// FLush buffer is now empty
+	require.Equal(0, len(codes.flushBuffer))
+	// Flush buffer codes are on disk now
+	require.Equal(flushBufferThreshold, len(codes.codes))
+
+	codeRead, err := readCodes(codes.file)
 	require.NoError(err)
-	require.Equal([]byte("code0"), readCode)
+	require.Equal(flushBufferThreshold, len(codeRead))
+	for i := range flushBufferThreshold {
+		code, found := codeRead[hashes[i]]
+		require.True(found)
+		require.Equal([]byte(fmt.Sprintf("code%d", i)), code)
+	}
 }
 
 func TestCodes_getCodeForHash_ReturnsCode(t *testing.T) {
@@ -971,7 +1020,7 @@ func TestCodes_getCodeForHash_ReturnsCode(t *testing.T) {
 	require.Equal(codeInCache, readCode)
 }
 
-func TestCodes_add_ignoresEntriesAlreadyInCacheOrDisk(t *testing.T) {
+func TestCodes_add_ignoresAlreadyExistingEntries(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	codes, err := openCodes(dir)
@@ -989,11 +1038,19 @@ func TestCodes_add_ignoresEntriesAlreadyInCacheOrDisk(t *testing.T) {
 	codeInCache := []byte("code1")
 	hashInCache := common.GetHash(codes.hasher, codeInCache)
 	codes.cache.Set(hashInCache, codeInCache)
+	codeInBuffer := []byte("code2")
+	hashInBuffer := common.GetHash(codes.hasher, codeInBuffer)
+	codes.flushBuffer[hashInBuffer] = codeInBuffer
 	codesOnDisk := []byte("code2")
 	codes.codes[common.GetHash(codes.hasher, codesOnDisk)] = 0 // Simulate on disk
 
 	hash := codes.add(codeInCache)
 	require.Equal(hashInCache, hash)
+	require.Equal(1, getCacheSize())
+	require.Equal(1, len(codes.codes))
+
+	hash = codes.add(codeInBuffer)
+	require.Equal(hashInBuffer, hash)
 	require.Equal(1, getCacheSize())
 	require.Equal(1, len(codes.codes))
 
@@ -1047,6 +1104,10 @@ func TestCodes_Flush_WritesToDisk(t *testing.T) {
 	hashOnDisk := common.GetHash(codes.hasher, codesOnDisk)
 	codes.codes[hashOnDisk] = 0 // Simulate on disk
 
+	codeInFlush := []byte("codeInFlush")
+	hashInFlush := common.GetHash(codes.hasher, codeInFlush)
+	codes.flushBuffer[hashInFlush] = codeInFlush
+
 	code1 := []byte("code1")
 	code2 := []byte("code2")
 	hash1 := common.GetHash(codes.hasher, code1)
@@ -1061,7 +1122,8 @@ func TestCodes_Flush_WritesToDisk(t *testing.T) {
 
 	readCodes, err := readCodes(codes.file)
 	require.NoError(err)
-	require.Equal(2, len(readCodes)) // The CodeOnDisk is skipped
+	require.Equal(3, len(readCodes)) // The CodeOnDisk is skipped
 	require.Equal(code1, readCodes[hash1])
 	require.Equal(code2, readCodes[hash2])
+	require.Equal(codeInFlush, readCodes[hashInFlush])
 }
