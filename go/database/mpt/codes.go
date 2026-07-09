@@ -33,7 +33,7 @@ import (
 // checkpoint and flush operations.
 type codes struct {
 	cache       *common.LruCache[common.Hash, []byte] // < a cache for the most recently used codes
-	codes       map[common.Hash]uint64                // < all managed codes
+	offsets     map[common.Hash]uint64                // < all managed codes
 	flushBuffer map[common.Hash][]byte
 	file        string // < the file to store the codes
 	fileSize    uint64 // < the current file size
@@ -81,7 +81,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 
 	return &codes{
 		cache:       common.NewLruCache[common.Hash, []byte](cacheSize),
-		codes:       data,
+		offsets:     data,
 		flushBuffer: make(map[common.Hash][]byte),
 		file:        file,
 		fileSize:    size,
@@ -96,7 +96,7 @@ func (c *codes) add(code []byte) common.Hash {
 	c.mutex.Lock()
 	if _, inCache := c.cache.Get(hash); !inCache {
 		if _, inFlushBuffer := c.flushBuffer[hash]; !inFlushBuffer {
-			if _, found := c.codes[hash]; !found {
+			if _, found := c.offsets[hash]; !found {
 				c.addToCache(hash, code)
 			}
 		}
@@ -108,7 +108,7 @@ func (c *codes) add(code []byte) common.Hash {
 func (c *codes) addToCache(hash common.Hash, code []byte) error {
 	evictedHash, evictedCode, evicted := c.cache.Set(hash, code)
 	if evicted {
-		if _, onDisk := c.codes[evictedHash]; !onDisk {
+		if _, onDisk := c.offsets[evictedHash]; !onDisk {
 			if _, found := c.flushBuffer[evictedHash]; !found {
 				c.flushBuffer[evictedHash] = evictedCode
 			}
@@ -132,7 +132,7 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 		c.addToCache(hash, code)
 		return code
 	}
-	if offset, found := c.codes[hash]; found {
+	if offset, found := c.offsets[hash]; found {
 		code, err := readCodeAtOffset(c.file, offset)
 		if err != nil {
 			c.mutex.Unlock()
@@ -161,7 +161,7 @@ func (c *codes) Flush() error {
 	defer c.mutex.Unlock()
 
 	c.cache.Iterate(func(hash common.Hash, code []byte) bool {
-		if _, onDisk := c.codes[hash]; !onDisk {
+		if _, onDisk := c.offsets[hash]; !onDisk {
 			c.flushBuffer[hash] = code
 		}
 		return true
@@ -170,6 +170,9 @@ func (c *codes) Flush() error {
 	return c.flushPending()
 }
 
+// flushPening empties the flushBuffer and writes the codes to disk.
+// The offsets and file size are updated.
+// This is intended to be called with the mutex locked.
 func (c *codes) flushPending() error {
 	if len(c.flushBuffer) == 0 {
 		return nil
@@ -182,7 +185,7 @@ func (c *codes) flushPending() error {
 	c.fileSize = size
 	c.flushBuffer = make(map[common.Hash][]byte)
 	for hash, offset := range offsets {
-		c.codes[hash] = offset
+		c.offsets[hash] = offset
 	}
 	return nil
 }
@@ -190,11 +193,18 @@ func (c *codes) flushPending() error {
 func (c *codes) GetMemoryFootprint() *common.MemoryFootprint {
 	var sizeCodes uint
 	c.mutex.Lock()
-	// for k, v := range c.codes {
-	// 	sizeCodes += uint(len(k) + len(v))
-	// }
+	for k, v := range c.offsets {
+		sizeCodes += uint(uint(len(k)) + uint(unsafe.Sizeof(v)))
+	}
+	mf := c.cache.GetDynamicMemoryFootprint(func(v []byte) uintptr {
+		return uintptr(len(v))
+	})
+	// Pending
+	for k, v := range c.flushBuffer {
+		sizeCodes += uint(len(k) + len(v))
+	}
 	c.mutex.Unlock()
-	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + uintptr(sizeCodes))
+	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + uintptr(sizeCodes) + mf.Total())
 }
 
 func (c *codes) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) error {
@@ -334,8 +344,8 @@ func readCodeOffsetsAndSize(path string) (map[common.Hash]uint64, uint64, error)
 		return nil, 0, err
 	}
 	defer file.Close()
-	reader := bufio.NewReader(file)
-	data, err := parseCodeOffsets(reader)
+	// reader := bufio.NewReader(file)
+	data, err := parseCodeOffsets(file)
 	return data, uint64(info.Size()), err
 }
 
@@ -361,7 +371,7 @@ func readCodeAtOffset(path string, offset uint64) ([]byte, error) {
 	return code, nil
 }
 
-func parseCodeOffsets(reader io.Reader) (map[common.Hash]uint64, error) {
+func parseCodeOffsets(reader io.ReadSeeker) (map[common.Hash]uint64, error) {
 	// If the file exists, parse it and return its content.
 	res := map[common.Hash]uint64{}
 	// The format is simple: [<key>, <length>, <code>]*
@@ -379,10 +389,11 @@ func parseCodeOffsets(reader io.Reader) (map[common.Hash]uint64, error) {
 			return nil, err
 		}
 		size := binary.BigEndian.Uint32(length[:])
-		code := make([]byte, size)
-		if _, err := io.ReadFull(reader, code[:]); err != nil {
+		_, err := reader.Seek(int64(size), io.SeekCurrent)
+		if err != nil {
 			return nil, err
 		}
+
 		res[hash] = pos
 		pos += uint64(size) + 32 + 4 // 32 bytes for the hash, 4 bytes for the length
 	}
