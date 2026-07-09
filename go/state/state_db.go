@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"sync"
 	"unsafe"
@@ -1328,6 +1329,10 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
 		return nil
+	}
+
+	if block == 4803542 {
+		fmt.Fprintf(os.Stdout, "Update at block %d: %s\n", block, update.String())
 	}
 
 	// Send the update to the state.
