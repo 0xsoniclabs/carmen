@@ -33,7 +33,7 @@ import (
 // checkpoint and flush operations.
 type codes struct {
 	cache    *common.LruCache[common.Hash, []byte] // < a cache for the most recently used codes
-	codes    map[common.Hash]uint64                // < all managed code offsets on disk
+	offsets  map[common.Hash]uint64                // < all managed code offsets on disk
 	pending  map[common.Hash][]byte                // < codes not yet written to disk
 	file     string                                // < the file to store the codes
 	fileSize uint64                                // < the current file size
@@ -80,7 +80,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 
 	return &codes{
 		cache:      common.NewLruCache[common.Hash, []byte](100_000), // TODO: make this configurable
-		codes:      data,
+		offsets:    data,
 		pending:    make(map[common.Hash][]byte),
 		file:       file,
 		fileSize:   size,
@@ -93,7 +93,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 func (c *codes) add(code []byte) common.Hash {
 	hash := common.GetHash(c.hasher, code)
 	c.mutex.Lock()
-	if _, onDisk := c.codes[hash]; !onDisk {
+	if _, onDisk := c.offsets[hash]; !onDisk {
 		if _, inPending := c.pending[hash]; !inPending {
 			c.handleCacheSet(hash, code)
 		}
@@ -116,7 +116,7 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 		return code
 	}
 	// Fall back to disk
-	offset, onDisk := c.codes[hash]
+	offset, onDisk := c.offsets[hash]
 	if !onDisk {
 		return nil
 	}
@@ -135,7 +135,7 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 func (c *codes) handleCacheSet(key common.Hash, value []byte) {
 	evictedKey, evictedValue, evicted := c.cache.Set(key, value)
 	if evicted {
-		if _, onDisk := c.codes[evictedKey]; !onDisk {
+		if _, onDisk := c.offsets[evictedKey]; !onDisk {
 			c.pending[evictedKey] = evictedValue
 		}
 	}
@@ -172,7 +172,7 @@ func (c *codes) Flush() error {
 	defer c.mutex.Unlock()
 	// Move cache entries not yet on disk into pending before flushing.
 	c.cache.Iterate(func(key common.Hash, value []byte) bool {
-		if _, onDisk := c.codes[key]; !onDisk {
+		if _, onDisk := c.offsets[key]; !onDisk {
 			c.pending[key] = value
 		}
 		return true
@@ -185,7 +185,7 @@ func (c *codes) flushPending() error {
 	if len(c.pending) == 0 {
 		return nil
 	}
-	size, err := appendCodes(c.pending, c.file, c.codes)
+	size, err := appendCodes(c.pending, c.file, c.offsets)
 	if err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ func (c *codes) flushPending() error {
 func (c *codes) GetMemoryFootprint() *common.MemoryFootprint {
 	var sizeCodes uint
 	c.mutex.Lock()
-	for k, v := range c.codes {
+	for k, v := range c.offsets {
 		sizeCodes += uint(uint(len(k)) + uint(unsafe.Sizeof(v)))
 	}
 	mf := c.cache.GetDynamicMemoryFootprint(func(v []byte) uintptr {

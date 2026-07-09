@@ -32,7 +32,7 @@ func TestCodes_OpenCodes(t *testing.T) {
 		t.Fatalf("failed to open codes: %v", err)
 	}
 
-	if want, got := 0, len(codes.codes); want != got {
+	if want, got := 0, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to be empty, got %d", got)
 	}
 }
@@ -191,7 +191,7 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	}
 
 	// After flush, everything is on disk.
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected %d codes on disk, got %d", want, got)
 	}
 	if want, got := 0, len(codes.pending); want != got {
@@ -214,7 +214,7 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 		t.Fatalf("failed to flush: %v", err)
 	}
 
-	if want, got := 3, len(codes.codes); want != got {
+	if want, got := 3, len(codes.offsets); want != got {
 		t.Fatalf("expected %d codes on disk, got %d", want, got)
 	}
 	if want, got := 0, len(codes.pending); want != got {
@@ -259,7 +259,7 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 
 	// Check code positions:
 	// - hash1 is on disk
-	_, onDisk := c.codes[hash1]
+	_, onDisk := c.offsets[hash1]
 	require.True(onDisk)
 	// - hash2 is in pending (evicted from cache, not on disk)
 	_, inPending := c.pending[hash2]
@@ -471,7 +471,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open original codes: %v", err)
 			}
 
-			if want, got := 2, len(codes.codes); want != got {
+			if want, got := 2, len(codes.offsets); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 
@@ -484,7 +484,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open recovered codes: %v", err)
 			}
 
-			if want, got := 1, len(codes.codes); want != got {
+			if want, got := 1, len(codes.offsets); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 		})
@@ -615,7 +615,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 	}
 
 	codes.add([]byte("code3"))
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 	codeSize := 0
@@ -658,7 +658,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -682,7 +682,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to commit checkpoint: %v", err)
 	}
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -696,7 +696,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 0, len(codes.codes); want != got {
+	if want, got := 0, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -730,7 +730,7 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 1, len(codes.codes); want != got {
+	if want, got := 1, len(codes.offsets); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -964,7 +964,7 @@ func TestCodes_readCodeFromDisk_ReadsValueCorrectly(t *testing.T) {
 
 	codes, err := openCodes(dir)
 	require.NoError(err)
-	for hash, offset := range codes.codes {
+	for hash, offset := range codes.offsets {
 		gotCode, err := codes.readCodeFromDisk(offset)
 		require.NoError(err)
 		wantCode := codesToWrite[hash]
@@ -1272,7 +1272,7 @@ func TestCodes_handleCacheSet_EvictedEntryDiscardedWhenOnDisk(t *testing.T) {
 	// Fill cache and mark {10} as already on disk.
 	c.cache.Set(common.Hash{10}, []byte{1})
 	c.cache.Set(common.Hash{11}, []byte{2})
-	c.codes[common.Hash{10}] = 0
+	c.offsets[common.Hash{10}] = 0
 
 	// Insert a new key — evicts {10}, but it's on disk so not added to pending.
 	c.handleCacheSet(common.Hash{99}, []byte{0xFF})
@@ -1304,7 +1304,7 @@ func TestCodes_handleCacheSet_FlushesWhenPendingReachesThreshold(t *testing.T) {
 	// Flush should have been triggered, clearing pending.
 	require.Empty(c.pending)
 	// All flushed entries should now be in c.codes (on disk).
-	require.Equal(pendingFlushThreshold, len(c.codes))
+	require.Equal(pendingFlushThreshold, len(c.offsets))
 }
 
 func TestCodes_writeCode_ReturnsError(t *testing.T) {

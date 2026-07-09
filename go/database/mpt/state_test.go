@@ -310,7 +310,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 
 	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{
 		cache:   common.NewLruCache[common.Hash, []byte](100),
-		codes:   make(map[common.Hash]uint64),
+		offsets: make(map[common.Hash]uint64),
 		pending: make(map[common.Hash][]byte),
 		hasher:  sha3.NewLegacyKeccak256(),
 	}, lock: lock}
@@ -385,7 +385,7 @@ func TestState_HasEmptyStorage(t *testing.T) {
 
 	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{
 		cache:   common.NewLruCache[common.Hash, []byte](100),
-		codes:   make(map[common.Hash]uint64),
+		offsets: make(map[common.Hash]uint64),
 		pending: make(map[common.Hash][]byte),
 		hasher:  sha3.NewLegacyKeccak256(),
 	}, lock: lock, directory: dir}
@@ -569,7 +569,7 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 
 	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{
 		cache:   common.NewLruCache[common.Hash, []byte](100),
-		codes:   make(map[common.Hash]uint64),
+		offsets: make(map[common.Hash]uint64),
 		pending: make(map[common.Hash][]byte),
 		hasher:  sha3.NewLegacyKeccak256(),
 	}, lock: lock}
