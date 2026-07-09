@@ -105,7 +105,7 @@ func (c *codes) add(code []byte) common.Hash {
 	return hash
 }
 
-func (c *codes) addToCache(hash common.Hash, code []byte) {
+func (c *codes) addToCache(hash common.Hash, code []byte) error {
 	evictedHash, evictedCode, evicted := c.cache.Set(hash, code)
 	if evicted {
 		if _, onDisk := c.codes[evictedHash]; !onDisk {
@@ -113,14 +113,11 @@ func (c *codes) addToCache(hash common.Hash, code []byte) {
 				c.flushBuffer[evictedHash] = evictedCode
 			}
 			if len(c.flushBuffer) >= flushBufferThreshold {
-				//TODO: Handle error
-				fileSize, _ := appendCodes(c.flushBuffer, c.file)
-				c.codes, _, _ = readCodeOffsetsAndSize(c.file)
-				c.fileSize = fileSize
-				c.flushBuffer = make(map[common.Hash][]byte)
+				return c.flushPending()
 			}
 		}
 	}
+	return nil
 }
 
 func (c *codes) getCodeForHash(hash common.Hash) []byte {
@@ -169,13 +166,24 @@ func (c *codes) Flush() error {
 		}
 		return true
 	})
-	size, err := appendCodes(c.flushBuffer, c.file)
+
+	return c.flushPending()
+}
+
+func (c *codes) flushPending() error {
+	if len(c.flushBuffer) == 0 {
+		return nil
+	}
+
+	offsets, size, err := appendCodes(c.flushBuffer, c.file)
 	if err != nil {
 		return err
 	}
 	c.fileSize = size
 	c.flushBuffer = make(map[common.Hash][]byte)
-	c.codes, _, _ = readCodeOffsetsAndSize(c.file) // Init the codes again
+	for hash, offset := range offsets {
+		c.codes[hash] = offset
+	}
 	return nil
 }
 
@@ -407,45 +415,47 @@ func parseCodes(reader io.Reader) (map[common.Hash][]byte, error) {
 
 // writeCodes write the given map of codes to the given file.
 func writeCodes(codes map[common.Hash][]byte, filename string) (err error) {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	buffer := bufio.NewWriter(file)
-	return errors.Join(
-		writeCodesTo(codes, buffer),
-		buffer.Flush(),
-		file.Close(),
-	)
+	_, _, err = appendCodes(codes, filename)
+	return err
 }
 
 // appendCodes appends the given map of codes to the given file.
-func appendCodes(codes map[common.Hash][]byte, filename string) (fileSize uint64, err error) {
+func appendCodes(codes map[common.Hash][]byte, filename string) (offsets map[common.Hash]uint64, fileSize uint64, err error) {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
+	}
+	curOffset, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, 0, err
 	}
 	buffer := bufio.NewWriter(file)
-	err1 := writeCodesTo(codes, buffer)
+	offsets = make(map[common.Hash]uint64)
+	for hash, code := range codes {
+		err = writeCode(hash, code, buffer)
+		if err != nil {
+			return nil, 0, err
+		}
+		offsets[hash] = uint64(curOffset)
+		curOffset += int64(len(code)) + 32 + 4 // 32 bytes for the hash, 4 bytes for the length
+	}
 	err2 := buffer.Flush()
 	size, err3 := file.Seek(0, io.SeekCurrent)
-	return uint64(size), errors.Join(err1, err2, err3, file.Close())
+	return offsets, uint64(size), errors.Join(err2, err3, file.Close())
 }
 
-func writeCodesTo(codes map[common.Hash][]byte, out io.Writer) (err error) {
+func writeCode(hash common.Hash, code []byte, out io.Writer) (err error) {
 	// The format is simple: [<key>, <length>, <code>]*
-	for key, code := range codes {
-		if _, err := out.Write(key[:]); err != nil {
-			return err
-		}
-		var length [4]byte
-		binary.BigEndian.PutUint32(length[:], uint32(len(code)))
-		if _, err := out.Write(length[:]); err != nil {
-			return err
-		}
-		if _, err := out.Write(code); err != nil {
-			return err
-		}
+	if _, err := out.Write(hash[:]); err != nil {
+		return err
+	}
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(code)))
+	if _, err := out.Write(length[:]); err != nil {
+		return err
+	}
+	if _, err := out.Write(code); err != nil {
+		return err
 	}
 	return nil
 }

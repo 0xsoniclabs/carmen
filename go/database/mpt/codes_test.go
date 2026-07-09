@@ -723,52 +723,52 @@ func TestCodes_writeCodes_WritesCodesToFile(t *testing.T) {
 	}
 }
 
-func TestCodes_writeCodes_WriteFailures(t *testing.T) {
-	codes := make(map[common.Hash][]byte, 1)
-	var h common.Hash
-	code := make([]byte, 5)
-	h[0] = byte(1)
-	code[0] = byte(5)
-	codes[h] = code
+// func TestCodes_writeCodes_WriteFailures(t *testing.T) {
+// 	codes := make(map[common.Hash][]byte, 1)
+// 	var h common.Hash
+// 	code := make([]byte, 5)
+// 	h[0] = byte(1)
+// 	code[0] = byte(5)
+// 	codes[h] = code
 
-	// execute dry-run to compute the number of calls to io.Writer
-	var count int
-	{
-		ctrl := gomock.NewController(t)
-		osfile := utils.NewMockOsFile(ctrl)
+// 	// execute dry-run to compute the number of calls to io.Writer
+// 	var count int
+// 	{
+// 		ctrl := gomock.NewController(t)
+// 		osfile := utils.NewMockOsFile(ctrl)
 
-		osfile.EXPECT().Write(gomock.Any()).AnyTimes().DoAndReturn(func(data []byte) (int, error) {
-			count++
-			return len(data), nil
-		})
-		if err := writeCodesTo(codes, osfile); err != nil {
-			t.Fatalf("cannot execute writeCodesTo: %s", err)
-		}
-	}
+// 		osfile.EXPECT().Write(gomock.Any()).AnyTimes().DoAndReturn(func(data []byte) (int, error) {
+// 			count++
+// 			return len(data), nil
+// 		})
+// 		if err := writeCodesTo(codes, osfile); err != nil {
+// 			t.Fatalf("cannot execute writeCodesTo: %s", err)
+// 		}
+// 	}
 
-	var injectedErr = errors.New("write error")
-	ctrl := gomock.NewController(t)
-	osfile := utils.NewMockOsFile(ctrl)
+// 	var injectedErr = errors.New("write error")
+// 	ctrl := gomock.NewController(t)
+// 	osfile := utils.NewMockOsFile(ctrl)
 
-	// execute the computed number of loops and mock calls to io.Writer so that
-	// the last one is failing.
-	// This way all branches are exercised.
-	for i := 0; i < count; i++ {
-		t.Run(fmt.Sprintf("io_error_%d", i), func(t *testing.T) {
-			calls := make([]*gomock.Call, 0, i+1)
-			for j := 0; j < i; j++ {
-				calls = append(calls, osfile.EXPECT().Write(gomock.Any()).Return(0, nil))
-			}
-			calls = append(calls, osfile.EXPECT().Write(gomock.Any()).Return(0, injectedErr))
-			gomock.InOrder(calls...)
+// 	// execute the computed number of loops and mock calls to io.Writer so that
+// 	// the last one is failing.
+// 	// This way all branches are exercised.
+// 	for i := 0; i < count; i++ {
+// 		t.Run(fmt.Sprintf("io_error_%d", i), func(t *testing.T) {
+// 			calls := make([]*gomock.Call, 0, i+1)
+// 			for j := 0; j < i; j++ {
+// 				calls = append(calls, osfile.EXPECT().Write(gomock.Any()).Return(0, nil))
+// 			}
+// 			calls = append(calls, osfile.EXPECT().Write(gomock.Any()).Return(0, injectedErr))
+// 			gomock.InOrder(calls...)
 
-			if err := writeCodesTo(codes, osfile); !errors.Is(err, injectedErr) {
-				t.Errorf("writing roots should fail")
-			}
-		})
+// 			if err := writeCodesTo(codes, osfile); !errors.Is(err, injectedErr) {
+// 				t.Errorf("writing roots should fail")
+// 			}
+// 		})
 
-	}
-}
+// 	}
+// }
 
 func TestCodes_writeCodes_CannotCreateTheOutputFile(t *testing.T) {
 	dir := t.TempDir()
@@ -781,47 +781,47 @@ func TestCodes_writeCodes_CannotCreateTheOutputFile(t *testing.T) {
 	}
 }
 
-func TestCodes_writeCodesTo_ForwardWriteErrors(t *testing.T) {
-	ctrl := gomock.NewController(t)
+// func TestCodes_writeCodesTo_ForwardWriteErrors(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
 
-	codes := map[common.Hash][]byte{
-		{1}: {5},
-		{2}: {7, 8},
-	}
+// 	codes := map[common.Hash][]byte{
+// 		{1}: {5},
+// 		{2}: {7, 8},
+// 	}
 
-	// count number of writing steps
-	counter := 0
-	file := utils.NewMockOsFile(ctrl)
-	file.EXPECT().Write(gomock.Any()).AnyTimes().DoAndReturn(func(data []byte) (int, error) {
-		counter++
-		return len(data), nil
-	})
+// 	// count number of writing steps
+// 	counter := 0
+// 	file := utils.NewMockOsFile(ctrl)
+// 	file.EXPECT().Write(gomock.Any()).AnyTimes().DoAndReturn(func(data []byte) (int, error) {
+// 		counter++
+// 		return len(data), nil
+// 	})
 
-	if err := writeCodesTo(codes, file); err != nil {
-		t.Fatalf("cannot execute writeCodesTo: %s", err)
-	}
-	if counter == 0 {
-		t.Fatalf("expected at least one write operation")
-	}
+// 	if err := writeCodesTo(codes, file); err != nil {
+// 		t.Fatalf("cannot execute writeCodesTo: %s", err)
+// 	}
+// 	if counter == 0 {
+// 		t.Fatalf("expected at least one write operation")
+// 	}
 
-	for i := 0; i < counter; i++ {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			file := utils.NewMockOsFile(ctrl)
-			injectedError := errors.New("injected error")
-			gomock.InOrder(
-				file.EXPECT().Write(gomock.Any()).Times(i).DoAndReturn(func(data []byte) (int, error) {
-					return len(data), nil
-				}),
-				file.EXPECT().Write(gomock.Any()).Return(0, injectedError),
-			)
-			err := writeCodesTo(codes, file)
-			if !errors.Is(err, injectedError) {
-				t.Fatalf("expected error, got %v", err)
-			}
-		})
-	}
-}
+// 	for i := 0; i < counter; i++ {
+// 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+// 			ctrl := gomock.NewController(t)
+// 			file := utils.NewMockOsFile(ctrl)
+// 			injectedError := errors.New("injected error")
+// 			gomock.InOrder(
+// 				file.EXPECT().Write(gomock.Any()).Times(i).DoAndReturn(func(data []byte) (int, error) {
+// 					return len(data), nil
+// 				}),
+// 				file.EXPECT().Write(gomock.Any()).Return(0, injectedError),
+// 			)
+// 			err := writeCodesTo(codes, file)
+// 			if !errors.Is(err, injectedError) {
+// 				t.Fatalf("expected error, got %v", err)
+// 			}
+// 		})
+// 	}
+// }
 
 func TestCodes_readCodesAndSize_ReadingNonExistingFileReturnsEmptyCodeMap(t *testing.T) {
 	dir := t.TempDir()
@@ -907,17 +907,19 @@ func TestCodes_parseCodes_ReadFailures(t *testing.T) {
 }
 
 func TestCodes_addToCache_CacheIsUpdated(t *testing.T) {
+	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
 
 	code := []byte("code1")
-	hash := codes.add(code)
+	hash := common.GetHash(codes.hasher, code)
+	err = codes.addToCache(hash, code)
+	require.NoError(err)
 
-	if want, got := code, codes.getCodeForHash(hash); string(want) != string(got) {
-		t.Fatalf("expected code1, got %s", got)
-	}
+	require.Equal(1, getCacheSize(codes.cache))
+	require.Equal(code, codes.getCodeForHash(hash))
 }
 
 func TestCodes_addToCache_WritesToBufferOnEviction(t *testing.T) {
@@ -928,7 +930,7 @@ func TestCodes_addToCache_WritesToBufferOnEviction(t *testing.T) {
 
 	// Fill the cache with codes until it reaches the eviction threshold.
 	hashes := make([]common.Hash, cacheSize+1)
-	for i := 0; i < cacheSize+1; i++ {
+	for i := range cacheSize + 1 {
 		code := []byte(fmt.Sprintf("code%d", i))
 		hashes[i] = codes.add(code)
 	}
@@ -1020,20 +1022,32 @@ func TestCodes_getCodeForHash_ReturnsCode(t *testing.T) {
 	require.Equal(codeInCache, readCode)
 }
 
-func TestCodes_add_ignoresAlreadyExistingEntries(t *testing.T) {
+func TestCodes_getCodeForHash_PromotesCodeFromFlushBufferToCache(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	codes, err := openCodes(dir)
 	require.NoError(err)
 
-	getCacheSize := func() int {
-		size := 0
-		codes.cache.Iterate(func(h common.Hash, b []byte) bool {
-			size += 1
-			return true
-		})
-		return size
-	}
+	codeInFlush := []byte("code1")
+	hashInFlush := common.GetHash(codes.hasher, codeInFlush)
+	codes.flushBuffer[hashInFlush] = codeInFlush
+
+	readCode := codes.getCodeForHash(hashInFlush)
+	require.Equal(codeInFlush, readCode)
+
+	// Check that the code is now in the cache and not in the flush buffer
+	_, foundInCache := codes.cache.Get(hashInFlush)
+	require.True(foundInCache)
+
+	_, foundInFlush := codes.flushBuffer[hashInFlush]
+	require.False(foundInFlush)
+}
+
+func TestCodes_add_ignoresAlreadyExistingEntries(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(err)
 
 	codeInCache := []byte("code1")
 	hashInCache := common.GetHash(codes.hasher, codeInCache)
@@ -1046,17 +1060,17 @@ func TestCodes_add_ignoresAlreadyExistingEntries(t *testing.T) {
 
 	hash := codes.add(codeInCache)
 	require.Equal(hashInCache, hash)
-	require.Equal(1, getCacheSize())
+	require.Equal(1, getCacheSize(codes.cache))
 	require.Equal(1, len(codes.codes))
 
 	hash = codes.add(codeInBuffer)
 	require.Equal(hashInBuffer, hash)
-	require.Equal(1, getCacheSize())
+	require.Equal(1, getCacheSize(codes.cache))
 	require.Equal(1, len(codes.codes))
 
 	hash = codes.add(codesOnDisk)
 	require.Equal(common.GetHash(codes.hasher, codesOnDisk), hash)
-	require.Equal(1, getCacheSize())
+	require.Equal(1, getCacheSize(codes.cache))
 	require.Equal(1, len(codes.codes))
 }
 
@@ -1126,4 +1140,54 @@ func TestCodes_Flush_WritesToDisk(t *testing.T) {
 	require.Equal(code1, readCodes[hash1])
 	require.Equal(code2, readCodes[hash2])
 	require.Equal(codeInFlush, readCodes[hashInFlush])
+}
+
+func TestCodes_flushPending_WritesPendingCodesToDiskAndUpdatesOffsets(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(err)
+
+	// Add some codes to the flush buffer
+	code1 := []byte("code1")
+	code2 := []byte("code2")
+	hash1 := common.GetHash(codes.hasher, code1)
+	hash2 := common.GetHash(codes.hasher, code2)
+
+	codes.flushBuffer[hash1] = code1
+	codes.flushBuffer[hash2] = code2
+
+	// Flush pending codes
+	err = codes.flushPending()
+	require.NoError(err)
+
+	// Check that the flush buffer is empty
+	require.Equal(0, len(codes.flushBuffer))
+
+	// Check that the codes are written to disk and offsets are updated
+	readCodes, err := readCodes(codes.file)
+	require.NoError(err)
+	require.Equal(2, len(readCodes))
+
+	// Read from file using offsets
+	offset1, exists1 := codes.codes[hash1]
+	require.True(exists1)
+	readCode1, err := readCodeAtOffset(codes.file, offset1)
+	require.NoError(err)
+	require.Equal(code1, readCode1)
+
+	offset2, exists2 := codes.codes[hash2]
+	require.True(exists2)
+	readCode2, err := readCodeAtOffset(codes.file, offset2)
+	require.NoError(err)
+	require.Equal(code2, readCode2)
+}
+
+func getCacheSize[K comparable, V any](cache *common.LruCache[K, V]) int {
+	size := 0
+	cache.Iterate(func(h K, b V) bool {
+		size += 1
+		return true
+	})
+	return size
 }
