@@ -417,7 +417,8 @@ func appendCodes(codes map[common.Hash][]byte, filename string, offsets map[comm
 		fileSize += uint64(len(code)) + 4 + 32 // 4 bytes for length, 32 bytes for hash
 	}
 	err2 := buffer.Flush()
-	return fileSize, errors.Join(err2, file.Close())
+	size, err1 := file.Seek(0, io.SeekCurrent)
+	return uint64(size), errors.Join(err1, err2, file.Close())
 }
 
 // writeCode writes a single code entry to the given writer in the format:
