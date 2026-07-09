@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"sync"
 	"unsafe"
@@ -1316,6 +1317,8 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 	if err := s.Check(); err != nil {
 		return nil
 	}
+
+	fmt.Fprintf(os.Stdout, "StateDB: EndBlock %d, applying update: %s\n", block, update.String())
 
 	// Send the update to the state.
 	archiveDone, err := s.state.Apply(block, update)
