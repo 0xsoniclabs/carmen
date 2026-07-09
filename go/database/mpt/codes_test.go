@@ -915,7 +915,7 @@ func TestCodes_addToCache_CacheIsUpdated(t *testing.T) {
 
 	code := []byte("code1")
 	hash := common.GetHash(codes.hasher, code)
-	err = codes.addToCache(hash, code)
+	err = codes.handleCacheSet(hash, code)
 	require.NoError(err)
 
 	require.Equal(1, getCacheSize(codes.cache))

@@ -97,7 +97,7 @@ func (c *codes) add(code []byte) common.Hash {
 	if _, inCache := c.cache.Get(hash); !inCache {
 		if _, inFlushBuffer := c.flushBuffer[hash]; !inFlushBuffer {
 			if _, found := c.offsets[hash]; !found {
-				c.addToCache(hash, code)
+				c.handleCacheSet(hash, code)
 			}
 		}
 	}
@@ -105,7 +105,33 @@ func (c *codes) add(code []byte) common.Hash {
 	return hash
 }
 
-func (c *codes) addToCache(hash common.Hash, code []byte) error {
+func (c *codes) getCodeForHash(hash common.Hash) []byte {
+	c.mutex.Lock()
+	if code, inCache := c.cache.Get(hash); inCache {
+		c.mutex.Unlock()
+		return code
+	}
+	if code, inFlushBuffer := c.flushBuffer[hash]; inFlushBuffer {
+		c.mutex.Unlock()
+		delete(c.flushBuffer, hash)
+		c.handleCacheSet(hash, code)
+		return code
+	}
+	if offset, found := c.offsets[hash]; found {
+		code, err := readCodeAtOffset(c.file, offset)
+		if err != nil {
+			c.mutex.Unlock()
+			return nil
+		}
+		c.handleCacheSet(hash, code)
+		c.mutex.Unlock()
+		return code
+	}
+	c.mutex.Unlock()
+	return nil
+}
+
+func (c *codes) handleCacheSet(hash common.Hash, code []byte) error {
 	evictedHash, evictedCode, evicted := c.cache.Set(hash, code)
 	if evicted {
 		if _, onDisk := c.offsets[evictedHash]; !onDisk {
@@ -120,30 +146,26 @@ func (c *codes) addToCache(hash common.Hash, code []byte) error {
 	return nil
 }
 
-func (c *codes) getCodeForHash(hash common.Hash) []byte {
-	c.mutex.Lock()
-	if code, inCache := c.cache.Get(hash); inCache {
-		c.mutex.Unlock()
-		return code
+func readCodeAtOffset(path string, offset uint64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	if code, inFlushBuffer := c.flushBuffer[hash]; inFlushBuffer {
-		c.mutex.Unlock()
-		delete(c.flushBuffer, hash)
-		c.addToCache(hash, code)
-		return code
+	defer file.Close()
+
+	if _, err := file.Seek(int64(offset)+32, io.SeekStart); err != nil {
+		return nil, err
 	}
-	if offset, found := c.offsets[hash]; found {
-		code, err := readCodeAtOffset(c.file, offset)
-		if err != nil {
-			c.mutex.Unlock()
-			return nil
-		}
-		c.addToCache(hash, code)
-		c.mutex.Unlock()
-		return code
+	var length [4]byte
+	if _, err := io.ReadFull(file, length[:]); err != nil {
+		return nil, err
 	}
-	c.mutex.Unlock()
-	return nil
+	size := binary.BigEndian.Uint32(length[:])
+	code := make([]byte, size)
+	if _, err := io.ReadFull(file, code[:]); err != nil {
+		return nil, err
+	}
+	return code, nil
 }
 
 func (c *codes) getCodes() map[common.Hash][]byte {
@@ -346,28 +368,6 @@ func readCodeOffsetsAndSize(path string) (map[common.Hash]uint64, uint64, error)
 	defer file.Close()
 	data, err := parseCodeOffsets(file)
 	return data, uint64(info.Size()), err
-}
-
-func readCodeAtOffset(path string, offset uint64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	if _, err := file.Seek(int64(offset)+32, io.SeekStart); err != nil {
-		return nil, err
-	}
-	var length [4]byte
-	if _, err := io.ReadFull(file, length[:]); err != nil {
-		return nil, err
-	}
-	size := binary.BigEndian.Uint32(length[:])
-	code := make([]byte, size)
-	if _, err := io.ReadFull(file, code[:]); err != nil {
-		return nil, err
-	}
-	return code, nil
 }
 
 func parseCodeOffsets(reader io.ReadSeeker) (map[common.Hash]uint64, error) {
