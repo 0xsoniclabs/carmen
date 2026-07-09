@@ -309,30 +309,32 @@ func (r codeRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 // readCodes parses the content of the given file if it exists or returns
 // a an empty code collection if there is no such file.
 func readCodes(path string) (_ map[common.Hash][]byte, retErr error) {
-	file, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return map[common.Hash][]byte{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer func() { retErr = errors.Join(retErr, file.Close()) }()
+	// file, err := os.Open(path)
+	// if os.IsNotExist(err) {
+	// 	return map[common.Hash][]byte{}, nil
+	// }
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// defer func() { retErr = errors.Join(retErr, file.Close()) }()
 
-	return readCodesFromReader(file)
+	// return readCodesFromReader(file)
+	return nil, nil
 }
 
 func readCodesFromReader(reader io.Reader) (_ map[common.Hash][]byte, retErr error) {
-	codes := map[common.Hash][]byte{}
-	for {
-		hash, code, err := readCode(reader)
-		if err != nil {
-			if err == io.EOF {
-				return codes, nil
-			}
-			return nil, err
-		}
-		codes[hash] = code
-	}
+	// codes := map[common.Hash][]byte{}
+	// for {
+	// 	hash, code, err := readCode(reader)
+	// 	if err != nil {
+	// 		if err == io.EOF {
+	// 			return codes, nil
+	// 		}
+	// 		return nil, err
+	// 	}
+	// 	codes[hash] = code
+	// }
+	return nil, nil
 }
 
 // readCodeOffsetsAndSize parses the content of the given file and returns the
@@ -357,41 +359,43 @@ func readCodeOffsetsAndSize(path string) (_ map[common.Hash]uint64, _ uint64, re
 }
 
 func parseCodes(reader io.ReadSeeker) (map[common.Hash]uint64, error) {
-	res := map[common.Hash]uint64{}
-	for {
-		offset, err := reader.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return nil, err
-		}
-		hash, _, err := readCode(reader)
-		if err != nil {
-			if err == io.EOF {
-				return res, nil
-			}
-			return nil, err
-		}
-		res[hash] = uint64(offset)
-	}
+	// res := map[common.Hash]uint64{}
+	// for {
+	// 	offset, err := reader.Seek(0, io.SeekCurrent)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	hash, _, err := readCode(reader)
+	// 	if err != nil {
+	// 		if err == io.EOF {
+	// 			return res, nil
+	// 		}
+	// 		return nil, err
+	// 	}
+	// 	res[hash] = uint64(offset)
+	// }
+	return nil, nil
 }
 
 // readCode reads a single code entry from the reader, returning the hash and
 // the code bytes. It advances the reader past the entry.
 // Returns io.EOF when there are no more entries.
 func readCode(reader io.Reader) (common.Hash, []byte, error) {
-	var hash common.Hash
-	if _, err := io.ReadFull(reader, hash[:]); err != nil {
-		return hash, nil, err
-	}
-	var length [4]byte
-	if _, err := io.ReadFull(reader, length[:]); err != nil {
-		return hash, nil, err
-	}
-	size := binary.BigEndian.Uint32(length[:])
-	code := make([]byte, size)
-	if _, err := io.ReadFull(reader, code); err != nil {
-		return hash, nil, err
-	}
-	return hash, code, nil
+	// var hash common.Hash
+	// if _, err := io.ReadFull(reader, hash[:]); err != nil {
+	// 	return hash, nil, err
+	// }
+	// var length [4]byte
+	// if _, err := io.ReadFull(reader, length[:]); err != nil {
+	// 	return hash, nil, err
+	// }
+	// size := binary.BigEndian.Uint32(length[:])
+	// code := make([]byte, size)
+	// if _, err := io.ReadFull(reader, code); err != nil {
+	// 	return hash, nil, err
+	// }
+	// return hash, code, nil
+	return common.Hash{}, nil, nil
 }
 
 // appendCodes appends the given map of codes to the given file.
