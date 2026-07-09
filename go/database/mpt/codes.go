@@ -93,9 +93,11 @@ func openCodes(stateDirectory string) (*codes, error) {
 func (c *codes) add(code []byte) common.Hash {
 	hash := common.GetHash(c.hasher, code)
 	c.mutex.Lock()
-	if _, onDisk := c.offsets[hash]; !onDisk {
-		if _, inPending := c.pending[hash]; !inPending {
-			c.handleCacheSet(hash, code)
+	if _, inCache := c.cache.Get(hash); !inCache {
+		if _, onDisk := c.offsets[hash]; !onDisk {
+			if _, inPending := c.pending[hash]; !inPending {
+				c.handleCacheSet(hash, code)
+			}
 		}
 	}
 	c.mutex.Unlock()
@@ -120,7 +122,7 @@ func (c *codes) getCodeForHash(hash common.Hash) []byte {
 	if !onDisk {
 		return nil
 	}
-	code, err := c.readCodeFromDisk(offset)
+	code, err := c.readCodeAtOffset(offset)
 	if err != nil {
 		return nil
 	}
@@ -144,8 +146,8 @@ func (c *codes) handleCacheSet(key common.Hash, value []byte) {
 	}
 }
 
-// readCodeFromDisk reads a code at the given offset from the codes file.
-func (c *codes) readCodeFromDisk(offset uint64) ([]byte, error) {
+// readCodeAtOffset reads a code at the given offset from the codes file.
+func (c *codes) readCodeAtOffset(offset uint64) ([]byte, error) {
 	f, err := os.Open(c.file)
 	if err != nil {
 		return nil, err
@@ -400,7 +402,7 @@ func appendCodes(codes map[common.Hash][]byte, filename string, offsets map[comm
 		return 0, err
 	}
 	// Get the current end-of-file position as the starting offset.
-	offset, err := file.Seek(0, io.SeekEnd)
+	offset, err := file.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return 0, errors.Join(err, file.Close())
 	}

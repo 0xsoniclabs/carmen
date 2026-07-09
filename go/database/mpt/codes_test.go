@@ -965,7 +965,7 @@ func TestCodes_readCodeFromDisk_ReadsValueCorrectly(t *testing.T) {
 	codes, err := openCodes(dir)
 	require.NoError(err)
 	for hash, offset := range codes.offsets {
-		gotCode, err := codes.readCodeFromDisk(offset)
+		gotCode, err := codes.readCodeAtOffset(offset)
 		require.NoError(err)
 		wantCode := codesToWrite[hash]
 		require.Equal(wantCode, gotCode)
@@ -1058,7 +1058,7 @@ func TestCodes_readCodeFromDisk_ErrorCases(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			c, offset := test.prepare(t)
-			_, err := c.readCodeFromDisk(offset)
+			_, err := c.readCodeAtOffset(offset)
 			require.Error(err)
 		})
 	}
@@ -1187,7 +1187,7 @@ func TestCodes_appendCodes(t *testing.T) {
 			// Verify all appended codes can be read back from their offsets.
 			c := &codes{file: file}
 			for h, want := range test.toAppend {
-				got, err := c.readCodeFromDisk(offsets[h])
+				got, err := c.readCodeAtOffset(offsets[h])
 				require.NoError(err)
 				require.Equal(want, got, "mismatch for hash %v", h)
 			}
