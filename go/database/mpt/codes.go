@@ -344,7 +344,6 @@ func readCodeOffsetsAndSize(path string) (map[common.Hash]uint64, uint64, error)
 		return nil, 0, err
 	}
 	defer file.Close()
-	// reader := bufio.NewReader(file)
 	data, err := parseCodeOffsets(file)
 	return data, uint64(info.Size()), err
 }
@@ -377,25 +376,25 @@ func parseCodeOffsets(reader io.ReadSeeker) (map[common.Hash]uint64, error) {
 	// The format is simple: [<key>, <length>, <code>]*
 	var hash common.Hash
 	var length [4]byte
-	pos := uint64(0)
 	for {
+		codePos, err := reader.Seek(0, io.SeekCurrent)
+		pos := uint64(codePos)
 		if _, err := io.ReadFull(reader, hash[:]); err != nil {
 			if err == io.EOF {
 				return res, nil
 			}
 			return nil, err
 		}
+		res[hash] = pos
+		// Skip the code, we only need the offsets.
 		if _, err := io.ReadFull(reader, length[:]); err != nil {
 			return nil, err
 		}
 		size := binary.BigEndian.Uint32(length[:])
-		_, err := reader.Seek(int64(size), io.SeekCurrent)
+		_, err = reader.Seek(int64(size), io.SeekCurrent)
 		if err != nil {
 			return nil, err
 		}
-
-		res[hash] = pos
-		pos += uint64(size) + 32 + 4 // 32 bytes for the hash, 4 bytes for the length
 	}
 }
 
