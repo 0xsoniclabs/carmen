@@ -309,31 +309,30 @@ func (r codeRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 // readCodes parses the content of the given file if it exists or returns
 // a an empty code collection if there is no such file.
 func readCodes(path string) (_ map[common.Hash][]byte, retErr error) {
-	// file, err := os.Open(path)
-	// if os.IsNotExist(err) {
-	// 	return map[common.Hash][]byte{}, nil
-	// }
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// defer func() { retErr = errors.Join(retErr, file.Close()) }()
+	file, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return map[common.Hash][]byte{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { retErr = errors.Join(retErr, file.Close()) }()
 
-	// return readCodesFromReader(file)
-	return nil, nil
+	return readCodesFromReader(file)
 }
 
 func readCodesFromReader(reader io.Reader) (_ map[common.Hash][]byte, retErr error) {
-	// codes := map[common.Hash][]byte{}
-	// for {
-	// 	hash, code, err := readCode(reader)
-	// 	if err != nil {
-	// 		if err == io.EOF {
-	// 			return codes, nil
-	// 		}
-	// 		return nil, err
-	// 	}
-	// 	codes[hash] = code
-	// }
+	codes := map[common.Hash][]byte{}
+	for {
+		hash, code, err := readCode(reader)
+		if err != nil {
+			if err == io.EOF {
+				return codes, nil
+			}
+			return nil, err
+		}
+		codes[hash] = code
+	}
 	return nil, nil
 }
 
