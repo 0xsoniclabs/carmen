@@ -11,7 +11,6 @@
 package mpt
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -26,10 +25,10 @@ import (
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
 
-	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 )
@@ -202,46 +201,46 @@ func BenchmarkStorageChanges(b *testing.B) {
 	}
 }
 
-func TestReadCodes(t *testing.T) {
-	var h1 common.Hash
-	var h2 common.Hash
-	var h3 common.Hash
+// func TestReadCodes(t *testing.T) {
+// 	var h1 common.Hash
+// 	var h2 common.Hash
+// 	var h3 common.Hash
 
-	h1[0] = 0xAA
-	h2[0] = 0xBB
-	h3[0] = 0xCC
+// 	h1[0] = 0xAA
+// 	h2[0] = 0xBB
+// 	h3[0] = 0xCC
 
-	h1[31] = 0xAA
-	h2[31] = 0xBB
-	h3[31] = 0xCC
+// 	h1[31] = 0xAA
+// 	h2[31] = 0xBB
+// 	h3[31] = 0xCC
 
-	code1 := []byte{0xDD, 0xEE, 0xFF}
-	code2 := []byte{0xDD, 0xEE}
-	code3 := []byte{0xEE}
+// 	code1 := []byte{0xDD, 0xEE, 0xFF}
+// 	code2 := []byte{0xDD, 0xEE}
+// 	code3 := []byte{0xEE}
 
-	var data []byte
-	data = append(data, append(binary.BigEndian.AppendUint32(h1[:], uint32(len(code1))), code1...)...)
-	data = append(data, append(binary.BigEndian.AppendUint32(h2[:], uint32(len(code2))), code2...)...)
-	data = append(data, append(binary.BigEndian.AppendUint32(h3[:], uint32(len(code3))), code3...)...)
+// 	var data []byte
+// 	data = append(data, append(binary.BigEndian.AppendUint32(h1[:], uint32(len(code1))), code1...)...)
+// 	data = append(data, append(binary.BigEndian.AppendUint32(h2[:], uint32(len(code2))), code2...)...)
+// 	data = append(data, append(binary.BigEndian.AppendUint32(h3[:], uint32(len(code3))), code3...)...)
 
-	reader := utils.NewChunkReader(data, 3)
-	res, err := parseCodes(reader)
-	if err != nil {
-		t.Fatalf("should not fail: %s", err)
-	}
+// 	reader := utils.NewChunkReader(data, 3)
+// 	res, err := parseCodes(reader)
+// 	if err != nil {
+// 		t.Fatalf("should not fail: %s", err)
+// 	}
 
-	if code, exists := res[h1]; !exists || !bytes.Equal(code, code1) {
-		t.Errorf("bytes do not match: %x != %x", code, code1)
-	}
+// 	if code, exists := res[h1]; !exists || !bytes.Equal(code, code1) {
+// 		t.Errorf("bytes do not match: %x != %x", code, code1)
+// 	}
 
-	if code, exists := res[h2]; !exists || !bytes.Equal(code, code2) {
-		t.Errorf("bytes do not match: %x != %x", code, code1)
-	}
+// 	if code, exists := res[h2]; !exists || !bytes.Equal(code, code2) {
+// 		t.Errorf("bytes do not match: %x != %x", code, code1)
+// 	}
 
-	if code, exists := res[h3]; !exists || !bytes.Equal(code, code3) {
-		t.Errorf("bytes do not match: %x != %x", code, code1)
-	}
-}
+// 	if code, exists := res[h3]; !exists || !bytes.Equal(code, code3) {
+// 		t.Errorf("bytes do not match: %x != %x", code, code1)
+// 	}
+// }
 
 func TestState_tryMarkDirty_Fail_Access_Dir(t *testing.T) {
 	if err := tryMarkDirty("abc"); err == nil {
@@ -304,7 +303,9 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	codes, err := openCodes(t.TempDir())
+	require.NoError(t, err)
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: codes, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedErr) {
 			t.Errorf("unexpected error: %v != %v", err, injectedErr)
@@ -380,7 +381,9 @@ func TestState_HasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to mark directory dirty: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{}, lock: lock, directory: dir}
+	codes, err := openCodes(dir)
+	require.NoError(t, err)
+	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: codes, lock: lock, directory: dir}
 	defer func() {
 		if err := state.Close(); err != nil {
 			t.Fatalf("failed to close the state: %v", err)
@@ -594,7 +597,9 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	codes, err := openCodes(t.TempDir())
+	require.NoError(t, err)
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: codes, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedError) {
 			t.Fatalf("unexpected error: %v != %v", err, injectedError)

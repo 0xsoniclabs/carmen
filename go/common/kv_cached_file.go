@@ -93,12 +93,12 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 		return &val, nil
 	}
 	if val, inFlushBuffer := c.flushBuffer[key]; inFlushBuffer {
-		c.mutex.Unlock()
 		delete(c.flushBuffer, key)
 		err := c.handleCacheSet(&key, &val)
 		if err != nil {
 			return nil, err
 		}
+		c.mutex.Unlock()
 		return &val, nil
 	}
 	if offset, found := c.offsets[key]; found {
@@ -181,18 +181,18 @@ func (c *KVCachedFile[K, V]) GetAll() (map[K]V, error) {
 	defer file.Close()
 
 	for key, offset := range c.offsets {
-		_, err := file.Seek(int64(offset), io.SeekStart)
+		readKey, value, err := readFromDiskAtOffset[K, V](c.filePath, offset, c.readValueFn)
 		if err != nil {
 			return nil, err
 		}
-		readKey, value, err := c.readValueFn(file)
-		if err != nil {
-			return nil, err
+		if readKey == nil || value == nil {
+			return nil, errors.New("failed to read key or value from file")
 		}
-		if readKey != key {
+
+		if *readKey != key {
 			return nil, errors.New("key mismatch when reading from file")
 		}
-		all[key] = value
+		all[key] = *value
 	}
 
 	return all, nil

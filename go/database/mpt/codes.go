@@ -11,9 +11,7 @@
 package mpt
 
 import (
-	"bufio"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -32,13 +30,9 @@ import (
 // All codes are retained in memory, incrementally backed up to disk during
 // checkpoint and flush operations.
 type codes struct {
-	cache       *common.LruCache[common.Hash, []byte] // < a cache for the most recently used codes
-	offsets     map[common.Hash]uint64                // < all managed codes
-	flushBuffer map[common.Hash][]byte
-	file        string // < the file to store the codes
-	fileSize    uint64 // < the current file size
-	mutex       sync.Mutex
-	hasher      hash.Hash
+	codes  *common.KVCachedFile[common.Hash, []byte]
+	mutex  sync.Mutex
+	hasher hash.Hash
 
 	directory  string                // < a directory for placing checkpoint data
 	checkpoint checkpoint.Checkpoint // < the last checkpoint
@@ -61,14 +55,7 @@ func openCodes(stateDirectory string) (*codes, error) {
 		return nil, err
 	}
 
-	// Create the code file if it does not exist.
-	if _, err := os.Stat(file); os.IsNotExist(err) {
-		if err := os.WriteFile(file, []byte{}, 0600); err != nil {
-			return nil, err
-		}
-	}
-
-	data, size, err := readCodeOffsetsAndSize(file)
+	storedCodes, err := common.OpenKVCachedFile[common.Hash, []byte](file, 0, cacheSize, flushBufferThreshold, readCode, writeCode)
 	if err != nil {
 		return nil, err
 	}
@@ -80,153 +67,46 @@ func openCodes(stateDirectory string) (*codes, error) {
 	}
 
 	return &codes{
-		cache:       common.NewLruCache[common.Hash, []byte](cacheSize),
-		offsets:     data,
-		flushBuffer: make(map[common.Hash][]byte),
-		file:        file,
-		fileSize:    size,
-		directory:   directory,
-		hasher:      sha3.NewLegacyKeccak256(),
-		checkpoint:  meta.Checkpoint,
+		codes:      storedCodes,
+		directory:  directory,
+		hasher:     sha3.NewLegacyKeccak256(),
+		checkpoint: meta.Checkpoint,
 	}, nil
 }
 
 func (c *codes) add(code []byte) common.Hash {
 	hash := common.GetHash(c.hasher, code)
-	c.mutex.Lock()
-	if _, inCache := c.cache.Get(hash); !inCache {
-		if _, inFlushBuffer := c.flushBuffer[hash]; !inFlushBuffer {
-			if _, found := c.offsets[hash]; !found {
-				c.handleCacheSet(hash, code)
-			}
-		}
-	}
-	c.mutex.Unlock()
+	c.codes.Set(hash, code)
 	return hash
 }
 
 func (c *codes) getCodeForHash(hash common.Hash) []byte {
-	c.mutex.Lock()
-	if code, inCache := c.cache.Get(hash); inCache {
-		c.mutex.Unlock()
-		return code
-	}
-	if code, inFlushBuffer := c.flushBuffer[hash]; inFlushBuffer {
-		c.mutex.Unlock()
-		delete(c.flushBuffer, hash)
-		c.handleCacheSet(hash, code)
-		return code
-	}
-	if offset, found := c.offsets[hash]; found {
-		code, err := readCodeAtOffset(c.file, offset)
-		if err != nil {
-			c.mutex.Unlock()
-			return nil
-		}
-		c.handleCacheSet(hash, code)
-		c.mutex.Unlock()
-		return code
-	}
-	c.mutex.Unlock()
-	return nil
-}
-
-func (c *codes) handleCacheSet(hash common.Hash, code []byte) error {
-	evictedHash, evictedCode, evicted := c.cache.Set(hash, code)
-	if evicted {
-		if _, onDisk := c.offsets[evictedHash]; !onDisk {
-			if _, found := c.flushBuffer[evictedHash]; !found {
-				c.flushBuffer[evictedHash] = evictedCode
-			}
-			if len(c.flushBuffer) >= flushBufferThreshold {
-				return c.flushPending()
-			}
-		}
-	}
-	return nil
-}
-
-func readCodeAtOffset(path string, offset uint64) ([]byte, error) {
-	file, err := os.Open(path)
+	//TODO: handle error
+	code, err := c.codes.Get(hash)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	defer file.Close()
-
-	if _, err := file.Seek(int64(offset)+32, io.SeekStart); err != nil {
-		return nil, err
+	if code == nil {
+		return nil
 	}
-	var length [4]byte
-	if _, err := io.ReadFull(file, length[:]); err != nil {
-		return nil, err
-	}
-	size := binary.BigEndian.Uint32(length[:])
-	code := make([]byte, size)
-	if _, err := io.ReadFull(file, code[:]); err != nil {
-		return nil, err
-	}
-	return code, nil
+	return *code
 }
 
 func (c *codes) getCodes() map[common.Hash][]byte {
-	c.mutex.Lock()
-	res, err := readCodes(c.file)
-	c.mutex.Unlock()
+	codes, err := c.codes.GetAll()
 	if err != nil {
 		return nil
 	}
-	return res
+	return codes
 }
 
 func (c *codes) Flush() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	c.cache.Iterate(func(hash common.Hash, code []byte) bool {
-		if _, onDisk := c.offsets[hash]; !onDisk {
-			c.flushBuffer[hash] = code
-		}
-		return true
-	})
-
-	return c.flushPending()
-}
-
-// flushPening empties the flushBuffer and writes the codes to disk.
-// The offsets and file size are updated.
-// This is intended to be called with the mutex locked.
-func (c *codes) flushPending() error {
-	if len(c.flushBuffer) == 0 {
-		return nil
-	}
-
-	offsets, size, err := appendCodes(c.flushBuffer, c.file)
-	if err != nil {
-		return err
-	}
-	c.fileSize = size
-	c.flushBuffer = make(map[common.Hash][]byte)
-	for hash, offset := range offsets {
-		c.offsets[hash] = offset
-	}
-	return nil
+	return c.codes.Flush()
 }
 
 func (c *codes) GetMemoryFootprint() *common.MemoryFootprint {
-	var sizeCodes uint
-	c.mutex.Lock()
-	for k, v := range c.offsets {
-		sizeCodes += uint(uint(len(k)) + uint(unsafe.Sizeof(v)))
-	}
-	mf := c.cache.GetDynamicMemoryFootprint(func(v []byte) uintptr {
-		return uintptr(len(v))
-	})
-	// Pending
-	for k, v := range c.flushBuffer {
-		sizeCodes += uint(len(k) + len(v))
-	}
-	c.mutex.Unlock()
-	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + uintptr(sizeCodes) + mf.Total())
+	codes := c.codes.GetMemoryFootprint()
+	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + codes.Total())
 }
 
 func (c *codes) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) error {
@@ -258,7 +138,7 @@ func (c *codes) Prepare(checkpoint checkpoint.Checkpoint) error {
 	preparedFile := filepath.Join(c.directory, fileNameCodesPrepareCheckpoint)
 	return writeCodeCheckpointMetaData(preparedFile, codeCheckpointMetaData{
 		Checkpoint: checkpoint,
-		FileSize:   c.fileSize,
+		FileSize:   c.codes.FileSize(),
 	})
 }
 
@@ -325,136 +205,31 @@ func (r codeRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 // readCodes parses the content of the given file if it exists or returns
 // a an empty code collection if there is no such file.
 func readCodes(path string) (map[common.Hash][]byte, error) {
-	codes, _, err := readCodesAndSize(path)
-	return codes, err
-}
-
-// readCodesAndSize parses the content of the given file and returns the
-// contained collection of codes and the size of the file.
-func readCodesAndSize(path string) (map[common.Hash][]byte, uint64, error) {
-	// If there is no file, initialize and return an empty code collection.
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return map[common.Hash][]byte{}, 0, nil
-	}
+	storedCodes, err := common.OpenKVCachedFile[common.Hash, []byte](path, 0, cacheSize, flushBufferThreshold, readCode, writeCode)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-
-	file, err := os.Open(path)
+	codes, err := storedCodes.GetAll()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	defer file.Close()
-	reader := bufio.NewReader(file)
-	data, err := parseCodes(reader)
-	return data, uint64(info.Size()), err
+	return codes, nil
 }
 
-func readCodeOffsetsAndSize(path string) (map[common.Hash]uint64, uint64, error) {
-	// If there is no file, initialize and return an empty code collection.
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return map[common.Hash]uint64{}, 0, nil
-	}
+// writeCodes writes the given map of codes to the given file.
+func writeCodes(codes map[common.Hash][]byte, path string) (err error) {
+	storedCodes, err := common.OpenKVCachedFile[common.Hash, []byte](path, 0, cacheSize, flushBufferThreshold, readCode, writeCode)
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, 0, err
+	for hash, code := range codes {
+		storedCodes.Set(hash, code)
 	}
-	defer file.Close()
-	data, err := parseCodeOffsets(file)
-	return data, uint64(info.Size()), err
-}
-
-func parseCodeOffsets(reader io.ReadSeeker) (map[common.Hash]uint64, error) {
-	// If the file exists, parse it and return its content.
-	res := map[common.Hash]uint64{}
-	// The format is simple: [<key>, <length>, <code>]*
-	var hash common.Hash
-	var length [4]byte
-	for {
-		codePos, err := reader.Seek(0, io.SeekCurrent)
-		pos := uint64(codePos)
-		if _, err := io.ReadFull(reader, hash[:]); err != nil {
-			if err == io.EOF {
-				return res, nil
-			}
-			return nil, err
-		}
-		res[hash] = pos
-		// Skip the code, we only need the offsets.
-		if _, err := io.ReadFull(reader, length[:]); err != nil {
-			return nil, err
-		}
-		size := binary.BigEndian.Uint32(length[:])
-		_, err = reader.Seek(int64(size), io.SeekCurrent)
-		if err != nil {
-			return nil, err
-		}
-	}
-}
-
-func parseCodes(reader io.Reader) (map[common.Hash][]byte, error) {
-	// If the file exists, parse it and return its content.
-	res := map[common.Hash][]byte{}
-	// The format is simple: [<key>, <length>, <code>]*
-	var hash common.Hash
-	var length [4]byte
-	for {
-		if _, err := io.ReadFull(reader, hash[:]); err != nil {
-			if err == io.EOF {
-				return res, nil
-			}
-			return nil, err
-		}
-		if _, err := io.ReadFull(reader, length[:]); err != nil {
-			return nil, err
-		}
-		size := binary.BigEndian.Uint32(length[:])
-		code := make([]byte, size)
-		if _, err := io.ReadFull(reader, code[:]); err != nil {
-			return nil, err
-		}
-		res[hash] = code
-	}
-}
-
-// writeCodes write the given map of codes to the given file.
-func writeCodes(codes map[common.Hash][]byte, filename string) (err error) {
-	_, _, err = appendCodes(codes, filename)
+	err = storedCodes.Flush()
 	return err
 }
 
-// appendCodes appends the given map of codes to the given file.
-func appendCodes(codes map[common.Hash][]byte, filename string) (offsets map[common.Hash]uint64, fileSize uint64, err error) {
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return nil, 0, err
-	}
-	curOffset, err := file.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return nil, 0, err
-	}
-	buffer := bufio.NewWriter(file)
-	offsets = make(map[common.Hash]uint64)
-	for hash, code := range codes {
-		err = writeCode(hash, code, buffer)
-		if err != nil {
-			return nil, 0, err
-		}
-		offsets[hash] = uint64(curOffset)
-		curOffset += int64(len(code)) + 32 + 4 // 32 bytes for the hash, 4 bytes for the length
-	}
-	err2 := buffer.Flush()
-	size, err3 := file.Seek(0, io.SeekCurrent)
-	return offsets, uint64(size), errors.Join(err2, err3, file.Close())
-}
-
-func writeCode(hash common.Hash, code []byte, out io.Writer) (err error) {
+func writeCode(out io.Writer, hash common.Hash, code []byte) (err error) {
 	// The format is simple: [<key>, <length>, <code>]*
 	if _, err := out.Write(hash[:]); err != nil {
 		return err
@@ -468,6 +243,23 @@ func writeCode(hash common.Hash, code []byte, out io.Writer) (err error) {
 		return err
 	}
 	return nil
+}
+
+func readCode(reader io.ReadSeeker) (common.Hash, []byte, error) {
+	var hash common.Hash
+	var length [4]byte
+	if _, err := io.ReadFull(reader, hash[:]); err != nil {
+		return common.Hash{}, nil, err
+	}
+	if _, err := io.ReadFull(reader, length[:]); err != nil {
+		return common.Hash{}, nil, err
+	}
+	size := binary.BigEndian.Uint32(length[:])
+	code := make([]byte, size)
+	if _, err := io.ReadFull(reader, code[:]); err != nil {
+		return common.Hash{}, nil, err
+	}
+	return hash, code, nil
 }
 
 type codeCheckpointMetaData struct {

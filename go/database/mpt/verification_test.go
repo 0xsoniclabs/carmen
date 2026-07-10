@@ -454,7 +454,9 @@ func TestVerification_DifferentHashInCodeFileIsDetected(t *testing.T) {
 		codes := map[common.Hash][]byte{
 			testHash: byteCode,
 		}
-		if err := writeCodes(codes, filepath.Join(dir, "codes.dat")); err != nil {
+		codesPath := filepath.Join(dir, "codes.dat")
+		os.Remove(codesPath)
+		if err := writeCodes(codes, codesPath); err != nil {
 			t.Fatalf("failed to write code file")
 		}
 
