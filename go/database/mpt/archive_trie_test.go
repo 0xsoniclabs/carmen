@@ -1210,6 +1210,37 @@ func TestArchiveTrie_GettingView_Block_OutOfRange(t *testing.T) {
 	}
 }
 
+func TestArchiveTrie_GetCodeForHash_ForwardsLiveStateError(t *testing.T) {
+	injectedErr := errors.New("injectedError")
+	ctrl := gomock.NewController(t)
+	live := NewMockLiveState(ctrl)
+	live.EXPECT().GetCodeForHash(gomock.Any()).Return(nil, injectedErr)
+
+	archive := &ArchiveTrie{head: live}
+
+	if _, err := archive.GetCodeForHash(common.Hash{1}); !errors.Is(err, injectedErr) {
+		t.Errorf("expected error to be forwarded from head.GetCodeForHash, got %v", err)
+	}
+}
+
+func TestArchiveTrie_GetCode_ForwardsGetCodeForHashError(t *testing.T) {
+	injectedErr := errors.New("injectedError")
+	hash := common.Hash{0x42}
+
+	ctrl := gomock.NewController(t)
+	db := NewMockDatabase(ctrl)
+	db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{CodeHash: hash}, true, nil)
+	live := NewMockLiveState(ctrl)
+	live.EXPECT().GetCodeForHash(hash).Return(nil, injectedErr)
+
+	archive := &ArchiveTrie{head: live, forest: db, roots: &rootList{}}
+	archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
+
+	if _, err := archive.GetCode(0, common.Address{1}); !errors.Is(err, injectedErr) {
+		t.Errorf("expected error to be forwarded from GetCodeForHash, got %v", err)
+	}
+}
+
 func TestArchiveTrie_GetCodes(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {

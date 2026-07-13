@@ -614,6 +614,47 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 	}
 }
 
+// newFailingCodes returns a codes instance whose backing KVCachedFile is
+// configured with an offset entry pointing into a non-existent file, so any
+// Get for the returned hash triggers a disk read failure. The returned error
+// from the failing Get will wrap os.ErrNotExist.
+func newFailingCodes(t *testing.T) (*codes, common.Hash) {
+	t.Helper()
+	hash := common.Hash{0x42}
+	kv, err := common.InitKVCachedFileWith[common.Hash, []byte](
+		filepath.Join(t.TempDir(), "missing.dat"),
+		0,
+		map[common.Hash]uint64{hash: 0},
+		1, 1, readCode, writeCode,
+	)
+	if err != nil {
+		t.Fatalf("cannot init cached file: %v", err)
+	}
+	return &codes{codes: kv}, hash
+}
+
+func TestState_GetCodeForHash_ForwardsCodesReadError(t *testing.T) {
+	codes, hash := newFailingCodes(t)
+	state := &MptState{codes: codes}
+
+	if _, err := state.GetCodeForHash(hash); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected os.ErrNotExist to be forwarded from codes.getCodeForHash, got %v", err)
+	}
+}
+
+func TestState_GetCode_ForwardsCodesReadError(t *testing.T) {
+	codes, hash := newFailingCodes(t)
+
+	ctrl := gomock.NewController(t)
+	db := NewMockDatabase(ctrl)
+	db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{CodeHash: hash}, true, nil)
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: codes}
+
+	if _, err := state.GetCode(common.Address{1}); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected os.ErrNotExist to be forwarded from GetCodeForHash, got %v", err)
+	}
+}
+
 func TestState_Flush_WriteDirtyCodesOnly(t *testing.T) {
 	dir := t.TempDir()
 	state, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})

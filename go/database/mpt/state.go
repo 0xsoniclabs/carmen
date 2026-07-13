@@ -108,7 +108,7 @@ type LiveState interface {
 
 	// GetCodeForHash retrieves bytecode stored
 	// under the input hash.
-	GetCodeForHash(hash common.Hash) []byte
+	GetCodeForHash(hash common.Hash) ([]byte, error)
 
 	// GetCodes retrieves all codes and their hashes.
 	GetCodes() map[common.Hash][]byte
@@ -290,10 +290,10 @@ func (s *MptState) GetCode(address common.Address) (value []byte, err error) {
 	if !exists {
 		return nil, nil
 	}
-	return s.GetCodeForHash(info.CodeHash), nil
+	return s.GetCodeForHash(info.CodeHash)
 }
 
-func (s *MptState) GetCodeForHash(hash common.Hash) []byte {
+func (s *MptState) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return s.codes.getCodeForHash(hash)
 }
 

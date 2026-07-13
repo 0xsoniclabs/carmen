@@ -80,16 +80,15 @@ func (c *codes) add(code []byte) common.Hash {
 	return hash
 }
 
-func (c *codes) getCodeForHash(hash common.Hash) []byte {
-	//TODO: handle error
+func (c *codes) getCodeForHash(hash common.Hash) ([]byte, error) {
 	code, err := c.codes.Get(hash)
 	if err != nil {
-		return nil
+		return []byte{}, err
 	}
 	if code == nil {
-		return nil
+		return nil, nil
 	}
-	return *code
+	return *code, nil
 }
 
 func (c *codes) getCodes() map[common.Hash][]byte {
