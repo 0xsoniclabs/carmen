@@ -14,6 +14,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -26,6 +27,12 @@ import (
 // NoArchiveError is an error returned by implementation of the State interface
 // for archive operations if no archive is maintained by this implementation.
 const NoArchiveError = common.ConstError("state does not maintain archive data")
+
+// ErrStagedBlockMisuse reports that a StagedBlock was used against its contract:
+// decided twice, decided out of order, or waited for without being committed. It
+// marks a mistake in the calling code rather than a failure of the state, so the
+// state stays usable and does not collect it as an issue.
+const ErrStagedBlockMisuse = common.ConstError("staged block used out of contract")
 
 // State interfaces provides access to accounts and smart contract values memory.
 type State interface {
@@ -50,12 +57,13 @@ type State interface {
 	// HasEmptyStorage returns true if the contract has no storage attached to it.
 	HasEmptyStorage(addr common.Address) (bool, error)
 
-	// Apply applies the provided updates to the state content.
-	// The channel signals the completion of any spawned asynchronous operations
-	// like the update of the archive, if there is such.
-	// The channel may be nil if there are no asynchronous operations to be performed.
-	// If the asynchronous operations fail, the error is returned through the channel.
-	Apply(block uint64, update common.Update) (<-chan error, error)
+	// Apply applies the provided updates to the live state and returns the result
+	// as a staged block: applied to the live state, but not yet promoted into the
+	// archive. The caller decides its fate through the returned StagedBlock.
+	//
+	// Several blocks may be staged at once, which lets a caller execute ahead of a
+	// decision it has not taken yet.
+	Apply(block uint64, update common.Update) (StagedBlock, error)
 
 	// GetHash hashes the state.
 	// Deprecated: use GetCommitment instead.
@@ -104,6 +112,81 @@ type State interface {
 	Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error)
 }
 
+// StagedBlock is a block that has been applied to the live state but is not yet
+// part of the archive. It is what lets a caller execute several blocks ahead of a
+// decision it has not taken yet and then keep or discard each of them.
+//
+// Exactly one of Commit or Rollback must be called. Both invalidate the block, and
+// a second call on it reports an error rather than acting twice.
+//
+// Ordering is enforced rather than merely documented, because each operation is
+// only meaningful at one end of the staged sequence. Commit applies to the OLDEST
+// staged block, since the archive is append-only and must receive blocks in order.
+// Rollback applies to the NEWEST, since every undo operation restores a value read
+// before its own block ran, and so reconstructs the intended state only once every
+// later block has already been rolled back.
+type StagedBlock interface {
+	// StateHash returns the root of the live state as of this block.
+	StateHash() common.Hash
+
+	// Commit promotes this block into the archive. It returns as soon as the write
+	// is under way, without waiting for it to complete; use Wait for that.
+	//
+	// It reports an error if this is not the oldest staged block, or if the block
+	// has already been committed or rolled back.
+	Commit() error
+
+	// Wait blocks until the archive write triggered by Commit has completed and
+	// reports its outcome. It must be called after Commit. It returns immediately
+	// if the state maintains no archive, since then there is nothing to wait for.
+	Wait() error
+
+	// Rollback reverts this block from the live state, restoring the root its
+	// predecessor left behind.
+	//
+	// It reports an error if this is not the newest staged block, or if the block
+	// has already been committed or rolled back.
+	Rollback() error
+}
+
+// NewIrreversibleBlock returns a StagedBlock for a state that applies a block the
+// moment Apply is called and offers no way to take it back. Commit has nothing
+// left to do, Wait waits for whatever asynchronous work the state started (pass a
+// nil channel if there is none), and Rollback reports that this state does not
+// support it.
+//
+// It serves the state implementations that neither maintain an archive nor stage:
+// their staged sequence is always empty, so no ordering rule can be broken and
+// every block is final the moment it is applied.
+func NewIrreversibleBlock(block uint64, hash func() common.Hash, done <-chan error) StagedBlock {
+	return &irreversibleBlock{block: block, hash: hash, done: done}
+}
+
+type irreversibleBlock struct {
+	block uint64
+	hash  func() common.Hash
+	done  <-chan error
+}
+
+func (b *irreversibleBlock) StateHash() common.Hash {
+	return b.hash()
+}
+
+func (b *irreversibleBlock) Commit() error {
+	return nil
+}
+
+func (b *irreversibleBlock) Wait() error {
+	if b.done == nil {
+		return nil
+	}
+	return <-b.done
+}
+
+func (b *irreversibleBlock) Rollback() error {
+	return fmt.Errorf("%w: cannot roll back block %d: this state does not support rolling back blocks", ErrStagedBlockMisuse, b.block)
+}
+
 type LiveDB interface {
 	GetBalance(address common.Address) (balance amount.Amount, err error)
 	GetNonce(address common.Address) (nonce common.Nonce, err error)
@@ -113,7 +196,8 @@ type LiveDB interface {
 	GetCodeHash(address common.Address) (hash common.Hash, err error)
 	HasEmptyStorage(addr common.Address) (bool, error)
 	GetHash() (hash common.Hash, err error)
-	Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error)
+	Apply(block uint64, update *common.Update) (undoList []func() error, archiveUpdateHints common.Releaser, err error)
+	RevertLastBlock(undo []func() error) error
 	Flush() error
 	Close() error
 	common.MemoryFootprintProvider

@@ -44,8 +44,11 @@ func BenchmarkFlushGoState(b *testing.B) {
 				byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i),
 			}, amount.New(n))
 		}
-		_, err := state.Apply(n, update)
+		staged, err := state.Apply(n, update)
 		if err != nil {
+			b.Fatal(err)
+		}
+		if err := staged.Commit(); err != nil {
 			b.Fatal(err)
 		}
 

@@ -356,7 +356,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 	}
 	update := common.Update{}
 	update.Balances = []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}}
-	if _, err := state.Apply(0, &update); !errors.Is(err, injectedErr) {
+	if _, _, err := state.Apply(0, &update); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}
 	nodeVisitor := NewMockNodeVisitor(ctrl)
@@ -460,7 +460,7 @@ func TestState_StateModificationsWithoutErrorHaveExpectedEffects(t *testing.T) {
 			}
 
 			update := common.Update{}
-			if _, err := state.Apply(0, &update); err != nil {
+			if _, _, err := state.Apply(0, &update); err != nil {
 				t.Errorf("error to apply: %s", err)
 			}
 		})
