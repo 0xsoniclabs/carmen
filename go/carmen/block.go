@@ -85,7 +85,12 @@ func (c *headBlockContext) Commit() error {
 		}
 	}()
 
-	c.state.EndBlock(uint64(c.block))
+	// Ending the block only applies it to the live state. A block committed through
+	// this API is kept, so it is promoted into the archive as well. Both steps
+	// collect their errors in the state, which end() reports below.
+	if staged, err := c.state.EndBlock(uint64(c.block)); err == nil && staged != nil {
+		_ = staged.Commit()
+	}
 	c.db.headStateCommitLock.Unlock()
 	headStateCommitLockReleased = true
 

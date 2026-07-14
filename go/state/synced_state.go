@@ -96,7 +96,10 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return s.state.HasEmptyStorage(addr)
 }
 
-func (s *syncedState) Apply(block uint64, update common.Update) (<-chan error, error) {
+// Apply is synchronized, but the StagedBlock it returns is not routed through
+// this wrapper: its Commit and Rollback are called on the handle directly, and
+// the underlying state synchronizes them itself.
+func (s *syncedState) Apply(block uint64, update common.Update) (StagedBlock, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.Apply(block, update)
