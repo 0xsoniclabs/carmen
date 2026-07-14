@@ -820,11 +820,12 @@ func (mr *MockStateDBMockRecorder) Empty(arg0 any) *gomock.Call {
 }
 
 // EndBlock mocks base method.
-func (m *MockStateDB) EndBlock(number uint64) <-chan error {
+func (m *MockStateDB) EndBlock(number uint64) (StagedBlock, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EndBlock", number)
-	ret0, _ := ret[0].(<-chan error)
-	return ret0
+	ret0, _ := ret[0].(StagedBlock)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // EndBlock indicates an expected call of EndBlock.

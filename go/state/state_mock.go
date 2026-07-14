@@ -47,10 +47,10 @@ func (m *MockState) EXPECT() *MockStateMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (m *MockState) Apply(block uint64, update common.Update) (StagedBlock, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
-	ret0, _ := ret[0].(<-chan error)
+	ret0, _ := ret[0].(StagedBlock)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -317,6 +317,86 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockState)(nil).HasEmptyStorage), addr)
 }
 
+// MockStagedBlock is a mock of StagedBlock interface.
+type MockStagedBlock struct {
+	ctrl     *gomock.Controller
+	recorder *MockStagedBlockMockRecorder
+	isgomock struct{}
+}
+
+// MockStagedBlockMockRecorder is the mock recorder for MockStagedBlock.
+type MockStagedBlockMockRecorder struct {
+	mock *MockStagedBlock
+}
+
+// NewMockStagedBlock creates a new mock instance.
+func NewMockStagedBlock(ctrl *gomock.Controller) *MockStagedBlock {
+	mock := &MockStagedBlock{ctrl: ctrl}
+	mock.recorder = &MockStagedBlockMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockStagedBlock) EXPECT() *MockStagedBlockMockRecorder {
+	return m.recorder
+}
+
+// Commit mocks base method.
+func (m *MockStagedBlock) Commit() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Commit")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Commit indicates an expected call of Commit.
+func (mr *MockStagedBlockMockRecorder) Commit() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockStagedBlock)(nil).Commit))
+}
+
+// Rollback mocks base method.
+func (m *MockStagedBlock) Rollback() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Rollback")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Rollback indicates an expected call of Rollback.
+func (mr *MockStagedBlockMockRecorder) Rollback() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rollback", reflect.TypeOf((*MockStagedBlock)(nil).Rollback))
+}
+
+// StateHash mocks base method.
+func (m *MockStagedBlock) StateHash() common.Hash {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StateHash")
+	ret0, _ := ret[0].(common.Hash)
+	return ret0
+}
+
+// StateHash indicates an expected call of StateHash.
+func (mr *MockStagedBlockMockRecorder) StateHash() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StateHash", reflect.TypeOf((*MockStagedBlock)(nil).StateHash))
+}
+
+// Wait mocks base method.
+func (m *MockStagedBlock) Wait() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Wait")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Wait indicates an expected call of Wait.
+func (mr *MockStagedBlockMockRecorder) Wait() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Wait", reflect.TypeOf((*MockStagedBlock)(nil).Wait))
+}
+
 // MockLiveDB is a mock of LiveDB interface.
 type MockLiveDB struct {
 	ctrl     *gomock.Controller
@@ -342,12 +422,13 @@ func (m *MockLiveDB) EXPECT() *MockLiveDBMockRecorder {
 }
 
 // Apply mocks base method.
-func (m *MockLiveDB) Apply(block uint64, update *common.Update) (common.Releaser, error) {
+func (m *MockLiveDB) Apply(block uint64, update *common.Update) ([]func() error, common.Releaser, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Apply", block, update)
-	ret0, _ := ret[0].(common.Releaser)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret0, _ := ret[0].([]func() error)
+	ret1, _ := ret[1].(common.Releaser)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Apply indicates an expected call of Apply.
@@ -516,4 +597,18 @@ func (m *MockLiveDB) HasEmptyStorage(addr common.Address) (bool, error) {
 func (mr *MockLiveDBMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockLiveDB)(nil).HasEmptyStorage), addr)
+}
+
+// RevertLastBlock mocks base method.
+func (m *MockLiveDB) RevertLastBlock(undo []func() error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevertLastBlock", undo)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevertLastBlock indicates an expected call of RevertLastBlock.
+func (mr *MockLiveDBMockRecorder) RevertLastBlock(undo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevertLastBlock", reflect.TypeOf((*MockLiveDB)(nil).RevertLastBlock), undo)
 }

@@ -59,6 +59,8 @@ type Database interface {
 	// ClearStorage removes all storage slots for the input address and the root.
 	ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, error)
 
+	// RestoreStorage(rootRef *NodeReference, addr common.Address, storageRoot NodeReference) (NodeReference, error)
+
 	// HasEmptyStorage returns true if account has empty storage.
 	HasEmptyStorage(rootRef *NodeReference, addr common.Address) (bool, error)
 
@@ -134,6 +136,10 @@ type MptState struct {
 	lock      common.LockFile
 	trie      *LiveTrie
 	codes     *codes
+	// undoList collects the operations reverting the mutations of the update
+	// currently being applied, in application order. Apply hands it to its caller
+	// and starts a fresh one; RevertLastBlock replays it backwards.
+	undoList []func() error
 }
 
 func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptState, error) {
@@ -147,6 +153,19 @@ func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptSt
 		trie:      trie,
 		codes:     codes,
 	}, nil
+}
+
+// undoAccountInfo returns the operation restoring an account's information to
+// what it was before the current update touched it. An account that did not
+// exist is removed again: an empty AccountInfo deletes the account node and
+// recursively releases its storage (see AccountNode.SetAccount).
+func (s *MptState) undoAccountInfo(address common.Address, existed bool, previous AccountInfo) func() error {
+	return func() error {
+		if !existed {
+			return s.trie.SetAccountInfo(address, AccountInfo{})
+		}
+		return s.trie.SetAccountInfo(address, previous)
+	}
 }
 
 func openStateDirectory(directory string) (common.LockFile, error) {
@@ -214,11 +233,19 @@ func (s *MptState) SetBalance(address common.Address, balance amount.Amount) (er
 	if info.Balance == balance {
 		return nil
 	}
+	oldInfo := info
 	info.Balance = balance
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+
+	err = s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+
+	s.undoList = append(s.undoList, s.undoAccountInfo(address, exists, oldInfo))
+	return nil
 }
 
 func (s *MptState) GetNonce(address common.Address) (nonce common.Nonce, err error) {
@@ -237,11 +264,19 @@ func (s *MptState) SetNonce(address common.Address, nonce common.Nonce) (err err
 	if info.Nonce == nonce {
 		return nil
 	}
+	oldInfo := info
 	info.Nonce = nonce
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+
+	err = s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+
+	s.undoList = append(s.undoList, s.undoAccountInfo(address, exists, oldInfo))
+	return nil
 }
 
 func (s *MptState) GetStorage(address common.Address, key common.Key) (value common.Value, err error) {
@@ -249,12 +284,28 @@ func (s *MptState) GetStorage(address common.Address, key common.Key) (value com
 }
 
 func (s *MptState) SetStorage(address common.Address, key common.Key, value common.Value) error {
-	return s.trie.SetValue(address, key, value)
+	oldValue, err := s.trie.GetValue(address, key)
+	if err != nil {
+		return err
+	}
+	if oldValue == value {
+		return nil
+	}
+
+	err = s.trie.SetValue(address, key, value)
+	if err != nil {
+		return err
+	}
+	s.undoList = append(s.undoList, func() error {
+		return s.trie.SetValue(address, key, oldValue)
+	})
+	return nil
 }
 
 func (s *MptState) HasEmptyStorage(address common.Address) (bool, error) {
 	return s.trie.HasEmptyStorage(address)
 }
+
 func (s *MptState) GetCode(address common.Address) (value []byte, err error) {
 	info, exists, err := s.trie.GetAccountInfo(address)
 	if err != nil {
@@ -286,9 +337,19 @@ func (s *MptState) SetCode(address common.Address, code []byte) (err error) {
 	if !exists && len(code) == 0 {
 		return nil
 	}
+	oldInfo := info
 	codeHash := s.codes.add(code)
 	info.CodeHash = codeHash
-	return s.trie.SetAccountInfo(address, info)
+	err = s.trie.SetAccountInfo(address, info)
+	if err != nil {
+		return err
+	}
+	// Note: the code itself stays in the code index. The index is content
+	// addressed, so a reverted block leaves an unreferenced entry behind rather
+	// than corrupting anything.
+	s.undoList = append(s.undoList, s.undoAccountInfo(address, exists, oldInfo))
+
+	return nil
 }
 
 func (s *MptState) GetCodeHash(address common.Address) (hash common.Hash, err error) {
@@ -313,14 +374,43 @@ func (s *MptState) GetHash() (hash common.Hash, err error) {
 	return hash, err
 }
 
-func (s *MptState) Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error) {
+// Apply applies the update to the live trie. It returns the operations reverting
+// it -- to be passed to RevertLastBlock -- together with the hints the archive
+// can reuse when it later replays the same update.
+//
+// The undo list is handed to the caller in every case, including a failed
+// update: a partial update has already mutated the trie, and its undo list is
+// the only way back. This state always starts a fresh one, so the operations of
+// one update can never leak into the next.
+func (s *MptState) Apply(block uint64, update *common.Update) (undoList []func() error, archiveUpdateHints common.Releaser, err error) {
 	zone := tracy.ZoneBegin("Apply")
 	defer zone.End()
+	defer func() { s.undoList = nil }()
+
 	if err := update.ApplyTo(s); err != nil {
-		return nil, err
+		return s.undoList, nil, err
 	}
 	_, hints, err := s.trie.UpdateHashes()
-	return hints, err
+	return s.undoList, hints, err
+}
+
+// RevertLastBlock undoes the operations of a single applied update, restoring the
+// live trie to the state it had before that update. The operations are replayed
+// in reverse order, so an account that the update both created and populated
+// loses its slots before the account itself is removed.
+//
+// The undo list is not modified, so the caller may retain it. Reverting is only
+// correct for the most recently applied update: each operation restores a value
+// read before the update ran, which reconstructs the right state only once every
+// later update has already been reverted.
+func (s *MptState) RevertLastBlock(undo []func() error) error {
+	errs := make([]error, 0, len(undo))
+	for i := len(undo) - 1; i >= 0; i-- {
+		if err := undo[i](); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (s *MptState) Visit(mode AccessMode, visitor NodeVisitor) error {
