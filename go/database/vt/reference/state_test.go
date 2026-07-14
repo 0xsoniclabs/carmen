@@ -521,7 +521,7 @@ func newRefState(t *testing.T) (*refState, error) {
 	return &refState{trie: trie}, nil
 }
 
-func (s *refState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *refState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 	return s.trie.Apply(block, update)
 }
 
