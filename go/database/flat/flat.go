@@ -279,6 +279,7 @@ func processCommands(
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
 			backendChan, err := backend.Apply(command.update.block, command.update.data)
+			issues.HandleIssue(err)
 			if command.update.done != nil {
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.
@@ -294,7 +295,6 @@ func processCommands(
 					close(command.update.done)
 				}(err)
 			}
-			issues.HandleIssue(err)
 			zone.End()
 		} else if command.commit != nil {
 			zone := tracy.ZoneBegin("State.Commit")
