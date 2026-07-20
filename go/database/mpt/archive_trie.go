@@ -11,7 +11,6 @@
 package mpt
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -101,7 +100,11 @@ func OpenArchiveTrie(
 
 	root := NewNodeReference(EmptyId())
 	if roots.length() > 0 {
-		root = roots.get(uint64(roots.length() - 1)).NodeRef
+		rootValue, err := roots.get(uint64(roots.length() - 1))
+		if err != nil {
+			return nil, err
+		}
+		root = rootValue.NodeRef
 	}
 	head.root = root
 
@@ -163,7 +166,11 @@ func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, 
 	if roots.length() == 0 {
 		return nil
 	}
-	return VerifyMptState(ctx, directory, config, roots.roots, observer)
+	rootsList, err := roots.GetAll()
+	if err != nil {
+		return err
+	}
+	return VerifyMptState(ctx, directory, config, rootsList, observer)
 }
 
 func (a *ArchiveTrie) Add(block uint64, update common.Update, hint any) error {
@@ -254,7 +261,11 @@ func (a *ArchiveTrie) GetBlockRoot(block uint64) (NodeId, error) {
 	if block >= uint64(a.roots.length()) {
 		return EmptyId(), fmt.Errorf("block %d not present in archive", block)
 	}
-	return a.roots.get(block).NodeRef.id, nil
+	root, err := a.roots.get(block)
+	if err != nil {
+		return EmptyId(), err
+	}
+	return root.NodeRef.id, nil
 }
 
 func (a *ArchiveTrie) GetBlockHeight() (block uint64, empty bool, err error) {
@@ -352,9 +363,12 @@ func (a *ArchiveTrie) GetHash(block uint64) (hash common.Hash, err error) {
 		a.rootsMutex.Unlock()
 		return common.Hash{}, fmt.Errorf("invalid block: %d >= %d", block, length)
 	}
-	res := a.roots.get(block).Hash
+	res, err := a.roots.get(block)
 	a.rootsMutex.Unlock()
-	return res, nil
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return res.Hash, nil
 }
 
 func (a *ArchiveTrie) CreateWitnessProof(block uint64, address common.Address, keys ...common.Key) (witness.Proof, error) {
@@ -390,10 +404,18 @@ func (a *ArchiveTrie) GetDiff(srcBlock, trgBlock uint64) (Diff, error) {
 		a.rootsMutex.Unlock()
 		return Diff{}, fmt.Errorf("target block %d not present in archive, highest block is %d", trgBlock, a.roots.length()-1)
 	}
-	before := a.roots.get(srcBlock).NodeRef
-	after := a.roots.get(trgBlock).NodeRef
+	before, err := a.roots.get(srcBlock)
+	if err != nil {
+		a.rootsMutex.Unlock()
+		return Diff{}, err
+	}
+	after, err := a.roots.get(trgBlock)
+	if err != nil {
+		a.rootsMutex.Unlock()
+		return Diff{}, err
+	}
 	a.rootsMutex.Unlock()
-	return GetDiff(a.forest, &before, &after)
+	return GetDiff(a.forest, &before.NodeRef, &after.NodeRef)
 }
 
 // GetDiffForBlock computes the diff introduced by the given block compared to its
@@ -405,9 +427,13 @@ func (a *ArchiveTrie) GetDiffForBlock(block uint64) (Diff, error) {
 			a.rootsMutex.Unlock()
 			return Diff{}, fmt.Errorf("archive is empty, no diff present for block 0")
 		}
-		after := a.roots.get(0).NodeRef
+		after, err := a.roots.get(0)
+		if err != nil {
+			a.rootsMutex.Unlock()
+			return Diff{}, err
+		}
 		a.rootsMutex.Unlock()
-		return GetDiff(a.forest, &emptyNodeReference, &after)
+		return GetDiff(a.forest, &emptyNodeReference, &after.NodeRef)
 	}
 	return a.GetDiff(block-1, block)
 }
@@ -424,22 +450,15 @@ func (a *ArchiveTrie) GetMemoryFootprint() *common.MemoryFootprint {
 func (a *ArchiveTrie) Check() error {
 	roots := make([]*NodeReference, a.roots.length())
 	for i := 0; i < a.roots.length(); i++ {
-		roots[i] = &a.roots.roots[i].NodeRef
+		rootm, err := a.roots.get(uint64(i))
+		if err != nil {
+			return err
+		}
+		roots[i] = &rootm.NodeRef
 	}
 	return errors.Join(
 		a.CheckErrors(),
 		a.forest.CheckAll(roots))
-}
-
-func (a *ArchiveTrie) Dump() {
-	a.rootsMutex.Lock()
-	defer a.rootsMutex.Unlock()
-	for i, root := range a.roots.roots {
-		fmt.Printf("\nBlock %d: %x\n", i, root.Hash)
-		view := getTrieView(root.NodeRef, a.forest)
-		view.Dump()
-		fmt.Printf("\n")
-	}
 }
 
 func (a *ArchiveTrie) Flush() error {
@@ -576,9 +595,13 @@ func (a *ArchiveTrie) getView(block uint64) (*LiveTrie, error) {
 		a.rootsMutex.Unlock()
 		return nil, fmt.Errorf("invalid block: %d >= %d", block, length)
 	}
-	rootRef := a.roots.roots[block].NodeRef
+	root, err := a.roots.get(block)
+	if err != nil {
+		a.rootsMutex.Unlock()
+		return nil, err
+	}
 	a.rootsMutex.Unlock()
-	return getTrieView(rootRef, a.forest), nil
+	return getTrieView(root.NodeRef, a.forest), nil
 }
 
 // CheckErrors returns a non-nil error should any error
@@ -616,24 +639,35 @@ func (a *ArchiveTrie) GetConfig() MptConfig {
 // rootList is a utility type managing an in-memory copy of the list of roots
 // of an archive and its synchronization with an on-disk file copy.
 type rootList struct {
-	roots          []Root
-	filename       string // < the file storing the list of roots
-	directory      string // < the directory for checkpoint data
-	numRootsInFile int
+	roots     *common.KVCachedFile[uint64, Root] // < the in-memory copy of the roots list
+	filename  string                             // < the file storing the list of roots
+	directory string                             // < the directory for checkpoint data
+
+	numRoots       int // < total number of roots
+	numRootsInFile int // < number of roots stored in the file
 
 	checkpoint checkpoint.Checkpoint
 }
 
 func (l *rootList) length() int {
-	return len(l.roots)
+	return l.numRoots
 }
 
-func (l *rootList) get(block uint64) Root {
-	return l.roots[block]
+// TODO: check
+func (l *rootList) get(block uint64) (Root, error) {
+	root, err := l.roots.Get(block)
+	if err != nil {
+		return Root{}, err
+	}
+	if root == nil {
+		return Root{}, fmt.Errorf("root for block %d not found", block)
+	}
+	return *root, nil
 }
 
 func (l *rootList) append(r Root) {
-	l.roots = append(l.roots, r)
+	l.roots.Set(uint64(l.numRoots), r)
+	l.numRoots++
 }
 
 func loadRoots(archiveDirectory string) (*rootList, error) {
@@ -644,13 +678,6 @@ func loadRoots(archiveDirectory string) (*rootList, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
 	}
-	// If there is no file, initialize and return an empty list.
-	if _, err := os.Stat(filename); err != nil {
-		return &rootList{
-			filename:  filename,
-			directory: directory,
-		}, nil
-	}
 
 	committedCheckpointFile := filepath.Join(directory, fileNameArchiveRootsCommittedCheckpoint)
 	checkpointData, err := readRootListCheckpointData(committedCheckpointFile)
@@ -658,93 +685,108 @@ func loadRoots(archiveDirectory string) (*rootList, error) {
 		return nil, err
 	}
 
-	f, err := os.Open(filename)
+	// OpenOrderedFile creates the underlying file if it does not yet exist,
+	// so a fresh archive directory yields an empty root list.
+	entrySize := uint64(NodeIdEncoder{}.GetEncodedSize() + 32)
+	roots, err := common.OpenOrderedFile(filename, entrySize, readRoot, writeRoot)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	stat, err := f.Stat()
+	kvFile, err := common.OpenKVCachedFile[uint64, Root](roots, 10000, 1000)
 	if err != nil {
 		return nil, err
 	}
 
-	reader := bufio.NewReader(f)
-	roots, err := loadRootsFrom(reader, stat.Size())
+	// Verify that the on-disk file is a whole number of root entries.
+	fileSize, err := kvFile.FileSize()
 	if err != nil {
 		return nil, err
 	}
+	if fileSize%entrySize != 0 {
+		return nil, fmt.Errorf("invalid root file format: size %d is not a multiple of entry size %d", fileSize, entrySize)
+	}
+
+	size, err := kvFile.Size()
+	if err != nil {
+		return nil, err
+	}
+	if int(size) < checkpointData.NumRoots {
+		return nil, fmt.Errorf("root list file is corrupted: expected at least %d roots, but found only %d", checkpointData.NumRoots, size)
+	}
+
 	return &rootList{
-		roots:          roots,
+		roots:          kvFile,
 		filename:       filename,
 		directory:      directory,
-		numRootsInFile: len(roots),
+		numRoots:       int(size),
+		numRootsInFile: int(size),
 		checkpoint:     checkpointData.Checkpoint,
 	}, nil
 }
 
-func loadRootsFrom(reader io.Reader, sizeInBytes int64) ([]Root, error) {
+// readRoot reads a single root from the given reader.
+// Key is skipped, as the file it's ordered
+func readRoot(reader io.ReadSeeker) (uint64, Root, error) {
 	encoder := NodeIdEncoder{}
-	res := make([]Root, 0, sizeInBytes/int64(encoder.GetEncodedSize()+32)) // NodeID size + 32 bytes Hash size
 	buffer := make([]byte, encoder.GetEncodedSize())
 	var hash common.Hash
-	for {
-		if _, err := io.ReadFull(reader, buffer); err != nil {
-			if err == io.EOF {
-				return res, nil
-			}
-			return nil, fmt.Errorf("invalid root file format: %v", err)
-		}
-
-		if _, err := io.ReadFull(reader, hash[:]); err != nil {
-			return nil, fmt.Errorf("invalid root file format: %v", err)
-		}
-
-		var id NodeId
-		encoder.Load(buffer, &id)
-		res = append(res, Root{NewNodeReference(id), hash})
-	}
-}
-
-func StoreRoots(filename string, roots []Root) error {
-	list := rootList{roots: roots, filename: filename}
-	return list.storeRoots()
-}
-
-func (l *rootList) storeRoots() error {
-	toBeWritten := l.roots[l.numRootsInFile:]
-	if l.numRootsInFile > 0 && len(toBeWritten) == 0 {
-		return nil
+	if _, err := io.ReadFull(reader, buffer); err != nil {
+		return 0, Root{}, fmt.Errorf("invalid root file format: %v", err)
 	}
 
-	f, err := os.OpenFile(l.filename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if _, err := io.ReadFull(reader, hash[:]); err != nil {
+		return 0, Root{}, fmt.Errorf("invalid root file format: %v", err)
+	}
+
+	var id NodeId
+	encoder.Load(buffer, &id)
+	return 0, Root{NewNodeReference(id), hash}, nil
+}
+
+// writeRoot writes a single root to the given writer with the format
+// [<node-id>, <state-hash>].
+func writeRoot(writer io.Writer, pos uint64, root Root) error {
+	// Format: [<node-id>, <state-hash>]*
+	encoder := NodeIdEncoder{}
+	buffer := make([]byte, encoder.GetEncodedSize())
+	encoder.Store(buffer, &root.NodeRef.id)
+	if _, err := writer.Write(buffer[:]); err != nil {
+		return err
+	}
+	if _, err := writer.Write(root.Hash[:]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l *rootList) GetAll() ([]Root, error) {
+	all, err := l.roots.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	allRoots := make([]Root, len(all))
+	for i, root := range all {
+		allRoots[i] = root
+	}
+	return allRoots, nil
+}
+
+func StoreRoots(filename string, rootsToWrite []Root) error {
+	roots, err := loadRoots(filepath.Dir(filename))
 	if err != nil {
 		return err
 	}
-	writer := bufio.NewWriter(f)
-	res := errors.Join(
-		storeRootsTo(writer, toBeWritten),
-		writer.Flush(),
-		f.Close(),
-	)
-	if res == nil {
-		l.numRootsInFile = len(l.roots)
+	for _, root := range rootsToWrite {
+		roots.append(root)
 	}
-	return res
+	return roots.storeRoots()
 }
 
-func storeRootsTo(writer io.Writer, roots []Root) error {
-	// Simple file format: [<node-id><state-hash>]*
-	encoder := NodeIdEncoder{}
-	buffer := make([]byte, encoder.GetEncodedSize())
-	for _, root := range roots {
-		encoder.Store(buffer, &root.NodeRef.id)
-		if _, err := writer.Write(buffer[:]); err != nil {
-			return err
-		}
-		if _, err := writer.Write(root.Hash[:]); err != nil {
-			return err
-		}
+func (l *rootList) storeRoots() error {
+	if err := l.roots.Flush(); err != nil {
+		return err
 	}
+	l.numRootsInFile = l.numRoots
 	return nil
 }
 
@@ -771,7 +813,7 @@ func (l *rootList) Prepare(checkpoint checkpoint.Checkpoint) error {
 	pendingFile := filepath.Join(l.directory, fileNameArchiveRootsPreparedCheckpoint)
 	return writeRootListCheckpointData(pendingFile, rootListCheckpointData{
 		Checkpoint: checkpoint,
-		NumRoots:   l.length(),
+		NumRoots:   l.numRootsInFile,
 	})
 }
 
