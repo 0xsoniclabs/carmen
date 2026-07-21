@@ -8,13 +8,15 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package common
+package kv_file
 
 import (
 	"fmt"
 	"maps"
 	"sync"
 	"unsafe"
+
+	"github.com/0xsoniclabs/carmen/go/common"
 )
 
 // KVCachedFile wraps a KVFile and provides an in-memory cache for key-value pairs.
@@ -25,7 +27,7 @@ import (
 // flush, so repeated Flush calls with no intervening Set do not rewrite the
 // same values to disk.
 type KVCachedFile[K comparable, V any] struct {
-	cache       *LruCache[K, V]
+	cache       *common.LruCache[K, V]
 	flushBuffer map[K]V
 	dirty       map[K]bool
 	file        KVFileWithMemoryFootprint[K, V]
@@ -46,7 +48,7 @@ func OpenKVCachedFile[K comparable, V any](file KVFileWithMemoryFootprint[K, V],
 	}
 
 	return &KVCachedFile[K, V]{
-		cache:                NewLruCache[K, V](cacheSize),
+		cache:                common.NewLruCache[K, V](cacheSize),
 		flushBuffer:          make(map[K]V),
 		dirty:                make(map[K]bool),
 		fromDisk:             make(map[K]bool),
@@ -261,7 +263,7 @@ func (c *KVCachedFile[K, V]) Close() error {
 	return c.file.Close()
 }
 
-func (c *KVCachedFile[K, V]) GetMemoryFootprint() *MemoryFootprint {
+func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	fileFootprint := c.file.GetMemoryFootprint()
@@ -280,5 +282,5 @@ func (c *KVCachedFile[K, V]) GetMemoryFootprint() *MemoryFootprint {
 	for k, v := range c.flushBuffer {
 		sizeValues += unsafe.Sizeof(k) + valueSize(v)
 	}
-	return NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + mf.Total() + fileFootprint.Total())
+	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + mf.Total() + fileFootprint.Total())
 }

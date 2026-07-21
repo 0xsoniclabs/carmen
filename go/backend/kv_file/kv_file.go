@@ -8,11 +8,15 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package common
+package kv_file
 
-import "io"
+import (
+	"io"
 
-//go:generate mockgen -source kv_file.go -destination kv_file_mocks.go -package common
+	"github.com/0xsoniclabs/carmen/go/common"
+)
+
+//go:generate mockgen -source kv_file.go -destination kv_file_mocks.go -package kv_file
 
 // KVFile is a file that supports key-value operations.
 // Key-value pairs can be updated but not deleted.
@@ -47,7 +51,7 @@ type KVFile[K comparable, V any] interface {
 // current in-memory footprint.
 type KVFileWithMemoryFootprint[K comparable, V any] interface {
 	KVFile[K, V]
-	GetMemoryFootprint() *MemoryFootprint
+	GetMemoryFootprint() *common.MemoryFootprint
 }
 
 // readValueFn is a utility type for reading a key-value pair from an io.ReadSeeker.

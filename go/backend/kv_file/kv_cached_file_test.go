@@ -8,13 +8,14 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package common
+package kv_file
 
 import (
 	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -710,7 +711,7 @@ func TestKVCachedFile_GetMemoryFootprint_IsNonZero(t *testing.T) {
 	require.NoError(c.Set(key1, value1))
 	c.flushBuffer[2] = "buffer-2"
 
-	mock.EXPECT().GetMemoryFootprint().Return(NewMemoryFootprint(0))
+	mock.EXPECT().GetMemoryFootprint().Return(common.NewMemoryFootprint(0))
 
 	mf := c.GetMemoryFootprint()
 	require.NotNil(mf)
@@ -726,7 +727,7 @@ func openTestKVCachedFile(t *testing.T) (*KVCachedFile[K, V], *MockKVFileWithMem
 	return file, mock
 }
 
-func getCacheSize[K comparable, V any](cache *LruCache[K, V]) int {
+func getCacheSize[K comparable, V any](cache *common.LruCache[K, V]) int {
 	size := 0
 	cache.Iterate(func(K, V) bool {
 		size++
