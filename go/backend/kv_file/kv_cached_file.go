@@ -55,25 +55,6 @@ func OpenKVCachedFile[K comparable, V any](file KVFileWithMemoryFootprint[K, V],
 	}, nil
 }
 
-func (c *KVCachedFile[K, V]) Set(key K, value V) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return c.handleCacheSet(&key, &value, true)
-}
-
-func (c *KVCachedFile[K, V]) SetBatch(entries map[K]V) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	for key, value := range entries {
-		if err := c.handleCacheSet(&key, &value, true); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // Get retrieves a value from the cache or disk.
 // Entries found in the flushBuffer are promoted to the cache.
 func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
@@ -101,88 +82,30 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 	return value, nil
 }
 
+func (c *KVCachedFile[K, V]) Set(key K, value V) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.handleCacheSet(&key, &value, true)
+}
+
+func (c *KVCachedFile[K, V]) SetBatch(entries map[K]V) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	for key, value := range entries {
+		if err := c.handleCacheSet(&key, &value, true); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Flush writes all pending (dirty) key-value pairs to the disk.
 func (c *KVCachedFile[K, V]) Flush() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	return c.flushLocked()
-}
-
-// flushLocked moves all dirty cache entries into the flush buffer and then
-// writes the buffer to the underlying file. Clean cache entries are left in
-// place so that they are not re-written to disk. This is intended to be
-// called with the mutex locked.
-func (c *KVCachedFile[K, V]) flushLocked() error {
-	c.cache.Iterate(func(key K, value V) bool {
-		if _, isDirty := c.dirty[key]; isDirty {
-			c.flushBuffer[key] = value
-		}
-		return true
-	})
-
-	return c.flushPending()
-}
-
-// handleCacheSet caches the given key/value pair, marking it dirty. If the
-// insertion evicts another entry from the cache, that entry is moved into the
-// flush buffer; when the buffer reaches the flush threshold the pending writes
-// are persisted to the underlying file.
-func (c *KVCachedFile[K, V]) handleCacheSet(key *K, value *V, dirty bool) error {
-	if key == nil || value == nil {
-		return nil // No-op
-	}
-	if dirty {
-		c.dirty[*key] = true
-	}
-	evictedKey, evictedValue, evicted := c.cache.Set(*key, *value)
-	if evicted {
-		if _, isDirty := c.dirty[evictedKey]; isDirty {
-			c.flushBuffer[evictedKey] = evictedValue
-			if len(c.flushBuffer) >= c.flushBufferThreshold {
-				return c.flushPending()
-			}
-		}
-	}
-	return nil
-}
-
-// flushPending empties the flushBuffer by writing its contents to the
-// underlying file via SetBatch and then calling Flush on it. Keys that have
-// been persisted are removed from the dirty set. This is intended to be
-// called with the mutex locked.
-func (c *KVCachedFile[K, V]) flushPending() error {
-	if len(c.flushBuffer) == 0 {
-		return nil
-	}
-
-	if err := c.file.SetBatch(c.flushBuffer); err != nil {
-		return err
-	}
-	if err := c.file.Flush(); err != nil {
-		return err
-	}
-	for k := range c.flushBuffer {
-		delete(c.dirty, k)
-	}
-	c.flushBuffer = make(map[K]V)
-	return nil
-}
-
-// Iterate returns an iterator over all key-value pairs handled by the
-// KVCachedFile. Any pending writes are flushed to disk first so that the
-// underlying file iterator observes a complete, up-to-date view.
-func (c *KVCachedFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	// Flush any pending writes to ensure the underlying file is up-to-date.
-	if err := c.flushLocked(); err != nil {
-		return nil, err
-	}
-
-	// After flushing, every key/value pair lives on disk, so we can
-	// delegate to the underlying file's iterator.
-	return c.file.Iterate()
 }
 
 // Size returns the number of keys handled by the CachedFile.
@@ -237,6 +160,23 @@ func (c *KVCachedFile[K, V]) FileSize() (uint64, error) {
 	return c.file.FileSize()
 }
 
+// Iterate returns an iterator over all key-value pairs handled by the
+// KVCachedFile. Any pending writes are flushed to disk first so that the
+// underlying file iterator observes a complete, up-to-date view.
+func (c *KVCachedFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Flush any pending writes to ensure the underlying file is up-to-date.
+	if err := c.flushLocked(); err != nil {
+		return nil, err
+	}
+
+	// After flushing, every key/value pair lives on disk, so we can
+	// delegate to the underlying file's iterator.
+	return c.file.Iterate()
+}
+
 func (c *KVCachedFile[K, V]) Close() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -266,4 +206,64 @@ func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 		sizeValues += unsafe.Sizeof(k) + valueSize(v)
 	}
 	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + mf.Total() + fileFootprint.Total())
+}
+
+// flushLocked moves all dirty cache entries into the flush buffer and then
+// writes the buffer to the underlying file. Clean cache entries are left in
+// place so that they are not re-written to disk. This is intended to be
+// called with the mutex locked.
+func (c *KVCachedFile[K, V]) flushLocked() error {
+	c.cache.Iterate(func(key K, value V) bool {
+		if _, isDirty := c.dirty[key]; isDirty {
+			c.flushBuffer[key] = value
+		}
+		return true
+	})
+
+	return c.flushPending()
+}
+
+// flushPending empties the flushBuffer by writing its contents to the
+// underlying file via SetBatch and then calling Flush on it. Keys that have
+// been persisted are removed from the dirty set. This is intended to be
+// called with the mutex locked.
+func (c *KVCachedFile[K, V]) flushPending() error {
+	if len(c.flushBuffer) == 0 {
+		return nil
+	}
+
+	if err := c.file.SetBatch(c.flushBuffer); err != nil {
+		return err
+	}
+	if err := c.file.Flush(); err != nil {
+		return err
+	}
+	for k := range c.flushBuffer {
+		delete(c.dirty, k)
+	}
+	c.flushBuffer = make(map[K]V)
+	return nil
+}
+
+// handleCacheSet caches the given key/value pair, marking it dirty. If the
+// insertion evicts another entry from the cache, that entry is moved into the
+// flush buffer; when the buffer reaches the flush threshold the pending writes
+// are persisted to the underlying file.
+func (c *KVCachedFile[K, V]) handleCacheSet(key *K, value *V, dirty bool) error {
+	if key == nil || value == nil {
+		return nil // No-op
+	}
+	if dirty {
+		c.dirty[*key] = true
+	}
+	evictedKey, evictedValue, evicted := c.cache.Set(*key, *value)
+	if evicted {
+		if _, isDirty := c.dirty[evictedKey]; isDirty {
+			c.flushBuffer[evictedKey] = evictedValue
+			if len(c.flushBuffer) >= c.flushBufferThreshold {
+				return c.flushPending()
+			}
+		}
+	}
+	return nil
 }
