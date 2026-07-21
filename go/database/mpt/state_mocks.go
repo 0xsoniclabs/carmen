@@ -592,11 +592,12 @@ func (mr *MockLiveStateMockRecorder) GetCode(address any) *gomock.Call {
 }
 
 // GetCodeForHash mocks base method.
-func (m *MockLiveState) GetCodeForHash(hash common.Hash) []byte {
+func (m *MockLiveState) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCodeForHash", hash)
 	ret0, _ := ret[0].([]byte)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetCodeForHash indicates an expected call of GetCodeForHash.

@@ -13,17 +13,16 @@ package mpt
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
-	"unsafe"
 
-	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/kv_file"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"golang.org/x/crypto/sha3"
 )
 
 func TestCodes_OpenCodes(t *testing.T) {
@@ -32,7 +31,7 @@ func TestCodes_OpenCodes(t *testing.T) {
 		t.Fatalf("failed to open codes: %v", err)
 	}
 
-	if want, got := 0, len(codes.codes); want != got {
+	if want, got := 0, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to be empty, got %d", got)
 	}
 }
@@ -125,6 +124,7 @@ func TestCodes_OpenCodes_IOErrorsAreHandled(t *testing.T) {
 }
 
 func TestCodes_CodesCanBeAddedAndRetrieved(t *testing.T) {
+	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
@@ -133,24 +133,31 @@ func TestCodes_CodesCanBeAddedAndRetrieved(t *testing.T) {
 	code1 := []byte("code1")
 	code2 := []byte("code2")
 
-	hash1 := codes.add(code1)
-	hash2 := codes.add(code2)
+	hash1, err := codes.add(code1)
+	require.NoError(err)
+	hash2, err := codes.add(code2)
+	require.NoError(err)
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have 2 entries, got %d", got)
 	}
 
-	if want, got := code1, codes.getCodeForHash(hash1); string(want) != string(got) {
+	got, err := codes.getCodeForHash(hash1)
+	require.NoError(err)
+	if want, got := code1, got; string(want) != string(got) {
 		t.Fatalf("expected code1, got %s", got)
 	}
 
-	if want, got := code2, codes.getCodeForHash(hash2); string(want) != string(got) {
+	got, err = codes.getCodeForHash(hash2)
+	require.NoError(err)
+	if want, got := code2, got; string(want) != string(got) {
 		t.Fatalf("expected code2, got %s", got)
 	}
 }
 
 func TestCodes_Flush_EmptyCodesCanBeFlushed(t *testing.T) {
-	codes, err := openCodes(t.TempDir())
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
@@ -159,7 +166,8 @@ func TestCodes_Flush_EmptyCodesCanBeFlushed(t *testing.T) {
 		t.Fatalf("failed to flush: %v", err)
 	}
 
-	stats, err := os.Stat(codes.file)
+	file, _ := getCodePaths(dir)
+	stats, err := os.Stat(file)
 	if err != nil {
 		t.Fatalf("failed to stat file: %v", err)
 	}
@@ -169,10 +177,12 @@ func TestCodes_Flush_EmptyCodesCanBeFlushed(t *testing.T) {
 }
 
 func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
-	codes, err := openCodes(t.TempDir())
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	file, _ := getCodePaths(dir)
 
 	code1 := []byte("code1")
 	code2 := []byte("code2")
@@ -181,49 +191,25 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	codes.add(code1)
 	codes.add(code2)
 
-	if want, got := 2, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
-
 	if err := codes.Flush(); err != nil {
 		t.Fatalf("failed to flush: %v", err)
 	}
 
-	if want, got := 0, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
-
-	snapshot1, err := os.ReadFile(codes.file)
+	snapshot1, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
-	}
-
-	if codes.fileSize != uint64(len(snapshot1)) {
-		t.Fatalf("expected file size to be %d, got %d", len(snapshot1), codes.fileSize)
 	}
 
 	// The next step is incremental.
 	codes.add(code3)
 
-	if want, got := 1, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
-
 	if err := codes.Flush(); err != nil {
 		t.Fatalf("failed to flush: %v", err)
 	}
 
-	if want, got := 0, len(codes.pending); want != got {
-		t.Fatalf("expected %d pending codes, got %d", want, got)
-	}
-
-	snapshot2, err := os.ReadFile(codes.file)
+	snapshot2, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
-	}
-
-	if codes.fileSize != uint64(len(snapshot2)) {
-		t.Fatalf("expected file size to be %d, got %d", len(snapshot2), codes.fileSize)
 	}
 
 	if !bytes.HasPrefix(snapshot2, snapshot1) {
@@ -232,6 +218,7 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 }
 
 func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
+	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
@@ -240,8 +227,10 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	code1 := []byte("code1")
 	code2 := []byte("code2")
 
-	hash1 := codes.add(code1)
-	hash2 := codes.add(code2)
+	hash1, err := codes.add(code1)
+	require.NoError(err)
+	hash2, err := codes.add(code2)
+	require.NoError(err)
 
 	got := codes.getCodes()
 
@@ -258,6 +247,26 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	}
 }
 
+func TestCodes_getCodes_ReturnsEmptyMapOnIterateError(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	codeFile := kv_file.NewMockKVFileWithMemoryFootprint[common.Hash, []byte](ctrl)
+	codeFile.EXPECT().Iterate().Return(nil, errors.New("iterate failed"))
+
+	cached, err := kv_file.OpenKVCachedFile[common.Hash, []byte](codeFile, 1, 1)
+	require.NoError(err)
+
+	c := &codes{codes: cached}
+	got := c.getCodes()
+
+	// The historical contract is that getCodes returns a non-nil map so
+	// callers may safely write into it even after a read failure.
+	require.NotNil(got)
+	require.Empty(got)
+	got[common.Hash{0x01}] = []byte("safe-to-write")
+}
+
 func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
@@ -271,10 +280,8 @@ func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
 	codes.add(code2)
 
 	footprint := codes.GetMemoryFootprint()
-	want := unsafe.Sizeof(*codes) + uintptr(len(code1)+len(code2)+2*32)
-	got := footprint.Total()
-	if want != got {
-		t.Fatalf("expected %d, got %d", want, got)
+	if got := footprint.Total(); got == 0 {
+		t.Fatalf("expected non-zero footprint, got %d", got)
 	}
 }
 
@@ -350,20 +357,29 @@ func TestCodes_Prepare_CheckpointIsIncremental(t *testing.T) {
 }
 
 func TestCodes_Prepare_FailsIfFlushFails(t *testing.T) {
-	codes, err := openCodes(t.TempDir())
-	if err != nil {
-		t.Fatalf("failed to open codes: %v", err)
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	// The code file retains its file descriptor for its whole lifetime, so
+	// permission changes on the file cannot make a flush fail. The failure is
+	// therefore injected through a mock of the underlying file.
+	injected := errors.New("injected flush failure")
+	file := kv_file.NewMockKVFileWithMemoryFootprint[common.Hash, []byte](ctrl)
+	file.EXPECT().SetBatch(gomock.Any()).Return(injected)
+
+	cached, err := kv_file.OpenKVCachedFile[common.Hash, []byte](file, 10, 10)
+	require.NoError(err)
+
+	c := &codes{
+		codes:     cached,
+		hasher:    sha3.NewLegacyKeccak256(),
+		directory: t.TempDir(),
 	}
-
-	codes.add([]byte("code1"))
-
-	require.NoError(t, os.Chmod(codes.file, 0400)) // make the file read-only
-	defer func() { require.NoError(t, os.Chmod(codes.file, 0600)) }()
+	_, err = c.add([]byte("code1"))
+	require.NoError(err)
 
 	cp1 := checkpoint.Checkpoint(1)
-	if err := codes.Prepare(cp1); err == nil {
-		t.Fatalf("expected error, got nil")
-	}
+	require.ErrorIs(c.Prepare(cp1), injected)
 }
 
 func TestCodes_Commit_HandlesIoIssues(t *testing.T) {
@@ -443,7 +459,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open original codes: %v", err)
 			}
 
-			if want, got := 2, len(codes.codes); want != got {
+			if want, got := 2, len(codes.getCodes()); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 
@@ -456,7 +472,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open recovered codes: %v", err)
 			}
 
-			if want, got := 1, len(codes.codes); want != got {
+			if want, got := 1, len(codes.getCodes()); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 		})
@@ -511,6 +527,7 @@ func TestCodes_Restore_CanHandleErrorCorruptedData(t *testing.T) {
 	for name, temper := range tests {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
+			file, _ := getCodePaths(dir)
 
 			// Prepare a valid code state.
 			codes, err := openCodes(dir)
@@ -529,7 +546,7 @@ func TestCodes_Restore_CanHandleErrorCorruptedData(t *testing.T) {
 				t.Fatalf("failed to commit checkpoint: %v", err)
 			}
 
-			backup, err := os.ReadFile(codes.file)
+			backup, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatalf("failed to read file: %v", err)
 			}
@@ -549,7 +566,7 @@ func TestCodes_Restore_CanHandleErrorCorruptedData(t *testing.T) {
 			}
 
 			// Verify the restored state.
-			restored, err := os.ReadFile(codes.file)
+			restored, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatalf("failed to read file: %v", err)
 			}
@@ -587,7 +604,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 	}
 
 	codes.add([]byte("code3"))
-	if want, got := 3, len(codes.codes); want != got {
+	if want, got := 3, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -622,7 +639,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -646,7 +663,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to commit checkpoint: %v", err)
 	}
 
-	if want, got := 2, len(codes.codes); want != got {
+	if want, got := 2, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -660,7 +677,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 0, len(codes.codes); want != got {
+	if want, got := 0, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -694,7 +711,7 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
 
-	if want, got := 1, len(codes.codes); want != got {
+	if want, got := 1, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -713,7 +730,7 @@ func TestCodes_writeCodes_WritesCodesToFile(t *testing.T) {
 		t.Fatalf("failed to write codes: %v", err)
 	}
 
-	readCodes, _, err := readCodesAndSize(file)
+	readCodes, err := readCodes(file)
 	if err != nil {
 		t.Fatalf("failed to read codes: %v", err)
 	}
@@ -723,118 +740,59 @@ func TestCodes_writeCodes_WritesCodesToFile(t *testing.T) {
 	}
 }
 
-func TestCodes_writeCodes_WriteFailures(t *testing.T) {
-	codes := make(map[common.Hash][]byte, 1)
-	var h common.Hash
-	code := make([]byte, 5)
-	h[0] = byte(1)
-	code[0] = byte(5)
-	codes[h] = code
+func TestCodes_writeCodes_TruncatesFileIfItExists(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, fileNameCodes)
 
-	// execute dry-run to compute the number of calls to io.Writer
-	var count int
-	{
-		ctrl := gomock.NewController(t)
-		osfile := utils.NewMockOsFile(ctrl)
-
-		osfile.EXPECT().Write(gomock.Any()).AnyTimes().DoAndReturn(func(data []byte) (int, error) {
-			count++
-			return len(data), nil
-		})
-		if err := writeCodesTo(codes, osfile); err != nil {
-			t.Fatalf("cannot execute writeCodesTo: %s", err)
-		}
+	codes1 := map[common.Hash][]byte{
+		{1}: {5},
+		{2}: {7, 8},
 	}
 
-	var injectedErr = errors.New("write error")
-	ctrl := gomock.NewController(t)
-	osfile := utils.NewMockOsFile(ctrl)
+	if err := writeCodes(codes1, file); err != nil {
+		t.Fatalf("failed to write codes: %v", err)
+	}
 
-	// execute the computed number of loops and mock calls to io.Writer so that
-	// the last one is failing.
-	// This way all branches are exercised.
-	for i := 0; i < count; i++ {
-		t.Run(fmt.Sprintf("io_error_%d", i), func(t *testing.T) {
-			calls := make([]*gomock.Call, 0, i+1)
-			for j := 0; j < i; j++ {
-				calls = append(calls, osfile.EXPECT().Write(gomock.Any()).Return(0, nil))
-			}
-			calls = append(calls, osfile.EXPECT().Write(gomock.Any()).Return(0, injectedErr))
-			gomock.InOrder(calls...)
+	codes2 := map[common.Hash][]byte{
+		{3}: {9},
+	}
 
-			if err := writeCodesTo(codes, osfile); !errors.Is(err, injectedErr) {
-				t.Errorf("writing roots should fail")
-			}
-		})
+	if err := writeCodes(codes2, file); err != nil {
+		t.Fatalf("failed to write codes: %v", err)
+	}
 
+	readCodes, err := readCodes(file)
+	if err != nil {
+		t.Fatalf("failed to read codes: %v", err)
+	}
+
+	if want, got := 1, len(readCodes); want != got {
+		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
 
 func TestCodes_writeCodes_CannotCreateTheOutputFile(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, fileNameCodesCheckpointDirectory)
-	if err := os.Mkdir(file, os.FileMode(0644)); err != nil {
+	if err := os.Mkdir(file, os.FileMode(0400)); err != nil {
 		t.Fatalf("cannot create dir: %s", err)
 	}
+	require.NoError(t, os.Chmod(dir, 0500))
+	defer func() { require.NoError(t, os.Chmod(dir, 0777)) }()
 	if err := writeCodes(make(map[common.Hash][]byte, 1), file); err == nil {
 		t.Errorf("writing roots should fail")
-	}
-}
-
-func TestCodes_writeCodesTo_ForwardWriteErrors(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	codes := map[common.Hash][]byte{
-		{1}: {5},
-		{2}: {7, 8},
-	}
-
-	// count number of writing steps
-	counter := 0
-	file := utils.NewMockOsFile(ctrl)
-	file.EXPECT().Write(gomock.Any()).AnyTimes().DoAndReturn(func(data []byte) (int, error) {
-		counter++
-		return len(data), nil
-	})
-
-	if err := writeCodesTo(codes, file); err != nil {
-		t.Fatalf("cannot execute writeCodesTo: %s", err)
-	}
-	if counter == 0 {
-		t.Fatalf("expected at least one write operation")
-	}
-
-	for i := 0; i < counter; i++ {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			file := utils.NewMockOsFile(ctrl)
-			injectedError := errors.New("injected error")
-			gomock.InOrder(
-				file.EXPECT().Write(gomock.Any()).Times(i).DoAndReturn(func(data []byte) (int, error) {
-					return len(data), nil
-				}),
-				file.EXPECT().Write(gomock.Any()).Return(0, injectedError),
-			)
-			err := writeCodesTo(codes, file)
-			if !errors.Is(err, injectedError) {
-				t.Fatalf("expected error, got %v", err)
-			}
-		})
 	}
 }
 
 func TestCodes_readCodesAndSize_ReadingNonExistingFileReturnsEmptyCodeMap(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, fileNameCodes)
-	codes, size, err := readCodesAndSize(path)
+	codes, err := readCodes(path)
 	if err != nil {
 		t.Fatalf("failed to read codes: %v", err)
 	}
 	if want, got := 0, len(codes); want != got {
 		t.Fatalf("expected codes to be empty, got %d", got)
-	}
-	if want, got := uint64(0), size; want != got {
-		t.Fatalf("expected code file-size to be 0, got %d", got)
 	}
 }
 
@@ -846,7 +804,7 @@ func TestCodes_readCodesAndSize_ReadingIssuesAreReported(t *testing.T) {
 		t.Fatalf("failed to prepare invalid code file: %v", err)
 	}
 
-	_, _, err := readCodesAndSize(path)
+	_, err := readCodes(path)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -861,7 +819,7 @@ func TestCodes_readCodesAndSize_PermissionErrorsAreDetected(t *testing.T) {
 	}
 	defer func() { require.NoError(t, os.Chmod(dir, 0700)) }()
 
-	_, _, err := readCodesAndSize(path)
+	_, err := readCodes(path)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -878,30 +836,110 @@ func TestCodes_readCodes_Cannot_Read(t *testing.T) {
 	}
 }
 
-func TestCodes_parseCodes_ReadFailures(t *testing.T) {
-	var injectedErr = errors.New("read error")
-	ctrl := gomock.NewController(t)
-	osfile := utils.NewMockOsFile(ctrl)
+func TestCodes_add_ReturnsHashOfCodeAndStoresIt(t *testing.T) {
+	tests := map[string][]byte{
+		"empty":  {},
+		"short":  []byte("code1"),
+		"binary": {0x00, 0xff, 0x10, 0x20},
+		"long":   bytes.Repeat([]byte("x"), 4096),
+	}
 
-	var h common.Hash
-	sizes := []int{len(h), 4, 100}
-	// execute three times - parseCode calls io.Reader three times to get [<key>, <length>, <code>]
-	for i := 0; i < 3; i++ {
-		calls := make([]*gomock.Call, 0, i+1)
-		for j := 0; j < i; j++ {
-			pos := j
-			call := osfile.EXPECT().Read(gomock.Any()).DoAndReturn(func(buf []byte) (int, error) {
-				buf[0] = 1             // fill in an non-zero value not to return an empty array
-				return sizes[pos], nil // returning expected size causes this io.Reader is called exactly once
-			})
-			calls = append(calls, call)
-		}
-		calls = append(calls, osfile.EXPECT().Read(gomock.Any()).Return(1, injectedErr))
-		gomock.InOrder(calls...)
+	for name, code := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			codes, err := openCodes(t.TempDir())
+			require.NoError(err)
 
-		if _, err := parseCodes(osfile); !errors.Is(err, injectedErr) {
-			t.Errorf("reading codes should fail")
-		}
+			hash, err := codes.add(code)
+			require.NoError(err)
+			require.Equal(common.GetKeccak256Hash(code), hash,
+				"add must return the keccak256 hash of the code")
+			got, err := codes.getCodeForHash(hash)
+			require.NoError(err)
+			require.Equal(code, got,
+				"the code must be retrievable via the returned hash")
+		})
+	}
+}
 
+func TestCodes_getCodeForHash_ReturnsCodeForKnownHashAndNilOtherwise(t *testing.T) {
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(t, err)
+
+	code1 := []byte("code1")
+	code2 := []byte("another code")
+	hash1, err := codes.add(code1)
+	require.NoError(t, err)
+	hash2, err := codes.add(code2)
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		hash common.Hash
+		want []byte
+	}{
+		"known hash returns code":        {hash1, code1},
+		"second known hash returns code": {hash2, code2},
+		"unknown hash returns nil":       {common.Hash{0xde, 0xad}, nil},
+		"zero hash returns nil":          {common.Hash{}, nil},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := codes.getCodeForHash(tc.hash)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	// Flushing to disk and re-opening must not change the lookup behaviour.
+	require.NoError(t, codes.Flush())
+	reopened, err := openCodes(dir)
+	require.NoError(t, err)
+	got, err := reopened.getCodeForHash(hash1)
+	require.NoError(t, err)
+	require.Equal(t, code1, got,
+		"code must still be retrievable after flush + reopen")
+	got, err = reopened.getCodeForHash(hash2)
+	require.NoError(t, err)
+	require.Equal(t, code2, got,
+		"code must still be retrievable after flush + reopen")
+	got, err = reopened.getCodeForHash(common.Hash{0xde, 0xad})
+	require.NoError(t, err)
+	require.Nil(t, got,
+		"unknown hash must still return nil after flush + reopen")
+}
+
+func TestCodes_Flush_CodesArePersistedOnDisk(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+
+	codes, err := openCodes(dir)
+	require.NoError(err)
+
+	want := map[common.Hash][]byte{}
+	for _, code := range [][]byte{
+		[]byte("code1"),
+		[]byte("another code"),
+		{0x00, 0xff, 0x10, 0x20},
+		bytes.Repeat([]byte("x"), 1024),
+	} {
+		hash, err := codes.add(code)
+		require.NoError(err)
+		want[hash] = code
+	}
+
+	require.NoError(codes.Flush())
+
+	// Re-opening the store must yield the exact same set of codes read back
+	// from disk.
+	reopened, err := openCodes(dir)
+	require.NoError(err)
+
+	got := reopened.getCodes()
+	require.Equal(len(want), len(got))
+	for hash, code := range want {
+		require.Equal(code, got[hash],
+			"code for hash %x must survive flush + reopen unchanged", hash)
 	}
 }

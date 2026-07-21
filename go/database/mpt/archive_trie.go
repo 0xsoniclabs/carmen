@@ -320,10 +320,10 @@ func (a *ArchiveTrie) GetCode(block uint64, account common.Address) (code []byte
 	if err != nil {
 		return nil, a.addError(err)
 	}
-	return a.GetCodeForHash(info.CodeHash), nil
+	return a.GetCodeForHash(info.CodeHash)
 }
 
-func (a *ArchiveTrie) GetCodeForHash(hash common.Hash) []byte {
+func (a *ArchiveTrie) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return a.head.GetCodeForHash(hash)
 }
 

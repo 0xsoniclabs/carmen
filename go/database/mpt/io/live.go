@@ -71,7 +71,7 @@ type mptStateVisitor interface {
 	// GetHash returns the hash of the represented Trie.
 	GetHash() (common.Hash, error)
 	// GetCodeForHash returns byte code for given hash.
-	GetCodeForHash(common.Hash) []byte
+	GetCodeForHash(common.Hash) ([]byte, error)
 }
 
 // noResponseNodeVisitor is a visitor for nodes.
@@ -112,7 +112,7 @@ func (e exportableArchiveTrie) GetHash() (common.Hash, error) {
 	return e.trie.GetHash(e.block)
 }
 
-func (e exportableArchiveTrie) GetCodeForHash(hash common.Hash) []byte {
+func (e exportableArchiveTrie) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return e.trie.GetCodeForHash(hash)
 }
 
@@ -132,7 +132,7 @@ func (e *exportableLiveTrie) GetHash() (common.Hash, error) {
 	return e.db.GetHash()
 }
 
-func (e *exportableLiveTrie) GetCodeForHash(hash common.Hash) []byte {
+func (e *exportableLiveTrie) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return e.db.GetCodeForHash(hash)
 }
 
@@ -456,7 +456,10 @@ func getReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor) (
 			}
 			progress.Step(1)
 			codeHash := n.Info().CodeHash
-			code := db.GetCodeForHash(codeHash)
+			code, err := db.GetCodeForHash(codeHash)
+			if err != nil {
+				return fmt.Errorf("failed to retrieve code for hash %x: %w", codeHash[:], err)
+			}
 			if len(code) > 0 {
 				codes[codeHash] = code
 			}
