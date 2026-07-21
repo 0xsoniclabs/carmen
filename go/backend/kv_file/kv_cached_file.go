@@ -12,7 +12,7 @@ package kv_file
 
 import (
 	"fmt"
-	"maps"
+	"iter"
 	"sync"
 	"unsafe"
 
@@ -31,7 +31,6 @@ type KVCachedFile[K comparable, V any] struct {
 	flushBuffer map[K]V
 	dirty       map[K]bool
 	file        KVFileWithMemoryFootprint[K, V]
-	fromDisk    map[K]bool
 
 	mutex                sync.Mutex
 	flushBufferThreshold int
@@ -51,7 +50,6 @@ func OpenKVCachedFile[K comparable, V any](file KVFileWithMemoryFootprint[K, V],
 		cache:                common.NewLruCache[K, V](cacheSize),
 		flushBuffer:          make(map[K]V),
 		dirty:                make(map[K]bool),
-		fromDisk:             make(map[K]bool),
 		file:                 file,
 		flushBufferThreshold: flushBufferThreshold,
 	}, nil
@@ -99,7 +97,6 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.fromDisk[key] = true
 
 	return value, nil
 }
@@ -166,42 +163,26 @@ func (c *KVCachedFile[K, V]) flushPending() error {
 	}
 	for k := range c.flushBuffer {
 		delete(c.dirty, k)
-		c.fromDisk[k] = true
 	}
 	c.flushBuffer = make(map[K]V)
 	return nil
 }
 
-// GetAll returns a map of all keys and values handled by the KVCachedFile.
-func (c *KVCachedFile[K, V]) GetAll() (map[K]V, error) {
+// Iterate returns an iterator over all key-value pairs handled by the
+// KVCachedFile. Any pending writes are flushed to disk first so that the
+// underlying file iterator observes a complete, up-to-date view.
+func (c *KVCachedFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	all, err := c.file.GetAll()
-	if err != nil {
+	// Flush any pending writes to ensure the underlying file is up-to-date.
+	if err := c.flushLocked(); err != nil {
 		return nil, err
 	}
-	// Defensively initialize the map in case the underlying file returns
-	// a nil map for empty content.
-	if all == nil {
-		all = make(map[K]V)
-	}
 
-	// Mark all keys from the underlying file as on disk
-	for key := range all {
-		c.fromDisk[key] = true
-	}
-
-	// Add all values from the flush buffer
-	maps.Copy(all, c.flushBuffer)
-
-	// Add all values from the cache
-	c.cache.Iterate(func(key K, value V) bool {
-		all[key] = value
-		return true
-	})
-
-	return all, nil
+	// After flushing, every key/value pair lives on disk, so we can
+	// delegate to the underlying file's iterator.
+	return c.file.Iterate()
 }
 
 // Size returns the number of keys handled by the CachedFile.
@@ -209,18 +190,25 @@ func (c *KVCachedFile[K, V]) Size() (uint64, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	uniqueKeys := uint64(0)
+
+	countIfNotInFile := func(key K) error {
+		has, err := c.file.Has(key)
+		if err != nil {
+			return err
+		}
+		if !has {
+			uniqueKeys++
+		}
+		return nil
+	}
+
 	var err error
 	c.cache.Iterate(func(key K, value V) bool {
 		if _, inFlushBuffer := c.flushBuffer[key]; !inFlushBuffer {
-			if _, isFromDisk := c.fromDisk[key]; !isFromDisk {
-				v, err2 := c.file.Get(key)
-				if err2 != nil {
-					err = err2
-					return false
-				}
-				if v == nil {
-					uniqueKeys++
-				}
+			err2 := countIfNotInFile(key)
+			if err2 != nil {
+				err = err2
+				return false
 			}
 		}
 		return true
@@ -230,14 +218,9 @@ func (c *KVCachedFile[K, V]) Size() (uint64, error) {
 	}
 
 	for key := range c.flushBuffer {
-		if _, isFromDisk := c.fromDisk[key]; !isFromDisk {
-			v, err := c.file.Get(key)
-			if err != nil {
-				return 0, err
-			}
-			if v == nil {
-				uniqueKeys++
-			}
+		err = countIfNotInFile(key)
+		if err != nil {
+			return 0, err
 		}
 	}
 

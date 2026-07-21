@@ -10,6 +10,7 @@
 package kv_file
 
 import (
+	iter "iter"
 	reflect "reflect"
 
 	common "github.com/0xsoniclabs/carmen/go/common"
@@ -98,19 +99,34 @@ func (mr *MockKVFileMockRecorder[K, V]) Get(key any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockKVFile[K, V])(nil).Get), key)
 }
 
-// GetAll mocks base method.
-func (m *MockKVFile[K, V]) GetAll() (map[K]V, error) {
+// Has mocks base method.
+func (m *MockKVFile[K, V]) Has(key K) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAll")
-	ret0, _ := ret[0].(map[K]V)
+	ret := m.ctrl.Call(m, "Has", key)
+	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetAll indicates an expected call of GetAll.
-func (mr *MockKVFileMockRecorder[K, V]) GetAll() *gomock.Call {
+// Has indicates an expected call of Has.
+func (mr *MockKVFileMockRecorder[K, V]) Has(key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAll", reflect.TypeOf((*MockKVFile[K, V])(nil).GetAll))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Has", reflect.TypeOf((*MockKVFile[K, V])(nil).Has), key)
+}
+
+// Iterate mocks base method.
+func (m *MockKVFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Iterate")
+	ret0, _ := ret[0].(iter.Seq2[K, V])
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Iterate indicates an expected call of Iterate.
+func (mr *MockKVFileMockRecorder[K, V]) Iterate() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Iterate", reflect.TypeOf((*MockKVFile[K, V])(nil).Iterate))
 }
 
 // Set mocks base method.
@@ -238,21 +254,6 @@ func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) Get(key any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).Get), key)
 }
 
-// GetAll mocks base method.
-func (m *MockKVFileWithMemoryFootprint[K, V]) GetAll() (map[K]V, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAll")
-	ret0, _ := ret[0].(map[K]V)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetAll indicates an expected call of GetAll.
-func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) GetAll() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAll", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).GetAll))
-}
-
 // GetMemoryFootprint mocks base method.
 func (m *MockKVFileWithMemoryFootprint[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 	m.ctrl.T.Helper()
@@ -265,6 +266,36 @@ func (m *MockKVFileWithMemoryFootprint[K, V]) GetMemoryFootprint() *common.Memor
 func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) GetMemoryFootprint() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMemoryFootprint", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).GetMemoryFootprint))
+}
+
+// Has mocks base method.
+func (m *MockKVFileWithMemoryFootprint[K, V]) Has(key K) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Has", key)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Has indicates an expected call of Has.
+func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) Has(key any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Has", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).Has), key)
+}
+
+// Iterate mocks base method.
+func (m *MockKVFileWithMemoryFootprint[K, V]) Iterate() (iter.Seq2[K, V], error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Iterate")
+	ret0, _ := ret[0].(iter.Seq2[K, V])
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Iterate indicates an expected call of Iterate.
+func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) Iterate() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Iterate", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).Iterate))
 }
 
 // Set mocks base method.

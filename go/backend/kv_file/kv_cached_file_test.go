@@ -13,6 +13,7 @@ package kv_file
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -280,21 +281,6 @@ func TestKVCachedFile_Get_ReturnsErrorOnFileReadError(t *testing.T) {
 	require.Nil(got)
 }
 
-func TestKVCachedFile_Get_UpdatesFromDiskTracking(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	want := "file-value"
-	mock.EXPECT().Get(key1).Return(&want, nil)
-
-	_, err := c.Get(key1)
-	require.NoError(err)
-
-	// The key is now tracked as having been read from disk.
-	_, isFromDisk := c.fromDisk[key1]
-	require.True(isFromDisk)
-}
-
 func TestKVCachedFile_Get_ValuesInFlushBufferArePromotedIntoCache(t *testing.T) {
 	require := require.New(t)
 	// No file interactions expected: the buffer never reaches the flush
@@ -480,110 +466,93 @@ func TestKVCachedFile_flushPending_ClearsDirtyForFlushedKeys(t *testing.T) {
 	require.Empty(c.dirty)
 }
 
-func TestKVCachedFile_flushPending_UpdatesFromDiskForFlushedKeys(t *testing.T) {
+// mockIterateSeq returns an iter.Seq2 mock return value that yields the
+// key/value pairs from the given map.
+func mockIterateSeq(entries map[K]V) iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		for k, v := range entries {
+			if !yield(k, v) {
+				return
+			}
+		}
+	}
+}
+
+func TestKVCachedFile_Iterate_YieldsFileContents(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	// No pending writes: flushLocked is a no-op, Iterate delegates directly
+	// to the underlying file.
+	fileContents := map[K]V{0: "value0", 1: "value1", 2: "value2"}
+	mock.EXPECT().Iterate().Return(mockIterateSeq(fileContents), nil)
+
+	seq, err := c.Iterate()
+	require.NoError(err)
+
+	got := map[K]V{}
+	for k, v := range seq {
+		got[k] = v
+	}
+	require.Equal(fileContents, got)
+}
+
+func TestKVCachedFile_Iterate_FlushesDirtyEntriesBeforeIterating(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
 	require.NoError(c.Set(1, "value-1"))
 	require.NoError(c.Set(2, "value-2"))
-	require.Len(c.fromDisk, 0)
+	c.flushBuffer[3] = "value-3"
 
-	mock.EXPECT().SetBatch(gomock.Any()).Return(nil)
-	mock.EXPECT().Flush().Return(nil)
+	written := map[K]V{}
+	gomock.InOrder(
+		mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
+			for k, v := range entries {
+				written[k] = v
+			}
+			return nil
+		}),
+		mock.EXPECT().Flush().Return(nil),
+		mock.EXPECT().Iterate().DoAndReturn(func() (iter.Seq2[K, V], error) {
+			return mockIterateSeq(written), nil
+		}),
+	)
 
-	require.NoError(c.Flush())
-	require.Len(c.fromDisk, 2)
-}
-
-func TestKVCachedFile_GetAll_ReturnsAllValues(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	mock.EXPECT().GetAll().Return(map[K]V{
-		0: "value0",
-		1: "value1",
-	}, nil)
-
-	_, _, _ = c.cache.Set(2, "value2")
-	_, _, _ = c.cache.Set(3, "value3")
-
-	c.flushBuffer[4] = "value4"
-	c.flushBuffer[5] = "value5"
-
-	all, err := c.GetAll()
+	seq, err := c.Iterate()
 	require.NoError(err)
-	require.Equal(6, len(all))
-	for i := 0; i < 6; i++ {
-		require.Equal(fmt.Sprintf("value%d", i), all[i])
+
+	got := map[K]V{}
+	for k, v := range seq {
+		got[k] = v
 	}
+	require.Equal(map[K]V{1: "value-1", 2: "value-2", 3: "value-3"}, got)
 }
 
-func TestKVCachedFile_GetAll_ReturnsLatestValueForKey(t *testing.T) {
-	testCases := map[string]struct {
-		// fileValue is what the underlying file returns from GetAll.
-		fileValue V
-		op        func(t *testing.T, c *KVCachedFile[K, V])
-	}{
-		"latest value in cache": {
-			fileValue: "value0",
-			op: func(t *testing.T, c *KVCachedFile[K, V]) {
-				require.NoError(t, c.Set(0, "value0-updated"))
-			},
-		},
-		"latest value in flush buffer": {
-			fileValue: "value0",
-			op: func(t *testing.T, c *KVCachedFile[K, V]) {
-				c.flushBuffer[0] = "value0-updated"
-			},
-		},
-		"latest value on file": {
-			// The updated value has already made it to the file.
-			fileValue: "value0-updated",
-			op:        func(t *testing.T, c *KVCachedFile[K, V]) {},
-		},
-	}
-
-	for name, test := range testCases {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			c, mock := openTestKVCachedFile(t)
-
-			mock.EXPECT().GetAll().Return(map[K]V{0: test.fileValue}, nil)
-			test.op(t, c)
-
-			values, err := c.GetAll()
-			require.NoError(err)
-			require.Equal("value0-updated", values[0])
-		})
-	}
-}
-
-func TestKVCachedFile_GetAll_ReturnsErrorOnFileError(t *testing.T) {
+func TestKVCachedFile_Iterate_ReturnsErrorOnFlushFailure(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
-	injected := errors.New("get-all failed")
-	mock.EXPECT().GetAll().Return(nil, injected)
+	c.flushBuffer[1] = "value-1"
 
-	got, err := c.GetAll()
+	injected := errors.New("flush failed")
+	mock.EXPECT().SetBatch(gomock.Any()).Return(injected)
+
+	seq, err := c.Iterate()
 	require.ErrorIs(err, injected)
-	require.Nil(got)
+	require.Nil(seq)
 }
 
-func TestKVCachedFile_GetAll_HandlesNilMapFromFile(t *testing.T) {
+func TestKVCachedFile_Iterate_ReturnsErrorFromFileIterate(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
-	// Underlying file returns (nil, nil): GetAll must still produce a
-	// usable map populated from the cache and flush buffer.
-	mock.EXPECT().GetAll().Return(nil, nil)
+	injected := errors.New("iterate failed")
+	mock.EXPECT().Iterate().Return(nil, injected)
 
-	_, _, _ = c.cache.Set(1, "cache-1")
-	c.flushBuffer[2] = "buffer-2"
-
-	all, err := c.GetAll()
-	require.NoError(err)
-	require.Equal(map[K]V{1: "cache-1", 2: "buffer-2"}, all)
+	seq, err := c.Iterate()
+	require.ErrorIs(err, injected)
+	require.Nil(seq)
 }
 
 func TestKVCachedFile_Size_ReturnsCorrectSize(t *testing.T) {
@@ -596,11 +565,9 @@ func TestKVCachedFile_Size_ReturnsCorrectSize(t *testing.T) {
 		2: "file-2",
 		3: "file-3",
 	}
-	mock.EXPECT().Get(gomock.Any()).DoAndReturn(func(k K) (*V, error) {
-		if v, ok := file[k]; ok {
-			return &v, nil
-		}
-		return nil, nil
+	mock.EXPECT().Has(gomock.Any()).DoAndReturn(func(k K) (bool, error) {
+		_, ok := file[k]
+		return ok, nil
 	}).AnyTimes()
 	mock.EXPECT().Size().DoAndReturn(func() (uint64, error) { return uint64(len(file)), nil }).Times(1)
 
@@ -626,7 +593,7 @@ func TestKVCachedFile_Size_ReturnsErrorOnFileReadError(t *testing.T) {
 	_, _, _ = c.cache.Set(1, "cache-1")
 
 	injected := errors.New("size read failed")
-	mock.EXPECT().Get(1).Return(nil, injected)
+	mock.EXPECT().Has(1).Return(false, injected)
 
 	_, err := c.Size()
 	require.ErrorIs(err, injected)

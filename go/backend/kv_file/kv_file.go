@@ -12,6 +12,7 @@ package kv_file
 
 import (
 	"io"
+	"iter"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 )
@@ -24,6 +25,9 @@ type KVFile[K comparable, V any] interface {
 	// Get retrieves a value from the file by key.
 	// Returns nil if the key does not exist.
 	Get(key K) (*V, error)
+
+	// Has checks if a key exists in the file.
+	Has(key K) (bool, error)
 
 	// Set adds a key-value pair to the file.
 	Set(key K, value V) error
@@ -40,8 +44,8 @@ type KVFile[K comparable, V any] interface {
 	// FileSize returns the size of the file in bytes.
 	FileSize() (uint64, error)
 
-	// GetAll retrieves all key-value pairs from the file.
-	GetAll() (map[K]V, error)
+	// Iterate returns an iterator over the key-value pairs in the file.
+	Iterate() (iter.Seq2[K, V], error)
 
 	// Close closes the file and releases any resources associated with it.
 	Close() error
