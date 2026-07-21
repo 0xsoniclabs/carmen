@@ -11,7 +11,6 @@
 package mpt
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -28,6 +27,7 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
+	"github.com/0xsoniclabs/carmen/go/backend/kv_file"
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -853,7 +853,13 @@ func TestArchiveTrie_Add_UpdateFailsHashing(t *testing.T) {
 	live.EXPECT().Flush()
 	live.EXPECT().closeWithError(gomock.Any())
 
-	archive := &ArchiveTrie{head: live, forest: db, roots: &rootList{}}
+	// A real (temp-file backed) root list is required because filling the
+	// skipped blocks appends to the paged array.
+	roots, err := loadRoots(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to load roots: %v", err)
+	}
+	archive := &ArchiveTrie{head: live, forest: db, roots: roots}
 	defer func() {
 		if err := archive.Close(); !errors.Is(err, injectedError) {
 			t.Errorf("closing should fail, got %v, want: %v", err, injectedError)
@@ -1069,42 +1075,6 @@ func TestArchiveTrie_Add_FailingToCreateCheckpointsIsDetected(t *testing.T) {
 	}
 }
 
-func TestArchiveTrie_RootsGrowSubLinearly(t *testing.T) {
-	dir := t.TempDir()
-	roots, err := loadRoots(dir)
-	if err != nil {
-		t.Fatalf("failed to create empty root list: %v", err)
-	}
-
-	// Golang slices grow by the factor of 2 when they are small,
-	// while they grow slower when they become huge.
-	// The slice 'archive.roots' contains millions of elements
-	// stored as GiBs in memory.
-	// This test verifies that the slices grow slower for huge arrays
-	// to ensure that memory consumption is not doubled every time
-	// the slice grows.
-	// This feature cannot be customized, i.e., this test verifies
-	// that the described assumption will hold in future versions
-	// of golang and/or runtime configurations.
-
-	const size = 100_000
-	const threshold = 10_000
-	const factor = 1.3
-
-	var prevCap int
-	for i := 0; i < size; i++ {
-		roots.append(Root{})
-
-		if i > threshold {
-			if got, want := cap(roots.roots), int(factor*float64(prevCap)); got >= want {
-				t.Fatalf("array grows too fast: %d >= %d", got, want)
-			}
-		}
-
-		prevCap = cap(roots.roots)
-	}
-}
-
 func TestArchiveTrie_Add_LiveStateFailsHashing(t *testing.T) {
 	// inject a failing hasher
 	var injectedError = errors.New("injectedError")
@@ -1114,7 +1084,11 @@ func TestArchiveTrie_Add_LiveStateFailsHashing(t *testing.T) {
 	live.EXPECT().Flush()
 	live.EXPECT().closeWithError(gomock.Any())
 
-	archive := &ArchiveTrie{head: live, roots: &rootList{}}
+	roots, err := loadRoots(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to load roots: %v", err)
+	}
+	archive := &ArchiveTrie{head: live, roots: roots}
 	defer func() {
 		if err := archive.Close(); !errors.Is(err, injectedError) {
 			t.Errorf("closing should fail, got %v, want: %v", err, injectedError)
@@ -1140,7 +1114,11 @@ func TestArchiveTrie_Add_LiveStateFailsCreateAccount(t *testing.T) {
 	live.EXPECT().Flush()
 	live.EXPECT().closeWithError(gomock.Any())
 
-	archive := &ArchiveTrie{head: live, roots: &rootList{}}
+	roots, err := loadRoots(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to load roots: %v", err)
+	}
+	archive := &ArchiveTrie{head: live, roots: roots}
 	defer func() {
 		if err := archive.Close(); !errors.Is(err, injectedError) {
 			t.Errorf("closing should fail, got %v, want: %v", err, injectedError)
@@ -1168,7 +1146,11 @@ func TestArchiveTrie_Add_FreezingFails(t *testing.T) {
 	live.EXPECT().Flush()
 	live.EXPECT().closeWithError(gomock.Any())
 
-	archive := &ArchiveTrie{head: live, forest: db, roots: &rootList{}}
+	roots, err := loadRoots(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to load roots: %v", err)
+	}
+	archive := &ArchiveTrie{head: live, forest: db, roots: roots}
 	defer func() {
 		if err := archive.Close(); !errors.Is(err, injectedErr) {
 			t.Errorf("closing should fail, got %v, want: %v", err, injectedErr)
@@ -1736,31 +1718,6 @@ func TestArchiveTrie_GetMemoryFootprint(t *testing.T) {
 	}
 }
 
-func TestArchiveTrie_Dump(t *testing.T) {
-	for _, config := range allMptConfigs {
-		t.Run(config.Name, func(t *testing.T) {
-			dir := t.TempDir()
-			archive, err := OpenArchiveTrie(dir, config, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
-			if err != nil {
-				t.Fatalf("failed to create empty archive, err %v", err)
-			}
-			defer func() {
-				if err := archive.Close(); err != nil {
-					t.Errorf("failed to close archive: %v", err)
-				}
-			}()
-
-			if err = archive.Add(0, common.Update{
-				Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}},
-			}, nil); err != nil {
-				t.Fatalf("cannot apply update: %s", err)
-			}
-
-			archive.Dump()
-		})
-	}
-}
-
 func TestArchiveTrie_VerificationOfArchiveWithMissingFileFails(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
@@ -1846,49 +1803,8 @@ func TestArchiveTrie_VerificationOfArchiveWithCorruptedFileFails(t *testing.T) {
 	}
 }
 
-func TestArchiveTrie_CanLoadRootsFromJunkySource(t *testing.T) {
-
-	roots := []Root{
-		{NewNodeReference(ValueId(12)), common.Hash{12}},
-		{NewNodeReference(ValueId(14)), common.Hash{14}},
-	}
-
-	var b bytes.Buffer
-	writer := bufio.NewWriter(&b)
-	require.NoError(t, storeRootsTo(writer, roots))
-	require.NoError(t, writer.Flush())
-
-	for _, size := range []int{1, 2, 4, 1024} {
-		reader := utils.NewChunkReader(b.Bytes(), size)
-		res, err := loadRootsFrom(reader, int64(b.Len()))
-		if err != nil {
-			t.Fatalf("error loading roots: %v", err)
-		}
-		if !reflect.DeepEqual(roots, res) {
-			t.Errorf("failed to restore roots, wanted %v, got %v", roots, res)
-		}
-	}
-}
-
-func TestArchiveTrie_LoadRootsCapacityIsCorrect(t *testing.T) {
-	for _, size := range []int64{1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300, 500, 1000, 2000, 3000, 5000, 10000} {
-		reader := bytes.NewReader([]byte{})
-		res, err := loadRootsFrom(reader, size)
-		if err != nil {
-			t.Fatalf("error loading roots: %v", err)
-		}
-		if len(res) != 0 {
-			t.Errorf("unexpected len, wanted 0, got %d", len(res))
-		}
-
-		expected := size / int64(NodeIdEncoder{}.GetEncodedSize()+32)
-		if got, want := cap(res), int(expected); got > want {
-			t.Errorf("unexpected capacity, wanted %d, got %d", want, got)
-		}
-	}
-}
-
 func TestArchiveTrie_StoreLoadRoots(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	original, err := loadRoots(dir)
 	if err != nil {
@@ -1917,9 +1833,11 @@ func TestArchiveTrie_StoreLoadRoots(t *testing.T) {
 	}
 
 	for i := 0; i < original.length(); i++ {
-		want := original.roots[i].NodeRef.Id()
-		got := restored.roots[i].NodeRef.Id()
-		if want != got {
+		want, err := original.get(uint64(i))
+		require.NoError(err)
+		got, err := restored.get(uint64(i))
+		require.NoError(err)
+		if want.NodeRef.Id() != got.NodeRef.Id() {
 			t.Errorf("invalid restored root at position %d, wanted %v, got %v", i, want, got)
 		}
 	}
@@ -1927,40 +1845,66 @@ func TestArchiveTrie_StoreLoadRoots(t *testing.T) {
 
 func TestArchiveTrie_RootListStoreOnlyWritesNewRoots(t *testing.T) {
 	dir := t.TempDir()
-	list, err := loadRoots(dir)
+
+	// Use a mock backing file to record which keys are actually written on
+	// each Flush.
+	ctrl := gomock.NewController(t)
+	file := kv_file.NewMockKVFileWithMemoryFootprint[uint64, Root](ctrl)
+
+	var writtenBatches []map[uint64]Root
+	file.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[uint64]Root) error {
+		cp := make(map[uint64]Root, len(entries))
+		for k, v := range entries {
+			cp[k] = v
+		}
+		writtenBatches = append(writtenBatches, cp)
+		return nil
+	}).AnyTimes()
+	file.EXPECT().Flush().Return(nil).AnyTimes()
+
+	cached, err := kv_file.OpenKVCachedFile[uint64, Root](file, 10000, 1000)
 	if err != nil {
-		t.Fatalf("failed to load roots: %v", err)
+		t.Fatalf("failed to open kv cached file: %v", err)
+	}
+	list := &rootList{
+		roots:     cached,
+		filename:  filepath.Join(dir, fileNameArchiveRoots),
+		directory: filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory),
 	}
 
-	// The first write establishes a list of roots in the output file.
-	list.append(Root{})
-	list.append(Root{})
-	list.append(Root{})
+	// First round: 3 new roots.
+	list.append(Root{NodeRef: NewNodeReference(ValueId(1))})
+	list.append(Root{NodeRef: NewNodeReference(ValueId(2))})
+	list.append(Root{NodeRef: NewNodeReference(ValueId(3))})
 	if err := list.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
 	}
 
-	// We redirect the incremental update into another file to see what is written.
-	oldFile := list.filename
-	newFile := filepath.Join(dir, "new-roots.dat")
-	list.filename = newFile
-	list.append(Root{})
-	list.append(Root{})
+	// Second round: 2 additional new roots.
+	list.append(Root{NodeRef: NewNodeReference(ValueId(4))})
+	list.append(Root{NodeRef: NewNodeReference(ValueId(5))})
 	if err := list.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
 	}
 
-	if err := os.Rename(newFile, oldFile); err != nil {
-		t.Fatalf("failed to rename file: %v", err)
+	if got := list.length(); got != 5 {
+		t.Fatalf("unexpected number of roots, wanted 5, got %d", got)
+	}
+	if got := list.numRootsInFile; got != 5 {
+		t.Fatalf("unexpected number of roots in file, wanted 5, got %d", got)
 	}
 
-	// Loading the second file should only produce 2 roots.
-	restored, err := loadRoots(dir)
-	if err != nil {
-		t.Fatalf("failed to load roots: %v", err)
+	// storeRoots must have been observed at least once for each round and
+	// must not write more entries than the total appended so far.
+	if len(writtenBatches) < 2 {
+		t.Fatalf("expected at least 2 flushes, got %d", len(writtenBatches))
 	}
-	if want, got := 2, restored.length(); want != got {
-		t.Fatalf("invalid number of restored roots, wanted %d, got %d", want, got)
+	for i, batch := range writtenBatches {
+		for key := range batch {
+			if key >= uint64(list.length()) {
+				t.Errorf("flush %d contains unexpected key %d", i, key)
+			}
+		}
 	}
 }
 
@@ -1990,8 +1934,19 @@ func TestArchiveTrie_IncrementalRootListUpdates(t *testing.T) {
 			t.Fatalf("failed to reload roots: %v", err)
 		}
 
-		if !reflect.DeepEqual(list, restored) {
-			t.Fatalf("failed to restore roots, wanted %v, got %v", list, restored)
+		wantRoots, err := list.GetAll()
+		if err != nil {
+			t.Fatalf("failed to fetch stored roots: %v", err)
+		}
+		gotRoots, err := restored.GetAll()
+		if err != nil {
+			t.Fatalf("failed to fetch restored roots: %v", err)
+		}
+		if !reflect.DeepEqual(wantRoots, gotRoots) {
+			t.Fatalf("failed to restore roots, wanted %v, got %v", wantRoots, gotRoots)
+		}
+		if want, got := list.length(), restored.length(); want != got {
+			t.Fatalf("mismatched root list length, wanted %d, got %d", want, got)
 		}
 	}
 }
@@ -2012,29 +1967,39 @@ func TestArchiveTrie_DirectlyStoredRootsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	if !reflect.DeepEqual(roots, restored.roots) {
-		t.Errorf("failed to restore roots, wanted %v, got %v", roots, restored.roots)
+	got, err := restored.GetAll()
+	if err != nil {
+		t.Fatalf("failed to fetch restored roots: %v", err)
+	}
+	if !reflect.DeepEqual(roots, got) {
+		t.Errorf("failed to restore roots, wanted %v, got %v", roots, got)
 	}
 }
 
 func TestArchiveTrie_FileAccessErrorWhenStoringRootsIsDetected(t *testing.T) {
 	dir := t.TempDir()
-	list, err := loadRoots(dir)
-	if err != nil {
-		t.Fatalf("failed to load roots: %v", err)
-	}
-	if err := list.storeRoots(); err != nil {
-		t.Fatalf("failed to store empty roots file: %v", err)
-	}
 
-	// remove write access
-	if err := os.Chmod(list.filename, 0x400); err != nil {
-		t.Fatalf("cannot chmod roots file: %v", err)
+	// Use a mock backing file whose SetBatch returns an error to simulate a
+	// write failure when the pending roots are flushed to disk.
+	ctrl := gomock.NewController(t)
+	file := kv_file.NewMockKVFileWithMemoryFootprint[uint64, Root](ctrl)
+	injectedErr := errors.New("injected write failure")
+	file.EXPECT().SetBatch(gomock.Any()).Return(injectedErr).AnyTimes()
+	file.EXPECT().Flush().Return(nil).AnyTimes()
+
+	cached, err := kv_file.OpenKVCachedFile[uint64, Root](file, 10000, 1000)
+	if err != nil {
+		t.Fatalf("failed to open kv cached file: %v", err)
+	}
+	list := &rootList{
+		roots:     cached,
+		filename:  filepath.Join(dir, fileNameArchiveRoots),
+		directory: filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory),
 	}
 
 	list.append(Root{})
-	if err := list.storeRoots(); err == nil {
-		t.Errorf("expected an error when storing roots into non-accessible file")
+	if err := list.storeRoots(); !errors.Is(err, injectedErr) {
+		t.Errorf("expected injected error when storing roots into non-accessible file, got %v", err)
 	}
 }
 
@@ -2133,56 +2098,6 @@ func TestArchiveTrie_QueryLoadTest(t *testing.T) {
 	}
 }
 
-func TestStoreRootsTo_WriterFailures(t *testing.T) {
-	var roots []Root
-	for i := 0; i < 48; i++ {
-		id := NodeId(uint64(1) << i)
-		roots = append(roots, Root{NodeRef: NewNodeReference(id)})
-	}
-
-	var injectedErr = errors.New("write error")
-	ctrl := gomock.NewController(t)
-	osfile := utils.NewMockOsFile(ctrl)
-	osfile.EXPECT().Write(gomock.Any()).Return(0, injectedErr)
-
-	if err := storeRootsTo(osfile, roots); !errors.Is(err, injectedErr) {
-		t.Errorf("writing roots should fail")
-	}
-}
-
-func TestStoreRootsTo_SecondWriterFailures(t *testing.T) {
-	var roots []Root
-	for i := 0; i < 48; i++ {
-		id := NodeId(uint64(1) << i)
-		roots = append(roots, Root{NodeRef: NewNodeReference(id)})
-	}
-
-	var injectedErr = errors.New("write error")
-	ctrl := gomock.NewController(t)
-	osfile := utils.NewMockOsFile(ctrl)
-	gomock.InOrder(
-		osfile.EXPECT().Write(gomock.Any()).Return(0, nil),
-		osfile.EXPECT().Write(gomock.Any()).Return(0, injectedErr),
-	)
-
-	if err := storeRootsTo(osfile, roots); !errors.Is(err, injectedErr) {
-		t.Errorf("writing roots should fail")
-	}
-}
-
-func TestStoreRoots_Cannot_Create(t *testing.T) {
-	var roots []Root
-	dir := t.TempDir()
-	file := filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory)
-	if err := os.Mkdir(file, os.FileMode(0644)); err != nil {
-		t.Fatalf("cannot create dir: %s", err)
-	}
-	if err := StoreRoots(file, roots); err == nil {
-		t.Errorf("writing roots should fail")
-	}
-
-}
-
 func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
@@ -2223,8 +2138,10 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			live.EXPECT().Flush().Return(injectedErr).AnyTimes() // flush can be repeated
 			live.EXPECT().closeWithError(gomock.Any()).AnyTimes()
 
-			archive := &ArchiveTrie{forest: db, head: live, roots: &rootList{}}
-			archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
+			roots, err := loadRoots(t.TempDir())
+			require.NoError(t, err)
+			archive := &ArchiveTrie{forest: db, head: live, roots: roots}
+			archive.roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
 
 			// all operations must fail
 			for _, name := range rotate(names, i) {
@@ -2301,8 +2218,10 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 			db.EXPECT().hashAddress(gomock.Any()).DoAndReturn(common.Keccak256ForAddress).AnyTimes()
 			db.EXPECT().getViewAccess(gomock.Any()).Return(shared.MakeShared[Node](&EmptyNode{}).GetViewHandle(), nil).AnyTimes()
 
-			archive := &ArchiveTrie{forest: db, head: liveState, roots: &rootList{}}
-			archive.roots.roots = append(archive.roots.roots, Root{NodeRef: NewNodeReference(ValueId(1))})
+			roots, err := loadRoots(t.TempDir())
+			require.NoError(t, err)
+			archive := &ArchiveTrie{forest: db, head: liveState, roots: roots}
+			archive.roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
 			defer func() {
 				if err := archive.Close(); !errors.Is(err, injectedErr) {
 					t.Errorf("expected error does not match: %v != %v", err, injectedErr)
@@ -3130,44 +3049,6 @@ func TestRootList_LoadRoots_ForwardsIoIssues(t *testing.T) {
 	}
 }
 
-func TestRootList_storeRootsTo_HandlesWriteIssues(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	writeCounter := utils.NewMockOsFile(ctrl)
-
-	roots := make([]Root, 10)
-
-	counter := 0
-	writeCounter.EXPECT().Write(gomock.Any()).DoAndReturn(func(p []byte) (int, error) {
-		counter++
-		return len(p), nil
-	}).AnyTimes()
-
-	if err := storeRootsTo(writeCounter, roots); err != nil {
-		t.Fatalf("failed to store roots: %v", err)
-	}
-
-	if counter == 0 {
-		t.Fatalf("expected write to be called")
-	}
-
-	for i := 0; i < counter; i++ {
-		t.Run(fmt.Sprintf("write_%d", i), func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			out := utils.NewMockOsFile(ctrl)
-
-			inducedError := fmt.Errorf("induced error")
-			gomock.InOrder(
-				out.EXPECT().Write(gomock.Any()).Return(0, nil).Times(i),
-				out.EXPECT().Write(gomock.Any()).Return(0, inducedError),
-			)
-
-			if err := storeRootsTo(out, roots); !errors.Is(err, inducedError) {
-				t.Fatalf("expected error when writing roots")
-			}
-		})
-	}
-}
-
 func TestRootList_GuaranteeCheckpoint_EmptyListSupportsCheckpointZero(t *testing.T) {
 	dir := t.TempDir()
 	roots, err := loadRoots(dir)
@@ -3298,23 +3179,34 @@ func TestRootList_Prepare_OnlyAcceptsIncrementalCheckpoints(t *testing.T) {
 
 func TestRootList_Prepare_DetectsFlushIssue(t *testing.T) {
 	dir := t.TempDir()
-	roots, err := loadRoots(dir)
+
+	// Create the checkpoint directory that loadRoots would otherwise set up.
+	checkpointDir := filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory)
+	if err := os.MkdirAll(checkpointDir, 0700); err != nil {
+		t.Fatalf("failed to create checkpoint directory: %v", err)
+	}
+
+	// Use a mock backing file whose SetBatch returns an error so that the
+	// flush triggered inside Prepare fails.
+	ctrl := gomock.NewController(t)
+	file := kv_file.NewMockKVFileWithMemoryFootprint[uint64, Root](ctrl)
+	injectedErr := errors.New("injected flush failure")
+	file.EXPECT().SetBatch(gomock.Any()).Return(injectedErr)
+
+	cached, err := kv_file.OpenKVCachedFile[uint64, Root](file, 10000, 1000)
 	if err != nil {
-		t.Fatalf("failed to load roots: %v", err)
+		t.Fatalf("failed to open kv cached file: %v", err)
 	}
-
+	roots := &rootList{
+		roots:     cached,
+		filename:  filepath.Join(dir, fileNameArchiveRoots),
+		directory: checkpointDir,
+	}
 	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	if err := roots.storeRoots(); err != nil {
-		t.Fatalf("failed to store roots: %v", err)
-	}
-	if err := os.Chmod(roots.filename, 0400); err != nil {
-		t.Fatalf("failed to make roots file read-only: %v", err)
-	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
 	cp := checkpoint.Checkpoint(1)
-	if err := roots.Prepare(cp); err == nil {
-		t.Fatalf("expected error when roots could not be flushed to disk")
+	if err := roots.Prepare(cp); !errors.Is(err, injectedErr) {
+		t.Fatalf("expected error when roots could not be flushed to disk, got %v", err)
 	}
 }
 
