@@ -58,8 +58,10 @@ type KVFileWithMemoryFootprint[K comparable, V any] interface {
 	GetMemoryFootprint() *common.MemoryFootprint
 }
 
-// readValueFn is a utility type for reading a key-value pair from an io.ReadSeeker.
-type readValueFn[K comparable, V any] func(reader io.ReadSeeker) (K, V, error)
+// readValueFn is a utility type for reading a key-value pair from an io.Reader.
+// The reader is already positioned at the start of the record; implementations
+// must consume exactly one record.
+type readValueFn[K comparable, V any] func(reader io.Reader) (K, V, error)
 
 // writeValueFn is a utility type for writing a key-value pair to an io.Writer.
 type writeValueFn[K comparable, V any] func(writer io.Writer, key K, value V) error
