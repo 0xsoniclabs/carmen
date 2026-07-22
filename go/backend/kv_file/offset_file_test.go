@@ -63,7 +63,7 @@ func TestOffsetFile_Open_CreatesFileWhenMissing(t *testing.T) {
 
 	f, err := OpenOffsetFile[uint64, uint64](path, offsetReadValue, offsetWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	info, err := os.Stat(path)
 	require.NoError(err)
@@ -85,7 +85,7 @@ func TestOffsetFile_Open_LoadsExistingEntries(t *testing.T) {
 
 	f, err := OpenOffsetFile[uint64, uint64](path, offsetReadValue, offsetWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	size, err := f.Size()
 	require.NoError(err)
@@ -175,7 +175,7 @@ func TestOffsetFile_Get_DetectsKeyMismatchOnDisk(t *testing.T) {
 
 	f2, err := OpenOffsetFile[uint64, uint64](path, offsetReadValue, offsetWriteValue)
 	require.NoError(err)
-	defer f2.Close()
+	defer func() { require.NoError(f2.Close()) }()
 
 	// The offsets map now records key=999. Asking for it succeeds because
 	// the stored key matches. Asking for key=1 returns nil because it was
@@ -353,7 +353,7 @@ func TestOffsetFile_Set_PropagatesWriteError(t *testing.T) {
 
 	f, err := OpenOffsetFile[uint64, uint64](path, offsetReadValue, writeFn)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	err = f.Set(1, 1)
 	require.ErrorIs(err, injected)
@@ -395,7 +395,7 @@ func TestOffsetFile_Get_PropagatesReadError(t *testing.T) {
 
 	f2, err := OpenOffsetFile[uint64, uint64](path, readFn, offsetWriteValue)
 	require.NoError(err)
-	defer f2.Close()
+	defer func() { require.NoError(f2.Close()) }()
 
 	scanned = true
 	_, err = f2.Get(1)
