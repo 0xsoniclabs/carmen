@@ -12,6 +12,7 @@ package mpt
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -115,6 +116,11 @@ func (c *codes) getCodes() map[common.Hash][]byte {
 
 func (c *codes) Flush() error {
 	return c.codes.Flush()
+}
+
+// Close releases the resources backing the code store.
+func (c *codes) Close() error {
+	return c.codes.Close()
 }
 
 func (c *codes) GetMemoryFootprint() *common.MemoryFootprint {
@@ -255,6 +261,9 @@ func writeCodes(codes map[common.Hash][]byte, path string) (err error) {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, storedCodes.Close())
+	}()
 	for hash, code := range codes {
 		err := storedCodes.Set(hash, code)
 		if err != nil {

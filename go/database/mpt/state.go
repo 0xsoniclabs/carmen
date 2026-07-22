@@ -359,6 +359,7 @@ func (s *MptState) closeWithError(externalError error) error {
 		externalError,
 		s.Flush(),
 		s.trie.Close(),
+		s.codes.Close(),
 	)
 	if err == nil {
 		err = markClean(s.directory)

@@ -368,6 +368,7 @@ func TestArchiveTrie_Open_Fails_InconsistentCheckpoints(t *testing.T) {
 			return errors.Join(
 				codes.Prepare(checkpoint),
 				codes.Commit(checkpoint),
+				codes.Close(),
 			)
 		},
 		"invalid roots checkpoint": func(dir string) error {

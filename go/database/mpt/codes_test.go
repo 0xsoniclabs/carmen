@@ -30,6 +30,7 @@ func TestCodes_OpenCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	if want, got := 0, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to be empty, got %d", got)
@@ -129,6 +130,7 @@ func TestCodes_CodesCanBeAddedAndRetrieved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(codes.Close()) }()
 
 	code1 := []byte("code1")
 	code2 := []byte("code2")
@@ -161,6 +163,7 @@ func TestCodes_Flush_EmptyCodesCanBeFlushed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	if err := codes.Flush(); err != nil {
 		t.Fatalf("failed to flush: %v", err)
@@ -182,6 +185,7 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 	file, _ := getCodePaths(dir)
 
 	code1 := []byte("code1")
@@ -226,6 +230,7 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(codes.Close()) }()
 
 	code1 := []byte("code1")
 	code2 := []byte("code2")
@@ -275,6 +280,7 @@ func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	code1 := []byte("short")
 	code2 := []byte("something longer")
@@ -295,6 +301,7 @@ func TestCodes_GuaranteeCheckpoint_PendingCheckpointIsCommitted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	cp0 := checkpoint.Checkpoint(0)
 
@@ -329,6 +336,7 @@ func TestCodes_GuaranteeCheckpoint_IoErrorsAreHandled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 	cp1 := checkpoint.Checkpoint(1)
 	if err := codes.Prepare(cp1); err != nil {
 		t.Fatalf("failed to prepare checkpoint: %v", err)
@@ -349,6 +357,7 @@ func TestCodes_Prepare_CheckpointIsIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	cp1 := checkpoint.Checkpoint(1)
 	if err := codes.Prepare(cp1); err != nil {
@@ -414,6 +423,7 @@ func TestCodes_Commit_HandlesIoIssues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to open codes: %v", err)
 			}
+			defer func() { require.NoError(t, codes.Close()) }()
 
 			_, err = codes.add([]byte("code1"))
 			require.NoError(t, err)
@@ -461,6 +471,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 			if err := codes.Flush(); err != nil {
 				t.Fatalf("failed to flush: %v", err)
 			}
+			require.NoError(t, codes.Close())
 
 			codes, err = openCodes(dir)
 			if err != nil {
@@ -470,6 +481,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 			if want, got := 2, len(codes.getCodes()); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
+			require.NoError(t, codes.Close())
 
 			if err := getCodeRestorer(dir).Restore(cp1); err != nil {
 				t.Fatalf("failed to restore checkpoint: %v", err)
@@ -479,6 +491,7 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to re-open recovered codes: %v", err)
 			}
+			defer func() { require.NoError(t, codes.Close()) }()
 
 			if want, got := 1, len(codes.getCodes()); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
@@ -542,6 +555,7 @@ func TestCodes_Restore_CanHandleErrorCorruptedData(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to open codes: %v", err)
 			}
+			defer func() { require.NoError(t, codes.Close()) }()
 
 			_, err = codes.add([]byte("code1"))
 			require.NoError(t, err)
@@ -633,6 +647,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 	if modified.Size() <= backup.Size() {
 		t.Fatalf("expected file to be larger after flush")
 	}
+	require.NoError(t, codes.Close())
 
 	if err := getCodeRestorer(dir).Restore(checkpoint); err != nil {
 		t.Fatalf("failed to restore checkpoint: %v", err)
@@ -651,6 +666,7 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	if want, got := 2, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
@@ -681,6 +697,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 	if want, got := 2, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
+	require.NoError(t, codes.Close())
 
 	cp = checkpoint.Checkpoint(0)
 	if err := getCodeRestorer(dir).Restore(cp); err != nil {
@@ -691,6 +708,7 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	if want, got := 0, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
@@ -718,6 +736,7 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 
 	_, err = codes.add([]byte("code2"))
 	require.NoError(t, err)
+	require.NoError(t, codes.Close())
 
 	if err := getCodeRestorer(dir).Restore(coordinator.GetCurrentCheckpoint()); err != nil {
 		t.Fatalf("failed to restore checkpoint: %v", err)
@@ -727,6 +746,7 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to re-open recovered codes: %v", err)
 	}
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	if want, got := 1, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
@@ -866,6 +886,7 @@ func TestCodes_add_ReturnsHashOfCodeAndStoresIt(t *testing.T) {
 			require := require.New(t)
 			codes, err := openCodes(t.TempDir())
 			require.NoError(err)
+			defer func() { require.NoError(codes.Close()) }()
 
 			hash, err := codes.add(code)
 			require.NoError(err)
@@ -883,6 +904,7 @@ func TestCodes_getCodeForHash_ReturnsCodeForKnownHashAndNilOtherwise(t *testing.
 	dir := t.TempDir()
 	codes, err := openCodes(dir)
 	require.NoError(t, err)
+	defer func() { require.NoError(t, codes.Close()) }()
 
 	code1 := []byte("code1")
 	code2 := []byte("another code")
@@ -913,6 +935,7 @@ func TestCodes_getCodeForHash_ReturnsCodeForKnownHashAndNilOtherwise(t *testing.
 	require.NoError(t, codes.Flush())
 	reopened, err := openCodes(dir)
 	require.NoError(t, err)
+	defer func() { require.NoError(t, reopened.Close()) }()
 	got, err := reopened.getCodeForHash(hash1)
 	require.NoError(t, err)
 	require.Equal(t, code1, got,
@@ -933,6 +956,7 @@ func TestCodes_Flush_CodesArePersistedOnDisk(t *testing.T) {
 
 	codes, err := openCodes(dir)
 	require.NoError(err)
+	defer func() { require.NoError(codes.Close()) }()
 
 	want := map[common.Hash][]byte{}
 	for _, code := range [][]byte{
@@ -952,6 +976,7 @@ func TestCodes_Flush_CodesArePersistedOnDisk(t *testing.T) {
 	// from disk.
 	reopened, err := openCodes(dir)
 	require.NoError(err)
+	defer func() { require.NoError(reopened.Close()) }()
 
 	got := reopened.getCodes()
 	require.Equal(len(want), len(got))
