@@ -65,7 +65,7 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 	}
 	if val, inFlushBuffer := c.flushBuffer[key]; inFlushBuffer {
 		delete(c.flushBuffer, key)
-		if err := c.handleCacheSet(&key, &val, false); err != nil {
+		if err := c.handleCacheSet(&key, &val, true); err != nil {
 			return nil, err
 		}
 		return &val, nil
