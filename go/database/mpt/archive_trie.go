@@ -738,10 +738,11 @@ func loadRoots(archiveDirectory string) (_ *rootList, retErr error) {
 		)
 	}
 
-	size, err := kvFile.Size()
+	size, err := kvFile.FileSize()
 	if err != nil {
 		return nil, errors.Join(err, kvFile.Close())
 	}
+	size /= entrySize
 	if int(size) < checkpointData.NumRoots {
 		return nil, errors.Join(
 			fmt.Errorf("root list file is corrupted: expected at least %d roots, but found only %d", checkpointData.NumRoots, size),
