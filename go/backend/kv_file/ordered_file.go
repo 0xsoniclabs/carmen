@@ -12,6 +12,7 @@ package kv_file
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"os"
@@ -53,6 +54,18 @@ func OpenOrderedFile[V any](path string, itemSize uint64, readValueFn readValueF
 	file, err := os.OpenFile(path, os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
+	}
+
+	// Verify that the on-disk file is a whole number of root entries.
+	fileSize, err := file.Stat()
+	if err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
+	if fileSize.Size()%int64(itemSize) != 0 {
+		return nil, errors.Join(
+			fmt.Errorf("invalid root file format: size %d is not a multiple of entry size %d", fileSize.Size(), itemSize),
+			file.Close(),
+		)
 	}
 
 	return &OrderedFile[V]{

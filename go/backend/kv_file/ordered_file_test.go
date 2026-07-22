@@ -104,6 +104,18 @@ func TestOrderedFile_Open_ReturnsErrorIfDirectoryDoesNotExist(t *testing.T) {
 	require.Error(err)
 }
 
+func TestOrderedFile_Open_ReturnsErrorIfFileIsNotMultipleOfEntrySize(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "invalid.dat")
+
+	// Write 10 bytes, which is not a multiple of the 8-byte entry size.
+	require.NoError(os.WriteFile(path, []byte("1234567890"), 0600))
+
+	_, err := OpenOrderedFile[uint64](path, orderedItemSize, orderedReadValue, orderedWriteValue)
+	require.Error(err)
+}
+
 func TestOrderedFile_Set_WritesValueAtCorrectOffset(t *testing.T) {
 	require := require.New(t)
 	f, path := openTestOrderedFile(t)
