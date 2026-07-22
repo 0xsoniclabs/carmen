@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -159,24 +160,20 @@ func OpenArchiveTrie(
 // VerifyArchiveTrie validates file-based archive stored in the given directory.
 // If the test passes, the data stored in the respective directory
 // can be considered a valid archive database of the given configuration.
-func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, observer VerificationObserver) error {
+func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, observer VerificationObserver) (res error) {
 	roots, err := loadRoots(directory)
 	if err != nil {
 		return err
 	}
+	defer func() { res = errors.Join(res, roots.Close()) }()
 	if roots.length() == 0 {
-		return roots.Close()
+		return nil
 	}
-	rootsList, err := roots.GetAll()
+	rootsSeq, err := roots.Iterate()
 	if err != nil {
-		return errors.Join(err, roots.Close())
-	}
-	// The roots are fully loaded into memory; release the file before the
-	// verification starts.
-	if err := roots.Close(); err != nil {
 		return err
 	}
-	return VerifyMptState(ctx, directory, config, rootsList, observer)
+	return VerifyMptState(ctx, directory, config, rootsSeq, observer)
 }
 
 func (a *ArchiveTrie) Add(block uint64, update common.Update, hint any) error {
@@ -797,19 +794,9 @@ func writeRoot(writer io.Writer, pos uint64, root Root) error {
 	return nil
 }
 
-func (l *rootList) GetAll() ([]Root, error) {
-	seq, err := l.roots.Iterate()
-	if err != nil {
-		return nil, err
-	}
-	allRoots := make([]Root, l.numRoots)
-	for i, root := range seq {
-		if i >= uint64(len(allRoots)) {
-			continue
-		}
-		allRoots[i] = root
-	}
-	return allRoots, nil
+// Iterate returns a sequence of all (block, root) pairs in the list.
+func (l *rootList) Iterate() (iter.Seq2[uint64, Root], error) {
+	return l.roots.Iterate()
 }
 
 func StoreRoots(filename string, rootsToWrite []Root) (err error) {

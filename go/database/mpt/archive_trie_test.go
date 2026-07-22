@@ -1978,11 +1978,11 @@ func TestArchiveTrie_IncrementalRootListUpdates(t *testing.T) {
 			t.Fatalf("failed to reload roots: %v", err)
 		}
 
-		wantRoots, err := list.GetAll()
+		wantRoots, err := collectRoots(list)
 		if err != nil {
 			t.Fatalf("failed to fetch stored roots: %v", err)
 		}
-		gotRoots, err := restored.GetAll()
+		gotRoots, err := collectRoots(restored)
 		if err != nil {
 			t.Fatalf("failed to fetch restored roots: %v", err)
 		}
@@ -2011,7 +2011,7 @@ func TestArchiveTrie_DirectlyStoredRootsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	got, err := restored.GetAll()
+	got, err := collectRoots(restored)
 	if err != nil {
 		t.Fatalf("failed to fetch restored roots: %v", err)
 	}
@@ -2044,6 +2044,79 @@ func TestArchiveTrie_FileAccessErrorWhenStoringRootsIsDetected(t *testing.T) {
 	require.NoError(t, list.append(Root{}))
 	if err := list.storeRoots(); !errors.Is(err, injectedErr) {
 		t.Errorf("expected injected error when storing roots into non-accessible file, got %v", err)
+	}
+}
+
+func TestRootList_Iterate_YieldsAllAppendedRoots(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	list, err := loadRoots(dir)
+	require.NoError(err)
+
+	want := []Root{
+		{NodeRef: NewNodeReference(ValueId(1)), Hash: common.Hash{1}},
+		{NodeRef: NewNodeReference(ValueId(2)), Hash: common.Hash{2}},
+		{NodeRef: NewNodeReference(ValueId(3)), Hash: common.Hash{3}},
+	}
+	for _, r := range want {
+		require.NoError(list.append(r))
+	}
+
+	seq, err := list.Iterate()
+	require.NoError(err)
+
+	got := map[uint64]Root{}
+	for block, r := range seq {
+		got[block] = r
+	}
+	require.Len(got, len(want))
+	for i, r := range want {
+		require.Equal(r, got[uint64(i)])
+	}
+}
+
+func TestRootList_Iterate_EmptyListYieldsNothing(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	list, err := loadRoots(dir)
+	require.NoError(err)
+
+	seq, err := list.Iterate()
+	require.NoError(err)
+
+	count := 0
+	for range seq {
+		count++
+	}
+	require.Zero(count)
+}
+
+func TestRootList_Iterate_CanBeInvokedMultipleTimes(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	list, err := loadRoots(dir)
+	require.NoError(err)
+
+	want := []Root{
+		{NodeRef: NewNodeReference(ValueId(7)), Hash: common.Hash{7}},
+		{NodeRef: NewNodeReference(ValueId(8)), Hash: common.Hash{8}},
+	}
+	for _, r := range want {
+		require.NoError(list.append(r))
+	}
+
+	seq, err := list.Iterate()
+	require.NoError(err)
+
+	for pass := 0; pass < 2; pass++ {
+		got := map[uint64]Root{}
+		for block, r := range seq {
+			got[block] = r
+		}
+		require.Len(got, len(want), "pass %d", pass)
+		for i, r := range want {
+			require.Equal(r, got[uint64(i)], "pass %d", pass)
+		}
 	}
 }
 
@@ -3623,6 +3696,22 @@ func TestRootList_truncateRootsFile_FailsForNonExistingFile(t *testing.T) {
 	if err := truncateRootsFile(file, 4); err == nil {
 		t.Fatalf("expected error when truncating non-existing file")
 	}
+}
+
+// collectRoots returns all roots stored in the given list as a slice.
+func collectRoots(l *rootList) ([]Root, error) {
+	seq, err := l.Iterate()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Root, l.length())
+	for i, r := range seq {
+		if i >= uint64(len(out)) {
+			continue
+		}
+		out[i] = r
+	}
+	return out, nil
 }
 
 func BenchmarkArchiveFlush_Roots(b *testing.B) {
