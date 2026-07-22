@@ -633,7 +633,7 @@ func TestKVCachedFile_handleCacheSet_DoesNotInsertIntoFlushBufferWhenEvictedEntr
 	// Trigger eviction
 	v := fmt.Sprintf("value%d", cacheSize)
 	key := cacheSize
-	c.handleCacheSet(&key, &v, false)
+	require.NoError(c.handleCacheSet(&key, &v, false))
 
 	require.Equal(0, len(c.flushBuffer))
 }
