@@ -69,7 +69,7 @@ func TestOrderedFile_Open_CreatesFileWhenMissing(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, orderedReadValue, orderedWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	info, err := os.Stat(path)
 	require.NoError(err)
@@ -89,7 +89,7 @@ func TestOrderedFile_Open_OpensExistingFile(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, orderedReadValue, orderedWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	size, err := f.Size()
 	require.NoError(err)
@@ -264,7 +264,7 @@ func TestOrderedFile_Size_TruncatesPartiallyWrittenTrailingEntry(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, orderedReadValue, orderedWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	size, err := f.Size()
 	require.NoError(err)
@@ -312,7 +312,7 @@ func TestOrderedFile_Set_PropagatesWriteError(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, orderedReadValue, writeFn)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	err = f.Set(0, 1)
 	require.ErrorIs(err, injected)
@@ -331,7 +331,7 @@ func TestOrderedFile_Get_PropagatesReadError(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, readFn, orderedWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	_, err = f.Get(0)
 	require.ErrorIs(err, injected)
@@ -350,7 +350,7 @@ func TestOrderedFile_Iterate_StopsOnReadError(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, readFn, orderedWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	// The iterator is lazy, so Iterate itself does not read the file and
 	// therefore cannot surface the read error. Consuming the sequence
@@ -466,7 +466,7 @@ func TestOrderedFile_Get_ReadIsBoundedToSingleRecord(t *testing.T) {
 
 	f, err := OpenOrderedFile[uint64](path, orderedItemSize, greedyRead, orderedWriteValue)
 	require.NoError(err)
-	defer f.Close()
+	defer func() { require.NoError(f.Close()) }()
 
 	_, err = f.Get(0)
 	require.ErrorIs(err, io.ErrUnexpectedEOF)
@@ -558,7 +558,7 @@ func TestOrderedFile_Iterate_HandlesChunkedReader(t *testing.T) {
 
 			f, err := OpenOrderedFile[uint64](path, orderedItemSize, chunkedRead, orderedWriteValue)
 			require.NoError(err)
-			defer f.Close()
+			defer func() { require.NoError(f.Close()) }()
 
 			for i, v := range values {
 				require.NoError(f.Set(uint64(i), v))
