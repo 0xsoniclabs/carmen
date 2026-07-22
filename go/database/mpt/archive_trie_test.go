@@ -85,6 +85,50 @@ func TestArchiveTrie_CanBeReOpened(t *testing.T) {
 	}
 }
 
+func TestArchiveTrie_Reopen_PreservesAllBlockRootHashes(t *testing.T) {
+	for _, config := range allMptConfigs {
+		t.Run(config.Name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+
+			const blocks = 10
+			hashes := make([]common.Hash, blocks)
+
+			archive, err := OpenArchiveTrie(dir, config, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+			require.NoError(err)
+
+			for i := 0; i < blocks; i++ {
+				update := common.Update{
+					Balances: []common.BalanceUpdate{
+						{Account: common.Address{byte(i + 1)}, Balance: amount.New(uint64(i + 1))},
+					},
+				}
+				require.NoError(archive.Add(uint64(i), update, nil))
+				hash, err := archive.GetHash(uint64(i))
+				require.NoError(err)
+				hashes[i] = hash
+			}
+
+			require.NoError(archive.Close())
+
+			archive, err = OpenArchiveTrie(dir, config, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+			require.NoError(err)
+			defer func() { require.NoError(archive.Close()) }()
+
+			height, empty, err := archive.GetBlockHeight()
+			require.NoError(err)
+			require.False(empty)
+			require.Equal(uint64(blocks-1), height)
+
+			for i := 0; i < blocks; i++ {
+				got, err := archive.GetHash(uint64(i))
+				require.NoError(err)
+				require.Equal(hashes[i], got, "hash mismatch for block %d", i)
+			}
+		})
+	}
+}
+
 func TestArchiveTrie_Open_LastCheckpointTimeIsSelectedRandomly(t *testing.T) {
 
 	config := ArchiveConfig{

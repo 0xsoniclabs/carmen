@@ -504,7 +504,9 @@ func (a *ArchiveTrie) VisitAccountStorage(
 func (a *ArchiveTrie) Close() error {
 	return errors.Join(
 		a.CheckErrors(),
-		a.head.closeWithError(a.Flush()))
+		a.head.closeWithError(a.Flush()),
+		a.roots.Close(),
+	)
 }
 
 func (a *ArchiveTrie) createCheckpoint() error {
@@ -826,6 +828,9 @@ func StoreRoots(filename string, rootsToWrite []Root) error {
 }
 
 func (l *rootList) storeRoots() error {
+	if l.roots == nil {
+		return nil
+	}
 	if err := l.roots.Flush(); err != nil {
 		return err
 	}
