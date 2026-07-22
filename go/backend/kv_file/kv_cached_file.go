@@ -219,7 +219,11 @@ func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 	for k, v := range c.flushBuffer {
 		sizeValues += unsafe.Sizeof(k) + valueSize(v)
 	}
-	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + mf.Total() + fileFootprint.Total())
+	var dirtySize uintptr
+	for k := range c.dirty {
+		dirtySize += unsafe.Sizeof(k) + unsafe.Sizeof(true)
+	}
+	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + dirtySize + mf.Total() + fileFootprint.Total())
 }
 
 // flushLocked moves all dirty cache entries into the flush buffer and then
