@@ -386,19 +386,12 @@ func TestKVCachedFile_Size_ReturnsCorrectSize(t *testing.T) {
 	}).AnyTimes()
 	mock.EXPECT().Size().DoAndReturn(func() (uint64, error) { return uint64(len(file)), nil }).Times(1)
 
-	// Buffer has keys 3 (overlaps with file), 4, 5.
-	c.flushBuffer[3] = "buffer-3"
-	c.flushBuffer[4] = "buffer-4"
-	c.flushBuffer[5] = "buffer-5"
-
-	// Cache has keys 1 (overlaps with file), 4 (overlaps with buffer), 6.
-	_, _, _ = c.cache.Set(1, "cache-1")
-	_, _, _ = c.cache.Set(4, "cache-4")
-	_, _, _ = c.cache.Set(6, "cache-6")
+	c.Set(1, "cache-1") // overwrites file 1, not gonna be counted
+	c.Set(4, "cache-4") // new key, will be counted
 
 	size, err := c.Size()
 	require.NoError(err)
-	require.Equal(uint64(6), size, "unique keys: 1,2,3,4,5,6")
+	require.Equal(uint64(4), size, "unique keys: 1,2,3,4")
 }
 
 func TestKVCachedFile_Size_ReturnsErrorOnFileReadError(t *testing.T) {
@@ -406,8 +399,10 @@ func TestKVCachedFile_Size_ReturnsErrorOnFileReadError(t *testing.T) {
 	c, mock := openTestKVCachedFile(t)
 
 	_, _, _ = c.cache.Set(1, "cache-1")
+	c.dirty[1] = true
 
 	injected := errors.New("size read failed")
+	mock.EXPECT().Size().Return(uint64(0), nil)
 	mock.EXPECT().Has(1).Return(false, injected)
 
 	_, err := c.Size()

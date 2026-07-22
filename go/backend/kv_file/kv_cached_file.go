@@ -122,50 +122,30 @@ func (c *KVCachedFile[K, V]) Flush() error {
 	return c.flushLocked()
 }
 
-// Size returns the number of keys handled by the CachedFile.
+// Size returns the number of unique keys stored in the cache, the flush
+// buffer, or the underlying file.
 func (c *KVCachedFile[K, V]) Size() (uint64, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	uniqueKeys := uint64(0)
-
-	countIfNotInFile := func(key K) error {
-		has, err := c.file.Has(key)
-		if err != nil {
-			return err
-		}
-		if !has {
-			uniqueKeys++
-		}
-		return nil
-	}
-
-	var err error
-	c.cache.Iterate(func(key K, value V) bool {
-		if _, inFlushBuffer := c.flushBuffer[key]; !inFlushBuffer {
-			err2 := countIfNotInFile(key)
-			if err2 != nil {
-				err = err2
-				return false
-			}
-		}
-		return true
-	})
-	if err != nil {
-		return 0, err
-	}
-
-	for key := range c.flushBuffer {
-		err = countIfNotInFile(key)
-		if err != nil {
-			return 0, err
-		}
-	}
 
 	fileSize, err := c.file.Size()
 	if err != nil {
 		return 0, err
 	}
-	return uniqueKeys + fileSize, nil
+	// Only dirty keys may not yet be present in the file. All other cached
+	// or buffered keys were loaded from the file and are therefore already
+	// counted in fileSize.
+	var newKeys uint64
+	for key := range c.dirty {
+		has, err := c.file.Has(key)
+		if err != nil {
+			return 0, err
+		}
+		if !has {
+			newKeys++
+		}
+	}
+	return fileSize + newKeys, nil
 }
 
 func (c *KVCachedFile[K, V]) FileSize() (uint64, error) {
