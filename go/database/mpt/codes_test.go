@@ -188,8 +188,10 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	code2 := []byte("code2")
 	code3 := []byte("code3")
 
-	codes.add(code1)
-	codes.add(code2)
+	_, err = codes.add(code1)
+	require.NoError(t, err)
+	_, err = codes.add(code2)
+	require.NoError(t, err)
 
 	if err := codes.Flush(); err != nil {
 		t.Fatalf("failed to flush: %v", err)
@@ -201,7 +203,8 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	}
 
 	// The next step is incremental.
-	codes.add(code3)
+	_, err = codes.add(code3)
+	require.NoError(t, err)
 
 	if err := codes.Flush(); err != nil {
 		t.Fatalf("failed to flush: %v", err)
@@ -276,8 +279,10 @@ func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
 	code1 := []byte("short")
 	code2 := []byte("something longer")
 
-	codes.add(code1)
-	codes.add(code2)
+	_, err = codes.add(code1)
+	require.NoError(t, err)
+	_, err = codes.add(code2)
+	require.NoError(t, err)
 
 	footprint := codes.GetMemoryFootprint()
 	if got := footprint.Total(); got == 0 {
@@ -410,7 +415,8 @@ func TestCodes_Commit_HandlesIoIssues(t *testing.T) {
 				t.Fatalf("failed to open codes: %v", err)
 			}
 
-			codes.add([]byte("code1"))
+			_, err = codes.add([]byte("code1"))
+			require.NoError(t, err)
 
 			cp1 := checkpoint.Checkpoint(1)
 			if err := codes.Prepare(cp1); err != nil {
@@ -437,7 +443,8 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to open codes: %v", err)
 			}
-			codes.add([]byte("code1"))
+			_, err = codes.add([]byte("code1"))
+			require.NoError(t, err)
 
 			cp1 := checkpoint.Checkpoint(1)
 			if err := codes.Prepare(cp1); err != nil {
@@ -449,7 +456,8 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				}
 			}
 
-			codes.add([]byte("code2"))
+			_, err = codes.add([]byte("code2"))
+			require.NoError(t, err)
 			if err := codes.Flush(); err != nil {
 				t.Fatalf("failed to flush: %v", err)
 			}
@@ -535,8 +543,10 @@ func TestCodes_Restore_CanHandleErrorCorruptedData(t *testing.T) {
 				t.Fatalf("failed to open codes: %v", err)
 			}
 
-			codes.add([]byte("code1"))
-			codes.add([]byte("code2"))
+			_, err = codes.add([]byte("code1"))
+			require.NoError(t, err)
+			_, err = codes.add([]byte("code2"))
+			require.NoError(t, err)
 
 			cp := checkpoint.Checkpoint(1)
 			if err := codes.Prepare(cp); err != nil {
@@ -586,8 +596,10 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to open codes: %v", err)
 	}
 
-	codes.add([]byte("code1"))
-	codes.add([]byte("code2"))
+	_, err = codes.add([]byte("code1"))
+	require.NoError(t, err)
+	_, err = codes.add([]byte("code2"))
+	require.NoError(t, err)
 
 	checkpoint := checkpoint.Checkpoint(1)
 	if err := codes.Prepare(checkpoint); err != nil {
@@ -603,7 +615,8 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 		t.Fatalf("failed to stat file: %v", err)
 	}
 
-	codes.add([]byte("code3"))
+	_, err = codes.add([]byte("code3"))
+	require.NoError(t, err)
 	if want, got := 3, len(codes.getCodes()); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
@@ -651,8 +664,10 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to open codes: %v", err)
 	}
 
-	codes.add([]byte("code1"))
-	codes.add([]byte("code2"))
+	_, err = codes.add([]byte("code1"))
+	require.NoError(t, err)
+	_, err = codes.add([]byte("code2"))
+	require.NoError(t, err)
 
 	cp := checkpoint.Checkpoint(1)
 	if err := codes.Prepare(cp); err != nil {
@@ -694,13 +709,15 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 		t.Fatalf("failed to create coordinator: %v", err)
 	}
 
-	codes.add([]byte("code1"))
+	_, err = codes.add([]byte("code1"))
+	require.NoError(t, err)
 
 	if _, err := coordinator.CreateCheckpoint(); err != nil {
 		t.Fatalf("failed to create checkpoint: %v", err)
 	}
 
-	codes.add([]byte("code2"))
+	_, err = codes.add([]byte("code2"))
+	require.NoError(t, err)
 
 	if err := getCodeRestorer(dir).Restore(coordinator.GetCurrentCheckpoint()); err != nil {
 		t.Fatalf("failed to restore checkpoint: %v", err)
