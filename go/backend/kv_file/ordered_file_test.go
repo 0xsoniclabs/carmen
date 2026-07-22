@@ -91,9 +91,9 @@ func TestOrderedFile_Open_OpensExistingFile(t *testing.T) {
 	require.NoError(err)
 	defer func() { require.NoError(f.Close()) }()
 
-	size, err := f.Size()
+	size, err := f.FileSize()
 	require.NoError(err)
-	require.EqualValues(2, size)
+	require.EqualValues(2*orderedItemSize, size)
 }
 
 func TestOrderedFile_Open_ReturnsErrorIfDirectoryDoesNotExist(t *testing.T) {
@@ -244,43 +244,6 @@ func TestOrderedFile_Iterate_ReturnsEmptyIteratorForEmptyFile(t *testing.T) {
 		count++
 	}
 	require.Equal(0, count)
-}
-
-func TestOrderedFile_Size_ReflectsFileSizeDividedByItemSize(t *testing.T) {
-	require := require.New(t)
-	f, _ := openTestOrderedFile(t)
-
-	size, err := f.Size()
-	require.NoError(err)
-	require.EqualValues(0, size)
-
-	require.NoError(f.Set(0, 1))
-	size, err = f.Size()
-	require.NoError(err)
-	require.EqualValues(1, size)
-
-	require.NoError(f.Set(1, 2))
-	size, err = f.Size()
-	require.NoError(err)
-	require.EqualValues(2, size)
-}
-
-func TestOrderedFile_Size_TruncatesPartiallyWrittenTrailingEntry(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "ordered.dat")
-
-	// One full item plus 3 spurious bytes → Size must report 1.
-	buf := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
-	require.NoError(os.WriteFile(path, buf, 0600))
-
-	f, err := OpenOrderedFile[uint64](path, orderedItemSize, orderedReadValue, orderedWriteValue)
-	require.NoError(err)
-	defer func() { require.NoError(f.Close()) }()
-
-	size, err := f.Size()
-	require.NoError(err)
-	require.EqualValues(1, size)
 }
 
 func TestOrderedFile_Flush_IsNoop(t *testing.T) {
@@ -446,8 +409,6 @@ func TestOrderedFile_OperationsFailAfterClose(t *testing.T) {
 	_, err := f.Get(0)
 	require.ErrorIs(err, os.ErrClosed)
 	_, err = f.Has(0)
-	require.ErrorIs(err, os.ErrClosed)
-	_, err = f.Size()
 	require.ErrorIs(err, os.ErrClosed)
 	_, err = f.FileSize()
 	require.ErrorIs(err, os.ErrClosed)

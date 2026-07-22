@@ -158,13 +158,6 @@ func (o *OrderedFile[V]) SetBatch(entries map[uint64]V) error {
 	return nil
 }
 
-func (o *OrderedFile[V]) Size() (uint64, error) {
-	o.mutex.Lock()
-	defer o.mutex.Unlock()
-
-	return o.sizeLocked()
-}
-
 func (o *OrderedFile[V]) FileSize() (uint64, error) {
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
