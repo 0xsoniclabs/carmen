@@ -91,19 +91,19 @@ func OpenArchiveTrie(
 	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: cacheConfig}
 	forest, err := OpenFileForest(directory, config, forestConfig)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, roots.Close())
 	}
 
 	head, err := makeTrie(directory, forest)
 	if err != nil {
-		return nil, errors.Join(err, forest.Close())
+		return nil, errors.Join(err, roots.Close(), forest.Close())
 	}
 
 	root := NewNodeReference(EmptyId())
 	if roots.length() > 0 {
 		rootValue, err := roots.get(uint64(roots.length() - 1))
 		if err != nil {
-			return nil, err
+			return nil, errors.Join(err, roots.Close(), head.Close())
 		}
 		root = rootValue.NodeRef
 	}
@@ -111,7 +111,7 @@ func OpenArchiveTrie(
 
 	state, err := newMptState(directory, lock, head)
 	if err != nil {
-		return nil, errors.Join(err, head.Close())
+		return nil, errors.Join(err, roots.Close(), head.Close())
 	}
 
 	checkpointDir := filepath.Join(directory, fileNameArchiveCheckpointDirectory)
@@ -125,7 +125,7 @@ func OpenArchiveTrie(
 		roots,
 	)
 	if err != nil {
-		return nil, errors.Join(err, head.Close())
+		return nil, errors.Join(err, roots.Close(), head.Close())
 	}
 
 	// Load the checkpointing configuration and set
@@ -165,10 +165,15 @@ func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, 
 		return err
 	}
 	if roots.length() == 0 {
-		return nil
+		return roots.Close()
 	}
 	rootsList, err := roots.GetAll()
 	if err != nil {
+		return errors.Join(err, roots.Close())
+	}
+	// The roots are fully loaded into memory; release the file before the
+	// verification starts.
+	if err := roots.Close(); err != nil {
 		return err
 	}
 	return VerifyMptState(ctx, directory, config, rootsList, observer)
@@ -652,8 +657,13 @@ type rootList struct {
 	filename  string                              // < the file storing the list of roots
 	directory string                              // < the directory for checkpoint data
 
-	numRoots       int // < total number of roots
-	numRootsInFile int // < number of roots stored in the file
+	numRoots int // < total number of roots
+
+	// numRootsInFile is a lower bound on the number of roots persisted in the
+	// file: it is only synchronised by storeRoots, while the underlying cache
+	// may flush entries to disk on its own at any time. It must therefore only
+	// be consumed after a storeRoots call, as done by Prepare.
+	numRootsInFile int
 
 	checkpoint checkpoint.Checkpoint
 }
@@ -802,7 +812,7 @@ func (l *rootList) GetAll() ([]Root, error) {
 	return allRoots, nil
 }
 
-func StoreRoots(filename string, rootsToWrite []Root) error {
+func StoreRoots(filename string, rootsToWrite []Root) (err error) {
 	// loadRoots derives the roots file path from the directory and the
 	// canonical filename. Reject inputs that would otherwise cause writes to
 	// silently target a different path than the caller requested.
