@@ -451,7 +451,7 @@ func (a *ArchiveTrie) GetMemoryFootprint() *common.MemoryFootprint {
 	mf := common.NewMemoryFootprint(unsafe.Sizeof(*a))
 	mf.AddChild("head", a.head.GetMemoryFootprint())
 	a.rootsMutex.Lock()
-	mf.AddChild("roots", common.NewMemoryFootprint(uintptr(a.roots.length())*unsafe.Sizeof(NodeId(0))))
+	mf.AddChild("roots", a.roots.GetMemoryFootprint())
 	a.rootsMutex.Unlock()
 	return mf
 }
@@ -650,9 +650,9 @@ func (a *ArchiveTrie) GetConfig() MptConfig {
 // rootList is a utility type managing an in-memory copy of the list of roots
 // of an archive and its synchronization with an on-disk file copy.
 type rootList struct {
-	roots     *kv_file.KVCachedFile[uint64, Root] // < the in-memory copy of the roots list
-	filename  string                              // < the file storing the list of roots
-	directory string                              // < the directory for checkpoint data
+	roots     kv_file.KVFileWithMemoryFootprint[uint64, Root] // < the in-memory copy of the roots list
+	filename  string                                          // < the file storing the list of roots
+	directory string                                          // < the directory for checkpoint data
 
 	numRoots int // < total number of roots
 
@@ -724,18 +724,6 @@ func loadRoots(archiveDirectory string) (_ *rootList, retErr error) {
 	kvFile, err := kv_file.OpenKVCachedFile[uint64, Root](roots, 10000, 1000)
 	if err != nil {
 		return nil, errors.Join(err, roots.Close())
-	}
-
-	// Verify that the on-disk file is a whole number of root entries.
-	fileSize, err := kvFile.FileSize()
-	if err != nil {
-		return nil, errors.Join(err, kvFile.Close())
-	}
-	if fileSize%entrySize != 0 {
-		return nil, errors.Join(
-			fmt.Errorf("invalid root file format: size %d is not a multiple of entry size %d", fileSize, entrySize),
-			kvFile.Close(),
-		)
 	}
 
 	size, err := kvFile.FileSize()
@@ -834,6 +822,12 @@ func (l *rootList) storeRoots() error {
 	}
 	l.numRootsInFile = l.numRoots
 	return nil
+}
+
+func (r *rootList) GetMemoryFootprint() *common.MemoryFootprint {
+	mf := common.NewMemoryFootprint(unsafe.Sizeof(*r))
+	mf.AddChild("roots", r.roots.GetMemoryFootprint())
+	return mf
 }
 
 func (l *rootList) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) error {
