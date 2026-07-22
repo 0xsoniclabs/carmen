@@ -38,9 +38,6 @@ type KVFile[K comparable, V any] interface {
 	// Flush ensures that all buffered data is written to disk.
 	Flush() error
 
-	// Size returns the number of key-value pairs in the file.
-	Size() (uint64, error)
-
 	// FileSize returns the size of the file in bytes.
 	FileSize() (uint64, error)
 

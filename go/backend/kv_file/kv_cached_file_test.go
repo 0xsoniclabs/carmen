@@ -370,45 +370,6 @@ func TestKVCachedFile_Flush_OnlyWritesDirtyEntriesAfterPartialUpdate(t *testing.
 	require.Equal(map[K]V{1: "value-1-updated"}, written)
 }
 
-func TestKVCachedFile_Size_ReturnsCorrectSize(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	// Backing "storage" behind the mock. Values 1, 2, 3 are on the file.
-	file := map[K]V{
-		1: "file-1",
-		2: "file-2",
-		3: "file-3",
-	}
-	mock.EXPECT().Has(gomock.Any()).DoAndReturn(func(k K) (bool, error) {
-		_, ok := file[k]
-		return ok, nil
-	}).AnyTimes()
-	mock.EXPECT().Size().DoAndReturn(func() (uint64, error) { return uint64(len(file)), nil }).Times(1)
-
-	require.NoError(c.Set(1, "cache-1")) // overwrites file 1, not gonna be counted
-	require.NoError(c.Set(4, "cache-4")) // new key, will be counted
-
-	size, err := c.Size()
-	require.NoError(err)
-	require.Equal(uint64(4), size, "unique keys: 1,2,3,4")
-}
-
-func TestKVCachedFile_Size_ReturnsErrorOnFileReadError(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	_, _, _ = c.cache.Set(1, "cache-1")
-	c.dirty[1] = true
-
-	injected := errors.New("size read failed")
-	mock.EXPECT().Size().Return(uint64(0), nil)
-	mock.EXPECT().Has(1).Return(false, injected)
-
-	_, err := c.Size()
-	require.ErrorIs(err, injected)
-}
-
 func TestKVCachedFile_FileSize_ReturnsCorrectSize(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
