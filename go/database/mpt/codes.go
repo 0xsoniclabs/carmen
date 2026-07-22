@@ -33,7 +33,7 @@ import (
 // memory, while the remainder are fetched from disk on demand. Checkpoint
 // and flush operations incrementally persist buffered writes to disk.
 type codes struct {
-	codes  *kv_file.KVCachedFile[common.Hash, []byte]
+	codes  kv_file.KVFileWithMemoryFootprint[common.Hash, []byte]
 	hasher hash.Hash
 
 	directory  string                // < a directory for placing checkpoint data
