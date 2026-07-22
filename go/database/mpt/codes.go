@@ -63,13 +63,13 @@ func openCodes(stateDirectory string) (*codes, error) {
 	}
 	storedCodes, err := kv_file.OpenKVCachedFile[common.Hash, []byte](codeFile, cacheSize, flushBufferThreshold)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, codeFile.Close())
 	}
 
 	committed := filepath.Join(directory, fileNameCodesCommittedCheckpoint)
 	meta, err := readCodeCheckpointMetaData(committed)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, storedCodes.Close())
 	}
 
 	return &codes{
@@ -82,8 +82,17 @@ func openCodes(stateDirectory string) (*codes, error) {
 
 func (c *codes) add(code []byte) (common.Hash, error) {
 	hash := common.GetHash(c.hasher, code)
-	err := c.codes.Set(hash, code)
+	// Codes are content-addressed and immutable, so a known code must not be
+	// re-written: re-setting it would append a duplicate record to the
+	// underlying append-only file on the next flush.
+	has, err := c.codes.Has(hash)
 	if err != nil {
+		return common.Hash{}, err
+	}
+	if has {
+		return hash, nil
+	}
+	if err := c.codes.Set(hash, code); err != nil {
 		return common.Hash{}, err
 	}
 	return hash, nil
@@ -227,20 +236,19 @@ func (r codeRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 // readCodes parses the content of the given file if it exists or returns
 // a an empty code collection if there is no such file.
-func readCodes(path string) (map[common.Hash][]byte, error) {
+func readCodes(path string) (codes map[common.Hash][]byte, err error) {
 	codeFile, err := kv_file.OpenOffsetFile(path, readCode, writeCode)
 	if err != nil {
 		return nil, err
 	}
-	storedCodes, err := kv_file.OpenKVCachedFile[common.Hash, []byte](codeFile, cacheSize, flushBufferThreshold)
+	defer func() {
+		err = errors.Join(err, codeFile.Close())
+	}()
+	seq, err := codeFile.Iterate()
 	if err != nil {
 		return nil, err
 	}
-	seq, err := storedCodes.Iterate()
-	if err != nil {
-		return nil, err
-	}
-	codes := map[common.Hash][]byte{}
+	codes = map[common.Hash][]byte{}
 	for key, code := range seq {
 		codes[key] = code
 	}

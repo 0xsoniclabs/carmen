@@ -224,6 +224,51 @@ func TestCodes_Flush_CodesAreWrittenIncrementally(t *testing.T) {
 	}
 }
 
+// TestCodes_Add_KnownCodesAreNotRewritten verifies that re-adding a code that
+// is already stored does not append a duplicate record to the code file —
+// neither within a session nor after a reopen.
+func TestCodes_Add_KnownCodesAreNotRewritten(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	codes, err := openCodes(dir)
+	require.NoError(err)
+	file, _ := getCodePaths(dir)
+
+	code := []byte("code1")
+	hash1, err := codes.add(code)
+	require.NoError(err)
+	require.NoError(codes.Flush())
+
+	info, err := os.Stat(file)
+	require.NoError(err)
+	sizeAfterFirstAdd := info.Size()
+
+	// Re-adding the same code within the session must not grow the file.
+	hash2, err := codes.add(code)
+	require.NoError(err)
+	require.Equal(hash1, hash2)
+	require.NoError(codes.Flush())
+
+	info, err = os.Stat(file)
+	require.NoError(err)
+	require.Equal(sizeAfterFirstAdd, info.Size())
+
+	// The same must hold for codes loaded from disk after a reopen.
+	require.NoError(codes.Close())
+	codes, err = openCodes(dir)
+	require.NoError(err)
+	defer func() { require.NoError(codes.Close()) }()
+
+	hash3, err := codes.add(code)
+	require.NoError(err)
+	require.Equal(hash1, hash3)
+	require.NoError(codes.Flush())
+
+	info, err = os.Stat(file)
+	require.NoError(err)
+	require.Equal(sizeAfterFirstAdd, info.Size())
+}
+
 func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
@@ -379,6 +424,7 @@ func TestCodes_Prepare_FailsIfFlushFails(t *testing.T) {
 	// therefore injected through a mock of the underlying file.
 	injected := errors.New("injected flush failure")
 	file := kv_file.NewMockKVFileWithMemoryFootprint[common.Hash, []byte](ctrl)
+	file.EXPECT().Has(gomock.Any()).Return(false, nil)
 	file.EXPECT().SetBatch(gomock.Any()).Return(injected)
 
 	cached, err := kv_file.OpenKVCachedFile[common.Hash, []byte](file, 10, 10)
