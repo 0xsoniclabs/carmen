@@ -386,8 +386,8 @@ func TestKVCachedFile_Size_ReturnsCorrectSize(t *testing.T) {
 	}).AnyTimes()
 	mock.EXPECT().Size().DoAndReturn(func() (uint64, error) { return uint64(len(file)), nil }).Times(1)
 
-	c.Set(1, "cache-1") // overwrites file 1, not gonna be counted
-	c.Set(4, "cache-4") // new key, will be counted
+	require.NoError(c.Set(1, "cache-1")) // overwrites file 1, not gonna be counted
+	require.NoError(c.Set(4, "cache-4")) // new key, will be counted
 
 	size, err := c.Size()
 	require.NoError(err)
