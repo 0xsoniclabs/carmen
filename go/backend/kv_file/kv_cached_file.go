@@ -88,6 +88,20 @@ func (c *KVCachedFile[K, V]) Set(key K, value V) error {
 	return c.handleCacheSet(&key, &value, true)
 }
 
+// Has checks if a key exists in the cache, the pending writes, or the
+// underlying file. Unlike Get, it does not load the value into the cache.
+func (c *KVCachedFile[K, V]) Has(key K) (bool, error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if _, inCache := c.cache.Get(key); inCache {
+		return true, nil
+	}
+	if _, inFlushBuffer := c.flushBuffer[key]; inFlushBuffer {
+		return true, nil
+	}
+	return c.file.Has(key)
+}
+
 func (c *KVCachedFile[K, V]) SetBatch(entries map[K]V) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()

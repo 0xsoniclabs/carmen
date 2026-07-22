@@ -80,6 +80,74 @@ func TestKVCachedFile_Get_ReturnsValueCorrectly(t *testing.T) {
 	}
 }
 
+func TestKVCachedFile_Has_ChecksCacheBufferAndFile(t *testing.T) {
+	tests := map[string]struct {
+		setup func(t *testing.T, c *KVCachedFile[K, V], mock *MockKVFileWithMemoryFootprint[K, V]) (want bool)
+	}{
+		"found in cache": {
+			setup: func(t *testing.T, c *KVCachedFile[K, V], _ *MockKVFileWithMemoryFootprint[K, V]) bool {
+				require.NoError(t, c.Set(key1, value1))
+				return true
+			},
+		},
+		"found in flush buffer": {
+			setup: func(t *testing.T, c *KVCachedFile[K, V], _ *MockKVFileWithMemoryFootprint[K, V]) bool {
+				c.flushBuffer[key1] = value1
+				return true
+			},
+		},
+		"found in file": {
+			setup: func(t *testing.T, _ *KVCachedFile[K, V], mock *MockKVFileWithMemoryFootprint[K, V]) bool {
+				mock.EXPECT().Has(key1).Return(true, nil)
+				return true
+			},
+		},
+		"not found": {
+			setup: func(t *testing.T, _ *KVCachedFile[K, V], mock *MockKVFileWithMemoryFootprint[K, V]) bool {
+				mock.EXPECT().Has(key1).Return(false, nil)
+				return false
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			c, mock := openTestKVCachedFile(t)
+			want := test.setup(t, c, mock)
+
+			got, err := c.Has(key1)
+			require.NoError(err)
+			require.Equal(want, got)
+		})
+	}
+}
+
+func TestKVCachedFile_Has_DoesNotLoadValueIntoCache(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	mock.EXPECT().Has(key1).Return(true, nil)
+
+	has, err := c.Has(key1)
+	require.NoError(err)
+	require.True(has)
+
+	_, inCache := c.cache.Get(key1)
+	require.False(inCache, "Has must not populate the cache")
+}
+
+func TestKVCachedFile_Has_PropagatesFileError(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	injected := errors.New("has failed")
+	mock.EXPECT().Has(key1).Return(false, injected)
+
+	_, err := c.Has(key1)
+	require.ErrorIs(err, injected)
+}
+
 func TestKVCachedFile_Get_ReturnsNilOnUnknownKey(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
