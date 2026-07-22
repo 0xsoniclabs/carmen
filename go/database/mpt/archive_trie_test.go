@@ -1815,9 +1815,9 @@ func TestArchiveTrie_StoreLoadRoots(t *testing.T) {
 	}
 	for i := 0; i < 48; i++ {
 		id := NodeId(uint64(1) << i)
-		original.append(Root{NodeRef: NewNodeReference(id)})
+		require.NoError(original.append(Root{NodeRef: NewNodeReference(id)}))
 		id = NodeId((uint64(1) << (i + 1)) - 1)
-		original.append(Root{NodeRef: NewNodeReference(id)})
+		require.NoError(original.append(Root{NodeRef: NewNodeReference(id)}))
 	}
 
 	if err := original.storeRoots(); err != nil {
@@ -1873,16 +1873,16 @@ func TestArchiveTrie_RootListStoreOnlyWritesNewRoots(t *testing.T) {
 	}
 
 	// First round: 3 new roots.
-	list.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	list.append(Root{NodeRef: NewNodeReference(ValueId(2))})
-	list.append(Root{NodeRef: NewNodeReference(ValueId(3))})
+	require.NoError(t, list.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+	require.NoError(t, list.append(Root{NodeRef: NewNodeReference(ValueId(2))}))
+	require.NoError(t, list.append(Root{NodeRef: NewNodeReference(ValueId(3))}))
 	if err := list.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
 	}
 
 	// Second round: 2 additional new roots.
-	list.append(Root{NodeRef: NewNodeReference(ValueId(4))})
-	list.append(Root{NodeRef: NewNodeReference(ValueId(5))})
+	require.NoError(t, list.append(Root{NodeRef: NewNodeReference(ValueId(4))}))
+	require.NoError(t, list.append(Root{NodeRef: NewNodeReference(ValueId(5))}))
 	if err := list.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
 	}
@@ -1922,7 +1922,7 @@ func TestArchiveTrie_IncrementalRootListUpdates(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		for j := 0; j < 10; j++ {
 			id := NodeId(counter)
-			list.append(Root{NodeRef: NewNodeReference(id)})
+			require.NoError(t, list.append(Root{NodeRef: NewNodeReference(id)}))
 			counter++
 		}
 		if err := list.storeRoots(); err != nil {
@@ -1997,7 +1997,7 @@ func TestArchiveTrie_FileAccessErrorWhenStoringRootsIsDetected(t *testing.T) {
 		directory: filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory),
 	}
 
-	list.append(Root{})
+	require.NoError(t, list.append(Root{}))
 	if err := list.storeRoots(); !errors.Is(err, injectedErr) {
 		t.Errorf("expected injected error when storing roots into non-accessible file, got %v", err)
 	}
@@ -2010,8 +2010,8 @@ func TestRootList_CanParticipateToCheckpointOperations(t *testing.T) {
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(2))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(2))}))
 
 	if want, got := 2, roots.length(); want != got {
 		t.Fatalf("invalid number of roots, wanted %d, got %d", want, got)
@@ -2027,7 +2027,7 @@ func TestRootList_CanParticipateToCheckpointOperations(t *testing.T) {
 		t.Fatalf("failed to create checkpoint: %v", err)
 	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(3))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(3))}))
 	if err := roots.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
 	}
@@ -2141,7 +2141,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 			roots, err := loadRoots(t.TempDir())
 			require.NoError(t, err)
 			archive := &ArchiveTrie{forest: db, head: live, roots: roots}
-			archive.roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
+			require.NoError(t, archive.roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
 
 			// all operations must fail
 			for _, name := range rotate(names, i) {
@@ -2221,7 +2221,7 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 			roots, err := loadRoots(t.TempDir())
 			require.NoError(t, err)
 			archive := &ArchiveTrie{forest: db, head: liveState, roots: roots}
-			archive.roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
+			require.NoError(t, archive.roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
 			defer func() {
 				if err := archive.Close(); !errors.Is(err, injectedErr) {
 					t.Errorf("expected error does not match: %v != %v", err, injectedErr)
@@ -3026,7 +3026,7 @@ func TestRootList_LoadRoots_ForwardsIoIssues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to load roots: %v", err)
 			}
-			roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
+			require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
 
 			cp := checkpoint.Checkpoint(1)
 			err = errors.Join(
@@ -3147,8 +3147,8 @@ func TestRootList_Prepare_FlushesRootsToDisk(t *testing.T) {
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(2))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(2))}))
 
 	if want, got := 0, roots.numRootsInFile; want != got {
 		t.Fatalf("unexpected number of roots in file, wanted %d, got %d", want, got)
@@ -3202,7 +3202,7 @@ func TestRootList_Prepare_DetectsFlushIssue(t *testing.T) {
 		filename:  filepath.Join(dir, fileNameArchiveRoots),
 		directory: checkpointDir,
 	}
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
 
 	cp := checkpoint.Checkpoint(1)
 	if err := roots.Prepare(cp); !errors.Is(err, injectedErr) {
@@ -3318,8 +3318,8 @@ func TestRootList_Restore_CanRecoverCorruptedRoots(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to load roots: %v", err)
 			}
-			roots.append(Root{NodeRef: NewNodeReference(ValueId(123))})
-			roots.append(Root{NodeRef: NewNodeReference(ValueId(123))})
+			require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(123))}))
+			require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(123))}))
 
 			cp := checkpoint.Checkpoint(1)
 			if err := roots.Prepare(cp); err != nil {
@@ -3435,8 +3435,8 @@ func TestRootList_getNumRootsInCheckpoint_RetrievesRootHeightFromCommittedOrPend
 	if err != nil {
 		t.Fatalf("failed to load roots: %v", err)
 	}
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(2))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(2))}))
 
 	err = errors.Join(
 		roots.Prepare(1),
@@ -3446,7 +3446,7 @@ func TestRootList_getNumRootsInCheckpoint_RetrievesRootHeightFromCommittedOrPend
 		t.Fatalf("failed to create checkpoint: %v", err)
 	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(3))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(3))}))
 	if err := roots.Prepare(2); err != nil {
 		t.Fatalf("failed to prepare checkpoint: %v", err)
 	}
@@ -3485,9 +3485,9 @@ func TestRootList_truncate_ShortensTheRootFileAndUpdatesTheLastCheckpoint(t *tes
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(2))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(3))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(2))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(3))}))
 
 	if err := roots.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
@@ -3545,9 +3545,9 @@ func TestRootList_truncate_FailsIfCurrentListIsTooShort(t *testing.T) {
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(1))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(2))})
-	roots.append(Root{NodeRef: NewNodeReference(ValueId(3))})
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(2))}))
+	require.NoError(t, roots.append(Root{NodeRef: NewNodeReference(ValueId(3))}))
 
 	if err := roots.storeRoots(); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
