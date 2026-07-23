@@ -297,7 +297,7 @@ func TestKVCachedFile_Get_PromotesInFlightValueIntoCacheAsClean(t *testing.T) {
 
 	// Block the background writer inside SetBatch so the sealed buffer stays
 	// in flight while we read one of its keys.
-	release := make(chan struct{})
+	release, unblockWriter := newWriterRelease(t)
 	writing := make(chan struct{})
 	var once sync.Once
 	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(map[K]V) error {
@@ -326,7 +326,7 @@ func TestKVCachedFile_Get_PromotesInFlightValueIntoCacheAsClean(t *testing.T) {
 	_, isDirty := c.dirty[0]
 	require.False(isDirty, "promoted in-flight value must be cached as clean")
 
-	close(release)
+	unblockWriter()
 	require.NoError(c.Flush())
 }
 
@@ -336,7 +336,7 @@ func TestKVCachedFile_Set_ReSetWhileInFlightIsNotLost(t *testing.T) {
 
 	// Seal a buffer for the background writer and block it inside SetBatch so
 	// the buffer stays in flight while we re-Set one of its keys.
-	release := make(chan struct{})
+	release, unblockWriter := newWriterRelease(t)
 	firstWrite := make(chan struct{})
 	var once sync.Once
 	written := map[K]V{}
@@ -360,7 +360,7 @@ func TestKVCachedFile_Set_ReSetWhileInFlightIsNotLost(t *testing.T) {
 	require.NoError(c.Set(0, "value0-new"))
 
 	// Let the in-flight write finish, then flush everything.
-	close(release)
+	unblockWriter()
 	require.NoError(c.Flush())
 
 	// The re-Set value must have survived and reached disk.
@@ -717,7 +717,7 @@ func TestKVCachedFile_Set_AppliesBackPressureWhenPendingQueueIsFull(t *testing.T
 	c, mock := openTestKVCachedFile(t)
 
 	// Block the background writer on the first buffer so the queue cannot drain.
-	release := make(chan struct{})
+	release, unblockWriter := newWriterRelease(t)
 	writing := make(chan struct{})
 	var once sync.Once
 	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(map[K]V) error {
@@ -761,7 +761,7 @@ func TestKVCachedFile_Set_AppliesBackPressureWhenPendingQueueIsFull(t *testing.T
 		"seal must block while the pending queue is full")
 
 	// Releasing the writer lets it drain, which unblocks the pending seal.
-	close(release)
+	unblockWriter()
 	require.Eventually(isDone, time.Second, 10*time.Millisecond,
 		"seal must resume once the writer drains a buffer")
 }
@@ -965,7 +965,7 @@ func TestKVCachedFile_Get_ReturnsNewestValueAcrossMultiplePendingBuffers(t *test
 	// Block the writer inside SetBatch so a sealed buffer stays in c.pending; the
 	// writer keeps the buffer it is writing in the queue until the write returns,
 	// so both sealed buffers coexist there while we read the key.
-	release := make(chan struct{})
+	release, unblockWriter := newWriterRelease(t)
 	writing := make(chan struct{})
 	var once sync.Once
 	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(map[K]V) error {
@@ -993,7 +993,7 @@ func TestKVCachedFile_Get_ReturnsNewestValueAcrossMultiplePendingBuffers(t *test
 	require.NotNil(got)
 	require.Equal("new", *got, "Get must return the newest pending value")
 
-	close(release)
+	unblockWriter()
 	require.NoError(c.Flush())
 }
 
@@ -1003,7 +1003,7 @@ func TestKVCachedFile_FlushWorker_PersistsBuffersInFIFOOrder(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
-	release := make(chan struct{})
+	release, unblockWriter := newWriterRelease(t)
 	writing := make(chan struct{})
 	var once sync.Once
 	var writeOrder []V
@@ -1026,14 +1026,20 @@ func TestKVCachedFile_FlushWorker_PersistsBuffersInFIFOOrder(t *testing.T) {
 	<-writing   // writer holds the first buffer in flight
 	seal("new") // queued behind it
 
-	close(release)
+	unblockWriter()
 	require.NoError(c.Flush())
 
 	require.Equal([]V{"old", "new"}, writeOrder,
 		"buffers must be written oldest-first so the newest value wins on disk")
 }
 
-// Concurrent callers and the background writer must not race. Run with -race.
+// Concurrent callers and the background writer must not race. The fake file is
+// deliberately NOT synchronized (see fakeKVFile), so this doubles as a guard on
+// KVCachedFile's own serialization of file access: if that serialization (fileMu)
+// were dropped, the writer and a foreground reader would touch the fake's map at
+// once, which -race reports and Go's runtime turns into a fatal "concurrent map"
+// panic. Run with -race for the hard signal. Get/Has target never-written keys so
+// they miss the cache and actually reach the file.
 func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 	require := require.New(t)
 	c, err := OpenKVCachedFile[K, V](newFakeKVFile(), cacheSize, flushBufferThreshold)
@@ -1041,9 +1047,8 @@ func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 	t.Cleanup(c.shutdownWriter)
 
 	const (
-		workers        = 8
-		opsPerWorker   = 300
-		keySpace     K = 32
+		workers      = 8
+		opsPerWorker = 300
 	)
 	var wg sync.WaitGroup
 	for w := range workers {
@@ -1051,14 +1056,18 @@ func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := range opsPerWorker {
-				k := K(i) % keySpace
+				key := w*opsPerWorker + i
 				switch i % 4 {
 				case 0:
-					_ = c.Set(k, fmt.Sprintf("w%d-i%d", w, i))
+					// Distinct keys keep evicting dirty entries, which keeps the
+					// background writer flushing buffers to the file.
+					_ = c.Set(key, fmt.Sprintf("w%d-i%d", w, i))
 				case 1:
-					_, _ = c.Get(k)
+					// Negative keys are never written, so they miss the cache,
+					// buffer and pending, forcing a read of the underlying file.
+					_, _ = c.Get(-key)
 				case 2:
-					_, _ = c.Has(k)
+					_, _ = c.Has(-key)
 				case 3:
 					_ = c.Flush()
 				}
@@ -1075,10 +1084,12 @@ func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 // Test helpers
 // ---------------------------------------------------------------------------
 
-// fakeKVFile is a minimal thread-safe in-memory KVFile for concurrency tests,
-// where a gomock mock's expectation bookkeeping would itself serialize calls.
+// fakeKVFile is a minimal in-memory KVFile for concurrency tests. It is
+// deliberately NOT synchronized: KVCachedFile must serialize all access to the
+// wrapped file itself (KVFile is not required to be safe for concurrent use), so
+// a lock here would hide a regression in that serialization instead of exposing
+// it. Do not add a mutex.
 type fakeKVFile struct {
-	mu   sync.Mutex
 	data map[K]V
 }
 
@@ -1087,8 +1098,6 @@ func newFakeKVFile() *fakeKVFile {
 }
 
 func (f *fakeKVFile) Get(key K) (*V, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	if v, ok := f.data[key]; ok {
 		return &v, nil
 	}
@@ -1096,22 +1105,16 @@ func (f *fakeKVFile) Get(key K) (*V, error) {
 }
 
 func (f *fakeKVFile) Has(key K) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	_, ok := f.data[key]
 	return ok, nil
 }
 
 func (f *fakeKVFile) Set(key K, value V) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.data[key] = value
 	return nil
 }
 
 func (f *fakeKVFile) SetBatch(entries map[K]V) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	maps.Copy(f.data, entries)
 	return nil
 }
@@ -1121,8 +1124,6 @@ func (f *fakeKVFile) Flush() error { return nil }
 func (f *fakeKVFile) FileSize() (uint64, error) { return 0, nil }
 
 func (f *fakeKVFile) Iterate() (iter.Seq2[K, V], error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	return mockIterateSeq(maps.Clone(f.data)), nil
 }
 
@@ -1144,6 +1145,21 @@ func openTestKVCachedFile(t *testing.T) (*KVCachedFile[K, V], *MockKVFileWithMem
 	// gomock controller's own cleanup verifies expectations.
 	t.Cleanup(file.shutdownWriter)
 	return file, mock
+}
+
+// newWriterRelease returns a channel used to unblock a mocked background writer
+// that parks inside SetBatch, together with a function that closes it. The
+// channel is also closed during test cleanup if the test has not closed it
+// itself: without this, a failed assertion would skip the test's own close and
+// leave the writer parked, so the shutdownWriter cleanup registered by
+// openTestKVCachedFile would deadlock waiting for the writer to exit. Because it
+// is registered after that cleanup, LIFO ordering runs it first.
+func newWriterRelease(t *testing.T) (release chan struct{}, unblock func()) {
+	t.Helper()
+	release = make(chan struct{})
+	unblock = sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	return release, unblock
 }
 
 // mockIterateSeq returns an iter.Seq2 mock return value that yields the
