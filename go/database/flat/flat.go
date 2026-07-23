@@ -293,6 +293,9 @@ func processCommands(
 				err = staged.Commit()
 			}
 			committed := err == nil
+			// Register the apply/commit error with the collector so that Check
+			// reports it even when no caller waits on the done channel.
+			issues.HandleIssue(err)
 			if command.update.done != nil {
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.
