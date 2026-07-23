@@ -824,9 +824,9 @@ func (l *rootList) storeRoots() error {
 	return nil
 }
 
-func (r *rootList) GetMemoryFootprint() *common.MemoryFootprint {
-	mf := common.NewMemoryFootprint(unsafe.Sizeof(*r))
-	mf.AddChild("roots", r.roots.GetMemoryFootprint())
+func (l *rootList) GetMemoryFootprint() *common.MemoryFootprint {
+	mf := common.NewMemoryFootprint(unsafe.Sizeof(*l))
+	mf.AddChild("roots", l.roots.GetMemoryFootprint())
 	return mf
 }
 
