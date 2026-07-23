@@ -96,13 +96,17 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return s.state.HasEmptyStorage(addr)
 }
 
-// Apply is synchronized, but the StagedBlock it returns is not routed through
-// this wrapper: its Commit and Rollback are called on the handle directly, and
-// the underlying state synchronizes them itself.
+// Apply is synchronized, and so is the StagedBlock it returns: the handle is
+// wrapped so that deciding it re-enters this wrapper's lock, keeping Commit and
+// Rollback mutually exclusive with every other access to the underlying state.
 func (s *syncedState) Apply(block uint64, update common.Update) (StagedBlock, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.Apply(block, update)
+	staged, err := s.state.Apply(block, update)
+	if err != nil || staged == nil {
+		return staged, err
+	}
+	return &syncedStagedBlock{block: staged, mu: &s.mu}, nil
 }
 
 func (s *syncedState) GetHash() (common.Hash, error) {
@@ -161,4 +165,39 @@ func (s *syncedState) Export(ctx context.Context, out io.Writer) (common.Hash, e
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.Export(ctx, out)
+}
+
+// syncedStagedBlock routes a staged block's decision operations through the same
+// lock as the surrounding syncedState, so that promoting or reverting a block is
+// mutually exclusive with any concurrent read, Apply, or other decision on the
+// underlying state.
+type syncedStagedBlock struct {
+	block StagedBlock
+	mu    *sync.Mutex
+}
+
+func (b *syncedStagedBlock) StateHash() common.Hash {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.block.StateHash()
+}
+
+func (b *syncedStagedBlock) Commit() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.block.Commit()
+}
+
+func (b *syncedStagedBlock) Rollback() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.block.Rollback()
+}
+
+// Wait is deliberately not synchronized: it blocks until the archive write
+// triggered by Commit completes, and holding the state lock for that duration
+// would stall every other operation. It only reads a channel established during
+// Commit and touches no state guarded by the lock.
+func (b *syncedStagedBlock) Wait() error {
+	return b.block.Wait()
 }

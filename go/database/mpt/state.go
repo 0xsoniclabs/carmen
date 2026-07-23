@@ -13,6 +13,7 @@ package mpt
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -405,8 +406,8 @@ func (s *MptState) Apply(block uint64, update *common.Update) (undoList []func()
 // later update has already been reverted.
 func (s *MptState) RevertLastBlock(undo []func() error) error {
 	errs := make([]error, 0, len(undo))
-	for i := len(undo) - 1; i >= 0; i-- {
-		if err := undo[i](); err != nil {
+	for _, u := range slices.Backward(undo) {
+		if err := u(); err != nil {
 			errs = append(errs, err)
 		}
 	}
