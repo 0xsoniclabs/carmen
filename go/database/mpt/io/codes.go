@@ -14,18 +14,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sort"
+	"iter"
 
 	"github.com/0xsoniclabs/carmen/go/common"
-	"golang.org/x/exp/maps"
 )
 
-func writeCodes(codes map[common.Hash][]byte, out io.Writer) error {
-	// Sort codes for a stable result.
-	hashes := maps.Keys(codes)
-	sort.Slice(hashes, func(i, j int) bool { return hashes[i].Compare(&hashes[j]) < 0 })
-	for _, hash := range hashes {
-		code := codes[hash]
+func writeCodes(codes iter.Seq2[common.Hash, []byte], out io.Writer) error {
+	for _, code := range codes {
 		b := []byte{byte('C'), 0, 0}
 		binary.BigEndian.PutUint16(b[1:], uint16(len(code)))
 		if _, err := out.Write(b); err != nil {

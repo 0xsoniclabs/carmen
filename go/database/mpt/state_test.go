@@ -229,11 +229,11 @@ func TestReadCodes(t *testing.T) {
 	}
 
 	file := filepath.Join(t.TempDir(), fileNameCodes)
-	if err := writeCodes(input, file); err != nil {
+	if err := writeCodesForTesting(input, file); err != nil {
 		t.Fatalf("failed to write codes: %s", err)
 	}
 
-	res, err := readCodes(file)
+	res, err := readCodesForTesting(file)
 	if err != nil {
 		t.Fatalf("should not fail: %s", err)
 	}
@@ -535,7 +535,10 @@ func TestState_GetCodes(t *testing.T) {
 				}
 			}
 
-			codes := state.GetCodes()
+			codes, err := state.codes.getCodesForTesting()
+			if err != nil {
+				t.Fatalf("cannot get codes: %s", err)
+			}
 			if got, want := len(codes), size-1; got != want {
 				t.Errorf("sizes do not much: got: %d != want: %d", got, want)
 			}
@@ -764,7 +767,11 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 				handle.Release()
 			})
 			// Re-set all codes so the next flush has to write them all again.
-			for hash, code := range state.codes.getCodes() {
+			allCodes, err := state.codes.getCodesForTesting()
+			if err != nil {
+				b.Fatalf("failed to get codes: %v", err)
+			}
+			for hash, code := range allCodes {
 				if err := state.codes.codes.Set(hash, code); err != nil {
 					b.Fatalf("failed to set code: %v", err)
 				}

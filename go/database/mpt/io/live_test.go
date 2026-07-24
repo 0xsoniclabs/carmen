@@ -14,6 +14,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"iter"
 	"os"
 	"strings"
 	"testing"
@@ -23,6 +25,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestIO_ExportAndImportAsLiveDb(t *testing.T) {
@@ -115,7 +118,8 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 	// Modify the state by adding and removing code from an account.
 	// This temporary code should not be included in the resulting exported data.
 	modified, modifiedHash := exportExampleStateWithModification(t, func(s *mpt.MptState) {
-		codesBefore := s.GetCodes()
+		codesBefore, err := s.GetCodes()
+		require.NoError(t, err)
 
 		addr1 := common.Address{1}
 		code, err := s.GetCode(addr1)
@@ -125,8 +129,9 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 		modified := append(code, []byte("extra_code")...)
 		require.NoError(t, s.SetCode(addr1, modified))
 		require.NoError(t, s.SetCode(addr1, code))
-		codesAfter := s.GetCodes()
-		if before, after := len(codesBefore), len(codesAfter); before+1 != after {
+		codesAfter, err := s.GetCodes()
+		require.NoError(t, err)
+		if before, after := countCodes(codesBefore), countCodes(codesAfter); before+1 != after {
 			t.Fatalf("modification did not had expected code-altering effect: %d -> %d", before, after)
 		}
 	})
@@ -141,6 +146,70 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 	if !bytes.Equal(reference, modified) {
 		t.Fatalf("exported data contains extra codes")
 	}
+}
+
+func TestWriteReferencedCodes_WritesAllReferencedNonEmptyCodes(t *testing.T) {
+	require := require.New(t)
+
+	sourceDir := t.TempDir()
+	db := createExampleLiveDB(t, sourceDir)
+	require.NoError(db.Close())
+
+	db, err := mpt.OpenGoFileState(sourceDir, mpt.S5LiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(db.Close()) })
+
+	var buf bytes.Buffer
+	require.NoError(writeReferencedCodes(
+		context.Background(), NewLog(),
+		&exportableLiveTrie{db: db, directory: sourceDir}, &buf,
+	))
+
+	// createExampleLiveDB references two distinct non-empty codes:
+	// "some_code" (accounts 1 and 4) and "some_other_code" (account 3).
+	require.ElementsMatch(
+		[][]byte{[]byte("some_code"), []byte("some_other_code")},
+		readAllCodes(t, &buf),
+	)
+}
+
+func TestWriteReferencedCodes_PropagatesVisitError(t *testing.T) {
+	require := require.New(t)
+
+	ctrl := gomock.NewController(t)
+	db := NewMockmptStateVisitor(ctrl)
+	injected := errors.New("visit failed")
+	db.EXPECT().Visit(gomock.Any(), true).Return(injected)
+
+	err := writeReferencedCodes(context.Background(), NewLog(), db, io.Discard)
+	require.ErrorIs(err, injected)
+}
+
+// readAllCodes reads all 'C'-tagged code records from r until EOF.
+func readAllCodes(t *testing.T, r io.Reader) [][]byte {
+	t.Helper()
+	var codes [][]byte
+	tag := []byte{0}
+	for {
+		_, err := io.ReadFull(r, tag)
+		if err == io.EOF {
+			return codes
+		}
+		require.NoError(t, err)
+		require.Equal(t, byte('C'), tag[0])
+		code, err := readCode(r)
+		require.NoError(t, err)
+		codes = append(codes, code)
+	}
+}
+
+// countCodes drains a codes iterator returning the number of entries.
+func countCodes(codes iter.Seq2[common.Hash, []byte]) int {
+	n := 0
+	for range codes {
+		n++
+	}
+	return n
 }
 
 func exportExampleState(t *testing.T) ([]byte, common.Hash) {

@@ -642,7 +642,7 @@ func verifyContractCodes(directory string, source *verificationNodeSource, obser
 	observer.Progress("Checking contract codes ...")
 
 	codeFile := filepath.Join(directory, "codes.dat")
-	codes, err := readCodes(codeFile)
+	codes, err := readCodesForTesting(codeFile)
 	if err != nil {
 		return err
 	}

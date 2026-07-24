@@ -12,52 +12,138 @@ package io
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
 	"io"
+	"maps"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/stretchr/testify/require"
 )
 
-func TestCodes_OutputIsSortedByHash(t *testing.T) {
+func TestWriteCodes_WritesTagLengthAndBytesForEachCode(t *testing.T) {
+	require := require.New(t)
 
-	codes := map[common.Hash][]byte{}
-
-	codes[common.Hash{1}] = []byte{1, 2, 3}
-	codes[common.Hash{2}] = []byte{4, 5}
-	codes[common.Hash{3}] = []byte{6, 7, 8}
-
-	buffer := new(bytes.Buffer)
-	if err := writeCodes(codes, buffer); err != nil {
-		t.Fatalf("failed to write codes: %v", err)
+	codes := map[common.Hash][]byte{
+		{1}: {1, 2, 3},
+		{2}: {4, 5},
+		{3}: {6, 7, 8},
 	}
 
-	in := bytes.NewBuffer(buffer.Bytes())
+	var buf bytes.Buffer
+	require.NoError(writeCodes(maps.All(codes), &buf))
 
-	expectations := [][]byte{
-		{1, 2, 3},
-		{4, 5},
-		{6, 7, 8},
-	}
-
-	for _, expectation := range expectations {
-		token, err := in.ReadByte()
-		if err != nil {
-			t.Fatalf("failed to read code token: %v", err)
-		}
-		if want, got := byte('C'), token; want != got {
-			t.Errorf("unexpected token, wanted %c, got %c", want, got)
-		}
+	got := make(map[string][]byte, len(codes))
+	in := bytes.NewReader(buf.Bytes())
+	for range codes {
+		tag, err := in.ReadByte()
+		require.NoError(err)
+		require.Equal(byte('C'), tag)
 		code, err := readCode(in)
-		if err != nil {
-			t.Fatalf("failed to read code: %v", err)
-		}
-		if !bytes.Equal(code, expectation) {
-			t.Errorf("unexpected code, wanted %x, got %x", expectation, code)
-		}
+		require.NoError(err)
+		got[string(code)] = code
+	}
+	_, err := in.ReadByte()
+	require.ErrorIs(err, io.EOF)
+
+	want := make(map[string][]byte, len(codes))
+	for _, code := range codes {
+		want[string(code)] = code
+	}
+	require.Equal(want, got)
+}
+
+func TestWriteCodes_WritesNothingForEmptyIterator(t *testing.T) {
+	require := require.New(t)
+
+	var buf bytes.Buffer
+	require.NoError(writeCodes(maps.All(map[common.Hash][]byte{}), &buf))
+	require.Zero(buf.Len())
+}
+
+func TestWriteCodes_PropagatesWriteError(t *testing.T) {
+	injected := errors.New("write failed")
+	tests := map[string]struct {
+		failAfter int
+	}{
+		"on header write": {failAfter: 0},
+		"on body write":   {failAfter: 1},
 	}
 
-	_, err := in.ReadByte()
-	if err != io.EOF {
-		t.Errorf("expected end of encoded data, but %v", err)
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+
+			w := &failingWriter{failAfter: test.failAfter, err: injected}
+			codes := map[common.Hash][]byte{{1}: {1, 2, 3}}
+
+			err := writeCodes(maps.All(codes), w)
+			require.ErrorContains(err, injected.Error())
+		})
 	}
+}
+
+func TestReadCode_ReturnsCodeWrittenByWriteCodes(t *testing.T) {
+	require := require.New(t)
+
+	want := []byte{9, 8, 7, 6}
+	codes := map[common.Hash][]byte{{1}: want}
+
+	var buf bytes.Buffer
+	require.NoError(writeCodes(maps.All(codes), &buf))
+
+	tag, err := buf.ReadByte()
+	require.NoError(err)
+	require.Equal(byte('C'), tag)
+
+	got, err := readCode(&buf)
+	require.NoError(err)
+	require.Equal(want, got)
+}
+
+func TestReadCode_ReturnsEmptyCodeForZeroLength(t *testing.T) {
+	require := require.New(t)
+
+	code, err := readCode(bytes.NewReader([]byte{0, 0}))
+	require.NoError(err)
+	require.Empty(code)
+}
+
+func TestReadCode_ReturnsErrorOnTruncatedInput(t *testing.T) {
+	// Header claims 4 bytes of body but only 2 are provided.
+	truncatedBody := []byte{0, 0, 1, 2}
+	binary.BigEndian.PutUint16(truncatedBody, 4)
+
+	tests := map[string]struct {
+		input []byte
+	}{
+		"short length header": {input: []byte{0}},
+		"short code body":     {input: truncatedBody},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+
+			_, err := readCode(bytes.NewReader(test.input))
+			require.ErrorIs(err, io.ErrUnexpectedEOF)
+		})
+	}
+}
+
+// failingWriter is an io.Writer that succeeds for the first failAfter calls
+// and then returns err on every subsequent call.
+type failingWriter struct {
+	failAfter int
+	calls     int
+	err       error
+}
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	if w.calls >= w.failAfter {
+		return 0, w.err
+	}
+	w.calls++
+	return len(p), nil
 }

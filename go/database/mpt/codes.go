@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"iter"
+	"maps"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -109,18 +111,18 @@ func (c *codes) getCodeForHash(hash common.Hash) ([]byte, error) {
 	return *code, nil
 }
 
-func (c *codes) getCodes() map[common.Hash][]byte {
-	// Preserve the historical non-nil contract so that callers can safely
-	// write into the returned map even after a read failure.
-	codes := map[common.Hash][]byte{}
-	seq, err := c.codes.Iterate()
+func (c *codes) getCodes() (iter.Seq2[common.Hash, []byte], error) {
+	return c.codes.Iterate()
+}
+
+// getCodesForTesting drains the iterator returned by getCodes into a map. It
+// is a testing convenience for callers that need random access or a length.
+func (c *codes) getCodesForTesting() (map[common.Hash][]byte, error) {
+	it, err := c.getCodes()
 	if err != nil {
-		return codes
+		return nil, err
 	}
-	for key, code := range seq {
-		codes[key] = code
-	}
-	return codes
+	return maps.Collect(it), nil
 }
 
 func (c *codes) Flush() error {
@@ -134,7 +136,9 @@ func (c *codes) Close() error {
 
 func (c *codes) GetMemoryFootprint() *common.MemoryFootprint {
 	codes := c.codes.GetMemoryFootprint()
-	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + codes.Total())
+	footprint := common.NewMemoryFootprint(unsafe.Sizeof(*c))
+	footprint.AddChild("codes", codes)
+	return footprint
 }
 
 func (c *codes) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) error {
@@ -234,9 +238,9 @@ func (r codeRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	return os.Truncate(r.file, int64(meta.FileSize))
 }
 
-// readCodes parses the content of the given file if it exists or returns
+// readCodesForTesting parses the content of the given file if it exists or returns
 // a an empty code collection if there is no such file.
-func readCodes(path string) (codes map[common.Hash][]byte, err error) {
+func readCodesForTesting(path string) (codes map[common.Hash][]byte, err error) {
 	codeFile, err := kv_file.OpenOffsetFile(path, readCode, writeCode)
 	if err != nil {
 		return nil, err
@@ -255,8 +259,8 @@ func readCodes(path string) (codes map[common.Hash][]byte, err error) {
 	return codes, nil
 }
 
-// writeCodes writes the given map of codes to the given file.
-func writeCodes(codes map[common.Hash][]byte, path string) (err error) {
+// writeCodesForTesting writes the given map of codes to the given file.
+func writeCodesForTesting(codes map[common.Hash][]byte, path string) (err error) {
 	err = os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -272,14 +276,10 @@ func writeCodes(codes map[common.Hash][]byte, path string) (err error) {
 	defer func() {
 		err = errors.Join(err, storedCodes.Close())
 	}()
-	for hash, code := range codes {
-		err := storedCodes.Set(hash, code)
-		if err != nil {
-			return err
-		}
-	}
-	err = storedCodes.Flush()
-	return err
+	return errors.Join(
+		storedCodes.SetBatch(codes),
+		storedCodes.Flush(),
+	)
 }
 
 func writeCode(out io.Writer, hash common.Hash, code []byte) (err error) {

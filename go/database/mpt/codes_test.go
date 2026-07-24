@@ -13,6 +13,7 @@ package mpt
 import (
 	"bytes"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,13 +27,16 @@ import (
 )
 
 func TestCodes_OpenCodes(t *testing.T) {
+	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to open codes: %v", err)
 	}
-	defer func() { require.NoError(t, codes.Close()) }()
+	defer func() { require.NoError(codes.Close()) }()
 
-	if want, got := 0, len(codes.getCodes()); want != got {
+	got, err := codes.getCodesForTesting()
+	require.NoError(err)
+	if want, got := 0, len(got); want != got {
 		t.Fatalf("expected codes to be empty, got %d", got)
 	}
 }
@@ -140,7 +144,9 @@ func TestCodes_CodesCanBeAddedAndRetrieved(t *testing.T) {
 	hash2, err := codes.add(code2)
 	require.NoError(err)
 
-	if want, got := 2, len(codes.getCodes()); want != got {
+	all, err := codes.getCodesForTesting()
+	require.NoError(err)
+	if want, got := 2, len(all); want != got {
 		t.Fatalf("expected codes to have 2 entries, got %d", got)
 	}
 
@@ -285,7 +291,9 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	hash2, err := codes.add(code2)
 	require.NoError(err)
 
-	got := codes.getCodes()
+	it, err := codes.getCodes()
+	require.NoError(err)
+	got := maps.Collect(it)
 
 	if want, got := 2, len(got); want != got {
 		t.Fatalf("expected %d codes, got %d", want, got)
@@ -300,24 +308,43 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 	}
 }
 
-func TestCodes_getCodes_ReturnsEmptyMapOnIterateError(t *testing.T) {
+func TestCodes_getCodes_ReturnsErrorOnIterateError(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 
 	codeFile := kv_file.NewMockKVFileWithMemoryFootprint[common.Hash, []byte](ctrl)
-	codeFile.EXPECT().Iterate().Return(nil, errors.New("iterate failed"))
+	injected := errors.New("iterate failed")
+	codeFile.EXPECT().Iterate().Return(nil, injected)
 
 	cached, err := kv_file.OpenKVCachedFile[common.Hash, []byte](codeFile, 1, 1)
 	require.NoError(err)
 
 	c := &codes{codes: cached}
-	got := c.getCodes()
+	got, err := c.getCodes()
+	require.ErrorIs(err, injected)
+	require.Nil(got)
+}
 
-	// The historical contract is that getCodes returns a non-nil map so
-	// callers may safely write into it even after a read failure.
-	require.NotNil(got)
-	require.Empty(got)
-	got[common.Hash{0x01}] = []byte("safe-to-write")
+func TestCodes_getCodes_IteratorTerminatesGracefullyOnClose(t *testing.T) {
+	require := require.New(t)
+	codes, err := openCodes(t.TempDir())
+	require.NoError(err)
+
+	_, err = codes.add([]byte("code1"))
+	require.NoError(err)
+	_, err = codes.add([]byte("code2"))
+	require.NoError(err)
+
+	it, err := codes.getCodes()
+	require.NoError(err)
+
+	require.NoError(codes.Close())
+
+	// After the store has been closed, iterating the previously obtained
+	// sequence must not panic; it may yield fewer entries than the store
+	// contained but must terminate gracefully.
+	for range it {
+	}
 }
 
 func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {
@@ -524,7 +551,9 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 				t.Fatalf("failed to re-open original codes: %v", err)
 			}
 
-			if want, got := 2, len(codes.getCodes()); want != got {
+			stored, err := codes.getCodesForTesting()
+			require.NoError(t, err)
+			if want, got := 2, len(stored); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 			require.NoError(t, codes.Close())
@@ -539,7 +568,9 @@ func TestCodes_Restore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 			}
 			defer func() { require.NoError(t, codes.Close()) }()
 
-			if want, got := 1, len(codes.getCodes()); want != got {
+			stored, err = codes.getCodesForTesting()
+			require.NoError(t, err)
+			if want, got := 1, len(stored); want != got {
 				t.Fatalf("expected codes to have %d entries, got %d", want, got)
 			}
 		})
@@ -677,7 +708,9 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 
 	_, err = codes.add([]byte("code3"))
 	require.NoError(t, err)
-	if want, got := 3, len(codes.getCodes()); want != got {
+	stored, err := codes.getCodesForTesting()
+	require.NoError(t, err)
+	if want, got := 3, len(stored); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -714,7 +747,9 @@ func TestCodes_CheckpointsCanBeRestored(t *testing.T) {
 	}
 	defer func() { require.NoError(t, codes.Close()) }()
 
-	if want, got := 2, len(codes.getCodes()); want != got {
+	restoredCodes, err := codes.getCodesForTesting()
+	require.NoError(t, err)
+	if want, got := 2, len(restoredCodes); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -740,7 +775,9 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 		t.Fatalf("failed to commit checkpoint: %v", err)
 	}
 
-	if want, got := 2, len(codes.getCodes()); want != got {
+	stored, err := codes.getCodesForTesting()
+	require.NoError(t, err)
+	if want, got := 2, len(stored); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 	require.NoError(t, codes.Close())
@@ -756,7 +793,9 @@ func TestCodes_CheckpointsCanBeAborted(t *testing.T) {
 	}
 	defer func() { require.NoError(t, codes.Close()) }()
 
-	if want, got := 0, len(codes.getCodes()); want != got {
+	stored, err = codes.getCodesForTesting()
+	require.NoError(t, err)
+	if want, got := 0, len(stored); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 }
@@ -794,7 +833,9 @@ func TestCodes_CanBeHandledByCheckpointCoordinator(t *testing.T) {
 	}
 	defer func() { require.NoError(t, codes.Close()) }()
 
-	if want, got := 1, len(codes.getCodes()); want != got {
+	stored, err := codes.getCodesForTesting()
+	require.NoError(t, err)
+	if want, got := 1, len(stored); want != got {
 		t.Fatalf("expected codes to have %d entries, got %d", want, got)
 	}
 
@@ -809,11 +850,11 @@ func TestCodes_writeCodes_WritesCodesToFile(t *testing.T) {
 		{2}: {7, 8},
 	}
 
-	if err := writeCodes(codes, file); err != nil {
+	if err := writeCodesForTesting(codes, file); err != nil {
 		t.Fatalf("failed to write codes: %v", err)
 	}
 
-	readCodes, err := readCodes(file)
+	readCodes, err := readCodesForTesting(file)
 	if err != nil {
 		t.Fatalf("failed to read codes: %v", err)
 	}
@@ -832,7 +873,7 @@ func TestCodes_writeCodes_TruncatesFileIfItExists(t *testing.T) {
 		{2}: {7, 8},
 	}
 
-	if err := writeCodes(codes1, file); err != nil {
+	if err := writeCodesForTesting(codes1, file); err != nil {
 		t.Fatalf("failed to write codes: %v", err)
 	}
 
@@ -840,11 +881,11 @@ func TestCodes_writeCodes_TruncatesFileIfItExists(t *testing.T) {
 		{3}: {9},
 	}
 
-	if err := writeCodes(codes2, file); err != nil {
+	if err := writeCodesForTesting(codes2, file); err != nil {
 		t.Fatalf("failed to write codes: %v", err)
 	}
 
-	readCodes, err := readCodes(file)
+	readCodes, err := readCodesForTesting(file)
 	if err != nil {
 		t.Fatalf("failed to read codes: %v", err)
 	}
@@ -862,7 +903,7 @@ func TestCodes_writeCodes_CannotCreateTheOutputFile(t *testing.T) {
 	}
 	require.NoError(t, os.Chmod(dir, 0500))
 	defer func() { require.NoError(t, os.Chmod(dir, 0777)) }()
-	if err := writeCodes(make(map[common.Hash][]byte, 1), file); err == nil {
+	if err := writeCodesForTesting(make(map[common.Hash][]byte, 1), file); err == nil {
 		t.Errorf("writing roots should fail")
 	}
 }
@@ -870,7 +911,7 @@ func TestCodes_writeCodes_CannotCreateTheOutputFile(t *testing.T) {
 func TestCodes_readCodesAndSize_ReadingNonExistingFileReturnsEmptyCodeMap(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, fileNameCodes)
-	codes, err := readCodes(path)
+	codes, err := readCodesForTesting(path)
 	if err != nil {
 		t.Fatalf("failed to read codes: %v", err)
 	}
@@ -887,7 +928,7 @@ func TestCodes_readCodesAndSize_ReadingIssuesAreReported(t *testing.T) {
 		t.Fatalf("failed to prepare invalid code file: %v", err)
 	}
 
-	_, err := readCodes(path)
+	_, err := readCodesForTesting(path)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -902,7 +943,7 @@ func TestCodes_readCodesAndSize_PermissionErrorsAreDetected(t *testing.T) {
 	}
 	defer func() { require.NoError(t, os.Chmod(dir, 0700)) }()
 
-	_, err := readCodes(path)
+	_, err := readCodesForTesting(path)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -914,7 +955,7 @@ func TestCodes_readCodes_Cannot_Read(t *testing.T) {
 	if err := os.Mkdir(file, os.FileMode(0)); err != nil {
 		t.Fatalf("cannot create dir: %s", err)
 	}
-	if _, err := readCodes(file); err == nil {
+	if _, err := readCodesForTesting(file); err == nil {
 		t.Errorf("reading codes should fail")
 	}
 }
@@ -1024,7 +1065,8 @@ func TestCodes_Flush_CodesArePersistedOnDisk(t *testing.T) {
 	require.NoError(err)
 	defer func() { require.NoError(reopened.Close()) }()
 
-	got := reopened.getCodes()
+	got, err := reopened.getCodesForTesting()
+	require.NoError(err)
 	require.Equal(len(want), len(got))
 	for hash, code := range want {
 		require.Equal(code, got[hash],

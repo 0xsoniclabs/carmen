@@ -13,6 +13,7 @@ package mpt
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -111,7 +112,7 @@ type LiveState interface {
 	GetCodeForHash(hash common.Hash) ([]byte, error)
 
 	// GetCodes retrieves all codes and their hashes.
-	GetCodes() map[common.Hash][]byte
+	GetCodes() (iter.Seq2[common.Hash, []byte], error)
 
 	// UpdateHashes recomputes hash root of this trie.
 	UpdateHashes() (common.Hash, *NodeHashes, error)
@@ -330,7 +331,7 @@ func (s *MptState) Visit(mode AccessMode, visitor NodeVisitor) error {
 	return s.trie.VisitTrie(mode, visitor)
 }
 
-func (s *MptState) GetCodes() map[common.Hash][]byte {
+func (s *MptState) GetCodes() (iter.Seq2[common.Hash, []byte], error) {
 	return s.codes.getCodes()
 }
 

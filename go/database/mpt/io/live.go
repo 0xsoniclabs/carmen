@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"strings"
 
@@ -52,6 +53,10 @@ const (
 
 // The default size of the node cache for imports.
 const importNodeCacheSize = 100_000
+
+// codeExportBufferBytes bounds how many bytes worth of contract codes are
+// buffered in memory during export before being flushed to the output stream.
+const codeExportBufferBytes = 16 * 1024 * 1024
 
 type HashType byte
 
@@ -233,12 +238,8 @@ func ExportLive(ctx context.Context, logger *Log, db mptStateVisitor, out io.Wri
 
 	// Write out codes.
 	logger.Print("exporting codes")
-	codes, err := getReferencedCodes(ctx, logger, db)
-	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to retrieve codes: %w", err)
-	}
-	if err := writeCodes(codes, out); err != nil {
-		return common.Hash{}, err
+	if err := writeReferencedCodes(ctx, logger, db, out); err != nil {
+		return common.Hash{}, fmt.Errorf("failed to export codes: %w", err)
 	}
 
 	// Write out all accounts and values.
@@ -444,11 +445,14 @@ func runImport(logger *Log, directory string, in io.Reader, config mpt.MptConfig
 	}
 }
 
-// getReferencedCodes returns a map of codes referenced by accounts in the
-// given database. The map is indexed by the code hash.
-func getReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor) (map[common.Hash][]byte, error) {
+// writeReferencedCodes writes to out all codes referenced by accounts in the
+// given database. Codes are buffered in memory and flushed to out once the
+// buffered bytes exceed codeExportBufferBytes, so the full code table need
+// not fit in memory.
+func writeReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor, out io.Writer) error {
 	progress := logger.NewProgressTracker("retrieved %d accounts, %.2f accounts/s", 1000_000)
 	codes := make(map[common.Hash][]byte)
+	pendingBytes := 0
 	err := db.Visit(makeNoResponseVisitor(func(node mpt.Node, info mpt.NodeInfo) error {
 		if n, ok := node.(*mpt.AccountNode); ok {
 			if interrupt.IsCancelled(ctxt) {
@@ -461,13 +465,25 @@ func getReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor) (
 				return fmt.Errorf("failed to retrieve code for hash %x: %w", codeHash[:], err)
 			}
 			if len(code) > 0 {
-				codes[codeHash] = code
+				if _, exists := codes[codeHash]; !exists {
+					codes[codeHash] = code
+					pendingBytes += len(code)
+				}
+				if pendingBytes >= codeExportBufferBytes {
+					if err := writeCodes(maps.All(codes), out); err != nil {
+						return err
+					}
+					clear(codes)
+					pendingBytes = 0
+				}
 			}
 		}
 		return nil
 	}), true)
-
-	return codes, err
+	if err != nil {
+		return err
+	}
+	return writeCodes(maps.All(codes), out)
 }
 
 // exportVisitor is an internal utility used by the Export function to write
