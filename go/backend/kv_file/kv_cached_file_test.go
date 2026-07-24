@@ -780,6 +780,43 @@ func TestKVCachedFile_waitForPendingFlushes_ReturnsBackgroundWriteError(t *testi
 	require.ErrorIs(c.waitForPendingFlushes(), injected)
 }
 
+func TestKVCachedFile_enqueueCurrentBufferLocked_AppendsBufferAndClearsDirtyEntries(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	// Block the writer so the sealed buffer stays visible in c.pending for
+	// inspection instead of being consumed immediately.
+	release, unblockWriter := newWriterRelease(t)
+	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(map[K]V) error {
+		<-release
+		return nil
+	}).AnyTimes()
+	mock.EXPECT().Flush().Return(nil).AnyTimes()
+
+	c.mu.Lock()
+	c.flushBuffer[1] = "a"
+	c.flushBuffer[2] = "b"
+	c.dirty[1] = true
+	c.dirty[2] = true
+	// Dirty entry that is not in the flush buffer must survive the seal.
+	c.dirty[3] = true
+	sealed := maps.Clone(c.flushBuffer)
+
+	c.enqueueCurrentBufferLocked()
+
+	require.Empty(c.flushBuffer, "flushBuffer must be reset after enqueue")
+	require.Len(c.pending, 1, "sealed buffer must be appended to pending")
+	require.Equal(sealed, c.pending[0], "pending buffer must equal the sealed flushBuffer")
+
+	require.NotContains(c.dirty, K(1), "dirty entries in the sealed buffer must be cleared")
+	require.NotContains(c.dirty, K(2), "dirty entries in the sealed buffer must be cleared")
+	require.Contains(c.dirty, K(3), "dirty entries not in the sealed buffer must be retained")
+	c.mu.Unlock()
+
+	unblockWriter()
+	require.NoError(c.Flush())
+}
+
 func TestKVCachedFile_shutdownWriter_IsIdempotent(t *testing.T) {
 	require := require.New(t)
 	c, _ := openTestKVCachedFile(t)
@@ -1038,8 +1075,9 @@ func TestKVCachedFile_FlushWorker_PersistsBuffersInFIFOOrder(t *testing.T) {
 // KVCachedFile's own serialization of file access: if that serialization (fileMu)
 // were dropped, the writer and a foreground reader would touch the fake's map at
 // once, which -race reports and Go's runtime turns into a fatal "concurrent map"
-// panic. Run with -race for the hard signal. Get/Has target never-written keys so
-// they miss the cache and actually reach the file.
+// panic. Run with -race for the hard signal. Get/Has target the same keys as
+// Set, so reads exercise every layer -- cache, flush buffer, pending queue, and
+// the underlying file once entries have been evicted and written.
 func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 	require := require.New(t)
 	c, err := OpenKVCachedFile[K, V](newFakeKVFile(), cacheSize, flushBufferThreshold)
@@ -1048,7 +1086,7 @@ func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 
 	const (
 		workers      = 8
-		opsPerWorker = 300
+		opsPerWorker = 100000
 	)
 	var wg sync.WaitGroup
 	for w := range workers {
@@ -1059,17 +1097,15 @@ func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
 				key := w*opsPerWorker + i
 				switch i % 4 {
 				case 0:
-					// Distinct keys keep evicting dirty entries, which keeps the
-					// background writer flushing buffers to the file.
-					_ = c.Set(key, fmt.Sprintf("w%d-i%d", w, i))
+					require.NoError(c.Set(key, fmt.Sprintf("w%d-i%d", w, i)))
 				case 1:
-					// Negative keys are never written, so they miss the cache,
-					// buffer and pending, forcing a read of the underlying file.
-					_, _ = c.Get(-key)
+					_, err := c.Get(key)
+					require.NoError(err)
 				case 2:
-					_, _ = c.Has(-key)
+					_, err := c.Has(key)
+					require.NoError(err)
 				case 3:
-					_ = c.Flush()
+					require.NoError(c.Flush())
 				}
 			}
 		}(w)
