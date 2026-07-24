@@ -16,25 +16,32 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"os"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/stretchr/testify/require"
 )
 
-func TestWriteCodes_WritesTagLengthAndBytesForEachCode(t *testing.T) {
+func TestWriteCodes_WritesCodesOrderedByHash(t *testing.T) {
 	require := require.New(t)
 
 	codes := map[common.Hash][]byte{
+		{3}: {6, 7, 8},
 		{1}: {1, 2, 3},
 		{2}: {4, 5},
-		{3}: {6, 7, 8},
 	}
 
 	var buf bytes.Buffer
 	require.NoError(writeCodes(maps.All(codes), &buf))
 
-	got := make(map[string][]byte, len(codes))
+	// Output must be ordered by hash regardless of iteration order.
+	want := [][]byte{
+		{1, 2, 3},
+		{4, 5},
+		{6, 7, 8},
+	}
+	var got [][]byte
 	in := bytes.NewReader(buf.Bytes())
 	for range codes {
 		tag, err := in.ReadByte()
@@ -42,15 +49,11 @@ func TestWriteCodes_WritesTagLengthAndBytesForEachCode(t *testing.T) {
 		require.Equal(byte('C'), tag)
 		code, err := readCode(in)
 		require.NoError(err)
-		got[string(code)] = code
+		got = append(got, code)
 	}
 	_, err := in.ReadByte()
 	require.ErrorIs(err, io.EOF)
 
-	want := make(map[string][]byte, len(codes))
-	for _, code := range codes {
-		want[string(code)] = code
-	}
 	require.Equal(want, got)
 }
 
@@ -80,6 +83,33 @@ func TestWriteCodes_PropagatesWriteError(t *testing.T) {
 
 			err := writeCodes(maps.All(codes), w)
 			require.ErrorContains(err, injected.Error())
+		})
+	}
+}
+
+func TestWriteCodes_RemovesTemporaryPebbleStore(t *testing.T) {
+	tests := map[string]struct {
+		out io.Writer
+	}{
+		"on success":        {out: &bytes.Buffer{}},
+		"on writer failure": {out: &failingWriter{err: errors.New("boom")}},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+
+			// Redirect os.MkdirTemp("", ...) into a directory owned by the test
+			// so we can observe whether writeCodes cleans up after itself.
+			tempRoot := t.TempDir()
+			t.Setenv("TMPDIR", tempRoot)
+
+			codes := map[common.Hash][]byte{{1}: {1, 2, 3}}
+			_ = writeCodes(maps.All(codes), test.out)
+
+			entries, err := os.ReadDir(tempRoot)
+			require.NoError(err)
+			require.Empty(entries, "writeCodes must remove its temporary pebble store")
 		})
 	}
 }

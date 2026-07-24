@@ -12,15 +12,57 @@ package io
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
+	"os"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/cockroachdb/pebble"
 )
 
-func writeCodes(codes iter.Seq2[common.Hash, []byte], out io.Writer) error {
-	for _, code := range codes {
+// writeCodes serialises all codes yielded by the iterator to out, ordered by
+// hash.
+func writeCodes(codes iter.Seq2[common.Hash, []byte], out io.Writer) (retErr error) {
+	dir, err := os.MkdirTemp("", "carmen-export-codes-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("failed to remove temp dir: %w", err))
+		}
+	}()
+
+	db, err := pebble.Open(dir, &pebble.Options{})
+	if err != nil {
+		return fmt.Errorf("failed to open temp pebble store: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("failed to close temp pebble store: %w", err))
+		}
+	}()
+
+	for hash, code := range codes {
+		if err := db.Set(hash[:], code, pebble.NoSync); err != nil {
+			return fmt.Errorf("failed to persist code: %w", err)
+		}
+	}
+
+	it, err := db.NewIter(nil)
+	if err != nil {
+		return fmt.Errorf("failed to open temp pebble iterator: %w", err)
+	}
+	defer func() {
+		if err := it.Close(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("failed to close temp pebble iterator: %w", err))
+		}
+	}()
+
+	for it.First(); it.Valid(); it.Next() {
+		code := it.Value()
 		b := []byte{byte('C'), 0, 0}
 		binary.BigEndian.PutUint16(b[1:], uint16(len(code)))
 		if _, err := out.Write(b); err != nil {
