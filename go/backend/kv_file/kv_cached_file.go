@@ -74,6 +74,9 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 	if err != nil {
 		return nil, err
 	}
+	if value == nil {
+		return nil, nil
+	}
 	err = c.handleCacheSet(&key, value, false)
 	if err != nil {
 		return nil, err

@@ -157,6 +157,9 @@ func TestKVCachedFile_Get_ReturnsNilOnUnknownKey(t *testing.T) {
 	got, err := c.Get(999)
 	require.NoError(err)
 	require.Nil(got)
+	// The cache must not contain the key after a Get that returns nil.
+	_, inCache := c.cache.Get(999)
+	require.False(inCache)
 }
 
 func TestKVCachedFile_Get_ReturnsErrorOnFileReadError(t *testing.T) {
