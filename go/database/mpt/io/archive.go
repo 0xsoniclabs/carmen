@@ -433,7 +433,8 @@ func (c *importContext) finishCurrentBlock(archive archive.Archive, live state.L
 	if !c.currentBlockHashFound {
 		return fmt.Errorf("input format error: no hash for block %d", c.currentBlock)
 	}
-	// TODO:
+	// The undo list is discarded: the import path replays a trusted, ordered
+	// archive dump strictly forward and never rolls a block back.
 	_, hints, err := live.Apply(c.currentBlock, &c.currentUpdate)
 	if err != nil {
 		return err

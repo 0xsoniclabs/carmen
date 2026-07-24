@@ -60,8 +60,6 @@ type Database interface {
 	// ClearStorage removes all storage slots for the input address and the root.
 	ClearStorage(rootRef *NodeReference, addr common.Address) (NodeReference, error)
 
-	// RestoreStorage(rootRef *NodeReference, addr common.Address, storageRoot NodeReference) (NodeReference, error)
-
 	// HasEmptyStorage returns true if account has empty storage.
 	HasEmptyStorage(rootRef *NodeReference, addr common.Address) (bool, error)
 
