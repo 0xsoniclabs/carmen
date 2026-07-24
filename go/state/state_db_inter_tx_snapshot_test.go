@@ -296,27 +296,27 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		{0x6},
 	}
 
-	operationWithAddress := map[string]func(ctx *StateDBContext, args OpArgs){
-		"setNonce":      setNonceOp,
-		"setCode":       setCodeOp,
-		"addBalance":    addBalanceOp,
-		"subBalance":    subBalanceOp,
-		"createAccount": createAccountOp,
-		"suicide":       suicideOp,
-		"addLog":        addLogOp,
+	operationWithAddress := map[string]func(db StateDB, rng *rand.Rand, args OpArgs){
+		"setNonce":      SetNonceOp,
+		"setCode":       SetCodeOp,
+		"addBalance":    AddBalanceOp,
+		"subBalance":    SubBalanceOp,
+		"createAccount": CreateAccountOp,
+		"suicide":       SuicideOp,
+		"addLog":        AddLogOp,
 	}
 
-	operationWithAddressAndKey := map[string]func(ctx *StateDBContext, args OpArgs){
-		"setState": setStateOp,
+	operationWithAddressAndKey := map[string]func(db StateDB, rng *rand.Rand, args OpArgs){
+		"setState": SetStateOp,
 	}
 
 	var opWithNameList []StateDBOperation
 	for opName, op := range operationWithAddress {
 		for i, address := range addresses {
 			opWithNameList = append(opWithNameList, StateDBOperation{
-				op:   op,
-				name: fmt.Sprintf("%s addr %d", opName, i),
-				args: OpArgs{address: &address},
+				Op:   op,
+				Name: fmt.Sprintf("%s addr %d", opName, i),
+				Args: OpArgs{Address: &address},
 			})
 		}
 	}
@@ -324,9 +324,9 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		for i, address := range addresses {
 			for j, key := range keys {
 				op := StateDBOperation{
-					op:   op,
-					name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
-					args: OpArgs{address: &address, key: &key},
+					Op:   op,
+					Name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
+					Args: OpArgs{Address: &address, Key: &key},
 				}
 				opWithNameList = append(opWithNameList, op)
 				// Multiple writes to to the same slot to trigger already existing case
@@ -336,9 +336,9 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	}
 
 	tests := make(map[string][][]StateDBOperation, 0)
-	for operationTriple := range cartesianProductTriple(opWithNameList) {
-		for testCase := range orderedPartitions(operationTriple) {
-			tests[testCaseName(testCase)] = testCase
+	for operationTriple := range CartesianProductTriple(opWithNameList) {
+		for testCase := range OrderedPartitions(operationTriple) {
+			tests[OperationPartitionName(testCase)] = testCase
 		}
 	}
 
@@ -358,7 +358,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 
 				ctx.state.BeginTransaction()
 				for _, op := range opList {
-					op.Execute(ctx)
+					op.Execute(ctx.state, ctx.rng)
 				}
 				ctx.state.EndTransaction()
 
@@ -378,12 +378,12 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 	}
 }
 
-func testCaseName(s [][]StateDBOperation) string {
+func OperationPartitionName(s [][]StateDBOperation) string {
 	var nameParts []string
 	for _, opList := range s {
 		name := ""
 		for _, op := range opList {
-			name += op.name + " AND "
+			name += op.Name + " AND "
 		}
 		nameParts = append(nameParts, name[:len(name)-5])
 	}
@@ -400,15 +400,15 @@ type StateDBContext struct {
 
 // OpArgs is a struct containing an address and a key, to be used as arguments for operations performed on the StateDB.
 type OpArgs struct {
-	address *common.Address
-	key     *common.Key
+	Address *common.Address
+	Key     *common.Key
 }
 
 // StateDBOperation is an helper struct representing an operation to be performed on the StateDB, with its name and arguments.
 type StateDBOperation struct {
-	op   func(ctx *StateDBContext, args OpArgs)
-	name string
-	args OpArgs
+	Op   func(db StateDB, rng *rand.Rand, args OpArgs)
+	Name string
+	Args OpArgs
 }
 
 // NewStateDBContext creates a new StateDBContext with a mocked State and a StateDB using that mocked State.
@@ -445,50 +445,50 @@ func NewStateDBContext(t *testing.T) *StateDBContext {
 	}
 }
 
-// Execute executes the operation on the given StateDBContext with the stored arguments.
-func (op *StateDBOperation) Execute(ctx *StateDBContext) {
-	op.op(ctx, op.args)
+// Execute executes the operation on the given StateDB, using rng for any random values.
+func (op *StateDBOperation) Execute(db StateDB, rng *rand.Rand) {
+	op.Op(db, rng, op.Args)
 }
 
-func setStateOp(ctx *StateDBContext, args OpArgs) {
-	randomValue := common.Value(randomByteArrayWithPrefix(ctx.rng, 32, []byte{0x2}))
-	ctx.state.SetState(*args.address, *args.key, randomValue)
+func SetStateOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	randomValue := common.Value(RandomByteArrayWithPrefix(rng, 32, []byte{0x2}))
+	db.SetState(*args.Address, *args.Key, randomValue)
 }
 
-func setNonceOp(ctx *StateDBContext, args OpArgs) {
-	ctx.state.SetNonce(*args.address, ctx.rng.Uint64N(math.MaxUint64)+1)
+func SetNonceOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	db.SetNonce(*args.Address, rng.Uint64N(math.MaxUint64)+1)
 }
 
-func setCodeOp(ctx *StateDBContext, args OpArgs) {
-	randomCode := randomByteArrayWithPrefix(ctx.rng, 8, []byte{0x2})
-	ctx.state.SetCode(*args.address, randomCode)
+func SetCodeOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	randomCode := RandomByteArrayWithPrefix(rng, 8, []byte{0x2})
+	db.SetCode(*args.Address, randomCode)
 }
 
-func addBalanceOp(ctx *StateDBContext, args OpArgs) {
-	ctx.state.AddBalance(*args.address, amount.New(10))
+func AddBalanceOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	db.AddBalance(*args.Address, amount.New(10))
 }
 
-func subBalanceOp(ctx *StateDBContext, args OpArgs) {
-	if val, exists := ctx.state.balances[*args.address]; exists && val.current.Uint64() < 10 {
-		// Avoid underflow
+func SubBalanceOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	if db.GetBalance(*args.Address).Uint64() < 10 {
+		// Avoid underflow.
 		return
 	}
-	ctx.state.SubBalance(*args.address, amount.New(10))
+	db.SubBalance(*args.Address, amount.New(10))
 }
 
-func createAccountOp(ctx *StateDBContext, args OpArgs) {
-	ctx.state.CreateAccount(*args.address)
+func CreateAccountOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	db.CreateAccount(*args.Address)
 }
 
-func suicideOp(ctx *StateDBContext, args OpArgs) {
-	ctx.state.Suicide(*args.address)
+func SuicideOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	db.Suicide(*args.Address)
 }
 
-func addLogOp(ctx *StateDBContext, args OpArgs) {
-	ctx.state.AddLog(&common.Log{
-		Address: *args.address,
-		Topics:  []common.Hash{common.Hash(randomByteArrayWithPrefix(ctx.rng, 32, []byte{}))},
-		Data:    randomByteArrayWithPrefix(ctx.rng, 3, []byte{}),
+func AddLogOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	db.AddLog(&common.Log{
+		Address: *args.Address,
+		Topics:  []common.Hash{common.Hash(RandomByteArrayWithPrefix(rng, 32, []byte{}))},
+		Data:    RandomByteArrayWithPrefix(rng, 3, []byte{}),
 	})
 }
 
@@ -621,8 +621,8 @@ func checkStateDB(t *testing.T, expected *stateDB, actual *stateDB, mock *MockSt
 	return nil
 }
 
-// randomByteArrayWithPrefix generates a random byte array of the given size, where the first bytes are the given prefix.
-func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
+// RandomByteArrayWithPrefix generates a random byte array of the given size, where the first bytes are the given prefix.
+func RandomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
 	b := make([]byte, size)
 	copy(b, prefix)
 	for i := len(prefix); i < size; i++ {
@@ -631,9 +631,9 @@ func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
 	return b
 }
 
-// cartesianProductTriple generates the cartesian product of a slice with itself three times,
+// CartesianProductTriple generates the cartesian product of a slice with itself three times,
 // yielding the result as a sequence of tuples containing the values.
-func cartesianProductTriple[T any](slice []T) iter.Seq[[]T] {
+func CartesianProductTriple[T any](slice []T) iter.Seq[[]T] {
 	return func(yield func([]T) bool) {
 		for _, a := range slice {
 			for _, b := range slice {
@@ -647,8 +647,8 @@ func cartesianProductTriple[T any](slice []T) iter.Seq[[]T] {
 	}
 }
 
-// orderedPartitions yields each ordered partition of the input slice.
-func orderedPartitions[T any](input []T) iter.Seq[[][]T] {
+// OrderedPartitions yields each ordered partition of the input slice.
+func OrderedPartitions[T any](input []T) iter.Seq[[][]T] {
 	return func(yield func([][]T) bool) {
 		n := len(input)
 		if n == 0 {
@@ -874,7 +874,7 @@ func Test_CartesianTriple(t *testing.T) {
 
 	input := []string{"a", "b"}
 	var triples [][]string
-	for t := range cartesianProductTriple(input) {
+	for t := range CartesianProductTriple(input) {
 		triples = append(triples, t)
 	}
 
@@ -897,7 +897,7 @@ func Test_OrderedPartitions(t *testing.T) {
 
 	input := []int{1, 2, 3}
 	var partitions [][][]int
-	for p := range orderedPartitions(input) {
+	for p := range OrderedPartitions(input) {
 		partitions = append(partitions, p)
 	}
 
