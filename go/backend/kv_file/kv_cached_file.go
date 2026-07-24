@@ -13,27 +13,49 @@ package kv_file
 import (
 	"fmt"
 	"iter"
+	"slices"
 	"sync"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
-// KVCachedFile wraps a KVFile and provides an in-memory cache for key-value pairs.
-// Writes to the file are buffered in memory and flushed to disk when a threshold is reached.
-//
-// The cache keeps track of which cached entries are "dirty" (i.e. have not yet
-// been persisted to the underlying file). Only dirty entries are written on
-// flush, so repeated Flush calls with no intervening Set do not rewrite the
-// same values to disk.
+// KVCachedFile wraps a KVFile with an in-memory write-back cache. Buffered
+// writes are persisted asynchronously by a background writer; Flush, Iterate
+// and Close wait for those writes to complete, while a threshold-triggered
+// write happens in the background. A background write failure is terminal and
+// is reported by the next operation.
 type KVCachedFile[K comparable, V any] struct {
 	cache       *common.LruCache[K, V]
 	flushBuffer map[K]V
 	dirty       map[K]bool
 	file        KVFileWithMemoryFootprint[K, V]
 
-	mutex                sync.Mutex
+	// fileMu serializes every access to file, so the background writer and a
+	// foreground operation never touch the wrapped KVFile at the same time
+	// (KVFile is not required to be safe for concurrent use). It is independent
+	// of mu: the writer performs its disk I/O holding only fileMu, so foreground
+	// operations that stay in memory (cache/buffer hits, Set) proceed under mu
+	// meanwhile, and only those that must reach the file wait on fileMu.
+	//
+	// Lock order is mu then fileMu: a foreground caller may take fileMu while
+	// holding mu, but the writer takes fileMu on its own and only re-acquires mu
+	// after releasing it, so the two never nest the other way and cannot deadlock.
+	fileMu sync.Mutex
+
 	flushBufferThreshold int
+	// maxPendingFlushes bounds the number of sealed buffers queued for the
+	// background writer, providing back-pressure that keeps memory bounded.
+	maxPendingFlushes int
+
+	// mu guards all mutable state below and is the locker of cond.
+	mu           sync.Mutex
+	cond         *sync.Cond    // signalled whenever pending, writeErr or closed change
+	pending      []map[K]V     // sealed buffers awaiting a durable write (FIFO)
+	writeErr     error         // sticky error from the background writer
+	closed       bool          // set to stop the background writer
+	writerDone   chan struct{} // closed when the writer goroutine has exited
+	shutdownOnce sync.Once     // makes writer shutdown idempotent
 }
 
 // OpenKVCachedFile wraps the given KVFile with a cache of the specified size and a flush buffer threshold.
@@ -46,20 +68,28 @@ func OpenKVCachedFile[K comparable, V any](file KVFileWithMemoryFootprint[K, V],
 		return nil, fmt.Errorf("cacheSize and flushBufferThreshold must be greater than 0, got %d and %d", cacheSize, flushBufferThreshold)
 	}
 
-	return &KVCachedFile[K, V]{
+	c := &KVCachedFile[K, V]{
 		cache:                common.NewLruCache[K, V](cacheSize),
 		flushBuffer:          make(map[K]V),
 		dirty:                make(map[K]bool),
 		file:                 file,
 		flushBufferThreshold: flushBufferThreshold,
-	}, nil
+		maxPendingFlushes:    flushBufferThreshold + 1,
+		writerDone:           make(chan struct{}),
+	}
+	c.cond = sync.NewCond(&c.mu)
+	go c.flushWorker()
+
+	return c, nil
 }
 
-// Get retrieves a value from the cache or disk.
-// Entries found in the flushBuffer are promoted to the cache.
+// Get retrieves the value stored for a key, or nil if it does not exist.
 func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.writeErr != nil {
+		return nil, c.writeErr
+	}
 	if val, inCache := c.cache.Get(key); inCache {
 		return &val, nil
 	}
@@ -70,7 +100,23 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 		}
 		return &val, nil
 	}
+	// Consult buffers handed to the background writer but not yet on disk,
+	// newest first. These buffers are owned by the writer and must not be
+	// mutated, but their keys were marked clean when sealed, so the value can
+	// be promoted into the cache as a clean entry: if it is later evicted it
+	// will not be re-written, and the pending buffer stays its source of truth
+	// until the writer persists it.
+	for _, v := range slices.Backward(c.pending) {
+		if val, ok := v[key]; ok {
+			if err := c.handleCacheSet(&key, &val, false); err != nil {
+				return nil, err
+			}
+			return &val, nil
+		}
+	}
+	c.fileMu.Lock()
 	value, err := c.file.Get(key)
+	c.fileMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -85,29 +131,48 @@ func (c *KVCachedFile[K, V]) Get(key K) (*V, error) {
 	return value, nil
 }
 
-func (c *KVCachedFile[K, V]) Set(key K, value V) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return c.handleCacheSet(&key, &value, true)
-}
-
-// Has checks if a key exists in the cache, the pending writes, or the
-// underlying file. Unlike Get, it does not load the value into the cache.
+// Has reports whether a value is stored for the given key. Unlike Get, it does
+// not load the value into the cache.
 func (c *KVCachedFile[K, V]) Has(key K) (bool, error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.writeErr != nil {
+		return false, c.writeErr
+	}
 	if _, inCache := c.cache.Get(key); inCache {
 		return true, nil
 	}
 	if _, inFlushBuffer := c.flushBuffer[key]; inFlushBuffer {
 		return true, nil
 	}
-	return c.file.Has(key)
+	for _, v := range slices.Backward(c.pending) {
+		if _, ok := v[key]; ok {
+			return true, nil
+		}
+	}
+	c.fileMu.Lock()
+	has, err := c.file.Has(key)
+	c.fileMu.Unlock()
+	return has, err
 }
 
+// Set stores a value for the given key.
+func (c *KVCachedFile[K, V]) Set(key K, value V) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.writeErr != nil {
+		return c.writeErr
+	}
+	return c.handleCacheSet(&key, &value, true)
+}
+
+// SetBatch stores multiple key-value pairs.
 func (c *KVCachedFile[K, V]) SetBatch(entries map[K]V) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.writeErr != nil {
+		return c.writeErr
+	}
 
 	for key, value := range entries {
 		if err := c.handleCacheSet(&key, &value, true); err != nil {
@@ -118,49 +183,69 @@ func (c *KVCachedFile[K, V]) SetBatch(entries map[K]V) error {
 	return nil
 }
 
-// Flush writes all pending (dirty) key-value pairs to the disk.
+// Flush persists all buffered writes to disk before returning.
 func (c *KVCachedFile[K, V]) Flush() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return c.flushLocked()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.drainLocked()
 }
 
 func (c *KVCachedFile[K, V]) FileSize() (uint64, error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return c.file.FileSize()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
+	c.fileMu.Lock()
+	size, err := c.file.FileSize()
+	c.fileMu.Unlock()
+	return size, err
 }
 
-// Iterate returns an iterator over all key-value pairs handled by the
-// KVCachedFile. Any pending writes are flushed to disk first so that the
-// underlying file iterator observes a complete, up-to-date view.
+// Iterate returns an iterator over all stored key-value pairs.
 func (c *KVCachedFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	// Flush any pending writes to ensure the underlying file is up-to-date.
-	if err := c.flushLocked(); err != nil {
+	// Flush any pending writes (and wait for in-flight ones) so the underlying
+	// file is up-to-date before iterating.
+	if err := c.drainLocked(); err != nil {
 		return nil, err
 	}
 
-	// After flushing, every key/value pair lives on disk, so we can
-	// delegate to the underlying file's iterator.
-	return c.file.Iterate()
+	// After draining, every key/value pair lives on disk, so we can delegate
+	// to the underlying file's iterator.
+	c.fileMu.Lock()
+	seq, err := c.file.Iterate()
+	c.fileMu.Unlock()
+	return seq, err
 }
 
 func (c *KVCachedFile[K, V]) Close() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	if err := c.flushLocked(); err != nil {
+	c.mu.Lock()
+	err := c.drainLocked()
+	c.mu.Unlock()
+
+	// Stop the background writer regardless of whether the drain succeeded, so
+	// its goroutine never outlives the cached file.
+	c.shutdownWriter()
+
+	if err != nil {
 		return err
 	}
+	// The writer has stopped, so fileMu is uncontended here; it is still taken to
+	// keep "every file access happens under fileMu" a true invariant.
+	c.fileMu.Lock()
+	defer c.fileMu.Unlock()
 	return c.file.Close()
 }
 
 func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.fileMu.Lock()
 	fileFootprint := c.file.GetMemoryFootprint()
+	c.fileMu.Unlock()
 	valueSize := func(v V) uintptr {
 		switch vv := any(v).(type) {
 		case []byte:
@@ -171,59 +256,148 @@ func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 			return uintptr(unsafe.Sizeof(v))
 		}
 	}
-	mf := c.cache.GetDynamicMemoryFootprint(valueSize)
-	var sizeValues uintptr
+	cacheFootprint := c.cache.GetDynamicMemoryFootprint(valueSize)
+	var flushBufferSize uintptr
 	for k, v := range c.flushBuffer {
-		sizeValues += unsafe.Sizeof(k) + valueSize(v)
+		flushBufferSize += unsafe.Sizeof(k) + valueSize(v)
+	}
+	var pendingSize uintptr
+	for _, buf := range c.pending {
+		for k, v := range buf {
+			pendingSize += unsafe.Sizeof(k) + valueSize(v)
+		}
 	}
 	var dirtySize uintptr
 	for k := range c.dirty {
 		dirtySize += unsafe.Sizeof(k) + unsafe.Sizeof(true)
 	}
-	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + dirtySize + mf.Total() + fileFootprint.Total())
+	var pending uintptr
+	for _, buf := range c.pending {
+		pending += unsafe.Sizeof(buf)
+	}
+	footprint := common.NewMemoryFootprint(unsafe.Sizeof(*c))
+	footprint.AddChild("file", fileFootprint)
+	footprint.AddChild("cache", cacheFootprint)
+	footprint.AddChild("flushBuffer", common.NewMemoryFootprint(flushBufferSize))
+	footprint.AddChild("pending", common.NewMemoryFootprint(pendingSize+pending))
+	footprint.AddChild("dirty", common.NewMemoryFootprint(dirtySize))
+	return footprint
 }
 
-// flushLocked moves all dirty cache entries into the flush buffer and then
-// writes the buffer to the underlying file. Clean cache entries are left in
-// place so that they are not re-written to disk. This is intended to be
-// called with the mutex locked.
-func (c *KVCachedFile[K, V]) flushLocked() error {
+// drainLocked persists all buffered writes and waits for them to complete,
+// returning the sticky write error if any. The caller must hold c.mu.
+func (c *KVCachedFile[K, V]) drainLocked() error {
+	if c.writeErr != nil {
+		return c.writeErr
+	}
 	c.cache.Iterate(func(key K, value V) bool {
 		if _, isDirty := c.dirty[key]; isDirty {
 			c.flushBuffer[key] = value
 		}
 		return true
 	})
-
-	return c.flushPending()
+	c.enqueueCurrentBufferLocked()
+	for len(c.pending) > 0 && c.writeErr == nil {
+		c.cond.Wait()
+	}
+	return c.writeErr
 }
 
-// flushPending empties the flushBuffer by writing its contents to the
-// underlying file via SetBatch and then calling Flush on it. Keys that have
-// been persisted are removed from the dirty set. This is intended to be
-// called with the mutex locked.
-func (c *KVCachedFile[K, V]) flushPending() error {
+// enqueueCurrentBufferLocked hands the current flush buffer to the background
+// writer and starts a fresh one. The caller must hold c.mu.
+func (c *KVCachedFile[K, V]) enqueueCurrentBufferLocked() {
 	if len(c.flushBuffer) == 0 {
-		return nil
+		return
 	}
-
-	if err := c.file.SetBatch(c.flushBuffer); err != nil {
-		return err
+	// Block while the queue is full to bound memory (back-pressure).
+	for len(c.pending) >= c.maxPendingFlushes && c.writeErr == nil && !c.closed {
+		c.cond.Wait()
 	}
-	if err := c.file.Flush(); err != nil {
-		return err
+	if c.writeErr != nil || c.closed {
+		return
 	}
+	// The buffered values are now committed to the background writer and will
+	// be persisted, so mark them clean immediately. A subsequent Set of any of
+	// these keys re-dirties it and is tracked in a later buffer; because
+	// buffers are written in FIFO order, the newer value wins on disk and no
+	// update is lost. (Clearing after the write completes instead would let a
+	// re-Set-while-in-flight be wrongly marked clean and dropped.)
 	for k := range c.flushBuffer {
 		delete(c.dirty, k)
 	}
+	c.pending = append(c.pending, c.flushBuffer)
 	c.flushBuffer = make(map[K]V)
-	return nil
+	c.cond.Broadcast()
 }
 
-// handleCacheSet caches the given key/value pair, marking it dirty. If the
-// insertion evicts another entry from the cache, that entry is moved into the
-// flush buffer; when the buffer reaches the flush threshold the pending writes
-// are persisted to the underlying file.
+// flushWorker is the background goroutine that persists queued buffers to disk
+// in FIFO order. On a write error it records the error as terminal and parks
+// until the file is closed, retaining the unwritten buffers.
+func (c *KVCachedFile[K, V]) flushWorker() {
+	defer close(c.writerDone)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for {
+		for len(c.pending) == 0 && !c.closed {
+			c.cond.Wait()
+		}
+		if c.closed {
+			return
+		}
+		if c.writeErr != nil {
+			// Terminal error: keep the pending buffers readable and park
+			// until Close wakes us.
+			c.cond.Wait()
+			continue
+		}
+
+		// Peek the oldest buffer but leave it in the queue so concurrent
+		// readers can still find its entries while it is being written.
+		buf := c.pending[0]
+		c.mu.Unlock()
+		err := c.writeBuffer(buf)
+		c.mu.Lock()
+
+		if err != nil {
+			c.writeErr = err
+			c.cond.Broadcast()
+			continue
+		}
+		// The dirty flags for these keys were already cleared when the buffer
+		// was sealed, so the writer only needs to drop the buffer from the
+		// queue.
+		c.pending = c.pending[1:]
+		c.cond.Broadcast()
+	}
+}
+
+// writeBuffer persists a single buffer to the underlying file. It is called
+// without holding c.mu so in-memory foreground operations are not blocked on
+// disk I/O; it holds fileMu instead, serializing against foreground operations
+// that reach the file (see the fileMu field).
+func (c *KVCachedFile[K, V]) writeBuffer(buf map[K]V) error {
+	c.fileMu.Lock()
+	defer c.fileMu.Unlock()
+	if err := c.file.SetBatch(buf); err != nil {
+		return err
+	}
+	return c.file.Flush()
+}
+
+// shutdownWriter stops the background writer and waits for it to exit. It is
+// idempotent and performs no file I/O.
+func (c *KVCachedFile[K, V]) shutdownWriter() {
+	c.shutdownOnce.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		c.cond.Broadcast()
+		c.mu.Unlock()
+		<-c.writerDone
+	})
+}
+
+// handleCacheSet inserts a key-value pair into the cache, optionally marking it
+// dirty. The caller must hold c.mu.
 func (c *KVCachedFile[K, V]) handleCacheSet(key *K, value *V, dirty bool) error {
 	if key == nil || value == nil {
 		return nil // No-op
@@ -231,12 +405,14 @@ func (c *KVCachedFile[K, V]) handleCacheSet(key *K, value *V, dirty bool) error 
 	if dirty {
 		c.dirty[*key] = true
 	}
+	// An evicted dirty entry moves into the flush buffer; reaching the
+	// threshold seals the buffer for the background writer.
 	evictedKey, evictedValue, evicted := c.cache.Set(*key, *value)
 	if evicted {
 		if _, isDirty := c.dirty[evictedKey]; isDirty {
 			c.flushBuffer[evictedKey] = evictedValue
 			if len(c.flushBuffer) >= c.flushBufferThreshold {
-				return c.flushPending()
+				c.enqueueCurrentBufferLocked()
 			}
 		}
 	}
