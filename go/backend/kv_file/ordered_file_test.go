@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -155,6 +156,20 @@ func TestOrderedFile_Get_ReadIsBoundedToSingleRecord(t *testing.T) {
 	require.ErrorIs(err, io.ErrUnexpectedEOF)
 }
 
+func TestOrderedFile_Get_ReturnsZeroForNonInitializedKeys(t *testing.T) {
+	require := require.New(t)
+	f, _ := openTestOrderedFile(t)
+
+	require.NoError(f.Set(1000, 42))
+
+	for key := range uint64(1000) {
+		got, err := f.Get(key)
+		require.NoError(err)
+		require.NotNil(got)
+		require.EqualValues(0, *got, "key %d", key)
+	}
+}
+
 func TestOrderedFile_Has_ReportsKeysWithinAllocatedRange(t *testing.T) {
 	require := require.New(t)
 	f, _ := openTestOrderedFile(t)
@@ -286,10 +301,7 @@ func TestOrderedFile_Iterate_ReturnsAllStoredValuesIndexedByPosition(t *testing.
 	seq, err := f.Iterate()
 	require.NoError(err)
 
-	all := map[uint64]uint64{}
-	for k, v := range seq {
-		all[k] = v
-	}
+	all := maps.Collect(seq)
 	require.Equal(map[uint64]uint64{0: 100, 1: 101, 2: 102}, all)
 }
 
@@ -355,6 +367,7 @@ func TestOrderedFile_Iterate_TerminatesWhenFileIsClosed(t *testing.T) {
 	// Close the file before consuming the iterator.
 	require.NoError(f.Close())
 
+	// TODO: Check that the iterator terminated because the file was closed, not because it reached the end of the file.
 	_, _, ok = next()
 	require.False(ok)
 }

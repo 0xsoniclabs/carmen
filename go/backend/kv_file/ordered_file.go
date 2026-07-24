@@ -43,6 +43,7 @@ type OrderedFile[V any] struct {
 
 // OpenOrderedFile opens an OrderedFile at the given path, creating the file if
 // it does not exist.
+// The key passed to `readValueFn` and `writeValueFn` is ignored, as the key is implicit in the file offset.
 func OpenOrderedFile[V any](path string, itemSize uint64, readValueFn readValueFn[uint64, V], writeValueFn writeValueFn[uint64, V]) (*OrderedFile[V], error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := os.WriteFile(path, []byte{}, 0600); err != nil {
@@ -110,15 +111,7 @@ func (o *OrderedFile[V]) Has(key uint64) (bool, error) {
 }
 
 func (o *OrderedFile[V]) Set(key uint64, value V) error {
-	o.mutex.Lock()
-	defer o.mutex.Unlock()
-
-	_, err := o.file.Seek(int64(key*o.itemSize), io.SeekStart)
-	if err != nil {
-		return err
-	}
-
-	return o.writeValueFn(o.file, key, value)
+	return o.SetBatch(map[uint64]V{key: value})
 }
 
 func (o *OrderedFile[V]) SetBatch(entries map[uint64]V) error {
