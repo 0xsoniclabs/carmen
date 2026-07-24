@@ -303,18 +303,6 @@ func (c *KVCachedFile[K, V]) drainLocked() error {
 	return c.writeErr
 }
 
-// waitForPendingFlushes blocks until the background writer has persisted every
-// queued buffer, returning the sticky write error if any. The caller must not
-// hold c.mu.
-func (c *KVCachedFile[K, V]) waitForPendingFlushes() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for len(c.pending) > 0 && c.writeErr == nil {
-		c.cond.Wait()
-	}
-	return c.writeErr
-}
-
 // enqueueCurrentBufferLocked hands the current flush buffer to the background
 // writer and starts a fresh one. The caller must hold c.mu.
 func (c *KVCachedFile[K, V]) enqueueCurrentBufferLocked() {
