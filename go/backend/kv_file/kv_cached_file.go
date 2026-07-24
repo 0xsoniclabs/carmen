@@ -256,14 +256,15 @@ func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 			return uintptr(unsafe.Sizeof(v))
 		}
 	}
-	mf := c.cache.GetDynamicMemoryFootprint(valueSize)
-	var sizeValues uintptr
+	cacheFootprint := c.cache.GetDynamicMemoryFootprint(valueSize)
+	var flushBufferSize uintptr
 	for k, v := range c.flushBuffer {
-		sizeValues += unsafe.Sizeof(k) + valueSize(v)
+		flushBufferSize += unsafe.Sizeof(k) + valueSize(v)
 	}
+	var pendingSize uintptr
 	for _, buf := range c.pending {
 		for k, v := range buf {
-			sizeValues += unsafe.Sizeof(k) + valueSize(v)
+			pendingSize += unsafe.Sizeof(k) + valueSize(v)
 		}
 	}
 	var dirtySize uintptr
@@ -274,7 +275,13 @@ func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
 	for _, buf := range c.pending {
 		pending += unsafe.Sizeof(buf)
 	}
-	return common.NewMemoryFootprint(unsafe.Sizeof(*c) + sizeValues + dirtySize + pending + mf.Total() + fileFootprint.Total())
+	footprint := common.NewMemoryFootprint(unsafe.Sizeof(*c))
+	footprint.AddChild("file", fileFootprint)
+	footprint.AddChild("cache", cacheFootprint)
+	footprint.AddChild("flushBuffer", common.NewMemoryFootprint(flushBufferSize))
+	footprint.AddChild("pending", common.NewMemoryFootprint(pendingSize+pending))
+	footprint.AddChild("dirty", common.NewMemoryFootprint(dirtySize))
+	return footprint
 }
 
 // drainLocked persists all buffered writes and waits for them to complete,
