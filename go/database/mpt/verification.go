@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"path/filepath"
 	"sort"
 
@@ -44,6 +45,18 @@ func (NilVerificationObserver) StartVerification()        {}
 func (NilVerificationObserver) Progress(msg string)       {}
 func (NilVerificationObserver) EndVerification(res error) {}
 
+// rootsFromSlice adapts a slice of roots to the iterator type expected by
+// the verification API.
+func rootsFromSlice(roots []Root) iter.Seq2[uint64, Root] {
+	return func(yield func(uint64, Root) bool) {
+		for i, r := range roots {
+			if !yield(uint64(i), r) {
+				return
+			}
+		}
+	}
+}
+
 // VerifyMptState runs validation checks on the forest and code hashes
 // stored in the given directory.
 // Forest checks:
@@ -57,7 +70,7 @@ func (NilVerificationObserver) EndVerification(res error) {}
 //     - all byte-codes within the code file matches their hashed representation in accounts
 //  2. Non-fatal checks
 //     - there are no extra Code Hashes not referenced by any account
-func VerifyMptState(ctx context.Context, directory string, config MptConfig, roots []Root, observer VerificationObserver) (res error) {
+func VerifyMptState(ctx context.Context, directory string, config MptConfig, roots iter.Seq2[uint64, Root], observer VerificationObserver) (res error) {
 	if observer == nil {
 		observer = NilVerificationObserver{}
 	}
@@ -93,7 +106,7 @@ func VerifyMptState(ctx context.Context, directory string, config MptConfig, roo
 //   - all required files are present and can be read
 //   - all referenced nodes are present
 //   - all hashes are consistent
-func verifyFileForest(ctx context.Context, directory string, config MptConfig, roots []Root, observer VerificationObserver) (res error) {
+func verifyFileForest(ctx context.Context, directory string, config MptConfig, roots iter.Seq2[uint64, Root], observer VerificationObserver) (res error) {
 	if observer == nil {
 		observer = NilVerificationObserver{}
 	}
@@ -113,7 +126,7 @@ func verifyFileForest(ctx context.Context, directory string, config MptConfig, r
 	return verifyForest(directory, config, roots, source, observer)
 }
 
-func verifyForest(directory string, config MptConfig, roots []Root, source *verificationNodeSource, observer VerificationObserver) (res error) {
+func verifyForest(directory string, config MptConfig, roots iter.Seq2[uint64, Root], source *verificationNodeSource, observer VerificationObserver) (res error) {
 	// ------------------------- Meta-Data Checks -----------------------------
 
 	observer.Progress(fmt.Sprintf("Checking forest stored in %s ...", directory))
@@ -198,7 +211,7 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 	// Check roots for Archive node
 	if source.getConfig().HashStorageLocation == HashStoredWithNode {
 		// Check hashes of roots.
-		observer.Progress(fmt.Sprintf("Checking %d root hashes ...", len(roots)))
+		observer.Progress("Checking root hashes ...")
 		refIds := newNodeIds()
 		for _, root := range roots {
 			refIds.Put(root.NodeRef.id)
@@ -309,7 +322,7 @@ func verifyHashes[N any](
 	stock stock.Stock[uint64, N],
 	ids stock.IndexSet[uint64],
 	hashOfEmptyNode common.Hash,
-	roots []Root,
+	roots iter.Seq2[uint64, Root],
 	observer VerificationObserver,
 	hash func(*N) (common.Hash, error),
 	readHash func(*N) (common.Hash, bool),
@@ -535,7 +548,7 @@ func verifyHashesStoredWithParents[N any](
 	source *verificationNodeSource,
 	stock stock.Stock[uint64, N],
 	ids stock.IndexSet[uint64],
-	roots []Root,
+	roots iter.Seq2[uint64, Root],
 	observer VerificationObserver,
 	hash func(*N) (common.Hash, error),
 	isNodeType func(NodeId) bool,

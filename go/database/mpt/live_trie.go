@@ -86,10 +86,10 @@ func VerifyFileLiveTrie(ctx context.Context, directory string, config MptConfig,
 	if !exists {
 		return nil
 	}
-	return verifyFileForest(ctx, directory, config, []Root{{
+	return verifyFileForest(ctx, directory, config, rootsFromSlice([]Root{{
 		NewNodeReference(metadata.RootNode),
 		metadata.RootHash,
-	}}, observer)
+	}}), observer)
 }
 
 func makeTrie(
