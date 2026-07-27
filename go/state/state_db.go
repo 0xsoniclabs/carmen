@@ -552,10 +552,10 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 			})
 
 			// Clear cached values.
-			value.stored = common.Value{}
-			value.storedKnown = true
-			value.committed = common.Value{}
-			value.committedKnown = true
+			// value.stored = common.Value{}
+			// value.storedKnown = true
+			// value.committed = common.Value{}
+			// value.committedKnown = true
 			value.current = common.Value{}
 		}
 	})
@@ -1179,10 +1179,10 @@ func (s *stateDB) EndTransaction() {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					value.stored = common.Value{}
-					value.storedKnown = true
-					value.committed = common.Value{}
-					value.committedKnown = true
+					// value.stored = common.Value{}
+					// value.storedKnown = true
+					// value.committed = common.Value{}
+					// value.committedKnown = true
 					value.current = common.Value{}
 
 					s.undo = append(s.undo, func() {
