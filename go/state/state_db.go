@@ -791,6 +791,7 @@ func (s *stateDB) GetCommittedState(addr common.Address, key common.Key) common.
 }
 
 func (s *stateDB) loadStoredState(sid slotId, val *slotValue) common.Value {
+	fmt.Fprintf(os.Stdout, "Loading storage state for address %x and key %x\n", sid.addr[:], sid.key[:])
 	if clearingState, found := s.clearedAccounts[sid.addr]; found && (clearingState == cleared || clearingState == clearedAndTainted) {
 		// If the account has been cleared in a committed transaction within the current block,
 		// the effects are not yet updated in the data base. So it must not be read from the DB
@@ -844,6 +845,7 @@ func (s *stateDB) GetState(addr common.Address, key common.Key) common.Value {
 }
 
 func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Value) {
+	fmt.Fprintf(os.Stdout, "Setting slot for address %x and key %x to value %x\n", addr[:], key[:], value[:])
 	if s.createAccountIfNotExists(addr) {
 		// The account was implicitly created and may have to be removed at the end of the block.
 		s.emptyCandidates = append(s.emptyCandidates, addr)
