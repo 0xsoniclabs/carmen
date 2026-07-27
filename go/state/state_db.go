@@ -522,6 +522,7 @@ func (s *stateDB) Exist(addr common.Address) bool {
 }
 
 func (s *stateDB) CreateAccount(addr common.Address) {
+	fmt.Fprintf(os.Stdout, "Calling create account on %x\n", addr[:])
 	s.setNonceInternal(addr, 0)
 	s.setCodeInternal(addr, []byte{})
 
@@ -543,6 +544,7 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	// Reset storage of the account, to purge any potential former values.
 	s.data.ForEach(func(slot slotId, value *slotValue) {
 		if slot.addr == addr {
+			fmt.Fprintf(os.Stdout, "Resetting storage for address %x and slot %x\n", addr[:], slot.key[:])
 			// Support rollback of account creation.
 			backup := *value
 			s.undo = append(s.undo, func() {
