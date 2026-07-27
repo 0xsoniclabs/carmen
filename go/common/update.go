@@ -170,41 +170,60 @@ func (u *Update) String() string {
 	if u.IsEmpty() {
 		return "Update{}"
 	}
+
+	deletedAccounts := append([]Address(nil), u.DeletedAccounts...)
+	sort.Slice(deletedAccounts, func(i, j int) bool { return accountLess(&deletedAccounts[i], &deletedAccounts[j]) })
+
+	createdAccounts := append([]Address(nil), u.CreatedAccounts...)
+	sort.Slice(createdAccounts, func(i, j int) bool { return accountLess(&createdAccounts[i], &createdAccounts[j]) })
+
+	balances := append([]BalanceUpdate(nil), u.Balances...)
+	sort.Slice(balances, func(i, j int) bool { return balanceLess(&balances[i], &balances[j]) })
+
+	nonces := append([]NonceUpdate(nil), u.Nonces...)
+	sort.Slice(nonces, func(i, j int) bool { return nonceLess(&nonces[i], &nonces[j]) })
+
+	codes := append([]CodeUpdate(nil), u.Codes...)
+	sort.Slice(codes, func(i, j int) bool { return codeLess(&codes[i], &codes[j]) })
+
+	slots := append([]SlotUpdate(nil), u.Slots...)
+	sort.Slice(slots, func(i, j int) bool { return slotLess(&slots[i], &slots[j]) })
+
 	builder := strings.Builder{}
 	builder.WriteString("Update{\n")
-	if len(u.DeletedAccounts) > 0 {
+	if len(deletedAccounts) > 0 {
 		builder.WriteString("\tDeleted Accounts:\n")
-		for _, account := range u.DeletedAccounts {
+		for _, account := range deletedAccounts {
 			builder.WriteString(fmt.Sprintf("\t\t%v\n", account))
 		}
 	}
-	if len(u.CreatedAccounts) > 0 {
+	if len(createdAccounts) > 0 {
 		builder.WriteString("\tCreated Accounts:\n")
-		for _, account := range u.CreatedAccounts {
+		for _, account := range createdAccounts {
 			builder.WriteString(fmt.Sprintf("\t\t%v\n", account))
 		}
 	}
-	if len(u.Balances) > 0 {
+	if len(balances) > 0 {
 		builder.WriteString("\tBalances:\n")
-		for _, change := range u.Balances {
+		for _, change := range balances {
 			builder.WriteString(fmt.Sprintf("\t\t%v: %v\n", change.Account, change.Balance))
 		}
 	}
-	if len(u.Nonces) > 0 {
+	if len(nonces) > 0 {
 		builder.WriteString("\tNonces:\n")
-		for _, change := range u.Nonces {
+		for _, change := range nonces {
 			builder.WriteString(fmt.Sprintf("\t\t%v: %d\n", change.Account, change.Nonce.ToUint64()))
 		}
 	}
-	if len(u.Codes) > 0 {
+	if len(codes) > 0 {
 		builder.WriteString("\tCodes:\n")
-		for _, change := range u.Codes {
+		for _, change := range codes {
 			builder.WriteString(fmt.Sprintf("\t\t%v: %x\n", change.Account, Keccak256(change.Code)))
 		}
 	}
-	if len(u.Slots) > 0 {
+	if len(slots) > 0 {
 		builder.WriteString("\tSlots:\n")
-		for _, change := range u.Slots {
+		for _, change := range slots {
 			builder.WriteString(fmt.Sprintf("\t\t%v: %v -> %x\n", change.Account, change.Key, change.Value))
 		}
 	}
