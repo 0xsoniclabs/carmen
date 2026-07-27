@@ -544,7 +544,7 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	// Reset storage of the account, to purge any potential former values.
 	s.data.ForEach(func(slot slotId, value *slotValue) {
 		if slot.addr == addr {
-			fmt.Fprintf(os.Stdout, "Resetting storage for address %x and slot %x\n", addr[:], slot.key[:])
+			fmt.Fprintf(os.Stdout, "Resetting storage for address %x and slot %x. Old Value: %x\n", addr[:], slot.key[:], value.current[:])
 			// Support rollback of account creation.
 			backup := *value
 			s.undo = append(s.undo, func() {
@@ -822,6 +822,7 @@ func (s *stateDB) loadStoredState(sid slotId, val *slotValue) common.Value {
 		val.committed, val.committedKnown = stored.value, true
 		val.stored, val.storedKnown = stored.value, true
 	} else {
+		fmt.Fprintf(os.Stdout, "Found value %x\n", stored.value[:])
 		s.data.Put(sid, &slotValue{
 			stored:         stored.value,
 			committed:      stored.value,
@@ -837,7 +838,7 @@ func (s *stateDB) GetState(addr common.Address, key common.Key) common.Value {
 	// Check whether the slot is already cached/modified.
 	sid := slotId{addr, key}
 	if val, exists := s.data.Get(sid); exists {
-		fmt.Fprintf(os.Stdout, "Getting slot for address %x and key %x from cache\n", addr[:], key[:])
+		fmt.Fprintf(os.Stdout, "Getting slot for address %x and key %x from cache. Value: %x\n", addr[:], key[:], val.current[:])
 		return val.current
 	}
 	// Fetch missing slot values (will also populate the cache).
