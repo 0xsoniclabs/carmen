@@ -834,6 +834,7 @@ func (s *stateDB) GetState(addr common.Address, key common.Key) common.Value {
 	// Check whether the slot is already cached/modified.
 	sid := slotId{addr, key}
 	if val, exists := s.data.Get(sid); exists {
+		fmt.Fprintf(os.Stdout, "Getting slot for address %x and key %x from cache", addr, key)
 		return val.current
 	}
 	// Fetch missing slot values (will also populate the cache).
