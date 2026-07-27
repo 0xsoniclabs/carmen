@@ -77,7 +77,10 @@ func accountInfo(context *cli.Context) error {
 		return nil
 	}
 
-	fmt.Printf("\tAccount Info:      %v\n", accountInfo)
+	fmt.Printf("\tAccount Info:\n")
+	fmt.Printf("\t\tNonce: %d\n", accountInfo.Nonce)
+	fmt.Printf("\t\tBalance: %d\n", accountInfo.Balance)
+	fmt.Printf("\t\tCodeHash: %x\n", accountInfo.CodeHash[:])
 
 	// collect storage values
 	storage := map[common.Key]common.Value{}
