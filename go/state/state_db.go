@@ -1344,7 +1344,7 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 		return nil
 	}
 
-	if block == 4803542 {
+	if block == 4913001 {
 		fmt.Fprintf(os.Stdout, "%s", update.String())
 	}
 
