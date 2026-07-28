@@ -401,6 +401,13 @@ type slotValue struct {
 	storedKnown bool
 	// Whether the committed value is known.
 	committedKnown bool
+	// Set when the storage of the owning account is cleared during the
+	// current block. From that point on the stored value can no longer
+	// serve as the write-back baseline at the end of the block: the DB may
+	// or may not be reset by an account-level delete/create in the block
+	// update, so the slot must be written back explicitly, even if its
+	// final value happens to match the stored one.
+	clearedStorage bool
 }
 
 // codeValue maintains the code associated to a given address.
@@ -551,23 +558,16 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 				*value = backup
 			})
 
-			// Clear cached values.
-			//
-			// storedKnown is set to false so the EndBlock writeback loop
-			// (`!storedKnown || stored != current`) unconditionally emits an
-			// explicit slot-update for every cached slot of the cleared account,
-			// including slots whose post-clear value happens to equal the
-			// pre-clear stored value.
-			//
-			// committed/committedKnown are reset so GetCommittedState is
-			// consistent with the "cleared account => 0" rule in
-			// loadStoredState; otherwise the EVM sees a stale "original" value
-			// in EIP-2200 gas metering and downstream balances drift.
-			value.stored = common.Value{}
-			value.storedKnown = false
+			// Clear cached values. The stored value is deliberately left
+			// untouched: it keeps describing the value currently in the DB,
+			// which is not affected by the clearing until the block update
+			// is applied. The committed value becomes zero, consistent with
+			// the "cleared account => zero" rule enforced by loadStoredState
+			// for the remainder of the block.
 			value.committed = common.Value{}
 			value.committedKnown = true
 			value.current = common.Value{}
+			value.clearedStorage = true
 		}
 	})
 
@@ -1193,23 +1193,16 @@ func (s *stateDB) EndTransaction() {
 			s.data.ForEach(func(slot slotId, value *slotValue) {
 				if slot.addr == addr {
 					oldValue := *value
-					// Clear cached values.
-					//
-					// storedKnown is set to false so the EndBlock writeback loop
-					// (`!storedKnown || stored != current`) unconditionally emits
-					// an explicit slot-update for every cached slot of the cleared
-					// account, including slots whose post-clear value happens to
-					// equal the pre-clear stored value.
-					//
-					// committed/committedKnown are reset so GetCommittedState is
-					// consistent with the "cleared account => 0" rule in
-					// loadStoredState; otherwise the EVM sees a stale "original"
-					// value in EIP-2200 gas metering and downstream balances drift.
-					value.stored = common.Value{}
-					value.storedKnown = false
+					// Clear cached values. The stored value is deliberately left
+					// untouched: it keeps describing the value currently in the DB,
+					// which is not affected by the clearing until the block update
+					// is applied. The committed value becomes zero, consistent with
+					// the "cleared account => zero" rule enforced by loadStoredState
+					// for the remainder of the block.
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
+					value.clearedStorage = true
 
 					s.undo = append(s.undo, func() {
 						*value = oldValue
@@ -1347,9 +1340,17 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 		}
 	}
 
-	// Update storage values in state DB
+	// Update storage values in state DB. Slots of accounts whose storage
+	// was cleared during this block are written back unconditionally, since
+	// the stored value no longer describes the state the DB will be in when
+	// the slot updates of this block update are applied. Accounts that do
+	// not exist at the end of the block and never existed in the DB are
+	// skipped, since there is no stored state to be updated for them.
 	s.data.ForEach(func(slot slotId, value *slotValue) {
-		if !value.storedKnown || value.stored != value.current {
+		if _, found := nonExistingAccounts[slot.addr]; found {
+			return
+		}
+		if value.clearedStorage || !value.storedKnown || value.stored != value.current {
 			update.AppendSlotUpdate(slot.addr, slot.key, value.current)
 			s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
 		}
