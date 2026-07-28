@@ -12,6 +12,7 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -25,12 +26,21 @@ import (
 var AccountInfo = cli.Command{
 	Action:    diagnostics.AddPerformanceDiagnosticsAction(accountInfo, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "account-info",
-	Flags:     []cli.Flag{&blockHeightFlag},
+	Flags:     []cli.Flag{&blockHeightFlag, &sortChunkSizeFlag},
 	Usage:     "lists information about a given account",
-	ArgsUsage: "[--block-height <height>] <directory> <account>",
+	ArgsUsage: "[--block-height <height>] [--sort-chunk-size <n>] <directory> <account>",
 }
 
-func accountInfo(context *cli.Context) error {
+var sortChunkSizeFlag = cli.Uint64Flag{
+	Name: "sort-chunk-size",
+	Usage: "if greater than zero, storage slots are printed in sorted chunks of " +
+		"this size instead of being buffered and sorted as a whole (bounds memory " +
+		"for contracts with very large storage; chunks are individually sorted, " +
+		"but the overall stream is not globally sorted)",
+	Value: 0,
+}
+
+func accountInfo(context *cli.Context) (retErr error) {
 	if context.Args().Len() != 2 {
 		return fmt.Errorf("expected 2 positional arguments, got %d; usage: %s",
 			context.Args().Len(), context.Command.ArgsUsage)
@@ -53,12 +63,10 @@ func accountInfo(context *cli.Context) error {
 		return err
 	}
 	defer func() {
-		if err := trie.Close(); err != nil {
-			fmt.Printf("\tError closing MPT: %v\n", err)
-		}
+		retErr = errors.Join(retErr, trie.Close())
 	}()
 
-	accountInfo, exists, err := trie.GetAccountInfo(addr)
+	info, exists, err := trie.GetAccountInfo(addr)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve account info: %w", err)
 	}
@@ -67,35 +75,56 @@ func accountInfo(context *cli.Context) error {
 		return nil
 	}
 	fmt.Printf("\tAccount Info for address %s:\n", addr.String())
-	fmt.Printf("\t\tNonce:           %d\n", accountInfo.Nonce.ToUint64())
-	fmt.Printf("\t\tBalance:         %s\n", accountInfo.Balance.String())
-	fmt.Printf("\t\tCode Hash:       0x%x\n", accountInfo.CodeHash[:])
+	fmt.Printf("\t\tNonce:           %d\n", info.Nonce.ToUint64())
+	fmt.Printf("\t\tBalance:         %s\n", info.Balance.String())
+	fmt.Printf("\t\tCode Hash:       0x%x\n", info.CodeHash[:])
+	fmt.Printf("\t\tStorage Values:\n")
 
-	// Collect the storage values.
-	storage := map[common.Key]common.Value{}
-	err = trie.VisitAccountStorage(addr, mpt.ReadAccess{}, mpt.MakeVisitor(func(node mpt.Node, info mpt.NodeInfo) mpt.VisitResponse {
-		if n, ok := node.(*mpt.ValueNode); ok {
-			storage[n.Key()] = n.Value()
+	// Collect the storage values. When --sort-chunk-size is set, the buffer is
+	// flushed (sorted and printed) every time it fills up, and a warning is
+	// emitted at the first flush noting that the resulting stream is only
+	// sorted within each chunk. Otherwise all slots are buffered and sorted
+	// once as a whole.
+	chunkSize := context.Uint64(sortChunkSizeFlag.Name)
+	buffer := make(map[common.Key]common.Value)
+	chunked := false
+	flush := func() {
+		if len(buffer) == 0 {
+			return
+		}
+		if chunkSize > 0 && !chunked {
+			fmt.Printf("\t\t(storage exceeds --sort-chunk-size=%d; output is sorted per chunk, not globally)\n", chunkSize)
+			chunked = true
+		}
+		keys := make([]common.Key, 0, len(buffer))
+		for k := range buffer {
+			keys = append(keys, k)
+		}
+		slices.SortFunc(keys, func(a, b common.Key) int {
+			return a.Compare(&b)
+		})
+		for _, k := range keys {
+			v := buffer[k]
+			fmt.Printf("\t\t\t0x%s: 0x%x\n", k.String(), v[:])
+		}
+		clear(buffer)
+	}
+
+	err = trie.VisitAccountStorage(addr, mpt.ReadAccess{}, mpt.MakeVisitor(func(node mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {
+		n, ok := node.(*mpt.ValueNode)
+		if !ok {
+			return mpt.VisitResponseContinue
+		}
+		buffer[n.Key()] = n.Value()
+		if chunkSize > 0 && uint64(len(buffer)) >= chunkSize {
+			flush()
 		}
 		return mpt.VisitResponseContinue
 	}))
 	if err != nil {
 		return fmt.Errorf("failed to visit account storage: %w", err)
 	}
-
-	keys := make([]common.Key, 0, len(storage))
-	for k := range storage {
-		keys = append(keys, k)
-	}
-	slices.SortFunc(keys, func(a, b common.Key) int {
-		return a.Compare(&b)
-	})
-
-	fmt.Printf("\t\tStorage Values:\n")
-	for _, k := range keys {
-		v := storage[k]
-		fmt.Printf("\t\t\t0x%s: 0x%x\n", k.String(), v[:])
-	}
+	flush()
 
 	return nil
 }
@@ -103,11 +132,17 @@ func accountInfo(context *cli.Context) error {
 // openTrie opens either the live or the archive trie in the given directory,
 // depending on the MPT mode and whether the --block-height flag is set. When
 // the archive is opened without an explicit block height, the archive's head
-// block is used.
+// block is used. Using --block-height against a live (mutable) MPT is
+// rejected, since historical state is only available in an archive.
 func openTrie(context *cli.Context, dir string, mptInfo io.MptInfo) (*LiveOrArchiveTrie, error) {
 	blockHeightSet := context.IsSet(blockHeightFlag.Name)
 
-	if mptInfo.Mode == mpt.Mutable && !blockHeightSet {
+	if mptInfo.Mode == mpt.Mutable {
+		if blockHeightSet {
+			return nil, fmt.Errorf(
+				"--block-height is not supported for a live (mutable) MPT at %q; "+
+					"point at an archive directory to query historical state", dir)
+		}
 		fmt.Printf("\tOpening live MPT\n")
 		liveTrie, err := mpt.OpenFileLiveTrie(dir, mptInfo.Config, mpt.NodeCacheConfig{})
 		if err != nil {
