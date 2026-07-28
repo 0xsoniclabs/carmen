@@ -552,12 +552,19 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 			})
 
 			// Clear cached values.
-			// Note: stored/storedKnown are intentionally left as-is so the
-			// EndBlock writeback loop emits an explicit slot-update to zero.
-			// committed/committedKnown must be reset to keep GetCommittedState
-			// consistent with the "cleared account => 0" rule in loadStoredState;
-			// otherwise the EVM sees a stale "original" value in EIP-2200 gas
-			// metering and downstream balances drift.
+			//
+			// storedKnown is set to false so the EndBlock writeback loop
+			// (`!storedKnown || stored != current`) unconditionally emits an
+			// explicit slot-update for every cached slot of the cleared account,
+			// including slots whose post-clear value happens to equal the
+			// pre-clear stored value.
+			//
+			// committed/committedKnown are reset so GetCommittedState is
+			// consistent with the "cleared account => 0" rule in
+			// loadStoredState; otherwise the EVM sees a stale "original" value
+			// in EIP-2200 gas metering and downstream balances drift.
+			value.stored = common.Value{}
+			value.storedKnown = false
 			value.committed = common.Value{}
 			value.committedKnown = true
 			value.current = common.Value{}
@@ -1187,13 +1194,19 @@ func (s *stateDB) EndTransaction() {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					// Note: stored/storedKnown are intentionally left as-is so the
-					// EndBlock writeback loop emits an explicit slot-update to zero.
-					// committed/committedKnown must be reset to keep
-					// GetCommittedState consistent with the "cleared account => 0"
-					// rule in loadStoredState; otherwise the EVM sees a stale
-					// "original" value in EIP-2200 gas metering and downstream
-					// balances drift.
+					//
+					// storedKnown is set to false so the EndBlock writeback loop
+					// (`!storedKnown || stored != current`) unconditionally emits
+					// an explicit slot-update for every cached slot of the cleared
+					// account, including slots whose post-clear value happens to
+					// equal the pre-clear stored value.
+					//
+					// committed/committedKnown are reset so GetCommittedState is
+					// consistent with the "cleared account => 0" rule in
+					// loadStoredState; otherwise the EVM sees a stale "original"
+					// value in EIP-2200 gas metering and downstream balances drift.
+					value.stored = common.Value{}
+					value.storedKnown = false
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
