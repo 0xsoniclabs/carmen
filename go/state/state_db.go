@@ -552,10 +552,14 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 			})
 
 			// Clear cached values.
-			// value.stored = common.Value{}
-			// value.storedKnown = true
-			// value.committed = common.Value{}
-			// value.committedKnown = true
+			// Note: stored/storedKnown are intentionally left as-is so the
+			// EndBlock writeback loop emits an explicit slot-update to zero.
+			// committed/committedKnown must be reset to keep GetCommittedState
+			// consistent with the "cleared account => 0" rule in loadStoredState;
+			// otherwise the EVM sees a stale "original" value in EIP-2200 gas
+			// metering and downstream balances drift.
+			value.committed = common.Value{}
+			value.committedKnown = true
 			value.current = common.Value{}
 		}
 	})
@@ -1183,10 +1187,15 @@ func (s *stateDB) EndTransaction() {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					// value.stored = common.Value{}
-					// value.storedKnown = true
-					// value.committed = common.Value{}
-					// value.committedKnown = true
+					// Note: stored/storedKnown are intentionally left as-is so the
+					// EndBlock writeback loop emits an explicit slot-update to zero.
+					// committed/committedKnown must be reset to keep
+					// GetCommittedState consistent with the "cleared account => 0"
+					// rule in loadStoredState; otherwise the EVM sees a stale
+					// "original" value in EIP-2200 gas metering and downstream
+					// balances drift.
+					value.committed = common.Value{}
+					value.committedKnown = true
 					value.current = common.Value{}
 
 					s.undo = append(s.undo, func() {
