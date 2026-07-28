@@ -399,6 +399,12 @@ type slotValue struct {
 	storedKnown bool
 	// Whether the committed value is known.
 	committedKnown bool
+	// Marks the current value as cleared: the storage of the owning account
+	// was cleared during this block, and no explicit value has been set for
+	// this slot since. A cleared slot reads as zero, and at the end of the
+	// block a zero is written to the DB if the DB is known to hold a
+	// non-zero value for it.
+	currentCleared bool
 }
 
 // codeValue maintains the code associated to a given address.
@@ -536,6 +542,8 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 	}
 
 	// Reset storage of the account, to purge any potential former values.
+	// The stored value is deliberately left untouched: it keeps describing
+	// the value currently present in the DB.
 	s.data.ForEach(func(slot slotId, value *slotValue) {
 		if slot.addr == addr {
 			// Support rollback of account creation.
@@ -545,11 +553,10 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 			})
 
 			// Clear cached values.
-			value.stored = common.Value{}
-			value.storedKnown = true
 			value.committed = common.Value{}
 			value.committedKnown = true
 			value.current = common.Value{}
+			value.currentCleared = true
 		}
 	})
 
@@ -836,12 +843,18 @@ func (s *stateDB) SetState(addr common.Address, key common.Key, value common.Val
 	}
 	sid := slotId{addr, key}
 	if entry, exists := s.data.Get(sid); exists {
-		if entry.current != value {
+		// A slot in the cleared state is updated by any set value, even
+		// zero; the explicit value is distinguishable from the cleared
+		// state and gets written to the DB at the end of the block.
+		if entry.current != value || entry.currentCleared {
 			oldValue := entry.current
+			oldCleared := entry.currentCleared
 			entry.current = value
+			entry.currentCleared = false
 			s.writtenSlots[entry] = true
 			s.undo = append(s.undo, func() {
 				entry.current = oldValue
+				entry.currentCleared = oldCleared
 			})
 		}
 	} else {
@@ -1157,16 +1170,19 @@ func (s *stateDB) EndTransaction() {
 			s.setNonceInternal(addr, 0)
 			s.setCodeInternal(addr, []byte{})
 
-			// Clear cached value states for the targeted account.
+			// Clear cached value states for the targeted account. The stored
+			// value is deliberately left untouched: it keeps describing the
+			// value currently present in the DB. Cached slot values
+			// transition into the cleared state, from which the end of the
+			// block writes a zero to the DB where needed.
 			s.data.ForEach(func(slot slotId, value *slotValue) {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					value.stored = common.Value{}
-					value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
+					value.currentCleared = true
 
 					s.undo = append(s.undo, func() {
 						*value = oldValue
@@ -1294,12 +1310,20 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 		}
 	}
 
-	// Update storage values in state DB
+	// Update storage values in state DB. Slots in the cleared state are
+	// written as zero if the DB is known to hold a non-zero value for them.
+	// All other slots are written if their current value differs from the
+	// value stored in the DB or the stored value is unknown.
 	s.data.ForEach(func(slot slotId, value *slotValue) {
-		if !value.storedKnown || value.stored != value.current {
-			update.AppendSlotUpdate(slot.addr, slot.key, value.current)
-			s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
+		if value.currentCleared {
+			if !value.storedKnown || value.stored == (common.Value{}) {
+				return
+			}
+		} else if value.storedKnown && value.stored == value.current {
+			return
 		}
+		update.AppendSlotUpdate(slot.addr, slot.key, value.current)
+		s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
 	})
 
 	// Update modified codes.
