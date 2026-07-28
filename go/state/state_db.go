@@ -753,6 +753,7 @@ func (s *stateDB) GetNonce(addr common.Address) uint64 {
 }
 
 func (s *stateDB) SetNonce(addr common.Address, nonce uint64) {
+	fmt.Fprintf(os.Stdout, "Setting nonce for address %x to %d\n", addr[:], nonce)
 	s.setNonceInternal(addr, nonce)
 	if s.createAccountIfNotExists(addr) && nonce == 0 {
 		s.emptyCandidates = append(s.emptyCandidates, addr)
@@ -761,7 +762,9 @@ func (s *stateDB) SetNonce(addr common.Address, nonce uint64) {
 
 func (s *stateDB) setNonceInternal(addr common.Address, nonce uint64) {
 	if val, exists := s.nonces[addr]; exists {
+		fmt.Fprintf(os.Stdout, "Nonce exists for address %x. Current: %d, New: %d\n", addr[:], val.current, nonce)
 		if val.current != nonce {
+			fmt.Fprintf(os.Stdout, "Nonce needs to be updated\n")
 			oldValue := val.current
 			val.current = nonce
 			s.undo = append(s.undo, func() {
@@ -769,6 +772,7 @@ func (s *stateDB) setNonceInternal(addr common.Address, nonce uint64) {
 			})
 		}
 	} else {
+		fmt.Fprintf(os.Stdout, "Nonce does not exist for address %x. Setting to %d\n", addr[:], nonce)
 		s.nonces[addr] = &nonceValue{
 			original: nil,
 			current:  nonce,
