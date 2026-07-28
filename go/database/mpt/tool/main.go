@@ -44,6 +44,7 @@ var (
 		&ImportArchiveCmd,
 		&ImportLiveAndArchiveCmd,
 		&Info,
+		&AccountInfo,
 		&InitArchive,
 		&Verify,
 		&VerifyProof,
