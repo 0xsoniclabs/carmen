@@ -162,7 +162,7 @@ func TestWriteReferencedCodes_WritesAllReferencedNonEmptyCodes(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(writeReferencedCodes(
 		context.Background(), NewLog(),
-		&exportableLiveTrie{db: db, directory: sourceDir}, &buf,
+		&exportableLiveTrie{db: db, directory: sourceDir}, &buf, t.TempDir(),
 	))
 
 	// createExampleLiveDB references two distinct non-empty codes:
@@ -181,7 +181,7 @@ func TestWriteReferencedCodes_PropagatesVisitError(t *testing.T) {
 	injected := errors.New("visit failed")
 	db.EXPECT().Visit(gomock.Any(), true).Return(injected)
 
-	err := writeReferencedCodes(context.Background(), NewLog(), db, io.Discard)
+	err := writeReferencedCodes(context.Background(), NewLog(), db, io.Discard, t.TempDir())
 	require.ErrorIs(err, injected)
 }
 
@@ -280,7 +280,7 @@ func exportExampleStateWithModification(t *testing.T, modify func(s *mpt.MptStat
 
 	// Export database to buffer.
 	var buffer bytes.Buffer
-	if err := Export(context.Background(), NewLog(), sourceDir, &buffer); err != nil {
+	if err := Export(context.Background(), NewLog(), sourceDir, &buffer, t.TempDir()); err != nil {
 		t.Fatalf("failed to export DB: %v", err)
 	}
 
@@ -400,7 +400,7 @@ func TestIO_ExportBlockFromArchive(t *testing.T) {
 	for i := 0; i < Blocks; i++ {
 		// Export live database from archive.
 		buffer := new(bytes.Buffer)
-		if err := ExportBlockFromArchive(context.Background(), NewLog(), sourceDir, buffer, uint64(i)); err != nil {
+		if err := ExportBlockFromArchive(context.Background(), NewLog(), sourceDir, buffer, uint64(i), t.TempDir()); err != nil {
 			t.Fatalf("failed to export Archive: %v", err)
 		}
 

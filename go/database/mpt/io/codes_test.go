@@ -17,6 +17,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -33,7 +34,7 @@ func TestWriteCodes_WritesCodesOrderedByHash(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	require.NoError(writeCodes(maps.All(codes), &buf))
+	require.NoError(writeCodes(maps.All(codes), &buf, t.TempDir()))
 
 	// Output must be ordered by hash regardless of iteration order.
 	want := [][]byte{
@@ -61,7 +62,7 @@ func TestWriteCodes_WritesNothingForEmptyIterator(t *testing.T) {
 	require := require.New(t)
 
 	var buf bytes.Buffer
-	require.NoError(writeCodes(maps.All(map[common.Hash][]byte{}), &buf))
+	require.NoError(writeCodes(maps.All(map[common.Hash][]byte{}), &buf, t.TempDir()))
 	require.Zero(buf.Len())
 }
 
@@ -81,35 +82,41 @@ func TestWriteCodes_PropagatesWriteError(t *testing.T) {
 			w := &failingWriter{failAfter: test.failAfter, err: injected}
 			codes := map[common.Hash][]byte{{1}: {1, 2, 3}}
 
-			err := writeCodes(maps.All(codes), w)
+			err := writeCodes(maps.All(codes), w, t.TempDir())
 			require.ErrorContains(err, injected.Error())
 		})
 	}
 }
 
-func TestWriteCodes_RemovesTemporaryPebbleStore(t *testing.T) {
+func TestWriteCodes_RemovesStagingStore(t *testing.T) {
 	tests := map[string]struct {
-		out io.Writer
+		out             io.Writer
+		emptyScratchDir bool
 	}{
-		"on success":        {out: &bytes.Buffer{}},
-		"on writer failure": {out: &failingWriter{err: errors.New("boom")}},
+		"on success":           {out: &bytes.Buffer{}},
+		"on writer failure":    {out: &failingWriter{err: errors.New("boom")}},
+		"in fallback temp dir": {out: &bytes.Buffer{}, emptyScratchDir: true},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 
-			// Redirect os.MkdirTemp("", ...) into a directory owned by the test
-			// so we can observe whether writeCodes cleans up after itself.
 			tempRoot := t.TempDir()
-			t.Setenv("TMPDIR", tempRoot)
+			scratchDir := tempRoot
+			if test.emptyScratchDir {
+				// An empty scratch dir falls back to the system temp directory,
+				// redirected here so the test can observe the cleanup.
+				t.Setenv("TMPDIR", tempRoot)
+				scratchDir = ""
+			}
 
 			codes := map[common.Hash][]byte{{1}: {1, 2, 3}}
-			_ = writeCodes(maps.All(codes), test.out)
+			_ = writeCodes(maps.All(codes), test.out, scratchDir)
 
 			entries, err := os.ReadDir(tempRoot)
 			require.NoError(err)
-			require.Empty(entries, "writeCodes must remove its temporary pebble store")
+			require.Empty(entries, "writeCodes must remove its staging store")
 		})
 	}
 }
@@ -121,7 +128,7 @@ func TestReadCode_ReturnsCodeWrittenByWriteCodes(t *testing.T) {
 	codes := map[common.Hash][]byte{{1}: want}
 
 	var buf bytes.Buffer
-	require.NoError(writeCodes(maps.All(codes), &buf))
+	require.NoError(writeCodes(maps.All(codes), &buf, t.TempDir()))
 
 	tag, err := buf.ReadByte()
 	require.NoError(err)
@@ -160,6 +167,49 @@ func TestReadCode_ReturnsErrorOnTruncatedInput(t *testing.T) {
 			require.ErrorIs(err, io.ErrUnexpectedEOF)
 		})
 	}
+}
+
+func TestNewCodeSortStore_CreatesUniqueDirectoriesUnderScratchDir(t *testing.T) {
+	require := require.New(t)
+
+	scratchDir := t.TempDir()
+	a, err := newCodeSortStore(scratchDir)
+	require.NoError(err)
+	b, err := newCodeSortStore(scratchDir)
+	require.NoError(err)
+
+	require.NotEqual(a.dir, b.dir)
+	require.Equal(scratchDir, filepath.Dir(a.dir))
+	require.Equal(scratchDir, filepath.Dir(b.dir))
+
+	require.NoError(a.close())
+	require.NoError(b.close())
+	entries, err := os.ReadDir(scratchDir)
+	require.NoError(err)
+	require.Empty(entries, "close must remove the staging directories")
+}
+
+func TestCodeSortStore_AddAndWriteTo_DeduplicatesRepeatedHashes(t *testing.T) {
+	require := require.New(t)
+
+	store, err := newCodeSortStore(t.TempDir())
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(store.close()) })
+
+	code := []byte{1, 2, 3}
+	require.NoError(store.add(common.Hash{1}, code))
+	require.NoError(store.add(common.Hash{1}, code))
+
+	var buf bytes.Buffer
+	require.NoError(store.writeTo(&buf))
+
+	tag, err := buf.ReadByte()
+	require.NoError(err)
+	require.Equal(byte('C'), tag)
+	got, err := readCode(&buf)
+	require.NoError(err)
+	require.Equal(code, got)
+	require.Zero(buf.Len(), "a repeatedly added code must be written only once")
 }
 
 // failingWriter is an io.Writer that succeeds for the first failAfter calls
