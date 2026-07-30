@@ -587,7 +587,7 @@ func TestForest_getAccess_Fails(t *testing.T) {
 
 					accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 					// only the second call must fail - repeats four times for four calls
-					calls := make([]*gomock.Call, 0, 8)
+					calls := make([]any, 0, 8)
 					for i := 0; i < 4; i++ {
 						calls = append(calls, accounts.EXPECT().Get(gomock.Any()).Return(AccountNode{}, nil))
 						calls = append(calls, accounts.EXPECT().Get(gomock.Any()).Return(AccountNode{}, injectedErr))

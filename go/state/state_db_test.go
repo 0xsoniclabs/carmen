@@ -2387,9 +2387,9 @@ func TestStateDB_CodeCanBeUpdated_In_Each_Block(t *testing.T) {
 
 	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
 	hashes := make([]common.Hash, 0, len(codes))
-	applyCalls := make([]*gomock.Call, 0, len(codes))
-	getCodeHashCalls := make([]*gomock.Call, 0, len(codes))
-	getCodeCalls := make([]*gomock.Call, 0, len(codes))
+	applyCalls := make([]any, 0, len(codes))
+	getCodeHashCalls := make([]any, 0, len(codes))
+	getCodeCalls := make([]any, 0, len(codes))
 
 	for i, code := range codes {
 		hashes = append(hashes, common.GetKeccak256Hash(code))
