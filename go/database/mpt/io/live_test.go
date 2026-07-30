@@ -475,7 +475,7 @@ func TestIO_ExportBlockFromOnlineArchive(t *testing.T) {
 
 		// while the archive has not been explicitly flushed or closed, the data should be available when exporting
 		buffer := new(bytes.Buffer)
-		if err := ExportBlockFromOnlineArchive(context.Background(), NewLog(), archive, buffer, uint64(i)); err != nil {
+		if err := ExportBlockFromOnlineArchive(context.Background(), NewLog(), archive, buffer, uint64(i), t.TempDir()); err != nil {
 			t.Fatalf("failed to export Archive: %v", err)
 		}
 
@@ -507,6 +507,51 @@ func TestIO_ExportBlockFromOnlineArchive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cannot close database: %v", err)
 		}
+	}
+}
+
+func TestLive_Export_FailsIfScratchDirIsNotWritable(t *testing.T) {
+	type exportFunc = func(context.Context, *Log, string, io.Writer, string) error
+
+	exportLive := func(ctx context.Context, _ *Log, dir string, out io.Writer, scratchDir string) error {
+		return Export(ctx, NewLog(), dir, out, scratchDir)
+	}
+	exportArchive := func(ctx context.Context, _ *Log, dir string, out io.Writer, scratchDir string) error {
+		return ExportArchive(ctx, NewLog(), dir, out, scratchDir)
+	}
+	exportBlockFromArchive := func(ctx context.Context, _ *Log, dir string, out io.Writer, scratchDir string) error {
+		return ExportBlockFromArchive(ctx, NewLog(), dir, out, 3, scratchDir)
+	}
+
+	for name, funcs := range map[string]struct {
+		export exportFunc
+	}{
+		"live": {
+			export: exportLive,
+		},
+		"archive": {
+			export: exportArchive,
+		},
+		"live-from-archive": {
+			export: exportBlockFromArchive,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			genesis, _ := exportExampleState(t)
+
+			buffer := bytes.NewBuffer(genesis)
+			targetDir := t.TempDir()
+			genesisBlock := uint64(12)
+			require.NoError(InitializeArchive(NewLog(), targetDir, buffer, genesisBlock))
+
+			buffer = new(bytes.Buffer)
+			scratchDir := t.TempDir()
+			require.NoError(os.Chmod(scratchDir, 0500))
+
+			err := funcs.export(context.Background(), NewLog(), targetDir, buffer, scratchDir)
+			require.Error(err)
+		})
 	}
 }
 
