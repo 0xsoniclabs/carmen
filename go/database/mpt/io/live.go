@@ -191,6 +191,7 @@ func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, 
 // This method exports from an online archive, i.e, an archive that is being updated with new blocks.
 // To ensure the exported data is up-to-date, this method flushes the archive to disk before exporting.
 // Expected usage is, for instance, the creation of database dumps once in many blocks to backup the state.
+// Temporary staging data is placed under scratchDir.
 func ExportBlockFromOnlineArchive(ctx context.Context, logger *Log, archive *mpt.ArchiveTrie, out io.Writer, block uint64, scratchDir string) error {
 	logger.Printf("exporting block %d from online archive", block)
 	defer func() {

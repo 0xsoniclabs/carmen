@@ -297,6 +297,7 @@ func TestArchiveState_Export_NonWritableScratchDirFails(t *testing.T) {
 
 	sourceDir := t.TempDir()
 	trie, err := mpt.OpenArchiveTrie(sourceDir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024}, mpt.ArchiveConfig{})
+	t.Cleanup(func() { require.NoError(trie.Close()) })
 	require.NoError(err, "failed to create archive")
 
 	newAddr := common.AddressFromNumber(1)
