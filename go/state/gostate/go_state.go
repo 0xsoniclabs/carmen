@@ -386,7 +386,7 @@ func (s *GoState) Check() error {
 	return s.getStateError()
 }
 
-func (s *GoState) Export(context.Context, io.Writer) (common.Hash, error) {
+func (s *GoState) Export(context.Context, io.Writer, string) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
 }
 

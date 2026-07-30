@@ -125,18 +125,18 @@ func (mr *MockStateMockRecorder) Exists(address any) *gomock.Call {
 }
 
 // Export mocks base method.
-func (m *MockState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
+func (m *MockState) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Export", ctx, out)
+	ret := m.ctrl.Call(m, "Export", ctx, out, scratchDir)
 	ret0, _ := ret[0].(common.Hash)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Export indicates an expected call of Export.
-func (mr *MockStateMockRecorder) Export(ctx, out any) *gomock.Call {
+func (mr *MockStateMockRecorder) Export(ctx, out, scratchDir any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Export", reflect.TypeOf((*MockState)(nil).Export), ctx, out)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Export", reflect.TypeOf((*MockState)(nil).Export), ctx, out, scratchDir)
 }
 
 // Flush mocks base method.
