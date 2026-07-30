@@ -402,18 +402,18 @@ func (mr *MockHistoricBlockContextMockRecorder) Close() *gomock.Call {
 }
 
 // Export mocks base method.
-func (m *MockHistoricBlockContext) Export(ctx context.Context, out io.Writer) (Hash, error) {
+func (m *MockHistoricBlockContext) Export(ctx context.Context, out io.Writer, scratchDir string) (Hash, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Export", ctx, out)
+	ret := m.ctrl.Call(m, "Export", ctx, out, scratchDir)
 	ret0, _ := ret[0].(Hash)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Export indicates an expected call of Export.
-func (mr *MockHistoricBlockContextMockRecorder) Export(ctx, out any) *gomock.Call {
+func (mr *MockHistoricBlockContextMockRecorder) Export(ctx, out, scratchDir any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Export", reflect.TypeOf((*MockHistoricBlockContext)(nil).Export), ctx, out)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Export", reflect.TypeOf((*MockHistoricBlockContext)(nil).Export), ctx, out, scratchDir)
 }
 
 // GetProof mocks base method.

@@ -319,7 +319,7 @@ func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	state := newState()
 	require.Panics(
 		func() {
-			_, err := state.Export(t.Context(), nil)
+			_, err := state.Export(t.Context(), nil, t.TempDir())
 			require.NoError(err)
 		},
 		"Export should panic as it is not implemented",

@@ -154,8 +154,8 @@ func (s *syncedState) CreateWitnessProof(address common.Address, keys ...common.
 	return s.state.CreateWitnessProof(address, keys...)
 }
 
-func (s *syncedState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
+func (s *syncedState) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.Export(ctx, out)
+	return s.state.Export(ctx, out, scratchDir)
 }

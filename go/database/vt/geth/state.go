@@ -363,7 +363,7 @@ func (s *verkleState) CreateWitnessProof(address common.Address, keys ...common.
 	panic("not implemented")
 }
 
-func (s *verkleState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
+func (s *verkleState) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	panic("not implemented")
 }
 

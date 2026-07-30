@@ -204,10 +204,11 @@ type HistoricBlockContext interface {
 	// Export writes a LiveDB data dump for the given block into out.
 	// The resulting data can be used to sync a fresh
 	// LiveDB to a certain block.
+	// Temporary staging data is placed under scratchDir.
 	// Cancelling the given ctx will gracefully stop the export.
 	// Bear in mind that cancelling the context will result
 	// in returning an error interrupt.ErrCanceled.
-	Export(ctx context.Context, out io.Writer) (Hash, error)
+	Export(ctx context.Context, out io.Writer, scratchDir string) (Hash, error)
 
 	// Close releases resources held by this context. All modifications made
 	// within this context are discarded. This context is invalid after this

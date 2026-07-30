@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -23,6 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -194,7 +196,7 @@ func TestArchiveState_Export_ErrorsAreCaught(t *testing.T) {
 
 			test.setup(archive)
 
-			_, err := archive.Export(context.Background(), nil)
+			_, err := archive.Export(context.Background(), nil, t.TempDir())
 			if err == nil {
 				t.Fatal("export must fail")
 			}
@@ -238,7 +240,7 @@ func TestArchiveState_Export(t *testing.T) {
 		t.Fatalf("cannot get hash: %v", err)
 	}
 
-	gotHash, err := archive.Export(context.Background(), bytes.NewBuffer(nil))
+	gotHash, err := archive.Export(context.Background(), bytes.NewBuffer(nil), t.TempDir())
 	if err != nil {
 		t.Fatalf("cannot export: %v", err)
 	}
@@ -280,7 +282,7 @@ func TestArchiveState_Export_CanBeCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err = archive.Export(ctx, bytes.NewBuffer(nil))
+	_, err = archive.Export(ctx, bytes.NewBuffer(nil), t.TempDir())
 	if err == nil {
 		t.Fatalf("export must fail")
 	}
@@ -288,4 +290,36 @@ func TestArchiveState_Export_CanBeCancelled(t *testing.T) {
 	if !errors.Is(err, interrupt.ErrCanceled) {
 		t.Errorf("unexpected err\ngot: %v\nwant: %v", err, interrupt.ErrCanceled)
 	}
+}
+
+func TestArchiveState_Export_NonWritableScratchDirFails(t *testing.T) {
+	require := require.New(t)
+
+	sourceDir := t.TempDir()
+	trie, err := mpt.OpenArchiveTrie(sourceDir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{Capacity: 1024}, mpt.ArchiveConfig{})
+	t.Cleanup(func() { require.NoError(trie.Close()) })
+	require.NoError(err, "failed to create archive")
+
+	newAddr := common.AddressFromNumber(1)
+	newAmount := amount.New(1)
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{{Account: newAddr, Balance: newAmount}},
+		Nonces:   []common.NonceUpdate{{Account: newAddr, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: newAddr, Code: []byte{0x1}}},
+		Slots:    []common.SlotUpdate{{Account: newAddr, Key: common.Key{byte(1)}, Value: common.Value{byte(1)}}},
+	}
+
+	require.NoError(trie.Add(2, update, nil), "failed to create block in archive")
+
+	archive := &ArchiveState{
+		archive: trie,
+		block:   2,
+	}
+
+	scratchDir := t.TempDir()
+	require.NoError(os.Chmod(scratchDir, 0500))
+
+	_, err = archive.Export(context.Background(), bytes.NewBuffer(nil), scratchDir)
+	require.Error(err, "export must fail when scratch dir is not writable")
 }
