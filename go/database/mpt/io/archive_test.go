@@ -47,7 +47,7 @@ func TestIO_Archive_ExportAndImport(t *testing.T) {
 
 	// Export the archive into a buffer.
 	buffer := new(bytes.Buffer)
-	if err := ExportArchive(context.Background(), NewLog(), sourceDir, buffer); err != nil {
+	if err := ExportArchive(context.Background(), NewLog(), sourceDir, buffer, t.TempDir()); err != nil {
 		t.Fatalf("failed to export Archive: %v", err)
 	}
 	genesis := buffer.Bytes()
@@ -113,7 +113,7 @@ func TestIO_ArchiveAndLive_ExportAndImport(t *testing.T) {
 
 	// Export the archive into a buffer.
 	buffer := new(bytes.Buffer)
-	if err := ExportArchive(context.Background(), NewLog(), sourceDir, buffer); err != nil {
+	if err := ExportArchive(context.Background(), NewLog(), sourceDir, buffer, t.TempDir()); err != nil {
 		t.Fatalf("failed to export Archive: %v", err)
 	}
 	genesis := buffer.Bytes()

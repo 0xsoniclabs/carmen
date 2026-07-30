@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -368,6 +369,7 @@ func TestArchiveTrie_Open_Fails_InconsistentCheckpoints(t *testing.T) {
 			return errors.Join(
 				codes.Prepare(checkpoint),
 				codes.Commit(checkpoint),
+				codes.Close(),
 			)
 		},
 		"invalid roots checkpoint": func(dir string) error {
@@ -1238,8 +1240,17 @@ func TestArchiveTrie_GettingView_Block_OutOfRange(t *testing.T) {
 }
 
 func TestArchiveTrie_GetCodes(t *testing.T) {
+	collect := func(it iter.Seq2[common.Hash, []byte]) map[common.Hash][]byte {
+		codes := make(map[common.Hash][]byte)
+		for hash, code := range it {
+			codes[hash] = code
+		}
+		return codes
+	}
+
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
+			require := require.New(t)
 			dir := t.TempDir()
 
 			archive, err := OpenArchiveTrie(dir, config, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
@@ -1247,7 +1258,9 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 				t.Fatalf("failed to create empty archive, err %v", err)
 			}
 
-			codes := archive.GetCodes()
+			codesIterator, err := archive.GetCodes()
+			require.NoError(err)
+			codes := collect(codesIterator)
 			if len(codes) != 0 {
 				t.Errorf("unexpected number of codes in archive, expected 0, got %d", len(codes))
 			}
@@ -1266,7 +1279,11 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 				t.Fatalf("cannot apply update: %s", err)
 			}
 
-			codes = archive.GetCodes()
+			codesIterator, err = archive.GetCodes()
+			if err != nil {
+				t.Fatalf("cannot get codes: %v", err)
+			}
+			codes = collect(codesIterator)
 			if len(codes) != 2 {
 				t.Errorf("unexpected number of codes in archive, wanted 2, got %d", len(codes))
 			}

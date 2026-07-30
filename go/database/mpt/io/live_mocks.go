@@ -42,11 +42,12 @@ func (m *MockmptStateVisitor) EXPECT() *MockmptStateVisitorMockRecorder {
 }
 
 // GetCodeForHash mocks base method.
-func (m *MockmptStateVisitor) GetCodeForHash(arg0 common.Hash) []byte {
+func (m *MockmptStateVisitor) GetCodeForHash(arg0 common.Hash) ([]byte, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCodeForHash", arg0)
 	ret0, _ := ret[0].([]byte)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetCodeForHash indicates an expected call of GetCodeForHash.
