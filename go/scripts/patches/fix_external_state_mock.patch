@@ -1,0 +1,19 @@
+diff --git a/go/state/externalstate/external_state_mocks.go b/go/state/externalstate/external_state_mocks.go
+index 1a2bdf74..aa812ee9 100644
+--- a/go/state/externalstate/external_state_mocks.go
++++ b/go/state/externalstate/external_state_mocks.go
+@@ -11,8 +11,13 @@
+ // Package externalstate is a generated GoMock package.
+ package externalstate
+ 
++/*
++#include <stdlib.h>
++#include "state/c_state.h"
++*/
++import "C"
++
+ import (
+-	C "C"
+ 	reflect "reflect"
+ 	unsafe "unsafe"
+ 

@@ -74,6 +74,23 @@ pipeline {
                     }
                 }
 
+                stage('Check generated files are up-to-date') {
+                    steps {
+                        sh 'bash go/scripts/generate.sh'
+                        // Detect both modifications to tracked files and any
+                        // newly generated untracked files.
+                        sh '''
+                            status=$(git status --porcelain)
+                            if [ -n "$status" ]; then
+                                echo "Generated files are out of date:"
+                                echo "$status"
+                                git diff
+                                exit 1
+                            fi
+                        '''
+                    }
+                }
+
                 stage('Run Go tests') {
                     environment {
                         CODECOV_TOKEN = credentials('codecov-uploader-0xsoniclabs-global')

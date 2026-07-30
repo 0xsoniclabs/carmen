@@ -39,3 +39,13 @@ RUN mkdir -p /.cache && chmod 777 /.cache
 RUN curl -Os https://cli.codecov.io/latest/linux/codecov && \
   chmod +x codecov && \
   mv codecov /usr/local/bin
+
+# Install mockgen (used by `go generate` in go/scripts/generate.sh).
+# Keep the version in sync with go.uber.org/mock in go/go.mod.
+RUN go install go.uber.org/mock/mockgen@v0.6.0
+RUN mockgen -version
+
+# Because of user id forwarding, `go generate` runs as a non-root user and needs
+# to write into the module cache (/go/pkg/mod). Make the GOPATH tree writable
+# for everyone so subsequent `go` invocations can populate the cache.
+RUN chmod -R a+w /go

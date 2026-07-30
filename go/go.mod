@@ -27,7 +27,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/urfave/cli/v2 v2.27.5
-	go.uber.org/mock v0.2.0
+	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.44.0
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
 )
