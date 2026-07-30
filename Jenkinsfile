@@ -74,6 +74,13 @@ pipeline {
                     }
                 }
 
+                stage('Check generated files are up-to-date') {
+                    steps {
+                        sh 'bash go/scripts/generate.sh'
+                        sh 'git diff --exit-code'
+                    }
+                }
+
                 stage('Run Go tests') {
                     environment {
                         CODECOV_TOKEN = credentials('codecov-uploader-0xsoniclabs-global')
