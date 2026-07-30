@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/0xsoniclabs/carmen/go/common/diagnostics"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
@@ -59,20 +60,24 @@ func doExport(context *cli.Context) error {
 
 	ctx := interrupt.CancelOnInterrupt(context.Context)
 
+	// Staging data is placed next to the target file, so it lands on the same
+	// volume as the export destination rather than in the system temp directory.
+	scratchDir := filepath.Dir(trg)
+
 	var exportErr error
 
 	if mptInfo.Mode == mpt.Immutable {
 		if context.IsSet(targetBlockFlag.Name) {
 			// Passed Archive and chosen block to export
 			blkNumber := context.Uint64(targetBlockFlag.Name)
-			exportErr = io.ExportBlockFromArchive(ctx, logger, dir, out, blkNumber)
+			exportErr = io.ExportBlockFromArchive(ctx, logger, dir, out, blkNumber, scratchDir)
 		} else {
 			// Passed Archive without a chosen block
-			exportErr = io.ExportArchive(ctx, logger, dir, out)
+			exportErr = io.ExportArchive(ctx, logger, dir, out, scratchDir)
 		}
 	} else {
 		// Passed LiveDB
-		exportErr = io.Export(ctx, logger, dir, out)
+		exportErr = io.Export(ctx, logger, dir, out, scratchDir)
 	}
 
 	if err = errors.Join(

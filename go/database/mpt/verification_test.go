@@ -455,7 +455,7 @@ func TestVerification_DifferentHashInCodeFileIsDetected(t *testing.T) {
 		codes := map[common.Hash][]byte{
 			testHash: byteCode,
 		}
-		if err := writeCodes(codes, filepath.Join(dir, "codes.dat")); err != nil {
+		if err := writeCodesForTesting(codes, filepath.Join(dir, "codes.dat")); err != nil {
 			t.Fatalf("failed to write code file")
 		}
 
@@ -495,7 +495,7 @@ func TestVerification_ExtraCodeHashInCodeFileIsDetected(t *testing.T) {
 			}
 		}).AnyTimes()
 
-		if err := writeCodes(codes, dir+"/codes.dat"); err != nil {
+		if err := writeCodesForTesting(codes, dir+"/codes.dat"); err != nil {
 			t.Fatalf("failed to write code file")
 		}
 
@@ -512,7 +512,7 @@ func TestVerification_ExtraCodeHashInCodeFileIsDetected(t *testing.T) {
 func TestVerification_UnreadableCodesReturnError(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
 		// create code file
-		if err := writeCodes(nil, filepath.Join(dir, "codes.dat")); err != nil {
+		if err := writeCodesForTesting(nil, filepath.Join(dir, "codes.dat")); err != nil {
 			t.Fatalf("failed to create codes file: %v", err)
 		}
 		// corrupt it
@@ -560,7 +560,7 @@ func TestVerification_DifferentExtraHashInCodeFileIsDetected(t *testing.T) {
 		codes := map[common.Hash][]byte{
 			testHash: {2},
 		}
-		if err := writeCodes(codes, filepath.Join(dir, "codes.dat")); err != nil {
+		if err := writeCodesForTesting(codes, filepath.Join(dir, "codes.dat")); err != nil {
 			t.Fatalf("failed to write code file")
 		}
 
@@ -769,7 +769,7 @@ func runVerificationTest(t *testing.T, verify func(t *testing.T, dir string, con
 func fillTestCodeFile(filename string) error {
 	codes := make(map[common.Hash][]byte)
 	codes[common.Keccak256([]byte{1})] = []byte{1}
-	return writeCodes(codes, filename)
+	return writeCodesForTesting(codes, filename)
 }
 
 func modifyNode[N any](t *testing.T, directory string, encoder stock.ValueEncoder[N], modify func(n *N)) {

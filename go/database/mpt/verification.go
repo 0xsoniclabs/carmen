@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"path/filepath"
 	"sort"
 
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
@@ -638,39 +637,59 @@ func verifyHashesStoredWithParents[N any](
 // - All CodeHashes within the code file are correct matching the contract byte-codes
 // 2) Non-fatal checks
 // - There are no extra Code Hashes not referenced by any account
-func verifyContractCodes(directory string, source *verificationNodeSource, observer VerificationObserver) error {
+func verifyContractCodes(directory string, source *verificationNodeSource, observer VerificationObserver) (err error) {
 	observer.Progress("Checking contract codes ...")
 
-	codeFile := filepath.Join(directory, "codes.dat")
-	codes, err := readCodes(codeFile)
+	codes, err := openCodes(directory)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, codes.Close())
+	}()
 
 	// Check that the codes are correctly indexed.
-	for hash, code := range codes {
+	codeIterator, err := codes.getCodes()
+	if err != nil {
+		return err
+	}
+	for hash, code := range codeIterator {
 		if got, want := common.Keccak256(code), hash; got != want {
 			return fmt.Errorf("unexpected code hash, got: %x want: %x", got, want)
 		}
 	}
+
 	// Check that all referenced codes are present in the code file.
 	usedHashes := make(map[common.Hash]struct{})
 	err = source.forAccountNodes(func(acc *AccountNode) error {
 		codeHash := acc.info.CodeHash
 		usedHashes[codeHash] = struct{}{}
-		if _, exists := codes[codeHash]; codeHash != emptyCodeHash && !exists {
+		code, err := codes.getCodeForHash(codeHash)
+		if err != nil {
+			return err
+		}
+		if codeHash != emptyCodeHash && code == nil {
 			return fmt.Errorf("hash %x is missing in code file", codeHash)
 		}
 		return nil
 	})
-	// find any extra hashes
-	for hash := range codes {
+	if err != nil {
+		return err
+	}
+
+	// Report codes not referenced by any account. This requires a second pass
+	// over the code file, keeping the codes themselves out of memory.
+	codeIterator, err = codes.getCodes()
+	if err != nil {
+		return err
+	}
+	for hash := range codeIterator {
 		if _, exists := usedHashes[hash]; !exists {
 			observer.Progress(fmt.Sprintf("Contract %x is not referenced by any account\n", hash))
 		}
 	}
 
-	return err
+	return nil
 }
 
 type verificationNodeSource struct {

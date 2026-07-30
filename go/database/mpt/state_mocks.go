@@ -10,6 +10,7 @@
 package mpt
 
 import (
+	iter "iter"
 	reflect "reflect"
 
 	common "github.com/0xsoniclabs/carmen/go/common"
@@ -592,11 +593,12 @@ func (mr *MockLiveStateMockRecorder) GetCode(address any) *gomock.Call {
 }
 
 // GetCodeForHash mocks base method.
-func (m *MockLiveState) GetCodeForHash(hash common.Hash) []byte {
+func (m *MockLiveState) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCodeForHash", hash)
 	ret0, _ := ret[0].([]byte)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetCodeForHash indicates an expected call of GetCodeForHash.
@@ -636,11 +638,12 @@ func (mr *MockLiveStateMockRecorder) GetCodeSize(address any) *gomock.Call {
 }
 
 // GetCodes mocks base method.
-func (m *MockLiveState) GetCodes() map[common.Hash][]byte {
+func (m *MockLiveState) GetCodes() (iter.Seq2[common.Hash, []byte], error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCodes")
-	ret0, _ := ret[0].(map[common.Hash][]byte)
-	return ret0
+	ret0, _ := ret[0].(iter.Seq2[common.Hash, []byte])
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetCodes indicates an expected call of GetCodes.
