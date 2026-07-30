@@ -697,11 +697,15 @@ func TestKVCachedFile_Close_ReturnsErrorOnFlushError(t *testing.T) {
 
 	c.flushBuffer[1] = "value"
 	injected := errors.New("flush failed")
+	injectedClose := errors.New("close failed")
 	mock.EXPECT().SetBatch(gomock.Any()).Return(injected)
-	// Close on the underlying file must not be called when flush fails.
+	// The underlying file is closed even when the flush fails, so its
+	// resources are not leaked; both errors are reported.
+	mock.EXPECT().Close().Return(injectedClose)
 
 	err := c.Close()
 	require.ErrorIs(err, injected)
+	require.ErrorIs(err, injectedClose)
 }
 
 func TestKVCachedFile_Close_ReturnsErrorOnFileCloseError(t *testing.T) {

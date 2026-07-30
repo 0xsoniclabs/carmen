@@ -11,6 +11,7 @@
 package kv_file
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 	"slices"
@@ -230,14 +231,12 @@ func (c *KVCachedFile[K, V]) Close() error {
 	// its goroutine never outlives the cached file.
 	c.shutdownWriter()
 
-	if err != nil {
-		return err
-	}
-	// The writer has stopped, so fileMu is uncontended here; it is still taken to
-	// keep "every file access happens under fileMu" a true invariant.
+	// The writer has stopped, so fileMu is  uncontended here;
+	// it is still taken to keep "every file access happens
+	// under fileMu" a true invariant.
 	c.fileMu.Lock()
 	defer c.fileMu.Unlock()
-	return c.file.Close()
+	return errors.Join(err, c.file.Close())
 }
 
 func (c *KVCachedFile[K, V]) GetMemoryFootprint() *common.MemoryFootprint {
