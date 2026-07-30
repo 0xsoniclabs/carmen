@@ -163,7 +163,7 @@ func (s *ArchiveState) GetMemoryFootprint() *common.MemoryFootprint {
 	return common.NewMemoryFootprint(unsafe.Sizeof(*s))
 }
 
-func (s *ArchiveState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
+func (s *ArchiveState) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	if err := s.archiveError; err != nil {
 		return common.Hash{}, err
 	}
@@ -173,7 +173,7 @@ func (s *ArchiveState) Export(ctx context.Context, out io.Writer) (common.Hash, 
 		return common.Hash{}, state.ExportNotSupported
 	}
 
-	err := mptio.ExportBlockFromOnlineArchive(ctx, nil, trie, out, s.block)
+	err := mptio.ExportBlockFromOnlineArchive(ctx, nil, trie, out, s.block, scratchDir)
 	// trie could get corrupted during export, practically just by flushing it
 	s.archiveError = errors.Join(s.archiveError, trie.CheckErrors())
 	if err != nil || s.archiveError != nil {

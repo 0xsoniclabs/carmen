@@ -99,8 +99,9 @@ type State interface {
 	CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error)
 
 	// Export writes data from LiveDB into out.
+	// Temporary staging data is placed under scratchDir.
 	// If successful, expected root hash is returned.
-	Export(ctx context.Context, out io.Writer) (common.Hash, error)
+	Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error)
 }
 
 type LiveDB interface {

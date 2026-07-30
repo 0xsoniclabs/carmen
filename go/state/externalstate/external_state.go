@@ -357,7 +357,7 @@ func (s *ExternalState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *ExternalState) Export(context.Context, io.Writer) (common.Hash, error) {
+func (s *ExternalState) Export(context.Context, io.Writer, string) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
 }
 

@@ -2348,7 +2348,7 @@ func TestDatabase_Export(t *testing.T) {
 	}
 
 	b := bytes.NewBuffer(nil)
-	rootHash, err := ctx.Export(context.Background(), b)
+	rootHash, err := ctx.Export(context.Background(), b, t.TempDir())
 	if err != nil {
 		t.Fatalf("cannot export live db: %v", err)
 	}

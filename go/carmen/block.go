@@ -163,7 +163,7 @@ func (c *archiveBlockContext) GetProof(address Address, keys ...Key) (WitnessPro
 	return witnessProof{proof}, nil
 }
 
-func (c *archiveBlockContext) Export(ctx context.Context, out io.Writer) (Hash, error) {
+func (c *archiveBlockContext) Export(ctx context.Context, out io.Writer, scratchDir string) (Hash, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -171,7 +171,7 @@ func (c *archiveBlockContext) Export(ctx context.Context, out io.Writer) (Hash, 
 		return Hash{}, fmt.Errorf("cannot export from invalid block context")
 	}
 
-	h, err := c.archiveState.Export(ctx, out)
+	h, err := c.archiveState.Export(ctx, out, scratchDir)
 	if err != nil {
 		return Hash{}, err
 	}

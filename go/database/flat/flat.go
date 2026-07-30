@@ -400,14 +400,14 @@ func (s *State) CreateWitnessProof(address common.Address, keys ...common.Key) (
 	return s.backend.CreateWitnessProof(address, keys...)
 }
 
-func (s *State) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
+func (s *State) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	if err := s.sync(); err != nil {
 		return common.Hash{}, err
 	}
 	if s.backend == nil {
 		return common.Hash{}, state.ExportNotSupported
 	}
-	return s.backend.Export(ctx, out)
+	return s.backend.Export(ctx, out, scratchDir)
 }
 
 // --- Helpers ---
