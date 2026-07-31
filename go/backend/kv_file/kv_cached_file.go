@@ -404,6 +404,11 @@ func (c *KVCachedFile[K, V]) handleCacheSet(key *K, value *V, dirty bool) error 
 	}
 	if dirty {
 		c.dirty[*key] = true
+		// Drop any stale copy of the key from the un-sealed flush buffer: the
+		// cache now holds the newest value, tracked by its dirty flag. Keeping
+		// the stale entry would let a later seal clear that flag and silently
+		// drop the newer value.
+		delete(c.flushBuffer, *key)
 	}
 	// An evicted dirty entry moves into the flush buffer; reaching the
 	// threshold seals the buffer for the background writer.

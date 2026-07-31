@@ -403,6 +403,35 @@ func TestKVCachedFile_Set_ReSetWhileInFlightIsNotLost(t *testing.T) {
 	require.Equal("value0-new", *got)
 }
 
+func TestKVCachedFile_Set_ReSetWhileInFlushBufferIsNotLost(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	written := map[K]V{}
+	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
+		maps.Copy(written, entries)
+		return nil
+	}).AnyTimes()
+	mock.EXPECT().Flush().Return(nil).AnyTimes()
+
+	// Fill the cache and evict key 0 into the (un-sealed) flush buffer.
+	require.NoError(c.Set(0, "value0"))
+	for i := 1; i <= cacheSize; i++ {
+		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
+	}
+
+	// Re-Set key 0 while its old value still sits in the flush buffer, then
+	// trigger one more eviction so the buffer reaches the threshold and is
+	// sealed for the background writer.
+	require.NoError(c.Set(0, "value0-new"))
+	require.NoError(c.Set(cacheSize+1, "trigger"))
+
+	require.NoError(c.Flush())
+
+	// The re-Set value must be the one persisted, not the stale buffered one.
+	require.Equal("value0-new", written[0])
+}
+
 func TestKVCachedFile_Set_SurfacesAsyncWriteErrorOnNextOperation(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
