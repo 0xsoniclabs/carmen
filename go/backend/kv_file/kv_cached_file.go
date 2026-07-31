@@ -24,7 +24,7 @@ import (
 // maxPendingFlushes bounds the number of sealed buffers queued for the
 // background writer: one being written and one queued behind it. A producer
 // sealing a further buffer blocks until the writer catches up, keeping the
-// memory held by pending buffers bounded by ~2x the flush buffer threshold.
+// memory held by pending buffers bounded by ~2x the size of a sealed buffer.
 const maxPendingFlushes = 2
 
 // KVCachedFile wraps a KVFile with an in-memory write-back cache. Buffered
