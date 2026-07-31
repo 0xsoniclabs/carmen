@@ -3416,7 +3416,7 @@ func TestRootList_Prepare_DoesNotRecordCheckpointOnFlushFailure(t *testing.T) {
 		t.Cleanup(func() { _ = roots.Close() })
 
 		require.NoError(roots.append(Root{NodeRef: NewNodeReference(ValueId(0))}))
-		roots.storeRoots() // flush to disk
+		require.NoError(roots.storeRoots()) // flush to disk
 		// Add something to flush during the checkpont
 		require.NoError(roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
 		synctest.Wait() // wait for the background flush to finish
