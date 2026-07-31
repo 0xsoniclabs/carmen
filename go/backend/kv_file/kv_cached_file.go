@@ -21,6 +21,12 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 )
 
+// maxPendingFlushes bounds the number of sealed buffers queued for the
+// background writer: one being written and one queued behind it. A producer
+// sealing a further buffer blocks until the writer catches up, keeping the
+// memory held by pending buffers bounded by ~2x the flush buffer threshold.
+const maxPendingFlushes = 2
+
 // KVCachedFile wraps a KVFile with an in-memory write-back cache. Buffered
 // writes are persisted asynchronously by a background writer; Flush, Iterate
 // and Close wait for those writes to complete, while a threshold-triggered
@@ -45,9 +51,6 @@ type KVCachedFile[K comparable, V any] struct {
 	fileMu sync.Mutex
 
 	flushBufferThreshold int
-	// maxPendingFlushes bounds the number of sealed buffers queued for the
-	// background writer, providing back-pressure that keeps memory bounded.
-	maxPendingFlushes int
 
 	// mu guards all mutable state below and is the locker of cond.
 	mu           sync.Mutex
@@ -75,7 +78,6 @@ func OpenKVCachedFile[K comparable, V any](file KVFileWithMemoryFootprint[K, V],
 		dirty:                make(map[K]bool),
 		file:                 file,
 		flushBufferThreshold: flushBufferThreshold,
-		maxPendingFlushes:    flushBufferThreshold + 1,
 		writerDone:           make(chan struct{}),
 	}
 	c.cond = sync.NewCond(&c.mu)
@@ -309,7 +311,7 @@ func (c *KVCachedFile[K, V]) enqueueCurrentBufferLocked() {
 		return
 	}
 	// Block while the queue is full to bound memory (back-pressure).
-	for len(c.pending) >= c.maxPendingFlushes && c.writeErr == nil && !c.closed {
+	for len(c.pending) >= maxPendingFlushes && c.writeErr == nil && !c.closed {
 		c.cond.Wait()
 	}
 	if c.writeErr != nil || c.closed {
