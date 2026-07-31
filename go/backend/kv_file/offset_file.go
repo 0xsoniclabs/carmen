@@ -90,7 +90,9 @@ func (o *OffsetFile[K, V]) SetBatch(pending map[K]V) error {
 
 	for key, value := range pending {
 		if err := o.writeEntryLocked(key, value); err != nil {
-			return err
+			// Entries written before the failure are already indexed; refresh
+			// the cached file size so they remain readable.
+			return errors.Join(err, o.updateFileSizeLocked())
 		}
 	}
 	return o.updateFileSizeLocked()

@@ -225,6 +225,44 @@ func TestOffsetFile_SetBatch_EmptyBatchIsNoop(t *testing.T) {
 	require.EqualValues(0, info.Size())
 }
 
+func TestOffsetFile_SetBatch_KeepsWrittenEntriesReadableAfterPartialFailure(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "partial.dat")
+
+	// A codec that fails on the second write, so a batch of two entries is
+	// interrupted after one of them was written and indexed.
+	injected := errors.New("injected write failure")
+	calls := 0
+	writeFn := func(w io.Writer, key uint64, value uint64) error {
+		calls++
+		if calls > 1 {
+			return injected
+		}
+		return offsetWriteValue(w, key, value)
+	}
+
+	f, err := OpenOffsetFile[uint64, uint64](path, offsetReadValue, writeFn)
+	require.NoError(err)
+	defer func() { require.NoError(f.Close()) }()
+
+	entries := map[uint64]uint64{1: 10, 2: 20}
+	require.ErrorIs(f.SetBatch(entries), injected)
+
+	// The entry written before the failure is indexed and must stay readable.
+	for key, want := range entries {
+		has, err := f.Has(key)
+		require.NoError(err)
+		if !has {
+			continue
+		}
+		got, err := f.Get(key)
+		require.NoError(err)
+		require.NotNil(got)
+		require.Equal(want, *got)
+	}
+}
+
 func TestOffsetFile_Iterate_ReturnsAllEntries(t *testing.T) {
 	require := require.New(t)
 	f, _ := openTestOffsetFile(t)
