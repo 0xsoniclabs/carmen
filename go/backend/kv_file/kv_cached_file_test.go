@@ -17,6 +17,7 @@ import (
 	"maps"
 	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/stretchr/testify/require"
@@ -53,25 +54,6 @@ func TestKVCachedFile_Open_ReturnsErrorOnInvalidArguments(t *testing.T) {
 			require := require.New(t)
 			_, err := OpenKVCachedFile[K, V](test.file, test.cacheSize, test.flushBufferThreshold)
 			require.Error(err)
-		})
-	}
-}
-
-func TestKVCachedFile_Open_SetsMaxPendingFlushesToThresholdPlusOne(t *testing.T) {
-	tests := map[string]int{
-		"threshold 1":   1,
-		"threshold 3":   3,
-		"threshold 100": 100,
-	}
-	for name, threshold := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			ctrl := gomock.NewController(t)
-			mock := NewMockKVFileWithMemoryFootprint[K, V](ctrl)
-			c, err := OpenKVCachedFile[K, V](mock, cacheSize, threshold)
-			require.NoError(err)
-			t.Cleanup(c.shutdownWriter)
-			require.Equal(threshold+1, c.maxPendingFlushes)
 		})
 	}
 }
@@ -925,6 +907,37 @@ func TestKVCachedFile_enqueueCurrentBufferLocked_RetainsBufferAfterWriteErrorOrC
 			require.Len(c.flushBuffer, 1, "unwritten entries must be retained")
 		})
 	}
+}
+
+func TestKVCachedFile_enqueueCurrentBufferLocked_BlocksWhenPendingQueueIsFull(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+
+		_, unblockWriter := blockWriter(t, mock, nil)
+
+		// Two sealed buffers saturate the queue: one in flight, one queued.
+		sealBuffer(c, 1, "value-1")
+		synctest.Wait() // the writer is now parked inside SetBatch with buffer 1
+		sealBuffer(c, 2, "value-2")
+
+		// Sealing a third buffer must block until the writer catches up.
+		sealed := make(chan struct{})
+		go func() {
+			sealBuffer(c, 3, "value-3")
+			close(sealed)
+		}()
+		synctest.Wait() // the producer is now parked on the full queue
+		select {
+		case <-sealed:
+			t.Fatal("sealing beyond the pending bound did not block")
+		default:
+		}
+
+		unblockWriter()
+		<-sealed
+		require.NoError(c.Flush())
+	})
 }
 
 // The background writer must persist queued buffers oldest-first so the newest
