@@ -27,6 +27,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -537,6 +538,21 @@ func TestVerification_UnreadableCodesReturnError(t *testing.T) {
 		if !errors.Is(got, want) {
 			t.Errorf("unexpected error, got: %v, want: %v", got, want)
 		}
+	})
+}
+
+// Regression test: the pre-KVFile implementation served a missing code file
+// as an empty code collection; moving to KVFile-based storage must not change
+// this behavior.
+func TestVerification_MissingCodeFileIsTreatedAsEmptyCodeCollection(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		require.NoError(os.Remove(filepath.Join(dir, "codes.dat")))
+
+		// A missing code file is treated as an empty code collection: the
+		// codes referenced by the accounts must be reported as missing.
+		err := VerifyMptState(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
+		require.ErrorContains(err, "is missing in code file")
 	})
 }
 

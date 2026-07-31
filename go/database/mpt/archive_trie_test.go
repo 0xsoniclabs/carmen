@@ -409,6 +409,31 @@ func TestArchiveTrie_Open_Fails_InconsistentCheckpoints(t *testing.T) {
 	}
 }
 
+// Regression test: the pre-KVFile implementation served a missing root list
+// as an empty archive; moving to KVFile-based storage must not change this
+// behavior.
+func TestArchiveTrie_VerifyArchiveTrie_TreatsMissingRootsFileAsEmptyArchive(t *testing.T) {
+	for _, config := range allMptConfigs {
+		t.Run(config.Name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			archive, err := OpenArchiveTrie(dir, config, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+			require.NoError(err)
+			require.NoError(archive.Add(1, common.Update{
+				Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}},
+			}, nil))
+			require.NoError(archive.Close())
+
+			// Dropping the root list and its checkpoint data leaves an archive
+			// without blocks; verification must treat it as empty and pass.
+			require.NoError(os.Remove(filepath.Join(dir, fileNameArchiveRoots)))
+			require.NoError(os.RemoveAll(filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory)))
+
+			require.NoError(VerifyArchiveTrie(context.Background(), dir, config, NilVerificationObserver{}))
+		})
+	}
+}
+
 func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
