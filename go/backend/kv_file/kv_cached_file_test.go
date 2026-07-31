@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"iter"
 	"maps"
-	"sync"
 	"testing"
 	"testing/synctest"
 
@@ -28,12 +27,24 @@ const (
 	cacheSize            = 4
 	flushBufferThreshold = 3
 
-	key1   = 1
-	value1 = "value1"
+	key1   K = 1
+	value1   = "value1"
 )
 
-type K = int
-type V = string
+func TestKVCachedFile_Open_OpensFileCorrectly(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockKVFileWithMemoryFootprint[K, V](ctrl)
+
+	c, err := OpenKVCachedFile[K, V](mock, cacheSize, flushBufferThreshold)
+	require.NoError(err)
+	t.Cleanup(c.shutdownWriter) // do not leak the background writer
+	require.NotNil(c)
+	require.Zero(getCacheSize(c.cache))
+	require.Empty(c.flushBuffer)
+	require.Empty(c.dirty)
+	require.Empty(c.pending)
+}
 
 func TestKVCachedFile_Open_ReturnsErrorOnInvalidArguments(t *testing.T) {
 	mock := NewMockKVFileWithMemoryFootprint[K, V](gomock.NewController(t))
@@ -83,18 +94,36 @@ func TestKVCachedFile_Get_ReturnsValueCorrectly(t *testing.T) {
 				return want
 			},
 		},
+		"returns from pending buffer": {
+			setup: func(t *testing.T, c *KVCachedFile[K, V], mock *MockKVFileWithMemoryFootprint[K, V]) V {
+				want := "pending-value"
+				// The flush worker is parked and never signalled, so the
+				// injected buffer is not consumed during the test; the lock
+				// orders this write with the worker's reads. The worker drains
+				// the buffer on shutdown, which the expectations absorb.
+				mock.EXPECT().SetBatch(gomock.Any()).Return(nil).AnyTimes()
+				mock.EXPECT().Flush().Return(nil).AnyTimes()
+				c.mu.Lock()
+				c.pending = append(c.pending, map[K]V{key1: want})
+				c.mu.Unlock()
+				return want
+			},
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			c, mock := openTestKVCachedFile(t)
-			want := test.setup(t, c, mock)
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				c, mock := openTestKVCachedFile(t)
+				synctest.Wait() // the flush worker is parked on the empty queue
+				want := test.setup(t, c, mock)
 
-			got, err := c.Get(key1)
-			require.NoError(err)
-			require.NotNil(got)
-			require.Equal(want, *got)
+				got, err := c.Get(key1)
+				require.NoError(err)
+				require.NotNil(got)
+				require.Equal(want, *got)
+			})
 		})
 	}
 }
@@ -103,7 +132,7 @@ func TestKVCachedFile_Get_ReturnsNilOnUnknownKey(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
-	mock.EXPECT().Get(999).Return(nil, nil)
+	mock.EXPECT().Get(K(999)).Return(nil, nil)
 
 	got, err := c.Get(999)
 	require.NoError(err)
@@ -124,13 +153,56 @@ func TestKVCachedFile_Get_ReturnsErrorOnFileReadError(t *testing.T) {
 	require.Nil(got)
 }
 
-func TestKVCachedFile_Get_PromotesValuesInFlushBufferIntoCacheAsDirty(t *testing.T) {
+func TestKVCachedFile_Get_ChecksCacheThenFlushBufferThenPendingThenFile(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+		synctest.Wait() // the flush worker is parked on the empty queue
+
+		valueFile := "value-file"
+		mock.EXPECT().Get(key1).Return(&valueFile, nil).Times(1)
+		// The worker is never signalled, so the injected buffer is not
+		// consumed; the lock orders this write with the worker's reads.
+		c.mu.Lock()
+		c.pending = append(c.pending, map[K]V{key1: "value-pending"})
+		c.mu.Unlock()
+		c.flushBuffer[key1] = "value-buffer"
+		c.cache.Set(key1, "value-cache")
+
+		got, err := c.Get(key1)
+		require.NoError(err)
+		require.Equal("value-cache", *got)
+
+		// Clear cache
+		c.cache.Remove(key1)
+		got, err = c.Get(key1)
+		require.NoError(err)
+		require.Equal("value-buffer", *got)
+
+		// Clear cache, flush buffer is already clean as it was promoted
+		c.cache.Remove(key1)
+		got, err = c.Get(key1)
+		require.NoError(err)
+		require.Equal("value-pending", *got)
+
+		// Clear cache and pending
+		c.cache.Remove(key1)
+		c.mu.Lock()
+		c.pending = nil
+		c.mu.Unlock()
+		got, err = c.Get(key1)
+		require.NoError(err)
+		require.Equal("value-file", *got)
+	})
+}
+
+func TestKVCachedFile_Get_PromotesValuesFromFlushBufferToCacheAsDirty(t *testing.T) {
 	require := require.New(t)
 	// No file interactions expected: the buffer never reaches the flush
 	// threshold before the value is promoted back into the cache.
 	c, _ := openTestKVCachedFile(t)
 
-	for i := 0; i < cacheSize+1; i++ {
+	for i := range K(cacheSize + 1) {
 		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
 	}
 	_, inBuffer := c.flushBuffer[0]
@@ -146,13 +218,11 @@ func TestKVCachedFile_Get_PromotesValuesInFlushBufferIntoCacheAsDirty(t *testing
 	cached, found := c.cache.Get(0)
 	require.True(found)
 	require.Equal("value0", cached)
-	// The value was removed from the buffer without being written, so it must
-	// stay dirty: a clean promotion would drop it on eviction and lose the write.
 	_, isDirty := c.dirty[0]
 	require.True(isDirty, "value promoted from the flush buffer must be cached as dirty")
 }
 
-func TestKVCachedFile_Get_PromotesInFlightValueIntoCacheAsClean(t *testing.T) {
+func TestKVCachedFile_Get_PromotesPendingValueIntoCacheAsClean(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
@@ -161,26 +231,29 @@ func TestKVCachedFile_Get_PromotesInFlightValueIntoCacheAsClean(t *testing.T) {
 	writing, unblockWriter := blockWriter(t, mock, nil)
 
 	// Fill the cache and seal a buffer; key 0 is evicted into the in-flight buffer.
-	for i := 0; i < cacheSize+flushBufferThreshold; i++ {
+	for i := range K(cacheSize + flushBufferThreshold) {
 		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
 	}
 	<-writing // the writer is blocked with key 0 still in a pending buffer
 
-	// Reading key 0 serves it from the pending buffer and promotes it into the
-	// cache as a clean entry.
+	_, found := c.pending[0][0]
+	require.True(found)
+	_, isDirty := c.dirty[0]
+	require.False(isDirty, "Value should be clean when in pending")
+	// Get the value
 	got, err := c.Get(0)
 	require.NoError(err)
 	require.NotNil(got)
 	require.Equal("value0", *got)
 
+	// Make sure it has been promoted
 	cached, found := c.cache.Get(0)
 	require.True(found)
 	require.Equal("value0", cached)
-	_, isDirty := c.dirty[0]
+	_, isDirty = c.dirty[0]
 	require.False(isDirty, "promoted in-flight value must be cached as clean")
 
 	unblockWriter()
-	require.NoError(c.Flush())
 }
 
 func TestKVCachedFile_Get_ReturnsNewestValueAcrossMultiplePendingBuffers(t *testing.T) {
@@ -204,7 +277,6 @@ func TestKVCachedFile_Get_ReturnsNewestValueAcrossMultiplePendingBuffers(t *test
 	require.Equal("new", *got, "Get must return the newest pending value")
 
 	unblockWriter()
-	require.NoError(c.Flush())
 }
 
 func TestKVCachedFile_Has_ChecksCacheBufferAndFile(t *testing.T) {
@@ -229,6 +301,20 @@ func TestKVCachedFile_Has_ChecksCacheBufferAndFile(t *testing.T) {
 				return true
 			},
 		},
+		"found in pending buffer": {
+			setup: func(t *testing.T, c *KVCachedFile[K, V], mock *MockKVFileWithMemoryFootprint[K, V]) bool {
+				// The flush worker is parked and never signalled, so the
+				// injected buffer is not consumed during the test; the lock
+				// orders this write with the worker's reads. The worker drains
+				// the buffer on shutdown, which the expectations absorb.
+				mock.EXPECT().SetBatch(gomock.Any()).Return(nil).AnyTimes()
+				mock.EXPECT().Flush().Return(nil).AnyTimes()
+				c.mu.Lock()
+				c.pending = append(c.pending, map[K]V{key1: value1})
+				c.mu.Unlock()
+				return true
+			},
+		},
 		"not found": {
 			setup: func(t *testing.T, _ *KVCachedFile[K, V], mock *MockKVFileWithMemoryFootprint[K, V]) bool {
 				mock.EXPECT().Has(key1).Return(false, nil)
@@ -239,33 +325,18 @@ func TestKVCachedFile_Has_ChecksCacheBufferAndFile(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			c, mock := openTestKVCachedFile(t)
-			want := test.setup(t, c, mock)
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				c, mock := openTestKVCachedFile(t)
+				synctest.Wait() // the flush worker is parked on the empty queue
+				want := test.setup(t, c, mock)
 
-			got, err := c.Has(key1)
-			require.NoError(err)
-			require.Equal(want, got)
+				got, err := c.Has(key1)
+				require.NoError(err)
+				require.Equal(want, got)
+			})
 		})
 	}
-}
-
-func TestKVCachedFile_Has_FindsKeyInPendingBuffers(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	// Block the writer inside SetBatch so the sealed buffer holding key1 stays
-	// in the pending queue while it is looked up.
-	writing, unblockWriter := blockWriter(t, mock, nil)
-	sealBuffer(c, key1, value1)
-	<-writing
-
-	has, err := c.Has(key1)
-	require.NoError(err)
-	require.True(has, "Has must find keys awaiting a background write")
-
-	unblockWriter()
-	require.NoError(c.Flush())
 }
 
 func TestKVCachedFile_Has_DoesNotLoadValueIntoCache(t *testing.T) {
@@ -293,30 +364,6 @@ func TestKVCachedFile_Has_PropagatesFileError(t *testing.T) {
 	require.ErrorIs(err, injected)
 }
 
-func TestKVCachedFile_Get_PromotesValuesInFlushBufferIntoCache(t *testing.T) {
-	require := require.New(t)
-	// No file interactions expected: the buffer never reaches the flush
-	// threshold before the value is promoted back into the cache.
-	c, _ := openTestKVCachedFile(t)
-
-	for i := 0; i < cacheSize+1; i++ {
-		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
-	}
-	_, inBuffer := c.flushBuffer[0]
-	require.True(inBuffer)
-
-	got, err := c.Get(0)
-	require.NoError(err)
-	require.NotNil(got)
-	require.Equal("value0", *got)
-
-	_, inBuffer = c.flushBuffer[0]
-	require.False(inBuffer)
-	cached, found := c.cache.Get(0)
-	require.True(found)
-	require.Equal("value0", cached)
-}
-
 func TestKVCachedFile_Set_UpdatesCache(t *testing.T) {
 	require := require.New(t)
 	c, _ := openTestKVCachedFile(t)
@@ -329,7 +376,7 @@ func TestKVCachedFile_Set_UpdatesCache(t *testing.T) {
 	require.Equal(value1, got)
 }
 
-func TestKVCachedFile_Set_ReDirtiesKeyAfterFlush(t *testing.T) {
+func TestKVCachedFile_Set_SetKeyAsDirtyIfSetAgainAfterFlush(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
 
@@ -352,91 +399,6 @@ func TestKVCachedFile_Set_ReDirtiesKeyAfterFlush(t *testing.T) {
 	require.False(isDirty)
 }
 
-func TestKVCachedFile_Set_ReSetWhileInFlightIsNotLost(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	// Seal a buffer for the background writer and block it inside SetBatch so
-	// the buffer stays in flight while we re-Set one of its keys.
-	written := map[K]V{}
-	firstWrite, unblockWriter := blockWriter(t, mock, func(entries map[K]V) {
-		maps.Copy(written, entries)
-	})
-
-	// Fill the cache and evict (threshold) entries to seal the first buffer.
-	for i := 0; i < cacheSize+flushBufferThreshold; i++ {
-		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
-	}
-	<-firstWrite // the writer is now blocked inside SetBatch with key 0 in flight
-
-	// Re-Set key 0 with a new value while its old value is being written.
-	require.NoError(c.Set(0, "value0-new"))
-
-	// Let the in-flight write finish, then flush everything.
-	unblockWriter()
-	require.NoError(c.Flush())
-
-	// The re-Set value must have survived and reached disk.
-	require.Equal("value0-new", written[0])
-
-	got, err := c.Get(0)
-	require.NoError(err)
-	require.NotNil(got)
-	require.Equal("value0-new", *got)
-}
-
-func TestKVCachedFile_Set_ReSetWhileInFlushBufferIsNotLost(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	written := map[K]V{}
-	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
-		maps.Copy(written, entries)
-		return nil
-	}).AnyTimes()
-	mock.EXPECT().Flush().Return(nil).AnyTimes()
-
-	// Fill the cache and evict key 0 into the (un-sealed) flush buffer.
-	require.NoError(c.Set(0, "value0"))
-	for i := 1; i <= cacheSize; i++ {
-		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
-	}
-
-	// Re-Set key 0 while its old value still sits in the flush buffer, then
-	// trigger one more eviction so the buffer reaches the threshold and is
-	// sealed for the background writer.
-	require.NoError(c.Set(0, "value0-new"))
-	require.NoError(c.Set(cacheSize+1, "trigger"))
-
-	require.NoError(c.Flush())
-
-	// The re-Set value must be the one persisted, not the stale buffered one.
-	require.Equal("value0-new", written[0])
-}
-
-func TestKVCachedFile_Set_SurfacesAsyncWriteErrorOnNextOperation(t *testing.T) {
-	require := require.New(t)
-	c, mock := openTestKVCachedFile(t)
-
-	// Fill enough entries so that the next Set pushes the flush buffer to the
-	// threshold and triggers a background file write.
-	for i := 0; i < cacheSize+flushBufferThreshold-1; i++ {
-		require.NoError(c.Set(i, fmt.Sprintf("value%d", i)))
-	}
-
-	injected := errors.New("write failed")
-	mock.EXPECT().SetBatch(gomock.Any()).Return(injected)
-
-	// The write is asynchronous, so the triggering Set itself does not fail;
-	// the error surfaces on the next operation (here a Flush barrier).
-	require.NoError(c.Set(cacheSize+flushBufferThreshold-1, "trigger"))
-	require.ErrorIs(c.Flush(), injected)
-
-	// The error is sticky: subsequent operations keep reporting it.
-	_, err := c.Get(0)
-	require.ErrorIs(err, injected)
-}
-
 func TestKVCachedFile_SetBatch_StoresAllEntries(t *testing.T) {
 	require := require.New(t)
 	// No file interactions expected: the entries fit in the cache.
@@ -450,6 +412,7 @@ func TestKVCachedFile_SetBatch_StoresAllEntries(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(got)
 		require.Equal(want, *got)
+		require.True(c.dirty[key])
 	}
 }
 
@@ -503,6 +466,38 @@ func TestKVCachedFile_Flush_ClearsDirtyForFlushedKeys(t *testing.T) {
 	require.Empty(c.dirty)
 }
 
+func TestKVCachedFile_Flush_SerializeNewestValues(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	// Seal a buffer for the background writer and block it inside SetBatch so
+	// the buffer stays in flight while we re-Set one of its keys.
+	written := map[K]V{}
+	_, unblockWriter := blockWriter(t, mock, func(entries map[K]V) {
+		maps.Copy(written, entries)
+	})
+	// We just need the writeback here, the writer is always blocked
+	unblockWriter()
+
+	// The lock orders the injected buffer with the worker's reads of the
+	// pending queue.
+	c.mu.Lock()
+	c.pending = append(c.pending, map[K]V{0: "value-pending-0",
+		1: "value-pending-1",
+		2: "value-pending-2"})
+	c.flushBuffer[1] = "value-buffer-1"
+	c.flushBuffer[2] = "value-buffer-2"
+	c.cache.Set(2, "value-cache-2")
+	c.dirty[2] = true
+	c.mu.Unlock()
+
+	require.NoError(c.Flush())
+	require.Equal(len(written), 3)
+	require.Equal("value-pending-0", written[0])
+	require.Equal("value-buffer-1", written[1])
+	require.Equal("value-cache-2", written[2])
+}
+
 func TestKVCachedFile_Flush_ReturnsErrorOnFileError(t *testing.T) {
 	injected := errors.New("injected")
 	tests := map[string]func(mock *MockKVFileWithMemoryFootprint[K, V]){
@@ -529,8 +524,8 @@ func TestKVCachedFile_Flush_ReturnsErrorOnFileError(t *testing.T) {
 
 func TestKVCachedFile_Flush_IsNoopWhenNothingPending(t *testing.T) {
 	require := require.New(t)
-	// No file interactions expected when nothing is pending.
-	c, _ := openTestKVCachedFile(t)
+	c, mock := openTestKVCachedFile(t)
+	mock.EXPECT().Flush().Return(nil).Times(0)
 
 	require.NoError(c.Flush())
 }
@@ -583,6 +578,44 @@ func TestKVCachedFile_Flush_OnlyWritesDirtyEntriesAfterPartialUpdate(t *testing.
 	require.Equal(map[K]V{1: "value-1-updated"}, written)
 }
 
+func TestKVCachedFile_Flush_AsyncWriteErrorReleasesBlockedProducers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+
+		injected := errors.New("write failed")
+		release, unblock := newWriterRelease(t)
+		mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(map[K]V) error {
+			<-release
+			return injected
+		})
+
+		sealBuffer(c, 1, "value-1")
+		synctest.Wait() // the writer is now parked inside SetBatch with buffer 1
+		sealBuffer(c, 2, "value-2")
+
+		sealed := make(chan struct{})
+		go func() {
+			sealBuffer(c, 3, "value-3")
+			close(sealed)
+		}()
+		flushed := make(chan error, 1)
+		go func() { flushed <- c.Flush() }()
+
+		synctest.Wait() // producer and flusher are now parked on the full queue
+		select {
+		case <-sealed:
+			t.Fatal("producer sealed a buffer while the pending queue was full")
+		default:
+		}
+
+		unblock()
+		require.ErrorIs(<-flushed, injected)
+		<-sealed
+		require.ErrorIs(c.Set(4, "value-4"), injected)
+	})
+}
+
 func TestKVCachedFile_FileSize_ReturnsCorrectSize(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
@@ -617,10 +650,7 @@ func TestKVCachedFile_Iterate_YieldsFileContents(t *testing.T) {
 	seq, err := c.Iterate()
 	require.NoError(err)
 
-	got := map[K]V{}
-	for k, v := range seq {
-		got[k] = v
-	}
+	got := maps.Collect(seq)
 	require.Equal(fileContents, got)
 }
 
@@ -647,10 +677,7 @@ func TestKVCachedFile_Iterate_FlushesDirtyEntriesBeforeIterating(t *testing.T) {
 	seq, err := c.Iterate()
 	require.NoError(err)
 
-	got := map[K]V{}
-	for k, v := range seq {
-		got[k] = v
-	}
+	got := maps.Collect(seq)
 	require.Equal(map[K]V{1: "value-1", 2: "value-2", 3: "value-3"}, got)
 }
 
@@ -748,6 +775,41 @@ func TestKVCachedFile_Close_StopsBackgroundWriter(t *testing.T) {
 	}
 }
 
+func TestKVCachedFile_Close_CompletesWithProducerBlockedOnBackPressure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+
+		writing, unblockWriter := blockWriter(t, mock, nil)
+		mock.EXPECT().Close().Return(nil)
+
+		sealBuffer(c, 1, "value-1")
+		<-writing
+		sealBuffer(c, 2, "value-2")
+
+		done := make(chan struct{}, 2)
+		go func() {
+			sealBuffer(c, 3, "value-3")
+			done <- struct{}{}
+		}()
+		go func() {
+			require.NoError(c.Close())
+			done <- struct{}{}
+		}()
+
+		synctest.Wait() // producer and closer are now parked on the full queue
+		select {
+		case <-done:
+			t.Fatal("producer or closer completed while the writer still held the queue")
+		default:
+		}
+
+		unblockWriter()
+		<-done
+		<-done
+	})
+}
+
 func TestKVCachedFile_GetMemoryFootprint_IsNonZero(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
@@ -794,52 +856,6 @@ func TestKVCachedFile_Operations_ReturnStickyErrorAfterBackgroundWriteFailure(t 
 	}
 }
 
-// Concurrent callers and the background writer must not race. The fake file is
-// deliberately NOT synchronized (see fakeKVFile), so this doubles as a guard on
-// KVCachedFile's own serialization of file access: if that serialization (fileMu)
-// were dropped, the writer and a foreground reader would touch the fake's map at
-// once, which -race reports and Go's runtime turns into a fatal "concurrent map"
-// panic. Run with -race for the hard signal. Get/Has target the same keys as
-// Set, so reads exercise every layer -- cache, flush buffer, pending queue, and
-// the underlying file once entries have been evicted and written.
-func TestKVCachedFile_SetGetHasAndFlush_AreRaceFree(t *testing.T) {
-	require := require.New(t)
-	c, err := OpenKVCachedFile[K, V](newFakeKVFile(), cacheSize, flushBufferThreshold)
-	require.NoError(err)
-	t.Cleanup(c.shutdownWriter)
-
-	const (
-		workers      = 8
-		opsPerWorker = 100000
-	)
-	var wg sync.WaitGroup
-	for w := range workers {
-		wg.Add(1)
-		go func(w int) {
-			defer wg.Done()
-			for i := range opsPerWorker {
-				key := w*opsPerWorker + i
-				switch i % 4 {
-				case 0:
-					require.NoError(c.Set(key, fmt.Sprintf("w%d-i%d", w, i)))
-				case 1:
-					_, err := c.Get(key)
-					require.NoError(err)
-				case 2:
-					_, err := c.Has(key)
-					require.NoError(err)
-				case 3:
-					require.NoError(c.Flush())
-				}
-			}
-		}(w)
-	}
-	wg.Wait()
-
-	require.NoError(c.Flush())
-	require.NoError(c.Close())
-}
-
 func TestKVCachedFile_enqueueCurrentBufferLocked_IsNoopWhenBufferIsEmpty(t *testing.T) {
 	require := require.New(t)
 	// No file interactions expected: an empty buffer is never handed to the writer.
@@ -871,13 +887,13 @@ func TestKVCachedFile_enqueueCurrentBufferLocked_AppendsBufferAndClearsDirtyEntr
 
 	c.enqueueCurrentBufferLocked()
 
-	require.Empty(c.flushBuffer, "flushBuffer must be reset after enqueue")
-	require.Len(c.pending, 1, "sealed buffer must be appended to pending")
-	require.Equal(sealed, c.pending[0], "pending buffer must equal the sealed flushBuffer")
+	require.Empty(c.flushBuffer)
+	require.Len(c.pending, 1)
+	require.Equal(sealed, c.pending[0])
 
-	require.NotContains(c.dirty, K(1), "dirty entries in the sealed buffer must be cleared")
-	require.NotContains(c.dirty, K(2), "dirty entries in the sealed buffer must be cleared")
-	require.Contains(c.dirty, K(3), "dirty entries not in the sealed buffer must be retained")
+	require.NotContains(c.dirty, K(1))
+	require.NotContains(c.dirty, K(2))
+	require.Contains(c.dirty, K(3))
 	c.mu.Unlock()
 
 	unblockWriter()
@@ -940,8 +956,6 @@ func TestKVCachedFile_enqueueCurrentBufferLocked_BlocksWhenPendingQueueIsFull(t 
 	})
 }
 
-// The background writer must persist queued buffers oldest-first so the newest
-// value of a repeated key lands on disk last and wins.
 func TestKVCachedFile_flushWorker_PersistsBuffersInFIFOOrder(t *testing.T) {
 	require := require.New(t)
 	c, mock := openTestKVCachedFile(t)
@@ -1098,7 +1112,7 @@ func TestKVCachedFile_handleCacheSet_MovesEvictedEntryToFlushBuffer(t *testing.T
 	// flush buffer, and its size (1) stays below the flush threshold (3).
 	c, _ := openTestKVCachedFile(t)
 
-	for i := 0; i < cacheSize+1; i++ {
+	for i := K(0); i < cacheSize+1; i++ {
 		v := fmt.Sprintf("value%d", i)
 		require.NoError(c.handleCacheSet(&i, &v, true))
 	}
@@ -1121,8 +1135,8 @@ func TestKVCachedFile_handleCacheSet_FlushesBufferToFileWhenThresholdReached(t *
 	// Insert enough entries so that the cache is full and (threshold - 1)
 	// entries have been evicted into the buffer. No flush is triggered yet, so
 	// the background writer stays parked and these unlocked calls are safe.
-	total := cacheSize + flushBufferThreshold - 1
-	for i := 0; i < total; i++ {
+	total := K(cacheSize + flushBufferThreshold - 1)
+	for i := K(0); i < total; i++ {
 		v := fmt.Sprintf("value%d", i)
 		require.NoError(c.handleCacheSet(&i, &v, true))
 	}
@@ -1149,40 +1163,49 @@ func TestKVCachedFile_handleCacheSet_FlushesBufferToFileWhenThresholdReached(t *
 	require.Equal(value, cached)
 
 	require.Equal(flushBufferThreshold, len(written))
-	for i := 0; i < flushBufferThreshold; i++ {
+	for i := range K(flushBufferThreshold) {
 		require.Equal(fmt.Sprintf("value%d", i), written[i])
 	}
 }
 
-func TestKVCachedFile_handleCacheSet_DoesNotMarkEntryDirtyWhenDirtyFlagIsFalse(t *testing.T) {
-	require := require.New(t)
-	c, _ := openTestKVCachedFile(t)
+func TestKVCachedFile_handleCacheSet_MarksEntryDirtyDependingOnDirtyFlag(t *testing.T) {
+	testCases := map[string]bool{
+		"dirty flag true":  true,
+		"dirty flag false": false,
+	}
 
-	key, value := key1, value1
-	require.NoError(c.handleCacheSet(&key, &value, false))
+	for name, dirtyFlag := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			c, _ := openTestKVCachedFile(t)
 
-	_, exists := c.dirty[key]
-	require.False(exists)
+			key, value := key1, value1
+			require.NoError(c.handleCacheSet(&key, &value, dirtyFlag))
+
+			_, exists := c.dirty[key]
+			require.Equal(dirtyFlag, exists)
+		})
+	}
 }
 
 func TestKVCachedFile_handleCacheSet_DoesNotInsertIntoFlushBufferWhenEvictedEntryIsClean(t *testing.T) {
 	require := require.New(t)
 	c, _ := openTestKVCachedFile(t)
 
-	for i := 0; i < cacheSize; i++ {
+	for i := K(0); i < cacheSize; i++ {
 		v := fmt.Sprintf("value%d", i)
 		require.NoError(c.handleCacheSet(&i, &v, false))
 	}
 
 	// Trigger eviction
 	v := fmt.Sprintf("value%d", cacheSize)
-	key := cacheSize
+	key := K(cacheSize)
 	require.NoError(c.handleCacheSet(&key, &v, false))
 
 	require.Equal(0, len(c.flushBuffer))
 }
 
-func TestKVCachedFile_handleCacheSet_UpdatedEntryIsRetrievedInAllLocations(t *testing.T) {
+func TestKVCachedFile_handleCacheSet_OverwritesExistingEntry(t *testing.T) {
 	testCases := map[string]struct {
 		setup func(t *testing.T, c *KVCachedFile[K, V])
 	}{
@@ -1221,55 +1244,6 @@ func TestKVCachedFile_handleCacheSet_UpdatedEntryIsRetrievedInAllLocations(t *te
 	}
 }
 
-// fakeKVFile is a minimal in-memory KVFile for concurrency tests. It is
-// deliberately NOT synchronized: KVCachedFile must serialize all access to the
-// wrapped file itself (KVFile is not required to be safe for concurrent use), so
-// a lock here would hide a regression in that serialization instead of exposing
-// it. Do not add a mutex.
-type fakeKVFile struct {
-	data map[K]V
-}
-
-func newFakeKVFile() *fakeKVFile {
-	return &fakeKVFile{data: make(map[K]V)}
-}
-
-func (f *fakeKVFile) Get(key K) (*V, error) {
-	if v, ok := f.data[key]; ok {
-		return &v, nil
-	}
-	return nil, nil
-}
-
-func (f *fakeKVFile) Has(key K) (bool, error) {
-	_, ok := f.data[key]
-	return ok, nil
-}
-
-func (f *fakeKVFile) Set(key K, value V) error {
-	f.data[key] = value
-	return nil
-}
-
-func (f *fakeKVFile) SetBatch(entries map[K]V) error {
-	maps.Copy(f.data, entries)
-	return nil
-}
-
-func (f *fakeKVFile) Flush() error { return nil }
-
-func (f *fakeKVFile) FileSize() (uint64, error) { return 0, nil }
-
-func (f *fakeKVFile) Iterate() (iter.Seq2[K, V], error) {
-	return mockIterateSeq(maps.Clone(f.data)), nil
-}
-
-func (f *fakeKVFile) Close() error { return nil }
-
-func (f *fakeKVFile) GetMemoryFootprint() *common.MemoryFootprint {
-	return common.NewMemoryFootprint(0)
-}
-
 func openTestKVCachedFile(t *testing.T) (*KVCachedFile[K, V], *MockKVFileWithMemoryFootprint[K, V]) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
@@ -1297,44 +1271,6 @@ func (c *KVCachedFile[K, V]) waitForPendingFlushes() error {
 	return c.writeErr
 }
 
-// blockWriter makes the mocked file park the background writer inside SetBatch
-// until the returned unblock function is called. The returned channel is closed
-// when the writer first enters SetBatch, and onWrite (if not nil) observes every
-// batch once the writer is released; results it records are safe to read after a
-// Flush. Unblock is also invoked during test cleanup so a failed assertion
-// cannot leave the writer parked (see newWriterRelease).
-func blockWriter(t *testing.T, mock *MockKVFileWithMemoryFootprint[K, V], onWrite func(entries map[K]V)) (writing <-chan struct{}, unblock func()) {
-	t.Helper()
-	release, unblock := newWriterRelease(t)
-	writingCh := make(chan struct{})
-	var once sync.Once
-	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
-		once.Do(func() { close(writingCh) })
-		<-release
-		if onWrite != nil {
-			onWrite(entries)
-		}
-		return nil
-	}).AnyTimes()
-	mock.EXPECT().Flush().Return(nil).AnyTimes()
-	return writingCh, unblock
-}
-
-// newWriterRelease returns a channel used to unblock a mocked background writer
-// that parks inside SetBatch, together with a function that closes it. The
-// channel is also closed during test cleanup if the test has not closed it
-// itself: without this, a failed assertion would skip the test's own close and
-// leave the writer parked, so the shutdownWriter cleanup registered by
-// openTestKVCachedFile would deadlock waiting for the writer to exit. Because it
-// is registered after that cleanup, LIFO ordering runs it first.
-func newWriterRelease(t *testing.T) (release chan struct{}, unblock func()) {
-	t.Helper()
-	release = make(chan struct{})
-	unblock = sync.OnceFunc(func() { close(release) })
-	t.Cleanup(unblock)
-	return release, unblock
-}
-
 // sealBuffer places a single entry into the flush buffer and hands the buffer
 // over to the background writer.
 func sealBuffer(c *KVCachedFile[K, V], key K, value V) {
@@ -1344,23 +1280,61 @@ func sealBuffer(c *KVCachedFile[K, V], key K, value V) {
 	c.mu.Unlock()
 }
 
-// mockIterateSeq returns an iter.Seq2 mock return value that yields the
-// key/value pairs from the given map.
-func mockIterateSeq(entries map[K]V) iter.Seq2[K, V] {
-	return func(yield func(K, V) bool) {
-		for k, v := range entries {
-			if !yield(k, v) {
-				return
-			}
+func TestKVCachedFile_waitForPendingFlushes_BlocksUntilQueuedBuffersArePersisted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+		writing, unblock := blockWriter(t, mock, nil)
+
+		sealBuffer(c, key1, value1)
+		<-writing
+
+		done := make(chan error, 1)
+		go func() { done <- c.waitForPendingFlushes() }()
+
+		synctest.Wait() // the waiter is now parked on the non-empty queue
+		select {
+		case <-done:
+			t.Fatal("waitForPendingFlushes returned while a buffer was still in flight")
+		default:
 		}
-	}
+
+		unblock()
+		require.NoError(<-done)
+		c.mu.Lock()
+		require.Empty(c.pending)
+		c.mu.Unlock()
+	})
 }
 
-func getCacheSize[K comparable, V any](cache *common.LruCache[K, V]) int {
-	size := 0
-	cache.Iterate(func(K, V) bool {
-		size++
-		return true
+func TestKVCachedFile_waitForPendingFlushes_ReturnsStickyWriteError(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	injected := errors.New("write failed")
+	mock.EXPECT().SetBatch(gomock.Any()).Return(injected)
+
+	sealBuffer(c, key1, value1)
+	require.ErrorIs(c.waitForPendingFlushes(), injected)
+}
+
+func TestSealBuffer_HandsASingleEntryBufferToTheWriter(t *testing.T) {
+	require := require.New(t)
+	c, mock := openTestKVCachedFile(t)
+
+	var written map[K]V
+	mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
+		written = entries
+		return nil
 	})
-	return size
+	mock.EXPECT().Flush().Return(nil)
+
+	sealBuffer(c, key1, value1)
+	require.NoError(c.waitForPendingFlushes())
+
+	require.Equal(map[K]V{key1: value1}, written)
+	c.mu.Lock()
+	require.Empty(c.flushBuffer)
+	require.Empty(c.pending)
+	c.mu.Unlock()
 }

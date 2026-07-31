@@ -78,6 +78,7 @@ func OpenKVCachedFile[K comparable, V any](file KVFileWithMemoryFootprint[K, V],
 		dirty:                make(map[K]bool),
 		file:                 file,
 		flushBufferThreshold: flushBufferThreshold,
+		pending:              make([]map[K]V, 0, maxPendingFlushes),
 		writerDone:           make(chan struct{}),
 	}
 	c.cond = sync.NewCond(&c.mu)
@@ -159,7 +160,6 @@ func (c *KVCachedFile[K, V]) Has(key K) (bool, error) {
 	return has, err
 }
 
-// Set stores a value for the given key.
 func (c *KVCachedFile[K, V]) Set(key K, value V) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -169,7 +169,6 @@ func (c *KVCachedFile[K, V]) Set(key K, value V) error {
 	return c.handleCacheSet(&key, &value, true)
 }
 
-// SetBatch stores multiple key-value pairs.
 func (c *KVCachedFile[K, V]) SetBatch(entries map[K]V) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -233,9 +232,7 @@ func (c *KVCachedFile[K, V]) Close() error {
 	// its goroutine never outlives the cached file.
 	c.shutdownWriter()
 
-	// The writer has stopped, so fileMu is  uncontended here;
-	// it is still taken to keep "every file access happens
-	// under fileMu" a true invariant.
+	// The writer has stopped, so fileMu is uncontended here.
 	c.fileMu.Lock()
 	defer c.fileMu.Unlock()
 	return errors.Join(err, c.file.Close())
@@ -376,9 +373,8 @@ func (c *KVCachedFile[K, V]) flushWorker() {
 	}
 }
 
-// writeBuffer persists a single buffer to the underlying file. It is called
-// without holding c.mu so in-memory foreground operations are not blocked on
-// disk I/O; it holds fileMu instead, serializing against foreground operations
+// writeBuffer persists a single buffer to the underlying file.
+// It holds fileMu only, serializing against foreground operations
 // that reach the file (see the fileMu field).
 func (c *KVCachedFile[K, V]) writeBuffer(buf map[K]V) error {
 	c.fileMu.Lock()

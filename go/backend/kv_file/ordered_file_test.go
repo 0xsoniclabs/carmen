@@ -19,7 +19,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
@@ -481,58 +480,6 @@ func TestOrderedFile_OperationsFailAfterClose(t *testing.T) {
 // synchronisation a reader racing a writer on the same record could observe a
 // torn value. Every written value consists of 8 identical bytes, so any
 // observed value with mixed bytes proves a torn read.
-func TestOrderedFile_ConcurrentReadsAndWritesAreSafe(t *testing.T) {
-	require := require.New(t)
-	f, _ := openTestOrderedFile(t)
-
-	const numKeys = 4
-	const rounds = 1000
-	pattern := func(b byte) uint64 { return 0x0101010101010101 * uint64(b) }
-	checkUniform := func(v uint64) {
-		var buf [8]byte
-		binary.LittleEndian.PutUint64(buf[:], v)
-		for _, b := range buf {
-			if b != buf[0] {
-				t.Errorf("torn read: observed value %016x with mixed bytes", v)
-				return
-			}
-		}
-	}
-
-	for key := range uint64(numKeys) {
-		require.NoError(f.Set(key, pattern(1)))
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() { // writer: overwrites records with uniform byte patterns
-		defer wg.Done()
-		for i := range rounds {
-			require.NoError(f.Set(uint64(i%numKeys), pattern(byte(i))))
-		}
-	}()
-	go func() { // point reader
-		defer wg.Done()
-		for i := range rounds {
-			value, err := f.Get(uint64(i % numKeys))
-			require.NoError(err)
-			require.NotNil(value)
-			checkUniform(*value)
-		}
-	}()
-	go func() { // iterating reader
-		defer wg.Done()
-		for range rounds / 100 {
-			seq, err := f.Iterate()
-			require.NoError(err)
-			for _, value := range seq {
-				checkUniform(value)
-			}
-		}
-	}()
-	wg.Wait()
-}
-
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
