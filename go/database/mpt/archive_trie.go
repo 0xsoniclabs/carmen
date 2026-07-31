@@ -649,6 +649,12 @@ func (a *ArchiveTrie) GetConfig() MptConfig {
 
 // rootList is a utility type managing an in-memory copy of the list of roots
 // of an archive and its synchronization with an on-disk file copy.
+//
+// The file stores one fixed-size record [<node-id>, <state-hash>] per block.
+// Records are flushed asynchronously and in arbitrary block order, so after a
+// crash the region beyond the last checkpoint may be sparse, with unwritten
+// records reading as zeros. Records up to the last checkpoint are always
+// dense.
 type rootList struct {
 	roots     kv_file.KVFileWithMemoryFootprint[uint64, Root] // < the in-memory copy of the roots list
 	filename  string                                          // < the file storing the list of roots

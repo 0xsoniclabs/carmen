@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -3377,6 +3378,45 @@ func TestRootList_Prepare_FlushesRootsToDisk(t *testing.T) {
 	}
 }
 
+// Regression test for the crash-shape contract documented on rootList:
+// records are flushed asynchronously in arbitrary block order, but Prepare
+// must fully drain the list, so every record up to the size recorded in the
+// checkpoint is present on disk - dense, without zero holes.
+func TestRootList_Prepare_DrainsAllRootsToDisk(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	roots, err := loadRoots(dir)
+	require.NoError(err)
+	defer func() { require.NoError(roots.Close()) }()
+
+	// Enough roots to overflow the internal cache, so that background flushes
+	// keep writing arbitrary subsets of blocks while appending.
+	const numRoots = 15_000
+	root := func(i uint64) Root {
+		return Root{NodeRef: NewNodeReference(ValueId(i + 1)), Hash: common.Hash{byte(i + 1), byte(i >> 8)}}
+	}
+	for i := range uint64(numRoots) {
+		require.NoError(roots.append(root(i)))
+	}
+
+	require.NoError(roots.Prepare(checkpoint.Checkpoint(1)))
+
+	meta, err := utils.ReadJsonFile[rootListCheckpointData](filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory, fileNameArchiveRootsPreparedCheckpoint))
+	require.NoError(err)
+	require.Equal(numRoots, meta.NumRoots)
+
+	data, err := os.ReadFile(filepath.Join(dir, fileNameArchiveRoots))
+	require.NoError(err)
+	entrySize := NodeIdEncoder{}.GetEncodedSize() + 32
+	require.GreaterOrEqual(len(data), numRoots*entrySize)
+	reader := bytes.NewReader(data)
+	for i := range uint64(numRoots) {
+		_, got, err := readRoot(reader)
+		require.NoError(err)
+		require.Equal(root(i), got, "missing or wrong root record for block %d", i)
+	}
+}
+
 func TestRootList_Prepare_OnlyAcceptsIncrementalCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	roots, err := loadRoots(dir)
@@ -3421,6 +3461,51 @@ func TestRootList_Prepare_DetectsFlushIssue(t *testing.T) {
 	if err := roots.Prepare(cp); !errors.Is(err, injectedErr) {
 		t.Fatalf("expected error when roots could not be flushed to disk, got %v", err)
 	}
+}
+
+// Regression test: if the drain fails partway, Prepare must fail without recording the checkpoint,
+// so a checkpoint can never refer to roots that did not reach the disk.
+func TestRootList_Prepare_DoesNotRecordCheckpointOnFlushFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		dir := t.TempDir()
+		checkpointDir := filepath.Join(dir, fileNameArchiveRootsCheckpointDirectory)
+		require.NoError(os.MkdirAll(checkpointDir, 0700))
+
+		// The first batch write succeeds and the second fails, interrupting the
+		// flush midway with only part of the roots on disk.
+		ctrl := gomock.NewController(t)
+		file := kv_file.NewMockKVFileWithMemoryFootprint[uint64, Root](ctrl)
+		injectedErr := errors.New("injected flush failure")
+		gomock.InOrder(
+			file.EXPECT().SetBatch(gomock.Any()).Return(nil),
+			file.EXPECT().SetBatch(gomock.Any()).Return(injectedErr),
+		)
+		file.EXPECT().Flush().Return(nil).AnyTimes()
+		file.EXPECT().Close().Return(nil)
+
+		// A small cache, so that appending seals multiple write batches.
+		cached, err := kv_file.OpenKVCachedFile[uint64, Root](file, 10, 5)
+		require.NoError(err)
+		roots := &rootList{
+			roots:     cached,
+			filename:  filepath.Join(dir, fileNameArchiveRoots),
+			directory: checkpointDir,
+		}
+		t.Cleanup(func() { _ = roots.Close() })
+
+		require.NoError(roots.append(Root{NodeRef: NewNodeReference(ValueId(0))}))
+		require.NoError(roots.storeRoots()) // flush to disk
+		// Add something to flush during the checkpont
+		require.NoError(roots.append(Root{NodeRef: NewNodeReference(ValueId(1))}))
+		synctest.Wait() // wait for the background flush to finish
+
+		require.ErrorIs(roots.Prepare(checkpoint.Checkpoint(1)), injectedErr)
+
+		prepareFile := filepath.Join(checkpointDir, fileNameArchiveRootsPreparedCheckpoint)
+		_, err = os.Stat(prepareFile)
+		require.True(os.IsNotExist(err), "a failed flush must not record a checkpoint")
+	})
 }
 
 func TestRootList_Prepare_FailsOnIOError(t *testing.T) {
