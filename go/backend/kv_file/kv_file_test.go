@@ -82,7 +82,7 @@ func TestKVFile_Get_ReturnsNilForUnknownKey(t *testing.T) {
 	forEachKVFile(t, func(t *testing.T, _ string, open func() KVFileWithMemoryFootprint[K, V]) {
 		require := require.New(t)
 		file := open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 
 		got, err := file.Get(0)
 		require.NoError(err)
@@ -99,7 +99,7 @@ func TestKVFile_SetAndGet_RoundTripsValues(t *testing.T) {
 	forEachKVFile(t, func(t *testing.T, _ string, open func() KVFileWithMemoryFootprint[K, V]) {
 		require := require.New(t)
 		file := open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 
 		const numKeys = 5
 		for i := range K(numKeys) {
@@ -118,7 +118,7 @@ func TestKVFile_Set_OverwritesExistingValue(t *testing.T) {
 	forEachKVFile(t, func(t *testing.T, _ string, open func() KVFileWithMemoryFootprint[K, V]) {
 		require := require.New(t)
 		file := open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 
 		require.NoError(file.Set(0, "old"))
 		require.NoError(file.Set(0, "new"))
@@ -134,7 +134,7 @@ func TestKVFile_Has_ReportsWrittenKeys(t *testing.T) {
 	forEachKVFile(t, func(t *testing.T, _ string, open func() KVFileWithMemoryFootprint[K, V]) {
 		require := require.New(t)
 		file := open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 
 		has, err := file.Has(0)
 		require.NoError(err)
@@ -159,7 +159,7 @@ func TestKVFile_SetBatchAndIterate_YieldsAllWrittenEntries(t *testing.T) {
 	forEachKVFile(t, func(t *testing.T, _ string, open func() KVFileWithMemoryFootprint[K, V]) {
 		require := require.New(t)
 		file := open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 
 		entries := map[K]V{0: "value-0", 1: "value-1", 2: "value-2"}
 		require.NoError(file.SetBatch(entries))
@@ -183,7 +183,7 @@ func TestKVFile_FlushAndClose_PersistValuesAcrossReopen(t *testing.T) {
 		require.NoError(file.Close())
 
 		file = open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 		for i := range K(numKeys) {
 			got, err := file.Get(i)
 			require.NoError(err)
@@ -251,7 +251,7 @@ func TestKVFile_SetGetHasAndFlush_ConcurrentWritesToSharedKeysArePersisted(t *te
 
 		// Reopen the store: every key must hold its last written value.
 		file = open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 		for key := range numKeys {
 			got, err := file.Get(key)
 			require.NoError(err)
@@ -268,7 +268,7 @@ func TestKVFile_ConcurrentReadsAndWritesAreSafe(t *testing.T) {
 		}
 		require := require.New(t)
 		file := open()
-		defer file.Close()
+		defer require.NoError(file.Close())
 
 		const numKeys = 8
 		const rounds = 1000
