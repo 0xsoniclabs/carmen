@@ -962,6 +962,61 @@ func TestKVCachedFile_flushWorker_PersistsBuffersInFIFOOrder(t *testing.T) {
 		"buffers must be written oldest-first so the newest value wins on disk")
 }
 
+func TestKVCachedFile_flushWorker_WaitsForPendingBuffersWhenIdle(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+
+		// The writer is parked on the empty queue.
+		// No operation happens on the mock.
+		synctest.Wait()
+
+		// Seal a buffer and wake the writer; it must write it to the file.
+		written := map[K]V{}
+		mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
+			maps.Copy(written, entries)
+			return nil
+		}).Times(1)
+		mock.EXPECT().Flush().Return(nil).Times(1)
+
+		sealBuffer(c, key1, value1)
+
+		require.NoError(c.Flush())
+		require.Equal(map[K]V{key1: value1}, written)
+	})
+}
+
+func TestKVCachedFile_flushWorker_WritesBuffersSealedDuringShutdown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		c, mock := openTestKVCachedFile(t)
+
+		written := map[K]V{}
+		mock.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[K]V) error {
+			maps.Copy(written, entries)
+			return nil
+		}).AnyTimes()
+		mock.EXPECT().Flush().Return(nil).AnyTimes()
+
+		synctest.Wait() // the writer is parked on the empty queue
+
+		// Seal a buffer and mark the file closed before the writer wakes: the
+		// interleaving a concurrent reader can produce during Close.
+		c.mu.Lock()
+		c.flushBuffer[key1] = value1
+		c.enqueueCurrentBufferLocked()
+		c.closed = true
+		c.cond.Broadcast()
+		c.mu.Unlock()
+
+		<-c.writerDone
+		require.Equal(map[K]V{key1: value1}, written, "buffer sealed during shutdown was dropped")
+		c.mu.Lock()
+		require.Empty(c.pending, "an orphaned buffer deadlocks any later drain")
+		c.mu.Unlock()
+	})
+}
+
 func TestKVCachedFile_writeBuffer_WritesBatchThenFlushesFile(t *testing.T) {
 	injected := errors.New("injected")
 	tests := map[string]struct {

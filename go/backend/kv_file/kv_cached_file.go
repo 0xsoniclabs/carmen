@@ -342,7 +342,11 @@ func (c *KVCachedFile[K, V]) flushWorker() {
 		for len(c.pending) == 0 && !c.closed {
 			c.cond.Wait()
 		}
-		if c.closed {
+		// On shutdown the queue is written out first: a buffer sealed between
+		// a Close's drain and the shutdown (e.g. by a concurrent Get promotion
+		// evicting dirty entries) would otherwise be lost, and a later drain
+		// would wait forever for it to be popped.
+		if c.closed && (len(c.pending) == 0 || c.writeErr != nil) {
 			return
 		}
 		if c.writeErr != nil {
