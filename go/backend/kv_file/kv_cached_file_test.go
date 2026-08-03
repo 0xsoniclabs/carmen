@@ -492,7 +492,7 @@ func TestKVCachedFile_Flush_SerializeNewestValues(t *testing.T) {
 	c.mu.Unlock()
 
 	require.NoError(c.Flush())
-	require.Equal(len(written), 3)
+	require.Equal(3, len(written))
 	require.Equal("value-pending-0", written[0])
 	require.Equal("value-buffer-1", written[1])
 	require.Equal("value-cache-2", written[2])
