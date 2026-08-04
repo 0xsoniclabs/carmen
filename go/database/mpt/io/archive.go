@@ -58,9 +58,7 @@ var archiveMagicNumber []byte = []byte("Fantom-Archive-State")
 const archiveFormatVersion = byte(1)
 
 // ExportArchive exports the archive in the given directory to out. Temporary
-// staging data is placed under scratchDir, which should be on the same volume
-// as the export destination; an empty scratchDir falls back to the system
-// temp directory.
+// staging data is placed under scratchDir.
 func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Writer, scratchDir string) error {
 	return ExportArchiveWithConfig(ctx, logger, directory, out, scratchDir, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 }
