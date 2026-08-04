@@ -5086,6 +5086,48 @@ func TestStateDB_EndBlock_ClearedSlotsWithKnownNonZeroStoredValueAreZeroed(t *te
 	stateDB.EndBlock(1)
 }
 
+func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	state.EXPECT().Check().AnyTimes()
+	state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	state.EXPECT().GetNonce(gomock.Any()).Return(common.ToNonce(1), nil).AnyTimes()
+	state.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+	// The stored value is fetched exactly once; later reads must be served
+	// from the caches.
+	state.EXPECT().GetStorage(gomock.Any(), gomock.Any()).Times(1).Return(val1, nil)
+
+	address := common.Address{1, 2, 3}
+	// The slot is set back to the value the DB already holds, so no slot
+	// update is emitted for it.
+	state.EXPECT().Apply(uint64(1), common.Update{
+		Nonces: []common.NonceUpdate{{Account: address, Nonce: common.ToNonce(5)}},
+		Codes:  []common.CodeUpdate{{Account: address, Code: []byte{}}},
+	}).Return(nil, nil)
+
+	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
+	stateDB.BeginTransaction()
+	require.Equal(val1, stateDB.GetState(address, key1)) // caches the stored value val1
+	stateDB.CreateAccount(address)                       // clears the storage
+	stateDB.SetState(address, key1, val1)                // sets the slot back to its stored value
+	stateDB.SetNonce(address, 5)                         // keeps the account alive
+	stateDB.EndTransaction()
+	stateDB.EndBlock(1)
+
+	// The stored data cache entry carries the incremented reincarnation, so
+	// the still valid value is not masked as outdated.
+	cached, exists := stateDB.storedDataCache.Get(slotId{address, key1})
+	require.True(exists)
+	require.Equal(val1, cached.value)
+	require.Equal(stateDB.reincarnation[address], cached.reincarnation)
+
+	// The value remains visible in the next block.
+	stateDB.BeginTransaction()
+	require.Equal(val1, stateDB.GetState(address, key1))
+	stateDB.EndTransaction()
+}
+
 func TestStateDB_EndBlock_WipesLeftoverStorageOfEmptyAccount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
