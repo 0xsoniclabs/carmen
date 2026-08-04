@@ -14,11 +14,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/stretchr/testify/require"
@@ -210,6 +212,38 @@ func TestCodeSortStore_AddAndWriteTo_DeduplicatesRepeatedHashes(t *testing.T) {
 	require.NoError(err)
 	require.Equal(code, got)
 	require.Zero(buf.Len(), "a repeatedly added code must be written only once")
+}
+
+func BenchmarkCodeSortStore(b *testing.B) {
+	sizes := []int{100_000, 1_000_000, 10_000_000}
+	for _, n := range sizes {
+		b.Run(fmt.Sprintf("N=%d", n), func(b *testing.B) {
+			require := require.New(b)
+			var total time.Duration
+			for range b.N {
+				store, err := newCodeSortStore(b.TempDir())
+				if err != nil {
+					b.Fatal(err)
+				}
+				start := time.Now()
+				for i := range n {
+					code := [200]byte{byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i)}
+					// Mix i to avoid sequential key insertion.
+					u := uint32(i) * 2654435761
+					var hash common.Hash
+					binary.BigEndian.PutUint32(hash[0:4], u)
+					if err := store.add(hash, code[:]); err != nil {
+						b.Fatal(err)
+					}
+				}
+				require.NoError(store.writeTo(io.Discard))
+				total += time.Since(start)
+				require.NoError(store.close())
+			}
+			perOp := total.Seconds() / float64(b.N)
+			b.ReportMetric(perOp, "Add+WriteTo/s")
+		})
+	}
 }
 
 // failingWriter is an io.Writer that succeeds for the first failAfter calls
