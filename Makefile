@@ -18,8 +18,8 @@ carmen-rust:
 	cargo build --release
 
 clean:
-	cd rust ; \
-	cargo clean ; \
+	rm -f go/coverage.txt
+	cd rust && cargo clean
 
 .PHONY: license-check
 license-check:
