@@ -72,7 +72,7 @@ func newCodeSortStore(scratchDir string) (*codeSortStore, error) {
 	// The store is discarded after the export, so crash safety through the
 	// write-ahead log is not needed.
 	// No automatic compactions are needed either, as the store is append-only and short lived.
-	db, err := pebble.Open(dir, &pebble.Options{DisableWAL: true}) //DisableAutomaticCompactions: true, L0StopWritesThreshold: 1000})
+	db, err := pebble.Open(dir, &pebble.Options{DisableWAL: true, DisableAutomaticCompactions: true, L0StopWritesThreshold: 1000})
 	if err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("failed to open staging store: %w", err),

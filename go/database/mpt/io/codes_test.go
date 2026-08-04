@@ -241,7 +241,7 @@ func BenchmarkCodeSortStore(b *testing.B) {
 				require.NoError(store.close())
 			}
 			perOp := total.Seconds() / float64(b.N)
-			b.ReportMetric(perOp, "s/op")
+			b.ReportMetric(perOp, "Add+WriteTo/s")
 			fmt.Printf("BenchmarkCodeSortStore/N=%d: add+writeTo total=%.3fs, per-op=%.3fs (b.N=%d)\n",
 				n, total.Seconds(), perOp, b.N)
 		})
