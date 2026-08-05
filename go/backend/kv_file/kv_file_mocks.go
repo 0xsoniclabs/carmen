@@ -157,21 +157,6 @@ func (mr *MockKVFileMockRecorder[K, V]) SetBatch(entries any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetBatch", reflect.TypeOf((*MockKVFile[K, V])(nil).SetBatch), entries)
 }
 
-// Size mocks base method.
-func (m *MockKVFile[K, V]) Size() (uint64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Size")
-	ret0, _ := ret[0].(uint64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Size indicates an expected call of Size.
-func (mr *MockKVFileMockRecorder[K, V]) Size() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Size", reflect.TypeOf((*MockKVFile[K, V])(nil).Size))
-}
-
 // MockKVFileWithMemoryFootprint is a mock of KVFileWithMemoryFootprint interface.
 type MockKVFileWithMemoryFootprint[K comparable, V any] struct {
 	ctrl     *gomock.Controller
@@ -324,19 +309,4 @@ func (m *MockKVFileWithMemoryFootprint[K, V]) SetBatch(entries map[K]V) error {
 func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) SetBatch(entries any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetBatch", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).SetBatch), entries)
-}
-
-// Size mocks base method.
-func (m *MockKVFileWithMemoryFootprint[K, V]) Size() (uint64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Size")
-	ret0, _ := ret[0].(uint64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Size indicates an expected call of Size.
-func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) Size() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Size", reflect.TypeOf((*MockKVFileWithMemoryFootprint[K, V])(nil).Size))
 }
