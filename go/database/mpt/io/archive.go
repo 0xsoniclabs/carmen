@@ -57,11 +57,13 @@ var archiveMagicNumber []byte = []byte("Fantom-Archive-State")
 
 const archiveFormatVersion = byte(1)
 
-func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Writer) error {
-	return ExportArchiveWithConfig(ctx, logger, directory, out, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+// ExportArchive exports the archive in the given directory to out. Temporary
+// staging data is placed under scratchDir.
+func ExportArchive(ctx context.Context, logger *Log, directory string, out io.Writer, scratchDir string) error {
+	return ExportArchiveWithConfig(ctx, logger, directory, out, scratchDir, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
 }
 
-func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string, out io.Writer, nodeConfig mpt.NodeCacheConfig, archiveConfig mpt.ArchiveConfig) error {
+func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string, out io.Writer, scratchDir string, nodeConfig mpt.NodeCacheConfig, archiveConfig mpt.ArchiveConfig) error {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -89,8 +91,11 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 
 	// Write out codes.
 	logger.Printf("exporting codes")
-	codes := archive.GetCodes()
-	if err = writeCodes(codes, out); err != nil {
+	codes, err := archive.GetCodes()
+	if err != nil {
+		return err
+	}
+	if err = writeCodes(codes, out, scratchDir); err != nil {
 		return err
 	}
 

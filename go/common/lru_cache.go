@@ -25,6 +25,10 @@ type LruCache[K comparable, V any] struct {
 
 // NewLruCache returns a new instance
 func NewLruCache[K comparable, V any](capacity int) *LruCache[K, V] {
+	if capacity < 2 {
+		capacity = 2
+	}
+
 	return &LruCache[K, V]{
 		cache:    make(map[K]*entry[K, V], capacity),
 		capacity: capacity,

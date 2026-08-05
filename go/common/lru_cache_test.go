@@ -12,7 +12,24 @@ package common
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestLRUCache_NewLruCache_RoundsUpCapacityIfLessThanTwo(t *testing.T) {
+	tests := map[string]int{
+		"Zero capacity":     0,
+		"Capacity of one":   1,
+		"Negative capacity": -100,
+	}
+
+	for name, capacity := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := NewLruCache[int, int](capacity)
+			require.Equal(t, 2, c.capacity)
+		})
+	}
+}
 
 func TestLruExceedCapacity(t *testing.T) {
 	c := NewLruCache[int, int](3)

@@ -16,7 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
+	"iter"
 	"sort"
 
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
@@ -44,6 +44,18 @@ func (NilVerificationObserver) StartVerification()        {}
 func (NilVerificationObserver) Progress(msg string)       {}
 func (NilVerificationObserver) EndVerification(res error) {}
 
+// rootsFromSlice adapts a slice of roots to the iterator type expected by
+// the verification API.
+func rootsFromSlice(roots []Root) iter.Seq2[uint64, Root] {
+	return func(yield func(uint64, Root) bool) {
+		for i, r := range roots {
+			if !yield(uint64(i), r) {
+				return
+			}
+		}
+	}
+}
+
 // VerifyMptState runs validation checks on the forest and code hashes
 // stored in the given directory.
 // Forest checks:
@@ -57,7 +69,7 @@ func (NilVerificationObserver) EndVerification(res error) {}
 //     - all byte-codes within the code file matches their hashed representation in accounts
 //  2. Non-fatal checks
 //     - there are no extra Code Hashes not referenced by any account
-func VerifyMptState(ctx context.Context, directory string, config MptConfig, roots []Root, observer VerificationObserver) (res error) {
+func VerifyMptState(ctx context.Context, directory string, config MptConfig, roots iter.Seq2[uint64, Root], observer VerificationObserver) (res error) {
 	if observer == nil {
 		observer = NilVerificationObserver{}
 	}
@@ -93,7 +105,7 @@ func VerifyMptState(ctx context.Context, directory string, config MptConfig, roo
 //   - all required files are present and can be read
 //   - all referenced nodes are present
 //   - all hashes are consistent
-func verifyFileForest(ctx context.Context, directory string, config MptConfig, roots []Root, observer VerificationObserver) (res error) {
+func verifyFileForest(ctx context.Context, directory string, config MptConfig, roots iter.Seq2[uint64, Root], observer VerificationObserver) (res error) {
 	if observer == nil {
 		observer = NilVerificationObserver{}
 	}
@@ -113,7 +125,7 @@ func verifyFileForest(ctx context.Context, directory string, config MptConfig, r
 	return verifyForest(directory, config, roots, source, observer)
 }
 
-func verifyForest(directory string, config MptConfig, roots []Root, source *verificationNodeSource, observer VerificationObserver) (res error) {
+func verifyForest(directory string, config MptConfig, roots iter.Seq2[uint64, Root], source *verificationNodeSource, observer VerificationObserver) (res error) {
 	// ------------------------- Meta-Data Checks -----------------------------
 
 	observer.Progress(fmt.Sprintf("Checking forest stored in %s ...", directory))
@@ -198,7 +210,7 @@ func verifyForest(directory string, config MptConfig, roots []Root, source *veri
 	// Check roots for Archive node
 	if source.getConfig().HashStorageLocation == HashStoredWithNode {
 		// Check hashes of roots.
-		observer.Progress(fmt.Sprintf("Checking %d root hashes ...", len(roots)))
+		observer.Progress("Checking root hashes ...")
 		refIds := newNodeIds()
 		for _, root := range roots {
 			refIds.Put(root.NodeRef.id)
@@ -309,7 +321,7 @@ func verifyHashes[N any](
 	stock stock.Stock[uint64, N],
 	ids stock.IndexSet[uint64],
 	hashOfEmptyNode common.Hash,
-	roots []Root,
+	roots iter.Seq2[uint64, Root],
 	observer VerificationObserver,
 	hash func(*N) (common.Hash, error),
 	readHash func(*N) (common.Hash, bool),
@@ -535,7 +547,7 @@ func verifyHashesStoredWithParents[N any](
 	source *verificationNodeSource,
 	stock stock.Stock[uint64, N],
 	ids stock.IndexSet[uint64],
-	roots []Root,
+	roots iter.Seq2[uint64, Root],
 	observer VerificationObserver,
 	hash func(*N) (common.Hash, error),
 	isNodeType func(NodeId) bool,
@@ -625,39 +637,59 @@ func verifyHashesStoredWithParents[N any](
 // - All CodeHashes within the code file are correct matching the contract byte-codes
 // 2) Non-fatal checks
 // - There are no extra Code Hashes not referenced by any account
-func verifyContractCodes(directory string, source *verificationNodeSource, observer VerificationObserver) error {
-	observer.Progress(fmt.Sprintf("Checking contract codes ..."))
+func verifyContractCodes(directory string, source *verificationNodeSource, observer VerificationObserver) (err error) {
+	observer.Progress("Checking contract codes ...")
 
-	codeFile := filepath.Join(directory, "codes.dat")
-	codes, err := readCodes(codeFile)
+	codes, err := openCodes(directory)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, codes.Close())
+	}()
 
 	// Check that the codes are correctly indexed.
-	for hash, code := range codes {
+	codeIterator, err := codes.getCodes()
+	if err != nil {
+		return err
+	}
+	for hash, code := range codeIterator {
 		if got, want := common.Keccak256(code), hash; got != want {
 			return fmt.Errorf("unexpected code hash, got: %x want: %x", got, want)
 		}
 	}
+
 	// Check that all referenced codes are present in the code file.
 	usedHashes := make(map[common.Hash]struct{})
 	err = source.forAccountNodes(func(acc *AccountNode) error {
 		codeHash := acc.info.CodeHash
 		usedHashes[codeHash] = struct{}{}
-		if _, exists := codes[codeHash]; codeHash != emptyCodeHash && !exists {
+		code, err := codes.getCodeForHash(codeHash)
+		if err != nil {
+			return err
+		}
+		if codeHash != emptyCodeHash && code == nil {
 			return fmt.Errorf("hash %x is missing in code file", codeHash)
 		}
 		return nil
 	})
-	// find any extra hashes
-	for hash := range codes {
+	if err != nil {
+		return err
+	}
+
+	// Report codes not referenced by any account. This requires a second pass
+	// over the code file, keeping the codes themselves out of memory.
+	codeIterator, err = codes.getCodes()
+	if err != nil {
+		return err
+	}
+	for hash := range codeIterator {
 		if _, exists := usedHashes[hash]; !exists {
 			observer.Progress(fmt.Sprintf("Contract %x is not referenced by any account\n", hash))
 		}
 	}
 
-	return err
+	return nil
 }
 
 type verificationNodeSource struct {

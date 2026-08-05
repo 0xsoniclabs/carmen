@@ -892,7 +892,7 @@ func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
 	syncs <- struct{}{}
 
 	// Expect the backend export to be called.
-	backend.EXPECT().Export(gomock.Any(), gomock.Any()).Return(common.Hash{0xAA}, nil)
+	backend.EXPECT().Export(gomock.Any(), gomock.Any(), gomock.Any()).Return(common.Hash{0xAA}, nil)
 
 	state := &State{
 		backend:  backend,
@@ -900,7 +900,7 @@ func TestState_Export_SyncsAndForwardsToBackend(t *testing.T) {
 		syncs:    syncs,
 	}
 
-	hash, err := state.Export(t.Context(), nil)
+	hash, err := state.Export(t.Context(), nil, t.TempDir())
 	require.NoError(t, err)
 	require.Equal(t, common.Hash{0xAA}, hash)
 
@@ -923,14 +923,14 @@ func TestState_Export_IssueReportedBySyncIsForwarded(t *testing.T) {
 	}
 	state.issues.HandleIssue(issue)
 
-	_, err := state.Export(t.Context(), nil)
+	_, err := state.Export(t.Context(), nil, t.TempDir())
 	require.ErrorIs(t, err, issue)
 }
 
 func TestState_Export_NotSupportedWithoutBackend(t *testing.T) {
 	flatState := &State{}
 
-	_, err := flatState.Export(t.Context(), nil)
+	_, err := flatState.Export(t.Context(), nil, t.TempDir())
 	require.ErrorIs(t, err, state.ExportNotSupported)
 }
 

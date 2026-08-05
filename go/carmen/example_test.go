@@ -552,7 +552,7 @@ func ExampleHistoricBlockContext_Export() {
 	var rootHash carmen.Hash
 	b := bytes.NewBuffer(nil)
 	if err = db.QueryBlock(uint64(1), func(ctxt carmen.HistoricBlockContext) error {
-		rootHash, err = ctxt.Export(context.Background(), b)
+		rootHash, err = ctxt.Export(context.Background(), b, dir)
 		if err != nil {
 			log.Fatalf("cannot export: %v", err)
 		}

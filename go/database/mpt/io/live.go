@@ -71,7 +71,7 @@ type mptStateVisitor interface {
 	// GetHash returns the hash of the represented Trie.
 	GetHash() (common.Hash, error)
 	// GetCodeForHash returns byte code for given hash.
-	GetCodeForHash(common.Hash) []byte
+	GetCodeForHash(common.Hash) ([]byte, error)
 }
 
 // noResponseNodeVisitor is a visitor for nodes.
@@ -112,7 +112,7 @@ func (e exportableArchiveTrie) GetHash() (common.Hash, error) {
 	return e.trie.GetHash(e.block)
 }
 
-func (e exportableArchiveTrie) GetCodeForHash(hash common.Hash) []byte {
+func (e exportableArchiveTrie) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return e.trie.GetCodeForHash(hash)
 }
 
@@ -132,15 +132,17 @@ func (e *exportableLiveTrie) GetHash() (common.Hash, error) {
 	return e.db.GetHash()
 }
 
-func (e *exportableLiveTrie) GetCodeForHash(hash common.Hash) []byte {
+func (e *exportableLiveTrie) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return e.db.GetCodeForHash(hash)
 }
 
 // Export opens a LiveDB instance retained in the given directory and writes
 // its content to the given output writer. The result contains all the
 // information required by the Import function below to reconstruct the full
-// state of the LiveDB.
-func Export(ctx context.Context, logger *Log, directory string, out io.Writer) error {
+// state of the LiveDB. Temporary staging data is placed under scratchDir,
+// which should be on the same volume as the export destination; an empty
+// scratchDir falls back to the system temp directory.
+func Export(ctx context.Context, logger *Log, directory string, out io.Writer, scratchDir string) (retErr error) {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -157,13 +159,15 @@ func Export(ctx context.Context, logger *Log, directory string, out io.Writer) e
 	}
 	defer db.Close()
 
-	_, err = ExportLive(ctx, logger, &exportableLiveTrie{db: db, directory: directory}, out)
+	_, err = ExportLive(ctx, logger, &exportableLiveTrie{db: db, directory: directory}, out, scratchDir)
 	return err
 }
 
 // ExportBlockFromArchive exports LiveDB genesis for a single given block from an Archive.
 // Note: block must be <= of Archive block height.
-func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, out io.Writer, block uint64) error {
+// Temporary staging data is placed under scratchDir; an empty scratchDir
+// falls back to the system temp directory.
+func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, out io.Writer, block uint64, scratchDir string) (retErr error) {
 	info, err := CheckMptDirectoryAndGetInfo(directory)
 	if err != nil {
 		return fmt.Errorf("error in input directory: %v", err)
@@ -178,8 +182,8 @@ func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, 
 		return err
 	}
 
-	defer archive.Close()
-	_, err = ExportLive(ctx, logger, exportableArchiveTrie{trie: archive, block: block}, out)
+	defer func() { retErr = errors.Join(retErr, archive.Close()) }()
+	_, err = ExportLive(ctx, logger, exportableArchiveTrie{trie: archive, block: block}, out, scratchDir)
 	return err
 }
 
@@ -187,7 +191,8 @@ func ExportBlockFromArchive(ctx context.Context, logger *Log, directory string, 
 // This method exports from an online archive, i.e, an archive that is being updated with new blocks.
 // To ensure the exported data is up-to-date, this method flushes the archive to disk before exporting.
 // Expected usage is, for instance, the creation of database dumps once in many blocks to backup the state.
-func ExportBlockFromOnlineArchive(ctx context.Context, logger *Log, archive *mpt.ArchiveTrie, out io.Writer, block uint64) error {
+// Temporary staging data is placed under scratchDir.
+func ExportBlockFromOnlineArchive(ctx context.Context, logger *Log, archive *mpt.ArchiveTrie, out io.Writer, block uint64, scratchDir string) error {
 	logger.Printf("exporting block %d from online archive", block)
 	defer func() {
 		logger.Printf("exported block %d from online archive", block)
@@ -203,12 +208,14 @@ func ExportBlockFromOnlineArchive(ctx context.Context, logger *Log, archive *mpt
 	_, err := ExportLive(ctx, logger, exportableArchiveTrie{
 		trie:  archive,
 		block: block,
-	}, out)
+	}, out, scratchDir)
 	return err
 }
 
-// ExportLive exports given db into out.
-func ExportLive(ctx context.Context, logger *Log, db mptStateVisitor, out io.Writer) (common.Hash, error) {
+// ExportLive exports given db into out. Temporary staging data is placed
+// under scratchDir; an empty scratchDir falls back to the system temp
+// directory.
+func ExportLive(ctx context.Context, logger *Log, db mptStateVisitor, out io.Writer, scratchDir string) (common.Hash, error) {
 	// Start with the magic number.
 	if _, err := out.Write(stateMagicNumber); err != nil {
 		return common.Hash{}, err
@@ -233,12 +240,8 @@ func ExportLive(ctx context.Context, logger *Log, db mptStateVisitor, out io.Wri
 
 	// Write out codes.
 	logger.Print("exporting codes")
-	codes, err := getReferencedCodes(ctx, logger, db)
-	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to retrieve codes: %w", err)
-	}
-	if err := writeCodes(codes, out); err != nil {
-		return common.Hash{}, err
+	if err := writeReferencedCodes(ctx, logger, db, out, scratchDir); err != nil {
+		return common.Hash{}, fmt.Errorf("failed to export codes: %w", err)
 	}
 
 	// Write out all accounts and values.
@@ -444,27 +447,47 @@ func runImport(logger *Log, directory string, in io.Reader, config mpt.MptConfig
 	}
 }
 
-// getReferencedCodes returns a map of codes referenced by accounts in the
-// given database. The map is indexed by the code hash.
-func getReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor) (map[common.Hash][]byte, error) {
+// writeReferencedCodes writes to out all codes referenced by accounts in the
+// given database, ordered by hash. Codes are staged in a disk-backed store
+// created under scratchDir, so the full code table need not fit in memory.
+func writeReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor, out io.Writer, scratchDir string) (retErr error) {
+	store, err := newCodeSortStore(scratchDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		retErr = errors.Join(retErr, store.close())
+	}()
+
 	progress := logger.NewProgressTracker("retrieved %d accounts, %.2f accounts/s", 1000_000)
-	codes := make(map[common.Hash][]byte)
-	err := db.Visit(makeNoResponseVisitor(func(node mpt.Node, info mpt.NodeInfo) error {
+	// Track the hashes staged so far, so that a code shared by many accounts
+	// is retrieved and staged only once. This keeps hashes in memory, not codes.
+	seen := make(map[common.Hash]struct{})
+	err = db.Visit(makeNoResponseVisitor(func(node mpt.Node, info mpt.NodeInfo) error {
 		if n, ok := node.(*mpt.AccountNode); ok {
 			if interrupt.IsCancelled(ctxt) {
 				return interrupt.ErrCanceled
 			}
 			progress.Step(1)
 			codeHash := n.Info().CodeHash
-			code := db.GetCodeForHash(codeHash)
+			if _, exists := seen[codeHash]; exists {
+				return nil
+			}
+			seen[codeHash] = struct{}{}
+			code, err := db.GetCodeForHash(codeHash)
+			if err != nil {
+				return fmt.Errorf("failed to retrieve code for hash %x: %w", codeHash[:], err)
+			}
 			if len(code) > 0 {
-				codes[codeHash] = code
+				return store.add(codeHash, code)
 			}
 		}
 		return nil
 	}), true)
-
-	return codes, err
+	if err != nil {
+		return err
+	}
+	return store.writeTo(out)
 }
 
 // exportVisitor is an internal utility used by the Export function to write

@@ -26,11 +26,11 @@ import (
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
-	"golang.org/x/exp/maps"
 
-	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/backend/kv_file"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 )
@@ -220,13 +220,18 @@ func TestReadCodes(t *testing.T) {
 	code2 := []byte{0xDD, 0xEE}
 	code3 := []byte{0xEE}
 
-	var data []byte
-	data = append(data, append(binary.BigEndian.AppendUint32(h1[:], uint32(len(code1))), code1...)...)
-	data = append(data, append(binary.BigEndian.AppendUint32(h2[:], uint32(len(code2))), code2...)...)
-	data = append(data, append(binary.BigEndian.AppendUint32(h3[:], uint32(len(code3))), code3...)...)
+	input := map[common.Hash][]byte{
+		h1: code1,
+		h2: code2,
+		h3: code3,
+	}
 
-	reader := utils.NewChunkReader(data, 3)
-	res, err := parseCodes(reader)
+	file := filepath.Join(t.TempDir(), fileNameCodes)
+	if err := writeCodesForTesting(input, file); err != nil {
+		t.Fatalf("failed to write codes: %s", err)
+	}
+
+	res, err := readCodesForTesting(file)
 	if err != nil {
 		t.Fatalf("should not fail: %s", err)
 	}
@@ -236,11 +241,11 @@ func TestReadCodes(t *testing.T) {
 	}
 
 	if code, exists := res[h2]; !exists || !bytes.Equal(code, code2) {
-		t.Errorf("bytes do not match: %x != %x", code, code1)
+		t.Errorf("bytes do not match: %x != %x", code, code2)
 	}
 
 	if code, exists := res[h3]; !exists || !bytes.Equal(code, code3) {
-		t.Errorf("bytes do not match: %x != %x", code, code1)
+		t.Errorf("bytes do not match: %x != %x", code, code3)
 	}
 }
 
@@ -305,7 +310,9 @@ func TestState_StateModifications_Failing(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	codes, err := openCodes(t.TempDir())
+	require.NoError(t, err)
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: codes, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedErr) {
 			t.Errorf("unexpected error: %v != %v", err, injectedErr)
@@ -381,7 +388,9 @@ func TestState_HasEmptyStorage(t *testing.T) {
 		t.Fatalf("failed to mark directory dirty: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: &codes{}, lock: lock, directory: dir}
+	codes, err := openCodes(dir)
+	require.NoError(t, err)
+	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "metadata.dat")}, codes: codes, lock: lock, directory: dir}
 	defer func() {
 		if err := state.Close(); err != nil {
 			t.Fatalf("failed to close the state: %v", err)
@@ -566,7 +575,10 @@ func TestState_GetCodes(t *testing.T) {
 				}
 			}
 
-			codes := state.GetCodes()
+			codes, err := state.codes.getCodesForTesting()
+			if err != nil {
+				t.Fatalf("cannot get codes: %s", err)
+			}
 			if got, want := len(codes), size-1; got != want {
 				t.Errorf("sizes do not much: got: %d != want: %d", got, want)
 			}
@@ -595,7 +607,9 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 		t.Fatalf("cannot create lock file: %v", err)
 	}
 
-	state := &MptState{trie: &LiveTrie{forest: db}, codes: &codes{}, lock: lock}
+	codes, err := openCodes(t.TempDir())
+	require.NoError(t, err)
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: codes, lock: lock}
 	defer func() {
 		if err := state.Close(); !errors.Is(err, injectedError) {
 			t.Fatalf("unexpected error: %v != %v", err, injectedError)
@@ -607,6 +621,41 @@ func TestState_ForestErrorIsReportedInFlushAndClose(t *testing.T) {
 	}
 	if want, got := injectedError, state.Close(); !errors.Is(got, want) {
 		t.Errorf("missing forest error in Close result, wanted %v, got %v", want, got)
+	}
+}
+
+func newFailingCodes(t *testing.T) *codes {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	codeFile := kv_file.NewMockKVFileWithMemoryFootprint[common.Hash, []byte](ctrl)
+	codeFile.EXPECT().Get(gomock.Any()).Return(nil, os.ErrNotExist).AnyTimes()
+
+	cached, err := kv_file.OpenKVCachedFile[common.Hash, []byte](codeFile, 1, 1)
+	if err != nil {
+		t.Fatalf("failed to open kv cached file: %v", err)
+	}
+	return &codes{codes: cached}
+}
+
+func TestState_GetCodeForHash_ForwardsCodesReadError(t *testing.T) {
+	codes := newFailingCodes(t)
+	state := &MptState{codes: codes}
+
+	if _, err := state.GetCodeForHash(common.Hash{0x42}); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected os.ErrNotExist to be forwarded from codes.getCodeForHash, got %v", err)
+	}
+}
+
+func TestState_GetCode_ForwardsCodesReadError(t *testing.T) {
+	codes := newFailingCodes(t)
+
+	ctrl := gomock.NewController(t)
+	db := NewMockDatabase(ctrl)
+	db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{CodeHash: common.Hash{0x42}}, true, nil)
+	state := &MptState{trie: &LiveTrie{forest: db}, codes: codes}
+
+	if _, err := state.GetCode(common.Address{1}); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected os.ErrNotExist to be forwarded from GetCodeForHash, got %v", err)
 	}
 }
 
@@ -731,7 +780,9 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 
 	// Add some codes to be flushed.
 	for i := 0; i < numAccounts; i++ {
-		state.codes.codes[common.Hash{byte(i >> 8), byte(i)}] = make([]byte, 100)
+		if err := state.codes.codes.Set(common.Hash{byte(i >> 8), byte(i)}, make([]byte, 100)); err != nil {
+			b.Fatalf("failed to set code: %v", err)
+		}
 	}
 
 	if err = state.Flush(); err != nil {
@@ -755,10 +806,16 @@ func runFlushBenchmark(b *testing.B, config MptConfig, forceDirtyNodes bool) {
 				}
 				handle.Release()
 			})
-			if err := os.Remove(state.codes.file); err != nil {
-				b.Fatalf("failed to remove codes file: %v", err)
+			// Re-set all codes so the next flush has to write them all again.
+			allCodes, err := state.codes.getCodesForTesting()
+			if err != nil {
+				b.Fatalf("failed to get codes: %v", err)
 			}
-			state.codes.pending = maps.Keys(state.codes.codes)
+			for hash, code := range allCodes {
+				if err := state.codes.codes.Set(hash, code); err != nil {
+					b.Fatalf("failed to set code: %v", err)
+				}
+			}
 		}
 		if err = state.Flush(); err != nil {
 			b.Fatalf("failed to flush state: %v", err)

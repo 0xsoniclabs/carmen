@@ -209,6 +209,6 @@ func (s *State) CreateWitnessProof(address common.Address, keys ...common.Key) (
 	return nil, fmt.Errorf("witness proof not supported yet")
 }
 
-func (s *State) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
+func (s *State) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	panic("not implemented")
 }
