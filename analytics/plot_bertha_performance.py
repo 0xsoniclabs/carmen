@@ -2,8 +2,9 @@
 
 # %% Setup
 
-from operator import itemgetter
 import re
+from operator import itemgetter
+
 import matplotlib.pyplot as plt
 
 

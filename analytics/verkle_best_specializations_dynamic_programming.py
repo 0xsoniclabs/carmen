@@ -167,7 +167,7 @@ def print_best_specializations(node_name, counts, sizes):
             for row in table:
                 for cell in row:
                     print(cell.ljust(max_len + 3), end="")
-                print("")
+                print()
 
 
 def load_node_counts(csv_path):

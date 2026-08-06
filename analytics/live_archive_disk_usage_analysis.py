@@ -1,11 +1,12 @@
 # %% Setup
 
-from matplotlib.transforms import offset_copy
 import re
 import sys
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from matplotlib.transforms import offset_copy
 
 # The default CSV to load. When running non-interactively, this can be overridden by a command-line argument.
 # Note that the titles of plots below need to be adjusted accordingly if different data is used.
@@ -276,15 +277,15 @@ def plot_empirical_cdf_broken_axis(data, break_at, outlier_region, title):
 
     # draw broken axes indicators
     d = 1.5  # proportion of vertical to horizontal extent of the slanted line
-    kwargs = dict(
-        marker=[(-1, -d), (1, d)],
-        markersize=12,
-        linestyle="none",
-        color="k",
-        mec="k",
-        mew=1,
-        clip_on=False,
-    )
+    kwargs = {
+        "marker": [(-1, -d), (1, d)],
+        "markersize": 12,
+        "linestyle": "none",
+        "color": "k",
+        "mec": "k",
+        "mew": 1,
+        "clip_on": False,
+    }
     ax1.plot([1, 1], [1, 0], transform=ax1.transAxes, **kwargs)
     ax2.plot([0, 0], [1, 0], transform=ax2.transAxes, **kwargs)
 
