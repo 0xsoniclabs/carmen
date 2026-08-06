@@ -153,7 +153,7 @@ jobs:
     - name: generate code coverage
       run: cargo llvm-cov --codecov --output-path codecov.json -- --skip crate_crypto
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: codecov.json
