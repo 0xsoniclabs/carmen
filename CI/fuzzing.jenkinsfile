@@ -1,0 +1,159 @@
+// Copyright (c) 2025 Sonic Operations Ltd
+//
+// Use of this software is governed by the Business Source License included
+// in the LICENSE file and at soniclabs.com/bsl11.
+//
+// Change Date: 2028-4-16
+//
+// On the date above, in accordance with the Business Source License, use of
+// this software will be governed by the GNU Lesser General Public License v3.
+
+// Fuzzes one Carmen entry point, built on the toolchain image this commit ships
+// (CI/Dockerfile.jenkins), so what is fuzzed and what it is built with can never drift apart. That
+// is why this pipeline lives here rather than in LaScala: a Jenkins dockerfile agent is resolved
+// against the pipeline's own repository, so only a pipeline in Carmen can use Carmen's image.
+//
+// Which entry point, and for how long, is decided by the rotation job in LaScala
+// (fuzzing/rotation.jenkinsfile). This job takes the entry point as a plain string and finds the
+// package it lives in itself, so adding a fuzzer to this repository needs no pipeline change here
+// and none there.
+@Library('shared-library') _
+
+// Package holding the entry point, relative to go/ where the go.mod sits, resolved from the checkout
+// in 'prepare'. Null until then, which the failure handler below has to allow for.
+def fuzzPackage
+// Repository url and commit of this checkout, for the reproduction instructions.
+def checkedOut
+
+pipeline {
+    agent {
+        dockerfile {
+            filename 'CI/Dockerfile.jenkins'
+            // ?: because the very first build of a new job has no parameter definitions yet, and a
+            // null label would put a six hour fuzzing run on whatever agent happens to be free.
+            label params.AgentLabel ?: 'fuzzing-carmen'
+        }
+    }
+
+    options {
+        timestamps()
+        // Failsafe against a misconfigured job: sets the build to ABORTED when it triggers, and an
+        // aborted build runs no failure handler, so FuzzTime is kept an hour below it (checked in
+        // 'validate-parameters') to leave a bug found in the final minutes time to be reported.
+        timeout(time: 8, unit: 'HOURS')
+    }
+
+    // No triggers: the LaScala rotation job decides when this runs and what it fuzzes.
+
+    environment {
+        CC = 'clang-19'
+        CXX = 'clang++-19'
+        GOMEMLIMIT = goMemLimit()
+        // The corpus the fuzzer builds up lives in $GOCACHE/fuzz - only the inputs that FAIL are
+        // written into the repository. The container is thrown away after every build, so the cache
+        // has to live in the workspace, which the agent keeps: otherwise every run starts from the
+        // seed corpus again and every hour ever spent fuzzing this entry point is discarded.
+        GOCACHE = "${env.WORKSPACE}/.gocache"
+    }
+
+    parameters {
+        string(
+            name: 'AgentLabel',
+            defaultValue: 'fuzzing-carmen',
+            description: 'Jenkins agent label to run this job on. It builds a Docker image, so it ' +
+                'has to be an agent that can.'
+        )
+        string(
+            name: 'EntryPoint',
+            defaultValue: '',
+            description: '''Required. Fuzzer entry point to run. Any `func FuzzXxx(f *testing.F)` of
+this repository will do: the job searches the checkout for the package it lives in, and lists every
+entry point it found if this is not one of them.
+
+At the time of writing (a hint, not a constraint - the repository decides): FuzzMapOperations,
+FuzzLruCache_RandomOps, FuzzNWays_RandomOps, FuzzBufferedFile_RandomOps, FuzzBufferedFile_ReadWrite,
+FuzzStack_RandomOps, FuzzFileStock_RandomOps, FuzzSyncStock_RandomOps, FuzzMemoryStock_RandomOps,
+FuzzLiveTrie_RandomAccountOps, FuzzLiveTrie_RandomAccountStorageOps, FuzzArchiveTrie_RandomAccountOps,
+FuzzArchiveTrie_RandomAccountStorageOps.'''
+        )
+        string(
+            name: 'FuzzTime',
+            defaultValue: '6h',
+            description: 'Time given to the fuzzer, as a Go duration. At most 7h, an hour below the ' +
+                'build timeout. Shorten it (e.g. 30s) to test this pipeline.'
+        )
+    }
+
+    stages {
+        stage('validate-parameters') {
+            steps {
+                describeBuild()
+
+                script {
+                    // Against the 8 hour timeout set above.
+                    fuzzer.requireSaneTimeout(fuzzTime: params.FuzzTime, timeoutMinutes: 8 * 60)
+                }
+            }
+        }
+
+        stage('prepare') {
+            steps {
+                script {
+                    // The SCM configuration of the job replaces the repository/version parameters a
+                    // pipeline outside this repository would need, so the reproduction instructions
+                    // read both back out of the checkout.
+                    checkedOut = fuzzer.checkoutInfo()
+
+                    // Resolved against this checkout, so a mistyped EntryPoint aborts here with the
+                    // list of what this repository actually offers rather than fuzzing nothing. The
+                    // module directory defaults to go/, which is where Carmen's go.mod sits.
+                    fuzzPackage = fuzzer.resolvePackage(entryPoint: params.EntryPoint)
+
+                    // Workspaces are reused between builds; report only what this run produced.
+                    fuzzer.resetLog()
+                }
+            }
+        }
+
+        stage('build') {
+            steps {
+                sh 'make all'
+            }
+        }
+
+        stage('fuzzing-test') {
+            steps {
+                script {
+                    fuzzer.fuzz(
+                        package: fuzzPackage,
+                        entryPoint: params.EntryPoint,
+                        fuzzTime: params.FuzzTime
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                fuzzer.reportProgress(channel: 'jenkins-carmen')
+            }
+        }
+
+        failure {
+            script {
+                // A build that failed before 'prepare' resolved the package has no findings to
+                // attach: the failure is reported above and there is nothing to add.
+                if (fuzzPackage) {
+                    fuzzer.archiveFindings(
+                        package: fuzzPackage,
+                        entryPoint: params.EntryPoint,
+                        repository: checkedOut.repository,
+                        version: checkedOut.version
+                    )
+                }
+            }
+        }
+    }
+}
