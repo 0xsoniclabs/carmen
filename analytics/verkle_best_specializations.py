@@ -4,8 +4,8 @@ import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 import pulp
+import seaborn as sns
 from sortedcontainers import SortedDict, SortedSet
 
 # The default CSV to load. When running non-interactively, this can be overridden by a command-line argument.
@@ -98,7 +98,7 @@ def load_statistics(csv_path):
     # Group by `Node Kind` and calculate the prefix sum of `Count` within each group
     df['PrefixSum'] = df.groupby("Node Kind")["Count"].transform('cumsum')
     # Collect the node info into a nested dictionary
-    node_info = dict()
+    node_info = {}
     for node_kind, group in df.groupby("Node Kind"):
         node_info[node_kind] = {
             # Total number of nodes of this kind
@@ -157,7 +157,7 @@ def best_variants_with_upper_bound_greedy(
     assert num_nodes_to_use > 0
 
     # Always include the largest node specialization
-    available_nodes = [i for i in node_prefix_sum.keys() if i != max_node]
+    available_nodes = [i for i in node_prefix_sum if i != max_node]
     # Initial solution: only the largest node specialization
     min_solution = SortedDict({max_node: node_prefix_sum[max_node]})
     min_size = node_prefix_sum[max_node] * node_sizes[max_node]
@@ -211,7 +211,7 @@ def best_variants_with_upper_bound_ilp(
     Returns:
         (dict, float): Mapping from node size index to number of nodes covered, and the total storage size.
     """
-    greedy_dict, _ = greedy_solution
+    _greedy_dict, _ = greedy_solution
     total_node_count = max(node_prefix_sum.values())
     assert num_specializations > 0
 
@@ -470,7 +470,7 @@ def min_storage_size(node_info: dict, node_sizes: dict, node_type: str):
     """
 
     min_size = 0
-    for i in node_info[node_type]["node_size"].keys():
+    for i in node_info[node_type]["node_size"]:
         num_nodes_covered = node_info[node_type]["node_size"][i]
         min_size += node_sizes[i] * num_nodes_covered
     return min_size
@@ -520,7 +520,7 @@ specializations = []
 res = calculate_size_for_indices(
     SortedSet(specializations), node_info["Leaf"]["prefix_sum"], leaf_node_sizes
 )
-for key in res[0].keys():
+for key in res[0]:
     num_nodes = res[0][key]
     folder_size = leaf_node_sizes[key] * num_nodes
     print(

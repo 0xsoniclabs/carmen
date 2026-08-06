@@ -9,8 +9,9 @@
 # {"node1": {"total": 1000, "reuse": 200}, "node2": {"total": 1500, "reuse": 300}, ...}
 # Lines which do not start with '{' are ignored.
 
-import sys
 import json
+import sys
+
 import matplotlib.pyplot as plt
 
 
@@ -36,7 +37,7 @@ def parse_data(filename):
 
 
 def plot_data(data):
-    fig, [ax_total_reuse, ax_used] = plt.subplots(2, 1, figsize=(24, 12))
+    _fig, [ax_total_reuse, ax_used] = plt.subplots(2, 1, figsize=(24, 12))
 
     colormap = plt.get_cmap("tab20")
     node_keys = list(data.keys())
