@@ -80,7 +80,7 @@ type Database interface {
 
 	// CheckAll verifies internal invariants of a set of Trie instances rooted by
 	// the given nodes. It is a generalization of the Check() function.
-	CheckAll(rootRefs []*NodeReference) error
+	CheckAll(rootRefs iter.Seq2[uint64, *NodeReference]) error
 
 	// CheckErrors returns an error that might have been
 	// encountered on this forest in the past.

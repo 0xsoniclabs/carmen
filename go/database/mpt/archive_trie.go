@@ -457,17 +457,16 @@ func (a *ArchiveTrie) GetMemoryFootprint() *common.MemoryFootprint {
 }
 
 func (a *ArchiveTrie) Check() error {
-	roots := make([]*NodeReference, a.roots.length())
-	for i := 0; i < a.roots.length(); i++ {
-		rootm, err := a.roots.get(uint64(i))
-		if err != nil {
-			return err
-		}
-		roots[i] = &rootm.NodeRef
+	it, err := a.roots.Iterate()
+	if err != nil {
+		return err
 	}
 	return errors.Join(
 		a.CheckErrors(),
-		a.forest.CheckAll(roots))
+		a.forest.CheckAll(common.Map2(it, func(k uint64, v Root) (uint64, *NodeReference) {
+			return k, &v.NodeRef
+		})),
+	)
 }
 
 func (a *ArchiveTrie) Flush() error {
