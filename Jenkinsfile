@@ -24,8 +24,6 @@ pipeline {
 
     environment {
         GOMEMLIMIT = '1GiB'
-        CC = 'clang-19'
-        CXX = 'clang++-19'
     }
 
     stages {

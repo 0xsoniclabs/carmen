@@ -44,8 +44,6 @@ pipeline {
     }
 
     environment {
-        CC = 'clang-19'
-        CXX = 'clang++-19'
         GOMEMLIMIT = goMemLimit()
         // The corpus lives in $GOCACHE/fuzz and the container is thrown away after every build, so
         // the cache has to sit in the workspace, which the agent keeps.
