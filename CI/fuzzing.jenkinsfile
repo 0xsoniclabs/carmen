@@ -1,0 +1,134 @@
+// Copyright (c) 2025 Sonic Operations Ltd
+//
+// Use of this software is governed by the Business Source License included
+// in the LICENSE file and at soniclabs.com/bsl11.
+//
+// Change Date: 2028-4-16
+//
+// On the date above, in accordance with the Business Source License, use of
+// this software will be governed by the GNU Lesser General Public License v3.
+
+// Fuzzes one Carmen entry point a day, rotating over every `func FuzzXxx(f *testing.F)` this
+// repository has - so a new fuzzer joins the rotation without a change here. The decision and the
+// steps come from LaScala's shared library (fuzzRotation, fuzzer); the schedule and the toolchain
+// are this repository's, because a Jenkins dockerfile agent is resolved against the pipeline's own
+// repository and only a pipeline in Carmen can build on Carmen's CI/Dockerfile.jenkins.
+//
+// The module root is left at its default of go/, which is where Carmen's go.mod sits.
+@Library('shared-library') _
+
+def entryPoint
+def fuzzPackage
+def checkedOut
+
+pipeline {
+    agent {
+        dockerfile {
+            filename 'CI/Dockerfile.jenkins'
+            label 'fuzzing-carmen'
+        }
+    }
+
+    options {
+        timestamps()
+        timeout(time: 8, unit: 'HOURS')
+        // Two builds at once would pick the same entry point.
+        disableConcurrentBuilds()
+        // The rotation reads what was fuzzed lately out of these build descriptions, so this history
+        // is its memory: it has to hold far more builds than the repository has entry points.
+        buildDiscarder(logRotator(numToKeepStr: '200'))
+    }
+
+    triggers {
+        cron('@daily')
+    }
+
+    environment {
+        CC = 'clang-19'
+        CXX = 'clang++-19'
+        GOMEMLIMIT = goMemLimit()
+        // The corpus lives in $GOCACHE/fuzz and the container is thrown away after every build, so
+        // the cache has to sit in the workspace, which the agent keeps.
+        GOCACHE = "${env.WORKSPACE}/.gocache"
+    }
+
+    parameters {
+        string(
+            name: 'EntryPoint',
+            defaultValue: '',
+            description: 'Fuzzer entry point to run. Empty - which is what the daily run leaves it - ' +
+                'means the one that has gone longest without a turn.'
+        )
+        string(
+            name: 'FuzzTime',
+            defaultValue: '6h',
+            description: 'Time given to the fuzzer, as a Go duration. At most 7h, an hour below the ' +
+                'build timeout. Shorten it (e.g. 30s) to test this pipeline.'
+        )
+    }
+
+    stages {
+        stage('prepare') {
+            steps {
+                describeBuild()
+
+                script {
+                    fuzzer.requireSaneTimeout(fuzzTime: params.FuzzTime, timeoutMinutes: 8 * 60)
+                    checkedOut = fuzzer.checkoutInfo()
+                    entryPoint = params.EntryPoint ?: fuzzRotation.pickTarget()
+                    fuzzPackage = fuzzer.resolvePackage(entryPoint: entryPoint)
+                    fuzzer.resetLog()
+                }
+            }
+        }
+
+        stage('build') {
+            steps {
+                sh 'make all'
+            }
+        }
+
+        stage('fuzzing-test') {
+            steps {
+                script {
+                    fuzzer.fuzz(
+                        package: fuzzPackage,
+                        entryPoint: entryPoint,
+                        fuzzTime: params.FuzzTime
+                    )
+                }
+            }
+
+            post {
+                // Whatever the fuzzer found: an entry point that crashes must not be picked forever.
+                always {
+                    script {
+                        fuzzRotation.recordTarget(entryPoint)
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                fuzzer.reportProgress(channel: 'jenkins-carmen')
+            }
+        }
+
+        failure {
+            script {
+                // A build that failed before 'prepare' resolved the package has nothing to attach.
+                if (fuzzPackage) {
+                    fuzzer.archiveFindings(
+                        package: fuzzPackage,
+                        entryPoint: entryPoint,
+                        repository: checkedOut.repository,
+                        version: checkedOut.version
+                    )
+                }
+            }
+        }
+    }
+}
