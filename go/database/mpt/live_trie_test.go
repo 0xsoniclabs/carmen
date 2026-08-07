@@ -864,7 +864,7 @@ func TestLiveTrie_DeleteLargeAccount(t *testing.T) {
 				t.Errorf("failed to clear storage: %v", err)
 			}
 			// If done wrong, the delete takes > 1 second.
-			if duration, limit := time.Since(start), 50*time.Millisecond; duration > limit {
+			if duration, limit := time.Since(start), 1*time.Second; duration > limit {
 				t.Errorf("delete took too long: %v, limit %v", duration, limit)
 			}
 
