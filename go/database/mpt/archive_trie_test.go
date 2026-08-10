@@ -2046,7 +2046,7 @@ func TestArchiveTrie_DirectlyStoredRootsCanBeRestored(t *testing.T) {
 		{NewNodeReference(ValueId(14)), common.Hash{14}},
 	}
 
-	if err := StoreRoots(file, roots); err != nil {
+	if err := StoreRoots(file, slices.Values(roots)); err != nil {
 		t.Fatalf("failed to store roots: %v", err)
 	}
 	restored, err := loadRoots(dir)

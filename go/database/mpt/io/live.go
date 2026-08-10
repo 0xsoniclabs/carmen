@@ -284,17 +284,21 @@ func InitializeArchive(logger *Log, directory string, in io.Reader, block uint64
 	}
 
 	// Create a root file listing block roots.
-	roots := make([]mpt.Root, block+1)
-	for i := uint64(0); i < block; i++ {
-		roots[i] = mpt.Root{
-			NodeRef: mpt.NewNodeReference(mpt.EmptyId()),
-			Hash:    mpt.EmptyNodeEthereumHash,
+	roots := func(yield func(mpt.Root) bool) {
+		for range block {
+			if !yield(mpt.Root{
+				NodeRef: mpt.NewNodeReference(mpt.EmptyId()),
+				Hash:    mpt.EmptyNodeEthereumHash,
+			}) {
+				return
+			}
 		}
+		yield(mpt.Root{
+			NodeRef: mpt.NewNodeReference(root),
+			Hash:    hash,
+		})
 	}
-	roots[block] = mpt.Root{
-		NodeRef: mpt.NewNodeReference(root),
-		Hash:    hash,
-	}
+
 	if err := mpt.StoreRoots(directory+string(os.PathSeparator)+"roots.dat", roots); err != nil {
 		return err
 	}
