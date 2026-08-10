@@ -65,7 +65,7 @@ func main() {
 	}
 
 	// Patterns to ignore
-	ignore := []string{"/build/", "_mock.go", ".pb.go", "keccak.h"}
+	ignore := []string{"/build/", "_mock.go", "_mocks.go", ".pb.go", "keccak.h"}
 
 	// Process files with specified extensions
 	for ext, prefix := range patterns {
