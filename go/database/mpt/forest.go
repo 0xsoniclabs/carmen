@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"log"
 	"os"
 	"path/filepath"
@@ -29,6 +30,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/stock/memory"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/synced"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 )
 
@@ -673,12 +675,14 @@ func (s *Forest) Dump(rootRef *NodeReference) {
 // errors are detected, the Trie is to be considered in an invalid state and
 // the behavior of all other operations is undefined.
 func (s *Forest) Check(rootRef *NodeReference) error {
-	return s.CheckAll([]*NodeReference{rootRef})
+	return s.CheckAll(iter_utils.FromSliceWith([]*NodeReference{rootRef}, func(n *NodeReference) uint64 {
+		return n.Id().Index()
+	}))
 }
 
 // CheckAll verifies internal invariants of a set of Trie instances rooted by
 // the given nodes. It is a generalization of the Check() function.
-func (s *Forest) CheckAll(rootRefs []*NodeReference) error {
+func (s *Forest) CheckAll(rootRefs iter.Seq2[uint64, *NodeReference]) error {
 	return CheckForest(s, rootRefs)
 }
 
