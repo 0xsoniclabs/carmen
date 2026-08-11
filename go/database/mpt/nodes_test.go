@@ -19,7 +19,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -4519,7 +4518,7 @@ func TestCheckForest_DetectsIssuesInTrees(t *testing.T) {
 			ctxt := newNodeContext(t, ctrl)
 			ref, _ := ctxt.Build(test.tree)
 
-			err := CheckForest(ctxt, iter_utils.FromSlice([]*NodeReference{&ref}))
+			err := CheckForest(ctxt, slices.Values([]*NodeReference{&ref}))
 			if test.ok && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -4556,7 +4555,7 @@ func TestCheckForest_AcceptsValidReUse(t *testing.T) {
 	handle.Get().(*BranchNode).children[4] = refMock
 	handle.Release()
 
-	if err := CheckForest(ctxt, iter_utils.FromSlice([]*NodeReference{&ref1, &ref2})); err != nil {
+	if err := CheckForest(ctxt, slices.Values([]*NodeReference{&ref1, &ref2})); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -4572,7 +4571,7 @@ func TestCheckForest_DetectsInvalidReUse(t *testing.T) {
 
 	ref2, _ := ctxt.Get("A")
 
-	err := CheckForest(ctxt, iter_utils.FromSlice([]*NodeReference{&ref1, &ref2}))
+	err := CheckForest(ctxt, slices.Values([]*NodeReference{&ref1, &ref2}))
 	if err == nil || !strings.Contains(err.Error(), "invalid reuse") {
 		t.Errorf("expected an invalid reuse error but got: %v", err)
 	}
@@ -4994,7 +4993,7 @@ func (t *trie) Check() error {
 }
 
 func (t *trie) CheckForest() error {
-	return CheckForest(t.manager, iter_utils.FromSlice([]*NodeReference{&t.root}))
+	return CheckForest(t.manager, slices.Values([]*NodeReference{&t.root}))
 }
 
 func (t *trie) Dump() error {
@@ -8304,7 +8303,7 @@ func (c *nodeContext) nextIndex() uint64 {
 
 func (c *nodeContext) Check(t *testing.T, ref NodeReference) {
 	t.Helper()
-	if err := CheckForest(c, iter_utils.FromSlice([]*NodeReference{&ref})); err != nil {
+	if err := CheckForest(c, slices.Values([]*NodeReference{&ref})); err != nil {
 		handle := c.tryGetNode(t, ref.Id())
 		defer handle.Release()
 		out := &bytes.Buffer{}

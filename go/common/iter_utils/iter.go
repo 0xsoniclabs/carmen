@@ -12,7 +12,6 @@ package iter_utils
 
 import (
 	"iter"
-	"slices"
 )
 
 // Map maps an `iter.Seq` of values to another `iter.Seq` of values using the provided mapping function.
@@ -38,10 +37,4 @@ func DropKeys[K, V any](seq iter.Seq2[K, V]) iter.Seq[V] {
 			}
 		}
 	}
-}
-
-// FromSlice creates an `iter.Seq` from a slice of values.
-// Original ordering is preserved.
-func FromSlice[V any](slice []V) iter.Seq[V] {
-	return DropKeys(slices.All(slice))
 }

@@ -39,12 +39,3 @@ func TestIter_DropKeys_ReturnsSeqOfValues(t *testing.T) {
 	slices.Sort(got)
 	require.Equal(t, expected, got)
 }
-
-func TestIter_FromSliceWith_ReturnsSeq(t *testing.T) {
-	require := require.New(t)
-
-	input := []string{"a", "ab", "abc"}
-
-	seq := FromSlice(input)
-	require.Equal(input, slices.Collect(seq))
-}
