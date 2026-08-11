@@ -104,9 +104,7 @@ func MergeProofs(others ...WitnessProof) WitnessProof {
 
 // Add merges the input witness proof into the current witness proof.
 func (p WitnessProof) Add(other WitnessProof) {
-	for k, v := range other.proofDb {
-		p.proofDb[k] = v
-	}
+	maps.Copy(p.proofDb, other.proofDb)
 }
 
 // Extract extracts a sub-proof for a given account and selected storage locations from this proof.
@@ -343,7 +341,7 @@ func (p *proofExtractionVisitor) Visit(node Node, info NodeInfo) VisitResponse {
 	case *BranchNode:
 		if n.dirtyHashes != 0 {
 			embeddedChildren := make(map[NodeId]bool, 16)
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				if n.isChildHashDirty(byte(i)) {
 					childHandle, err := p.nodeSource.getViewAccess(&n.children[i])
 					if err != nil {

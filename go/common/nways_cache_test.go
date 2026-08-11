@@ -158,13 +158,13 @@ func TestNWaysCacheSetGetVariousConfigurations(t *testing.T) {
 	for ways := 2; ways < capacity; ways *= 2 {
 		t.Run(fmt.Sprintf("ways: %d", ways), func(t *testing.T) {
 			c := NewNWaysCache[int, int](capacity, ways)
-			for i := 0; i < capacity; i++ {
+			for i := range capacity {
 				if evictedKey, evictedVal, evicted := c.Set(i, i); evictedKey != 0 || evictedVal != 0 || evicted {
 					t.Errorf("No value should be evicted when adding: %d", i)
 				}
 			}
 
-			for want := 0; want < capacity; want++ {
+			for want := range capacity {
 				got, exists := c.Get(want)
 				if !exists {
 					t.Errorf("key should exist: %d", want)
@@ -183,7 +183,7 @@ func TestNWaysCacheSetGetMissingValuesVariousConfigurations(t *testing.T) {
 	for ways := 2; ways < capacity; ways *= 2 {
 		t.Run(fmt.Sprintf("ways: %d", ways), func(t *testing.T) {
 			c := NewNWaysCache[int, int](capacity, ways)
-			for i := 0; i < capacity; i++ {
+			for i := range capacity {
 				if evictedKey, evictedVal, evicted := c.Set(i, i); evictedKey != 0 || evictedVal != 0 || evicted {
 					t.Errorf("No value should be evicted when adding: %d", i)
 				}
@@ -255,7 +255,7 @@ func TestNWaysCache_Concurrent_ReadsWrites(t *testing.T) {
 
 	// generate keys
 	keys := make(map[int]bool, loops)
-	for i := 0; i < loops; i++ {
+	for range loops {
 		key := rand.Intn(2048)
 		keys[key] = true
 	}
@@ -298,7 +298,7 @@ func TestNWaysCache_Concurrent_Sequence(t *testing.T) {
 		t.Run(fmt.Sprintf("iter %v", withIter), func(t *testing.T) {
 			c := NewNWaysCache[int, int](1024, 16)
 			var wg sync.WaitGroup
-			for i := 0; i < loops; i++ {
+			for i := range loops {
 				wg.Add(1)
 				go func(key, val int, withIter bool) {
 					defer wg.Done()

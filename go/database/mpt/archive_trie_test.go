@@ -76,7 +76,7 @@ func TestArchiveTrie_CanOnlyBeOpenedOnce(t *testing.T) {
 
 func TestArchiveTrie_CanBeReOpened(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
 		if err != nil {
 			t.Fatalf("failed to open test archive: %v", err)
@@ -99,7 +99,7 @@ func TestArchiveTrie_Reopen_PreservesAllBlockRootHashes(t *testing.T) {
 			archive, err := OpenArchiveTrie(dir, config, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
 			require.NoError(err)
 
-			for i := 0; i < blocks; i++ {
+			for i := range blocks {
 				update := common.Update{
 					Balances: []common.BalanceUpdate{
 						{Account: common.Address{byte(i + 1)}, Balance: amount.New(uint64(i + 1))},
@@ -122,7 +122,7 @@ func TestArchiveTrie_Reopen_PreservesAllBlockRootHashes(t *testing.T) {
 			require.False(empty)
 			require.Equal(uint64(blocks-1), height)
 
-			for i := 0; i < blocks; i++ {
+			for i := range blocks {
 				got, err := archive.GetHash(uint64(i))
 				require.NoError(err)
 				require.Equal(hashes[i], got, "hash mismatch for block %d", i)
@@ -140,7 +140,7 @@ func TestArchiveTrie_Open_LastCheckpointTimeIsSelectedRandomly(t *testing.T) {
 	deltas := []time.Duration{}
 
 	dir := t.TempDir()
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, config)
 		if err != nil {
 			t.Fatalf("cannot init archive trie: %v", err)
@@ -597,7 +597,7 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			// insert growing number of keys in several accounts
 			nonces := make([]common.NonceUpdate, 0, Addresses)
 			slotUpdates := make([]common.SlotUpdate, 0, Addresses*Addresses)
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				addr := common.AddressFromNumber(i)
 				slots := make([]common.SlotUpdate, 0, i+1)
 				for j := 0; j < i+1; j++ {
@@ -623,7 +623,7 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			}
 
 			// check the keys in the accounts are correct when visiting accounts
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				addr := common.AddressFromNumber(i)
 				visited := make(map[common.Key]common.Value)
 				if err := archive.VisitAccountStorage(2, addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
@@ -650,8 +650,8 @@ func TestArchiveTrie_VisitAccount(t *testing.T) {
 			}
 
 			// check there are no slots in blocks 0 and 1
-			for block := uint64(0); block < 2; block++ {
-				for i := 0; i < Addresses; i++ {
+			for block := range uint64(2) {
+				for i := range Addresses {
 					addr := common.AddressFromNumber(i)
 					if err := archive.VisitAccountStorage(block, addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 						t.Errorf("unexpected node: %v", node)
@@ -703,7 +703,7 @@ func TestArchiveTrie_CanHandleEmptyBlocks(t *testing.T) {
 				t.Errorf("failed to add block: %v", err)
 			}
 
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				got, err := archive.GetBalance(uint64(i), addr)
 				if err != nil || got != balance {
 					t.Errorf("wrong balance for block %d, got %v, wanted %v, err %v", i, got, balance, err)
@@ -787,7 +787,7 @@ func TestArchiveTrie_CanProcessPrecomputedHashes(t *testing.T) {
 
 			// Block 4 -- larger range of data
 			update = common.Update{}
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				addr := common.Address{byte(i + 10)}
 				err = errors.Join(
 					live.SetBalance(addr, blc1),
@@ -961,7 +961,7 @@ func TestArchiveTrie_Add_CreatesCheckpointPeriodically(t *testing.T) {
 				}
 			}()
 
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				if err := archive.Add(uint64(i), common.Update{}, nil); err != nil {
 					t.Fatalf("failed to apply update: %v", err)
 				}
@@ -1273,10 +1273,7 @@ func TestArchiveTrie_GettingView_Block_OutOfRange(t *testing.T) {
 
 func TestArchiveTrie_GetCodes(t *testing.T) {
 	collect := func(it iter.Seq2[common.Hash, []byte]) map[common.Hash][]byte {
-		codes := make(map[common.Hash][]byte)
-		for hash, code := range it {
-			codes[hash] = code
-		}
+		codes := maps.Collect(it)
 		return codes
 	}
 
@@ -1900,7 +1897,7 @@ func TestArchiveTrie_StoreLoadRoots(t *testing.T) {
 	if original.length() != 0 {
 		t.Errorf("unexpected number of roots, wanted 0, got %d", original.length())
 	}
-	for i := 0; i < 48; i++ {
+	for i := range 48 {
 		id := NodeId(uint64(1) << i)
 		require.NoError(original.append(Root{NodeRef: NewNodeReference(id)}))
 		id = NodeId((uint64(1) << (i + 1)) - 1)
@@ -1941,9 +1938,7 @@ func TestArchiveTrie_RootListStoreOnlyWritesNewRoots(t *testing.T) {
 	var writtenBatches []map[uint64]Root
 	file.EXPECT().SetBatch(gomock.Any()).DoAndReturn(func(entries map[uint64]Root) error {
 		cp := make(map[uint64]Root, len(entries))
-		for k, v := range entries {
-			cp[k] = v
-		}
+		maps.Copy(cp, entries)
 		writtenBatches = append(writtenBatches, cp)
 		return nil
 	}).AnyTimes()
@@ -2006,8 +2001,8 @@ func TestArchiveTrie_IncrementalRootListUpdates(t *testing.T) {
 	}
 
 	counter := 0
-	for i := 0; i < 5; i++ {
-		for j := 0; j < 10; j++ {
+	for range 5 {
+		for range 10 {
 			id := NodeId(counter)
 			require.NoError(t, list.append(Root{NodeRef: NewNodeReference(id)}))
 			counter++
@@ -2108,10 +2103,7 @@ func TestRootList_Iterate_YieldsAllAppendedRoots(t *testing.T) {
 	seq, err := list.Iterate()
 	require.NoError(err)
 
-	got := map[uint64]Root{}
-	for block, r := range seq {
-		got[block] = r
-	}
+	got := maps.Collect(seq)
 	require.Len(got, len(want))
 	for i, r := range want {
 		require.Equal(r, got[uint64(i)])
@@ -2151,11 +2143,8 @@ func TestRootList_Iterate_CanBeInvokedMultipleTimes(t *testing.T) {
 	seq, err := list.Iterate()
 	require.NoError(err)
 
-	for pass := 0; pass < 2; pass++ {
-		got := map[uint64]Root{}
-		for block, r := range seq {
-			got[block] = r
-		}
+	for pass := range 2 {
+		got := maps.Collect(seq)
 		require.Len(got, len(want), "pass %d", pass)
 		for i, r := range want {
 			require.Equal(r, got[uint64(i)], "pass %d", pass)
@@ -2206,14 +2195,14 @@ func TestArchiveTrie_QueryLoadTest(t *testing.T) {
 
 	// We fill the archive with N blocks, each with N accounts and N slots.
 	const N = 100
-	for b := 0; b < N; b++ {
+	for b := range N {
 		update := common.Update{}
-		for a := 0; a < N; a++ {
+		for a := range N {
 			addr := common.Address{byte(a)}
 			if b == 0 {
 				update.AppendBalanceUpdate(addr, amount.New(10))
 			}
-			for k := 0; k < N; k++ {
+			for k := range N {
 				update.AppendSlotUpdate(addr, common.Key{byte(k)}, common.Value{byte(b), byte(a), byte(k)})
 			}
 		}
@@ -2227,11 +2216,11 @@ func TestArchiveTrie_QueryLoadTest(t *testing.T) {
 	P := runtime.NumCPU()
 	var wg sync.WaitGroup
 	wg.Add(P)
-	for i := 0; i < P; i++ {
+	for i := range P {
 		go func(seed int) {
 			defer wg.Done()
 			r := rand.New(rand.NewSource(int64(seed)))
-			for i := 0; i < Q; i++ {
+			for range Q {
 				block := uint64(r.Intn(N))
 				addr := common.Address{byte(r.Intn(N))}
 				key := common.Key{byte(r.Intn(N))}
@@ -2361,7 +2350,6 @@ func TestArchiveTrie_FailingLiveStateUpdate_InvalidatesArchive(t *testing.T) {
 	}
 
 	for i, liveStateOp := range liveStateOps {
-		i := i
 		t.Run(fmt.Sprintf("liveOp_%s", liveStateOp.name), func(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
@@ -3049,7 +3037,7 @@ func TestArchiveTrie_RestoredTrieCanBeReused(t *testing.T) {
 
 	counter := 0
 	address := common.Address{}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		counter++
 		err := archive.Add(uint64(i), common.Update{
 			Nonces: []common.NonceUpdate{
@@ -3064,7 +3052,7 @@ func TestArchiveTrie_RestoredTrieCanBeReused(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		nonce, err := archive.GetNonce(uint64(i), address)
 		if err != nil {
 			t.Fatalf("failed to get nonce: %v", err)
@@ -3111,7 +3099,7 @@ func TestArchiveTrie_RestoredTrieCanBeReused(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 150; i++ {
+	for i := range 150 {
 		nonce, err := archive.GetNonce(uint64(i), address)
 		if err != nil {
 			t.Fatalf("failed to get nonce: %v", err)
@@ -3228,7 +3216,7 @@ func TestRootList_GuaranteeCheckpoint_CreatedCheckpointsCanBeGuaranteed(t *testi
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cp := checkpoint.Checkpoint(i + 1)
 		err := errors.Join(
 			roots.Prepare(cp),
@@ -3250,7 +3238,7 @@ func TestRootList_GuaranteeCheckpoint_FailsForNonExistingCheckpoint(t *testing.T
 		t.Fatalf("failed to load roots: %v", err)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cp := checkpoint.Checkpoint(i + 1)
 		err := errors.Join(
 			roots.Prepare(cp),

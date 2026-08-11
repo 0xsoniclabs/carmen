@@ -115,7 +115,7 @@ func fuzzLiveTrieRandomAccountOps(f *testing.F) {
 		var nonce2 common.Nonce
 		var nonce3 common.Nonce
 
-		for i := 0; i < common.NonceSize; i++ {
+		for i := range common.NonceSize {
 			nonce2[i] = byte(i + 1)
 			nonce3[i] = byte(0xFF)
 		}
@@ -124,7 +124,7 @@ func fuzzLiveTrieRandomAccountOps(f *testing.F) {
 		var balance2 [amount.BytesLength]byte
 		var balance3 [amount.BytesLength]byte
 
-		for i := 0; i < amount.BytesLength; i++ {
+		for i := range amount.BytesLength {
 			balance2[i] = byte(i + 1)
 			balance3[i] = byte(0xFF)
 		}
@@ -133,7 +133,7 @@ func fuzzLiveTrieRandomAccountOps(f *testing.F) {
 		var codeHash2 common.Hash
 		var codeHash3 common.Hash
 
-		for i := 0; i < common.HashSize; i++ {
+		for i := range common.HashSize {
 			codeHash2[i] = byte(i + 1)
 			codeHash3[i] = byte(0xFF)
 		}
@@ -386,7 +386,7 @@ func fuzzLiveTrieRandomAccountStorageOps(f *testing.F) {
 		var val2 common.Value
 		var val3 common.Value
 
-		for i := 0; i < common.ValueSize; i++ {
+		for i := range common.ValueSize {
 			val2[i] = byte(i + 1)
 			val3[i] = byte(0xFF)
 		}
@@ -503,7 +503,7 @@ func init() {
 	tinyAddressLookup = make([]common.Address, 256)
 	tinyKeyLookup = make([]common.Key, 256)
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		{
 			var addr common.Address
 			hash := common.GetKeccak256Hash([]byte{byte(i)})

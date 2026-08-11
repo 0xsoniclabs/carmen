@@ -83,7 +83,7 @@ func keyToHashedPathNibbles(key common.Key) []Nibble {
 }
 
 func parseNibbles(dst []Nibble, src []byte) {
-	for i := 0; i < len(src); i++ {
+	for i := range src {
 		dst[2*i] = Nibble(src[i] >> 4)
 		dst[2*i+1] = Nibble(src[i] & 0xF)
 	}
@@ -96,7 +96,7 @@ func GetCommonPrefixLength(a, b []Nibble) int {
 	if lengthA > len(b) {
 		return GetCommonPrefixLength(b, a)
 	}
-	for i := 0; i < lengthA; i++ {
+	for i := range lengthA {
 		if a[i] != b[i] {
 			return i
 		}

@@ -36,7 +36,6 @@ func TestConfiguration_OnlyContainsOfficialImplementations(t *testing.T) {
 
 func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
 	for config := range GetAllConfigurations() {
-		config := config
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()
 			db, err := OpenDatabase(t.TempDir(), config, testProperties)

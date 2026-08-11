@@ -94,7 +94,7 @@ func TestWriteBuffer_CanFlushLargeNumberOfElements(t *testing.T) {
 	N := 1000
 
 	// Setup expectations
-	for i := 0; i < N; i++ {
+	for i := range N {
 		sink.EXPECT().Write(ValueId(uint64(i)), gomock.Any())
 	}
 
@@ -102,7 +102,7 @@ func TestWriteBuffer_CanFlushLargeNumberOfElements(t *testing.T) {
 	defer func() { require.NoError(t, buffer.Close()) }()
 
 	// Send in N nodes to be written to the sink.
-	for i := 0; i < N; i++ {
+	for i := range N {
 		buffer.Add(ValueId(uint64(i)), shared.MakeShared[Node](&ValueNode{}))
 	}
 
@@ -139,7 +139,7 @@ func TestWriteBuffer_AllQueuedEntriesArePresentUntilWritten(t *testing.T) {
 	})
 
 	node := shared.MakeShared[Node](EmptyNode{})
-	for i := 0; i < N; i++ {
+	for i := range N {
 		id := ValueId(uint64(i))
 		buffer.Add(id, node)
 		enqueuedLock.Lock()
@@ -219,7 +219,7 @@ func TestWriteBuffer_ElementsCanBeAddedInParallel(t *testing.T) {
 	N := 1000
 
 	// Setup expectations
-	for i := 0; i < N; i++ {
+	for i := range N {
 		sink.EXPECT().Write(ValueId(uint64(i)), gomock.Any())
 	}
 
@@ -232,7 +232,7 @@ func TestWriteBuffer_ElementsCanBeAddedInParallel(t *testing.T) {
 	for j := 0; j < N/100; j++ {
 		go func(j int) {
 			defer wg.Done()
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				buffer.Add(ValueId(uint64(j*100+i)), shared.MakeShared[Node](&ValueNode{}))
 			}
 		}(j)
@@ -262,10 +262,10 @@ func TestWriteBuffer_ElementsCanBeAddedAndCanceledInParallel(t *testing.T) {
 	for j := 0; j < N/100; j++ {
 		go func(j int) {
 			defer wg.Done()
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				buffer.Add(ValueId(uint64(j*100+i)), shared.MakeShared[Node](&ValueNode{}))
 			}
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				buffer.Cancel(ValueId(uint64(j*100 + i)))
 			}
 		}(j)
@@ -420,7 +420,7 @@ func TestWriteBuffer_Add_Cancel_Empty_DoesNotLock(t *testing.T) {
 
 	started.Wait()
 	const loops = 10_000_000
-	for i := 0; i < loops; i++ {
+	for range loops {
 		buffer.Add(id, node)
 	}
 

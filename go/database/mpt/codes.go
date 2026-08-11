@@ -252,10 +252,7 @@ func readCodesForTesting(path string) (codes map[common.Hash][]byte, err error) 
 	if err != nil {
 		return nil, err
 	}
-	codes = map[common.Hash][]byte{}
-	for key, code := range seq {
-		codes[key] = code
-	}
+	codes = maps.Collect(seq)
 	return codes, nil
 }
 

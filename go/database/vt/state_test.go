@@ -92,9 +92,9 @@ func TestState_CreateAccounts_In_Blocks_Accounts_Updated(t *testing.T) {
 
 			const numBlocks = 10
 			const numInsertsPerBlock = 10
-			for i := 0; i < numBlocks; i++ {
+			for i := range numBlocks {
 				update := common.Update{}
-				for j := 0; j < numInsertsPerBlock; j++ {
+				for j := range numInsertsPerBlock {
 					addr := common.Address{byte(j), byte(j >> 8)}
 					update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(uint64(i * j))})
 					update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(i * j))})
@@ -109,7 +109,7 @@ func TestState_CreateAccounts_In_Blocks_Accounts_Updated(t *testing.T) {
 				require.NotEmpty(t, hash, "hash should not be empty for block %d", i)
 
 				// check basic properties of accounts
-				for j := 0; j < numInsertsPerBlock; j++ {
+				for j := range numInsertsPerBlock {
 					addr := common.Address{byte(j), byte(j >> 8)}
 
 					nonce, err := state.GetNonce(addr)
@@ -143,9 +143,9 @@ func TestState_Storage_Can_Set_And_Receive(t *testing.T) {
 			const numAddresses = 10
 			const numKeysPerAddress = 10
 			update := common.Update{}
-			for i := 0; i < numAddresses; i++ {
+			for i := range numAddresses {
 				addr := common.Address{byte(i), byte(i >> 8)}
-				for j := 0; j < numKeysPerAddress; j++ {
+				for j := range numKeysPerAddress {
 					key := common.Key{byte(i), byte(i >> 8), byte(j), byte(j >> 8)}
 					value := common.Value{byte(i), byte(i >> 8), byte(j), byte(j >> 8)}
 					update.Codes = append(update.Codes, common.CodeUpdate{Account: addr, Code: []byte{}})
@@ -161,9 +161,9 @@ func TestState_Storage_Can_Set_And_Receive(t *testing.T) {
 			require.NotEmpty(t, hash, "hash should not be empty for block")
 
 			// check storage properties
-			for i := 0; i < numAddresses; i++ {
+			for i := range numAddresses {
 				addr := common.Address{byte(i), byte(i >> 8)}
-				for j := 0; j < numKeysPerAddress; j++ {
+				for j := range numKeysPerAddress {
 					key := common.Key{byte(i), byte(i >> 8), byte(j), byte(j >> 8)}
 					expectedValue := common.Value{byte(i), byte(i >> 8), byte(j), byte(j >> 8)}
 
@@ -209,7 +209,7 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
 				const numOfCodes = 10
 				expectedCodes := [numOfCodes][]byte{}
 				update := common.Update{}
-				for i := 0; i < numOfCodes; i++ {
+				for i := range numOfCodes {
 					addr := common.Address{byte(i), byte(i >> 8)}
 					update.Codes = append(update.Codes, common.CodeUpdate{
 						Account: addr,
@@ -228,7 +228,7 @@ func TestState_Code_Can_Set_And_Receive(t *testing.T) {
 				require.NoError(t, err, "failed to get hash for block")
 				require.NotEmpty(t, hash, "hash should not be empty for block")
 
-				for i := 0; i < numOfCodes; i++ {
+				for i := range numOfCodes {
 					addr := common.Address{byte(i), byte(i >> 8)}
 
 					code, err := state.GetCode(addr)

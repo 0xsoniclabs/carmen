@@ -102,7 +102,7 @@ func TestPosition_AreOrderedAndWorkWithSharedPrefixes(t *testing.T) {
 	positions := []*position{}
 	var position *position
 	positions = append(positions, position)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		position = position.child(byte(i))
 		positions = append(positions, position)
 	}
@@ -119,7 +119,6 @@ func TestPosition_AreOrderedAndWorkWithSharedPrefixes(t *testing.T) {
 
 func TestNodeSource_CanRead_Nodes(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			runTestWithArchive(t, config, func(trie *mpt.ArchiveTrie) {
 				t.Parallel()
@@ -179,8 +178,8 @@ func TestVisit_CanHandleSlowConsumer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create account: %v", err)
 	}
-	for i := 0; i < 100; i++ {
-		for j := 0; j < 100; j++ {
+	for i := range 100 {
+		for j := range 100 {
 			key := common.Key{byte(i), byte(j)}
 			err = live.SetStorage(addr, key, common.Value{1})
 			if err != nil {
@@ -249,7 +248,6 @@ func TestVisit_CanHandleSlowConsumer(t *testing.T) {
 
 func TestVisit_Nodes_Failing_CannotOpenDir(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 
@@ -263,7 +261,6 @@ func TestVisit_Nodes_Failing_CannotOpenDir(t *testing.T) {
 
 func TestVisit_Nodes_Failing_MissingDir(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 
@@ -292,7 +289,6 @@ func TestVisit_Nodes_Failing_MissingDir(t *testing.T) {
 
 func TestVisit_Nodes_Failing_MissingData(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			runTestWithArchive(t, config, func(trie *mpt.ArchiveTrie) {
 				t.Parallel()
@@ -360,9 +356,7 @@ func TestVisit_Nodes_CannotCloseSources(t *testing.T) {
 	injectedError := fmt.Errorf("injected error")
 
 	for _, config := range allMptConfigs {
-		config := config
 		for name, factory := range sourceFactories {
-			factory := factory
 			t.Run(fmt.Sprintf("%s_%s", name, config.Name), func(t *testing.T) {
 				t.Parallel()
 
@@ -449,7 +443,7 @@ func TestVisit_Nodes_Iterated_Deterministic(t *testing.T) {
 					// visit all nodes in the trie and compare that the nodes are visited in the same order
 					// as the nodes in the trie
 					// run the experiment N times to ensure that the order is deterministic
-					for i := 0; i < N; i++ {
+					for i := range N {
 						t.Run(fmt.Sprintf("block=%d,iteration=%d", block, i), func(t *testing.T) {
 							t.Parallel()
 							var position int
@@ -487,9 +481,7 @@ func TestOpenSource_Failing_MissingFiles(t *testing.T) {
 	tests := []string{"accounts", "extensions", "branches", "values"}
 
 	for _, config := range allMptConfigs {
-		config := config
 		for _, test := range tests {
-			test := test
 			t.Run(fmt.Sprintf("%s %s", config.Name, test), func(t *testing.T) {
 				t.Parallel()
 
@@ -545,7 +537,6 @@ func TestOpenSource_Failing_MissingFiles(t *testing.T) {
 
 func TestNodeSourceFactoryForLiveDB_CanRead_Nodes(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 
@@ -612,7 +603,7 @@ func matchNodes(t *testing.T, a, b mpt.Node) {
 			t.Errorf("expected next %v, got %v", want, got)
 		}
 	case *mpt.BranchNode:
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			if got, want := n.GetChildren()[i], b.(*mpt.BranchNode).GetChildren()[i]; got.Id() != want.Id() {
 				t.Errorf("expected children %v, got %v", want, got)
 			}
@@ -644,11 +635,11 @@ func createArchive(t *testing.T, dir string, config mpt.MptConfig) *mpt.ArchiveT
 		Accounts = 30
 	)
 
-	for i := 0; i < Blocks; i++ {
+	for i := range Blocks {
 		code := []byte{1, 2, 3, byte(i)}
 		u := uint64(i)
 		update := common.Update{}
-		for j := 0; j < Accounts; j++ {
+		for j := range Accounts {
 			newAddr := common.AddressFromNumber(j)
 
 			update.Balances = append(update.Balances, common.BalanceUpdate{
@@ -682,12 +673,12 @@ func createMptState(t *testing.T, dir string, config mpt.MptConfig) *mpt.MptStat
 	)
 
 	// populate the live db with some data
-	for i := 0; i < Accounts; i++ {
+	for i := range Accounts {
 		addr := common.AddressFromNumber(i)
 		if err := live.SetNonce(addr, common.Nonce{1}); err != nil {
 			t.Fatalf("failed to set account info: %v", err)
 		}
-		for j := 0; j < Key; j++ {
+		for j := range Key {
 			if err := live.SetStorage(addr, common.Key{byte(i), byte(j)}, common.Value{1}); err != nil {
 				t.Fatalf("failed to set value: %v", err)
 			}
@@ -708,10 +699,10 @@ func TestBarrier_SyncsWorkers(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(NumWorker)
 	barrier := newBarrier(NumWorker)
-	for i := 0; i < NumWorker; i++ {
+	for range NumWorker {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < NumIterations; j++ {
+			for j := range NumIterations {
 				barrier.wait()
 				dataLock.Lock()
 				data = append(data, j)
@@ -740,7 +731,7 @@ func TestBarrier_CanBeReleased(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(NumWorker)
 	barrier := newBarrier(NumWorker)
-	for i := 0; i < NumWorker; i++ {
+	for i := range NumWorker {
 		go func(i int) {
 			defer wg.Done()
 			if i != 0 {

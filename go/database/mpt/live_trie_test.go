@@ -240,7 +240,7 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			)
 
 			// there are no accounts at the beginning
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				addr := common.AddressFromNumber(i)
 				if err := trie.VisitAccountStorage(addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 					t.Errorf("unexpected node: %v", node)
@@ -251,14 +251,14 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			}
 
 			// insert addresses only
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				if err := trie.SetAccountInfo(common.AddressFromNumber(i), AccountInfo{Nonce: common.Nonce{1}}); err != nil {
 					t.Fatalf("failed to set account info: %v", err)
 				}
 			}
 
 			// there are no nodes in the accounts
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				addr := common.AddressFromNumber(i)
 				if err := trie.VisitAccountStorage(addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
 					t.Errorf("unexpected node: %v", node)
@@ -269,7 +269,7 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			}
 
 			// inset keys
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				addr := common.AddressFromNumber(i)
 				for j := 0; j < i+1; j++ {
 					if err := trie.SetValue(addr, common.Key{byte(j)}, common.Value{byte(j)}); err != nil {
@@ -279,7 +279,7 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 			}
 
 			// check the keys in the accounts are correct when visiting accounts
-			for i := 0; i < Addresses; i++ {
+			for i := range Addresses {
 				addr := common.AddressFromNumber(i)
 				visited := make(map[common.Key]common.Value)
 				if err := trie.VisitAccountStorage(addr, ReadAccess{}, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
@@ -655,7 +655,6 @@ func TestLiveTrie_ChangeInTrieSubstructureUpdatesHash(t *testing.T) {
 
 func TestLiveTrie_InsertLotsOfData(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 			const N = 30
@@ -722,7 +721,6 @@ func TestLiveTrie_InsertLotsOfData(t *testing.T) {
 
 func TestLiveTrie_InsertLotsOfValues(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 			const N = 500
@@ -814,7 +812,6 @@ func getTestKeys(number int) []common.Key {
 
 func TestLiveTrie_DeleteLargeAccount(t *testing.T) {
 	for _, config := range allMptConfigs {
-		config := config
 		t.Run(config.Name, func(t *testing.T) {
 			t.Parallel()
 			const N = 200000
@@ -834,7 +831,7 @@ func TestLiveTrie_DeleteLargeAccount(t *testing.T) {
 			if err := trie.SetAccountInfo(addr, AccountInfo{Nonce: common.Nonce{1}}); err != nil {
 				t.Fatalf("failed to create account: %v", err)
 			}
-			for i := 0; i < N; i++ {
+			for i := range N {
 				if err := trie.SetValue(addr, common.Key{byte(i), byte(i >> 8), byte(i >> 16)}, common.Value{1}); err != nil {
 					t.Fatalf("failed to insert value: %v", err)
 				}

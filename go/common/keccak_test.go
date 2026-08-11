@@ -46,7 +46,7 @@ func TestKeccakC_AddressSpecializationProducesSameHashAsGenericVersion(t *testin
 	}
 
 	// Test each individual bit.
-	for i := 0; i < 20*8; i++ {
+	for i := range 20 * 8 {
 		addr := Address{}
 		addr[i/8] = 1 << i % 8
 		tests = append(tests, addr)
@@ -54,7 +54,7 @@ func TestKeccakC_AddressSpecializationProducesSameHashAsGenericVersion(t *testin
 
 	// Add some random inputs as well.
 	r := rand.New(rand.NewSource(99))
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		addr := Address{}
 		r.Read(addr[:])
 		tests = append(tests, addr)
@@ -96,7 +96,7 @@ func TestKeccakC_KeySpecializationProducesSameHashAsGenericVersion(t *testing.T)
 	}
 
 	// Test each individual bit.
-	for i := 0; i < 32*8; i++ {
+	for i := range 32 * 8 {
 		key := Key{}
 		key[i/8] = 1 << i % 8
 		tests = append(tests, key)
@@ -104,7 +104,7 @@ func TestKeccakC_KeySpecializationProducesSameHashAsGenericVersion(t *testing.T)
 
 	// Add some random inputs as well.
 	r := rand.New(rand.NewSource(99))
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		key := Key{}
 		r.Read(key[:])
 		tests = append(tests, key)

@@ -263,7 +263,7 @@ func encodeLength(length int, offset byte, writer writer) writer {
 	}
 	numBytesForLength := getNumBytes(uint64(length))
 	writer = writer.Put(offset + 55 + numBytesForLength)
-	for i := byte(0); i < numBytesForLength; i++ {
+	for i := range numBytesForLength {
 		writer = writer.Put(byte(length >> (8 * (numBytesForLength - i - 1))))
 	}
 	return writer
@@ -392,7 +392,7 @@ func readNumber(b []byte, slen byte) (uint64, error) {
 		return 0, fmt.Errorf("expected %d bytes, got: %d", slen, len(b))
 	}
 	var s uint64
-	for i := byte(0); i < slen; i++ {
+	for i := range slen {
 		s = s<<8 | uint64(b[i])
 	}
 	return s, nil

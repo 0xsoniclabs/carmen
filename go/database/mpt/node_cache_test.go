@@ -241,7 +241,7 @@ func TestNodeCache_Release_NoChange(t *testing.T) {
 		t.Errorf("unexpected eviction order, wanted %s, got %s", want, got)
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cache.Release(&ref1)
 		if want, got := "[V-3 V-2 V-1]", fmt.Sprintf("%v", cache.getIdsInReverseEvictionOrder()); want != got {
 			t.Errorf("unexpected eviction order, wanted %s, got %s", want, got)
@@ -295,7 +295,7 @@ func TestNodeCache_StressTestLruList(t *testing.T) {
 
 	// fill cache with elements
 	refs := []NodeReference{}
-	for i := 0; i < Capacity; i++ {
+	for i := range Capacity {
 		id := ValueId(uint64(i))
 		ref := NewNodeReference(id)
 		cache.GetOrSet(&ref, nil)
@@ -304,7 +304,7 @@ func TestNodeCache_StressTestLruList(t *testing.T) {
 
 	// touch elements in cache and check LRU consistency
 	r := rand.New(rand.NewSource(123))
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		pos := int(r.Int31n(Capacity))
 		ref := refs[pos]
 		cache.Touch(&ref)
@@ -388,7 +388,7 @@ func TestNodeCache_ForEachEnumeratesAllEntries(t *testing.T) {
 		t.Errorf("invalid content, wanted %v, got %v", want, got)
 	}
 
-	for i := 0; i < 2*Capacity; i++ {
+	for i := range 2 * Capacity {
 		ref := NewNodeReference(ValueId(uint64(i)))
 		node := shared.MakeShared[Node](&ValueNode{})
 
@@ -408,12 +408,12 @@ func TestNodeCache_GetAndSetThreadSafety(t *testing.T) {
 	N := 100
 	var wg sync.WaitGroup
 	wg.Add(N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		go func(i int) {
 			defer wg.Done()
 			id := ValueId(uint64(i))
 			node := shared.MakeShared[Node](EmptyNode{})
-			for j := 0; j < 1000; j++ {
+			for range 1000 {
 				ref := NewNodeReference(id)
 				got, _, _, _, _ := cache.GetOrSet(&ref, node)
 				if got != node {
@@ -428,11 +428,11 @@ func TestNodeCache_GetAndSetThreadSafety(t *testing.T) {
 
 func TestNodeCache_GetAndSetIsThreadSafe(t *testing.T) {
 	nodes := []*shared.Shared[Node]{}
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		nodes = append(nodes, shared.MakeShared[Node](&ValueNode{pathLength: byte(i)}))
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		t.Run(fmt.Sprintf("iteration-%d", i), func(t *testing.T) {
 			t.Parallel()
 			cache := newNodeCache(128)
@@ -444,7 +444,7 @@ func TestNodeCache_GetAndSetIsThreadSafe(t *testing.T) {
 			done := sync.WaitGroup{}
 			done.Add(10)
 			stop := make(chan struct{})
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				go func() {
 					ready.Done()
 					defer done.Done()
@@ -487,7 +487,7 @@ func TestNodeCache_GetAndSetIsThreadSafe(t *testing.T) {
 }
 
 func TestTagPair_ProducesValidPairOfTags(t *testing.T) {
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		transition, stable := getUpdateTagPair(uint64(i))
 		if !isTransitionTag(transition) {
 			t.Errorf("invalid transition tag %x", transition)

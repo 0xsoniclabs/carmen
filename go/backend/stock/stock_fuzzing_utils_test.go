@@ -247,7 +247,7 @@ func TestFuzzing_Deserialize_Expensive_ops_Skipped(t *testing.T) {
 	data := []fuzzing.Operation[stockFuzzContext]{
 		&opNewId{}, &opGetIds{}, &opGetIds{}, &opGetIds{}, &opGetIds{}, &opGet{0}}
 
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		data = append(data, &opGetIds{})
 		data = append(data, &opGet{0})
 	}
@@ -262,7 +262,7 @@ func TestFuzzing_Deserialize_Expensive_ops_Skipped(t *testing.T) {
 		&opNewId{}, &opGetIds{}, &opGetIds{}, &opGetIds{}, &opGet{0}}
 
 	numExpensive := 4 // already four
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		if numExpensive < 20 {
 			want = append(want, &opGetIds{})
 		}
@@ -291,7 +291,7 @@ func assertOperationsEquals(t *testing.T, got, want []fuzzing.Operation[stockFuz
 		t.Fatalf("number of got and wanted operations do not match: %d != %d", got, want)
 	}
 
-	for i := 0; i < len(got); i++ {
+	for i := range got {
 		gotOp, gotPayload := getOpAndData(got[i])
 		wantOp, wantPayload := getOpAndData(want[i])
 

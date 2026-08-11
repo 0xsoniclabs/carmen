@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -578,7 +577,7 @@ func (s *Forest) Flush() error {
 func (s *Forest) flushDirtyIds(ids []NodeId) error {
 	var errs []error
 	// Flush dirty keys in order (to avoid excessive seeking).
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	for _, id := range ids {
 		ref := NewNodeReference(id)
 		node, present := s.nodeCache.Get(&ref)

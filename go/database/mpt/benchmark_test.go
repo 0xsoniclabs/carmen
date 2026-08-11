@@ -44,7 +44,7 @@ func Benchmark_Mpt_Hash_BranchNode_All_Leaves_Updated(b *testing.B) {
 	var counter uint64
 	for i := 0; i < b.N; i++ {
 		// modify all values in one leaf
-		for j := 0; j < 16; j++ {
+		for range 16 {
 			key := common.Address{byte(i) << 4} // set first byte to insert at one branch at each iteration, updating all leaves
 			value := AccountInfo{Balance: amount.New(counter + 1)}
 			counter++
@@ -102,7 +102,7 @@ func Benchmark_Mpt_Hash_Key(b *testing.B) {
 }
 
 func createTestNode_One_BranchNode_With_Full_Leaves_Space(live *LiveTrie) error {
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		key := common.Address{byte(i) << 4} // set first byte to insert at different branch at each iteration
 		value := AccountInfo{Nonce: common.Nonce{byte(i + 1)}}
 

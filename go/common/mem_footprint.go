@@ -12,7 +12,7 @@ package common
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -92,7 +92,7 @@ func (mf *MemoryFootprint) toStringBuilder(sb *strings.Builder, path string) {
 	for name := range mf.children {
 		names = append(names, name)
 	}
-	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
+	slices.Sort(names)
 
 	for _, name := range names {
 		footprint := mf.children[name]

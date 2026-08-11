@@ -58,7 +58,7 @@ func BenchmarkNWaysParallelReads(b *testing.B) {
 	for ways := 2; ways <= 32; ways *= 2 {
 		b.StopTimer()
 		c := NewNWaysCache[int, int](N, ways)
-		for i := 0; i < N; i++ {
+		for i := range N {
 			c.Set(keys[i], i)
 		}
 		b.StartTimer()

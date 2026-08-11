@@ -68,7 +68,7 @@ func initFileBasedStack[I stock.Index](file utils.OsFile) (*fileBasedStack[I], e
 		}
 
 		valueBuffer := make([]byte, valueSize)
-		for i := 0; i < toLoad; i++ {
+		for range toLoad {
 			if _, err := io.ReadFull(file, valueBuffer); err != nil {
 				return nil, err
 			}

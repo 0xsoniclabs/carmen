@@ -34,7 +34,7 @@ func Benchmark_VerkleTrie_Commit_To_InnerNode_All_Leaves_Updated(b *testing.B) {
 	var counter int
 	for i := 0; i < b.N; i++ {
 		// modify all values in one leaf
-		for j := 0; j < verkle.NodeWidth; j++ {
+		for j := range verkle.NodeWidth {
 			var key common.Key
 			key[0] = byte(j) // set first byte to insert at one branch at each iteration, updating all leaves
 			value := common.Value{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), 0x1}
@@ -83,7 +83,7 @@ func Benchmark_VerkleTrie_Commit_To_LeafNode_Update_All_Values(b *testing.B) {
 
 	var counter int
 	for i := 0; i < b.N; i++ {
-		for j := 0; j < verkle.NodeWidth; j++ {
+		for j := range verkle.NodeWidth {
 			var key common.Key
 			key[31] = byte(j) // set the last byte to insert at one value of the first leaf
 			value := common.Value{byte(counter), byte(counter >> 8), byte(counter >> 16), byte(counter >> 24), 0x1}
@@ -133,7 +133,7 @@ func Benchmark_VerkleTrie_Hash_Key_No_Cache(b *testing.B) {
 
 func createTestNode_One_Inner_Node_With_Full_Leaves_Space() (*verkle.InternalNode, error) {
 	root := verkle.New().(*verkle.InternalNode)
-	for i := 0; i < verkle.NodeWidth; i++ {
+	for i := range verkle.NodeWidth {
 		key := common.Key{byte(i)} // set the first byte to insert at different branch at each iteration
 		value := common.Value{byte(i)}
 

@@ -27,7 +27,7 @@ func FuzzBufferedFile_RandomOps(f *testing.F) {
 func FuzzBufferedFile_ReadWrite(f *testing.F) {
 	length := 5 * bufferSize // length above the buffer size
 	long := make([]byte, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		long[i]++
 	}
 
@@ -42,7 +42,7 @@ func FuzzBufferedFile_ReadWrite(f *testing.F) {
 	}
 
 	// sample variants of the updates to seed the fuzzing
-	for start := 0; start < len(updates); start++ {
+	for start := range updates {
 		for end := start; end < len(updates); end++ {
 			var raw []byte
 			for _, update := range updates[start:end] {
