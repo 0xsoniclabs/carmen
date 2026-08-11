@@ -28,6 +28,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -457,17 +458,19 @@ func (a *ArchiveTrie) GetMemoryFootprint() *common.MemoryFootprint {
 }
 
 func (a *ArchiveTrie) Check() error {
-	roots := make([]*NodeReference, a.roots.length())
-	for i := 0; i < a.roots.length(); i++ {
-		rootm, err := a.roots.get(uint64(i))
-		if err != nil {
-			return err
-		}
-		roots[i] = &rootm.NodeRef
+	a.rootsMutex.Lock()
+	defer a.rootsMutex.Unlock()
+
+	it, err := a.roots.Iterate()
+	if err != nil {
+		return err
 	}
 	return errors.Join(
 		a.CheckErrors(),
-		a.forest.CheckAll(roots))
+		a.forest.CheckAll(iter_utils.Map(iter_utils.DropKeys(it), func(v Root) *NodeReference {
+			return &v.NodeRef
+		})),
+	)
 }
 
 func (a *ArchiveTrie) Flush() error {

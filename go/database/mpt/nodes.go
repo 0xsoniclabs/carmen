@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -483,13 +484,13 @@ func visitPathTo(
 // nodes. A reuse is only valid if the node's position within the respective
 // tries is compatible -- thus, the node is reachable through the same
 // navigation path.
-func CheckForest(source NodeSource, roots []*NodeReference) error {
+func CheckForest(source NodeSource, roots iter.Seq[*NodeReference]) error {
 	// The check algorithm is based on an iterative depth-first traversal
 	// where information on encountered nodes is cached to avoid multiple
 	// evaluations.
 	workList := []NodeId{}
 	contexts := map[NodeId]nodeCheckContext{}
-	for _, ref := range roots {
+	for ref := range roots {
 		workList = append(workList, ref.Id())
 		contexts[ref.Id()] = nodeCheckContext{
 			root:           ref.Id(),

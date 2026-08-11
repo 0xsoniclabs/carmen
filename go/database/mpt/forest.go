@@ -15,9 +15,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -673,12 +675,12 @@ func (s *Forest) Dump(rootRef *NodeReference) {
 // errors are detected, the Trie is to be considered in an invalid state and
 // the behavior of all other operations is undefined.
 func (s *Forest) Check(rootRef *NodeReference) error {
-	return s.CheckAll([]*NodeReference{rootRef})
+	return s.CheckAll(slices.Values([]*NodeReference{rootRef}))
 }
 
 // CheckAll verifies internal invariants of a set of Trie instances rooted by
 // the given nodes. It is a generalization of the Check() function.
-func (s *Forest) CheckAll(rootRefs []*NodeReference) error {
+func (s *Forest) CheckAll(rootRefs iter.Seq[*NodeReference]) error {
 	return CheckForest(s, rootRefs)
 }
 
