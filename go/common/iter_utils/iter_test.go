@@ -11,74 +11,40 @@
 package iter_utils
 
 import (
+	"maps"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestIter_Map2_ReturnsMappedSeq2(t *testing.T) {
-	require := require.New(t)
+func TestIter_Map_ReturnsMappedSeq(t *testing.T) {
+	input := []int{1, 2, 3}
+	expected := []string{"1", "2", "3"}
 
-	seq := func(yield func(int, string) bool) {
-		pairs := []struct {
-			key   int
-			value string
-		}{
-			{1, "one"},
-			{2, "two"},
-			{3, "three"},
-		}
-
-		for _, pair := range pairs {
-			if !yield(pair.key, pair.value) {
-				return
-			}
-		}
+	mapFunc := func(v int) string {
+		return strconv.Itoa(v)
 	}
-	mapFunc := func(k int, v string) (string, int) {
-		return v, k * 10
-	}
-
-	mappedSeq := Map2(seq, mapFunc)
-
-	results := make(map[string]int)
-	mappedSeq(func(k string, v int) bool {
-		results[k] = v
-		return true // Continue iteration
-	})
-
-	// Define the expected results after mapping
-	expectedResults := map[string]int{
-		"one":   10,
-		"two":   20,
-		"three": 30,
-	}
-
-	require.Equal(expectedResults, results)
+	seq := Map(slices.Values(input), mapFunc)
+	require.Equal(t, expected, slices.Collect(seq))
 }
 
-func TestIter_FromSliceWith_ReturnsSeq2(t *testing.T) {
+func TestIter_DropKeys_ReturnsSeqOfValues(t *testing.T) {
+	input := map[int]string{1: "one", 2: "two", 3: "three"}
+	expected := []string{"one", "three", "two"}
+
+	seq := DropKeys(maps.All(input))
+	got := slices.Collect(seq)
+	slices.Sort(got)
+	require.Equal(t, expected, got)
+}
+
+func TestIter_FromSliceWith_ReturnsSeq(t *testing.T) {
 	require := require.New(t)
 
-	slice := []string{"a", "ab", "abc"}
-	keyFunc := func(v string) int {
-		return len(v) // Use the length of the string as the key
-	}
+	input := []string{"a", "ab", "abc"}
 
-	seq := FromSliceWith(slice, keyFunc)
-
-	results := make(map[int]string)
-	seq(func(k int, v string) bool {
-		results[k] = v
-		return true // Continue iteration
-	})
-
-	// Define the expected results after mapping
-	expectedResults := map[int]string{
-		1: "a",
-		2: "ab",
-		3: "abc",
-	}
-
-	require.Equal(expectedResults, results)
+	seq := FromSlice(input)
+	require.Equal(input, slices.Collect(seq))
 }

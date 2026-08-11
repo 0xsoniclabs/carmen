@@ -58,7 +58,7 @@ func (mr *MockDatabaseMockRecorder) Check(rootRef any) *gomock.Call {
 }
 
 // CheckAll mocks base method.
-func (m *MockDatabase) CheckAll(rootRefs iter.Seq2[uint64, *NodeReference]) error {
+func (m *MockDatabase) CheckAll(rootRefs iter.Seq[*NodeReference]) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CheckAll", rootRefs)
 	ret0, _ := ret[0].(error)

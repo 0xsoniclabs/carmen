@@ -458,14 +458,17 @@ func (a *ArchiveTrie) GetMemoryFootprint() *common.MemoryFootprint {
 }
 
 func (a *ArchiveTrie) Check() error {
+	a.rootsMutex.Lock()
+	defer a.rootsMutex.Unlock()
+
 	it, err := a.roots.Iterate()
 	if err != nil {
 		return err
 	}
 	return errors.Join(
 		a.CheckErrors(),
-		a.forest.CheckAll(iter_utils.Map2(it, func(k uint64, v Root) (uint64, *NodeReference) {
-			return k, &v.NodeRef
+		a.forest.CheckAll(iter_utils.Map(iter_utils.DropKeys(it), func(v Root) *NodeReference {
+			return &v.NodeRef
 		})),
 	)
 }
