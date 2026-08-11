@@ -12,6 +12,7 @@ package iter_utils
 
 import (
 	"iter"
+	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/common/result"
 )
@@ -39,22 +40,29 @@ type ResultSeq[V any] = iter.Seq[result.Result[V]]
 // equivalent of an `iter.Seq2`.
 type ResultSeq2[K, V any] = ResultSeq[Pair[K, V]]
 
-// OkSeq lifts an `iter.Seq` into a `ResultSeq` that never fails.
-func OkSeq[V any](seq iter.Seq[V]) ResultSeq[V] {
-	return func(yield func(result.Result[V]) bool) {
+// Map maps an `iter.Seq` of values to another `iter.Seq` of values using the provided mapping function.
+func Map[VIn, VOut any](
+	seq iter.Seq[VIn],
+	f func(VIn) VOut,
+) iter.Seq[VOut] {
+	return func(yield func(VOut) bool) {
 		for v := range seq {
-			if !yield(result.Ok(v)) {
+			if !yield(f(v)) {
 				return
 			}
 		}
 	}
 }
 
-// OkSeq2 lifts an `iter.Seq2` into a `ResultSeq2` that never fails.
-func OkSeq2[K, V any](seq iter.Seq2[K, V]) ResultSeq2[K, V] {
-	return func(yield func(result.Result[Pair[K, V]]) bool) {
+// Map2 maps an `iter.Seq2` of key-value pairs to another `iter.Seq2` of key-value pairs using the provided mapping function.
+func Map2[KIn, VIn, KOut, VOut any](
+	seq iter.Seq2[KIn, VIn],
+	f func(KIn, VIn) (KOut, VOut),
+) iter.Seq2[KOut, VOut] {
+	return func(yield func(KOut, VOut) bool) {
 		for k, v := range seq {
-			if !yield(result.Ok(Pair[K, V]{Key: k, Value: v})) {
+			k2, v2 := f(k, v)
+			if !yield(k2, v2) {
 				return
 			}
 		}
@@ -93,14 +101,22 @@ func Unwrap2[K, V any](seq ResultSeq2[K, V]) (iter.Seq2[K, V], func() error) {
 	}, seqErr
 }
 
-// Map maps an `iter.Seq` of values to another `iter.Seq` of values using the provided mapping function.
-func Map[VIn, VOut any](
-	seq iter.Seq[VIn],
-	f func(VIn) VOut,
-) iter.Seq[VOut] {
-	return func(yield func(VOut) bool) {
+// OkSeq lifts an `iter.Seq` into a `ResultSeq` that never fails.
+func OkSeq[V any](seq iter.Seq[V]) ResultSeq[V] {
+	return func(yield func(result.Result[V]) bool) {
 		for v := range seq {
-			if !yield(f(v)) {
+			if !yield(result.Ok(v)) {
+				return
+			}
+		}
+	}
+}
+
+// OkSeq2 lifts an `iter.Seq2` into a `ResultSeq2` that never fails.
+func OkSeq2[K, V any](seq iter.Seq2[K, V]) ResultSeq2[K, V] {
+	return func(yield func(result.Result[Pair[K, V]]) bool) {
+		for k, v := range seq {
+			if !yield(result.Ok(Pair[K, V]{Key: k, Value: v})) {
 				return
 			}
 		}
@@ -114,11 +130,7 @@ func MapOk[VIn, VOut any](
 	f func(VIn) VOut,
 ) ResultSeq[VOut] {
 	return Map(seq, func(r result.Result[VIn]) result.Result[VOut] {
-		v, err := r.Get()
-		if err != nil {
-			return result.Err[VOut](err)
-		}
-		return result.Ok(f(v))
+		return result.Map(r, f)
 	})
 }
 
@@ -128,14 +140,11 @@ func MapOk2[KIn, VIn, KOut, VOut any](
 	seq ResultSeq2[KIn, VIn],
 	f func(KIn, VIn) (KOut, VOut),
 ) ResultSeq2[KOut, VOut] {
-	return Map(seq, func(r result.Result[Pair[KIn, VIn]]) result.Result[Pair[KOut, VOut]] {
-		in, err := r.Get()
-		if err != nil {
-			return result.Err[Pair[KOut, VOut]](err)
-		}
+	return MapOk(seq, func(in Pair[KIn, VIn]) Pair[KOut, VOut] {
 		key, value := f(in.Unpack())
-		return result.Ok(Pair[KOut, VOut]{Key: key, Value: value})
+		return Pair[KOut, VOut]{Key: key, Value: value}
 	})
+
 }
 
 func DropKeys[K, V any](seq iter.Seq2[K, V]) iter.Seq[V] {
@@ -157,11 +166,5 @@ func DropKeysOk2[K, V any](seq ResultSeq2[K, V]) ResultSeq[V] {
 // Enumerate creates an `iter.Seq2` from a slice of values, pairing each value
 // with its `uint64` index.
 func Enumerate[V any](slice []V) iter.Seq2[uint64, V] {
-	return func(yield func(uint64, V) bool) {
-		for i, v := range slice {
-			if !yield(uint64(i), v) {
-				return
-			}
-		}
-	}
+	return Map2(slices.All(slice), func(i int, v V) (uint64, V) { return uint64(i), v })
 }

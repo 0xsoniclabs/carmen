@@ -68,6 +68,15 @@ func TestIter_Unwrap_StopsAtFirstFailureAndReportsIt(t *testing.T) {
 	require.ErrorIs(seqErr(), injected)
 }
 
+func TestIter_Unwrap_YieldsAllValuesWithoutError(t *testing.T) {
+	require := require.New(t)
+
+	seq, seqErr := Unwrap(OkSeq(slices.Values([]string{"a", "b"})))
+
+	require.Equal([]string{"a", "b"}, slices.Collect(seq))
+	require.NoError(seqErr())
+}
+
 func TestIter_Unwrap2_YieldsAllPairsWithoutError(t *testing.T) {
 	require := require.New(t)
 

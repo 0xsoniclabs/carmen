@@ -34,3 +34,12 @@ func Err[T any](err error) Result[T] {
 func (r Result[T]) Get() (T, error) {
 	return r.value, r.err
 }
+
+// Map applies a transformation function to the value contained in the Result,
+func Map[TIn, TOut any](r Result[TIn], f func(TIn) TOut) Result[TOut] {
+	value, err := r.Get()
+	if err != nil {
+		return Err[TOut](err)
+	}
+	return Ok(f(value))
+}

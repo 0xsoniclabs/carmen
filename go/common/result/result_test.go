@@ -31,3 +31,24 @@ func TestResult_Err_ProducesResultWithError(t *testing.T) {
 	require.ErrorIs(t, err, issue)
 	require.Zero(t, value)
 }
+
+func TestResult_Map_TransformsValueOnSuccess(t *testing.T) {
+	result := Ok[int](42)
+	mapped := Map(result, func(x int) string {
+		return fmt.Sprintf("Value: %d", x)
+	})
+	value, err := mapped.Get()
+	require.NoError(t, err)
+	require.Equal(t, "Value: 42", value)
+}
+
+func TestResult_Map_PreservesErrorOnFailure(t *testing.T) {
+	issue := fmt.Errorf("test error")
+	result := Err[int](issue)
+	mapped := Map(result, func(x int) string {
+		return fmt.Sprintf("Value: %d", x)
+	})
+	value, err := mapped.Get()
+	require.ErrorIs(t, err, issue)
+	require.Zero(t, value)
+}
