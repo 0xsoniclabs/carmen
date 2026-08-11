@@ -10,11 +10,11 @@
 package mpt
 
 import (
-	iter "iter"
 	reflect "reflect"
 
 	common "github.com/0xsoniclabs/carmen/go/common"
 	amount "github.com/0xsoniclabs/carmen/go/common/amount"
+	iter_utils "github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	shared "github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -58,7 +58,7 @@ func (mr *MockDatabaseMockRecorder) Check(rootRef any) *gomock.Call {
 }
 
 // CheckAll mocks base method.
-func (m *MockDatabase) CheckAll(rootRefs iter.Seq[*NodeReference]) error {
+func (m *MockDatabase) CheckAll(rootRefs iter_utils.ResultSeq[*NodeReference]) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CheckAll", rootRefs)
 	ret0, _ := ret[0].(error)
@@ -638,10 +638,10 @@ func (mr *MockLiveStateMockRecorder) GetCodeSize(address any) *gomock.Call {
 }
 
 // GetCodes mocks base method.
-func (m *MockLiveState) GetCodes() (iter.Seq2[common.Hash, []byte], error) {
+func (m *MockLiveState) GetCodes() (iter_utils.ResultSeq2[common.Hash, []byte], error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCodes")
-	ret0, _ := ret[0].(iter.Seq2[common.Hash, []byte])
+	ret0, _ := ret[0].(iter_utils.ResultSeq2[common.Hash, []byte])
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

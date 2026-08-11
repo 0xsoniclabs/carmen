@@ -16,12 +16,12 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"maps"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -300,8 +300,9 @@ func TestOrderedFile_Iterate_ReturnsAllStoredValuesIndexedByPosition(t *testing.
 	seq, err := f.Iterate()
 	require.NoError(err)
 
-	all := maps.Collect(seq)
-	require.Equal(map[uint64]uint64{0: 100, 1: 101, 2: 102}, all)
+	res, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
+	require.Equal(map[uint64]uint64{0: 100, 1: 101, 2: 102}, res)
 }
 
 func TestOrderedFile_Iterate_ReturnsEmptyIteratorForEmptyFile(t *testing.T) {
@@ -311,14 +312,12 @@ func TestOrderedFile_Iterate_ReturnsEmptyIteratorForEmptyFile(t *testing.T) {
 	seq, err := f.Iterate()
 	require.NoError(err)
 
-	count := 0
-	for range seq {
-		count++
-	}
-	require.Equal(0, count)
+	res, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
+	require.Empty(res)
 }
 
-func TestOrderedFile_Iterate_StopsOnReadError(t *testing.T) {
+func TestOrderedFile_Iterate_ReportsReadError(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "err.dat")
@@ -334,19 +333,17 @@ func TestOrderedFile_Iterate_StopsOnReadError(t *testing.T) {
 	defer func() { require.NoError(f.Close()) }()
 
 	// The iterator is lazy, so Iterate itself does not read the file and
-	// therefore cannot surface the read error. Consuming the sequence
-	// terminates silently once the read fails.
+	// therefore cannot surface the read error. It is reported by the sequence
+	// instead, which aborts the iteration at the failing read.
 	seq, err := f.Iterate()
 	require.NoError(err)
 
-	yielded := 0
-	for range seq {
-		yielded++
-	}
-	require.Equal(0, yielded, "read errors must abort the iterator before yielding")
+	entries, seqErr := iter_utils.CollectOk2(seq)
+	require.Empty(entries, "read errors must abort the iterator before yielding")
+	require.ErrorIs(seqErr, injected)
 }
 
-func TestOrderedFile_Iterate_TerminatesWhenFileIsClosed(t *testing.T) {
+func TestOrderedFile_Iterate_ReportsErrorWhenFileIsClosed(t *testing.T) {
 	require := require.New(t)
 	f, _ := openTestOrderedFile(t)
 
@@ -357,18 +354,22 @@ func TestOrderedFile_Iterate_TerminatesWhenFileIsClosed(t *testing.T) {
 	seq, err := f.Iterate()
 	require.NoError(err)
 
-	next, _ := iter.Pull2(seq)
-	key, val, ok := next()
+	next, stop := iter.Pull(seq)
+	defer stop()
+	res, ok := next()
 	require.True(ok)
-	require.EqualValues(0, key)
-	require.EqualValues(1, val)
+	pair, err := res.Get()
+	require.NoError(err)
+	require.EqualValues(0, pair.Key)
+	require.EqualValues(1, pair.Value)
 
 	// Close the file before consuming the iterator.
 	require.NoError(f.Close())
 
-	// TODO: Check that the iterator terminated because the file was closed, not because it reached the end of the file.
-	_, _, ok = next()
-	require.False(ok)
+	res, ok = next()
+	require.True(ok)
+	_, err = res.Get()
+	require.ErrorIs(err, os.ErrClosed)
 }
 
 func TestOrderedFile_Iterate_HandlesChunkedReader(t *testing.T) {
@@ -409,7 +410,8 @@ func TestOrderedFile_Iterate_HandlesChunkedReader(t *testing.T) {
 			seq, err := f.Iterate()
 			require.NoError(err)
 
-			all := maps.Collect(seq)
+			all, err := iter_utils.CollectOk2(seq)
+			require.NoError(err)
 			require.Len(all, len(values))
 			for i, v := range values {
 				require.EqualValues(v, all[uint64(i)], "position %d", i)

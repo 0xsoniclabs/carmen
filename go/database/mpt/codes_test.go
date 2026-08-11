@@ -13,7 +13,6 @@ package mpt
 import (
 	"bytes"
 	"errors"
-	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,6 +20,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/kv_file"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/sha3"
@@ -293,7 +293,8 @@ func TestCodes_getCodes_ReturnsAllCodes(t *testing.T) {
 
 	it, err := codes.getCodes()
 	require.NoError(err)
-	got := maps.Collect(it)
+	got, itErr := iter_utils.CollectOk2(it)
+	require.NoError(itErr)
 
 	if want, got := 2, len(got); want != got {
 		t.Fatalf("expected %d codes, got %d", want, got)
@@ -325,7 +326,7 @@ func TestCodes_getCodes_ReturnsErrorOnIterateError(t *testing.T) {
 	require.Nil(got)
 }
 
-func TestCodes_getCodes_IteratorTerminatesGracefullyOnClose(t *testing.T) {
+func TestCodes_getCodes_IteratorReportsErrorOnClose(t *testing.T) {
 	require := require.New(t)
 	codes, err := openCodes(t.TempDir())
 	require.NoError(err)
@@ -342,9 +343,10 @@ func TestCodes_getCodes_IteratorTerminatesGracefullyOnClose(t *testing.T) {
 
 	// After the store has been closed, iterating the previously obtained
 	// sequence must not panic; it may yield fewer entries than the store
-	// contained but must terminate gracefully.
-	for range it {
-	}
+	// contained, but the close must be reported instead of silently
+	// truncating the iteration.
+	_, itErr := iter_utils.CollectOk2(it)
+	require.ErrorIs(itErr, os.ErrClosed)
 }
 
 func TestCodes_GetMemoryFootprint_ReturnsProperSize(t *testing.T) {

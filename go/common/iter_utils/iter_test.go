@@ -190,12 +190,64 @@ func TestIter_MapOk2_ForwardsFailures(t *testing.T) {
 	require.ErrorIs(err, injected)
 }
 
-func TestIter_DropKeys_YieldsValuesWithoutKeys(t *testing.T) {
+func TestIter_CollectOk_YieldsAllValuesWithoutError(t *testing.T) {
+	require := require.New(t)
+	data := []string{"a", "b"}
+
+	seq := OkSeq(slices.Values(data))
+
+	values, seqErr := CollectOk(seq)
+	require.Equal(data, values)
+	require.NoError(seqErr)
+}
+
+func TestIter_CollectOk_StopsAtFirstFailureAndReportsIt(t *testing.T) {
 	require := require.New(t)
 
-	seq := DropKeys(Enumerate([]string{"a", "b"}))
+	injected := fmt.Errorf("injected failure")
+	seq := func(yield func(result.Result[string]) bool) {
+		if !yield(result.Ok("one")) {
+			return
+		}
+		if !yield(result.Err[string](injected)) {
+			return
+		}
+		yield(result.Ok("three"))
+	}
 
-	require.Equal([]string{"a", "b"}, slices.Collect(seq))
+	values, seqErr := CollectOk(seq)
+	require.Equal([]string{"one"}, values)
+	require.ErrorIs(seqErr, injected)
+}
+
+func TestIter_CollectOk2_YieldsAllPairsWithoutError(t *testing.T) {
+	require := require.New(t)
+	data := map[uint64]string{0: "a", 1: "b"}
+
+	seq := OkSeq2(maps.All(data))
+
+	pairs, seqErr := CollectOk2(seq)
+	require.Equal(data, pairs)
+	require.NoError(seqErr)
+}
+
+func TestIter_CollectOk2_StopsAtFirstFailureAndReportsIt(t *testing.T) {
+	require := require.New(t)
+
+	injected := fmt.Errorf("injected failure")
+	seq := func(yield func(result.Result[Pair[int, string]]) bool) {
+		if !yield(result.Ok(Pair[int, string]{Key: 1, Value: "one"})) {
+			return
+		}
+		if !yield(result.Err[Pair[int, string]](injected)) {
+			return
+		}
+		yield(result.Ok(Pair[int, string]{Key: 3, Value: "three"}))
+	}
+
+	pairs, seqErr := CollectOk2(seq)
+	require.Equal(map[int]string{1: "one"}, pairs)
+	require.ErrorIs(seqErr, injected)
 }
 
 func TestIter_DropKeysOk2_YieldsValuesWithoutKeys(t *testing.T) {

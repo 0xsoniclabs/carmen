@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +37,7 @@ func TestWriteCodes_WritesCodesOrderedByHash(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	require.NoError(writeCodes(maps.All(codes), &buf, t.TempDir()))
+	require.NoError(writeCodes(iter_utils.OkSeq2(maps.All(codes)), &buf, t.TempDir()))
 
 	// Output must be ordered by hash regardless of iteration order.
 	want := [][]byte{
@@ -64,7 +65,7 @@ func TestWriteCodes_WritesNothingForEmptyIterator(t *testing.T) {
 	require := require.New(t)
 
 	var buf bytes.Buffer
-	require.NoError(writeCodes(maps.All(map[common.Hash][]byte{}), &buf, t.TempDir()))
+	require.NoError(writeCodes(iter_utils.OkSeq2(maps.All(map[common.Hash][]byte{})), &buf, t.TempDir()))
 	require.Zero(buf.Len())
 }
 
@@ -84,7 +85,7 @@ func TestWriteCodes_PropagatesWriteError(t *testing.T) {
 			w := &failingWriter{failAfter: test.failAfter, err: injected}
 			codes := map[common.Hash][]byte{{1}: {1, 2, 3}}
 
-			err := writeCodes(maps.All(codes), w, t.TempDir())
+			err := writeCodes(iter_utils.OkSeq2(maps.All(codes)), w, t.TempDir())
 			require.ErrorContains(err, injected.Error())
 		})
 	}
@@ -114,7 +115,7 @@ func TestWriteCodes_RemovesStagingStore(t *testing.T) {
 			}
 
 			codes := map[common.Hash][]byte{{1}: {1, 2, 3}}
-			_ = writeCodes(maps.All(codes), test.out, scratchDir)
+			_ = writeCodes(iter_utils.OkSeq2(maps.All(codes)), test.out, scratchDir)
 
 			entries, err := os.ReadDir(tempRoot)
 			require.NoError(err)
@@ -130,7 +131,7 @@ func TestReadCode_ReturnsCodeWrittenByWriteCodes(t *testing.T) {
 	codes := map[common.Hash][]byte{{1}: want}
 
 	var buf bytes.Buffer
-	require.NoError(writeCodes(maps.All(codes), &buf, t.TempDir()))
+	require.NoError(writeCodes(iter_utils.OkSeq2(maps.All(codes)), &buf, t.TempDir()))
 
 	tag, err := buf.ReadByte()
 	require.NoError(err)

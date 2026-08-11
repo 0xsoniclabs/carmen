@@ -13,12 +13,12 @@ package kv_file
 import (
 	"errors"
 	"fmt"
-	"iter"
 	"maps"
 	"testing"
 	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -673,12 +673,13 @@ func TestKVCachedFile_Iterate_YieldsFileContents(t *testing.T) {
 	// No pending writes: draining is a no-op, Iterate delegates directly
 	// to the underlying file.
 	fileContents := map[K]V{0: "value0", 1: "value1", 2: "value2"}
-	mock.EXPECT().Iterate().Return(mockIterateSeq(fileContents), nil)
+	mock.EXPECT().Iterate().Return(iter_utils.OkSeq2(maps.All(fileContents)), nil)
 
 	seq, err := c.Iterate()
 	require.NoError(err)
 
-	got := maps.Collect(seq)
+	got, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
 	require.Equal(fileContents, got)
 }
 
@@ -697,15 +698,16 @@ func TestKVCachedFile_Iterate_FlushesDirtyEntriesBeforeIterating(t *testing.T) {
 			return nil
 		}),
 		mock.EXPECT().Flush().Return(nil),
-		mock.EXPECT().Iterate().DoAndReturn(func() (iter.Seq2[K, V], error) {
-			return mockIterateSeq(written), nil
+		mock.EXPECT().Iterate().DoAndReturn(func() (iter_utils.ResultSeq2[K, V], error) {
+			return iter_utils.OkSeq2(maps.All(written)), nil
 		}),
 	)
 
 	seq, err := c.Iterate()
 	require.NoError(err)
 
-	got := maps.Collect(seq)
+	got, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
 	require.Equal(map[K]V{1: "value-1", 2: "value-2", 3: "value-3"}, got)
 }
 

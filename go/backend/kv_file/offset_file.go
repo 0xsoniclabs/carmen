@@ -14,13 +14,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"maps"
 	"os"
 	"sync"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 )
 
 // OffsetFile is a KVFile backed by a single append-only file with an in-memory
@@ -184,7 +185,8 @@ func (o *OffsetFile[K, V]) Has(key K) (bool, error) {
 	return exists, nil
 }
 
-func (o *OffsetFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
+func (o *OffsetFile[K, V]) Iterate() (iter_utils.ResultSeq2[K, V], error) {
+	type keyValuePair = iter_utils.Pair[K, V]
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
 
@@ -196,13 +198,14 @@ func (o *OffsetFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
 	// terminates.
 	offsets := maps.Clone(o.offsets)
 	limit := o.fileSize
-	return func(yield func(K, V) bool) {
+	return func(yield func(result.Result[keyValuePair]) bool) {
 		for key, offset := range offsets {
 			_, value, err := readFromDiskAtOffset(o.file, offset, limit, o.readValueFn)
 			if err != nil {
+				yield(result.Err[keyValuePair](err))
 				return
 			}
-			if !yield(key, *value) {
+			if !yield(result.Ok(keyValuePair{Key: key, Value: *value})) {
 				return
 			}
 		}

@@ -15,16 +15,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"os"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/cockroachdb/pebble"
 )
 
 // writeCodes serialises all codes yielded by the iterator to out, ordered by
 // hash.
-func writeCodes(codes iter.Seq2[common.Hash, []byte], out io.Writer, scratchDir string) (retErr error) {
+func writeCodes(codes iter_utils.ResultSeq2[common.Hash, []byte], out io.Writer, scratchDir string) (retErr error) {
 	store, err := newCodeSortStore(scratchDir)
 	if err != nil {
 		return err
@@ -33,10 +33,14 @@ func writeCodes(codes iter.Seq2[common.Hash, []byte], out io.Writer, scratchDir 
 		retErr = errors.Join(retErr, store.close())
 	}()
 
-	for hash, code := range codes {
+	seq, seqErr := iter_utils.Unwrap2(codes)
+	for hash, code := range seq {
 		if err := store.add(hash, code); err != nil {
 			return err
 		}
+	}
+	if err := seqErr(); err != nil {
+		return err
 	}
 	return store.writeTo(out)
 }

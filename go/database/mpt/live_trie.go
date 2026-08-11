@@ -20,6 +20,7 @@ import (
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 )
 
@@ -86,10 +87,11 @@ func VerifyFileLiveTrie(ctx context.Context, directory string, config MptConfig,
 	if !exists {
 		return nil
 	}
-	return verifyFileForest(ctx, directory, config, rootsFromSlice([]Root{{
-		NewNodeReference(metadata.RootNode),
-		metadata.RootHash,
-	}}), observer)
+	roots := iter_utils.OkSeq2(iter_utils.Enumerate([]Root{{
+		NodeRef: NewNodeReference(metadata.RootNode),
+		Hash:    metadata.RootHash,
+	}}))
+	return verifyFileForest(ctx, directory, config, roots, observer)
 }
 
 func makeTrie(

@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +26,16 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+// rootsFromSlice adapts a slice of roots to the iterator type expected by
+// the verification API.
+func rootsFromSlice(roots []Root) iter_utils.ResultSeq2[uint64, Root] {
+	return iter_utils.OkSeq2(iter_utils.Enumerate(roots))
+}
 
 const N = 100
 
@@ -703,7 +709,7 @@ func TestVerification_VerifyValidMptState(t *testing.T) {
 }
 
 func TestVerification_CanInterrupt(t *testing.T) {
-	type verifyFunc func(context.Context, string, MptConfig, iter.Seq2[uint64, Root], VerificationObserver) error
+	type verifyFunc func(context.Context, string, MptConfig, iter_utils.ResultSeq2[uint64, Root], VerificationObserver) error
 	tests := map[string]verifyFunc{"VerifyMptState": VerifyMptState, "VerifyFileForest": verifyFileForest}
 
 	for name, verify := range tests {

@@ -12,13 +12,13 @@ package kv_file
 
 import (
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -167,7 +167,9 @@ func TestKVFile_SetBatchAndIterate_YieldsAllWrittenEntries(t *testing.T) {
 
 		seq, err := file.Iterate()
 		require.NoError(err)
-		require.Equal(entries, maps.Collect(seq))
+		got, err := iter_utils.CollectOk2(seq)
+		require.NoError(err)
+		require.Equal(entries, got)
 	})
 }
 
@@ -319,9 +321,11 @@ func TestKVFile_ConcurrentReadsAndWritesAreSafe(t *testing.T) {
 			for range rounds / 100 {
 				seq, err := file.Iterate()
 				require.NoError(err)
-				for key, got := range seq {
+				pairs, seqErr := iter_utils.Unwrap2(seq)
+				for key, got := range pairs {
 					checkValue(key, got)
 				}
+				require.NoError(seqErr())
 			}
 		})
 		wg.Wait()
@@ -413,14 +417,16 @@ func TestKVFile_Iterate_YieldsCompleteValuesDuringConcurrentWrites(t *testing.T)
 
 		seq, err := file.Iterate()
 		require.NoError(err)
+		pairs, seqErr := iter_utils.Unwrap2(seq)
 		seen := map[K]bool{}
-		for key, value := range seq {
+		for key, value := range pairs {
 			// Overwritten keys may yield any version, but never a value
 			// belonging to another key or a torn record.
 			require.True(strings.HasPrefix(value, fmt.Sprintf("k%d-", key)),
 				"value %q does not belong to key %d", value, key)
 			seen[key] = true
 		}
+		require.NoError(seqErr())
 		close(stop)
 		wg.Wait()
 

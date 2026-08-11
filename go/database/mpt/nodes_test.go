@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -4488,6 +4489,12 @@ func TestValueNode_CheckDetectsIssues(t *testing.T) {
 //                             CheckForest
 // ----------------------------------------------------------------------------
 
+// refsFromSlice adapts node references to the iterator type expected by CheckForest.
+// It yields the provided references in the given order.
+func refsFromSlice(refs ...*NodeReference) iter_utils.ResultSeq[*NodeReference] {
+	return iter_utils.OkSeq(slices.Values(refs))
+}
+
 func TestCheckForest_DetectsIssuesInTrees(t *testing.T) {
 	tests := map[string]struct {
 		tree NodeDesc
@@ -4518,7 +4525,7 @@ func TestCheckForest_DetectsIssuesInTrees(t *testing.T) {
 			ctxt := newNodeContext(t, ctrl)
 			ref, _ := ctxt.Build(test.tree)
 
-			err := CheckForest(ctxt, slices.Values([]*NodeReference{&ref}))
+			err := CheckForest(ctxt, refsFromSlice(&ref))
 			if test.ok && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -4555,7 +4562,7 @@ func TestCheckForest_AcceptsValidReUse(t *testing.T) {
 	handle.Get().(*BranchNode).children[4] = refMock
 	handle.Release()
 
-	if err := CheckForest(ctxt, slices.Values([]*NodeReference{&ref1, &ref2})); err != nil {
+	if err := CheckForest(ctxt, refsFromSlice(&ref1, &ref2)); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -4571,7 +4578,7 @@ func TestCheckForest_DetectsInvalidReUse(t *testing.T) {
 
 	ref2, _ := ctxt.Get("A")
 
-	err := CheckForest(ctxt, slices.Values([]*NodeReference{&ref1, &ref2}))
+	err := CheckForest(ctxt, refsFromSlice(&ref1, &ref2))
 	if err == nil || !strings.Contains(err.Error(), "invalid reuse") {
 		t.Errorf("expected an invalid reuse error but got: %v", err)
 	}
@@ -4993,7 +5000,7 @@ func (t *trie) Check() error {
 }
 
 func (t *trie) CheckForest() error {
-	return CheckForest(t.manager, slices.Values([]*NodeReference{&t.root}))
+	return CheckForest(t.manager, refsFromSlice(&t.root))
 }
 
 func (t *trie) Dump() error {
@@ -8297,7 +8304,7 @@ func (c *nodeContext) nextIndex() uint64 {
 
 func (c *nodeContext) Check(t *testing.T, ref NodeReference) {
 	t.Helper()
-	if err := CheckForest(c, slices.Values([]*NodeReference{&ref})); err != nil {
+	if err := CheckForest(c, refsFromSlice(&ref)); err != nil {
 		handle := c.tryGetNode(t, ref.Id())
 		defer handle.Release()
 		out := &bytes.Buffer{}

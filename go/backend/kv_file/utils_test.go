@@ -14,13 +14,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"iter"
 	"maps"
 	"sync"
 	"testing"
 	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -100,26 +100,14 @@ func (f *fakeKVFile) Flush() error { return nil }
 
 func (f *fakeKVFile) FileSize() (uint64, error) { return 0, nil }
 
-func (f *fakeKVFile) Iterate() (iter.Seq2[K, V], error) {
-	return mockIterateSeq(maps.Clone(f.data)), nil
+func (f *fakeKVFile) Iterate() (iter_utils.ResultSeq2[K, V], error) {
+	return iter_utils.OkSeq2(maps.All(maps.Clone(f.data))), nil
 }
 
 func (f *fakeKVFile) Close() error { return nil }
 
 func (f *fakeKVFile) GetMemoryFootprint() *common.MemoryFootprint {
 	return common.NewMemoryFootprint(0)
-}
-
-// mockIterateSeq returns an iter.Seq2 mock return value that yields the
-// key/value pairs from the given map.
-func mockIterateSeq(entries map[K]V) iter.Seq2[K, V] {
-	return func(yield func(K, V) bool) {
-		for k, v := range entries {
-			if !yield(k, v) {
-				return
-			}
-		}
-	}
 }
 
 func getCacheSize[K comparable, V any](cache *common.LruCache[K, V]) int {

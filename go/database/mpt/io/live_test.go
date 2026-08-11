@@ -15,13 +15,13 @@ import (
 	"context"
 	"errors"
 	"io"
-	"iter"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
@@ -131,7 +131,7 @@ func TestIO_ExportedDataDoesNotContainExtraCodes(t *testing.T) {
 		require.NoError(t, s.SetCode(addr1, code))
 		codesAfter, err := s.GetCodes()
 		require.NoError(t, err)
-		if before, after := countCodes(codesBefore), countCodes(codesAfter); before+1 != after {
+		if before, after := countCodes(t, codesBefore), countCodes(t, codesAfter); before+1 != after {
 			t.Fatalf("modification did not had expected code-altering effect: %d -> %d", before, after)
 		}
 	})
@@ -204,12 +204,11 @@ func readAllCodes(t *testing.T, r io.Reader) [][]byte {
 }
 
 // countCodes drains a codes iterator returning the number of entries.
-func countCodes(codes iter.Seq2[common.Hash, []byte]) int {
-	n := 0
-	for range codes {
-		n++
-	}
-	return n
+func countCodes(t *testing.T, codes iter_utils.ResultSeq2[common.Hash, []byte]) int {
+	t.Helper()
+	entries, err := iter_utils.CollectOk2(codes)
+	require.NoError(t, err)
+	return len(entries)
 }
 
 func exportExampleState(t *testing.T) ([]byte, common.Hash) {
