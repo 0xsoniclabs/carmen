@@ -797,7 +797,7 @@ func (l *rootList) Iterate() (iter.Seq2[uint64, Root], error) {
 	return l.roots.Iterate()
 }
 
-func StoreRoots(filename string, rootsToWrite []Root) (err error) {
+func StoreRoots(filename string, rootsToWrite iter.Seq[Root]) (err error) {
 	// loadRoots derives the roots file path from the directory and the
 	// canonical filename. Reject inputs that would otherwise cause writes to
 	// silently target a different path than the caller requested.
@@ -811,7 +811,7 @@ func StoreRoots(filename string, rootsToWrite []Root) (err error) {
 	defer func() {
 		err = errors.Join(err, roots.Close())
 	}()
-	for _, root := range rootsToWrite {
+	for root := range rootsToWrite {
 		if err = roots.append(root); err != nil {
 			return err
 		}
