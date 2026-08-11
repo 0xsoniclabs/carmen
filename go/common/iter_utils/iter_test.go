@@ -31,8 +31,8 @@ func TestIter_Map_ReturnsMappedSeq(t *testing.T) {
 }
 
 func TestIter_DropKeys_ReturnsSeqOfValues(t *testing.T) {
-	input := map[int]string{1: "one", 2: "two", 3: "three"}
-	expected := []string{"one", "three", "two"}
+	input := map[int]string{1: "A", 2: "B", 3: "C"}
+	expected := []string{"A", "B", "C"}
 
 	seq := DropKeys(maps.All(input))
 	got := slices.Collect(seq)
