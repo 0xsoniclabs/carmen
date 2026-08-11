@@ -38,7 +38,7 @@ func DropKeys[K, V any](seq iter.Seq2[K, V]) iter.Seq[V] {
 }
 
 // FromSlice creates an `iter.Seq` from a slice of values.
-// Original ordering is preserv
+// Original ordering is preserved.
 func FromSlice[V any](slice []V) iter.Seq[V] {
 	return func(yield func(V) bool) {
 		for _, v := range slice {
