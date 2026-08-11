@@ -14,11 +14,11 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/exp/slices"
 )
 
 func TestBufferedFile_Open_NonExisting(t *testing.T) {

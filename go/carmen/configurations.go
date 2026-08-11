@@ -12,10 +12,11 @@ package carmen
 
 import (
 	"fmt"
+	"iter"
+	"maps"
 
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/0xsoniclabs/carmen/go/state/gostate"
-	"golang.org/x/exp/maps"
 )
 
 // Configuration is a unique identifier of a Carmen DB setup option.
@@ -99,7 +100,7 @@ func GetCarmenGoS5WithArchiveConfiguration() Configuration {
 // However, by importing the carmen/experimental package or by explicitly
 // registering custom implementations using RegisterConfiguration() below,
 // additional options can be made available.
-func GetAllConfigurations() []Configuration {
+func GetAllConfigurations() iter.Seq[Configuration] {
 	return maps.Keys(registeredConfigurations)
 }
 

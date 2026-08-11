@@ -16,7 +16,7 @@ import (
 )
 
 func TestConfiguration_OnlyContainsOfficialImplementations(t *testing.T) {
-	configs := GetAllConfigurations()
+	configs := slices.Collect(GetAllConfigurations())
 
 	want := []Configuration{
 		GetCarmenGoS5WithArchiveConfiguration(),
@@ -35,7 +35,7 @@ func TestConfiguration_OnlyContainsOfficialImplementations(t *testing.T) {
 }
 
 func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
-	for _, config := range GetAllConfigurations() {
+	for config := range GetAllConfigurations() {
 		config := config
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()

@@ -15,12 +15,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/carmen"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
-	"golang.org/x/exp/maps"
 )
 
 func ExampleDatabase_AddBlock() {
@@ -364,7 +365,7 @@ func ExampleHistoricBlockContext_GetProof() {
 
 	// ------- WitnessProof can be deserialized  -------
 
-	recoveredProof := carmen.CreateWitnessProofFromNodes(maps.Keys(completeProof)...)
+	recoveredProof := carmen.CreateWitnessProofFromNodes(slices.Collect(maps.Keys(completeProof))...)
 
 	// ------- Properties can be proven offline  -------
 	for i := 0; i < N; i++ {

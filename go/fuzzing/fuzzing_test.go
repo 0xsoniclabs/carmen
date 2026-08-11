@@ -11,9 +11,10 @@
 package fuzzing
 
 import (
-	"go.uber.org/mock/gomock"
-	"golang.org/x/exp/slices"
+	"slices"
 	"testing"
+
+	"go.uber.org/mock/gomock"
 )
 
 func TestFuzz_TwoFuzzingLoopOneCampaignSeedOnly(t *testing.T) {

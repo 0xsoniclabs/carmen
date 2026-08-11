@@ -19,7 +19,7 @@ import (
 )
 
 func TestConfigurations_ConfigurationsAreRegisteredGlobally(t *testing.T) {
-	registeredConfigs := carmen.GetAllConfigurations()
+	registeredConfigs := slices.Collect(carmen.GetAllConfigurations())
 	for _, config := range experimental.GetDatabaseConfigurations() {
 		if !slices.Contains(registeredConfigs, config) {
 			t.Errorf("missing registration of configuration %v", config)
@@ -28,7 +28,7 @@ func TestConfigurations_ConfigurationsAreRegisteredGlobally(t *testing.T) {
 }
 
 func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
-	for _, config := range carmen.GetAllConfigurations() {
+	for config := range carmen.GetAllConfigurations() {
 		config := config
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()

@@ -12,14 +12,15 @@ package mpt
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
-	"golang.org/x/exp/maps"
 )
 
 type Diff map[common.Address]*AccountDiff
@@ -36,7 +37,7 @@ func (d Diff) Equal(other Diff) bool {
 }
 
 func (d Diff) String() string {
-	addresses := maps.Keys(d)
+	addresses := slices.Collect(maps.Keys(d))
 	sort.Slice(addresses, func(i, j int) bool {
 		return string(addresses[i][:]) < string(addresses[j][:])
 	})
@@ -57,7 +58,7 @@ func (d Diff) String() string {
 		}
 
 		if len(diff.Storage) > 0 {
-			keys := maps.Keys(diff.Storage)
+			keys := slices.Collect(maps.Keys(diff.Storage))
 			sort.Slice(keys, func(i, j int) bool {
 				return string(keys[i][:]) < string(keys[j][:])
 			})

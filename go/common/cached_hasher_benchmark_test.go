@@ -12,7 +12,7 @@ package common
 
 import (
 	"encoding/binary"
-	"golang.org/x/exp/rand"
+	"math/rand"
 	"testing"
 )
 

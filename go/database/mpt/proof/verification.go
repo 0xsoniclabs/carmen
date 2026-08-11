@@ -14,13 +14,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
+	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/common/witness"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
-	"golang.org/x/exp/maps"
 )
 
 //go:generate mockgen -source verification.go -destination verification_mocks.go -package proof
@@ -394,7 +395,7 @@ func (v *storageVerifyingVisitor) Visit(n mpt.Node, _ mpt.NodeInfo) mpt.VisitRes
 
 // verifyStorage verifies the consistency of witness proofs for storage slots.
 func (v *storageVerifyingVisitor) verifyStorage() error {
-	keys := maps.Keys(v.storage)
+	keys := slices.Collect(maps.Keys(v.storage))
 
 	proof, err := v.trie.CreateWitnessProof(v.currentAddress, keys...)
 	if err != nil {

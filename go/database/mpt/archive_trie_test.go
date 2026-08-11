@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -37,7 +38,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/exp/maps"
 )
 
 // Note: most properties of the ArchiveTrie are tested through the common
@@ -2268,7 +2268,7 @@ func TestArchiveTrie_FailingOperation_InvalidatesOtherArchiveOperations(t *testi
 		return append(cp[k:], cp[:k]...)
 	}
 
-	names := maps.Keys(archiveOps)
+	names := slices.Collect(maps.Keys(archiveOps))
 
 	// rotate getters to start the experiment from all existing getters.
 	for i := 0; i < len(archiveOps); i++ {
