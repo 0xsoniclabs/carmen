@@ -17,8 +17,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 //go:generate mockgen -source checkpoint.go -destination checkpoint_mocks.go -package checkpoint

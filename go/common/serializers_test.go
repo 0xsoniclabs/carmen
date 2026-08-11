@@ -11,12 +11,12 @@
 package common_test
 
 import (
+	"math/rand"
 	"slices"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
-	"golang.org/x/exp/rand"
 )
 
 func TestAddressSerializer(t *testing.T) {

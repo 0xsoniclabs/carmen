@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
-	"golang.org/x/exp/maps"
 )
 
 //go:generate mockgen -source proof.go -destination proof_mocks.go -package mpt
@@ -246,7 +246,7 @@ func (p WitnessProof) Equals(other witness.Proof) bool {
 // The representation contains all nodes sorted by their hash.
 func (p WitnessProof) String() string {
 	// Extract keys and sort them
-	keys := maps.Keys(p.proofDb)
+	keys := slices.Collect(maps.Keys(p.proofDb))
 	cmp := common.HashComparator{}
 	sort.Slice(keys, func(i, j int) bool {
 		return cmp.Compare(&keys[i], &keys[j]) <= 0

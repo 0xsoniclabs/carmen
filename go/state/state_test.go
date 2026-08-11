@@ -15,6 +15,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"iter"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,7 +27,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/0xsoniclabs/carmen/go/state/gostate"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/maps"
 
 	_ "github.com/0xsoniclabs/carmen/go/state/externalstate"
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
@@ -81,7 +82,7 @@ func initStates() []namedStateConfig {
 	return res
 }
 
-func getAllSchemas() []state.Schema {
+func getAllSchemas() iter.Seq[state.Schema] {
 	schemas := map[state.Schema]struct{}{}
 	for config := range state.GetAllRegisteredStateFactories() {
 		schemas[config.Schema] = struct{}{}
@@ -122,7 +123,7 @@ func getReferenceStateFor(t *testing.T, params state.Parameters) (state.State, e
 
 func testHashAfterModification(t *testing.T, mod func(t *testing.T, schema state.Schema, s state.State)) {
 	want := map[state.Schema]common.Hash{}
-	for _, s := range getAllSchemas() {
+	for s := range getAllSchemas() {
 		ref, err := getReferenceStateFor(t, state.Parameters{Schema: s})
 		if err != nil {
 			t.Fatalf("failed to create reference state: %v", err)

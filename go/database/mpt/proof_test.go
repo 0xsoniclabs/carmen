@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"testing"
 
@@ -23,7 +24,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/immutable"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/exp/maps"
 )
 
 func TestCreateWitnessProof_CanCreateProof(t *testing.T) {

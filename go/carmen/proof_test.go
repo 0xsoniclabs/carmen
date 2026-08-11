@@ -12,9 +12,10 @@ package carmen
 
 import (
 	"bytes"
-	"github.com/0xsoniclabs/carmen/go/common/immutable"
-	"golang.org/x/exp/slices"
+	"slices"
 	"testing"
+
+	"github.com/0xsoniclabs/carmen/go/common/immutable"
 )
 
 func TestProof_CreateWitnessProofFromNodes(t *testing.T) {
@@ -34,11 +35,11 @@ func TestProof_CreateWitnessProofFromNodes(t *testing.T) {
 	}
 	gotElements := proof.GetElements()
 
-	slices.SortFunc(gotElements, func(a, b Bytes) bool {
-		return bytes.Compare(a.ToBytes(), b.ToBytes()) < 0
+	slices.SortFunc(gotElements, func(a, b Bytes) int {
+		return bytes.Compare(a.ToBytes(), b.ToBytes())
 	})
-	slices.SortFunc(wantElements, func(a, b Bytes) bool {
-		return bytes.Compare(a.ToBytes(), b.ToBytes()) < 0
+	slices.SortFunc(wantElements, func(a, b Bytes) int {
+		return bytes.Compare(a.ToBytes(), b.ToBytes())
 	})
 
 	if got, want := gotElements, wantElements; !slices.Equal(got, want) {

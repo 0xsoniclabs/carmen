@@ -17,8 +17,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
+	"slices"
 	"sort"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -28,7 +30,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
-	"golang.org/x/exp/maps"
 )
 
 // This file provides a pair of import and export functions capable of
@@ -144,7 +145,7 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 		}
 
 		// Encode changes of this block.
-		addresses := maps.Keys(diff)
+		addresses := slices.Collect(maps.Keys(diff))
 		sort.Slice(addresses, func(i, j int) bool { return bytes.Compare(addresses[i][:], addresses[j][:]) < 0 })
 		for _, address := range addresses {
 			if _, err := out.Write([]byte{'A'}); err != nil {
@@ -179,7 +180,7 @@ func ExportArchiveWithConfig(ctx context.Context, logger *Log, directory string,
 					return err
 				}
 			}
-			keys := maps.Keys(accountDiff.Storage)
+			keys := slices.Collect(maps.Keys(accountDiff.Storage))
 			sort.Slice(keys, func(i, j int) bool { return bytes.Compare(keys[i][:], keys[j][:]) < 0 })
 			for _, key := range keys {
 				value := accountDiff.Storage[key]

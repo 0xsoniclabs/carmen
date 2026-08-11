@@ -242,7 +242,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 
 func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.StateDB)) {
 	want := map[state.Schema]common.Hash{}
-	for _, s := range getAllSchemas() {
+	for s := range getAllSchemas() {
 		ref_state, err := getReferenceStateFor(t, state.Parameters{
 			Schema:  s,
 			Archive: state.NoArchive,
