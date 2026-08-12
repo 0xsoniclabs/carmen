@@ -27,6 +27,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -82,6 +83,23 @@ func TestVerification_VerificationObserverIsKeptUpdatedOnEvents(t *testing.T) {
 		if err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), observer); err != nil {
 			t.Errorf("found unexpected error in fresh forest: %v", err)
 		}
+	})
+}
+
+func TestVerification_RootIteratorFailureIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+
+		injected := errors.New("injected failure")
+		failing := func(yield func(result.Result[iter_utils.Pair[uint64, Root]]) bool) {
+			if !yield(result.Ok(iter_utils.Pair[uint64, Root]{Key: 0, Value: roots[0]})) {
+				return
+			}
+			yield(result.Err[iter_utils.Pair[uint64, Root]](injected))
+		}
+
+		err := verifyFileForest(context.Background(), dir, config, failing, NilVerificationObserver{})
+		require.ErrorIs(err, injected)
 	})
 }
 

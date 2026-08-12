@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/0xsoniclabs/carmen/go/common/tribool"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -4534,6 +4535,24 @@ func TestCheckForest_DetectsIssuesInTrees(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckForest_ReportsRootIteratorFailure(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContext(t, ctrl)
+
+	ref, _ := ctxt.Build(&Account{address: common.Address{0x12}, info: AccountInfo{Nonce: common.Nonce{1}}})
+
+	injected := errors.New("injected failure")
+	roots := func(yield func(result.Result[*NodeReference]) bool) {
+		if !yield(result.Ok(&ref)) {
+			return
+		}
+		yield(result.Err[*NodeReference](injected))
+	}
+
+	require.ErrorIs(CheckForest(ctxt, roots), injected)
 }
 
 func TestCheckForest_AcceptsValidReUse(t *testing.T) {

@@ -41,7 +41,10 @@ type KVFile[K comparable, V any] interface {
 	// FileSize returns the size of the file in bytes.
 	FileSize() (uint64, error)
 
-	// Iterate returns an iterator over the key-value pairs in the file.
+	// Iterate returns an iterator over the key-value pairs in the file. A pair
+	// that cannot be read is yielded as an error element which ends the
+	// iteration, so consumers must inspect every element to tell a complete
+	// iteration from one cut short by a failure.
 	Iterate() (iter_utils.ResultSeq2[K, V], error)
 
 	// Close closes the file and releases any resources associated with it.

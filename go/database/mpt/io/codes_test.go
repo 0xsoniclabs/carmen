@@ -24,6 +24,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/stretchr/testify/require"
 )
 
@@ -261,4 +262,23 @@ func (w *failingWriter) Write(p []byte) (int, error) {
 	}
 	w.calls++
 	return len(p), nil
+}
+
+func TestWriteCodes_ReportsIteratorFailureWithoutWritingArchive(t *testing.T) {
+	require := require.New(t)
+
+	code := []byte{1, 2, 3}
+	injected := errors.New("injected failure")
+	codes := func(yield func(result.Result[iter_utils.Pair[common.Hash, []byte]]) bool) {
+		if !yield(result.Ok(iter_utils.Pair[common.Hash, []byte]{Key: common.Keccak256(code), Value: code})) {
+			return
+		}
+		yield(result.Err[iter_utils.Pair[common.Hash, []byte]](injected))
+	}
+
+	var buf bytes.Buffer
+	err := writeCodes(codes, &buf, t.TempDir())
+
+	require.ErrorIs(err, injected)
+	require.Empty(buf.Bytes(), "a failed iteration must not write a partial archive")
 }
