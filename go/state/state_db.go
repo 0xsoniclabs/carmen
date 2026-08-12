@@ -544,9 +544,9 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 				*value = backup
 			})
 
-			// Clear cached values.
-			value.stored = common.Value{}
-			value.storedKnown = true
+			// Clear cached values. The stored value and its known flag are
+			// deliberately left untouched: they keep describing the value
+			// currently present in the DB.
 			value.committed = common.Value{}
 			value.committedKnown = true
 			value.current = common.Value{}
@@ -1162,8 +1162,8 @@ func (s *stateDB) EndTransaction() {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					value.stored = common.Value{}
-					value.storedKnown = true
+					// value.stored = common.Value{}
+					// value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
@@ -1296,10 +1296,19 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 
 	// Update storage values in state DB
 	s.data.ForEach(func(slot slotId, value *slotValue) {
-		if !value.storedKnown || value.stored != value.current {
-			update.AppendSlotUpdate(slot.addr, slot.key, value.current)
-			s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
+		if value.storedKnown && value.stored == value.current {
+			// No DB write is needed, but if the account was cleared in this
+			// block its reincarnation counter was incremented; the cache
+			// entry is refreshed so that the still valid stored value is not
+			// masked as outdated by future reads. This covers slots that are
+			// explicitly set back to their stored value after a clearing.
+			if state, found := s.clearedAccounts[slot.addr]; found && (state == cleared || state == clearedAndTainted) {
+				s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
+			}
+			return
 		}
+		update.AppendSlotUpdate(slot.addr, slot.key, value.current)
+		s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
 	})
 
 	// Update modified codes.
