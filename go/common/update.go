@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -133,27 +134,47 @@ func (u *Update) String() string {
 	builder := strings.Builder{}
 	builder.WriteString("Update{\n")
 
-	if len(u.Balances) > 0 {
+	balances := slices.Clone(u.Balances)
+	slices.SortFunc(balances, func(a, b BalanceUpdate) int {
+		return a.Account.Compare(&b.Account)
+	})
+	nonces := slices.Clone(u.Nonces)
+	slices.SortFunc(nonces, func(a, b NonceUpdate) int {
+		return a.Account.Compare(&b.Account)
+	})
+	codes := slices.Clone(u.Codes)
+	slices.SortFunc(codes, func(a, b CodeUpdate) int {
+		return a.Account.Compare(&b.Account)
+	})
+	slots := slices.Clone(u.Slots)
+	slices.SortFunc(slots, func(a, b SlotUpdate) int {
+		if c := a.Account.Compare(&b.Account); c != 0 {
+			return c
+		}
+		return a.Key.Compare(&b.Key)
+	})
+
+	if len(balances) > 0 {
 		builder.WriteString("\tBalances:\n")
-		for _, change := range u.Balances {
+		for _, change := range balances {
 			fmt.Fprintf(&builder, "\t\t%v: %v\n", change.Account, change.Balance)
 		}
 	}
-	if len(u.Nonces) > 0 {
+	if len(nonces) > 0 {
 		builder.WriteString("\tNonces:\n")
-		for _, change := range u.Nonces {
+		for _, change := range nonces {
 			fmt.Fprintf(&builder, "\t\t%v: %d\n", change.Account, change.Nonce.ToUint64())
 		}
 	}
-	if len(u.Codes) > 0 {
+	if len(codes) > 0 {
 		builder.WriteString("\tCodes:\n")
-		for _, change := range u.Codes {
+		for _, change := range codes {
 			fmt.Fprintf(&builder, "\t\t%v: %x\n", change.Account, Keccak256(change.Code))
 		}
 	}
-	if len(u.Slots) > 0 {
+	if len(slots) > 0 {
 		builder.WriteString("\tSlots:\n")
-		for _, change := range u.Slots {
+		for _, change := range slots {
 			fmt.Fprintf(&builder, "\t\t%v: %v -> %x\n", change.Account, change.Key, change.Value)
 		}
 	}
