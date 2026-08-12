@@ -117,6 +117,17 @@ func TestIter_Map_ReturnsMappedSeq(t *testing.T) {
 	require.Equal(t, expected, slices.Collect(seq))
 }
 
+func TestIter_Map2_ReturnsMappedSeq(t *testing.T) {
+	input := map[string]int{"a": 1, "b": 2}
+	expected := map[string]string{"a": "1", "b": "2"}
+
+	mapFunc := func(k string, v int) (string, string) {
+		return k, strconv.Itoa(v)
+	}
+	seq := Map2(maps.All(input), mapFunc)
+	require.Equal(t, expected, maps.Collect(seq))
+}
+
 func TestIter_MapOk_MapsSuccessfulValues(t *testing.T) {
 	require := require.New(t)
 
@@ -141,10 +152,10 @@ func TestIter_MapOk_ForwardsFailures(t *testing.T) {
 		},
 	)
 
-	for r := range seq {
-		_, err := r.Get()
-		require.ErrorIs(err, injected)
-	}
+	values := slices.Collect(seq)
+	require.Equal(1, len(values))
+	_, err := values[0].Get()
+	require.ErrorIs(err, injected)
 }
 
 func TestIter_MapOk2_MapsSuccessfulPairs(t *testing.T) {
@@ -173,10 +184,18 @@ func TestIter_MapOk2_ForwardsFailures(t *testing.T) {
 		},
 	)
 
-	for r := range seq {
-		_, err := r.Get()
-		require.ErrorIs(err, injected)
-	}
+	values := slices.Collect(seq)
+	require.Equal(1, len(values))
+	_, err := values[0].Get()
+	require.ErrorIs(err, injected)
+}
+
+func TestIter_DropKeys_YieldsValuesWithoutKeys(t *testing.T) {
+	require := require.New(t)
+
+	seq := DropKeys(Enumerate([]string{"a", "b"}))
+
+	require.Equal([]string{"a", "b"}, slices.Collect(seq))
 }
 
 func TestIter_DropKeysOk2_YieldsValuesWithoutKeys(t *testing.T) {
@@ -197,10 +216,10 @@ func TestIter_DropKeysOk2_ForwardsFailures(t *testing.T) {
 		yield(result.Err[Pair[int, string]](injected))
 	})
 
-	for r := range seq {
-		_, err := r.Get()
-		require.ErrorIs(err, injected)
-	}
+	values := slices.Collect(seq)
+	require.Equal(1, len(values))
+	_, err := values[0].Get()
+	require.ErrorIs(err, injected)
 }
 
 func TestIter_Enumerate_PairsValuesWithTheirIndices(t *testing.T) {
