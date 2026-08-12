@@ -135,30 +135,61 @@ func (u *Update) String() string {
 
 	if len(u.Balances) > 0 {
 		builder.WriteString("\tBalances:\n")
-		for _, change := range u.Balances {
+		for _, i := range orderByHash(len(u.Balances), func(i int) []byte {
+			return u.Balances[i].Account[:]
+		}) {
+			change := u.Balances[i]
 			fmt.Fprintf(&builder, "\t\t%v: %v\n", change.Account, change.Balance)
 		}
 	}
 	if len(u.Nonces) > 0 {
 		builder.WriteString("\tNonces:\n")
-		for _, change := range u.Nonces {
+		for _, i := range orderByHash(len(u.Nonces), func(i int) []byte {
+			return u.Nonces[i].Account[:]
+		}) {
+			change := u.Nonces[i]
 			fmt.Fprintf(&builder, "\t\t%v: %d\n", change.Account, change.Nonce.ToUint64())
 		}
 	}
 	if len(u.Codes) > 0 {
 		builder.WriteString("\tCodes:\n")
-		for _, change := range u.Codes {
+		for _, i := range orderByHash(len(u.Codes), func(i int) []byte {
+			return u.Codes[i].Account[:]
+		}) {
+			change := u.Codes[i]
 			fmt.Fprintf(&builder, "\t\t%v: %x\n", change.Account, Keccak256(change.Code))
 		}
 	}
 	if len(u.Slots) > 0 {
 		builder.WriteString("\tSlots:\n")
-		for _, change := range u.Slots {
+		for _, i := range orderByHash(len(u.Slots), func(i int) []byte {
+			buf := make([]byte, 0, len(Address{})+len(Key{}))
+			buf = append(buf, u.Slots[i].Account[:]...)
+			buf = append(buf, u.Slots[i].Key[:]...)
+			return buf
+		}) {
+			change := u.Slots[i]
 			fmt.Fprintf(&builder, "\t\t%v: %v -> %x\n", change.Account, change.Key, change.Value)
 		}
 	}
 	fmt.Fprintf(&builder, "}")
 	return builder.String()
+}
+
+// orderByHash returns a permutation of [0, n) sorted ascendingly by the
+// Keccak256 hash of the bytes returned by key. It is used to produce a
+// deterministic iteration order that does not depend on the input ordering.
+func orderByHash(n int, key func(i int) []byte) []int {
+	indices := make([]int, n)
+	hashes := make([][32]byte, n)
+	for i := 0; i < n; i++ {
+		indices[i] = i
+		hashes[i] = Keccak256(key(i))
+	}
+	sort.Slice(indices, func(a, b int) bool {
+		return bytes.Compare(hashes[indices[a]][:], hashes[indices[b]][:]) < 0
+	})
+	return indices
 }
 
 // UpdateTarget is an interface for State implementations offering individual
