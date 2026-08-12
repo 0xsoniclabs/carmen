@@ -1162,8 +1162,6 @@ func (s *stateDB) EndTransaction() {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					// value.stored = common.Value{}
-					// value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
