@@ -128,7 +128,7 @@ func TestCheckpointCoordinator_ErrorsDuringAbortAreCollected(t *testing.T) {
 func TestCheckpointCoordinator_CommitNumberIsPersisted(t *testing.T) {
 	dir := t.TempDir()
 
-	for commit := Checkpoint(0); commit < 10; commit++ {
+	for commit := range Checkpoint(10) {
 		coordinator, err := NewCoordinator(dir)
 		if err != nil {
 			t.Fatalf("failed to create coordinator: %v", err)
@@ -153,7 +153,7 @@ func TestCheckpointCoordinator_ParticipantsAreCheckedForLastCommitNumber(t *test
 	if err != nil {
 		t.Fatalf("failed to create coordinator: %v", err)
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := coordinator.CreateCheckpoint(); err != nil {
 			t.Fatalf("failed to run commit: %v", err)
 		}

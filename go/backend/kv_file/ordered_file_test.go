@@ -409,10 +409,7 @@ func TestOrderedFile_Iterate_HandlesChunkedReader(t *testing.T) {
 			seq, err := f.Iterate()
 			require.NoError(err)
 
-			all := map[uint64]uint64{}
-			for k, v := range seq {
-				all[k] = v
-			}
+			all := maps.Collect(seq)
 			require.Len(all, len(values))
 			for i, v := range values {
 				require.EqualValues(v, all[uint64(i)], "position %d", i)

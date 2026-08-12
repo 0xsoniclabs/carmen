@@ -49,7 +49,7 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 		t.Fatalf("failed to open database: %v", err)
 	}
 	const blocks = 10
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		addBlock(uint64(i), db)
 	}
 
@@ -77,7 +77,7 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		addBlock(uint64(i+blocks), db)
 	}
 
@@ -122,7 +122,7 @@ func TestCarmen_Empty_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 		t.Fatalf("failed to open database: %v", err)
 	}
 	const blocks = 10
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		block := uint64(i)
 		update := common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{byte(block)}, Balance: amount.New(100)}},

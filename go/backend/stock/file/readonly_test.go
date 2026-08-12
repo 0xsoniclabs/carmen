@@ -43,7 +43,7 @@ func TestReadOnlyFile_Get(t *testing.T) {
 		t.Fatalf("cannot open stock: %s", err)
 	}
 
-	for i := 0; i < Items; i++ {
+	for i := range Items {
 		got, err := readonly.Get(i)
 		if err != nil {
 			t.Fatalf("cannot get value: %s", err)

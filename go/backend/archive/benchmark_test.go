@@ -33,7 +33,7 @@ func BenchmarkAdding(b *testing.B) {
 
 		// initialize
 		var update common.Update
-		for i := byte(0); i < byte(bmAddressToCreate); i++ {
+		for i := range byte(bmAddressToCreate) {
 			update.AppendBalanceUpdate(common.Address{i}, amount.New(uint64(i)))
 		}
 		if err := a.Add(1, update, nil); err != nil {
@@ -42,11 +42,11 @@ func BenchmarkAdding(b *testing.B) {
 
 		var block uint64 = 2
 		b.Run(factory.label, func(b *testing.B) {
-			for i := 0; i < bmBlocksToInsert; i++ {
+			for range bmBlocksToInsert {
 				var update common.Update
-				for addrIt := 0; addrIt < bmAddressToUseParBlock; addrIt++ {
+				for range bmAddressToUseParBlock {
 					addr := byte(rand.Intn(bmAddressToCreate))
-					for keyIt := 0; keyIt < bmKeysToInsertParAddressAndBlock; keyIt++ {
+					for range bmKeysToInsertParAddressAndBlock {
 						key := byte(rand.Intn(0xFF))
 						update.AppendSlotUpdate(common.Address{addr}, common.Key{key}, common.Value{addr + key})
 					}

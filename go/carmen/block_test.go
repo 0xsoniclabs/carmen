@@ -26,7 +26,7 @@ func TestBlockContext_CanCreateSequenceOfTransactions(t *testing.T) {
 	for name, factory := range initBlockContexts() {
 		t.Run(name, func(t *testing.T) {
 			block := factory(t)
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				tx, err := block.BeginTransaction()
 				if err != nil {
 					t.Fatalf("failed to create transaction %d: %v", i, err)
@@ -77,7 +77,7 @@ func TestBlockContext_RunTransaction_Parallel(t *testing.T) {
 
 			// non-sync counter as only one txs can run at a time
 			var counter int32
-			for i := 0; i < loops; i++ {
+			for i := range loops {
 				go func(i int) {
 					defer wg.Done()
 					if err := block.RunTransaction(func(context TransactionContext) error {
@@ -110,7 +110,7 @@ func TestBlockContext_BeginTransaction_Parallel(t *testing.T) {
 			wg := &sync.WaitGroup{}
 			wg.Add(loops)
 
-			for i := 0; i < loops; i++ {
+			for i := range loops {
 				go func(i int) {
 					defer wg.Done()
 					ctx, err := block.BeginTransaction()

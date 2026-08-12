@@ -64,11 +64,9 @@ func testCanBeAccessedConcurrently(t *testing.T, factory stock.NamedStockFactory
 
 	var wg sync.WaitGroup
 	var errors [N]error
-	for i := 0; i < N; i++ {
+	for i := range N {
 		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id, err := stock.New()
 			if err != nil {
 				errors[i] = fmt.Errorf("unable to create new item: %v", err)
@@ -86,7 +84,7 @@ func testCanBeAccessedConcurrently(t *testing.T, factory stock.NamedStockFactory
 				errors[i] = fmt.Errorf("failed to free item: %v", err)
 				return
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

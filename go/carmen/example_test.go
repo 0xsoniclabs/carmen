@@ -303,7 +303,7 @@ func ExampleHistoricBlockContext_GetProof() {
 
 	const N = 10
 	// Add N blocks with one address and storage slot each
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if err := db.AddBlock(uint64(i), func(context carmen.HeadBlockContext) error {
 			if err := context.RunTransaction(func(context carmen.TransactionContext) error {
 				context.CreateAccount(carmen.Address{byte(i)})
@@ -328,7 +328,7 @@ func ExampleHistoricBlockContext_GetProof() {
 
 	completeProof := make(map[carmen.Bytes]struct{}, 1024)
 	// proof each address and key from each block, and merge all in one proof
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if err := db.QueryBlock(uint64(i), func(ctxt carmen.HistoricBlockContext) error {
 			proof, err := ctxt.GetProof(carmen.Address{byte(i)}, carmen.Key{byte(i)})
 			if err != nil {
@@ -347,7 +347,7 @@ func ExampleHistoricBlockContext_GetProof() {
 	}
 
 	rootHashes := make([]carmen.Hash, N)
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if err := db.QueryHistoricState(uint64(i), func(ctxt carmen.QueryContext) {
 			rootHashes[i] = ctxt.GetStateHash()
 		}); err != nil {
@@ -368,7 +368,7 @@ func ExampleHistoricBlockContext_GetProof() {
 	recoveredProof := carmen.CreateWitnessProofFromNodes(slices.Collect(maps.Keys(completeProof))...)
 
 	// ------- Properties can be proven offline  -------
-	for i := 0; i < N; i++ {
+	for i := range N {
 		{
 			// query account balance
 			balance, complete, err := recoveredProof.GetBalance(rootHashes[i], carmen.Address{byte(i)})

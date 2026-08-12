@@ -6356,7 +6356,6 @@ func TestTransitions_TestForMissingTransitions(t *testing.T) {
 
 func TestTransitions_TestStatesAreValid(t *testing.T) {
 	for _, transition := range getTestTransitions() {
-		transition := transition
 		t.Run(transition.getLabel(), func(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
@@ -6373,7 +6372,6 @@ func TestTransitions_TestStatesAreValid(t *testing.T) {
 
 func TestTransitions_BeforeAndAfterStatesCanBeFrozen(t *testing.T) {
 	for _, transition := range getTestTransitions() {
-		transition := transition
 		t.Run(transition.getLabel(), func(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
@@ -6479,7 +6477,6 @@ func TestTransitions_MutableTransitionHaveExpectedEffectWithEthereumHashing(t *t
 
 func testTransitions_MutableTransitionHaveExpectedEffect(t *testing.T, config MptConfig) {
 	for _, transition := range getTestTransitions() {
-		transition := transition
 		t.Run(transition.getLabel(), func(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
@@ -6574,7 +6571,7 @@ func markModifiedAsDirty(t *testing.T, ctxt *nodeContext, before, after NodeRefe
 		// Also update the dirty child-hash markers in the nodes.
 		if branch, ok := n.(*BranchNode); ok {
 			branch.dirtyHashes = 0
-			for i := byte(0); i < 16; i++ {
+			for i := range byte(16) {
 				if branch.children[i].Id().IsEmpty() {
 					continue
 				}
@@ -7044,7 +7041,6 @@ func TestTransitions_ImmutableTransitionHaveExpectedEffectWithEthereumHashing(t 
 
 func testTransitions_ImmutableTransitionHaveExpectedEffect(t *testing.T, config MptConfig) {
 	for _, transition := range getTestTransitions() {
-		transition := transition
 		t.Run(transition.getLabel(), func(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
@@ -7111,7 +7107,7 @@ func markReusedAsFrozen(t *testing.T, ctxt *nodeContext, before, after NodeRefer
 		// Also update the frozen hints in branch nodes.
 		if branch, ok := n.(*BranchNode); ok {
 			branch.frozenChildren = 0
-			for i := byte(0); i < 16; i++ {
+			for i := range byte(16) {
 				if branch.children[i].Id().IsEmpty() {
 					continue
 				}
@@ -7168,7 +7164,6 @@ func getTestActions() []action {
 
 	// Make all transitions actions.
 	for _, transition := range getTestTransitions() {
-		transition := transition
 		res = append(res, action{
 			description: fmt.Sprintf("transition/%s", transition.getLabel()),
 			input:       transition.before,
@@ -7701,7 +7696,6 @@ func TestActions_PassOnFrozenNode(t *testing.T) {
 
 func testActions_Pass(t *testing.T, frozen bool) {
 	for _, action := range getTestActions() {
-		action := action
 		t.Run(action.description, func(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
@@ -8476,7 +8470,7 @@ func (c *nodeContext) diff(prefix string, nodeA, nodeB Node) []string {
 
 			diffs = append(diffs, c.diffTries(prefix+"/storage", a.storage, b.storage)...)
 		} else {
-			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeOf(a), reflect.TypeOf(nodeB)))
+			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeFor[*AccountNode](), reflect.TypeOf(nodeB)))
 		}
 	}
 
@@ -8496,7 +8490,7 @@ func (c *nodeContext) diff(prefix string, nodeA, nodeB Node) []string {
 			}
 			diffs = append(diffs, c.diffTries(prefix+"/next", a.next, b.next)...)
 		} else {
-			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeOf(a), reflect.TypeOf(nodeB)))
+			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeFor[*ExtensionNode](), reflect.TypeOf(nodeB)))
 		}
 	}
 
@@ -8519,7 +8513,7 @@ func (c *nodeContext) diff(prefix string, nodeA, nodeB Node) []string {
 				diffs = append(diffs, c.diffTries(fmt.Sprintf("%s/0x%X", prefix, i), next, b.children[i])...)
 			}
 		} else {
-			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeOf(a), reflect.TypeOf(nodeB)))
+			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeFor[*BranchNode](), reflect.TypeOf(nodeB)))
 		}
 	}
 
@@ -8543,7 +8537,7 @@ func (c *nodeContext) diff(prefix string, nodeA, nodeB Node) []string {
 				}
 			}
 		} else {
-			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeOf(a), reflect.TypeOf(b)))
+			diffs = append(diffs, fmt.Sprintf("%s: different node types, got %v and %v", prefix, reflect.TypeFor[*ValueNode](), reflect.TypeFor[*ValueNode]()))
 		}
 	}
 

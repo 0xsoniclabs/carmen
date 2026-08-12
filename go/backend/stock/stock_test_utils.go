@@ -142,7 +142,7 @@ func testDeletedElementsAreReused(t *testing.T, factory NamedStockFactory) {
 	defer func() { require.NoError(t, stock.Close()) }()
 
 	seen := map[int]bool{}
-	for i := 0; i < 1_000_000; i++ {
+	for range 1_000_000 {
 		index, err := stock.New()
 		if err != nil {
 			t.Fatalf("failed to create new element: %v", err)
@@ -166,7 +166,7 @@ func testReusedElementsAreCleared(t *testing.T, factory NamedStockFactory) {
 	defer func() { require.NoError(t, stock.Close()) }()
 
 	seen := map[int]bool{}
-	for i := 0; i < 1_000_000; i++ {
+	for range 1_000_000 {
 		index, err := stock.New()
 		if err != nil {
 			t.Fatalf("failed to create new element: %v", err)
@@ -193,7 +193,7 @@ func testLargeNumberOfElements(t *testing.T, factory NamedStockFactory) {
 	}
 	defer func() { require.NoError(t, stock.Close()) }()
 	indexes := map[int]int{}
-	for i := 0; i < N; i++ {
+	for i := range N {
 		index, err := stock.New()
 		if err != nil {
 			t.Fatalf("failed to create new entry: %v", err)
@@ -204,7 +204,7 @@ func testLargeNumberOfElements(t *testing.T, factory NamedStockFactory) {
 		}
 	}
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		got, err := stock.Get(indexes[i])
 		if err != nil {
 			t.Fatalf("failed to locate element: %v", err)
@@ -352,7 +352,7 @@ func testGetIdsProducesAllIdsInTheStock(t *testing.T, factory NamedStockFactory)
 
 	const N = 100
 	ids := map[int]struct{}{}
-	for i := 0; i < N; i++ {
+	for range N {
 		i, err := stock.New()
 		if err != nil {
 			t.Fatalf("failed to insert single element into empty stock: %v", err)

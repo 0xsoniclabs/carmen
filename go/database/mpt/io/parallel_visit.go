@@ -221,7 +221,7 @@ func visitAllWithConfig(
 				responsesMutex.Unlock()
 
 				// Do the actual prefetching in parallel.
-				for i := 0; i < batchSize; i++ {
+				for range batchSize {
 					prefetchNext(source, false)
 				}
 			}

@@ -331,7 +331,7 @@ func TestHeadBlockContext_CanCreateSequenceOfBlocks(t *testing.T) {
 				t.Fatalf("failed to open database: %v", err)
 			}
 
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				block, err := db.BeginBlock(uint64(i))
 				if err != nil {
 					t.Fatalf("failed to create block %d: %v", i, err)
@@ -831,7 +831,7 @@ func TestDatabase_CloseDB_Unfinished_Queries(t *testing.T) {
 
 	const loops = 10
 	ctxs := make([]HistoricBlockContext, 0, loops)
-	for i := 0; i < loops; i++ {
+	for range loops {
 		ctx, err := db.GetHistoricContext(0)
 		if err != nil {
 			t.Errorf("cannot get history: %v", err)
@@ -840,7 +840,7 @@ func TestDatabase_CloseDB_Unfinished_Queries(t *testing.T) {
 	}
 
 	// each close should fail as there are running queries
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		if err := db.Close(); !errors.Is(err, errBlockContextRunning) {
 			t.Fatalf("closing database should fail while block is not committed")
 		}
@@ -867,9 +867,9 @@ func TestDatabase_GetProof(t *testing.T) {
 	const numBlocks = 100
 	const numAccounts = 11
 	const numKeys = 12
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
-			for j := 0; j < numAccounts; j++ {
+			for j := range numAccounts {
 				if err := context.RunTransaction(func(tc TransactionContext) error {
 					addr := Address{byte(j)}
 					tc.CreateAccount(addr)
@@ -877,7 +877,7 @@ func TestDatabase_GetProof(t *testing.T) {
 					codeHashes[addr] = Hash(common.Keccak256([]byte{byte(j)}))
 					tc.SetNonce(addr, uint64(i<<8+j+1))
 					tc.AddBalance(addr, NewAmount(uint64(i<<8+j+1)))
-					for k := 0; k < numKeys; k++ {
+					for k := range numKeys {
 						key := Key{byte(k)}
 						tc.SetState(addr, key, Value{byte(i), byte(j), byte(k)})
 					}
@@ -898,7 +898,7 @@ func TestDatabase_GetProof(t *testing.T) {
 
 	// collect all roots
 	roots := make([]Hash, 0, numBlocks)
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		if err := db.QueryHistoricState(uint64(i), func(context QueryContext) {
 			roots = append(roots, context.GetStateHash())
 		}); err != nil {
@@ -909,16 +909,16 @@ func TestDatabase_GetProof(t *testing.T) {
 	sums := make(map[Address]Amount)
 
 	// proof properties
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		block, err := db.GetHistoricContext(uint64(i))
 		if err != nil {
 			t.Fatalf("cannot get block: %v", err)
 		}
 		// proof each account and all keys of the account
-		for j := 0; j < numAccounts; j++ {
+		for j := range numAccounts {
 			addr := Address{byte(j)}
 			keys := make([]Key, 0, numKeys)
-			for k := 0; k < numKeys; k++ {
+			for k := range numKeys {
 				keys = append(keys, Key{byte(k)})
 			}
 			proof, err := block.GetProof(addr, keys...)
@@ -975,7 +975,7 @@ func TestDatabase_GetProof(t *testing.T) {
 			}
 
 			/// proof keys
-			for k := 0; k < numKeys; k++ {
+			for k := range numKeys {
 				key := Key{byte(k)}
 				value, complete, err := proof.GetState(roots[i], addr, key)
 				if err != nil {
@@ -1009,14 +1009,14 @@ func TestDatabase_GetProof_Serialise_Deserialize(t *testing.T) {
 	const numBlocks = 100
 	const numAccounts = 11
 	const numKeys = 12
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
-			for j := 0; j < numAccounts; j++ {
+			for j := range numAccounts {
 				if err := context.RunTransaction(func(tc TransactionContext) error {
 					addr := Address{byte(j)}
 					tc.CreateAccount(addr)
 					tc.SetNonce(addr, uint64(i<<8+j+1))
-					for k := 0; k < numKeys; k++ {
+					for k := range numKeys {
 						key := Key{byte(k)}
 						tc.SetState(addr, key, Value{byte(i), byte(j), byte(k)})
 					}
@@ -1037,7 +1037,7 @@ func TestDatabase_GetProof_Serialise_Deserialize(t *testing.T) {
 
 	// collect all roots
 	roots := make([]Hash, 0, numBlocks)
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		if err := db.QueryHistoricState(uint64(i), func(context QueryContext) {
 			roots = append(roots, context.GetStateHash())
 		}); err != nil {
@@ -1047,16 +1047,16 @@ func TestDatabase_GetProof_Serialise_Deserialize(t *testing.T) {
 
 	// proof properties
 	serialized := make([]Bytes, 0, 1024)
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		block, err := db.GetHistoricContext(uint64(i))
 		if err != nil {
 			t.Fatalf("cannot get block: %v", err)
 		}
 		// proof each account and all keys of the account
-		for j := 0; j < numAccounts; j++ {
+		for j := range numAccounts {
 			addr := Address{byte(j)}
 			keys := make([]Key, 0, numKeys)
-			for k := 0; k < numKeys; k++ {
+			for k := range numKeys {
 				keys = append(keys, Key{byte(k)})
 			}
 			proof, err := block.GetProof(addr, keys...)
@@ -1075,8 +1075,8 @@ func TestDatabase_GetProof_Serialise_Deserialize(t *testing.T) {
 	}
 
 	recovered := CreateWitnessProofFromNodes(serialized...)
-	for i := 0; i < numBlocks; i++ {
-		for j := 0; j < numAccounts; j++ {
+	for i := range numBlocks {
+		for j := range numAccounts {
 			addr := Address{byte(j)}
 
 			nonce, complete, err := recovered.GetNonce(roots[i], addr)
@@ -1093,7 +1093,7 @@ func TestDatabase_GetProof_Serialise_Deserialize(t *testing.T) {
 			}
 
 			/// proof keys
-			for k := 0; k < numKeys; k++ {
+			for k := range numKeys {
 				key := Key{byte(k)}
 				value, complete, err := recovered.GetState(roots[i], addr, key)
 				if err != nil {
@@ -1121,7 +1121,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 	const numKeys = 12
 
 	keys := make([]Key, 0, numKeys)
-	for k := 0; k < numKeys; k++ {
+	for k := range numKeys {
 		keys = append(keys, Key{byte(k)})
 	}
 
@@ -1133,7 +1133,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 				tc.SetNonce(addr, uint64(j))
 				if j > 1 { // the second account will have no code and state
 					tc.SetCode(addr, []byte{byte(j)})
-					for k := 0; k < numKeys; k++ {
+					for k := range numKeys {
 						tc.SetState(addr, keys[k], Value{byte(j), byte(k)})
 					}
 				}
@@ -1168,7 +1168,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 	// proof each account and all keys of the account
 	shadowProofs := make(map[Address]WitnessProof, numAccounts)
 	serialized := make([]Bytes, 0, 1024)
-	for j := 0; j < numAccounts; j++ {
+	for j := range numAccounts {
 		addr := Address{byte(j)}
 		proof, err := block.GetProof(addr, keys...)
 		if err != nil {
@@ -1188,7 +1188,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 
 	recovered := CreateWitnessProofFromNodes(serialized...)
 	t.Run("extract subproofs", func(t *testing.T) {
-		for j := 0; j < numAccounts; j++ {
+		for j := range numAccounts {
 			addr := Address{byte(j)}
 			wantProof := shadowProofs[addr]
 
@@ -1218,7 +1218,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 	})
 
 	t.Run("extract account and storage nodes", func(t *testing.T) {
-		for j := 0; j < numAccounts; j++ {
+		for j := range numAccounts {
 			addr := Address{byte(j)}
 
 			// extract address nodes only
@@ -1510,7 +1510,7 @@ func TestDatabase_BeginBlock_Parallel(t *testing.T) {
 	success := &atomic.Int32{}
 	wg := &sync.WaitGroup{}
 	wg.Add(loops)
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		go func(i int) {
 			defer wg.Done()
 			bctx, err := db.BeginBlock(uint64(i))
@@ -1547,7 +1547,7 @@ func TestDatabase_AddBlock_Parallel(t *testing.T) {
 	success := &atomic.Int32{}
 	wg := &sync.WaitGroup{}
 	wg.Add(loops)
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		go func(i int) {
 			defer wg.Done()
 			err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
@@ -1579,7 +1579,7 @@ func TestDatabase_GetHistoricBlock_Parallel(t *testing.T) {
 	}
 
 	// init a few blocks
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			return nil
 		}); err != nil {
@@ -1593,7 +1593,7 @@ func TestDatabase_GetHistoricBlock_Parallel(t *testing.T) {
 
 	wg := &sync.WaitGroup{}
 	wg.Add(loops)
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		go func(i int) {
 			defer wg.Done()
 			bctx, err := db.GetHistoricContext(uint64(i))
@@ -1622,7 +1622,7 @@ func TestDatabase_QueryBlock_Parallel(t *testing.T) {
 	}
 
 	// init a few blocks
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			return nil
 		}); err != nil {
@@ -1636,7 +1636,7 @@ func TestDatabase_QueryBlock_Parallel(t *testing.T) {
 
 	wg := &sync.WaitGroup{}
 	wg.Add(loops)
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		go func(i int) {
 			defer wg.Done()
 			if err := db.QueryBlock(uint64(i), func(context HistoricBlockContext) error {
@@ -1663,7 +1663,7 @@ func TestDatabase_AddBlock_QueryBlock_Parallel(t *testing.T) {
 	}
 
 	// init a few blocks
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			return nil
 		}); err != nil {
@@ -1678,7 +1678,7 @@ func TestDatabase_AddBlock_QueryBlock_Parallel(t *testing.T) {
 	// keep adding more blocks while querying already created once
 	wg := &sync.WaitGroup{}
 	wg.Add(loops)
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		go func(i int) {
 			defer wg.Done()
 			if err := db.QueryBlock(uint64(i), func(context HistoricBlockContext) error {
@@ -1691,7 +1691,7 @@ func TestDatabase_AddBlock_QueryBlock_Parallel(t *testing.T) {
 
 	wg.Add(loops)
 	added := &atomic.Int32{}
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		go func(block int) {
 			defer wg.Done()
 			if err := db.AddBlock(uint64(block), func(context HeadBlockContext) error {
@@ -1843,7 +1843,7 @@ func TestDatabase_Historic_Block_Available(t *testing.T) {
 
 	var transactions int
 	// query historic blocks
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		err := db.QueryBlock(uint64(i), func(context HistoricBlockContext) error {
 			if err := context.RunTransaction(func(context TransactionContext) error {
 				if got, want := context.GetBalance(addr), NewAmount(uint64(i*100)+1000); got != want {
@@ -1876,7 +1876,7 @@ func TestDatabase_StartBulkLoad_Can_Run_Consecutive(t *testing.T) {
 		t.Fatalf("failed to open database: %v", err)
 	}
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		ctx, err := db.StartBulkLoad(uint64(i))
 		if err != nil {
 			t.Errorf("cannot start bulk load: %v", err)
@@ -1999,7 +1999,7 @@ func TestDatabase_Async_AddBlock_QueryHistory_Close_ShouldNotThrowUnexpectedErro
 
 	// init a few blocks
 	const loops = 10
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		if err := addBlock(uint64(i)); err != nil {
 			t.Fatalf("cannot add block: %v", err)
 		}
@@ -2135,7 +2135,7 @@ func TestDatabase_Async_QueryHead_Accesses_ConsistentState(t *testing.T) {
 	// Have a few goroutines testing that nonces are in sync.
 	var group sync.WaitGroup
 	group.Add(numReaders)
-	for i := 0; i < numReaders; i++ {
+	for range numReaders {
 		go func() {
 			defer group.Done()
 			nonce := uint64(0)
@@ -2321,7 +2321,7 @@ func TestDatabase_Export(t *testing.T) {
 
 	const N = 3
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		if err = db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			if err = context.RunTransaction(func(context TransactionContext) error {
 				context.CreateAccount(Address{byte(i)})
@@ -2428,12 +2428,12 @@ func TestHeadBlockContext_Can_Update_Code(t *testing.T) {
 	const transactions = 12
 
 	// create a few blocks with transactions updating code
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		code := make([]byte, i+2)
 		code[i+1] = byte(i) // code size is growing, last byte is the index of the block, first byte is txs index
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			// insert transactions updating code
-			for j := 0; j < transactions; j++ {
+			for j := range transactions {
 				if err := context.RunTransaction(func(context TransactionContext) error {
 					code[0] = byte(j)
 					context.SetCode(addr, code)
@@ -2486,12 +2486,12 @@ func TestDatabase_Codes_Versioned_Archive(t *testing.T) {
 	codeHashes := make([]Hash, 0, blocks)
 
 	// create a few blocks with transactions updating code
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		code := make([]byte, i+2)
 		code[i+1] = byte(i) // code size is growing, last byte is the index of the block, first byte is txs index
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			// insert transactions updating code
-			for j := 0; j < transactions; j++ {
+			for j := range transactions {
 				if err := context.RunTransaction(func(context TransactionContext) error {
 					code[0] = byte(j)
 					context.SetCode(addr, code)
@@ -2517,7 +2517,7 @@ func TestDatabase_Codes_Versioned_Archive(t *testing.T) {
 		t.Fatalf("cannot flush db: %v", err)
 	}
 
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		if err := db.QueryHistoricState(uint64(i), func(context QueryContext) {
 			if got, want := context.GetCodeHash(addr), codeHashes[i]; got != want {
 				t.Errorf("error retrieving code hash, wanted %v, got %v", want, got)
@@ -2557,11 +2557,9 @@ func TestDatabase_Archive_Query_Proof_While_Updating_Race_Detection(t *testing.T
 
 	const workers = 100
 
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
+	for range workers {
 		// query proof in parallel to appending data to the archive
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// a tight loop querying the archive
 			for run.Load() {
 				lastBlock, err := db.GetArchiveBlockHeight()
@@ -2573,7 +2571,7 @@ func TestDatabase_Archive_Query_Proof_While_Updating_Race_Detection(t *testing.T
 				}
 
 				if err := db.QueryBlock(uint64(lastBlock), func(context HistoricBlockContext) error {
-					for j := 0; j < keys; j++ {
+					for j := range keys {
 						key := Key{byte(j), byte(j >> 8), byte(lastBlock), byte(lastBlock >> 8)}
 						if _, err := context.GetProof(addr, key); err != nil {
 							return err
@@ -2585,14 +2583,14 @@ func TestDatabase_Archive_Query_Proof_While_Updating_Race_Detection(t *testing.T
 					t.Errorf("failed to query archive state: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
-	for i := 0; i < blocks; i++ {
+	for i := range blocks {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			if err := context.RunTransaction(func(context TransactionContext) error {
 				context.AddBalance(addr, NewAmount(uint64(i)))
-				for j := 0; j < keys; j++ {
+				for j := range keys {
 					key := Key{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}
 					value := Value{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}
 					context.SetState(addr, key, value)

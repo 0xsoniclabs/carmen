@@ -17,7 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"sort"
+	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
@@ -254,7 +254,7 @@ func verifyForest(directory string, config MptConfig, roots iter.Seq2[uint64, Ro
 		func(node Node) (bool, error) { return hasher.isEmbedded(node, source) },
 		func(id NodeId) bool { return id.IsBranch() },
 		func(node *BranchNode, hashes map[NodeId]common.Hash, embedded map[NodeId]bool) {
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				child := &node.children[i]
 				if !child.Id().IsEmpty() && embedded[child.Id()] {
 					node.setEmbedded(byte(i), true)
@@ -270,7 +270,7 @@ func verifyForest(directory string, config MptConfig, roots iter.Seq2[uint64, Ro
 			node.dirtyHashes = 0
 		},
 		func(node *BranchNode, ids *nodeIdCollection) {
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				// ID may be an embedded child, it will be determined later while hashing
 				ids.Put(node.children[i].Id())
 			}
@@ -383,9 +383,7 @@ func (n *nodeIdCollection) DrainToOrderedKeys() []NodeId {
 	n.nodeIds = make(map[NodeId]struct{}) // remove items to save space
 
 	// ... and sort
-	sort.Slice(n.nodeIdsKeys, func(i, j int) bool {
-		return n.nodeIdsKeys[i] < n.nodeIdsKeys[j]
-	})
+	slices.Sort(n.nodeIdsKeys)
 
 	return n.nodeIdsKeys
 }

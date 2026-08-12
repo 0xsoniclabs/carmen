@@ -274,7 +274,7 @@ func TestHashing(t *testing.T) {
 	}
 
 	// check all final hashes for each schema are the same
-	for schema := 0; schema < len(hashes); schema++ {
+	for schema := range hashes {
 		for i := 0; i < len(hashes[schema])-1; i++ {
 			if hashes[schema][i] != hashes[schema][i+1] {
 				t.Errorf("hashes differ in schema %d", schema)
@@ -433,7 +433,7 @@ func TestStateDB_AddBlock_CannotCallRepeatedly_OnError(t *testing.T) {
 	db := newGoState(liveDB, nil, []func(){})
 
 	stateDB := state.CreateStateDBUsing(db)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		runAddBlock(uint64(i), stateDB)
 		if err := stateDB.Check(); !errors.Is(err, injectedErr) {
 			t.Errorf("each operation should fail: %v", err)
@@ -460,7 +460,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 	}
 
 	// the same result many times
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if _, err := db.Apply(uint64(i), update); !errors.Is(err, injectedErr) {
 			t.Errorf("operation should fail: %v", err)
 		}
@@ -490,7 +490,7 @@ func TestState_Flush_Or_Close_Corrupted_Archive_Detected(t *testing.T) {
 	db := newGoState(liveDB, archiveDB, []func(){})
 
 	// the same result many times
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if err := db.Close(); !errors.Is(err, injectedErr) {
 			t.Errorf("operation should fail: %v", err)
 		}
@@ -514,7 +514,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 
 	db := newGoState(liveDB, nil, []func(){})
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		update := common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{0xA}, Balance: amount.New(10)}},
 		}
@@ -694,7 +694,7 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	const loops = 10
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		i := i
 		t.Run(fmt.Sprintf("operation_%d", i), func(t *testing.T) {
 			t.Parallel()
@@ -718,7 +718,7 @@ func TestState_All_Live_Operations_May_Cause_Failure(t *testing.T) {
 			// calls must succeed until the first failure,
 			// repeated calls must all fail
 			var shouldFail bool
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				shouldFail = shouldFail || errors.Is(results[0], injectedErr)
 				if _, err := db.GetBalance(addr); shouldFail && !errors.Is(err, injectedErr) {
 					t.Errorf("operation should fail")
@@ -779,7 +779,7 @@ func TestState_All_Archive_Operations_May_Cause_Failure(t *testing.T) {
 
 	db := newGoState(liveDB, archiveDB, []func(){})
 	// repeated calls must all fail
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := db.GetArchiveState(0); !errors.Is(err, injectedErr) {
 			t.Errorf("calling archive should fail")
 		}
@@ -789,7 +789,7 @@ func TestState_All_Archive_Operations_May_Cause_Failure(t *testing.T) {
 	}
 	// swap calls
 	db = newGoState(liveDB, archiveDB, []func(){})
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, _, err := db.GetArchiveBlockHeight(); !errors.Is(err, injectedErr) {
 			t.Errorf("calling archive should fail")
 		}

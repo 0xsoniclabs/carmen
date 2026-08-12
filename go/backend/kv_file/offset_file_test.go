@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -273,10 +274,7 @@ func TestOffsetFile_Iterate_ReturnsAllEntries(t *testing.T) {
 
 	seq, err := f.Iterate()
 	require.NoError(err)
-	all := map[uint64]uint64{}
-	for k, v := range seq {
-		all[k] = v
-	}
+	all := maps.Collect(seq)
 	require.Equal(map[uint64]uint64{1: 11, 2: 22, 3: 33}, all)
 }
 
@@ -289,10 +287,7 @@ func TestOffsetFile_Iterate_ReturnsLatestValueAfterOverwrite(t *testing.T) {
 
 	seq, err := f.Iterate()
 	require.NoError(err)
-	all := map[uint64]uint64{}
-	for k, v := range seq {
-		all[k] = v
-	}
+	all := maps.Collect(seq)
 	require.Equal(map[uint64]uint64{1: 100}, all)
 }
 
@@ -515,10 +510,7 @@ func (r *chunkedReadSeeker) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 	remaining := int64(len(r.data)) - r.pos
-	n := int64(len(p))
-	if n > remaining {
-		n = remaining
-	}
+	n := min(int64(len(p)), remaining)
 	if r.chunkSize > 0 && n > int64(r.chunkSize) {
 		n = int64(r.chunkSize)
 	}

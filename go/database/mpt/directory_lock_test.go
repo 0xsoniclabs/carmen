@@ -21,7 +21,7 @@ import (
 
 func TestDirectoryLock_AcquireAndRelease(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		lock, err := LockDirectory(dir)
 		if err != nil {
 			t.Fatalf("failed to acquire lock: %v", err)

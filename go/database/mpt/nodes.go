@@ -558,7 +558,7 @@ func CheckForest(source NodeSource, roots iter.Seq[*NodeReference]) error {
 				err = scheduleNode(&storage, context.root, true, nil)
 			}
 		case *BranchNode:
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				child := &cur.children[i]
 				if !child.id.IsEmpty() {
 					path := make([]Nibble, len(context.path)+1)
@@ -2295,7 +2295,7 @@ func (BranchNodeEncoderWithNodeHash) Store(dst []byte, node *BranchNode) error {
 	}
 	encoder := NodeIdEncoder{}
 	step := encoder.GetEncodedSize()
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		encoder.Store(dst[i*step:], &node.children[i].id)
 	}
 	dst = dst[step*16:]
@@ -2306,7 +2306,7 @@ func (BranchNodeEncoderWithNodeHash) Store(dst []byte, node *BranchNode) error {
 func (BranchNodeEncoderWithNodeHash) Load(src []byte, node *BranchNode) error {
 	encoder := NodeIdEncoder{}
 	step := encoder.GetEncodedSize()
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		var id NodeId
 		encoder.Load(src[i*step:], &id)
 		node.children[i] = NewNodeReference(id)
@@ -2317,7 +2317,7 @@ func (BranchNodeEncoderWithNodeHash) Load(src []byte, node *BranchNode) error {
 
 	// The hashes of the child nodes are not stored with the node, so they are
 	// marked as dirty to trigger a re-computation the next time they are used.
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if !node.children[i].Id().IsEmpty() {
 			node.markChildHashDirty(byte(i))
 		}
@@ -2339,11 +2339,11 @@ func (BranchNodeEncoderWithChildHashes) Store(dst []byte, node *BranchNode) erro
 	}
 	encoder := NodeIdEncoder{}
 	step := encoder.GetEncodedSize()
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		encoder.Store(dst[i*step:], &node.children[i].id)
 	}
 	dst = dst[step*16:]
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		copy(dst, node.hashes[i][:])
 		dst = dst[common.HashSize:]
 	}
@@ -2354,13 +2354,13 @@ func (BranchNodeEncoderWithChildHashes) Store(dst []byte, node *BranchNode) erro
 func (BranchNodeEncoderWithChildHashes) Load(src []byte, node *BranchNode) error {
 	encoder := NodeIdEncoder{}
 	step := encoder.GetEncodedSize()
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		var id NodeId
 		encoder.Load(src[i*step:], &id)
 		node.children[i] = NewNodeReference(id)
 	}
 	src = src[step*16:]
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		copy(node.hashes[i][:], src)
 		src = src[common.HashSize:]
 	}

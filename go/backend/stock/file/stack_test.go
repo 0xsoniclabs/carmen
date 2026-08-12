@@ -61,7 +61,7 @@ func TestStack_LargePushAndPop(t *testing.T) {
 	}
 	defer func() { require.NoError(t, stack.Close()) }()
 
-	for i := 0; i < 10*stackBufferSize; i++ {
+	for i := range 10 * stackBufferSize {
 		if got, want := stack.Size(), i; got != want {
 			t.Fatalf("invalid size, wanted %d, got %d", want, got)
 		}
@@ -132,7 +132,7 @@ func TestStack_CloseAndReopenLarge(t *testing.T) {
 			t.Fatalf("failed to open empty stack: %v", err)
 		}
 
-		for i := 0; i < N; i++ {
+		for i := range N {
 			if got, want := stack.Size(), i; got != want {
 				t.Fatalf("invalid size, wanted %d, got %d", want, got)
 			}

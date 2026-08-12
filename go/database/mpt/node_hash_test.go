@@ -52,7 +52,7 @@ func TestNodeHashes_ContainsAddedElements(t *testing.T) {
 }
 
 func TestNodeHashes_RecycledListsAreEmpty(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		list := NewNodeHashes()
 		if size := len(list.GetHashes()); size != 0 {
 			t.Errorf("new node list is not empty, size: %d", size)

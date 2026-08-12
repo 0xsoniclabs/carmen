@@ -79,7 +79,7 @@ func Benchmark_PolyMultiCommit(b *testing.B) {
 	for _, i := range []int{64, 256} {
 		b.Run(fmt.Sprintf("values=%d", i), func(b *testing.B) {
 			poly := make([]banderwagon.Fr, VectorSize)
-			for j := 0; j < i; j++ {
+			for j := range i {
 				poly[j] = random
 			}
 			for b.Loop() {
@@ -95,14 +95,14 @@ func Benchmark_CommitAdd(b *testing.B) {
 	config := getConfig() // < the polynomial commit "engine"
 
 	poly := make([]banderwagon.Fr, VectorSize)
-	for i := 0; i < VectorSize; i++ {
+	for i := range VectorSize {
 		poly[i] = random
 	}
 	c1 := config.Commit(poly)
 
 	var c1v banderwagon.Fr
 	c1.MapToScalarField(&c1v)
-	for i := 0; i < VectorSize; i++ {
+	for i := range VectorSize {
 		poly[i] = c1v
 	}
 	c2 := config.Commit(poly)

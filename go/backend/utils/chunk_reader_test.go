@@ -20,7 +20,7 @@ import (
 func TestChunkReader_ReadChunks(t *testing.T) {
 	const size = 10_000
 	want := make([]byte, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		want[i] = byte(i)
 	}
 

@@ -38,7 +38,6 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 	maxBalance := amount.New(0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF) // Balance is max 16bytes
 
 	for _, config := range initStates() {
-		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -183,7 +182,7 @@ func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 				}
 			}()
 
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				load := db.StartBulkLoad(uint64(i))
 				load.CreateAccount(address1)
 				load.SetNonce(address1, uint64(i))
@@ -215,7 +214,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 				}
 			}()
 
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				// Run a bulk-load update (creates one block)
 				load := db.StartBulkLoad(uint64(i * 2))
 				address := common.Address{byte(i + 1)}
@@ -261,9 +260,8 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 		ref.EndBlock(0)
 		want[s] = ref.GetHash()
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		for _, config := range initStates() {
-			config := config
 			if strings.Contains(config.name(), "geth-leveldb") {
 				// This is the only implementation that sets the empty code hash by default.
 				// Therefore tests not modifying the code will fail.
@@ -406,7 +404,7 @@ func TestPersistentStateDB(t *testing.T) {
 			stateDb.SetCode(address1, []byte{1, 2, 3})
 
 			// insert number of slots to address 1
-			for i := 0; i < numSlots; i++ {
+			for i := range numSlots {
 				val := toVal(uint64(i))
 				stateDb.SetState(address1, toKey(uint64(i)), val)
 			}
@@ -422,7 +420,7 @@ func TestPersistentStateDB(t *testing.T) {
 			stateDb.SetCode(address2, []byte{3, 2, 1})
 
 			// insert number of slots to address 2
-			for i := 0; i < numSlots; i++ {
+			for i := range numSlots {
 				val := toVal(uint64(i + numSlots))
 				stateDb.SetState(address2, toKey(uint64(i)), val)
 			}
@@ -487,7 +485,7 @@ func TestStateDBRead(t *testing.T) {
 	}
 
 	// slots in address 1
-	for i := 0; i < numSlots; i++ {
+	for i := range numSlots {
 		val := toVal(uint64(i))
 		key := toKey(uint64(i))
 		if storage := stateDb.GetState(address1, key); storage != val {
@@ -496,7 +494,7 @@ func TestStateDBRead(t *testing.T) {
 	}
 
 	// slots in address 2
-	for i := 0; i < numSlots; i++ {
+	for i := range numSlots {
 		val := toVal(uint64(i + numSlots))
 		key := toKey(uint64(i))
 		if storage := stateDb.GetState(address2, key); storage != val {
@@ -630,7 +628,6 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 	const N = 10  // number of concurrent goroutines
 	const M = 100 // number of updates per goroutine
 	for _, config := range initStates() {
-		config := config
 		t.Run(config.name(), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -649,7 +646,7 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 			ready.Add(N)
 			done := sync.WaitGroup{}
 			done.Add(N)
-			for i := 0; i < N; i++ {
+			for i := range N {
 				isPrimary := i == 0
 				go func() {
 					defer done.Done()
@@ -665,7 +662,7 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 
 					// Perform concurrent accesses.
 					block := 0
-					for j := 0; j < M; j++ {
+					for range M {
 						if isPrimary {
 							stateDb.(state.StateDB).BeginBlock()
 						}

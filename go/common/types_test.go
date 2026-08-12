@@ -209,7 +209,7 @@ func TestTypes_Hash(t *testing.T) {
 
 func testTypesHash[T any](t *testing.T, next func() *T, h Hasher[T]) {
 	var prev uint64
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		hash := h.Hash(next())
 		if hash == 0 {
 			t.Errorf("hash is zero")
@@ -223,7 +223,7 @@ func testTypesHash[T any](t *testing.T, next func() *T, h Hasher[T]) {
 
 func TestTypes_HashToBytes(t *testing.T) {
 	var v Hash
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		v[i]++
 	}
 	b := v.ToBytes()
@@ -232,7 +232,7 @@ func TestTypes_HashToBytes(t *testing.T) {
 		t.Errorf("sizes do not match: %d != %d", got, want)
 	}
 
-	for i := 0; i < len(b); i++ {
+	for i := range b {
 		if got, want := b[i], v[i]; got != want {
 			t.Errorf("bytes do not match: %d != %d (pos: %d)", b, v, i)
 		}

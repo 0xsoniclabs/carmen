@@ -41,7 +41,7 @@ func TestVerification_VerifyProofArchiveTrie(t *testing.T) {
 			addr := common.Address{1}
 			for i := 0; i <= blocks; i++ {
 				slotUpdates := make([]common.SlotUpdate, 0, slots)
-				for j := 0; j < slots; j++ {
+				for j := range slots {
 					slotUpdates = append(slotUpdates, common.SlotUpdate{Account: addr, Key: common.Key{byte(i), byte(j)}, Value: common.Value{byte(j)}})
 				}
 
@@ -175,13 +175,13 @@ func TestVerification_VerifyProofLiveTrie(t *testing.T) {
 				t.Fatalf("failed to create live trie, err %v", err)
 			}
 
-			for i := 0; i < accounts; i++ {
+			for i := range accounts {
 				addr := common.Address{byte(i)}
 				if err := live.SetAccountInfo(addr, mpt.AccountInfo{Nonce: common.Nonce{byte(i)}, Balance: amount.New(uint64(i))}); err != nil {
 					t.Errorf("failed to add account %d; %s", i, err)
 				}
 
-				for j := 0; j < keys; j++ {
+				for j := range keys {
 					if err := live.SetValue(addr, common.Key{byte(j), byte(i)}, common.Value{byte(i)}); err != nil {
 						t.Errorf("failed to add account %d; %s", i, err)
 					}
@@ -295,7 +295,7 @@ func TestVerification_FailingArchiveTrie(t *testing.T) {
 
 	// exercise the mock based on the number of executions
 	loops := count
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		count = 0     // reset the counter
 		threshold = i // update the threshold every loop
 		if err := verifyArchiveTrie(context.Background(), errorInjectingArchiveVerifiableTrieMock, 0, 10, observer, 10); !errors.Is(err, injectedError) {
@@ -324,7 +324,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 		t.Fatalf("failed to set nonce: %v", err)
 	}
 
-	for i := 0; i < 11; i++ {
+	for i := range 11 {
 		if err := trie.SetValue(common.Address{1}, common.Key{byte(i)}, common.Value{1}); err != nil {
 			t.Fatalf("failed to set storage: %v", err)
 		}
@@ -419,7 +419,7 @@ func TestVerification_FailingLiveTrie(t *testing.T) {
 
 	// exercise the mock based on the number of executions
 	loops := count
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		count = 0     // reset the counter
 		threshold = i // update the threshold every loop
 		if err := verifyTrie(context.Background(), errorInjectingVerifiableTrieMock, observer, 10); !errors.Is(err, injectedError) {
@@ -448,7 +448,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 		t.Fatalf("failed to set nonce: %v", err)
 	}
 
-	for i := 0; i < 11; i++ {
+	for i := range 11 {
 		if err := trie.SetValue(common.Address{1}, common.Key{byte(i)}, common.Value{1}); err != nil {
 			t.Fatalf("failed to set storage: %v", err)
 		}
@@ -486,7 +486,7 @@ func TestVerification_FailingInvalidProofs(t *testing.T) {
 
 	// exercise the mock based on the number of executions
 	loops := counter
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		counter = 0   // reset the counter
 		threshold = i // update the threshold every loop
 		if err := verifyTrie(context.Background(), errorInjectingTrieMock, observer, 10); !errors.Is(err, ErrInvalidProof) {
@@ -550,7 +550,7 @@ func TestVerification_VerifyProof_Incomplete_Or_Empty(t *testing.T) {
 
 			// exercise the mock based on the number of executions
 			loops := count
-			for i := 0; i < loops; i++ {
+			for i := range loops {
 				count = 0     // reset the counter
 				threshold = i // update the threshold every loop
 				if err := verifyAccount(common.Hash{}, errorInjectingProofMock, address, data); err == nil {
@@ -605,7 +605,7 @@ func TestVerification_VerifyProof_Can_Cancel(t *testing.T) {
 
 	const numNodes = 100
 	nodes := make([]mpt.Node, 0, numNodes)
-	for i := 0; i < numNodes; i++ {
+	for range numNodes {
 		nodes = append(nodes, &mpt.ValueNode{})
 		nodes = append(nodes, &mpt.BranchNode{})
 		nodes = append(nodes, &mpt.ExtensionNode{})
@@ -702,7 +702,7 @@ func TestVerification_Log_Processed_Accounts(t *testing.T) {
 	visitor := accountVerifyingVisitor{trie: trie, observer: observer, logWindow: LogWindow,
 		ctx: context.Background()}
 
-	for i := 0; i < LogWindow+1; i++ {
+	for range LogWindow + 1 {
 		visitor.Visit(accountNode, mpt.NodeInfo{})
 	}
 }

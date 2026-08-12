@@ -15,7 +15,7 @@ package mpt
 import (
 	"errors"
 	"runtime"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
@@ -208,7 +208,7 @@ func (b *writeBuffer) tryEmptyBuffer() {
 	b.bufferMutex.Unlock()
 
 	// Sort IDs to minimize disk seeks.
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 
 	// Flush all nodes of current patch.
 	for i := 0; i < len(ids); i++ {
