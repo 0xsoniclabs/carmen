@@ -229,8 +229,10 @@ func DeletingAccountWithData(t *testing.T, state *stateDB, beginOp func(state *s
 	state.EndTransaction()
 
 	require.Equal(state.clearedAccounts[addr], cleared)
-	require.Equal(testSlotValue.stored, common.Value{})
-	require.Equal(testSlotValue.storedKnown, true)
+	// The stored value and its known flag are not touched by the clearing;
+	// they keep describing the value present in the DB.
+	require.Equal(testSlotValue.stored, common.Value{0x1})
+	require.Equal(testSlotValue.storedKnown, false)
 	require.Equal(testSlotValue.committed, common.Value{})
 	require.Equal(testSlotValue.committedKnown, true)
 	require.Equal(testSlotValue.current, common.Value{})
