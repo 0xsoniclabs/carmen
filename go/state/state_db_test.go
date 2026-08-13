@@ -179,9 +179,12 @@ func TestStateDB_RecreatingAnAccountSetsStorageToZero(t *testing.T) {
 	// Simulate a non-existing account.
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Check().AnyTimes()
+	// The written slot has an unknown stored value, so an explicit
+	// zero-write is emitted for it after the clearing.
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Slots:  []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
 	})
 
 	db.CreateAccount(address1)
@@ -236,9 +239,16 @@ func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 	// Initially the account is non-existing, it gets recreated.
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Check().AnyTimes()
+	// The slots written before the account clearing have an unknown stored
+	// value (they were never read), so explicit zero-writes are emitted for
+	// them to make sure no former value is retained in the DB.
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{0, 0, 0, 0, 0, 0, 0, 1}}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Slots: []common.SlotUpdate{
+			{Account: address1, Key: key2, Value: common.Value{}},
+			{Account: address1, Key: key1, Value: common.Value{}},
+		},
 	})
 
 	// First transaction creates an account and sets some storage values.
@@ -294,12 +304,16 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
 	mock.EXPECT().GetStorage(address1, key2).Return(val2, nil)
 
-	// At the end the account is recreated with the new state.
+	// At the end the account is recreated with the new state. The slot key2,
+	// known to hold val2 in the DB, is explicitly zeroed by the clearing.
 	mock.EXPECT().Apply(uint64(123), common.Update{
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-		Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: val2}},
+		Slots: []common.SlotUpdate{
+			{Account: address1, Key: key2, Value: common.Value{}},
+			{Account: address1, Key: key1, Value: val2},
+		},
 	})
 
 	if got := db.GetState(address1, key1); got != val1 {
@@ -340,6 +354,73 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 
 	db.EndTransaction()
 	db.EndBlock(123)
+}
+
+func TestStateDB_EndBlock_ClearedSlotsWithKnownStoredValueAreWrittenAsZero(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	state.EXPECT().Check().AnyTimes()
+	state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	state.EXPECT().GetNonce(gomock.Any()).Return(common.ToNonce(1), nil).AnyTimes()
+	state.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+	state.EXPECT().GetStorage(gomock.Any(), gomock.Any()).Return(val1, nil).AnyTimes()
+
+	address := common.Address{1, 2, 3}
+	// The cleared slot is known to hold val1 in the DB. Since the clearing
+	// of the account is not part of the block update, an explicit zero is
+	// written to purge the retained value, even without any SetState call.
+	state.EXPECT().Apply(uint64(1), common.Update{
+		Slots: []common.SlotUpdate{{Account: address, Key: key1, Value: common.Value{}}},
+	}).Return(nil, nil)
+
+	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
+	stateDB.BeginTransaction()
+	stateDB.GetState(address, key1) // caches the stored value val1
+	stateDB.CreateAccount(address)  // clears the storage
+	stateDB.EndTransaction()
+	stateDB.EndBlock(1)
+}
+
+func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	state.EXPECT().Check().AnyTimes()
+	state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	state.EXPECT().GetNonce(gomock.Any()).Return(common.ToNonce(1), nil).AnyTimes()
+	state.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+	// The stored value is fetched exactly once; later reads must be served
+	// from the caches.
+	state.EXPECT().GetStorage(gomock.Any(), gomock.Any()).Times(1).Return(val1, nil)
+
+	address := common.Address{1, 2, 3}
+	// The slot is set back to the value the DB already holds, so no slot
+	// update is emitted for it.
+	state.EXPECT().Apply(uint64(1), common.Update{
+		Nonces: []common.NonceUpdate{{Account: address, Nonce: common.ToNonce(5)}},
+		Codes:  []common.CodeUpdate{{Account: address, Code: []byte{}}},
+	}).Return(nil, nil)
+
+	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
+	stateDB.BeginTransaction()
+	require.Equal(val1, stateDB.GetState(address, key1)) // caches the stored value val1
+	stateDB.CreateAccount(address)                       // clears the storage
+	stateDB.SetState(address, key1, val1)                // sets the slot back to its stored value
+	stateDB.SetNonce(address, 5)                         // keeps the account alive
+	stateDB.EndTransaction()
+	stateDB.EndBlock(1)
+
+	// The stored data cache entry carries the incremented reincarnation, so
+	// the still valid value is not masked as outdated.
+	cached, exists := stateDB.storedDataCache.Get(slotId{address, key1})
+	require.True(exists)
+	require.Equal(val1, cached.value)
+	require.Equal(stateDB.reincarnation[address], cached.reincarnation)
+
+	// The value remains visible in the next block.
+	stateDB.BeginTransaction()
+	require.Equal(val1, stateDB.GetState(address, key1))
+	stateDB.EndTransaction()
 }
 
 func TestStateDB_DestroyingRecreatedAccountIsNotResettingClearingState(t *testing.T) {
@@ -433,7 +514,10 @@ func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues
 	mock.EXPECT().GetBalance(gomock.Any()).AnyTimes().Return(amount.New(0), nil)
 	mock.EXPECT().GetNonce(gomock.Any()).AnyTimes().Return(common.Nonce{}, nil)
 	mock.EXPECT().GetCodeSize(gomock.Any()).AnyTimes().Return(0, nil)
-	mock.EXPECT().Apply(uint64(0), common.Update{}) // Empty because it's a non-existing account
+	// The leftover stored value of the deleted account is explicitly zeroed.
+	mock.EXPECT().Apply(uint64(0), common.Update{
+		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
+	})
 	mock.EXPECT().GetStorage(address1, key1).Times(1).Return(val2, nil)
 
 	db.BeginBlock()
@@ -445,16 +529,16 @@ func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues
 	db.EndTransaction() // Account will be deleted because empty
 	db.EndBlock(0)
 
-	// Value is still in the storadDataCache
+	// The stored data cache reflects the zeroed value with the current reincarnation.
 	cachedValue, exists := db.storedDataCache.Get(slotId{address1, key1})
 	require.True(exists)
-	require.Equal(cachedValue.value, val2)
-	// Reincarnation value of the cached entry is higher than the current one
-	require.Greater(db.reincarnation[address1], cachedValue.reincarnation)
+	require.Equal(cachedValue.value, common.Value{})
+	require.Equal(db.reincarnation[address1], cachedValue.reincarnation)
 
 	db.BeginBlock()
 	db.BeginTransaction()
-	// This will lookup in the storadDataCache, but since the reincarnation is higher, it's gonna return an empty value
+	// The reincarnation value is the same, so it reads from the reincarnation map.
+	// The value has been zeroed-out and saved into the cache.
 	got = db.GetState(address1, key1)
 	require.Equal(got, common.Value{})
 
@@ -923,7 +1007,10 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 		Balances: []common.BalanceUpdate{{Account: address1, Balance: newBalance}},
 		Nonces:   []common.NonceUpdate{{Account: address1}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-		Slots:    []common.SlotUpdate{{Account: address1, Key: key2, Value: val2}},
+		Slots: []common.SlotUpdate{
+			{Account: address1, Key: key2, Value: val2},
+			{Account: address1, Key: key1, Value: common.Value{}},
+		},
 	})
 
 	// The changes are applied to the state at the end of the block.
@@ -1965,10 +2052,14 @@ func TestStateDB_ImplicitAccountCreatedBySetStateIsDroppedSinceEmptyIfNothingEls
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	// The account is not created at the end of the transaction, nor is the value set.
+	// The account is not created at the end of the transaction. For the
+	// written slot the stored value is unknown, so an explicit zero-write is
+	// emitted to make sure no former value is retained in the DB.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{
+		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
+	})
 
 	db.SetState(address1, key1, val1)
 	db.EndTransaction()
@@ -3152,6 +3243,9 @@ func TestStateDB_SuicidedAccountNotRecreatedBySettingBalance(t *testing.T) {
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Nonces:   []common.NonceUpdate{{Account: address1}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		// The slot written after the suicide has an unknown stored value, so
+		// an explicit zero-write is emitted for it after the clearing.
+		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
 	})
 
 	// The account is suicided

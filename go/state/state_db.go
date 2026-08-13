@@ -544,9 +544,9 @@ func (s *stateDB) CreateAccount(addr common.Address) {
 				*value = backup
 			})
 
-			// Clear cached values.
-			value.stored = common.Value{}
-			value.storedKnown = true
+			// Clear cached values. The stored value and its known flag are
+			// deliberately left untouched: they keep describing the value
+			// currently present in the DB.
 			value.committed = common.Value{}
 			value.committedKnown = true
 			value.current = common.Value{}
@@ -1162,8 +1162,6 @@ func (s *stateDB) EndTransaction() {
 				if slot.addr == addr {
 					oldValue := *value
 					// Clear cached values.
-					value.stored = common.Value{}
-					value.storedKnown = true
 					value.committed = common.Value{}
 					value.committedKnown = true
 					value.current = common.Value{}
@@ -1299,7 +1297,13 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 		if !value.storedKnown || value.stored != value.current {
 			update.AppendSlotUpdate(slot.addr, slot.key, value.current)
 			s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
+		} else if state, found := s.clearedAccounts[slot.addr]; found && (state == cleared || state == clearedAndTainted) {
+			// The account was cleared in this block, incrementing its reincarnation
+			// counter; refresh the cache entry so the still valid stored value is
+			// not masked as outdated by future reads.
+			s.storedDataCache.Set(slot, storedDataCacheValue{value.current, s.reincarnation[slot.addr]})
 		}
+
 	})
 
 	// Update modified codes.
