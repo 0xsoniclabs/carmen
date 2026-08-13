@@ -370,14 +370,14 @@ func TestStateDB_EndBlock_ClearedSlotsWithKnownStoredValueAreWrittenAsZero(t *te
 	// written to purge the retained value, even without any SetState call.
 	state.EXPECT().Apply(uint64(1), common.Update{
 		Slots: []common.SlotUpdate{{Account: address, Key: key1, Value: common.Value{}}},
-	}).Return(nil, nil)
+	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
 	stateDB.BeginTransaction()
 	stateDB.GetState(address, key1) // caches the stored value val1
 	stateDB.CreateAccount(address)  // clears the storage
 	stateDB.EndTransaction()
-	stateDB.EndBlock(1)
+	endBlockAndDiscardStaged(t, stateDB, 1)
 }
 
 func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *testing.T) {
@@ -398,7 +398,7 @@ func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *tes
 	state.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address, Nonce: common.ToNonce(5)}},
 		Codes:  []common.CodeUpdate{{Account: address, Code: []byte{}}},
-	}).Return(nil, nil)
+	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
 	stateDB.BeginTransaction()
@@ -407,7 +407,7 @@ func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *tes
 	stateDB.SetState(address, key1, val1)                // sets the slot back to its stored value
 	stateDB.SetNonce(address, 5)                         // keeps the account alive
 	stateDB.EndTransaction()
-	stateDB.EndBlock(1)
+	endBlockAndDiscardStaged(t, stateDB, 1)
 
 	// The stored data cache entry carries the incremented reincarnation, so
 	// the still valid value is not masked as outdated.
