@@ -537,7 +537,8 @@ func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues
 
 	db.BeginBlock()
 	db.BeginTransaction()
-	// This will lookup in the storadDataCache, but since the reincarnation is higher, it's gonna return an empty value
+	// The reincarnation value is the same, so it reads from the reincarnation map.
+	// The value has been zeroed-out and saved into the cache.
 	got = db.GetState(address1, key1)
 	require.Equal(got, common.Value{})
 
