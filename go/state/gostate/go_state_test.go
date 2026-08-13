@@ -734,9 +734,18 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
 
+	// The first archive write is blocked until both blocks are committed, so
+	// neither error can surface before the second Commit and both are still
+	// gathered by the time the second block's write completes.
+	release := make(chan struct{})
+
 	firstErr := fmt.Errorf("injectedError1")
 	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil, nil)
-	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).Return(firstErr)
+	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(uint64, common.Update, common.Releaser) error {
+			<-release
+			return firstErr
+		})
 
 	secondErr := fmt.Errorf("injectedError2")
 	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil, nil)
@@ -754,6 +763,7 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, second.Commit())
 
+	close(release)
 	err = second.Wait()
 	require.ErrorIs(t, err, firstErr)
 	require.ErrorIs(t, err, secondErr)
