@@ -431,7 +431,29 @@ func (s *GoState) Flush() error {
 	return s.Check()
 }
 
+// rollbackUndecidedBlocks takes back every staged block whose fate was never
+// decided, newest first. Closing is the last chance to do so: a block that has
+// not been committed by then is never going to be, and flushing it into the
+// live state would leave the database unopenable, since an archive-backed
+// state only opens when the archive head matches the live root.
+func (s *GoState) rollbackUndecidedBlocks() {
+	for {
+		s.stagedLock.Lock()
+		if len(s.staged) == 0 {
+			s.stagedLock.Unlock()
+			return
+		}
+		newest := s.staged[len(s.staged)-1]
+		s.stagedLock.Unlock()
+
+		// Rollback consumes the block and collects any revert error in the
+		// state error, which Close reports through its final Check.
+		_ = newest.Rollback()
+	}
+}
+
 func (s *GoState) Close() error {
+	s.rollbackUndecidedBlocks()
 	s.addStateError(errors.Join(
 		s.Flush(),
 		s.live.Close(),
