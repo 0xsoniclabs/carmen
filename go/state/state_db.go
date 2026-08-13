@@ -1322,6 +1322,12 @@ func (s *stateDB) EndBlock(block uint64) (StagedBlock, error) {
 
 	// Send the update to the state.
 	staged, err := s.state.Apply(block, update)
+	if err == nil && staged == nil {
+		// Reported rather than wrapped: a wrapper around a nil block is itself
+		// non-nil, so it would pass a caller's nil check and only fail once the
+		// block is decided on.
+		err = fmt.Errorf("state applied block %d without returning a staged block", block)
+	}
 	if err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
 		return nil, err
