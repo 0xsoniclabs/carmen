@@ -673,6 +673,42 @@ func TestState_Apply_NoArchive_WaitReturnsImmediately(t *testing.T) {
 	require.NoError(t, staged.Wait())
 }
 
+func TestState_Apply_WaitRacingWithCommitIsSafe(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+
+	// Wait deliberately races Commit: it must either report that the block is not
+	// yet committed or wait for the archive write, without a data race on the
+	// block's status. The race detector guards the latter.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var commitErr, waitErr error
+	go func() { defer wg.Done(); commitErr = staged.Commit() }()
+	go func() { defer wg.Done(); waitErr = staged.Wait() }()
+	wg.Wait()
+
+	require.NoError(commitErr)
+	if waitErr != nil {
+		require.ErrorIs(waitErr, state.ErrStagedBlockMisuse)
+	}
+	require.NoError(db.Close())
+}
+
 func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)

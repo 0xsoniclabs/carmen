@@ -272,7 +272,8 @@ func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, 
 
 // consumeOldest removes the given block from the front of the staged sequence,
 // rejecting the call if it is not the oldest staged block or was already
-// consumed.
+// consumed. On success, it also installs the channel on which the block's
+// archive write will report its completion.
 func (s *GoState) consumeOldest(block *stagedBlock) error {
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
@@ -285,6 +286,12 @@ func (s *GoState) consumeOldest(block *stagedBlock) error {
 	}
 	s.staged = s.staged[1:]
 	block.status = stagedCommitted
+	// The archive-write channel is installed under the same lock as the status
+	// transition, so a Wait that observes the block as committed always finds
+	// the channel in place as well.
+	if s.archive != nil {
+		block.archiveWriteDone = make(chan error, 1)
+	}
 	return nil
 }
 
@@ -376,20 +383,26 @@ func (b *stagedBlock) Commit() error {
 		return b.state.getStateError()
 	}
 
-	b.archiveWriteDone = make(chan error, 1)
+	// The archive-write channel was installed by consumeOldest.
 	b.state.archiveWriter <- archiveUpdate{b.block, &b.update, hints, b.archiveWriteDone}
 	b.state.drainArchiveErrors()
 	return b.state.getStateError()
 }
 
 func (b *stagedBlock) Wait() error {
-	if b.status != stagedCommitted {
+	// The fields are read under the lock that publishes them, so a Wait racing a
+	// concurrent Commit still reports the misuse instead of racing the decision.
+	b.state.stagedLock.Lock()
+	status, done := b.status, b.archiveWriteDone
+	b.state.stagedLock.Unlock()
+
+	if status != stagedCommitted {
 		return fmt.Errorf("%w: cannot wait for block %d: it has not been committed", state.ErrStagedBlockMisuse, b.block)
 	}
-	if b.archiveWriteDone == nil {
+	if done == nil {
 		return nil // no archive, nothing to wait for
 	}
-	return <-b.archiveWriteDone
+	return <-done
 }
 
 func (b *stagedBlock) Rollback() error {
