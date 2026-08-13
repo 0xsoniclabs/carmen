@@ -231,12 +231,26 @@ func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, 
 
 	undoList, archiveUpdateHints, err := s.live.Apply(block, &update)
 	if err != nil {
+		// A failed update may have partially mutated the live state, and its undo
+		// list is the only way back (see LiveDB.Apply). Reverting it leaves the
+		// live state at the last complete block.
+		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
+			s.addStateError(revertErr)
+		}
 		s.addStateError(err)
 		return nil, s.getStateError()
 	}
 
 	hash, err := s.live.GetHash()
 	if err != nil {
+		// Without its root the block cannot be staged, and a block that cannot be
+		// staged can never be decided; take it back entirely.
+		if archiveUpdateHints != nil {
+			archiveUpdateHints.Release()
+		}
+		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
+			s.addStateError(revertErr)
+		}
 		s.addStateError(err)
 		return nil, s.getStateError()
 	}
