@@ -684,6 +684,51 @@ func TestState_Apply_RollbackRevertsTheLiveDbAndSkipsTheArchive(t *testing.T) {
 	require.NoError(t, staged.Rollback())
 }
 
+func TestGoState_Close_RollsBackUndecidedStagedBlocksNewestFirst(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	// The undo lists are distinguishable by length, so the revert order below
+	// can be observed.
+	undo1 := make([]func() error, 1)
+	undo2 := make([]func() error, 2)
+	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(undo1, nil, nil)
+	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(undo2, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil).Times(2)
+
+	var reverted []int
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).DoAndReturn(func(undo []func() error) error {
+		reverted = append(reverted, len(undo))
+		return nil
+	}).Times(2)
+
+	liveDB.EXPECT().Flush().Return(nil)
+	liveDB.EXPECT().Close().Return(nil)
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil)
+	// archiveDB.Add is deliberately not expected: an undecided block must not be
+	// promoted into the archive by Close.
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	first, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+	second, err := db.Apply(2, common.Update{})
+	require.NoError(err)
+
+	require.NoError(db.Close())
+	require.Equal([]int{2, 1}, reverted,
+		"Close must roll the undecided blocks back newest first")
+
+	// The handles were consumed by Close, so late decisions are ordinary misuse
+	// errors instead of operations on a closed state.
+	require.ErrorIs(first.Commit(), state.ErrStagedBlockMisuse)
+	require.ErrorIs(second.Rollback(), state.ErrStagedBlockMisuse)
+	require.ErrorIs(first.Wait(), state.ErrStagedBlockMisuse)
+}
+
 func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 	// This test stimulates the concurrency of stateError accesses.
 
