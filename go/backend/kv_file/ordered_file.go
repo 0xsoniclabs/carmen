@@ -14,12 +14,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"os"
 	"sync"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 )
 
 // OrderedFile is a KVFile that stores fixed-size values in a single file,
@@ -152,7 +153,8 @@ func (o *OrderedFile[V]) FileSize() (uint64, error) {
 
 // Iterate returns an iterator over all stored key-value pairs in ascending key
 // order. The set of keys visited is fixed when Iterate is called.
-func (o *OrderedFile[V]) Iterate() (iter.Seq2[uint64, V], error) {
+func (o *OrderedFile[V]) Iterate() (iter_utils.ResultSeq2[uint64, V], error) {
+	type keyValuePair = iter_utils.Pair[uint64, V]
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
 
@@ -161,16 +163,17 @@ func (o *OrderedFile[V]) Iterate() (iter.Seq2[uint64, V], error) {
 		return nil, err
 	}
 
-	return func(yield func(uint64, V) bool) {
+	return func(yield func(result.Result[keyValuePair]) bool) {
 		for key := range size {
 			o.mutex.Lock()
 			value, err := o.readAtLocked(key)
 			o.mutex.Unlock()
 			if err != nil {
 				// Includes os.ErrClosed when the file is closed mid-iteration.
+				yield(result.Err[keyValuePair](err))
 				return
 			}
-			if !yield(key, value) {
+			if !yield(result.Ok(keyValuePair{Key: key, Value: value})) {
 				return
 			}
 		}

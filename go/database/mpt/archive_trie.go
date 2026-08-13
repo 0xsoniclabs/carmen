@@ -328,7 +328,7 @@ func (a *ArchiveTrie) GetCodeForHash(hash common.Hash) ([]byte, error) {
 	return a.head.GetCodeForHash(hash)
 }
 
-func (a *ArchiveTrie) GetCodes() (iter.Seq2[common.Hash, []byte], error) {
+func (a *ArchiveTrie) GetCodes() (iter_utils.ResultSeq2[common.Hash, []byte], error) {
 	return a.head.GetCodes()
 }
 
@@ -467,9 +467,10 @@ func (a *ArchiveTrie) Check() error {
 	}
 	return errors.Join(
 		a.CheckErrors(),
-		a.forest.CheckAll(iter_utils.Map(iter_utils.DropKeys(it), func(v Root) *NodeReference {
+		a.forest.CheckAll(iter_utils.MapOk(iter_utils.DropKeysOk2(it), func(v Root) *NodeReference {
 			return &v.NodeRef
-		})),
+		}),
+		),
 	)
 }
 
@@ -793,7 +794,7 @@ func writeRoot(writer io.Writer, pos uint64, root Root) error {
 }
 
 // Iterate returns a sequence of all (block, root) pairs in the list.
-func (l *rootList) Iterate() (iter.Seq2[uint64, Root], error) {
+func (l *rootList) Iterate() (iter_utils.ResultSeq2[uint64, Root], error) {
 	return l.roots.Iterate()
 }
 

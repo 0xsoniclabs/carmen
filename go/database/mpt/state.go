@@ -13,10 +13,10 @@ package mpt
 import (
 	"errors"
 	"fmt"
-	"iter"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"github.com/0xsoniclabs/carmen/go/state"
 
@@ -80,7 +80,7 @@ type Database interface {
 
 	// CheckAll verifies internal invariants of a set of Trie instances rooted by
 	// the given nodes. It is a generalization of the Check() function.
-	CheckAll(rootRefs iter.Seq[*NodeReference]) error
+	CheckAll(rootRefs iter_utils.ResultSeq[*NodeReference]) error
 
 	// CheckErrors returns an error that might have been
 	// encountered on this forest in the past.
@@ -112,7 +112,7 @@ type LiveState interface {
 	GetCodeForHash(hash common.Hash) ([]byte, error)
 
 	// GetCodes retrieves all codes and their hashes.
-	GetCodes() (iter.Seq2[common.Hash, []byte], error)
+	GetCodes() (iter_utils.ResultSeq2[common.Hash, []byte], error)
 
 	// UpdateHashes recomputes hash root of this trie.
 	UpdateHashes() (common.Hash, *NodeHashes, error)
@@ -331,7 +331,7 @@ func (s *MptState) Visit(mode AccessMode, visitor NodeVisitor) error {
 	return s.trie.VisitTrie(mode, visitor)
 }
 
-func (s *MptState) GetCodes() (iter.Seq2[common.Hash, []byte], error) {
+func (s *MptState) GetCodes() (iter_utils.ResultSeq2[common.Hash, []byte], error) {
 	return s.codes.getCodes()
 }
 

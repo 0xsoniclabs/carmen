@@ -12,9 +12,9 @@ package kv_file
 
 import (
 	"io"
-	"iter"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 )
 
 //go:generate mockgen -source kv_file.go -destination kv_file_mocks.go -package kv_file
@@ -41,8 +41,11 @@ type KVFile[K comparable, V any] interface {
 	// FileSize returns the size of the file in bytes.
 	FileSize() (uint64, error)
 
-	// Iterate returns an iterator over the key-value pairs in the file.
-	Iterate() (iter.Seq2[K, V], error)
+	// Iterate returns an iterator over the key-value pairs in the file. A pair
+	// that cannot be read is yielded as an error element which ends the
+	// iteration, so consumers must inspect every element to tell a complete
+	// iteration from one cut short by a failure.
+	Iterate() (iter_utils.ResultSeq2[K, V], error)
 
 	// Close closes the file and releases any resources associated with it.
 	Close() error

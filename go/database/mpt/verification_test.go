@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +26,17 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
+	"github.com/0xsoniclabs/carmen/go/common/result"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+// rootsFromSlice adapts a slice of roots to the iterator type expected by
+// the verification API.
+func rootsFromSlice(roots []Root) iter_utils.ResultSeq2[uint64, Root] {
+	return iter_utils.OkSeq2(iter_utils.Enumerate(roots))
+}
 
 const N = 100
 
@@ -76,6 +83,23 @@ func TestVerification_VerificationObserverIsKeptUpdatedOnEvents(t *testing.T) {
 		if err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), observer); err != nil {
 			t.Errorf("found unexpected error in fresh forest: %v", err)
 		}
+	})
+}
+
+func TestVerification_RootIteratorFailureIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+
+		injected := errors.New("injected failure")
+		failing := func(yield func(result.Result[iter_utils.Pair[uint64, Root]]) bool) {
+			if !yield(result.Ok(iter_utils.Pair[uint64, Root]{Key: 0, Value: roots[0]})) {
+				return
+			}
+			yield(result.Err[iter_utils.Pair[uint64, Root]](injected))
+		}
+
+		err := verifyFileForest(context.Background(), dir, config, failing, NilVerificationObserver{})
+		require.ErrorIs(err, injected)
 	})
 }
 
@@ -703,7 +727,7 @@ func TestVerification_VerifyValidMptState(t *testing.T) {
 }
 
 func TestVerification_CanInterrupt(t *testing.T) {
-	type verifyFunc func(context.Context, string, MptConfig, iter.Seq2[uint64, Root], VerificationObserver) error
+	type verifyFunc func(context.Context, string, MptConfig, iter_utils.ResultSeq2[uint64, Root], VerificationObserver) error
 	tests := map[string]verifyFunc{"VerifyMptState": VerifyMptState, "VerifyFileForest": verifyFileForest}
 
 	for name, verify := range tests {

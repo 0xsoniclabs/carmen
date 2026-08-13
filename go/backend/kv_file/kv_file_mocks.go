@@ -10,10 +10,10 @@
 package kv_file
 
 import (
-	iter "iter"
 	reflect "reflect"
 
 	common "github.com/0xsoniclabs/carmen/go/common"
+	iter_utils "github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -115,10 +115,10 @@ func (mr *MockKVFileMockRecorder[K, V]) Has(key any) *gomock.Call {
 }
 
 // Iterate mocks base method.
-func (m *MockKVFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
+func (m *MockKVFile[K, V]) Iterate() (iter_utils.ResultSeq2[K, V], error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Iterate")
-	ret0, _ := ret[0].(iter.Seq2[K, V])
+	ret0, _ := ret[0].(iter_utils.ResultSeq2[K, V])
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -269,10 +269,10 @@ func (mr *MockKVFileWithMemoryFootprintMockRecorder[K, V]) Has(key any) *gomock.
 }
 
 // Iterate mocks base method.
-func (m *MockKVFileWithMemoryFootprint[K, V]) Iterate() (iter.Seq2[K, V], error) {
+func (m *MockKVFileWithMemoryFootprint[K, V]) Iterate() (iter_utils.ResultSeq2[K, V], error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Iterate")
-	ret0, _ := ret[0].(iter.Seq2[K, V])
+	ret0, _ := ret[0].(iter_utils.ResultSeq2[K, V])
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

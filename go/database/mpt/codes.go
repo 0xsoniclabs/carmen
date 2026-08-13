@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"iter"
-	"maps"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -26,6 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -111,7 +110,7 @@ func (c *codes) getCodeForHash(hash common.Hash) ([]byte, error) {
 	return *code, nil
 }
 
-func (c *codes) getCodes() (iter.Seq2[common.Hash, []byte], error) {
+func (c *codes) getCodes() (iter_utils.ResultSeq2[common.Hash, []byte], error) {
 	return c.codes.Iterate()
 }
 
@@ -122,7 +121,7 @@ func (c *codes) getCodesForTesting() (map[common.Hash][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return maps.Collect(it), nil
+	return iter_utils.CollectOk2(it)
 }
 
 func (c *codes) Flush() error {
@@ -252,8 +251,7 @@ func readCodesForTesting(path string) (codes map[common.Hash][]byte, err error) 
 	if err != nil {
 		return nil, err
 	}
-	codes = maps.Collect(seq)
-	return codes, nil
+	return iter_utils.CollectOk2(seq)
 }
 
 // writeCodesForTesting writes the given map of codes to the given file.

@@ -12,6 +12,7 @@ package iter_utils
 
 import (
 	"iter"
+	"maps"
 	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/common/result"
@@ -144,17 +145,24 @@ func MapOk2[KIn, VIn, KOut, VOut any](
 		key, value := f(in.Unpack())
 		return Pair[KOut, VOut]{Key: key, Value: value}
 	})
-
 }
 
-func DropKeys[K, V any](seq iter.Seq2[K, V]) iter.Seq[V] {
-	return func(yield func(V) bool) {
-		for _, v := range seq {
-			if !yield(v) {
-				return
-			}
-		}
-	}
+// CollectOk collects the successful values of a `ResultSeq` into a slice.
+// If the sequence reports a failure, it is returned alongside the values
+// collected before the failure.
+func CollectOk[V any](seq ResultSeq[V]) ([]V, error) {
+	pairs, seqErr := Unwrap(seq)
+	entries := slices.Collect(pairs)
+	return entries, seqErr()
+}
+
+// CollectOk2 collects the successful key-value pairs of a `ResultSeq2` into a map.
+// If the sequence reports a failure, it is returned alongside the pairs
+// collected before the failure.
+func CollectOk2[K comparable, V any](seq ResultSeq2[K, V]) (map[K]V, error) {
+	pairs, seqErr := Unwrap2(seq)
+	entries := maps.Collect(pairs)
+	return entries, seqErr()
 }
 
 // DropKeysOk2 drops the keys of a `ResultSeq2`, yielding a `ResultSeq` of the values.

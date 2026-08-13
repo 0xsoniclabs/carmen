@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"maps"
 	"math/rand"
 	"os"
@@ -35,6 +34,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -1272,11 +1272,6 @@ func TestArchiveTrie_GettingView_Block_OutOfRange(t *testing.T) {
 }
 
 func TestArchiveTrie_GetCodes(t *testing.T) {
-	collect := func(it iter.Seq2[common.Hash, []byte]) map[common.Hash][]byte {
-		codes := maps.Collect(it)
-		return codes
-	}
-
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
 			require := require.New(t)
@@ -1289,7 +1284,8 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 
 			codesIterator, err := archive.GetCodes()
 			require.NoError(err)
-			codes := collect(codesIterator)
+			codes, err := iter_utils.CollectOk2(codesIterator)
+			require.NoError(err)
 			if len(codes) != 0 {
 				t.Errorf("unexpected number of codes in archive, expected 0, got %d", len(codes))
 			}
@@ -1311,7 +1307,8 @@ func TestArchiveTrie_GetCodes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot get codes: %v", err)
 			}
-			codes = collect(codesIterator)
+			codes, err = iter_utils.CollectOk2(codesIterator)
+			require.NoError(err)
 			if len(codes) != 2 {
 				t.Errorf("unexpected number of codes in archive, wanted 2, got %d", len(codes))
 			}
@@ -2103,7 +2100,8 @@ func TestRootList_Iterate_YieldsAllAppendedRoots(t *testing.T) {
 	seq, err := list.Iterate()
 	require.NoError(err)
 
-	got := maps.Collect(seq)
+	got, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
 	require.Len(got, len(want))
 	for i, r := range want {
 		require.Equal(r, got[uint64(i)])
@@ -2119,11 +2117,9 @@ func TestRootList_Iterate_EmptyListYieldsNothing(t *testing.T) {
 	seq, err := list.Iterate()
 	require.NoError(err)
 
-	count := 0
-	for range seq {
-		count++
-	}
-	require.Zero(count)
+	roots, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
+	require.Empty(roots)
 }
 
 func TestRootList_Iterate_CanBeInvokedMultipleTimes(t *testing.T) {
@@ -2143,8 +2139,9 @@ func TestRootList_Iterate_CanBeInvokedMultipleTimes(t *testing.T) {
 	seq, err := list.Iterate()
 	require.NoError(err)
 
-	for pass := range 2 {
-		got := maps.Collect(seq)
+	for pass := 0; pass < 2; pass++ {
+		got, rootsErr := iter_utils.CollectOk2(seq)
+		require.NoError(rootsErr, "pass %d", pass)
 		require.Len(got, len(want), "pass %d", pass)
 		for i, r := range want {
 			require.Equal(r, got[uint64(i)], "pass %d", pass)
@@ -3819,14 +3816,15 @@ func collectRoots(l *rootList) ([]Root, error) {
 	if err != nil {
 		return nil, err
 	}
+	roots, rootsErr := iter_utils.Unwrap2(seq)
 	out := make([]Root, l.length())
-	for i, r := range seq {
+	for i, r := range roots {
 		if i >= uint64(len(out)) {
 			continue
 		}
 		out[i] = r
 	}
-	return out, nil
+	return out, rootsErr()
 }
 
 func BenchmarkArchiveFlush_Roots(b *testing.B) {

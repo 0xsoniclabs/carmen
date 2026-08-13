@@ -13,12 +13,12 @@ package kv_file
 import (
 	"errors"
 	"fmt"
-	"iter"
 	"slices"
 	"sync"
 	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 )
 
 // maxPendingFlushes bounds the number of sealed buffers queued for the
@@ -205,7 +205,7 @@ func (c *KVCachedFile[K, V]) FileSize() (uint64, error) {
 }
 
 // Iterate returns an iterator over all stored key-value pairs.
-func (c *KVCachedFile[K, V]) Iterate() (iter.Seq2[K, V], error) {
+func (c *KVCachedFile[K, V]) Iterate() (iter_utils.ResultSeq2[K, V], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

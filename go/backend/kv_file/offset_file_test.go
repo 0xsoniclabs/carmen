@@ -16,11 +16,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -274,8 +274,9 @@ func TestOffsetFile_Iterate_ReturnsAllEntries(t *testing.T) {
 
 	seq, err := f.Iterate()
 	require.NoError(err)
-	all := maps.Collect(seq)
-	require.Equal(map[uint64]uint64{1: 11, 2: 22, 3: 33}, all)
+	res, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
+	require.Equal(map[uint64]uint64{1: 11, 2: 22, 3: 33}, res)
 }
 
 func TestOffsetFile_Iterate_ReturnsLatestValueAfterOverwrite(t *testing.T) {
@@ -287,11 +288,12 @@ func TestOffsetFile_Iterate_ReturnsLatestValueAfterOverwrite(t *testing.T) {
 
 	seq, err := f.Iterate()
 	require.NoError(err)
-	all := maps.Collect(seq)
-	require.Equal(map[uint64]uint64{1: 100}, all)
+	res, err := iter_utils.CollectOk2(seq)
+	require.NoError(err)
+	require.Equal(map[uint64]uint64{1: 100}, res)
 }
 
-func TestOffsetFile_Iterate_YieldsNothingAfterClose(t *testing.T) {
+func TestOffsetFile_Iterate_ReportsErrorAfterClose(t *testing.T) {
 	require := require.New(t)
 	f, _ := openTestOffsetFile(t)
 
@@ -301,11 +303,9 @@ func TestOffsetFile_Iterate_YieldsNothingAfterClose(t *testing.T) {
 	seq, err := f.Iterate()
 	require.NoError(err)
 
-	yielded := 0
-	for range seq {
-		yielded++
-	}
-	require.Equal(0, yielded)
+	entries, seqErr := iter_utils.CollectOk2(seq)
+	require.Empty(entries)
+	require.ErrorIs(seqErr, os.ErrClosed)
 }
 
 func TestOffsetFile_Size_CountsUniqueKeys(t *testing.T) {
