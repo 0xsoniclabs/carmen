@@ -361,6 +361,13 @@ type stagedBlock struct {
 
 	status           stagedStatus
 	archiveWriteDone chan error
+
+	// waitOnce makes sure the archive's outcome is taken from the channel exactly
+	// once. The channel is closed once the outcome has been sent, so a second read
+	// -- by a later or a concurrent waiter -- would report success for a write
+	// that failed.
+	waitOnce sync.Once
+	waitErr  error
 }
 
 func (b *stagedBlock) StateHash() common.Hash {
@@ -402,7 +409,8 @@ func (b *stagedBlock) Wait() error {
 	if done == nil {
 		return nil // no archive, nothing to wait for
 	}
-	return <-done
+	b.waitOnce.Do(func() { b.waitErr = <-done })
+	return b.waitErr
 }
 
 func (b *stagedBlock) Rollback() error {
