@@ -495,6 +495,43 @@ func TestMptState_Apply_ReturnsTheUndoListOfAPartiallyAppliedUpdate(t *testing.T
 	require.Len(undo, 1, "the operations undoing the partial update must be handed to the caller")
 }
 
+func TestMptState_Apply_DoesNotRecordMutationsMadeOutsideOfIt(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	// The import path mutates the state directly, one call per value of the dump.
+	// Recording those would retain a closure each and, worse, hand them to the
+	// next block as if they were part of it.
+	for i := range 10 {
+		addr := common.Address{byte(i)}
+		require.NoError(state.SetBalance(addr, amount.New(uint64(i+1))))
+		require.NoError(state.SetNonce(addr, common.ToNonce(uint64(i+1))))
+	}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{0xFF}, Balance: amount.New(1)}},
+	}
+	undo, _, err := state.Apply(1, &update)
+	require.NoError(err)
+	require.Len(undo, 1, "the block must own only the operations of its own update")
+}
+
+func TestMptState_SetBalance_RecordsNoUndoOutsideOfApply(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	require.NoError(state.SetBalance(common.Address{1}, amount.New(1)))
+	require.NoError(state.SetNonce(common.Address{1}, common.ToNonce(1)))
+	require.NoError(state.SetCode(common.Address{1}, []byte{0x01}))
+	require.NoError(state.SetStorage(common.Address{1}, common.Key{1}, common.Value{1}))
+
+	require.Nil(state.undoList, "no block is being applied, so nothing may be recorded")
+}
+
 func TestMptState_Apply_StartsAFreshUndoListForEachUpdate(t *testing.T) {
 	require := require.New(t)
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
