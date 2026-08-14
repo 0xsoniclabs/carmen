@@ -86,13 +86,23 @@ func (c *headBlockContext) Commit() error {
 	}()
 
 	// Ending the block only applies it to the live state. A block committed through
-	// this API is kept, so it is promoted into the archive as well. Both steps
-	// collect their errors in the state, which end() reports below.
-	if staged, err := c.state.EndBlock(uint64(c.block)); err == nil && staged != nil {
-		_ = staged.Commit()
+	// this API is kept, so it is promoted into the archive as well.
+	staged, err := c.state.EndBlock(uint64(c.block))
+	if err == nil && staged == nil {
+		err = fmt.Errorf("state db ended block %d without returning a staged block", c.block)
+	}
+	if err == nil {
+		err = staged.Commit()
 	}
 	c.db.headStateCommitLock.Unlock()
 	headStateCommitLockReleased = true
+
+	// The head only moves on once the block is committed. A misuse of the staged
+	// block is reported but not collected by Check, so relying on end() alone would
+	// let this report success for a block that never reached the archive.
+	if err != nil {
+		return errors.Join(err, c.end()) // < invalidates this context
+	}
 
 	c.db.moveBlockNumber(c.block)
 
