@@ -415,6 +415,8 @@ func TestState_Apply_WaitReturns_WhenBackendUpdateIsDone(t *testing.T) {
 
 		backendBlock := state.NewMockStagedBlock(ctrl)
 		backendBlock.EXPECT().Commit().Return(nil)
+		// The root of the block is taken from the backend as it is applied.
+		backendBlock.EXPECT().StateHash().Return(common.Hash{}).AnyTimes()
 		backendBlock.EXPECT().Wait().DoAndReturn(func() error {
 			<-release
 			return nil
@@ -484,19 +486,39 @@ func TestState_Apply_RollbackIsRejected(t *testing.T) {
 		"the flat state applies blocks immediately and must not claim to roll them back")
 }
 
-func TestState_Apply_StagedBlockReportsTheStateHash(t *testing.T) {
+func TestState_Apply_StagedBlockKeepsReportingItsOwnRoot(t *testing.T) {
 	require := require.New(t)
-	flatState, err := NewState(t.TempDir(), nil)
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+
+	firstRoot := common.Hash{1}
+	secondRoot := common.Hash{2}
+	first := state.NewMockStagedBlock(ctrl)
+	first.EXPECT().StateHash().Return(firstRoot)
+	first.EXPECT().Commit().Return(nil)
+	first.EXPECT().Wait().Return(nil).AnyTimes()
+	second := state.NewMockStagedBlock(ctrl)
+	second.EXPECT().StateHash().Return(secondRoot)
+	second.EXPECT().Commit().Return(nil)
+	second.EXPECT().Wait().Return(nil).AnyTimes()
+	gomock.InOrder(
+		backend.EXPECT().Apply(uint64(1), gomock.Any()).Return(first, nil),
+		backend.EXPECT().Apply(uint64(2), gomock.Any()).Return(second, nil),
+	)
+
+	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(err)
 
-	staged, err := flatState.Apply(1, common.Update{
-		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(100)}},
-	})
+	block1, err := flatState.Apply(1, common.Update{})
+	require.NoError(err)
+	block2, err := flatState.Apply(2, common.Update{})
 	require.NoError(err)
 
-	want, err := flatState.GetHash()
-	require.NoError(err)
-	require.Equal(want, staged.StateHash())
+	// Block 1's handle must keep reporting block 1's root, however many blocks
+	// followed and however often it is asked.
+	require.Equal(secondRoot, block2.StateHash())
+	require.Equal(firstRoot, block1.StateHash())
+	require.Equal(firstRoot, block1.StateHash())
 }
 
 func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {

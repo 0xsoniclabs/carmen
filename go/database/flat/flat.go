@@ -100,6 +100,10 @@ type update struct {
 	block uint64
 	data  common.Update
 	done  chan error // done is closed when the update has been processed by the background worker.
+	// hash is fulfilled with the root this block produced. The backend computes it
+	// while applying the block, so taking it from there costs nothing and, unlike
+	// the live root, it stays correct once further blocks have been applied.
+	hash future.Promise[common.Hash]
 }
 
 // NewState creates a new flat State instance that wraps the provided backend state.
@@ -240,7 +244,10 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 	}
 
 	var done chan error
-	// Update the backend in the background (if present).
+	// This state has no root of its own: the backend computes one once the command
+	// loop has applied the block. The root is therefore promised now and resolved
+	// when it is first asked for, so that Apply does not have to wait for the loop.
+	hashPromise, hashFuture := future.Create[common.Hash]()
 	if s.commands != nil {
 		done = make(chan error, 1)
 		s.commands <- command{
@@ -248,13 +255,20 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 				block: block,
 				data:  data,
 				done:  done,
+				hash:  hashPromise,
 			},
 		}
+	} else {
+		hashPromise.Fulfill(common.Hash{}) // no backend, no root -- as in GetCommitment
 	}
-	return state.NewIrreversibleBlock(block, func() common.Hash {
-		hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
-		return hash
-	}, done), nil
+	return state.NewIrreversibleBlock(block, func() func() common.Hash {
+		var once sync.Once
+		var value common.Hash
+		return func() common.Hash {
+			once.Do(func() { value = hashFuture.Await() })
+			return value
+		}
+	}(), done), nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
@@ -293,6 +307,13 @@ func processCommands(
 				err = staged.Commit()
 			}
 			committed := err == nil
+			// Report the root of this block whatever happened, so that a caller
+			// asking for it is never left waiting.
+			if committed {
+				command.update.hash.Fulfill(staged.StateHash())
+			} else {
+				command.update.hash.Fulfill(common.Hash{})
+			}
 			// Register the apply/commit error with the collector so that Check
 			// reports it even when no caller waits on the done channel.
 			issues.HandleIssue(err)
