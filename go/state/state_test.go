@@ -821,6 +821,32 @@ func TestIrreversibleBlock_Wait_ReportsTheOutcomeOfTheAsynchronousWork(t *testin
 	}
 }
 
+func TestIrreversibleBlock_Commit_RejectsASecondDecision(t *testing.T) {
+	require := require.New(t)
+
+	block := state.NewIrreversibleBlock(7, func() common.Hash { return common.Hash{} }, nil)
+
+	require.NoError(block.Commit())
+	require.ErrorIs(block.Commit(), state.ErrStagedBlockMisuse,
+		"a block that has been decided must not be decided again")
+	require.ErrorIs(block.Rollback(), state.ErrStagedBlockMisuse)
+}
+
+func TestIrreversibleBlock_Wait_ReportsTheSameOutcomeToEveryWaiter(t *testing.T) {
+	require := require.New(t)
+
+	injected := errors.New("injected error")
+	done := make(chan error, 1)
+	done <- injected
+	close(done)
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, done)
+
+	// The channel yields its value once; a second read would see the zero value.
+	require.ErrorIs(block.Wait(), injected)
+	require.ErrorIs(block.Wait(), injected)
+}
+
 func TestIrreversibleBlock_Rollback_IsRejected(t *testing.T) {
 	require := require.New(t)
 
