@@ -595,6 +595,11 @@ func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
 // Suicide marks the given account as suicided.
 // This clears the account balance.
 // The account still exist until the state is committed.
+// Suicide marks the account for deletion at the end of the block. It does not
+// check that the account was created in the current transaction: honouring
+// EIP-6780 is left to the caller. A caller that deletes an older account gets a
+// block whose rollback cannot restore that account's storage (see
+// MptState.RevertLastBlock).
 func (s *stateDB) Suicide(addr common.Address) bool {
 	if !s.Exist(addr) {
 		return false
