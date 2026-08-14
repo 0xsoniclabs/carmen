@@ -770,6 +770,41 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	require.ErrorContains(t, err, errors.Join(firstErr, secondErr).Error())
 }
 
+func TestState_StagedBlock_EveryWaiterReportsTheArchiveOutcome(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	injected := fmt.Errorf("archive write failed")
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(injected)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+	require.NoError(staged.Commit())
+
+	// The outcome is sent once and the channel is then closed, so a second reader
+	// would see the zero value. Sequential and concurrent waiters alike must be
+	// told that the write failed.
+	require.ErrorIs(staged.Wait(), injected)
+	require.ErrorIs(staged.Wait(), injected)
+
+	errs := decideConcurrently(8, staged.Wait)
+	for _, err := range errs {
+		require.ErrorIs(err, injected, "every waiter must report the archive failure")
+	}
+
+	// The failure is also collected in the state, so closing reports it too.
+	require.ErrorIs(db.Close(), injected)
+}
+
 func TestState_StagedBlock_ConcurrentCommitsDecideTheBlockOnce(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
