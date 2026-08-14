@@ -122,14 +122,17 @@ func TestBasicOperations(t *testing.T) {
 			}
 			defer func() { require.NoError(t, s.Close()) }()
 
-			// fill-in values
-			_, err = s.Apply(12, common.Update{
+			// fill-in values. The block is committed, since applying it only makes
+			// its content live.
+			staged, err := s.Apply(12, common.Update{
 				Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.Nonce{123}}},
 				Balances: []common.BalanceUpdate{{Account: address2, Balance: amount.New(45)}},
 				Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{67}}},
 				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{0x12, 0x34}}},
 			})
 			if err != nil {
+				t.Errorf("Error: %s", err)
+			} else if err := staged.Commit(); err != nil {
 				t.Errorf("Error: %s", err)
 			}
 
@@ -192,8 +195,11 @@ func TestMoreInserts(t *testing.T) {
 				},
 			}
 
-			if _, err := state.Apply(1, update); err != nil {
+			staged, err := state.Apply(1, update)
+			if err != nil {
 				t.Errorf("failed to update state: %v", err)
+			} else if err := staged.Commit(); err != nil {
+				t.Errorf("failed to commit state: %v", err)
 			}
 
 			if val, err := state.GetStorage(address1, key3); err != nil || val != val3 {
@@ -355,7 +361,8 @@ func TestStateDB_AddBlock_Errors_Propagated_MultipleStateInstances(t *testing.T)
 	// while the other call from stateB
 	// will not be executed because the
 	// state is already corrupted.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
 	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
 	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
 	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
@@ -381,6 +388,7 @@ func TestStateDB_AddBlock_Errors_Propagated_From_Archive_MultipleStateInstances(
 	archiveDB := archive.NewMockArchive(ctrl)
 
 	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any())
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil).AnyTimes()
 	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
 	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
 	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
@@ -425,7 +433,8 @@ func TestStateDB_AddBlock_CannotCallRepeatedly_OnError(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
 	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
 	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
 	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
@@ -451,7 +460,8 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -510,7 +520,8 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -528,7 +539,62 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	}
 }
 
-func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+func TestState_Apply_RevertsThePartialUpdateWhenTheLiveDbFails(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+
+	injectedErr := fmt.Errorf("injected error")
+
+	// A failed update returns the undo operations of its partial mutations; Apply
+	// must replay them rather than leave a half-applied block in the live state.
+	undo := make([]func() error, 3)
+	reverted := false
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(undo, nil, injectedErr)
+	liveDB.EXPECT().RevertLastBlock(gomock.Len(len(undo))).DoAndReturn(func([]func() error) error {
+		reverted = true
+		return nil
+	})
+
+	db := newGoState(liveDB, nil, nil)
+
+	_, err := db.Apply(1, common.Update{})
+	require.ErrorIs(err, injectedErr)
+	require.True(reverted, "the partial update must be reverted")
+}
+
+func TestState_Apply_TakesTheBlockBackWhenHashingFails(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+
+	injectedErr := fmt.Errorf("injected error")
+
+	// Without its root the block cannot be staged and thus never be decided, so
+	// Apply must revert it and release the archive hints it can no longer hand on.
+	undo := make([]func() error, 2)
+	hints := &countingReleaser{}
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(undo, hints, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, injectedErr)
+	liveDB.EXPECT().RevertLastBlock(gomock.Len(len(undo))).Return(nil)
+
+	db := newGoState(liveDB, nil, nil)
+
+	_, err := db.Apply(1, common.Update{})
+	require.ErrorIs(err, injectedErr)
+	require.Equal(1, hints.releases, "the archive hints must be released")
+}
+
+// countingReleaser counts how often its resources have been released.
+type countingReleaser struct {
+	releases int
+}
+
+func (r *countingReleaser) Release() {
+	r.releases++
+}
+
+func TestState_Apply_DoesNotTouchTheArchiveUntilTheBlockIsCommitted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		liveDB := state.NewMockLiveDB(ctrl)
@@ -537,7 +603,8 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 		started := false
 		release := make(chan struct{})
 
-		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+		liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
 		archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_, _, _ any) error {
 				started = true
@@ -553,45 +620,93 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 
 		state := newGoState(liveDB, archiveDB, nil)
 
-		archiveWriteDone, err := state.Apply(1, common.Update{})
+		staged, err := state.Apply(1, common.Update{})
 		require.NoError(t, err)
-		require.NotNil(t, archiveWriteDone)
 
-		// Wait until the update blocks in the archive update.
+		// The archive is append-only, so a merely staged block must not reach it.
 		synctest.Wait()
-		require.True(t, started, "ApplySync did not start the archive update")
+		require.False(t, started, "Apply started the archive update before the block was committed")
+
+		require.NoError(t, staged.Commit())
+		synctest.Wait()
+		require.True(t, started, "Commit did not start the archive update")
+
+		waitReturned := make(chan struct{})
+		go func() {
+			defer close(waitReturned)
+			require.NoError(t, staged.Wait())
+		}()
+
+		synctest.Wait()
 		select {
-		case <-archiveWriteDone:
-			t.Errorf("ApplySync finished before archive update was released")
+		case <-waitReturned:
+			t.Errorf("Wait returned before the archive update was released")
 		default:
 			// success
 		}
 
-		// Release the archive update and wait for the archiveWriteDone to finish.
 		close(release)
 		synctest.Wait()
 		select {
-		case <-archiveWriteDone:
+		case <-waitReturned:
 			// success
 		default:
-			t.Errorf("ApplySync did not finish after archive update was released")
+			t.Errorf("Wait did not return after the archive update was released")
 		}
 
 		require.NoError(t, state.Close())
 	})
 }
 
-func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
+func TestState_Apply_NoArchive_WaitReturnsImmediately(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
 
 	db := newGoState(liveDB, nil, []func(){})
 
-	archiveWriteDone, err := db.Apply(1, common.Update{})
+	staged, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
-	require.Nil(t, archiveWriteDone)
+	require.NoError(t, staged.Commit())
+	require.NoError(t, staged.Wait())
+}
+
+func TestState_Apply_WaitRacingWithCommitIsSafe(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+
+	// Wait deliberately races Commit: it must either report that the block is not
+	// yet committed or wait for the archive write, without a data race on the
+	// block's status. The race detector guards the latter.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var commitErr, waitErr error
+	go func() { defer wg.Done(); commitErr = staged.Commit() }()
+	go func() { defer wg.Done(); waitErr = staged.Wait() }()
+	wg.Wait()
+
+	require.NoError(commitErr)
+	if waitErr != nil {
+		require.ErrorIs(waitErr, state.ErrStagedBlockMisuse)
+	}
+	require.NoError(db.Close())
 }
 
 func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
@@ -601,17 +716,17 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 
 	injectedErr := fmt.Errorf("injectedError")
 
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
 	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr)
 
 	db := newGoState(liveDB, archiveDB, []func(){})
 
-	archiveWriteDone, err := db.Apply(1, common.Update{})
+	staged, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
-	require.NotNil(t, archiveWriteDone)
+	require.NoError(t, staged.Commit())
 
-	err = <-archiveWriteDone
-	require.ErrorIs(t, err, injectedErr)
+	require.ErrorIs(t, staged.Wait(), injectedErr)
 }
 
 func TestState_Apply_GathersOldErrors(t *testing.T) {
@@ -619,25 +734,295 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
 
+	// The first archive write is blocked until both blocks are committed, so
+	// neither error can surface before the second Commit and both are still
+	// gathered by the time the second block's write completes.
+	release := make(chan struct{})
+
 	firstErr := fmt.Errorf("injectedError1")
-	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil)
-	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).Return(firstErr)
+	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil, nil)
+	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(uint64, common.Update, common.Releaser) error {
+			<-release
+			return firstErr
+		})
 
 	secondErr := fmt.Errorf("injectedError2")
-	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil, nil)
 	archiveDB.EXPECT().Add(uint64(2), gomock.Any(), gomock.Any()).Return(secondErr)
+
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil).AnyTimes()
 
 	db := newGoState(liveDB, archiveDB, []func(){})
 
-	_, err := db.Apply(1, common.Update{})
+	first, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
+	require.NoError(t, first.Commit())
 
-	archiveWriteDone, err := db.Apply(2, common.Update{})
+	second, err := db.Apply(2, common.Update{})
 	require.NoError(t, err)
-	err = <-archiveWriteDone
+	require.NoError(t, second.Commit())
+
+	close(release)
+	err = second.Wait()
 	require.ErrorIs(t, err, firstErr)
 	require.ErrorIs(t, err, secondErr)
 	require.ErrorContains(t, err, errors.Join(firstErr, secondErr).Error())
+}
+
+func TestState_StagedBlock_EveryWaiterReportsTheArchiveOutcome(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	injected := fmt.Errorf("archive write failed")
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(injected)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+	require.NoError(staged.Commit())
+
+	// The outcome is sent once and the channel is then closed, so a second reader
+	// would see the zero value. Sequential and concurrent waiters alike must be
+	// told that the write failed.
+	require.ErrorIs(staged.Wait(), injected)
+	require.ErrorIs(staged.Wait(), injected)
+
+	errs := decideConcurrently(8, staged.Wait)
+	for _, err := range errs {
+		require.ErrorIs(err, injected, "every waiter must report the archive failure")
+	}
+
+	// The failure is also collected in the state, so closing reports it too.
+	require.ErrorIs(db.Close(), injected)
+}
+
+func TestState_StagedBlock_ConcurrentCommitsDecideTheBlockOnce(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	// Exactly one commit may reach the archive, however many callers race.
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+
+	errs := decideConcurrently(8, staged.Commit)
+
+	require.Equal(1, countNil(errs), "exactly one commit must decide the block")
+	requireRestAreMisuse(require, errs)
+	require.NoError(db.Close())
+}
+
+func TestState_StagedBlock_ConcurrentRollbacksDecideTheBlockOnce(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	// The live state may only be reverted once, however many callers race.
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil).Times(1)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+
+	errs := decideConcurrently(8, staged.Rollback)
+
+	require.Equal(1, countNil(errs), "exactly one rollback must decide the block")
+	requireRestAreMisuse(require, errs)
+	require.NoError(db.Close())
+}
+
+func TestState_StagedBlock_ConcurrentDecisionsAndReadsAreRaceFree(t *testing.T) {
+	require := require.New(t)
+	s, err := newGoMemoryState(state.Parameters{
+		Directory: t.TempDir(),
+		Variant:   VariantGoMemory,
+		Schema:    5,
+		Archive:   state.S5Archive,
+	})
+	require.NoError(err)
+
+	const (
+		blocks  = 40
+		readers = 4
+	)
+
+	// One goroutine stages and decides blocks while readers query the state and
+	// the staged handles concurrently. Every access goes through the synced
+	// wrapper, so none of them may race; run with -race for the hard signal.
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for range readers {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if _, err := s.GetBalance(common.Address{1}); err != nil {
+					require.NoError(err)
+				}
+				if _, err := s.GetHash(); err != nil {
+					require.NoError(err)
+				}
+			}
+		})
+	}
+
+	for i := range uint64(blocks) {
+		staged, err := s.Apply(i, common.Update{
+			Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(i + 1)}},
+		})
+		require.NoError(err)
+
+		// Racing decisions on the same handle: exactly one may win, and the
+		// losers must report misuse rather than acting twice.
+		var decide func() error
+		if i%2 == 0 {
+			decide = staged.Commit
+		} else {
+			decide = staged.Rollback
+		}
+		errs := decideConcurrently(3, decide)
+		require.Equal(1, countNil(errs))
+		requireRestAreMisuse(require, errs)
+
+		// Reading the decided handle must stay safe alongside the readers.
+		_ = staged.StateHash()
+	}
+
+	close(stop)
+	wg.Wait()
+
+	require.NoError(s.Check(), "misuse must not poison the state")
+	require.NoError(s.Close())
+}
+
+// decideConcurrently runs the given decision from n goroutines at once and
+// returns their results.
+func decideConcurrently(n int, decide func() error) []error {
+	errs := make([]error, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = decide()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	return errs
+}
+
+func countNil(errs []error) int {
+	count := 0
+	for _, err := range errs {
+		if err == nil {
+			count++
+		}
+	}
+	return count
+}
+
+func requireRestAreMisuse(require *require.Assertions, errs []error) {
+	for _, err := range errs {
+		if err != nil {
+			require.ErrorIs(err, state.ErrStagedBlockMisuse)
+		}
+	}
+}
+
+func TestState_Apply_RollbackRevertsTheLiveDbAndSkipsTheArchive(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	undo := []func() error{}
+	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(undo, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
+	// archiveDB.Add is deliberately not expected: a rolled back block must never
+	// reach the append-only archive.
+
+	db := newGoState(liveDB, archiveDB, []func(){})
+
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.NoError(t, staged.Rollback())
+}
+
+func TestGoState_Close_RollsBackUndecidedStagedBlocksNewestFirst(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	// The undo lists are distinguishable by length, so the revert order below
+	// can be observed.
+	undo1 := make([]func() error, 1)
+	undo2 := make([]func() error, 2)
+	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(undo1, nil, nil)
+	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(undo2, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil).Times(2)
+
+	var reverted []int
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).DoAndReturn(func(undo []func() error) error {
+		reverted = append(reverted, len(undo))
+		return nil
+	}).Times(2)
+
+	liveDB.EXPECT().Flush().Return(nil)
+	liveDB.EXPECT().Close().Return(nil)
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil)
+	// archiveDB.Add is deliberately not expected: an undecided block must not be
+	// promoted into the archive by Close.
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	first, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+	second, err := db.Apply(2, common.Update{})
+	require.NoError(err)
+
+	require.NoError(db.Close())
+	require.Equal([]int{2, 1}, reverted,
+		"Close must roll the undecided blocks back newest first")
+
+	// The handles were consumed by Close, so late decisions are ordinary misuse
+	// errors instead of operations on a closed state.
+	require.ErrorIs(first.Commit(), state.ErrStagedBlockMisuse)
+	require.ErrorIs(second.Rollback(), state.ErrStagedBlockMisuse)
+	require.ErrorIs(first.Wait(), state.ErrStagedBlockMisuse)
 }
 
 func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
@@ -646,7 +1031,8 @@ func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		liveDB := state.NewMockLiveDB(ctrl)
-		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+		liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
 		liveDB.EXPECT().Flush()
 		liveDB.EXPECT().Close()
 
@@ -667,9 +1053,11 @@ func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 		db := newGoState(liveDB, archiveDB, nil)
 		defer func() { require.Error(t, db.Close()) }()
 
-		// Send an update to the archive writer goroutine.
-		_, err := db.Apply(1, common.Update{})
+		// Send an update to the archive writer goroutine. Only a committed block
+		// reaches the archive, so staging alone would leave it untouched.
+		staged, err := db.Apply(1, common.Update{})
 		require.NoError(t, err)
+		require.NoError(t, staged.Commit())
 
 		// Ensure the archive goroutine is blocked inside Add.
 		synctest.Wait()
@@ -826,8 +1214,9 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	live := state.NewMockLiveDB(ctrl)
 	live.EXPECT().Flush().AnyTimes()
 	live.EXPECT().Close()
-	live.EXPECT().Apply(gomock.Any(), gomock.Any()).Do(func(_ uint64, update *common.Update) (common.Releaser, error) {
-		return nil, update.Normalize()
+	live.EXPECT().GetHash().Return(common.Hash{}, nil)
+	live.EXPECT().Apply(gomock.Any(), gomock.Any()).Do(func(_ uint64, update *common.Update) ([]func() error, common.Releaser, error) {
+		return nil, nil, update.Normalize()
 	})
 
 	st := newGoState(live, archive, []func(){})
@@ -845,13 +1234,20 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 		},
 	}
 
-	if _, err := st.Apply(1, update); err != nil {
+	staged, err := st.Apply(1, update)
+	if err != nil {
 		t.Errorf("failed to apply update: %v", err)
+	}
+	// The update only reaches the archive once the block is committed.
+	if err := staged.Commit(); err != nil {
+		t.Errorf("failed to commit block: %v", err)
 	}
 
 	wg.Wait()
 }
 
+// runAddBlock adds one block and keeps it. The block is committed, since ending it
+// only applies it to the live state -- it reaches the archive when it is committed.
 func runAddBlock(block uint64, stateDB state.StateDB) {
 	addr := common.Address{byte(block)}
 	key := common.Key{0xA}
@@ -863,5 +1259,9 @@ func runAddBlock(block uint64, stateDB state.StateDB) {
 	stateDB.SetCode(addr, make([]byte, 80))
 	stateDB.SetNonce(addr, 1)
 	stateDB.EndTransaction()
-	stateDB.EndBlock(block)
+	staged, err := stateDB.EndBlock(block)
+	if err != nil {
+		return // < collected by, and reported through, the state's Check
+	}
+	_ = staged.Commit()
 }

@@ -56,6 +56,17 @@ var (
 	UnsupportedConfiguration = state.UnsupportedConfiguration
 )
 
+// applyBlock applies the update as one block and keeps it. Applying a block only
+// makes its content live; committing is what makes it part of the archive as well.
+// Tests seeding a state want both, which is what this does.
+func applyBlock(s state.State, block uint64, update common.Update) error {
+	staged, err := s.Apply(block, update)
+	if err != nil {
+		return err
+	}
+	return staged.Commit()
+}
+
 type namedStateConfig struct {
 	config  state.Configuration
 	factory state.StateFactory
@@ -162,7 +173,7 @@ func TestEmptyHash(t *testing.T) {
 
 func TestAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{0x01}, Balance: amount.New(100)}},
 		})
 		require.NoError(t, err)
@@ -171,7 +182,7 @@ func TestAddressHashes(t *testing.T) {
 
 func TestMultipleAddressHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 				{Account: address2, Balance: balance2},
@@ -184,7 +195,7 @@ func TestMultipleAddressHashes(t *testing.T) {
 
 func TestStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Slots: []common.SlotUpdate{{Account: address1, Key: key2, Value: val3}},
 		})
 		require.NoError(t, err)
@@ -193,7 +204,7 @@ func TestStorageHashes(t *testing.T) {
 
 func TestMultipleStorageHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Slots: []common.SlotUpdate{
 				{Account: address1, Key: key2, Value: val3},
 				{Account: address2, Key: key3, Value: val1},
@@ -206,7 +217,7 @@ func TestMultipleStorageHashes(t *testing.T) {
 
 func TestBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 			},
@@ -217,7 +228,7 @@ func TestBalanceUpdateHashes(t *testing.T) {
 
 func TestMultipleBalanceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Balances: []common.BalanceUpdate{
 				{Account: address1, Balance: balance1},
 				{Account: address2, Balance: balance2},
@@ -230,7 +241,7 @@ func TestMultipleBalanceUpdateHashes(t *testing.T) {
 
 func TestNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
 			},
@@ -241,7 +252,7 @@ func TestNonceUpdateHashes(t *testing.T) {
 
 func TestMultipleNonceUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Nonces: []common.NonceUpdate{
 				{Account: address1, Nonce: nonce1},
 				{Account: address2, Nonce: nonce2},
@@ -254,7 +265,7 @@ func TestMultipleNonceUpdateHashes(t *testing.T) {
 
 func TestCodeUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Codes: []common.CodeUpdate{
 				{Account: address1, Code: []byte{1}},
 			},
@@ -265,7 +276,7 @@ func TestCodeUpdateHashes(t *testing.T) {
 
 func TestMultipleCodeUpdateHashes(t *testing.T) {
 	testHashAfterModification(t, func(t *testing.T, schema state.Schema, s state.State) {
-		_, err := s.Apply(0, common.Update{
+		err := applyBlock(s, 0, common.Update{
 			Codes: []common.CodeUpdate{
 				{Account: address1, Code: []byte{1}},
 				{Account: address2, Code: []byte{1, 2}},
@@ -289,7 +300,7 @@ func TestLargeStateHashes(t *testing.T) {
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: address, Nonce: common.Nonce{byte(i + 1)}})
 			update.Codes = append(update.Codes, common.CodeUpdate{Account: address, Code: []byte{byte(i), byte(i * 2), byte(i*3 + 2)}})
 		}
-		_, err := s.Apply(0, update)
+		err := applyBlock(s, 0, update)
 		require.NoError(t, err)
 	})
 }
@@ -318,7 +329,7 @@ func TestCanComputeNonEmptyMemoryFootprint(t *testing.T) {
 func TestCodeCanBeUpdated(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		// account must exist (not aut-created in Verkle Trie)
-		if _, err := s.Apply(0, common.Update{
+		if err := applyBlock(s, 0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 			Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 		}); err != nil {
@@ -342,7 +353,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 
 		// Set the code to a new value.
 		code1 := []byte{0, 1, 2, 3, 4}
-		if _, err := s.Apply(1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code1}}}); err != nil {
+		if err := applyBlock(s, 1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code1}}}); err != nil {
 			t.Fatalf("failed to update code: %v", err)
 		}
 		code, err = s.GetCode(address1)
@@ -359,7 +370,7 @@ func TestCodeCanBeUpdated(t *testing.T) {
 
 		// Update code again should be fine.
 		code2 := []byte{5, 4, 3, 2, 1}
-		if _, err := s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code2}}}); err != nil {
+		if err := applyBlock(s, 2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code2}}}); err != nil {
 			t.Fatalf("failed to update code: %v", err)
 		}
 		code, err = s.GetCode(address1)
@@ -380,7 +391,7 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 	testEachConfiguration(t, func(t *testing.T, config *namedStateConfig, s state.State) {
 		require := require.New(t)
 		// account must exist (not aut-created in Verkle Trie)
-		if _, err := s.Apply(0, common.Update{
+		if err := applyBlock(s, 0, common.Update{
 			Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 			Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 		}); err != nil {
@@ -399,7 +410,7 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		// Update code to non-empty code updates hash accordingly.
 		code := []byte{1, 2, 3, 4}
 		hashOfTestCode := common.GetKeccak256Hash(code)
-		_, err = s.Apply(1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code}}})
+		err = applyBlock(s, 1, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: code}}})
 		require.NoError(err)
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
@@ -410,7 +421,7 @@ func TestCodeHashesMatchCodes(t *testing.T) {
 		}
 
 		// Reset code to empty code updates hash accordingly.
-		_, err = s.Apply(2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{}}}})
+		err = applyBlock(s, 2, common.Update{Codes: []common.CodeUpdate{{Account: address1, Code: []byte{}}}})
 		require.NoError(err)
 		hash, err = s.GetCodeHash(address1)
 		if err != nil {
@@ -444,7 +455,7 @@ func TestArchive(t *testing.T) {
 			balance12 := amount.New(0x12)
 			balance34 := amount.New(0x34)
 
-			if _, err := s.Apply(0, common.Update{
+			if err := applyBlock(s, 0, common.Update{
 				Balances: []common.BalanceUpdate{
 					{Account: address1, Balance: balance12},
 				},
@@ -457,7 +468,7 @@ func TestArchive(t *testing.T) {
 				t.Fatalf("failed to add block 1; %s", err)
 			}
 
-			if _, err := s.Apply(1, common.Update{
+			if err := applyBlock(s, 1, common.Update{
 				Balances: []common.BalanceUpdate{
 					{Account: address1, Balance: balance34},
 					{Account: address2, Balance: balance12},
@@ -566,13 +577,13 @@ func TestLastArchiveBlock(t *testing.T) {
 				t.Fatalf("empty archive is not reporting lack of blocks")
 			}
 
-			if _, err := s.Apply(0, common.Update{
+			if err := applyBlock(s, 0, common.Update{
 				Balances: []common.BalanceUpdate{{Account: address1, Balance: balance1}},
 			}); err != nil {
 				t.Fatalf("failed to add block 0; %s", err)
 			}
 
-			if _, err := s.Apply(1, common.Update{
+			if err := applyBlock(s, 1, common.Update{
 				Balances: []common.BalanceUpdate{{Account: address2, Balance: balance2}},
 			}); err != nil {
 				t.Fatalf("failed to add block 1; %s", err)
@@ -649,7 +660,7 @@ func TestPersistentState(t *testing.T) {
 			update.AppendNonceUpdate(address1, nonce1)
 			update.AppendSlotUpdate(address1, key1, val1)
 			update.AppendCodeUpdate(address1, []byte{1, 2, 3})
-			if _, err := s.Apply(0, update); err != nil {
+			if err := applyBlock(s, 0, update); err != nil {
 				t.Errorf("Error to init state: %v", err)
 			}
 
@@ -741,4 +752,99 @@ func createState(t *testing.T, name, dir string) state.State {
 
 	t.Fatalf("State with name %s not found", name)
 	return nil
+}
+
+func TestIrreversibleBlock_StateHash_ReportsTheHashOfItsOwnBlock(t *testing.T) {
+	require := require.New(t)
+	want := common.Hash{0x42}
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return want }, nil)
+
+	// Reported repeatedly, and unaffected by whatever the live state does next: a
+	// handle resolving its hash against the state would report a later root here.
+	require.Equal(want, block.StateHash())
+	require.Equal(want, block.StateHash())
+}
+
+func TestIrreversibleBlock_Commit_HasNothingLeftToDo(t *testing.T) {
+	require := require.New(t)
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, nil)
+
+	require.NoError(block.Commit())
+}
+
+func TestIrreversibleBlock_Wait_ReportsTheOutcomeOfTheAsynchronousWork(t *testing.T) {
+	injected := errors.New("injected error")
+	tests := map[string]struct {
+		done func() chan error
+		want error
+	}{
+		"no asynchronous work": {
+			done: func() chan error { return nil },
+		},
+		"work succeeded": {
+			done: func() chan error {
+				done := make(chan error, 1)
+				close(done)
+				return done
+			},
+		},
+		"work failed": {
+			done: func() chan error {
+				done := make(chan error, 1)
+				done <- injected
+				return done
+			},
+			want: injected,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			done := test.done()
+
+			var block state.StagedBlock
+			if done == nil {
+				// A nil channel must be passed as a nil receive-only channel, not as
+				// a non-nil interface wrapping one.
+				block = state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, nil)
+			} else {
+				block = state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, done)
+			}
+
+			require.NoError(block.Commit())
+			if test.want == nil {
+				require.NoError(block.Wait())
+			} else {
+				require.ErrorIs(block.Wait(), test.want)
+			}
+		})
+	}
+}
+
+func TestIrreversibleBlock_Wait_ReportsTheSameOutcomeToEveryWaiter(t *testing.T) {
+	require := require.New(t)
+
+	injected := errors.New("injected error")
+	done := make(chan error, 1)
+	done <- injected
+	close(done)
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, done)
+
+	// The channel yields its value once; a second read would see the zero value.
+	require.ErrorIs(block.Wait(), injected)
+	require.ErrorIs(block.Wait(), injected)
+}
+
+func TestIrreversibleBlock_Rollback_IsRejected(t *testing.T) {
+	require := require.New(t)
+
+	block := state.NewIrreversibleBlock(7, func() common.Hash { return common.Hash{} }, nil)
+
+	err := block.Rollback()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse)
+	require.ErrorContains(err, "block 7")
 }

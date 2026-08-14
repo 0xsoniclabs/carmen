@@ -347,12 +347,44 @@ func initBlockContexts() map[string]func(t *testing.T) blockContext {
 	}
 }
 
+func TestHeadBlockContext_Commit_ReportsAFailedDecisionAndKeepsTheHead(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	stateDB := state.NewMockStateDB(ctrl)
+	stateDB.EXPECT().Check().Return(nil).AnyTimes()
+	stateDB.EXPECT().ResetBlockContext().AnyTimes()
+
+	// A misuse of the staged block is reported but deliberately not collected by
+	// Check, so Commit has to carry it out itself.
+	injected := fmt.Errorf("%w: injected", state.ErrStagedBlockMisuse)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(injected)
+	stateDB.EXPECT().EndBlock(gomock.Any()).Return(staged, nil)
+
+	db := &database{db: state.NewMockState(ctrl), lastBlock: -1}
+	db.headStateInUse = true
+	context := &headBlockContext{
+		commonContext: commonContext{db: db},
+		block:         5,
+		state:         stateDB,
+	}
+
+	require.ErrorIs(context.Commit(), injected)
+	require.Equal(int64(-1), db.lastBlock,
+		"the head must not advance past a block that was not committed")
+}
+
 func initHeadBlockContext(t *testing.T) HeadBlockContext {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockStateDB(ctrl)
 	stateDB.EXPECT().Check().Return(nil).AnyTimes()
 	stateDB.EXPECT().EndTransaction().AnyTimes()
-	stateDB.EXPECT().EndBlock(gomock.Any()).AnyTimes()
+	// A state db that applies a block always yields a staged block to decide on;
+	// committing it is what keeps the block.
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(nil).AnyTimes()
+	stateDB.EXPECT().EndBlock(gomock.Any()).Return(staged, nil).AnyTimes()
 	stateDB.EXPECT().AbortTransaction().AnyTimes()
 	stateDB.EXPECT().ResetBlockContext().AnyTimes()
 	st := state.NewMockState(ctrl)

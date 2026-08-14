@@ -38,8 +38,17 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 		update := common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{byte(block)}, Balance: amount.New(100)}},
 		}
-		if _, err := db.Apply(block, update); err != nil {
+		// The block is committed: applying it only makes it live, and this test
+		// turns on the archive keeping up with the live state.
+		staged, err := db.Apply(block, update)
+		if err != nil {
 			t.Fatalf("cannot add block: %v", err)
+		}
+		if err := staged.Commit(); err != nil {
+			t.Fatalf("cannot commit block: %v", err)
+		}
+		if err := staged.Wait(); err != nil {
+			t.Fatalf("cannot archive block: %v", err)
 		}
 	}
 
@@ -94,6 +103,59 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 	}
 }
 
+func TestScheme5_Close_RollsBackStagedBlocksSoTheStateCanBeReopened(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	params := state.Parameters{
+		Directory: dir,
+		Variant:   VariantGoMemory,
+		Schema:    5,
+		Archive:   state.S5Archive,
+	}
+
+	db, err := newGoMemoryState(params)
+	require.NoError(err)
+
+	// One block is committed; it must survive the shutdown.
+	committed, err := db.Apply(1, common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(100)}},
+	})
+	require.NoError(err)
+	require.NoError(committed.Commit())
+	require.NoError(committed.Wait())
+
+	// Two more blocks are staged and never decided; closing must take them back,
+	// or the live state would run ahead of the archive and the database could
+	// never be opened again.
+	for block := uint64(2); block <= 3; block++ {
+		_, err := db.Apply(block, common.Update{
+			Balances: []common.BalanceUpdate{{Account: common.Address{byte(block)}, Balance: amount.New(100)}},
+		})
+		require.NoError(err)
+	}
+	require.NoError(db.Close())
+
+	db, err = newGoMemoryState(params)
+	require.NoError(err, "the database must reopen after closing with staged blocks")
+	defer func() {
+		require.NoError(db.Close())
+	}()
+
+	// The committed block is present, the rolled back ones are not.
+	balance, err := db.GetBalance(common.Address{1})
+	require.NoError(err)
+	require.Equal(amount.New(100), balance)
+	for _, addr := range []common.Address{{2}, {3}} {
+		balance, err := db.GetBalance(addr)
+		require.NoError(err)
+		require.Equal(amount.New(), balance)
+	}
+	height, empty, err := db.GetArchiveBlockHeight()
+	require.NoError(err)
+	require.False(empty)
+	require.Equal(uint64(1), height)
+}
+
 func TestCarmen_Empty_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 
 	dir := t.TempDir()
@@ -127,8 +189,12 @@ func TestCarmen_Empty_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 		update := common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{byte(block)}, Balance: amount.New(100)}},
 		}
-		if _, err := db.Apply(block, update); err != nil {
+		staged, err := db.Apply(block, update)
+		if err != nil {
 			t.Fatalf("cannot add block: %v", err)
+		}
+		if err := staged.Commit(); err != nil {
+			t.Fatalf("cannot commit block: %v", err)
 		}
 	}
 
