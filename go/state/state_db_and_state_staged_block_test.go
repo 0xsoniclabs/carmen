@@ -148,3 +148,47 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 		}
 	})
 }
+
+// TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState covers
+// the one deletion EIP-6780 still permits: an account created and self-destructed
+// within the same transaction. The combination test cannot reach this case because it
+// spreads its operations over separate blocks.
+func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+		require := require.New(t)
+
+		// Seed an unrelated account so the state is not empty to begin with.
+		db.BeginBlock()
+		db.BeginTransaction()
+		db.AddBalance(address2, balance1)
+		db.EndTransaction()
+		keepBlock(t, db, 1)
+
+		initialHash := db.GetHash()
+
+		// Create a contract with storage and destroy it again, all in one
+		// transaction. The account never existed outside this block, so the block
+		// nets out to no change at all.
+		db.BeginBlock()
+		db.BeginTransaction()
+		db.CreateAccount(address1)
+		db.SetNonce(address1, 1)
+		db.AddBalance(address1, balance1)
+		db.SetCode(address1, []byte{0x01})
+		db.SetState(address1, key1, val1)
+		require.True(db.Suicide(address1))
+		db.EndTransaction()
+		staged, err := db.EndBlock(2)
+		require.NoError(err)
+
+		require.NoError(staged.Rollback())
+		require.Equal(initialHash, db.GetHash(),
+			"rolling the block back must restore the state it found")
+
+		db.BeginBlock()
+		db.BeginTransaction()
+		require.False(db.Exist(address1), "the destroyed account must not exist after the rollback")
+		require.Equal(balance1, db.GetBalance(address2), "the seeded account must be untouched")
+		db.EndTransaction()
+	})
+}

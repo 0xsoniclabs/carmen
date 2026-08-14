@@ -484,6 +484,21 @@ func TestState_Apply_RollbackIsRejected(t *testing.T) {
 		"the flat state applies blocks immediately and must not claim to roll them back")
 }
 
+func TestState_Apply_StagedBlockReportsTheStateHash(t *testing.T) {
+	require := require.New(t)
+	flatState, err := NewState(t.TempDir(), nil)
+	require.NoError(err)
+
+	staged, err := flatState.Apply(1, common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(100)}},
+	})
+	require.NoError(err)
+
+	want, err := flatState.GetHash()
+	require.NoError(err)
+	require.Equal(want, staged.StateHash())
+}
+
 func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
