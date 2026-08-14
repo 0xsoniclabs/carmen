@@ -770,6 +770,164 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	require.ErrorContains(t, err, errors.Join(firstErr, secondErr).Error())
 }
 
+func TestState_StagedBlock_ConcurrentCommitsDecideTheBlockOnce(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	// Exactly one commit may reach the archive, however many callers race.
+	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+
+	errs := decideConcurrently(8, staged.Commit)
+
+	require.Equal(1, countNil(errs), "exactly one commit must decide the block")
+	requireRestAreMisuse(require, errs)
+	require.NoError(db.Close())
+}
+
+func TestState_StagedBlock_ConcurrentRollbacksDecideTheBlockOnce(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	// The live state may only be reverted once, however many callers race.
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil).Times(1)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+
+	db := newGoState(liveDB, archiveDB, nil)
+	staged, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+
+	errs := decideConcurrently(8, staged.Rollback)
+
+	require.Equal(1, countNil(errs), "exactly one rollback must decide the block")
+	requireRestAreMisuse(require, errs)
+	require.NoError(db.Close())
+}
+
+func TestState_StagedBlock_ConcurrentDecisionsAndReadsAreRaceFree(t *testing.T) {
+	require := require.New(t)
+	s, err := newGoMemoryState(state.Parameters{
+		Directory: t.TempDir(),
+		Variant:   VariantGoMemory,
+		Schema:    5,
+		Archive:   state.S5Archive,
+	})
+	require.NoError(err)
+
+	const (
+		blocks  = 40
+		readers = 4
+	)
+
+	// One goroutine stages and decides blocks while readers query the state and
+	// the staged handles concurrently. Every access goes through the synced
+	// wrapper, so none of them may race; run with -race for the hard signal.
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if _, err := s.GetBalance(common.Address{1}); err != nil {
+					require.NoError(err)
+				}
+				if _, err := s.GetHash(); err != nil {
+					require.NoError(err)
+				}
+			}
+		}()
+	}
+
+	for i := range uint64(blocks) {
+		staged, err := s.Apply(i, common.Update{
+			Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(i + 1)}},
+		})
+		require.NoError(err)
+
+		// Racing decisions on the same handle: exactly one may win, and the
+		// losers must report misuse rather than acting twice.
+		var decide func() error
+		if i%2 == 0 {
+			decide = staged.Commit
+		} else {
+			decide = staged.Rollback
+		}
+		errs := decideConcurrently(3, decide)
+		require.Equal(1, countNil(errs))
+		requireRestAreMisuse(require, errs)
+
+		// Reading the decided handle must stay safe alongside the readers.
+		_ = staged.StateHash()
+	}
+
+	close(stop)
+	wg.Wait()
+
+	require.NoError(s.Check(), "misuse must not poison the state")
+	require.NoError(s.Close())
+}
+
+// decideConcurrently runs the given decision from n goroutines at once and
+// returns their results.
+func decideConcurrently(n int, decide func() error) []error {
+	errs := make([]error, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = decide()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	return errs
+}
+
+func countNil(errs []error) int {
+	count := 0
+	for _, err := range errs {
+		if err == nil {
+			count++
+		}
+	}
+	return count
+}
+
+func requireRestAreMisuse(require *require.Assertions, errs []error) {
+	for _, err := range errs {
+		if err != nil {
+			require.ErrorIs(err, state.ErrStagedBlockMisuse)
+		}
+	}
+}
+
 func TestState_Apply_RollbackRevertsTheLiveDbAndSkipsTheArchive(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
