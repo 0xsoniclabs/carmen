@@ -11,6 +11,8 @@
 version: "2"
 
 run:
+  # Analyse the files behind build tags too; without this the stress tests are
+  # invisible to the linter and drift out of sync with the interfaces they use.
   build-tags:
     - stress_test
 
