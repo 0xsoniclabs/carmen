@@ -303,10 +303,10 @@ func (s *verkleState) Apply(block uint64, update common.Update) (state.StagedBlo
 	}
 	s.root = rootNode
 
-	return state.NewIrreversibleBlock(block, func() common.Hash {
-		hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
-		return hash
-	}, nil), nil
+	// The root is taken now: it is the root of this block, and reading it later
+	// would report the root of whichever block came after.
+	hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
