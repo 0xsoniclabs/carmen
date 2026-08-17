@@ -160,16 +160,13 @@ type StagedBlock interface {
 // their staged sequence is always empty, so no ordering rule can be broken and
 // every block is final the moment it is applied.
 //
-// It departs from the StagedBlock contract in two respects, because the contract
-// describes a block whose fate is still open and this one's never is:
-//   - Wait does not require a preceding Commit. The asynchronous work is started by
-//     Apply rather than by the decision, so there is something to wait for from the
-//     moment the handle exists.
-//   - StateHash resolves the given function on each call, so a handle retained
-//     across a later Apply reports the newer root. These states cannot stage, so
-//     retaining a handle that long is outside the model they implement; resolving
-//     the hash eagerly instead would force a state that hashes asynchronously to
-//     block on every applied block.
+// The hash function must report the root of this block. Reading the live root when
+// asked instead would make a handle kept across a later block report that block's
+// root. A state that computes its root asynchronously can resolve the value when
+// the function is first called.
+//
+// Wait does not require a preceding Commit: this block is final from the moment it
+// exists, so there is no decision to order against.
 func NewIrreversibleBlock(block uint64, hash func() common.Hash, done <-chan error) StagedBlock {
 	return &irreversibleBlock{block: block, hash: hash, done: done}
 }
@@ -179,11 +176,9 @@ type irreversibleBlock struct {
 	hash  func() common.Hash
 	done  <-chan error
 
-	mutex     sync.Mutex
-	committed bool
-
 	// waitOnce makes sure the outcome of the asynchronous work is read from the
-	// channel once, so that every waiter is told the same thing.
+	// channel once: it is closed after the outcome is sent, so a second read would
+	// report success for work that failed.
 	waitOnce sync.Once
 	waitErr  error
 }
@@ -193,12 +188,6 @@ func (b *irreversibleBlock) StateHash() common.Hash {
 }
 
 func (b *irreversibleBlock) Commit() error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	if b.committed {
-		return fmt.Errorf("%w: cannot commit block %d: it has already been committed", ErrStagedBlockMisuse, b.block)
-	}
-	b.committed = true
 	return nil
 }
 
@@ -211,11 +200,6 @@ func (b *irreversibleBlock) Wait() error {
 }
 
 func (b *irreversibleBlock) Rollback() error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	if b.committed {
-		return fmt.Errorf("%w: cannot roll back block %d: it has already been committed", ErrStagedBlockMisuse, b.block)
-	}
 	return fmt.Errorf("%w: cannot roll back block %d: this state does not support rolling back blocks", ErrStagedBlockMisuse, b.block)
 }
 

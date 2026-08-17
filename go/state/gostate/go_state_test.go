@@ -878,9 +878,7 @@ func TestState_StagedBlock_ConcurrentDecisionsAndReadsAreRaceFree(t *testing.T) 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 	for range readers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -894,7 +892,7 @@ func TestState_StagedBlock_ConcurrentDecisionsAndReadsAreRaceFree(t *testing.T) 
 					require.NoError(err)
 				}
 			}
-		}()
+		})
 	}
 
 	for i := range uint64(blocks) {

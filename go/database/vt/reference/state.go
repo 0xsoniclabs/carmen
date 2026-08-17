@@ -145,10 +145,10 @@ func (s *State) Apply(block uint64, update common.Update) (state.StagedBlock, er
 		}
 	}
 
-	return state.NewIrreversibleBlock(block, func() common.Hash {
-		hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
-		return hash
-	}, nil), nil
+	// The root is taken now: it is the root of this block, and reading it later
+	// would report the root of whichever block came after.
+	hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
