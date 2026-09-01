@@ -9,6 +9,11 @@
 # this software will be governed by the GNU Lesser General Public License v3.
 
 version: "2"
+
+run:
+  build-tags:
+    - stress_test
+
 linters:
   enable:
     - errcheck
