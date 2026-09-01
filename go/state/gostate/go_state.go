@@ -287,9 +287,6 @@ func (s *GoState) consumeOldest(block *stagedBlock) error {
 	}
 	s.staged = s.staged[1:]
 	block.status = stagedCommitted
-	// The archive-write channel is installed under the same lock as the status
-	// transition, so a Wait that observes the block as committed always finds
-	// the channel in place as well.
 	if s.archive != nil {
 		block.archiveWriteDone = make(chan error, 1)
 	}
@@ -468,29 +465,29 @@ func (s *GoState) Flush() error {
 }
 
 // rollbackUndecidedBlocks takes back every staged block whose fate was never
-// decided, newest first. Closing is the last chance to do so: a block that has
-// not been committed by then is never going to be, and flushing it into the
-// live state would leave the database unopenable, since an archive-backed
-// state only opens when the archive head matches the live root.
-func (s *GoState) rollbackUndecidedBlocks() {
+// decided, newest first.
+func (s *GoState) rollbackUndecidedBlocks() error {
 	for {
 		s.stagedLock.Lock()
 		if len(s.staged) == 0 {
 			s.stagedLock.Unlock()
-			return
+			return nil
 		}
 		newest := s.staged[len(s.staged)-1]
 		s.stagedLock.Unlock()
 
 		// Rollback consumes the block and collects any revert error in the
 		// state error, which Close reports through its final Check.
-		_ = newest.Rollback()
+		err := newest.Rollback()
+		if err != nil {
+			return err
+		}
 	}
 }
 
 func (s *GoState) Close() error {
-	s.rollbackUndecidedBlocks()
 	s.addStateError(errors.Join(
+		s.rollbackUndecidedBlocks(),
 		s.Flush(),
 		s.live.Close(),
 	))

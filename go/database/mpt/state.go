@@ -157,19 +157,6 @@ func newMptState(directory string, lock common.LockFile, trie *LiveTrie) (*MptSt
 	}, nil
 }
 
-// undoAccountInfo returns the operation restoring an account's information to
-// what it was before the current update touched it. An account that did not
-// exist is removed again: an empty AccountInfo deletes the account node and
-// recursively releases its storage (see AccountNode.SetAccount).
-func (s *MptState) undoAccountInfo(address common.Address, existed bool, previous AccountInfo) func() error {
-	return func() error {
-		if !existed {
-			return s.trie.SetAccountInfo(address, AccountInfo{})
-		}
-		return s.trie.SetAccountInfo(address, previous)
-	}
-}
-
 func openStateDirectory(directory string) (common.LockFile, error) {
 	lock, err := LockDirectory(directory)
 	if err != nil {
@@ -521,4 +508,17 @@ func EstimatePerNodeMemoryUsage() int {
 		unsafe.Sizeof(shared.Shared[Node]{})
 
 	return int(maxNodeSize) + int(nodeCacheSlotSize)
+}
+
+// undoAccountInfo returns the operation restoring an account's information to
+// what it was before the current update touched it. An account that did not
+// exist is removed again: an empty AccountInfo deletes the account node and
+// recursively releases its storage (see AccountNode.SetAccount).
+func (s *MptState) undoAccountInfo(address common.Address, existed bool, previous AccountInfo) func() error {
+	return func() error {
+		if !existed {
+			return s.trie.SetAccountInfo(address, AccountInfo{})
+		}
+		return s.trie.SetAccountInfo(address, previous)
+	}
 }

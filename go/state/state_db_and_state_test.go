@@ -29,53 +29,6 @@ import (
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
-// forEachStagingState runs the given test against every configuration that
-// supports block staging: the MPT backed schema-5 states, with and without an
-// archive. The flat variants are excluded because they apply a block the moment it
-// arrives and offer no way back.
-func forEachStagingState(t *testing.T, test func(t *testing.T, config namedStateConfig, s state.State, db state.StateDB)) {
-	t.Helper()
-	for _, config := range initStates() {
-		if config.config.Schema != 5 || strings.Contains(config.name(), "flat") {
-			continue
-		}
-		t.Run(config.name(), func(t *testing.T) {
-			t.Parallel()
-			s, err := config.createState(t.TempDir())
-			require.NoError(t, err)
-			db := state.CreateStateDBUsing(s)
-			t.Cleanup(func() {
-				require.NoError(t, db.Close())
-			})
-			test(t, config, s, db)
-		})
-	}
-}
-
-// keepBlock ends the block and keeps it. Ending a block only makes its content
-// live; committing is what makes it part of the archive as well, and a test seeding
-// a state wants both.
-func keepBlock(t *testing.T, db state.StateDB, block uint64) {
-	t.Helper()
-	staged, err := db.EndBlock(block)
-	require.NoError(t, err)
-	require.NoError(t, staged.Commit())
-	require.NoError(t, staged.Wait())
-}
-
-// stageNonce stages one block setting the nonce of address1 to a value identifying
-// that block, and returns the staged block.
-func stageNonce(t *testing.T, db state.StateDB, block uint64, nonce uint64) state.StagedBlock {
-	t.Helper()
-	db.BeginBlock()
-	db.BeginTransaction()
-	db.SetNonce(address1, nonce)
-	db.EndTransaction()
-	staged, err := db.EndBlock(block)
-	require.NoError(t, err)
-	return staged
-}
-
 func TestCarmen_StagedBlock_RollbackRestoresThePreviousState(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
 		initialHash := db.GetHash()
@@ -145,9 +98,7 @@ func TestCarmen_StagedBlock_ReExecutionAfterRollbackReproducesTheSameRoots(t *te
 			require.NoError(t, staged[i].Rollback())
 		}
 
-		// ...and re-execute the very same blocks. This is the decisive property for
-		// a speculating consensus: a mispredicted suffix is rolled back and replayed,
-		// and must produce byte-identical blocks.
+		// ...and re-execute the very same blocks.
 		for i := uint64(1); i <= 3; i++ {
 			block := stageNonce(t, db, i, i*10)
 			require.Equal(t, want[i-1], db.GetHash(), "re-executed block %d produced a different root", i)
@@ -1284,4 +1235,51 @@ func toKey(key uint64) common.Key {
 	keyBytes := make([]byte, 32)
 	binary.BigEndian.PutUint64(keyBytes, key)
 	return common.KeySerializer{}.FromBytes(keyBytes)
+}
+
+// forEachStagingState runs the given test against every configuration that
+// supports block staging: the MPT backed schema-5 states, with and without an
+// archive. The flat variants are excluded because they apply a block the moment it
+// arrives and offer no way back.
+func forEachStagingState(t *testing.T, test func(t *testing.T, config namedStateConfig, s state.State, db state.StateDB)) {
+	t.Helper()
+	for _, config := range initStates() {
+		if config.config.Schema != 5 || strings.Contains(config.name(), "flat") {
+			continue
+		}
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			s, err := config.createState(t.TempDir())
+			require.NoError(t, err)
+			db := state.CreateStateDBUsing(s)
+			t.Cleanup(func() {
+				require.NoError(t, db.Close())
+			})
+			test(t, config, s, db)
+		})
+	}
+}
+
+// keepBlock ends the block and keeps it. Ending a block only makes its content
+// live; committing is what makes it part of the archive as well, and a test seeding
+// a state wants both.
+func keepBlock(t *testing.T, db state.StateDB, block uint64) {
+	t.Helper()
+	staged, err := db.EndBlock(block)
+	require.NoError(t, err)
+	require.NoError(t, staged.Commit())
+	require.NoError(t, staged.Wait())
+}
+
+// stageNonce stages one block setting the nonce of address1 to a value identifying
+// that block, and returns the staged block.
+func stageNonce(t *testing.T, db state.StateDB, block uint64, nonce uint64) state.StagedBlock {
+	t.Helper()
+	db.BeginBlock()
+	db.BeginTransaction()
+	db.SetNonce(address1, nonce)
+	db.EndTransaction()
+	staged, err := db.EndBlock(block)
+	require.NoError(t, err)
+	return staged
 }

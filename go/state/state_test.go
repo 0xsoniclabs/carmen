@@ -774,54 +774,15 @@ func TestIrreversibleBlock_Commit_HasNothingLeftToDo(t *testing.T) {
 	require.NoError(block.Commit())
 }
 
-func TestIrreversibleBlock_Wait_ReportsTheOutcomeOfTheAsynchronousWork(t *testing.T) {
-	injected := errors.New("injected error")
-	tests := map[string]struct {
-		done func() chan error
-		want error
-	}{
-		"no asynchronous work": {
-			done: func() chan error { return nil },
-		},
-		"work succeeded": {
-			done: func() chan error {
-				done := make(chan error, 1)
-				close(done)
-				return done
-			},
-		},
-		"work failed": {
-			done: func() chan error {
-				done := make(chan error, 1)
-				done <- injected
-				return done
-			},
-			want: injected,
-		},
-	}
+func TestIrreversibleBlock_Commit_RejectsASecondDecision(t *testing.T) {
+	require := require.New(t)
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			done := test.done()
+	block := state.NewIrreversibleBlock(7, func() common.Hash { return common.Hash{} }, nil)
 
-			var block state.StagedBlock
-			if done == nil {
-				// A nil channel must be passed as a nil receive-only channel, not as
-				// a non-nil interface wrapping one.
-				block = state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, nil)
-			} else {
-				block = state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, done)
-			}
-
-			require.NoError(block.Commit())
-			if test.want == nil {
-				require.NoError(block.Wait())
-			} else {
-				require.ErrorIs(block.Wait(), test.want)
-			}
-		})
-	}
+	// Committing does nothing here, but a caller deciding twice is making the
+	// mistake a staging state would report, and must hear about it on either.
+	require.NoError(block.Commit())
+	require.ErrorIs(block.Commit(), state.ErrStagedBlockMisuse)
 }
 
 func TestIrreversibleBlock_Wait_ReportsTheSameOutcomeToEveryWaiter(t *testing.T) {

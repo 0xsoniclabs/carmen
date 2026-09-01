@@ -37,8 +37,8 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 	// group becomes a staged block, and the check is on the state root rather than the
 	// internal stateDB fields.
 
-	addresses := []common.Address{address1, address2}
-	keys := []common.Key{key1, key2}
+	addresses := []common.Address{address1, address2, address3}
+	keys := []common.Key{key1, key2, key3}
 
 	// Operations that delete an account are intentionally left out, because a block
 	// rollback cannot reverse a deletion, and every way these operations would delete
