@@ -484,7 +484,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 				}
 				db.SetNonce(address, 2)
 				db.EndTransaction()
-				keepBlock(t, db, uint64(i*2 + 1))
+				keepBlock(t, db, uint64(i*2+1))
 			}
 		})
 	}
