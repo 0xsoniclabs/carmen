@@ -124,9 +124,9 @@ func TestScheme5_Close_RollsBackStagedBlocksSoTheStateCanBeReopened(t *testing.T
 	require.NoError(committed.Commit())
 	require.NoError(committed.Wait())
 
-	// Two more blocks are staged and never decided; closing must take them back,
-	// or the live state would run ahead of the archive and the database could
-	// never be opened again.
+	wantedHash := committed.StateHash()
+
+	// Two more blocks are staged and never decided.
 	for block := uint64(2); block <= 3; block++ {
 		_, err := db.Apply(block, common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{byte(block)}, Balance: amount.New(100)}},
@@ -142,6 +142,9 @@ func TestScheme5_Close_RollsBackStagedBlocksSoTheStateCanBeReopened(t *testing.T
 	}()
 
 	// The committed block is present, the rolled back ones are not.
+	gotHash, err := db.GetCommitment().Await().Get()
+	require.NoError(err)
+	require.Equal(wantedHash, gotHash)
 	balance, err := db.GetBalance(common.Address{1})
 	require.NoError(err)
 	require.Equal(amount.New(100), balance)

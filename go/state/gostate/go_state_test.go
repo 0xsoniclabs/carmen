@@ -585,15 +585,6 @@ func TestState_Apply_TakesTheBlockBackWhenHashingFails(t *testing.T) {
 	require.Equal(1, hints.releases, "the archive hints must be released")
 }
 
-// countingReleaser counts how often its resources have been released.
-type countingReleaser struct {
-	releases int
-}
-
-func (r *countingReleaser) Release() {
-	r.releases++
-}
-
 func TestState_Apply_DoesNotTouchTheArchiveUntilTheBlockIsCommitted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)
@@ -1264,4 +1255,13 @@ func runAddBlock(block uint64, stateDB state.StateDB) {
 		return // < collected by, and reported through, the state's Check
 	}
 	_ = staged.Commit()
+}
+
+// countingReleaser counts how often its resources have been released.
+type countingReleaser struct {
+	releases int
+}
+
+func (r *countingReleaser) Release() {
+	r.releases++
 }

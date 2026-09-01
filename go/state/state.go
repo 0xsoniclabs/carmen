@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -165,8 +166,9 @@ type StagedBlock interface {
 // root. A state that computes its root asynchronously can resolve the value when
 // the function is first called.
 //
-// Wait does not require a preceding Commit: this block is final from the moment it
-// exists, so there is no decision to order against.
+// Wait does not require a preceding Commit: the asynchronous work is started by
+// Apply rather than by the decision, so there is something to wait for from the
+// moment the handle exists.
 func NewIrreversibleBlock(block uint64, hash func() common.Hash, done <-chan error) StagedBlock {
 	return &irreversibleBlock{block: block, hash: hash, done: done}
 }
@@ -175,6 +177,11 @@ type irreversibleBlock struct {
 	block uint64
 	hash  func() common.Hash
 	done  <-chan error
+
+	// committed rejects a second decision. Committing this block does nothing, but
+	// a caller that decides twice is making the same mistake it would be told about
+	// on a staging state, and should hear about it on either.
+	committed atomic.Bool
 
 	// waitOnce makes sure the outcome of the asynchronous work is read from the
 	// channel once: it is closed after the outcome is sent, so a second read would
@@ -188,6 +195,9 @@ func (b *irreversibleBlock) StateHash() common.Hash {
 }
 
 func (b *irreversibleBlock) Commit() error {
+	if !b.committed.CompareAndSwap(false, true) {
+		return fmt.Errorf("%w: cannot commit block %d: it has already been committed", ErrStagedBlockMisuse, b.block)
+	}
 	return nil
 }
 

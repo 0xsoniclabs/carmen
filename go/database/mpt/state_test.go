@@ -518,18 +518,33 @@ func TestMptState_Apply_DoesNotRecordMutationsMadeOutsideOfIt(t *testing.T) {
 	require.Len(undo, 1, "the block must own only the operations of its own update")
 }
 
-func TestMptState_SetBalance_RecordsNoUndoOutsideOfApply(t *testing.T) {
-	require := require.New(t)
-	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-	require.NoError(err)
-	defer func() { require.NoError(state.Close()) }()
+func TestMptState_RecordsNoUndoOutsideOfApply(t *testing.T) {
+	testCases := map[string]func(state *MptState) error{
+		"setBalance": func(state *MptState) error {
+			return state.SetBalance(common.Address{1}, amount.New(1))
+		},
+		"setNonce": func(state *MptState) error {
+			return state.SetNonce(common.Address{1}, common.ToNonce(1))
+		},
+		"setCode": func(state *MptState) error {
+			return state.SetCode(common.Address{1}, []byte{0x01})
+		},
+		"setStorage": func(state *MptState) error {
+			return state.SetStorage(common.Address{1}, common.Key{1}, common.Value{1})
+		},
+	}
 
-	require.NoError(state.SetBalance(common.Address{1}, amount.New(1)))
-	require.NoError(state.SetNonce(common.Address{1}, common.ToNonce(1)))
-	require.NoError(state.SetCode(common.Address{1}, []byte{0x01}))
-	require.NoError(state.SetStorage(common.Address{1}, common.Key{1}, common.Value{1}))
+	for tcName, tc := range testCases {
+		t.Run(tcName, func(t *testing.T) {
+			require := require.New(t)
+			state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+			require.NoError(err)
+			defer func() { require.NoError(state.Close()) }()
 
-	require.Nil(state.undoList, "no block is being applied, so nothing may be recorded")
+			require.NoError(tc(state))
+			require.Nil(state.undoList)
+		})
+	}
 }
 
 func TestMptState_Apply_StartsAFreshUndoListForEachUpdate(t *testing.T) {

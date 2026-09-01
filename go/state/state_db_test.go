@@ -5002,36 +5002,6 @@ func TestStateDB_EndBlock_ReportsAndCollectsApplyError(t *testing.T) {
 	}
 }
 
-func TestStateDB_EndBlock_WaitCollectsArchiveErrorInIssueTracker(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	injectedError := fmt.Errorf("injected error")
-
-	staged := NewMockStagedBlock(ctrl)
-	staged.EXPECT().Commit().Return(nil)
-	staged.EXPECT().Wait().Return(injectedError)
-
-	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
-
-	block, err := db.EndBlock(1)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if err := block.Commit(); err != nil {
-		t.Fatalf("unexpected error committing: %v", err)
-	}
-
-	if err := block.Wait(); !errors.Is(err, injectedError) {
-		t.Errorf("expected Wait to report %v, got %v", injectedError, err)
-	}
-	if err := db.Check(); !errors.Is(err, injectedError) {
-		t.Errorf("expected error %v to be tracked, got %v", injectedError, err)
-	}
-}
-
 func TestStateDB_EndBlock_IsRefusedAfterAnArchiveError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
@@ -5064,7 +5034,50 @@ func TestStateDB_EndBlock_IsRefusedAfterAnArchiveError(t *testing.T) {
 	}
 }
 
-func TestStateDB_EndBlock_RollbackDropsCachedState(t *testing.T) {
+func TestStateDB_EndBlock_ClearsUndoList(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	state.EXPECT().Check().AnyTimes()
+	state.EXPECT().Apply(uint64(12), gomock.Any()).Return(NewMockStagedBlock(ctrl), nil)
+
+	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
+	stateDB.undo = []func(){nil, nil, nil}
+
+	endBlockAndDiscardStaged(t, stateDB, 12)
+	require.Empty(t, stateDB.undo)
+}
+
+func TestStateDbStagedBlock_Wait_CollectsAnArchiveFailureAsAnIssue(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	injectedError := fmt.Errorf("injected error")
+
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(nil)
+	staged.EXPECT().Wait().Return(injectedError)
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
+
+	block, err := db.EndBlock(1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := block.Commit(); err != nil {
+		t.Fatalf("unexpected error committing: %v", err)
+	}
+
+	if err := block.Wait(); !errors.Is(err, injectedError) {
+		t.Errorf("expected Wait to report %v, got %v", injectedError, err)
+	}
+	if err := db.Check(); !errors.Is(err, injectedError) {
+		t.Errorf("expected error %v to be tracked, got %v", injectedError, err)
+	}
+}
+
+func TestStateDbStagedBlock_Rollback_DropsTheCachedState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
@@ -5110,17 +5123,48 @@ func TestStateDB_EndBlock_RollbackDropsCachedState(t *testing.T) {
 	}
 }
 
-func TestStateDB_EndBlock_ClearsUndoList(t *testing.T) {
+func TestStateDbStagedBlock_Wait_ReportsMisuseWithoutCollectingIt(t *testing.T) {
+	require := require.New(t)
 	ctrl := gomock.NewController(t)
-	state := NewMockState(ctrl)
-	state.EXPECT().Check().AnyTimes()
-	state.EXPECT().Apply(uint64(12), gomock.Any()).Return(NewMockStagedBlock(ctrl), nil)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
 
-	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
-	stateDB.undo = []func(){nil, nil, nil}
+	misuse := fmt.Errorf("%w: injected", ErrStagedBlockMisuse)
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Wait().Return(misuse)
 
-	endBlockAndDiscardStaged(t, stateDB, 12)
-	require.Empty(t, stateDB.undo)
+	mock.EXPECT().Check().Return(nil).AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
+
+	block, err := db.EndBlock(1)
+	require.NoError(err)
+
+	// Misusing the staged block is a mistake in the calling code and leaves the
+	// state intact, so it is reported to the caller without becoming an issue of
+	// this StateDB.
+	require.ErrorIs(block.Wait(), ErrStagedBlockMisuse)
+	require.NoError(db.Check())
+}
+
+func TestStateDbStagedBlock_Rollback_ReportsAFailureWithItsBlock(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	injected := fmt.Errorf("injected error")
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Rollback().Return(injected)
+
+	mock.EXPECT().Check().Return(nil).AnyTimes()
+	mock.EXPECT().Apply(uint64(7), gomock.Any()).Return(staged, nil)
+
+	block, err := db.EndBlock(7)
+	require.NoError(err)
+
+	err = block.Rollback()
+	require.ErrorIs(err, injected)
+	require.ErrorContains(err, "block 7", "the failure must name the block it belongs to")
 }
 
 func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
