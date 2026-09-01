@@ -120,7 +120,6 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			}
 			db.EndTransaction()
 			db.EndBlock(block)
-			block++
 
 			if err := db.Check(); err != nil {
 				t.Errorf("update failed with unexpected error: %v", err)
