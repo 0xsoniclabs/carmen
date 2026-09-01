@@ -40,6 +40,7 @@ type GoState struct {
 	// guarded by its own lock rather than by the surrounding syncedState, because
 	// the StagedBlock handles are operated on directly and so do not pass through
 	// that wrapper.
+	// NOTE: this is unbounded, and may cause memory pressure.
 	staged     []*stagedBlock
 	stagedLock sync.Mutex
 
