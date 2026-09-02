@@ -20,7 +20,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -741,4 +743,93 @@ func createState(t *testing.T, name, dir string) state.State {
 
 	t.Fatalf("State with name %s not found", name)
 	return nil
+}
+
+func TestWaitHandle_Wait_ReturnsImmediatelyWithoutWork(t *testing.T) {
+	require.NoError(t, state.NewWaitHandle(nil).Wait())
+}
+
+func TestWaitHandle_Wait_BlocksUntilTheOutcomeIsReported(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		written := make(chan error)
+		handle := state.NewWaitHandle(written)
+
+		waitReturned := make(chan struct{})
+		go func() {
+			defer close(waitReturned)
+			require.NoError(t, handle.Wait())
+		}()
+
+		synctest.Wait()
+		select {
+		case <-waitReturned:
+			t.Fatal("Wait returned before the outcome was reported")
+		default:
+		}
+
+		close(written) // < a closed channel reports success
+		synctest.Wait()
+		select {
+		case <-waitReturned:
+		default:
+			t.Fatal("Wait did not return after the outcome was reported")
+		}
+	})
+}
+
+func TestWaitHandle_Wait_ReportsTheSameOutcomeToEveryWaiter(t *testing.T) {
+	require := require.New(t)
+
+	injected := errors.New("injected error")
+	written := make(chan error, 1)
+	written <- injected
+	close(written)
+
+	handle := state.NewWaitHandle(written)
+
+	// The channel yields the outcome once and the zero value from then on, so a
+	// handle that read it on every call would report success to every waiter but
+	// the first. Sequential and concurrent waiters alike must see the failure.
+	require.ErrorIs(handle.Wait(), injected)
+	require.ErrorIs(handle.Wait(), injected)
+
+	const waiters = 8
+	errs := make([]error, waiters)
+	var wg sync.WaitGroup
+	for i := range waiters {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = handle.Wait()
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		require.ErrorIs(err, injected, "every waiter must report the failure")
+	}
+}
+
+func TestWaitHandle_Then_TransformsTheOutcomeOnce(t *testing.T) {
+	require := require.New(t)
+
+	injected := errors.New("injected error")
+	written := make(chan error, 1)
+	written <- injected
+	close(written)
+
+	calls := 0
+	derived := state.NewWaitHandle(written).Then(func(err error) error {
+		calls++
+		return fmt.Errorf("attributed: %w", err)
+	})
+
+	// Nothing runs until someone waits, and the transform then runs exactly once,
+	// however often the derived handle is waited for.
+	require.Equal(0, calls)
+	for range 3 {
+		err := derived.Wait()
+		require.ErrorIs(err, injected)
+		require.ErrorContains(err, "attributed")
+	}
+	require.Equal(1, calls)
 }
