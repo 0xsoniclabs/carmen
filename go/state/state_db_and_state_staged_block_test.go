@@ -72,7 +72,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 	// pruned, matching real execution. (CreateAccount clears code and storage
 	// together, so the "storage implies code" invariant is never broken.)
 	setStorage := func(db state.StateDB, rng *rand.Rand, args state.OpArgs) {
-		db.SetCode(*args.Address, []byte{0x1})
+		db.SetCode(args.Address, []byte{0x1})
 		state.SetStateOp(db, rng, args)
 	}
 	operationWithAddressAndKey := map[string]func(db state.StateDB, rng *rand.Rand, args state.OpArgs){
@@ -85,7 +85,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 			opWithNameList = append(opWithNameList, state.StateDBOperation{
 				Op:   op,
 				Name: fmt.Sprintf("%s addr %d", opName, i),
-				Args: state.OpArgs{Address: &address},
+				Args: state.OpArgs{Address: address},
 			})
 		}
 	}
@@ -95,7 +95,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 				opWithNameList = append(opWithNameList, state.StateDBOperation{
 					Op:   op,
 					Name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
-					Args: state.OpArgs{Address: &address, Key: &key},
+					Args: state.OpArgs{Address: address, Key: key},
 				})
 			}
 		}
@@ -104,7 +104,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 	tests := make(map[string][][]state.StateDBOperation)
 	for operationTriple := range state.CartesianProductTriple(opWithNameList) {
 		for testCase := range state.OrderedPartitions(operationTriple) {
-			tests[state.OperationPartitionName(testCase)] = testCase
+			tests[state.OperationPartitionTestName(testCase)] = testCase
 		}
 	}
 
@@ -112,7 +112,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 		// The state is reused across subtests: every case rolls all of its blocks
 		// back, so it must leave the state exactly as it found it. Block numbers keep
 		// increasing so no height is re-used, and the subtests must therefore not run
-		// in parallel on the shared state.
+		// in parallel on the shared
 		block := uint64(0)
 		for name, testCase := range tests {
 			t.Run(name, func(t *testing.T) {

@@ -17,7 +17,6 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -295,37 +294,37 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		{0x6},
 	}
 
-	operationWithAddress := map[string]func(db StateDB, rng *rand.Rand, args opArgs){
-		"setNonce":      setNonceOp,
-		"setCode":       setCodeOp,
-		"addBalance":    addBalanceOp,
-		"subBalance":    subBalanceOp,
-		"createAccount": createAccountOp,
-		"suicide":       suicideOp,
-		"addLog":        addLogOp,
+	operationWithAddress := map[string]func(db StateDB, rng *rand.Rand, args OpArgs){
+		"setNonce":      SetNonceOp,
+		"setCode":       SetCodeOp,
+		"addBalance":    AddBalanceOp,
+		"subBalance":    SubBalanceOp,
+		"createAccount": CreateAccountOp,
+		"suicide":       SuicideOp,
+		"addLog":        AddLogOp,
 	}
 
-	operationWithAddressAndKey := map[string]func(db StateDB, rng *rand.Rand, args opArgs){
-		"setState": setStateOp,
+	operationWithAddressAndKey := map[string]func(db StateDB, rng *rand.Rand, args OpArgs){
+		"setState": SetStateOp,
 	}
 
-	var opWithNameList []stateDBOperation
+	var opWithNameList []StateDBOperation
 	for opName, op := range operationWithAddress {
 		for i, address := range addresses {
-			opWithNameList = append(opWithNameList, stateDBOperation{
+			opWithNameList = append(opWithNameList, StateDBOperation{
 				Op:   op,
 				Name: fmt.Sprintf("%s addr %d", opName, i),
-				Args: opArgs{Address: address},
+				Args: OpArgs{Address: address},
 			})
 		}
 	}
 	for opName, op := range operationWithAddressAndKey {
 		for i, address := range addresses {
 			for j, key := range keys {
-				op := stateDBOperation{
+				op := StateDBOperation{
 					Op:   op,
 					Name: fmt.Sprintf("%s addr %d key %d", opName, i, j),
-					Args: opArgs{Address: address, Key: key},
+					Args: OpArgs{Address: address, Key: key},
 				}
 				opWithNameList = append(opWithNameList, op)
 				// Multiple writes to to the same slot to trigger already existing case
@@ -334,10 +333,10 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 		}
 	}
 
-	tests := make(map[string][][]stateDBOperation, 0)
-	for operationTriple := range cartesianProductTriple(opWithNameList) {
-		for testCase := range orderedPartitions(operationTriple) {
-			tests[OperationPartitionName(testCase)] = testCase
+	tests := make(map[string][][]StateDBOperation, 0)
+	for operationTriple := range CartesianProductTriple(opWithNameList) {
+		for testCase := range OrderedPartitions(operationTriple) {
+			tests[OperationPartitionTestName(testCase)] = testCase
 		}
 	}
 
@@ -375,18 +374,6 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 			}
 		})
 	}
-}
-
-func OperationPartitionName(s [][]stateDBOperation) string {
-	var nameParts []string
-	for _, opList := range s {
-		name := ""
-		for _, op := range opList {
-			name += op.Name + " AND "
-		}
-		nameParts = append(nameParts, name[:len(name)-5])
-	}
-	return strings.Join(nameParts, " THEN ")
 }
 
 // StateDBContext is a helper struct wrapping a StateDB and its underlying mocked db.
@@ -432,7 +419,7 @@ func NewStateDBContext(t *testing.T) *StateDBContext {
 }
 
 // Execute executes the operation on the given StateDB, using rng for any random values.
-func (op *stateDBOperation) Execute(db StateDB, rng *rand.Rand) {
+func (op *StateDBOperation) Execute(db StateDB, rng *rand.Rand) {
 	op.Op(db, rng, op.Args)
 }
 
