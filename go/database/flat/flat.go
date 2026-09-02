@@ -240,7 +240,13 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 	}
 
 	var done chan error
-	// Update the backend in the background (if present).
+	// This state has no root of its own; the root of the block is the backend's
+	// root once the command loop has applied it. That is what the commit command
+	// queued right behind the update reports: the loop handles commands in order,
+	// and Apply is serialized by the surrounding synced state, so nothing else can
+	// be queued between the two. The root is resolved when first asked for, so
+	// that Apply does not have to wait for the loop.
+	hash := future.Immediate(result.Ok(common.Hash{})) // no backend, no root -- as in GetCommitment
 	if s.commands != nil {
 		done = make(chan error, 1)
 		s.commands <- command{
@@ -250,11 +256,17 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 				done:  done,
 			},
 		}
+		hash = s.GetCommitment()
 	}
-	return state.NewIrreversibleBlock(block, func() common.Hash {
-		hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
-		return hash
-	}, done), nil
+	return state.NewIrreversibleBlock(block, func() func() common.Hash {
+		var once sync.Once
+		var value common.Hash
+		return func() common.Hash {
+			// A hashing error is collected by the backend and reported through Check.
+			once.Do(func() { value, _ = hash.Await().Get() })
+			return value
+		}
+	}(), done), nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {

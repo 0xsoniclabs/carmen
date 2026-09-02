@@ -315,7 +315,9 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		},
 	}
 
-	commands := make(chan command, 1)
+	// Apply queues two commands: the update, and the request for the root the
+	// backend has once it applied it.
+	commands := make(chan command, 2)
 	state := &State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
@@ -326,11 +328,14 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 	_, err := state.Apply(1, update)
 	require.NoError(err)
 
-	// The update is send to the commands channel.
+	// The update is sent to the commands channel, followed by the root request.
 	command := <-commands
 	require.NotNil(command.update)
 	require.Equal(uint64(1), command.update.block)
 	require.Equal(update, command.update.data)
+	command = <-commands
+	require.Nil(command.update)
+	require.NotNil(command.commit)
 
 	for _, nonceUpdate := range update.Nonces {
 		acc, exists := state.accounts[nonceUpdate.Account]
@@ -377,6 +382,8 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	backendBlock := state.NewIrreversibleBlock(block, func() common.Hash { return common.Hash{} }, nil)
 	gomock.InOrder(
 		backend.EXPECT().Apply(block, update).Return(backendBlock, nil),
+		// The root of the block is asked for right behind the update.
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 		backend.EXPECT().Close(),
 	)
 
@@ -424,6 +431,7 @@ func TestState_Apply_WaitReturns_WhenBackendUpdateIsDone(t *testing.T) {
 				return backendBlock, nil
 			},
 		)
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
 		backend.EXPECT().Close()
 
@@ -485,6 +493,41 @@ func TestState_Apply_RollbackIsRejected(t *testing.T) {
 		"the flat state applies blocks immediately and must not claim to roll them back")
 }
 
+func TestState_Apply_StagedBlockKeepsReportingItsOwnRoot(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+
+	firstRoot := common.Hash{1}
+	secondRoot := common.Hash{2}
+	first := state.NewMockStagedBlock(ctrl)
+	first.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	second := state.NewMockStagedBlock(ctrl)
+	second.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	// The backend's root is asked for right behind each update, and so reports
+	// the root of that block, not of whatever was applied later.
+	gomock.InOrder(
+		backend.EXPECT().Apply(uint64(1), gomock.Any()).Return(first, nil),
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(firstRoot))),
+		backend.EXPECT().Apply(uint64(2), gomock.Any()).Return(second, nil),
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(secondRoot))),
+	)
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(err)
+
+	block1, err := flatState.Apply(1, common.Update{})
+	require.NoError(err)
+	block2, err := flatState.Apply(2, common.Update{})
+	require.NoError(err)
+
+	// Block 1's handle must keep reporting block 1's root, however many blocks
+	// followed and however often it is asked.
+	require.Equal(secondRoot, block2.StateHash())
+	require.Equal(firstRoot, block1.StateHash())
+	require.Equal(firstRoot, block1.StateHash())
+}
+
 func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
@@ -495,6 +538,7 @@ func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 			return nil, issue
 		},
 	)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
