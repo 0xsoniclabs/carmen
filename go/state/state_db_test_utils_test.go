@@ -14,6 +14,7 @@ import (
 	"iter"
 	"math"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -21,40 +22,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helpers shared by the tests of this package.
-
-// stateDBOperation is a helper struct representing an operation to be performed on the StateDB, with its name and arguments.
-type stateDBOperation struct {
-	Op   func(db StateDB, rng *rand.Rand, args opArgs)
+// StateDBOperation is a helper struct representing an operation to be performed on the StateDB, with its name and arguments.
+type StateDBOperation struct {
+	Op   func(db StateDB, rng *rand.Rand, args OpArgs)
 	Name string
-	Args opArgs
+	Args OpArgs
 }
 
-// opArgs is a struct containing an address and a key, to be used as arguments for operations performed on the StateDB.
-type opArgs struct {
+// OpArgs is a struct containing an address and a key, to be used as arguments for operations performed on the StateDB.
+type OpArgs struct {
 	Address common.Address
 	Key     common.Key
 }
 
-func setStateOp(db StateDB, rng *rand.Rand, args opArgs) {
-	randomValue := common.Value(randomByteArrayWithPrefix(rng, 32, []byte{0x2}))
+func SetStateOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	randomValue := common.Value(RandomByteArrayWithPrefix(rng, 32, []byte{0x2}))
 	db.SetState(args.Address, args.Key, randomValue)
 }
 
-func setNonceOp(db StateDB, rng *rand.Rand, args opArgs) {
+func SetNonceOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	db.SetNonce(args.Address, rng.Uint64N(math.MaxUint64)+1)
 }
 
-func setCodeOp(db StateDB, rng *rand.Rand, args opArgs) {
-	randomCode := randomByteArrayWithPrefix(rng, 8, []byte{0x2})
+func SetCodeOp(db StateDB, rng *rand.Rand, args OpArgs) {
+	randomCode := RandomByteArrayWithPrefix(rng, 8, []byte{0x2})
 	db.SetCode(args.Address, randomCode)
 }
 
-func addBalanceOp(db StateDB, rng *rand.Rand, args opArgs) {
+func AddBalanceOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	db.AddBalance(args.Address, amount.New(10))
 }
 
-func subBalanceOp(db StateDB, rng *rand.Rand, args opArgs) {
+func SubBalanceOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	if db.GetBalance(args.Address).Uint64() < 10 {
 		// Avoid underflow.
 		return
@@ -62,25 +61,39 @@ func subBalanceOp(db StateDB, rng *rand.Rand, args opArgs) {
 	db.SubBalance(args.Address, amount.New(10))
 }
 
-func createAccountOp(db StateDB, rng *rand.Rand, args opArgs) {
+func CreateAccountOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	db.CreateAccount(args.Address)
 }
 
-func suicideOp(db StateDB, rng *rand.Rand, args opArgs) {
+func SuicideOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	db.Suicide(args.Address)
 }
 
-func addLogOp(db StateDB, rng *rand.Rand, args opArgs) {
+func AddLogOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	db.AddLog(&common.Log{
 		Address: args.Address,
-		Topics:  []common.Hash{common.Hash(randomByteArrayWithPrefix(rng, 32, []byte{}))},
-		Data:    randomByteArrayWithPrefix(rng, 3, []byte{}),
+		Topics:  []common.Hash{common.Hash(RandomByteArrayWithPrefix(rng, 32, []byte{}))},
+		Data:    RandomByteArrayWithPrefix(rng, 3, []byte{}),
 	})
 }
 
-// randomByteArrayWithPrefix generates a random byte array of the given size, where the first bytes are the given prefix.
+// OperationPartitionTestName returns a string representing the sequence of operations provided.
+// Operations in the same group are joined with " AND ", and groups are joined with " THEN ".
+func OperationPartitionTestName(s [][]StateDBOperation) string {
+	var nameParts []string
+	for _, opList := range s {
+		name := ""
+		for _, op := range opList {
+			name += op.Name + " AND "
+		}
+		nameParts = append(nameParts, name[:len(name)-5])
+	}
+	return strings.Join(nameParts, " THEN ")
+}
+
+// RandomByteArrayWithPrefix generates a random byte array of the given size, where the first bytes are the given prefix.
 // If len(prefix) > size, the prefix is truncated.
-func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
+func RandomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
 	b := make([]byte, size)
 	copy(b, prefix)
 	for i := len(prefix); i < size; i++ {
@@ -89,9 +102,9 @@ func randomByteArrayWithPrefix(rng *rand.Rand, size int, prefix []byte) []byte {
 	return b
 }
 
-// cartesianProductTriple generates the cartesian product of a slice with itself three times,
+// CartesianProductTriple generates the cartesian product of a slice with itself three times,
 // yielding the result as a sequence of tuples containing the values.
-func cartesianProductTriple[T any](slice []T) iter.Seq[[]T] {
+func CartesianProductTriple[T any](slice []T) iter.Seq[[]T] {
 	return func(yield func([]T) bool) {
 		for _, a := range slice {
 			for _, b := range slice {
@@ -105,8 +118,8 @@ func cartesianProductTriple[T any](slice []T) iter.Seq[[]T] {
 	}
 }
 
-// orderedPartitions yields each ordered partition of the input slice.
-func orderedPartitions[T any](input []T) iter.Seq[[][]T] {
+// OrderedPartitions yields each ordered partition of the input slice.
+func OrderedPartitions[T any](input []T) iter.Seq[[][]T] {
 	return func(yield func([][]T) bool) {
 		n := len(input)
 		if n == 0 {
@@ -141,7 +154,7 @@ func Test_CartesianTriple(t *testing.T) {
 
 	input := []string{"a", "b"}
 	var triples [][]string
-	for t := range cartesianProductTriple(input) {
+	for t := range CartesianProductTriple(input) {
 		triples = append(triples, t)
 	}
 
@@ -164,7 +177,7 @@ func Test_OrderedPartitions(t *testing.T) {
 
 	input := []int{1, 2, 3}
 	var partitions [][][]int
-	for p := range orderedPartitions(input) {
+	for p := range OrderedPartitions(input) {
 		partitions = append(partitions, p)
 	}
 
