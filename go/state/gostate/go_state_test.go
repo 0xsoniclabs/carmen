@@ -355,7 +355,7 @@ func TestStateDB_AddBlock_Errors_Propagated_MultipleStateInstances(t *testing.T)
 	// while the other call from stateB
 	// will not be executed because the
 	// state is already corrupted.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
 	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
 	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
 	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
@@ -425,7 +425,7 @@ func TestStateDB_AddBlock_CannotCallRepeatedly_OnError(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
 	liveDB.EXPECT().GetBalance(gomock.Any()).Return(amount.New(0), nil).AnyTimes()
 	liveDB.EXPECT().GetNonce(gomock.Any()).Return(common.Nonce{}, nil).AnyTimes()
 	liveDB.EXPECT().GetCodeSize(gomock.Any()).Return(int(0), nil).AnyTimes()
@@ -451,7 +451,7 @@ func TestState_Flush_Or_Close_Corrupted_State_Detected(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -510,7 +510,7 @@ func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	injectedErr := fmt.Errorf("injectedError")
 
 	// will be called only once as repeated calls will not get triggered.
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, injectedErr)
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -537,7 +537,7 @@ func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
 		started := false
 		release := make(chan struct{})
 
-		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
 		archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_, _, _ any) error {
 				started = true
@@ -585,7 +585,7 @@ func TestState_Apply_NoArchive_ReturnsNilChannel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
 
 	db := newGoState(liveDB, nil, []func(){})
 
@@ -601,7 +601,7 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 
 	injectedErr := fmt.Errorf("injectedError")
 
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
 	archiveDB.EXPECT().Add(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr)
 
 	db := newGoState(liveDB, archiveDB, []func(){})
@@ -620,11 +620,11 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	archiveDB := archive.NewMockArchive(ctrl)
 
 	firstErr := fmt.Errorf("injectedError1")
-	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil, nil)
 	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).Return(firstErr)
 
 	secondErr := fmt.Errorf("injectedError2")
-	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil)
+	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil, nil)
 	archiveDB.EXPECT().Add(uint64(2), gomock.Any(), gomock.Any()).Return(secondErr)
 
 	db := newGoState(liveDB, archiveDB, []func(){})
@@ -646,7 +646,7 @@ func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		liveDB := state.NewMockLiveDB(ctrl)
-		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+		liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil, nil)
 		liveDB.EXPECT().Flush()
 		liveDB.EXPECT().Close()
 
@@ -826,8 +826,8 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	live := state.NewMockLiveDB(ctrl)
 	live.EXPECT().Flush().AnyTimes()
 	live.EXPECT().Close()
-	live.EXPECT().Apply(gomock.Any(), gomock.Any()).Do(func(_ uint64, update *common.Update) (common.Releaser, error) {
-		return nil, update.Normalize()
+	live.EXPECT().Apply(gomock.Any(), gomock.Any()).Do(func(_ uint64, update *common.Update) ([]func() error, common.Releaser, error) {
+		return nil, nil, update.Normalize()
 	})
 
 	st := newGoState(live, archive, []func(){})
