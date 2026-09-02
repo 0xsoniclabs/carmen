@@ -237,7 +237,6 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 	}
 
 	var done chan error
-	// Update the backend in the background (if present).
 	if s.commands != nil {
 		done = make(chan error, 1)
 		s.commands <- command{
@@ -248,22 +247,27 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 			},
 		}
 	}
-	// The commitment is requested right behind the update, so that it is the
-	// root of this block, whatever is applied before the handle is read.
-	commitment := s.GetCommitment()
-	var once sync.Once
-	var hash common.Hash
-	return state.NewIrreversibleBlock(block, func() common.Hash {
-		// A future is consumed once; the root is kept for later reads, and a
-		// failed commitment is reported through Check.
-		once.Do(func() {
-			var err error
-			if hash, err = commitment.Await().Get(); err != nil {
-				s.issues.HandleIssue(fmt.Errorf("failed to compute the root of block %d: %w", block, err))
-			}
-		})
-		return hash
-	}, done), nil
+	// Immediately request the commitment.
+	// Commands are processed in order, and no other thread can send commands
+	// while `Apply` is running if wrapped into a `syncedState`.
+	committment := s.GetCommitment()
+
+	return state.NewIrreversibleBlock(block, func() func() common.Hash {
+		return func() common.Hash {
+			var once sync.Once
+			var hash common.Hash
+			// A hashing error is collected by the backend and reported through Check.
+			once.Do(func() {
+				var err error
+				hash, err = committment.Await().Get()
+				if err != nil {
+					s.issues.HandleIssue(fmt.Errorf("failed to compute the root of block %d: %w", block, err))
+					return
+				}
+			})
+			return hash
+		}
+	}(), done), nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
