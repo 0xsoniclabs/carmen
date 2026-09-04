@@ -125,3 +125,14 @@ func TestCache_Entry_String(t *testing.T) {
 		t.Errorf("provided string does not match: %s != %s", got, want)
 	}
 }
+
+func TestCache_Clear_RemovesAllElemnets(t *testing.T) {
+	cache := NewLruCache[int, int](4)
+	cache.Set(1, 2)
+	cache.Set(2, 3)
+	cache.Set(3, 4)
+	cache.Set(5, 6)
+
+	cache.Clear()
+	require.Zero(t, len(cache.cache))
+}

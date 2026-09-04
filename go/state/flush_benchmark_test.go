@@ -44,8 +44,11 @@ func BenchmarkFlushGoState(b *testing.B) {
 				byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i),
 			}, amount.New(n))
 		}
-		_, err := state.Apply(n, update)
+		staged, err := state.Apply(n, update)
 		if err != nil {
+			b.Fatal(err)
+		}
+		if err := staged.Commit(); err != nil {
 			b.Fatal(err)
 		}
 
@@ -99,7 +102,8 @@ func Benchmark_Long_vs_Short_Flush_Period(b *testing.B) {
 			}
 
 			db.EndTransaction()
-			db.EndBlock(12)
+			_, err = db.EndBlock(12)
+			require.NoError(b, err)
 
 			if err := db.Check(); err != nil {
 				b.Errorf("update failed with unexpected error: %v", err)

@@ -35,6 +35,15 @@ type GoState struct {
 	archive archive.Archive
 	cleanup []func()
 
+	// staged holds the blocks applied to the LiveDB whose fate is not yet decided,
+	// oldest first. Commit consumes from the front, Rollback from the back. It is
+	// guarded by its own lock rather than by the surrounding syncedState, because
+	// the StagedBlock handles are operated on directly and so do not pass through
+	// that wrapper.
+	// NOTE: this is unbounded, and may cause memory pressure.
+	staged     []*stagedBlock
+	stagedLock sync.Mutex
+
 	stateError     error // collect errors occurred during operation
 	stateErrorLock sync.RWMutex
 
@@ -212,49 +221,218 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	return future.Immediate(result.Ok(h))
 }
 
-// Apply applies the provided updates to the state content.
-//
-// The channel signals the completion of any spawned asynchronous operations
-// like the update of the archive, if there is such.
-// The channel may be nil if there are no asynchronous operations to be performed.
-// If the asynchronous operations fail, the error is returned through the channel.
-func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error) {
+// Apply applies the update to the LiveDB and stages the resulting block. The
+// archive is deliberately left untouched: an archive is append-only, so a block
+// may only reach it once it is certain to stay, which is what StagedBlock.Commit
+// declares.
+func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 	if err := s.getStateError(); err != nil {
 		return nil, err
 	}
 
-	// Apply the changes to the LiveDB.
-	archiveUpdateHints, err := s.live.Apply(block, &update)
+	undoList, archiveUpdateHints, err := s.live.Apply(block, &update)
 	if err != nil {
+		// A failed update may have partially mutated the live state, and its undo
+		// list is the only way back (see LiveDB.Apply). Reverting it leaves the
+		// live state at the last complete block.
+		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
+			s.addStateError(revertErr)
+		}
 		s.addStateError(err)
 		return nil, s.getStateError()
 	}
 
-	var archiveWriteDone chan error
-	if s.archive != nil {
-		archiveWriteDone = make(chan error, 1)
-		// Send the update to the writer to be processed asynchronously.
-		s.archiveWriter <- archiveUpdate{block, &update, archiveUpdateHints, archiveWriteDone}
-
-		// Drain potential errors, but do not wait for them.
-		done := false
-		for !done {
-			select {
-			// In case there was an error, process it.
-			case err := <-s.archiveWriterError:
-				s.addStateError(err)
-			default:
-				// all errors consumed, moving on
-				done = true
-			}
+	hash, err := s.live.GetHash()
+	if err != nil {
+		// Without its root the block cannot be staged, and a block that cannot be
+		// staged can never be decided; take it back entirely.
+		if archiveUpdateHints != nil {
+			archiveUpdateHints.Release()
 		}
-		if err := s.getStateError(); err != nil {
-			return nil, err
+		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
+			s.addStateError(revertErr)
 		}
-	} else if archiveUpdateHints != nil {
-		archiveUpdateHints.Release()
+		s.addStateError(err)
+		return nil, s.getStateError()
 	}
-	return archiveWriteDone, nil
+
+	staged := &stagedBlock{
+		state:  s,
+		block:  block,
+		update: update,
+		undo:   undoList,
+		hints:  archiveUpdateHints,
+		hash:   hash,
+	}
+
+	s.stagedLock.Lock()
+	defer s.stagedLock.Unlock()
+	s.staged = append(s.staged, staged)
+	return staged, nil
+}
+
+// consumeOldest removes the given block from the front of the staged sequence,
+// rejecting the call if it is not the oldest staged block or was already
+// consumed. On success, it also installs the channel on which the block's
+// archive write will report its completion.
+func (s *GoState) consumeOldest(block *stagedBlock) error {
+	s.stagedLock.Lock()
+	defer s.stagedLock.Unlock()
+
+	if block.status != stagedPending {
+		return block.consumedError("commit")
+	}
+	if len(s.staged) == 0 || s.staged[0] != block {
+		return fmt.Errorf("%w: cannot commit block %d: it is not the oldest staged block, %d block(s) before it are still staged", state.ErrStagedBlockMisuse, block.block, s.indexOf(block))
+	}
+	s.staged = s.staged[1:]
+	block.status = stagedCommitted
+	if s.archive != nil {
+		block.archiveWriteDone = make(chan error, 1)
+	}
+	return nil
+}
+
+// consumeNewest removes the given block from the back of the staged sequence,
+// rejecting the call if it is not the newest staged block or was already
+// consumed.
+func (s *GoState) consumeNewest(block *stagedBlock) error {
+	s.stagedLock.Lock()
+	defer s.stagedLock.Unlock()
+
+	if block.status != stagedPending {
+		return block.consumedError("roll back")
+	}
+	last := len(s.staged) - 1
+	if last < 0 || s.staged[last] != block {
+		return fmt.Errorf("%w: cannot roll back block %d: it is not the newest staged block, %d block(s) after it are still staged", state.ErrStagedBlockMisuse, block.block, last-s.indexOf(block))
+	}
+	s.staged = s.staged[:last]
+	block.status = stagedRolledBack
+	return nil
+}
+
+// indexOf reports the position of the block in the staged sequence, or -1. It
+// must be called while holding stagedLock.
+func (s *GoState) indexOf(block *stagedBlock) int {
+	for i, candidate := range s.staged {
+		if candidate == block {
+			return i
+		}
+	}
+	return -1
+}
+
+// drainArchiveErrors collects the errors the archive writer reported so far
+// without waiting for any pending write.
+func (s *GoState) drainArchiveErrors() {
+	for {
+		select {
+		case err := <-s.archiveWriterError:
+			s.addStateError(err)
+		default:
+			return
+		}
+	}
+}
+
+// stagedStatus tracks which of the two terminal operations a staged block has
+// already seen, so that a second one reports an error rather than acting twice.
+type stagedStatus int
+
+const (
+	stagedPending stagedStatus = iota
+	stagedCommitted
+	stagedRolledBack
+)
+
+// stagedBlock is a block applied to the LiveDB whose fate is not yet decided. It
+// retains everything needed to take either decision: the update and its hints to
+// hand to the archive on Commit, and the undo list to replay on Rollback.
+type stagedBlock struct {
+	state  *GoState
+	block  uint64
+	update common.Update
+	undo   []func() error
+	hints  common.Releaser
+	hash   common.Hash
+
+	status           stagedStatus
+	archiveWriteDone chan error
+
+	// waitOnce makes sure the archive's outcome is taken from the channel exactly
+	// once. The channel is closed once the outcome has been sent, so a second read
+	// -- by a later or a concurrent waiter -- would report success for a write
+	// that failed.
+	waitOnce sync.Once
+	waitErr  error
+}
+
+func (b *stagedBlock) StateHash() common.Hash {
+	return b.hash
+}
+
+func (b *stagedBlock) Commit() error {
+	if err := b.state.consumeOldest(b); err != nil {
+		return err
+	}
+
+	// From here on the archive writer owns the hints and releases them.
+	hints := b.hints
+	b.hints = nil
+
+	if b.state.archive == nil {
+		if hints != nil {
+			hints.Release()
+		}
+		return b.state.getStateError()
+	}
+
+	// The archive-write channel was installed by consumeOldest.
+	b.state.archiveWriter <- archiveUpdate{b.block, &b.update, hints, b.archiveWriteDone}
+	b.state.drainArchiveErrors()
+	return b.state.getStateError()
+}
+
+func (b *stagedBlock) Wait() error {
+	// The fields are read under the lock that publishes them, so a Wait racing a
+	// concurrent Commit still reports the misuse instead of racing the decision.
+	b.state.stagedLock.Lock()
+	status, done := b.status, b.archiveWriteDone
+	b.state.stagedLock.Unlock()
+
+	if status != stagedCommitted {
+		return fmt.Errorf("%w: cannot wait for block %d: it has not been committed", state.ErrStagedBlockMisuse, b.block)
+	}
+	if done == nil {
+		return nil // no archive, nothing to wait for
+	}
+	b.waitOnce.Do(func() { b.waitErr = <-done })
+	return b.waitErr
+}
+
+func (b *stagedBlock) Rollback() error {
+	if err := b.state.consumeNewest(b); err != nil {
+		return err
+	}
+
+	if b.hints != nil {
+		b.hints.Release()
+		b.hints = nil
+	}
+	if err := b.state.live.RevertLastBlock(b.undo); err != nil {
+		b.state.addStateError(err)
+	}
+	return b.state.getStateError()
+}
+
+// consumedError explains that the block has already been decided on.
+func (b *stagedBlock) consumedError(operation string) error {
+	decision := "committed"
+	if b.status == stagedRolledBack {
+		decision = "rolled back"
+	}
+	return fmt.Errorf("%w: cannot %s block %d: it has already been %s", state.ErrStagedBlockMisuse, operation, b.block, decision)
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory
@@ -286,8 +464,30 @@ func (s *GoState) Flush() error {
 	return s.Check()
 }
 
+// rollbackUndecidedBlocks takes back every staged block whose fate was never
+// decided, newest first.
+func (s *GoState) rollbackUndecidedBlocks() error {
+	for {
+		s.stagedLock.Lock()
+		if len(s.staged) == 0 {
+			s.stagedLock.Unlock()
+			return nil
+		}
+		newest := s.staged[len(s.staged)-1]
+		s.stagedLock.Unlock()
+
+		// Rollback consumes the block and collects any revert error in the
+		// state error, which Close reports through its final Check.
+		err := newest.Rollback()
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (s *GoState) Close() error {
 	s.addStateError(errors.Join(
+		s.rollbackUndecidedBlocks(),
 		s.Flush(),
 		s.live.Close(),
 	))
