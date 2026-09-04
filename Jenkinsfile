@@ -17,6 +17,7 @@ pipeline {
     }
 
     options {
+        basicJobPriority priority: 2
         timestamps ()
         timeout(time: 2, unit: 'HOURS')
         disableConcurrentBuilds(abortPrevious: true)
