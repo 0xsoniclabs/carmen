@@ -17,150 +17,192 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLRUCache_NewLruCache_RoundsUpCapacityIfLessThanTwo(t *testing.T) {
-	tests := map[string]int{
-		"Zero capacity":     0,
-		"Capacity of one":   1,
-		"Negative capacity": -100,
+func TestLruCache_NewLruCache_RoundsUpCapacityIfLessThanTwo(t *testing.T) {
+	tests := map[string]struct {
+		capacity int
+	}{
+		"zero capacity":     {capacity: 0},
+		"capacity of one":   {capacity: 1},
+		"negative capacity": {capacity: -100},
 	}
 
-	for name, capacity := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			c := NewLruCache[int, int](capacity)
-			require.Equal(t, 2, c.capacity)
+			require := require.New(t)
+			cache := NewLruCache[int, int](test.capacity)
+			require.Equal(2, cache.capacity)
 		})
 	}
 }
 
-func TestLruExceedCapacity(t *testing.T) {
-	c := NewLruCache[int, int](3)
+func TestLruCache_Get_MovesEntryToHead(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, int](3)
+	cache.Set(1, 11)
+	cache.Set(2, 22)
+	cache.Set(3, 33)
 
-	c.Set(1, 11)
-	c.Set(2, 22)
+	value, exists := cache.Get(1)
+	require.True(exists)
+	require.Equal(11, value)
+	requireLruOrder(require, cache, []int{1, 3, 2})
+}
 
-	evictedKey, evictedValue, evicted := c.Set(3, 33)
-	if evictedKey != 0 || evictedValue != 0 || evicted {
-		t.Errorf("No items should have been evicted yet")
+func TestLruCache_Set_EvictsLeastRecentlyUsedWhenCapacityExceeded(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, int](3)
+
+	cache.Set(1, 11)
+	cache.Set(2, 22)
+	_, _, evicted := cache.Set(3, 33)
+	require.False(evicted)
+
+	_, exists := cache.Get(1) // refresh 1 so that 2 becomes the least recently used
+	require.True(exists)
+
+	evictedKey, evictedValue, evicted := cache.Set(4, 44)
+	require.True(evicted)
+	require.Equal(2, evictedKey)
+	require.Equal(22, evictedValue)
+
+	_, exists = cache.Get(2)
+	require.False(exists)
+	requireLruOrder(require, cache, []int{4, 1, 3})
+}
+
+func TestLruCache_Set_UpdatesExistingValueAndMovesEntryToHead(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, int](3)
+	cache.Set(1, 11)
+	cache.Set(2, 22)
+	cache.Set(3, 33)
+
+	_, _, evicted := cache.Set(2, 222)
+	require.False(evicted)
+
+	value, exists := cache.Get(2)
+	require.True(exists)
+	require.Equal(222, value)
+	requireLruOrder(require, cache, []int{2, 3, 1})
+}
+
+func TestLruCache_GetOrSet_ReturnsPresentValueOrSetsNew(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, int](2)
+
+	_, present, _, _, evicted := cache.GetOrSet(1, 11)
+	require.False(present)
+	require.False(evicted)
+
+	current, present, _, _, _ := cache.GetOrSet(1, 12)
+	require.True(present)
+	require.Equal(11, current)
+
+	cache.GetOrSet(2, 22)
+	_, present, evictedKey, evictedValue, evicted := cache.GetOrSet(3, 33)
+	require.False(present)
+	require.True(evicted)
+	require.Equal(1, evictedKey)
+	require.Equal(11, evictedValue)
+}
+
+func TestLruCache_Remove_KeepsListConsistent(t *testing.T) {
+	init := func() *LruCache[int, int] {
+		cache := NewLruCache[int, int](3)
+		cache.Set(1, 11)
+		cache.Set(2, 22)
+		cache.Set(3, 33)
+		return cache
 	}
 
-	_, exists := c.Get(1) // one refreshed - first in the list now
-	if exists == false {
-		t.Errorf("Item should exist")
+	tests := map[string]struct {
+		key        int
+		wantValue  int
+		wantExists bool
+		wantOrder  []int
+	}{
+		"head":        {key: 3, wantValue: 33, wantExists: true, wantOrder: []int{2, 1}},
+		"middle":      {key: 2, wantValue: 22, wantExists: true, wantOrder: []int{3, 1}},
+		"tail":        {key: 1, wantValue: 11, wantExists: true, wantOrder: []int{3, 2}},
+		"missing key": {key: 4, wantOrder: []int{3, 2, 1}},
 	}
 
-	evictedKey, evictedValue, evicted = c.Set(5, 44)
-	if evictedKey != 2 || evictedValue != 22 || evicted == false {
-		t.Errorf("Incorrectly evicted items: %d/%d", evictedKey, evictedValue)
-	}
-	_, exists = c.Get(2) // 2 is the oldest in the table
-	if exists {
-		t.Errorf("Item should be evicted")
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			cache := init()
+
+			value, exists := cache.Remove(test.key)
+			require.Equal(test.wantExists, exists)
+			require.Equal(test.wantValue, value)
+			requireLruOrder(require, cache, test.wantOrder)
+		})
 	}
 }
 
-// TestLRUOrder test correct ordering of the keys
-func TestLRUOrder(t *testing.T) {
-	c := NewLruCache[int, int](3)
+func TestLruCache_Remove_EmptiesSingleEntryCache(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, int](3)
+	cache.Set(1, 11)
 
-	c.Set(1, 11)
-	c.Set(2, 22)
-	c.Set(3, 33)
-
-	_, _ = c.Get(1) // one refreshed - first in the list now
-	if c.head.key != 1 {
-		t.Errorf("Item should be head")
-	}
-	if c.tail.key != 2 {
-		t.Errorf("Item should be tail")
-	}
-
-	c.Set(2, 222) // two refreshed - first in the list now
-	if c.head.key != 2 {
-		t.Errorf("Item should be head")
-	}
-	if c.tail.key != 3 {
-		t.Errorf("Item should be tail")
-	}
-
-	// insert exceeding and check order
-	c.Set(4, 44)
-	if c.head.key != 4 || c.head.next.key != 2 || c.head.next.next.key != 1 {
-		t.Errorf("wrong order")
-	}
-	if c.tail.key != 1 || c.tail.prev.key != 2 || c.tail.prev.prev.key != 4 {
-		t.Errorf("wrong order")
-	}
+	value, exists := cache.Remove(1)
+	require.True(exists)
+	require.Equal(11, value)
+	requireLruOrder(require, cache, nil)
 }
 
-func TestLRUCache_GetOrSet(t *testing.T) {
-	c := NewLruCache[int, int](4)
-
-	if _, present, _, _, evicted := c.GetOrSet(1, 11); present || evicted {
-		t.Errorf("value should be neither present nor evicted")
-	}
-
-	if current, present, _, _, _ := c.GetOrSet(1, 12); !present || current != 11 {
-		t.Errorf("previous value should be present")
-	}
-
-	// cause eviction
-	c.Set(5, 5)
-	c.Set(9, 9)
-	c.Set(13, 13)
-
-	if _, present, evictedKey, evictedValue, evicted := c.GetOrSet(17, 13); !evicted || present || evictedKey != 1 || evictedValue != 11 {
-		t.Errorf("value should be evicted: %d != 1 || %d != 11", evictedKey, evictedValue)
-	}
-
-	// no eviction - replacing
-	if current, present, _, _, evicted := c.GetOrSet(9, 13); evicted || !present || current != 9 {
-		t.Errorf("value should be evicted: %d != 9", current)
-	}
-
-}
-
-func TestCache_Entry_String(t *testing.T) {
-	e := entry[int, int]{10, 20, nil, nil}
-
-	if got, want := e.String(), "Entry: 10 -> 20"; got != want {
-		t.Errorf("provided string does not match: %s != %s", got, want)
-	}
-}
-
-func TestLruCache_Clear_RemovesAllElements(t *testing.T) {
+func TestLruCache_Clear_RemovesAllElementsAndKeepsCacheUsable(t *testing.T) {
+	require := require.New(t)
 	cache := NewLruCache[int, int](4)
-	cache.Set(1, 2)
-	cache.Set(2, 3)
-	cache.Set(3, 4)
-	cache.Set(5, 6)
+	cache.Set(1, 11)
+	cache.Set(2, 22)
+	cache.Set(3, 33)
+	cache.Set(4, 44)
 
 	cache.Clear()
-	require.Zero(t, len(cache.cache))
+	requireLruOrder(require, cache, nil)
+
+	cache.Set(5, 55)
+	value, exists := cache.Get(5)
+	require.True(exists)
+	require.Equal(55, value)
+	requireLruOrder(require, cache, []int{5})
 }
 
-func TestLruCache_dropLast_DoesNotPanicOnEmptyOrSingleValueCache(t *testing.T) {
-	testCases := map[string]func() *LruCache[int, int]{
-		"empty": func() *LruCache[int, int] {
-			return NewLruCache[int, int](4)
-		},
-		"single value": func() *LruCache[int, int] {
-			cache := NewLruCache[int, int](4)
-			cache.Set(1, 2)
-			return cache
-		},
+func TestLruCache_dropLast_RemovesTailAndKeepsListConsistent(t *testing.T) {
+	tests := map[string]struct {
+		keys      []int
+		wantKey   int
+		wantOrder []int
+	}{
+		"multiple values": {keys: []int{1, 2, 3}, wantKey: 1, wantOrder: []int{3, 2}},
+		"two values":      {keys: []int{1, 2}, wantKey: 1, wantOrder: []int{2}},
+		"single value":    {keys: []int{1}, wantKey: 1, wantOrder: nil},
 	}
 
-	for name, tc := range testCases {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			cache := tc()
-			require.NotPanics(t, func() {
-				_ = cache.dropLast()
-			})
-			require.Zero(t, len(cache.cache))
-			require.Nil(t, cache.head)
-			require.Nil(t, cache.tail)
+			require := require.New(t)
+			cache := NewLruCache[int, int](4)
+			for _, key := range test.keys {
+				cache.Set(key, key*10)
+			}
+
+			dropped := cache.dropLast()
+			require.NotNil(dropped)
+			require.Equal(test.wantKey, dropped.key)
+			require.Equal(test.wantKey*10, dropped.val)
+			requireLruOrder(require, cache, test.wantOrder)
 		})
 	}
+}
+
+func TestLruCache_dropLast_ReturnsNilOnEmptyCache(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, int](4)
+
+	require.Nil(cache.dropLast())
+	requireLruOrder(require, cache, nil)
 }
 
 func TestLruCache_GetMemoryFootprint_ReturnsCorrectSize(t *testing.T) {
@@ -196,4 +238,32 @@ func TestLruCache_GetDynamicMemoryFootprint_ReturnsCorrectSize(t *testing.T) {
 	require.Equal(expectedSize, cache.GetDynamicMemoryFootprint(func(v int) uintptr {
 		return sizes[v]
 	}).Total())
+}
+
+func TestEntry_String_ReturnsKeyValueDescription(t *testing.T) {
+	require := require.New(t)
+	e := entry[int, int]{10, 20, nil, nil}
+	require.Equal("Entry: 10 -> 20", e.String())
+}
+
+// requireLruOrder checks that the cache holds exactly the given keys,
+// linked from head to tail in both directions.
+func requireLruOrder[K comparable, V any](require *require.Assertions, cache *LruCache[K, V], keys []K) {
+	require.Len(cache.cache, len(keys))
+
+	item := cache.head
+	for _, key := range keys {
+		require.NotNil(item)
+		require.Equal(key, item.key)
+		item = item.next
+	}
+	require.Nil(item)
+
+	item = cache.tail
+	for i := len(keys) - 1; i >= 0; i-- {
+		require.NotNil(item)
+		require.Equal(keys[i], item.key)
+		item = item.prev
+	}
+	require.Nil(item)
 }
