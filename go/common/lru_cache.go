@@ -151,8 +151,9 @@ func (c *LruCache[K, V]) Remove(key K) (original V, exists bool) {
 }
 
 func (c *LruCache[K, V]) Clear() {
-	if len(c.cache) > 0 {
-		c.cache = make(map[K]*entry[K, V], c.capacity)
+	for len(c.cache) > 0 {
+		_ = c.dropLast()
+		// c.cache = make(map[K]*entry[K, V], c.capacity)
 	}
 	c.head = nil
 	c.tail = nil
@@ -185,7 +186,9 @@ func (c *LruCache[K, V]) dropLast() (dropped *entry[K, V]) {
 	dropped = c.tail
 	delete(c.cache, c.tail.key)
 	c.tail = c.tail.prev
-	c.tail.next = nil
+	if c.tail != nil { // There is at least one element in the queue
+		c.tail.next = nil
+	}
 	return dropped
 }
 

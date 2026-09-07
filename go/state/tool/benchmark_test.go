@@ -218,9 +218,15 @@ func TestRunBenchmarkState_ApplyError(t *testing.T) {
 
 	const methods = 3
 	for i := 0; i <= methods; i++ {
+		// A successful Apply always yields a staged block. It is declared before the
+		// mock state shadows the package name, and is ignored on the rounds where
+		// Apply is made to fail.
+		staged := state.NewMockStagedBlock(ctrl)
+		staged.EXPECT().Commit().Return(nil).AnyTimes()
+
 		state := state.NewMockState(ctrl)
 		state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), getError(i, 1)).AnyTimes()
-		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, getError(i, 2)).AnyTimes()
+		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, getError(i, 2)).AnyTimes()
 		state.EXPECT().GetCommitment().DoAndReturn(func() future.Future[result.Result[common.Hash]] {
 			return future.Immediate(result.Err[common.Hash](getError(i, 3)))
 		}).AnyTimes()

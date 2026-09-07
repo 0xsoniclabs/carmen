@@ -235,7 +235,7 @@ func (s *ExternalState) GetCommitment() future.Future[result.Result[common.Hash]
 	return future.Immediate(result.Ok(hash))
 }
 
-func (s *ExternalState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *ExternalState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 	if err := update.Normalize(); err != nil {
 		return nil, err
 	}
@@ -249,7 +249,11 @@ func (s *ExternalState) Apply(block uint64, update common.Update) (<-chan error,
 	for _, change := range update.Codes {
 		s.codeCache.Set(change.Account, change.Code)
 	}
-	return nil, nil
+	// The root is taken now: it is the root of this block, and reading it later
+	// would report the root of whichever block came after.
+	hash, _ := s.GetHash() // < the error is reported through GetCommitment
+	// `ExternalState` does not support undo, so we return an irreversible block.
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 func (s *ExternalState) Flush() error {

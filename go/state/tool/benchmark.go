@@ -267,8 +267,16 @@ func runBenchmarkState(
 			update.Nonces = append(update.Nonces, common.NonceUpdate{Account: addr, Nonce: common.ToNonce(1)})
 			counter++
 		}
-		if _, err := state.Apply(uint64(i), update); err != nil {
+		staged, err := state.Apply(uint64(i), update)
+		if err != nil {
 			return res, fmt.Errorf("error applying block %d: %v", i, err)
+		}
+		if staged == nil {
+			return res, fmt.Errorf("state applied block %d without returning a staged block", i)
+		}
+		// The benchmark only moves forwards, so every block it applies is kept.
+		if err := staged.Commit(); err != nil {
+			return res, fmt.Errorf("error committing block %d: %v", i, err)
 		}
 		// make sure hash/commit is computed
 		if _, err := state.GetCommitment().Await().Get(); err != nil {
