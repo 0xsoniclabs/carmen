@@ -182,10 +182,17 @@ func (c *LruCache[K, V]) touch(item *entry[K, V]) {
 
 // dropLast drop the last element from the queue and returns it
 func (c *LruCache[K, V]) dropLast() (dropped *entry[K, V]) {
+	if len(c.cache) == 0 {
+		return nil
+	}
 	dropped = c.tail
 	delete(c.cache, c.tail.key)
 	c.tail = c.tail.prev
-	c.tail.next = nil
+	if c.tail != nil { // There is at least one element in the queue
+		c.tail.next = nil
+	} else {
+		c.head = nil
+	}
 	return dropped
 }
 
