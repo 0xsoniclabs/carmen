@@ -136,3 +136,28 @@ func TestLruCache_Clear_RemovesAllElements(t *testing.T) {
 	cache.Clear()
 	require.Zero(t, len(cache.cache))
 }
+
+func TestLruCache_dropLast_DoesNotPanicOnEmptyOrSingleValueCache(t *testing.T) {
+	testCases := map[string]func() *LruCache[int, int]{
+		"empty": func() *LruCache[int, int] {
+			return NewLruCache[int, int](4)
+		},
+		"single value": func() *LruCache[int, int] {
+			cache := NewLruCache[int, int](4)
+			cache.Set(1, 2)
+			return cache
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cache := tc()
+			require.NotPanics(t, func() {
+				_ = cache.dropLast()
+			})
+			require.Zero(t, len(cache.cache))
+			require.Nil(t, cache.head)
+			require.Nil(t, cache.tail)
+		})
+	}
+}
