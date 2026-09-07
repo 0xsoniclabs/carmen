@@ -704,43 +704,43 @@ type command interface {
 	appendTo([]byte) []byte
 }
 
-// clear is the command clearing the maps content.
-type clear struct{}
+// clearCommand is the command clearing the maps content.
+type clearCommand struct{}
 
-func (c clear) apply(trg *FastMap[byte, byte], ref *map[byte]byte) {
+func (c clearCommand) apply(trg *FastMap[byte, byte], ref *map[byte]byte) {
 	trg.Clear()
 	*ref = map[byte]byte{}
 }
 
-func (c clear) appendTo(code []byte) []byte {
+func (c clearCommand) appendTo(code []byte) []byte {
 	return append(code, op_clear)
 }
 
-// put is a command adding a key/value pair to the map.
-type put struct {
+// putCommand is a command adding a key/value pair to the map.
+type putCommand struct {
 	key, value byte
 }
 
-func (c put) apply(trg *FastMap[byte, byte], ref *map[byte]byte) {
+func (c putCommand) apply(trg *FastMap[byte, byte], ref *map[byte]byte) {
 	trg.Put(c.key, c.value)
 	(*ref)[c.key] = c.value
 }
 
-func (c put) appendTo(code []byte) []byte {
+func (c putCommand) appendTo(code []byte) []byte {
 	return append(code, []byte{op_put, c.key, c.value}...)
 }
 
-// remove eliminates a key from the map.
-type remove struct {
+// removeCommand eliminates a key from the map.
+type removeCommand struct {
 	key byte
 }
 
-func (c remove) apply(trg *FastMap[byte, byte], ref *map[byte]byte) {
+func (c removeCommand) apply(trg *FastMap[byte, byte], ref *map[byte]byte) {
 	trg.Remove(c.key)
 	delete(*ref, c.key)
 }
 
-func (c remove) appendTo(code []byte) []byte {
+func (c removeCommand) appendTo(code []byte) []byte {
 	return append(code, []byte{op_remove, c.key}...)
 }
 
@@ -750,19 +750,19 @@ func parseCommands(encoded []byte) []command {
 	for len(encoded) > 1 {
 		switch encoded[0] % num_ops {
 		case op_clear:
-			res = append(res, clear{})
+			res = append(res, clearCommand{})
 			encoded = encoded[1:]
 		case op_put:
 			if len(encoded) < 3 {
 				return res
 			}
-			res = append(res, put{encoded[1], encoded[2]})
+			res = append(res, putCommand{encoded[1], encoded[2]})
 			encoded = encoded[3:]
 		case op_remove:
 			if len(encoded) < 2 {
 				return res
 			}
-			res = append(res, remove{encoded[1]})
+			res = append(res, removeCommand{encoded[1]})
 			encoded = encoded[2:]
 		}
 	}
@@ -783,27 +783,27 @@ func FuzzMapOperations(f *testing.F) {
 	f.Add(toBytes([]command{}))
 
 	// a case for each command
-	f.Add(toBytes([]command{clear{}}))
-	f.Add(toBytes([]command{put{2, 3}}))
-	f.Add(toBytes([]command{remove{3}}))
+	f.Add(toBytes([]command{clearCommand{}}))
+	f.Add(toBytes([]command{putCommand{2, 3}}))
+	f.Add(toBytes([]command{removeCommand{3}}))
 
 	// a combined case
-	f.Add(toBytes([]command{put{2, 3}, remove{2}, put{2, 4}, clear{}}))
+	f.Add(toBytes([]command{putCommand{2, 3}, removeCommand{2}, putCommand{2, 4}, clearCommand{}}))
 
 	// Test a full map
 	cmds := make([]command, 0, 256)
 	for i := range 256 {
-		cmds = append(cmds, put{byte(i), ^byte(i)})
+		cmds = append(cmds, putCommand{byte(i), ^byte(i)})
 	}
 	f.Add(toBytes(cmds))
 
 	// A case where all elements are added and removed.
 	cmds = cmds[0:0]
 	for i := range 256 {
-		cmds = append(cmds, put{byte(i), ^byte(i)})
+		cmds = append(cmds, putCommand{byte(i), ^byte(i)})
 	}
 	for i := range 256 {
-		cmds = append(cmds, remove{byte(i)})
+		cmds = append(cmds, removeCommand{byte(i)})
 	}
 	f.Add(toBytes(cmds))
 
