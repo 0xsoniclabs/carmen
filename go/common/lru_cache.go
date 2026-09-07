@@ -198,18 +198,18 @@ func (c *LruCache[K, V]) dropLast() (dropped *entry[K, V]) {
 // If V is a pointer type, it needs to provide the size of a referenced value.
 // If the size is different for individual values, use GetDynamicMemoryFootprint instead.
 func (c *LruCache[K, V]) GetMemoryFootprint(referencedValueSize uintptr) *MemoryFootprint {
-	selfSize := unsafe.Sizeof(*c)
-	entrySize := unsafe.Sizeof(entry[K, V]{})
-	mf := NewMemoryFootprint(selfSize + uintptr(c.capacity)*(entrySize+referencedValueSize))
-	return mf
+	return c.GetDynamicMemoryFootprint(func(V) uintptr {
+		return referencedValueSize
+	})
 }
 
 // GetDynamicMemoryFootprint provides the size of the cache in memory in bytes for values,
 // which reference dynamic amount of memory - like slices.
 func (c *LruCache[K, V]) GetDynamicMemoryFootprint(valueSizeProvider func(V) uintptr) *MemoryFootprint {
 	selfSize := unsafe.Sizeof(*c)
-	entryPointerSize := unsafe.Sizeof(&entry[K, V]{})
-	size := uintptr(c.capacity) * entryPointerSize
+	var key K
+	mapSlotSize := unsafe.Sizeof(key) + unsafe.Sizeof(&entry[K, V]{})
+	size := uintptr(c.capacity) * mapSlotSize
 	for _, value := range c.cache {
 		size += unsafe.Sizeof(entry[K, V]{})
 		size += valueSizeProvider(value.val)
