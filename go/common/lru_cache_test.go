@@ -192,3 +192,14 @@ func TestLruCache_dropLast_ClearsCacheOnSingleValueOrEmptyCache(t *testing.T) {
 		})
 	}
 }
+
+func TestLruCache_Clear_RemovesAllElements(t *testing.T) {
+	cache := NewLruCache[int, int](4)
+	cache.Set(1, 2)
+	cache.Set(2, 3)
+	cache.Set(3, 4)
+	cache.Set(5, 6)
+
+	cache.Clear()
+	require.Zero(t, len(cache.cache))
+}
