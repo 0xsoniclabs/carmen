@@ -75,9 +75,11 @@ func (c *LruCache[K, V]) Set(key K, val V) (evictedKey K, evictedValue V, evicte
 	// create entry if it does not exist
 	if !exists {
 		if len(c.cache) >= c.capacity {
-			item = c.dropLast() // reuse evicted object for the new entry
-			evictedKey = item.key
-			evictedValue = item.val
+			// reuse evicted object for the new entry
+			// capacity is strictly positive, so dropLast() will always return a non-nil key and value
+			droppedKey, droppedValue := c.dropLast()
+			evictedKey = *droppedKey
+			evictedValue = *droppedValue
 			evicted = true
 		} else {
 			item = new(entry[K, V])
@@ -180,12 +182,13 @@ func (c *LruCache[K, V]) touch(item *entry[K, V]) {
 	c.head = item
 }
 
-// dropLast drop the last element from the queue and returns it
-func (c *LruCache[K, V]) dropLast() (dropped *entry[K, V]) {
+// dropLast drop the last element from the queue and returns it, and a boolean indicating
+// whether an element was dropped. If the queue is empty, it returns a default initialized key and value.
+func (c *LruCache[K, V]) dropLast() (*K, *V) {
 	if len(c.cache) == 0 {
-		return nil
+		return nil, nil
 	}
-	dropped = c.tail
+	dropped := c.tail
 	delete(c.cache, c.tail.key)
 	c.tail = c.tail.prev
 	if c.tail != nil { // There is at least one element in the queue
@@ -193,7 +196,7 @@ func (c *LruCache[K, V]) dropLast() (dropped *entry[K, V]) {
 	} else {
 		c.head = nil
 	}
-	return dropped
+	return &dropped.key, &dropped.val
 }
 
 // GetMemoryFootprint provides the size of the cache in memory in bytes

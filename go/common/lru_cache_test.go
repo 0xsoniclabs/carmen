@@ -126,7 +126,52 @@ func TestCache_Entry_String(t *testing.T) {
 	}
 }
 
-func TestLruCache_dropLast_DoesNotPanicOnEmptyOrSingleValueCache(t *testing.T) {
+func TestLruCache_dropLast_RemovesLastElementCorrectly(t *testing.T) {
+	testCases := map[string]struct {
+		init        func() *LruCache[int, int]
+		expectedLen int
+	}{
+		"single value": {
+			init: func() *LruCache[int, int] {
+				cache := NewLruCache[int, int](4)
+				cache.Set(1, 2)
+				return cache
+			},
+			expectedLen: 0,
+		},
+		"multiple values": {
+			init: func() *LruCache[int, int] {
+				cache := NewLruCache[int, int](4)
+				cache.Set(1, 2)
+				cache.Set(3, 4)
+				return cache
+			},
+			expectedLen: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			cache := tc.init()
+			key, value := cache.dropLast()
+			require.NotNil(key)
+			require.NotNil(value)
+			require.Equal(1, *key)
+			require.Equal(2, *value)
+			require.Equal(tc.expectedLen, len(cache.cache))
+		})
+	}
+}
+
+func TestLruCache_dropLast_ReturnsNilForEmptyCache(t *testing.T) {
+	cache := NewLruCache[int, int](4)
+	key, value := cache.dropLast()
+	require.Nil(t, key)
+	require.Nil(t, value)
+}
+
+func TestLruCache_dropLast_ClearsCacheOnSingleValueOrEmptyCache(t *testing.T) {
 	testCases := map[string]func() *LruCache[int, int]{
 		"empty": func() *LruCache[int, int] {
 			return NewLruCache[int, int](4)
@@ -142,7 +187,7 @@ func TestLruCache_dropLast_DoesNotPanicOnEmptyOrSingleValueCache(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cache := tc()
 			require.NotPanics(t, func() {
-				_ = cache.dropLast()
+				_, _ = cache.dropLast()
 			})
 			require.Zero(t, len(cache.cache))
 			require.Nil(t, cache.head)
