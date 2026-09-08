@@ -440,16 +440,13 @@ func TestNodeCache_GetOrSet_PresentPathHintStaysConsistentUnderEviction(t *testi
 
 	const N = 1_000_000
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { // keeps recycling the tail slot with fresh nodes
-		defer wg.Done()
+	wg.Go(func() { // keeps recycling the tail slot with fresh nodes
 		for i := range N {
 			other := NewNodeReference(ValueId(uint64(i + 2)))
 			cache.GetOrSet(&other, shared.MakeShared[Node](&ValueNode{}))
 		}
-	}()
-	go func() { // re-registers the node and validates the resulting hint
-		defer wg.Done()
+	})
+	wg.Go(func() { // re-registers the node and validates the resulting hint
 		for range N {
 			cache.GetOrSet(&ref, node)
 			got, found := cache.Get(&ref)
@@ -457,7 +454,7 @@ func TestNodeCache_GetOrSet_PresentPathHintStaysConsistentUnderEviction(t *testi
 				require.Equal(node, got, "node should be the same as the one registered")
 			}
 		}
-	}()
+	})
 	wg.Wait()
 }
 
