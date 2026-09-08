@@ -203,12 +203,30 @@ func TestWriteBuffer_AFailedFlushIsReported(t *testing.T) {
 	view.Release()
 
 	buffer := MakeWriteBuffer(sink)
-	defer func() { require.Error(t, buffer.Close()) }()
+	defer func() { require.NoError(t, buffer.Close()) }()
 
 	buffer.Add(id, node)
 	if got := buffer.Flush(); !errors.Is(got, err) {
 		t.Errorf("sink error was not propagated, wanted %v, got %v", err, got)
 	}
+}
+
+func TestWriteBuffer_AFailedFlushIsReportedOnlyOnce(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	sink := NewMockNodeSink(ctrl)
+
+	id := ValueId(12)
+	node := shared.MakeShared[Node](&ValueNode{})
+	err := fmt.Errorf("TestError")
+	sink.EXPECT().Write(id, gomock.Any()).Return(err)
+
+	buffer := MakeWriteBuffer(sink)
+	buffer.Add(id, node)
+	require.ErrorIs(t, buffer.Flush(), err)
+
+	// The error has been reported and is not reported again.
+	require.NoError(t, buffer.Flush())
+	require.NoError(t, buffer.Close())
 }
 
 func TestWriteBuffer_ElementsCanBeAddedInParallel(t *testing.T) {

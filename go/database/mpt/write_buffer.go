@@ -40,9 +40,13 @@ type WriteBuffer interface {
 	// buffer and no longer flushed. If no such node is present, (nil,false)
 	// is returned.
 	Cancel(NodeId) (*shared.Shared[Node], bool)
-	// Flush forces all buffered elements to be written to the sink.
+	// Flush forces all buffered elements to be written to the sink. It
+	// returns the errors encountered by asynchronous writes that have not
+	// been reported by a previous Flush or Close call. Callers are expected
+	// to retain returned errors if they need to be sticky.
 	Flush() error
 	// Close flushes buffered elements and stops asynchronous operations.
+	// Like Flush, it returns only errors not reported before.
 	Close() error
 }
 
@@ -160,9 +164,7 @@ func (b *writeBuffer) Flush() error {
 	}
 	b.emptyBufferSignalMutex.Unlock()
 	<-b.flushDone // finishes either due to flush signal or being closed
-	b.errsMutex.Lock()
-	defer b.errsMutex.Unlock()
-	return errors.Join(b.errs...)
+	return b.consumeErrors()
 }
 
 func (b *writeBuffer) Close() error {
@@ -173,9 +175,17 @@ func (b *writeBuffer) Close() error {
 	}
 	b.emptyBufferSignalMutex.Unlock()
 	<-b.done // finishes once all elements are written
+	return b.consumeErrors()
+}
+
+// consumeErrors returns the errors collected since the last call and clears
+// them, such that each error is reported exactly once.
+func (b *writeBuffer) consumeErrors() error {
 	b.errsMutex.Lock()
 	defer b.errsMutex.Unlock()
-	return errors.Join(b.errs...)
+	err := errors.Join(b.errs...)
+	b.errs = nil
+	return err
 }
 
 func (b *writeBuffer) emptyBuffer(forceFullFlush bool) {

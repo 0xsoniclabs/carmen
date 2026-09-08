@@ -99,6 +99,39 @@ func TestForest_ErrorsCanBeRecordedAndCheckedConcurrently(t *testing.T) {
 	require.Len(t, forest.errors, N)
 }
 
+func TestForest_Flush_DoesNotReRecordWriteBufferErrors(t *testing.T) {
+	// Regression test: the write buffer used to report every write failure it
+	// had ever seen on each Flush, and the forest recorded it again each time,
+	// growing the error list linearly with the number of flushes.
+	injectedErr := errors.New("injected stock failure")
+	forest, err := OpenInMemoryForest(t.TempDir(), S5LiveConfig, ForestConfig{Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}})
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
+	accounts.EXPECT().Set(gomock.Any(), gomock.Any()).Return(injectedErr)
+	accounts.EXPECT().Flush().AnyTimes().Return(nil)
+	stockBackup := forest.accounts
+	forest.accounts = accounts
+	defer func() {
+		forest.accounts = stockBackup
+		require.ErrorIs(t, forest.Close(), injectedErr)
+	}()
+
+	// A dirty node in the write buffer fails to be written during the first flush.
+	forest.writeBuffer.Add(AccountId(1), shared.MakeShared[Node](&AccountNode{}))
+	require.ErrorIs(t, forest.Flush(), injectedErr)
+	require.Len(t, forest.errors, 1)
+	size := len(forest.CheckErrors().Error())
+
+	// Subsequent flushes keep reporting the failure without recording it again.
+	for range 10 {
+		require.ErrorIs(t, forest.Flush(), injectedErr)
+		require.Len(t, forest.errors, 1)
+		require.Equal(t, size, len(forest.CheckErrors().Error()))
+	}
+}
+
 func TestForest_Cannot_Open_Corrupted_Stock_Meta(t *testing.T) {
 	for _, variant := range fileAndMemVariants {
 		for _, config := range allMptConfigs {
