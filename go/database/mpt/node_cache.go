@@ -206,8 +206,8 @@ func (c *nodeCache) GetOrSet(
 	// Lookup element - if present, we are done.
 	if pos, found := c.index[ref.id]; found {
 		current := c.owners[pos].Node()
-		c.mutex.Unlock()
 		ref.updateCacheHints(uint32(pos), c.owners[pos].tag.Load())
+		c.mutex.Unlock()
 		return current, true, NodeId(0), nil, false
 	}
 

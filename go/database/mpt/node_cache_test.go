@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNodeCache_ElementsCanBeStoredAndRetrieved(t *testing.T) {
@@ -423,6 +424,37 @@ func TestNodeCache_GetAndSetThreadSafety(t *testing.T) {
 
 		}(i)
 	}
+	wg.Wait()
+}
+
+func TestNodeCache_GetOrSet_PresentPathHintStaysConsistentUnderEviction(t *testing.T) {
+	// Regression test: GetOrSet used to read the owner's tag after releasing
+	// the mutex when the element was already present. A concurrent eviction
+	// could recycle the owner in between, storing a hint pointing to a
+	// different node into the reference.
+	require := require.New(t)
+	cache := newNodeCache(2)
+	node := shared.MakeShared[Node](&ValueNode{pathLength: 1})
+	ref := NewNodeReference(ValueId(1))
+	cache.GetOrSet(&ref, node)
+
+	const N = 1_000_000
+	var wg sync.WaitGroup
+	wg.Go(func() { // keeps recycling the tail slot with fresh nodes
+		for i := range N {
+			other := NewNodeReference(ValueId(uint64(i + 2)))
+			cache.GetOrSet(&other, shared.MakeShared[Node](&ValueNode{}))
+		}
+	})
+	wg.Go(func() { // re-registers the node and validates the resulting hint
+		for range N {
+			cache.GetOrSet(&ref, node)
+			got, found := cache.Get(&ref)
+			if found == true {
+				require.Equal(node, got, "node should be the same as the one registered")
+			}
+		}
+	})
 	wg.Wait()
 }
 
