@@ -128,7 +128,8 @@ type Forest struct {
 	// A list of issues encountered while performing operations on the forest.
 	// If this list is non-empty, no guarantees are provided on the correctness
 	// of the maintained forest. Thus, it should be considered corrupted.
-	errors []error
+	errors      []error
+	errorsMutex sync.Mutex
 
 	// A flag indicating whether the forest is closed.
 	closed atomic.Bool
@@ -351,7 +352,7 @@ func (s *Forest) GetAccountInfo(rootRef *NodeReference, addr common.Address) (Ac
 	handle, err := s.getReadAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain read access to node %v: %w", rootRef.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return AccountInfo{}, false, err
 	}
 	defer handle.Release()
@@ -359,7 +360,7 @@ func (s *Forest) GetAccountInfo(rootRef *NodeReference, addr common.Address) (Ac
 	info, exists, err := handle.Get().GetAccount(s, addr, path[:])
 	if err != nil {
 		err = fmt.Errorf("failed to fetch account information for account %v: %w", addr, err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return info, exists, err
 }
@@ -368,7 +369,7 @@ func (s *Forest) SetAccountInfo(rootRef *NodeReference, addr common.Address, inf
 	root, err := s.getWriteAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return NodeReference{}, err
 	}
 	defer root.Release()
@@ -376,7 +377,7 @@ func (s *Forest) SetAccountInfo(rootRef *NodeReference, addr common.Address, inf
 	newRoot, _, err := root.Get().SetAccount(s, rootRef, root, addr, path[:], info)
 	if err != nil {
 		err = fmt.Errorf("failed to update account information for account %v: %w", addr, err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return newRoot, err
 }
@@ -385,7 +386,7 @@ func (s *Forest) GetValue(rootRef *NodeReference, addr common.Address, key commo
 	root, err := s.getReadAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain read access to node %v: %w", rootRef.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return common.Value{}, err
 	}
 	defer root.Release()
@@ -393,7 +394,7 @@ func (s *Forest) GetValue(rootRef *NodeReference, addr common.Address, key commo
 	value, _, err := root.Get().GetSlot(s, addr, path[:], key)
 	if err != nil {
 		err = fmt.Errorf("failed to fetch value for %v/%v: %w", addr, key, err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return value, err
 }
@@ -402,7 +403,7 @@ func (s *Forest) SetValue(rootRef *NodeReference, addr common.Address, key commo
 	root, err := s.getWriteAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return NodeReference{}, err
 	}
 	defer root.Release()
@@ -410,7 +411,7 @@ func (s *Forest) SetValue(rootRef *NodeReference, addr common.Address, key commo
 	newRoot, _, err := root.Get().SetSlot(s, rootRef, root, addr, path[:], key, value)
 	if err != nil {
 		err = fmt.Errorf("failed to update value for %v/%v: %w", addr, key, err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return newRoot, err
 }
@@ -426,7 +427,7 @@ func (s *Forest) HasEmptyStorage(rootRef *NodeReference, addr common.Address) (i
 	exists, err := VisitPathToAccount(s, rootRef, addr, ReadAccess{}, v)
 	if err != nil {
 		err = fmt.Errorf("failed to check storage for account %v: %w", addr, err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 
 	return isEmpty || !exists, err
@@ -436,7 +437,7 @@ func (s *Forest) ClearStorage(rootRef *NodeReference, addr common.Address) (Node
 	root, err := s.getWriteAccess(rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", rootRef.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return NodeReference{}, err
 	}
 	defer root.Release()
@@ -444,7 +445,7 @@ func (s *Forest) ClearStorage(rootRef *NodeReference, addr common.Address) (Node
 	newRoot, _, err := root.Get().ClearStorage(s, rootRef, root, addr, path[:])
 	if err != nil {
 		err = fmt.Errorf("failed to clear storage for %v: %w", addr, err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return newRoot, err
 }
@@ -453,14 +454,14 @@ func (s *Forest) VisitTrie(rootRef *NodeReference, mode AccessMode, visitor Node
 	root, err := mode.Access(s, rootRef)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain view access to node %v: %w", rootRef.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return err
 	}
 	defer root.Release()
 	_, err = root.Get().Visit(s, rootRef, 0, mode, visitor)
 	if err != nil {
 		err = fmt.Errorf("error during trie visit: %w", err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return err
 }
@@ -469,7 +470,7 @@ func (s *Forest) updateHashesFor(ref *NodeReference) (common.Hash, *NodeHashes, 
 	hash, hints, err := s.hasher.updateHashes(ref, s)
 	if err != nil {
 		err = fmt.Errorf("error during hash update: %w", err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return hash, hints, err
 }
@@ -479,7 +480,7 @@ func (s *Forest) setHashesFor(root *NodeReference, hashes *NodeHashes) error {
 		write, err := s.getMutableNodeByPath(root, cur.Path)
 		if err != nil {
 			err = fmt.Errorf("error during location of node at %v: %w", cur.Path, err)
-			s.errors = append(s.errors, err)
+			s.addError(err)
 			return err
 		}
 		write.Get().SetHash(cur.Hash)
@@ -492,7 +493,7 @@ func (s *Forest) getHashFor(ref *NodeReference) (common.Hash, error) {
 	hash, err := s.hasher.getHash(ref, s)
 	if err != nil {
 		err = fmt.Errorf("error while retrieving hash for node %v: %w", ref.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return hash, err
 }
@@ -514,14 +515,14 @@ func (s *Forest) Freeze(ref *NodeReference) error {
 	root, err := s.getWriteAccess(ref)
 	if err != nil {
 		err = fmt.Errorf("failed to obtain write access to node %v: %w", ref.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 		return err
 	}
 	defer root.Release()
 	err = root.Get().Freeze(s, root)
 	if err != nil {
 		err = fmt.Errorf("error while freezing trie rooted by %v: %w", ref.Id(), err)
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 	return err
 }
@@ -531,7 +532,17 @@ func (s *Forest) Freeze(ref *NodeReference) error {
 // If the result is not empty, this
 // Forest is to be considered corrupted and should be discarded.
 func (s *Forest) CheckErrors() error {
+	s.errorsMutex.Lock()
+	defer s.errorsMutex.Unlock()
 	return errors.Join(s.errors...)
+}
+
+// addError records an issue encountered during a forest operation. It is safe
+// to be called concurrently; see CheckErrors for retrieving recorded issues.
+func (s *Forest) addError(err error) {
+	s.errorsMutex.Lock()
+	defer s.errorsMutex.Unlock()
+	s.errors = append(s.errors, err)
 }
 
 func (s *Forest) Flush() error {
@@ -568,7 +579,7 @@ func (s *Forest) Flush() error {
 	)
 
 	if err != nil {
-		s.errors = append(s.errors, err)
+		s.addError(err)
 	}
 
 	return err
