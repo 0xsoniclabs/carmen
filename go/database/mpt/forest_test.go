@@ -82,7 +82,9 @@ func TestForest_ErrorsCanBeRecordedAndCheckedConcurrently(t *testing.T) {
 			<-start
 			root := NewNodeReference(AccountId(uint64(i) + 1))
 			_, _, err := forest.GetAccountInfo(&root, common.Address{1})
-			require.ErrorIs(t, err, injectedErr)
+			if !errors.Is(err, injectedErr) {
+				t.Errorf("expected injected stock failure, got %v", err)
+			}
 		})
 		wg.Go(func() {
 			<-start
