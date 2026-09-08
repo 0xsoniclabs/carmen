@@ -151,9 +151,7 @@ func (c *LruCache[K, V]) Remove(key K) (original V, exists bool) {
 }
 
 func (c *LruCache[K, V]) Clear() {
-	if len(c.cache) > 0 {
-		c.cache = make(map[K]*entry[K, V], c.capacity)
-	}
+	clear(c.cache)
 	c.head = nil
 	c.tail = nil
 }
