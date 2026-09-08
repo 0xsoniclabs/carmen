@@ -26,6 +26,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -50,6 +51,50 @@ var forestConfigs = map[string]ForestConfig{
 	"mutable_128k":   {Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 128 * 1024}},
 	"immutable_1k":   {Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}},
 	"immutable_128k": {Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 128 * 1024}},
+}
+
+func TestForest_ErrorsCanBeRecordedAndCheckedConcurrently(t *testing.T) {
+	// Regression test: forest operations used to append encountered errors to a
+	// plain slice while CheckErrors read it, without synchronization. This test
+	// makes concurrent operations fail through an injected stock while
+	// CheckErrors is polled, which is reported by the race detector.
+	injectedErr := errors.New("injected stock failure")
+	forest, err := OpenInMemoryForest(t.TempDir(), S5LiveConfig, ForestConfig{Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}})
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
+	accounts.EXPECT().Get(gomock.Any()).AnyTimes().Return(AccountNode{}, injectedErr)
+	stockBackup := forest.accounts
+	forest.accounts = accounts
+	defer func() {
+		forest.accounts = stockBackup
+		require.ErrorIs(t, forest.Close(), injectedErr)
+	}()
+
+	// All goroutines wait for the start signal to maximize the overlap of
+	// recording and checking errors.
+	const N = 100
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range N {
+		wg.Go(func() {
+			<-start
+			root := NewNodeReference(AccountId(uint64(i) + 1))
+			_, _, err := forest.GetAccountInfo(&root, common.Address{1})
+			require.ErrorIs(t, err, injectedErr)
+		})
+		wg.Go(func() {
+			<-start
+			_ = forest.CheckErrors()
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	err = forest.CheckErrors()
+	require.ErrorIs(t, err, injectedErr)
+	require.Len(t, forest.errors, N)
 }
 
 func TestForest_Cannot_Open_Corrupted_Stock_Meta(t *testing.T) {
