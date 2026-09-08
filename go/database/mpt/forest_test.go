@@ -875,6 +875,56 @@ func TestForest_Flush_Makes_Node_Clean(t *testing.T) {
 	}
 }
 
+func TestForest_Flush_DoesNotAccumulateRecordedErrors(t *testing.T) {
+	testCases := map[string]func(*testing.T, *Forest) error{
+		"ForestOp": func(t *testing.T, forest *Forest) error {
+			root := NewNodeReference(AccountId(1))
+			_, _, err := forest.GetAccountInfo(&root, common.Address{1})
+			return err
+		},
+		"WriteBuffer": func(t *testing.T, forest *Forest) error {
+			forest.writeBuffer.Add(AccountId(1), shared.MakeShared[Node](&AccountNode{}))
+			return forest.Flush()
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Regression test: Flush used to re-record all previously recorded errors
+			// together with the new ones, nesting the whole list once more on every
+			// call and thereby doubling its size each time.
+			injectedErr := errors.New("injected stock failure")
+			forest, err := OpenInMemoryForest(t.TempDir(), S5LiveConfig, ForestConfig{Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}})
+			require.NoError(t, err)
+
+			ctrl := gomock.NewController(t)
+			accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
+			accounts.EXPECT().Get(gomock.Any()).AnyTimes().Return(AccountNode{}, injectedErr)
+			accounts.EXPECT().Set(gomock.Any(), gomock.Any()).AnyTimes().Return(injectedErr)
+			accounts.EXPECT().Flush().AnyTimes().Return(nil)
+			stockBackup := forest.accounts
+			forest.accounts = accounts
+			defer func() {
+				forest.accounts = stockBackup
+				require.ErrorIs(t, forest.Close(), injectedErr)
+			}()
+
+			// Record a single error.
+			err = testCase(t, forest)
+			require.ErrorIs(t, err, injectedErr)
+			require.Len(t, forest.errors, 1)
+			size := len(forest.CheckErrors().Error())
+
+			// Flushing keeps reporting the error without growing the record.
+			for range 2 {
+				require.ErrorIs(t, forest.Flush(), injectedErr)
+				require.Len(t, forest.errors, 1)
+				require.Equal(t, size, len(forest.CheckErrors().Error()))
+			}
+		})
+	}
+}
+
 func TestForest_flushNode_EmptyId(t *testing.T) {
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
