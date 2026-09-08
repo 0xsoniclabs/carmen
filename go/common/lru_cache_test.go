@@ -12,6 +12,7 @@ package common
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -202,4 +203,38 @@ func TestLruCache_Clear_RemovesAllElements(t *testing.T) {
 
 	cache.Clear()
 	require.Zero(t, len(cache.cache))
+}
+
+func TestLruCache_GetMemoryFootprint_ReturnsCorrectSize(t *testing.T) {
+	require := require.New(t)
+	cache := NewLruCache[int, *int](3)
+	cache.Set(1, new(int))
+	cache.Set(2, new(int))
+
+	expectedSize := unsafe.Sizeof(*cache) +
+		3*(unsafe.Sizeof(int(0))+unsafe.Sizeof(&entry[int, *int]{})) +
+		2*(unsafe.Sizeof(entry[int, *int]{})+unsafe.Sizeof(int(0)))
+
+	require.Equal(expectedSize, cache.GetMemoryFootprint(unsafe.Sizeof(int(0))).Total())
+}
+
+func TestLruCache_GetDynamicMemoryFootprint_ReturnsCorrectSize(t *testing.T) {
+	require := require.New(t)
+	inputs := [][]int{
+		{1, 2, 3},
+		{4, 5},
+		{6, 7, 8, 9},
+	}
+	cache := NewLruCache[int, []int](3)
+
+	expectedSize := unsafe.Sizeof(*cache) +
+		3*(unsafe.Sizeof(int(0))+unsafe.Sizeof(&entry[int, []int]{}))
+	for i, input := range inputs {
+		cache.Set(i, input)
+		expectedSize += unsafe.Sizeof(entry[int, []int]{}) + uintptr(len(input))*unsafe.Sizeof(int(0))
+	}
+
+	require.Equal(expectedSize, cache.GetDynamicMemoryFootprint(func(v []int) uintptr {
+		return uintptr(len(v)) * unsafe.Sizeof(int(0))
+	}).Total())
 }
