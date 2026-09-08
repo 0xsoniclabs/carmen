@@ -268,6 +268,8 @@ func (a *ArchiveTrie) Add(block uint64, update common.Update, hint any) error {
 }
 
 func (a *ArchiveTrie) GetBlockRoot(block uint64) (NodeId, error) {
+	a.rootsMutex.Lock()
+	defer a.rootsMutex.Unlock()
 	if block >= uint64(a.roots.length()) {
 		return EmptyId(), fmt.Errorf("block %d not present in archive", block)
 	}

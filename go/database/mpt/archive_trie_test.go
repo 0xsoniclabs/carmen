@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1233,6 +1234,50 @@ func TestArchiveTrie_Add_FreezingFails(t *testing.T) {
 	if err := archive.Add(0, common.Update{}, nil); !errors.Is(err, injectedErr) {
 		t.Errorf("applying update should fail, got %v, want: %v", err, injectedErr)
 	}
+}
+
+func TestArchiveTrie_GetBlockRoot_IsSynchronizedWithAdd(t *testing.T) {
+	// GetBlockRoot must read the root list under the same mutex Add holds while
+	// appending to it; the race detector flags any unsynchronized access.
+	require := require.New(t)
+	archive, err := OpenArchiveTrie(t.TempDir(), S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+	require.NoError(err)
+	defer func() { require.NoError(archive.Close()) }()
+
+	const N = 2_000
+	roots := make([]NodeId, N+1)
+	var height atomic.Uint64
+	done := make(chan struct{})
+	var mismatches atomic.Int64
+	var wg sync.WaitGroup
+	wg.Go(func() { // queries the newest block while blocks are being appended
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			block := height.Load()
+			if block == 0 {
+				continue
+			}
+			root, err := archive.GetBlockRoot(block)
+			if err != nil || root != roots[block] {
+				mismatches.Add(1)
+			}
+		}
+	})
+	for block := uint64(1); block <= N; block++ {
+		addr := common.Address{byte(block), byte(block >> 8)}
+		update := common.Update{Balances: []common.BalanceUpdate{{Account: addr, Balance: amount.New(block)}}}
+		require.NoError(archive.Add(block, update, nil))
+		roots[block], err = archive.GetBlockRoot(block)
+		require.NoError(err)
+		height.Store(block)
+	}
+	close(done)
+	wg.Wait()
+	require.Zero(mismatches.Load())
 }
 
 func TestArchiveTrie_GettingView_Block_OutOfRange(t *testing.T) {
