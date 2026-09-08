@@ -125,3 +125,70 @@ func TestCache_Entry_String(t *testing.T) {
 		t.Errorf("provided string does not match: %s != %s", got, want)
 	}
 }
+
+func TestLruCache_dropLast_RemovesLastElementCorrectly(t *testing.T) {
+	testCases := map[string]struct {
+		init        func() *LruCache[int, int]
+		expectedLen int
+	}{
+		"single value": {
+			init: func() *LruCache[int, int] {
+				cache := NewLruCache[int, int](4)
+				cache.Set(1, 2)
+				return cache
+			},
+			expectedLen: 0,
+		},
+		"multiple values": {
+			init: func() *LruCache[int, int] {
+				cache := NewLruCache[int, int](4)
+				cache.Set(1, 2)
+				cache.Set(3, 4)
+				return cache
+			},
+			expectedLen: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			cache := tc.init()
+			dropped := cache.dropLast()
+			require.NotNil(dropped)
+			require.Equal(1, dropped.key)
+			require.Equal(2, dropped.val)
+			require.Equal(tc.expectedLen, len(cache.cache))
+		})
+	}
+}
+
+func TestLruCache_dropLast_ReturnsNilForEmptyCache(t *testing.T) {
+	cache := NewLruCache[int, int](4)
+	require.Nil(t, cache.dropLast())
+}
+
+func TestLruCache_dropLast_ClearsCacheOnSingleValueOrEmptyCache(t *testing.T) {
+	testCases := map[string]func() *LruCache[int, int]{
+		"empty": func() *LruCache[int, int] {
+			return NewLruCache[int, int](4)
+		},
+		"single value": func() *LruCache[int, int] {
+			cache := NewLruCache[int, int](4)
+			cache.Set(1, 2)
+			return cache
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cache := tc()
+			require.NotPanics(t, func() {
+				_ = cache.dropLast()
+			})
+			require.Zero(t, len(cache.cache))
+			require.Nil(t, cache.head)
+			require.Nil(t, cache.tail)
+		})
+	}
+}
