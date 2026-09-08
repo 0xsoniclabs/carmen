@@ -154,11 +154,10 @@ func TestLruCache_dropLast_RemovesLastElementCorrectly(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			cache := tc.init()
-			key, value := cache.dropLast()
-			require.NotNil(key)
-			require.NotNil(value)
-			require.Equal(1, *key)
-			require.Equal(2, *value)
+			dropped := cache.dropLast()
+			require.NotNil(dropped)
+			require.Equal(1, dropped.key)
+			require.Equal(2, dropped.val)
 			require.Equal(tc.expectedLen, len(cache.cache))
 		})
 	}
@@ -166,9 +165,7 @@ func TestLruCache_dropLast_RemovesLastElementCorrectly(t *testing.T) {
 
 func TestLruCache_dropLast_ReturnsNilForEmptyCache(t *testing.T) {
 	cache := NewLruCache[int, int](4)
-	key, value := cache.dropLast()
-	require.Nil(t, key)
-	require.Nil(t, value)
+	require.Nil(t, cache.dropLast())
 }
 
 func TestLruCache_dropLast_ClearsCacheOnSingleValueOrEmptyCache(t *testing.T) {
@@ -187,7 +184,7 @@ func TestLruCache_dropLast_ClearsCacheOnSingleValueOrEmptyCache(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cache := tc()
 			require.NotPanics(t, func() {
-				_, _ = cache.dropLast()
+				_ = cache.dropLast()
 			})
 			require.Zero(t, len(cache.cache))
 			require.Nil(t, cache.head)
