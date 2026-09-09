@@ -356,7 +356,7 @@ func TestState_StateModifications_Failing(t *testing.T) {
 	}
 	update := common.Update{}
 	update.Balances = []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}}
-	if _, err := state.Apply(0, &update); !errors.Is(err, injectedErr) {
+	if _, _, err := state.Apply(0, &update); !errors.Is(err, injectedErr) {
 		t.Errorf("accessing data should fail")
 	}
 	nodeVisitor := NewMockNodeVisitor(ctrl)
@@ -460,10 +460,253 @@ func TestState_StateModificationsWithoutErrorHaveExpectedEffects(t *testing.T) {
 			}
 
 			update := common.Update{}
-			if _, err := state.Apply(0, &update); err != nil {
+			if _, _, err := state.Apply(0, &update); err != nil {
 				t.Errorf("error to apply: %s", err)
 			}
 		})
+	}
+}
+
+func TestMptState_Apply_ReturnsTheUndoListOfAPartiallyAppliedUpdate(t *testing.T) {
+	require := require.New(t)
+	injectedErr := errors.New("injectedError")
+	addr1, addr2 := common.Address{1}, common.Address{2}
+
+	ctrl := gomock.NewController(t)
+	db := NewMockDatabase(ctrl)
+	// The balance update succeeds and records its undo operation; the nonce
+	// update then fails, leaving the trie partially mutated.
+	gomock.InOrder(
+		db.EXPECT().GetAccountInfo(gomock.Any(), addr1).Return(AccountInfo{}, false, nil),
+		db.EXPECT().SetAccountInfo(gomock.Any(), addr1, gomock.Any()).Return(NodeReference{}, nil),
+		db.EXPECT().GetAccountInfo(gomock.Any(), addr2).Return(AccountInfo{}, false, nil),
+		db.EXPECT().SetAccountInfo(gomock.Any(), addr2, gomock.Any()).Return(NodeReference{}, injectedErr),
+	)
+
+	state := &MptState{trie: &LiveTrie{forest: db}}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{{Account: addr1, Balance: amount.New(1)}},
+		Nonces:   []common.NonceUpdate{{Account: addr2, Nonce: common.ToNonce(1)}},
+	}
+	undo, _, err := state.Apply(0, &update)
+
+	require.ErrorIs(err, injectedErr)
+	require.Len(undo, 1, "the operations undoing the partial update must be handed to the caller")
+}
+
+func TestMptState_Apply_DoesNotRecordMutationsMadeOutsideOfIt(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	// The import path mutates the state directly, one call per value of the dump.
+	// Recording those would retain a closure each and, worse, hand them to the
+	// next block as if they were part of it.
+	for i := range 10 {
+		addr := common.Address{byte(i)}
+		require.NoError(state.SetBalance(addr, amount.New(uint64(i+1))))
+		require.NoError(state.SetNonce(addr, common.ToNonce(uint64(i+1))))
+	}
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{0xFF}, Balance: amount.New(1)}},
+	}
+	undo, _, err := state.Apply(1, &update)
+	require.NoError(err)
+	require.Len(undo, 1, "the block must own only the operations of its own update")
+}
+
+func TestMptState_RecordsNoUndoOutsideOfApply(t *testing.T) {
+	testCases := map[string]func(state *MptState) error{
+		"setBalance": func(state *MptState) error {
+			return state.SetBalance(common.Address{1}, amount.New(1))
+		},
+		"setNonce": func(state *MptState) error {
+			return state.SetNonce(common.Address{1}, common.ToNonce(1))
+		},
+		"setCode": func(state *MptState) error {
+			return state.SetCode(common.Address{1}, []byte{0x01})
+		},
+		"setStorage": func(state *MptState) error {
+			return state.SetStorage(common.Address{1}, common.Key{1}, common.Value{1})
+		},
+	}
+
+	for tcName, tc := range testCases {
+		t.Run(tcName, func(t *testing.T) {
+			require := require.New(t)
+			state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+			require.NoError(err)
+			defer func() { require.NoError(state.Close()) }()
+
+			require.NoError(tc(state))
+			require.Nil(state.undoList)
+		})
+	}
+}
+
+func TestMptState_Apply_StartsAFreshUndoListForEachUpdate(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	first := common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}},
+	}
+	undo1, _, err := state.Apply(0, &first)
+	require.NoError(err)
+	require.Len(undo1, 1)
+
+	second := common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{2}, Balance: amount.New(2)}},
+	}
+	undo2, _, err := state.Apply(1, &second)
+	require.NoError(err)
+	require.Len(undo2, 1, "the operations of one update must not leak into the next")
+}
+
+func TestMptState_RevertLastBlock_RestoresBalanceNonceCodeAndStorage(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	addr := common.Address{1}
+	key := common.Key{1}
+
+	// An account the update modifies rather than creates.
+	setup := common.Update{
+		Balances: []common.BalanceUpdate{{Account: addr, Balance: amount.New(100)}},
+		Nonces:   []common.NonceUpdate{{Account: addr, Nonce: common.ToNonce(7)}},
+		Codes:    []common.CodeUpdate{{Account: addr, Code: []byte{0x01}}},
+		Slots:    []common.SlotUpdate{{Account: addr, Key: key, Value: common.Value{0xAA}}},
+	}
+	_, _, err = state.Apply(0, &setup)
+	require.NoError(err)
+	want, err := state.GetHash()
+	require.NoError(err)
+
+	update := common.Update{
+		Balances: []common.BalanceUpdate{{Account: addr, Balance: amount.New(200)}},
+		Nonces:   []common.NonceUpdate{{Account: addr, Nonce: common.ToNonce(8)}},
+		Codes:    []common.CodeUpdate{{Account: addr, Code: []byte{0x02, 0x03}}},
+		Slots:    []common.SlotUpdate{{Account: addr, Key: key, Value: common.Value{0xBB}}},
+	}
+	undo, _, err := state.Apply(1, &update)
+	require.NoError(err)
+
+	require.NoError(state.RevertLastBlock(undo))
+
+	got, err := state.GetHash()
+	require.NoError(err)
+	require.Equal(want, got, "the revert must restore the root of the previous block")
+
+	balance, err := state.GetBalance(addr)
+	require.NoError(err)
+	require.Equal(amount.New(100), balance)
+	nonce, err := state.GetNonce(addr)
+	require.NoError(err)
+	require.Equal(common.ToNonce(7), nonce)
+	code, err := state.GetCode(addr)
+	require.NoError(err)
+	require.Equal([]byte{0x01}, code)
+	value, err := state.GetStorage(addr, key)
+	require.NoError(err)
+	require.Equal(common.Value{0xAA}, value)
+}
+
+func TestMptState_RevertLastBlock_RemovesAnAccountCreatedByTheUpdate(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	// Seed an unrelated account so the trie is not empty to begin with.
+	seed := common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{9}, Balance: amount.New(5)}},
+	}
+	_, _, err = state.Apply(0, &seed)
+	require.NoError(err)
+	want, err := state.GetHash()
+	require.NoError(err)
+
+	// The update creates an account and fills its storage; undoing the creation
+	// must take the storage subtree with it.
+	addr := common.Address{1}
+	update := common.Update{
+		Balances: []common.BalanceUpdate{{Account: addr, Balance: amount.New(100)}},
+		Nonces:   []common.NonceUpdate{{Account: addr, Nonce: common.ToNonce(1)}},
+		Codes:    []common.CodeUpdate{{Account: addr, Code: []byte{0x01}}},
+		Slots: []common.SlotUpdate{
+			{Account: addr, Key: common.Key{1}, Value: common.Value{0xAA}},
+			{Account: addr, Key: common.Key{2}, Value: common.Value{0xBB}},
+		},
+	}
+	undo, _, err := state.Apply(1, &update)
+	require.NoError(err)
+
+	require.NoError(state.RevertLastBlock(undo))
+
+	got, err := state.GetHash()
+	require.NoError(err)
+	require.Equal(want, got, "the revert must remove the created account and its storage")
+
+	empty, err := state.HasEmptyStorage(addr)
+	require.NoError(err)
+	require.True(empty)
+}
+
+func TestMptState_RevertLastBlock_ReplaysOperationsInReverseOrder(t *testing.T) {
+	require := require.New(t)
+
+	var order []int
+	undo := []func() error{}
+	for i := range 3 {
+		undo = append(undo, func() error {
+			order = append(order, i)
+			return nil
+		})
+	}
+
+	require.NoError((&MptState{}).RevertLastBlock(undo))
+	require.Equal([]int{2, 1, 0}, order,
+		"an account that an update both created and filled must lose its slots first")
+}
+
+func TestMptState_RevertLastBlock_CollectsErrorsOfAllFailingOperations(t *testing.T) {
+	require := require.New(t)
+
+	first := errors.New("first")
+	second := errors.New("second")
+	attempted := 0
+	undo := []func() error{
+		func() error { attempted++; return first },
+		func() error { attempted++; return nil },
+		func() error { attempted++; return second },
+	}
+
+	err := (&MptState{}).RevertLastBlock(undo)
+
+	require.ErrorIs(err, first)
+	require.ErrorIs(err, second)
+	require.Equal(3, attempted, "a failing operation must not stop the remaining ones")
+}
+
+func TestMptState_RevertLastBlock_DoesNotModifyTheGivenUndoList(t *testing.T) {
+	require := require.New(t)
+
+	undo := []func() error{
+		func() error { return nil },
+		func() error { return nil },
+	}
+
+	require.NoError((&MptState{}).RevertLastBlock(undo))
+	require.Len(undo, 2, "the caller may retain the undo list")
+	for _, u := range undo {
+		require.NotNil(u)
 	}
 }
 

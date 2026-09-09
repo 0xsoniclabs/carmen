@@ -763,7 +763,7 @@ func TestArchiveTrie_CanProcessPrecomputedHashes(t *testing.T) {
 					{Account: addr2, Balance: blc2},
 				},
 			}
-			hints, err := live.Apply(1, &update)
+			_, hints, err := live.Apply(1, &update)
 			if err != nil {
 				t.Fatalf("failed to update live db: %v", err)
 			}
@@ -776,7 +776,7 @@ func TestArchiveTrie_CanProcessPrecomputedHashes(t *testing.T) {
 			update = common.Update{
 				Balances: []common.BalanceUpdate{{Account: addr1, Balance: blc2}},
 			}
-			hints, err = live.Apply(2, &update)
+			_, hints, err = live.Apply(2, &update)
 			if err != nil {
 				t.Fatalf("failed to update live db: %v", err)
 			}
@@ -798,7 +798,7 @@ func TestArchiveTrie_CanProcessPrecomputedHashes(t *testing.T) {
 				}
 				update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: blc1})
 			}
-			hints, err = live.Apply(4, &update)
+			_, hints, err = live.Apply(4, &update)
 			if err != nil {
 				t.Fatalf("failed to update live db: %v", err)
 			}

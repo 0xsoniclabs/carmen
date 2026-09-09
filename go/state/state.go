@@ -113,7 +113,8 @@ type LiveDB interface {
 	GetCodeHash(address common.Address) (hash common.Hash, err error)
 	HasEmptyStorage(addr common.Address) (bool, error)
 	GetHash() (hash common.Hash, err error)
-	Apply(block uint64, update *common.Update) (archiveUpdateHints common.Releaser, err error)
+	Apply(block uint64, update *common.Update) (undoList []func() error, archiveUpdateHints common.Releaser, err error)
+	RevertLastBlock(undo []func() error) error
 	Flush() error
 	Close() error
 	common.MemoryFootprintProvider
