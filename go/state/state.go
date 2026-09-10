@@ -14,8 +14,10 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -178,6 +180,42 @@ func (h *WaitHandle) Wait() error {
 // for.
 func (h *WaitHandle) Then(transform func(error) error) *WaitHandle {
 	return &WaitHandle{wait: func() error { return transform(h.Wait()) }}
+}
+
+// irreversibleBlock is a StagedBlock for a state that doesn't support staging.
+// Commit has nothing left to do but hand out a handle on whatever asynchronous work the state
+// started, reporting on the given channel, and Rollback reports that this state does not support it.
+//
+// It serves the state implementations that neither maintain an archive nor stage:
+// their staged sequence is always empty, so no ordering rule can be broken and
+// every block is final the moment it is applied.
+type irreversibleBlock struct {
+	block uint64
+	hash  func() common.Hash
+	done  <-chan error
+
+	// committed rejects a second decision, informing the caller
+	// of a misuse of the interface.
+	committed atomic.Bool
+}
+
+func NewIrreversibleBlock(block uint64, hash func() common.Hash, done <-chan error) StagedBlock {
+	return &irreversibleBlock{block: block, hash: hash, done: done}
+}
+
+func (b *irreversibleBlock) StateHash() common.Hash {
+	return b.hash()
+}
+
+func (b *irreversibleBlock) Commit() (*WaitHandle, error) {
+	if !b.committed.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("%w: cannot commit block %d: it has already been committed", ErrStagedBlockMisuse, b.block)
+	}
+	return NewWaitHandle(b.done), nil
+}
+
+func (b *irreversibleBlock) Rollback() error {
+	return fmt.Errorf("%w: cannot roll back block %d: this state does not support rolling back blocks", ErrStagedBlockMisuse, b.block)
 }
 
 type LiveDB interface {

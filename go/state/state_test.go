@@ -745,6 +745,63 @@ func createState(t *testing.T, name, dir string) state.State {
 	return nil
 }
 
+func TestIrreversibleBlock_StateHash_ReportsTheHashOfItsOwnBlock(t *testing.T) {
+	require := require.New(t)
+	want := common.Hash{0x42}
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return want }, nil)
+
+	require.Equal(want, block.StateHash())
+}
+
+func TestIrreversibleBlock_Commit_HasNothingLeftToDo(t *testing.T) {
+	require := require.New(t)
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, nil)
+
+	done, err := block.Commit()
+	require.NoError(err)
+	require.NoError(done.Wait())
+}
+
+func TestIrreversibleBlock_Commit_RejectsASecondDecision(t *testing.T) {
+	require := require.New(t)
+
+	block := state.NewIrreversibleBlock(7, func() common.Hash { return common.Hash{} }, nil)
+
+	// Committing does nothing here, but a caller deciding twice is making the
+	// mistake a staging state would report, and must hear about it on either.
+	_, err := block.Commit()
+	require.NoError(err)
+	_, err = block.Commit()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse)
+}
+
+func TestIrreversibleBlock_Commit_HandsOutTheOutcomeOfTheAsynchronousWork(t *testing.T) {
+	require := require.New(t)
+
+	injected := errors.New("injected error")
+	written := make(chan error, 1)
+	written <- injected
+	close(written)
+
+	block := state.NewIrreversibleBlock(1, func() common.Hash { return common.Hash{} }, written)
+
+	done, err := block.Commit()
+	require.NoError(err)
+	require.ErrorIs(done.Wait(), injected)
+}
+
+func TestIrreversibleBlock_Rollback_IsRejected(t *testing.T) {
+	require := require.New(t)
+
+	block := state.NewIrreversibleBlock(7, func() common.Hash { return common.Hash{} }, nil)
+
+	err := block.Rollback()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse)
+	require.ErrorContains(err, "block 7")
+}
+
 func TestWaitHandle_Wait_ReturnsImmediatelyWithoutWork(t *testing.T) {
 	require.NoError(t, state.NewWaitHandle(nil).Wait())
 }
