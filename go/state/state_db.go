@@ -1322,18 +1322,24 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 	}
 
 	// Send the update to the state.
-	archiveDone, err := s.state.Apply(block, update)
+	staged, err := s.state.Apply(block, update)
 	var errRelay chan error
-	if archiveDone != nil {
-		// Relay any error from the archive update back to the caller.
-		errRelay = make(chan error, 1)
-		go func() {
-			defer close(errRelay)
-			if syncError := <-archiveDone; syncError != nil {
-				s.trackErrors(fmt.Errorf("failed to update archive for block %d: %w", block, syncError))
-				errRelay <- syncError
-			}
-		}()
+	if err == nil && staged != nil {
+		// Nothing can decide a block's fate through this StateDB yet, so the block
+		// is committed the moment it is applied.
+		var archiveDone *WaitHandle
+		archiveDone, err = staged.Commit()
+		if archiveDone != nil {
+			// Relay any error from the archive update back to the caller.
+			errRelay = make(chan error, 1)
+			go func() {
+				defer close(errRelay)
+				if syncError := archiveDone.Wait(); syncError != nil {
+					s.trackErrors(fmt.Errorf("failed to update archive for block %d: %w", block, syncError))
+					errRelay <- syncError
+				}
+			}()
+		}
 	}
 
 	if err != nil {
@@ -1557,9 +1563,19 @@ func (l *bulkLoad) apply() {
 		l.errs = append(l.errs, err)
 		return
 	}
-	_, err := l.db.state.Apply(l.block, l.update)
+	staged, err := l.db.state.Apply(l.block, l.update)
 	l.update = common.Update{}
+	if err == nil && staged == nil {
+		err = fmt.Errorf("state applied block %d without returning a staged block", l.block)
+	}
 	if err != nil {
+		l.errs = append(l.errs, err)
+		return
+	}
+	// A bulk loaded block is never taken back, so it is committed right away. The
+	// archive write is left to complete asynchronously, as it was before staging
+	// existed; its errors surface through Check.
+	if _, err := staged.Commit(); err != nil {
 		l.errs = append(l.errs, err)
 	}
 }

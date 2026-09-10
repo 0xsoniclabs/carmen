@@ -225,15 +225,11 @@ func (s *GoState) GetCommitment() future.Future[result.Result[common.Hash]] {
 	return future.Immediate(result.Ok(h))
 }
 
-// Apply applies the update to the LiveDB, stages the resulting block, and
-// commits it at once. Nothing can hold a staged block yet, so a block is still
-// final the moment it is applied.
-//
-// The channel signals the completion of any spawned asynchronous operations
-// like the update of the archive, if there is such.
-// The channel may be nil if there are no asynchronous operations to be performed.
-// If the asynchronous operations fail, the error is returned through the channel.
-func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error) {
+// Apply applies the update to the LiveDB and stages the resulting block. The
+// archive is deliberately left untouched: an archive is append-only, so a block
+// may only reach it once it is certain to stay, which is what StagedBlock.Commit
+// declares.
+func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 	if err := s.getStateError(); err != nil {
 		return nil, err
 	}
@@ -276,30 +272,9 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 		hints:  archiveUpdateHints,
 	})
 
-	// The block is decided the moment it is staged: no caller can hold it, so
-	// there is nobody to decide it later.
-	archiveWriteDone, err := handle.Commit()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.getStateError(); err != nil {
-		return nil, err
-	}
-
-	if s.archive == nil {
-		return nil, nil // no archive, nothing to wait for
-	}
-	// Apply still reports the outcome of the archive write on a channel. The
-	// block was committed right here, so this is its only waiter.
-	relay := make(chan error, 1)
-	go func() {
-		defer close(relay)
-		if err := archiveWriteDone.Wait(); err != nil {
-			relay <- err
-		}
-	}()
-	return relay, nil
+	s.stagedLock.Lock()
+	defer s.stagedLock.Unlock()
+	return handle, nil
 }
 
 // stageBlock appends the block to the staged queue and returns the handle a

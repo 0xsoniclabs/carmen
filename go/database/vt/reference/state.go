@@ -102,7 +102,7 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *State) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 
 	for _, update := range update.Nonces {
 		key := s.embedding.getBasicDataKey(update.Account)
@@ -145,7 +145,10 @@ func (s *State) Apply(block uint64, update common.Update) (<-chan error, error) 
 		}
 	}
 
-	return nil, nil
+	// The root is taken now: it is the root of this block, and reading it later
+	// would report the root of whichever block came after.
+	hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
