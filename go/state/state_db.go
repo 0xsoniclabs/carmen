@@ -121,15 +121,14 @@ type StateDB interface {
 	VmStateDB
 
 	BeginBlock()
-	// EndBlock commits pending changes into a block and triggers the asynchronous
-	// update of the Live and Archive DB.
-	// The channel signals the completion of any spawned asynchronous operations
-	// like the update of the archive, if there is such.
-	// The channel may be nil if there are no asynchronous operations to be performed.
-	// If the asynchronous operations fail, the error is returned through the channel.
-	// Errors reported by this channel shall also be accumulated and
-	// reported by Check().
-	EndBlock(number uint64) <-chan error
+	// EndBlock collects the pending changes into a block and applies them to the
+	// live state, returning the block as staged: its content is live, but it is not
+	// yet part of the archive. The caller commits or rolls it back through the
+	// returned StagedBlock; until it does, the block can still be taken back.
+	//
+	// An archive failure reported by the handle Commit returns is also accumulated
+	// and reported by Check().
+	EndBlock(number uint64) (StagedBlock, error)
 
 	BeginEpoch()
 	EndEpoch(number uint64)
@@ -1233,18 +1232,18 @@ func (s *stateDB) BeginBlock() {
 	// ignored
 }
 
-// EndBlock commits pending changes into a block and triggers the asynchronous
-// update of the Live and Archive DB.
-func (s *stateDB) EndBlock(block uint64) <-chan error {
+// EndBlock collects the pending changes into a block and applies them to the live
+// state, returning the block as staged. See StateDB.EndBlock.
+func (s *stateDB) EndBlock(block uint64) (StagedBlock, error) {
 	if !s.canApplyChanges {
 		err := fmt.Errorf("unable to process EndBlock event in StateDB without permission to apply changes")
 		s.trackErrors(err)
-		return nil
+		return nil, err
 	}
 
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
-		return nil
+		return nil, err
 	}
 
 	update := common.Update{}
@@ -1318,40 +1317,62 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 
 	// Skip applying changes if there have been any issues.
 	if err := s.Check(); err != nil {
-		return nil
+		return nil, err
 	}
 
 	// Send the update to the state.
 	staged, err := s.state.Apply(block, update)
-	var errRelay chan error
-	if err == nil && staged != nil {
-		// Nothing can decide a block's fate through this StateDB yet, so the block
-		// is committed the moment it is applied.
-		var archiveDone *WaitHandle
-		archiveDone, err = staged.Commit()
-		if archiveDone != nil {
-			// Relay any error from the archive update back to the caller.
-			errRelay = make(chan error, 1)
-			go func() {
-				defer close(errRelay)
-				if syncError := archiveDone.Wait(); syncError != nil {
-					s.trackErrors(fmt.Errorf("failed to update archive for block %d: %w", block, syncError))
-					errRelay <- syncError
-				}
-			}()
-		}
+	if err == nil && staged == nil {
+		// Reported rather than wrapped: a wrapper around a nil block is itself
+		// non-nil, so it would pass a caller's nil check and only fail once the
+		// block is decided on.
+		err = fmt.Errorf("state applied block %d without returning a staged block", block)
 	}
-
 	if err != nil {
 		s.trackErrors(fmt.Errorf("failed to apply update for block %d: %w", block, err))
-		// even if there is an error, we return the channel to allow
-		// the caller to wait for the archive update to finish.
-		return errRelay
+		return nil, err
 	}
 
 	// Reset internal state for next block
 	s.ResetBlockContext()
-	return errRelay
+	return &stateDbStagedBlock{StagedBlock: staged, db: s, block: block}, nil
+}
+
+// stateDbStagedBlock adds the StateDB layer's concerns to a staged block: the
+// cached content this StateDB read from the live state must be dropped when the
+// block is rolled back, and an archive failure must be attributed to the block and
+// collected for Check.
+type stateDbStagedBlock struct {
+	StagedBlock
+	db    *stateDB
+	block uint64
+}
+
+func (b *stateDbStagedBlock) Commit() (*WaitHandle, error) {
+	done, err := b.StagedBlock.Commit()
+	if err != nil {
+		// Not collected here: a misuse is a mistake in the calling code and leaves
+		// the state intact, and any other error is one the state has already
+		// collected itself.
+		return nil, err
+	}
+	// Only the outcome of the archive write is an issue of this StateDB.
+	return done.Then(func(err error) error {
+		if err == nil {
+			return nil
+		}
+		err = fmt.Errorf("failed to update archive for block %d: %w", b.block, err)
+		b.db.trackErrors(err)
+		return err
+	}), nil
+}
+
+func (b *stateDbStagedBlock) Rollback() error {
+	if err := b.StagedBlock.Rollback(); err != nil {
+		return fmt.Errorf("failed to roll back block %d: %w", b.block, err)
+	}
+	b.db.dropCachedState()
+	return nil
 }
 
 func (s *stateDB) BeginEpoch() {
@@ -1506,13 +1527,21 @@ func (s *stateDB) resetReincarnationWhenExceeds(limit int) {
 }
 
 func (s *stateDB) resetState(state State) {
-	s.ResetBlockContext()
-	s.storedDataCache.Clear()
-	s.reincarnation = map[common.Address]uint64{}
+	s.dropCachedState()
 	s.errorsMutex.Lock()
 	s.errors = s.errors[0:0]
 	s.errorsMutex.Unlock()
 	s.state = state
+}
+
+// dropCachedState discards everything this StateDB has cached about the content
+// of the underlying state, without touching the collected errors. It is what a
+// rolled back block needs: the cached values were read from a state that has just
+// been taken back, while any error observed along the way remains valid.
+func (s *stateDB) dropCachedState() {
+	s.ResetBlockContext()
+	s.storedDataCache.Clear()
+	s.reincarnation = map[common.Address]uint64{}
 }
 
 func (s *stateDB) trackErrors(err error) {

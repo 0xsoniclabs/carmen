@@ -1214,6 +1214,8 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	wg.Wait()
 }
 
+// runAddBlock adds one block and keeps it. The block is committed, since ending it
+// only applies it to the live state -- it reaches the archive when it is committed.
 func runAddBlock(block uint64, stateDB state.StateDB) {
 	addr := common.Address{byte(block)}
 	key := common.Key{0xA}
@@ -1225,7 +1227,11 @@ func runAddBlock(block uint64, stateDB state.StateDB) {
 	stateDB.SetCode(addr, make([]byte, 80))
 	stateDB.SetNonce(addr, 1)
 	stateDB.EndTransaction()
-	stateDB.EndBlock(block)
+	staged, err := stateDB.EndBlock(block)
+	if err != nil {
+		return // < collected by, and reported through, the state's Check
+	}
+	_, _ = staged.Commit()
 }
 
 // countingReleaser counts how often its resources have been released.
