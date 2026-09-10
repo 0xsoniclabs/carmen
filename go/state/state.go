@@ -15,6 +15,7 @@ package state
 import (
 	"context"
 	"io"
+	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -26,6 +27,12 @@ import (
 // NoArchiveError is an error returned by implementation of the State interface
 // for archive operations if no archive is maintained by this implementation.
 const NoArchiveError = common.ConstError("state does not maintain archive data")
+
+// ErrStagedBlockMisuse reports that a StagedBlock was used against its contract:
+// decided twice, decided out of order, or waited for without being committed. It
+// marks a mistake in the calling code rather than a failure of the state, so the
+// state stays usable and does not collect it as an issue.
+const ErrStagedBlockMisuse = common.ConstError("staged block used out of contract")
 
 // State interfaces provides access to accounts and smart contract values memory.
 type State interface {
@@ -102,6 +109,75 @@ type State interface {
 	// Temporary staging data is placed under scratchDir.
 	// If successful, expected root hash is returned.
 	Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error)
+}
+
+// StagedBlock is a block that has been applied to the live state but is not yet
+// part of the archive. It is what lets a caller execute several blocks ahead of a
+// decision it has not taken yet and then keep or discard each of them.
+//
+// Exactly one of Commit or Rollback must be called. Both invalidate the block, and
+// a second call on it reports an error rather than acting twice.
+//
+// Ordering is enforced rather than merely documented, because each operation is
+// only meaningful at one end of the staged sequence. Commit applies to the OLDEST
+// staged block, since the archive is append-only and must receive blocks in order.
+// Rollback applies to the NEWEST, since every undo operation restores a value read
+// before its own block ran, and so reconstructs the intended state only once every
+// later block has already been rolled back.
+type StagedBlock interface {
+	// StateHash returns the root of the live state as of this block.
+	StateHash() common.Hash
+
+	// Commit promotes this block into the archive. It returns as soon as the write
+	// is under way, without waiting for it to complete; the returned handle allows
+	// waiting for it. The handle is never nil when the error is.
+	//
+	// It reports an error if this is not the oldest staged block, or if the block
+	// has already been committed or rolled back.
+	Commit() (*WaitHandle, error)
+
+	// Rollback reverts this block from the live state, restoring the root its
+	// predecessor left behind.
+	//
+	// It reports an error if this is not the newest staged block, or if the block
+	// has already been committed or rolled back.
+	Rollback() error
+}
+
+// WaitHandle is the outcome of the archive write a Commit started. Wait blocks
+// until the write has completed and reports how it went; it returns immediately
+// if there was nothing to write, as on a state that maintains no archive.
+//
+// Every caller of Wait, however many and however late, gets the same outcome. The
+// asynchronous work reports it once, on a channel closed afterwards, so reading
+// that channel directly would report success to everyone but the first reader.
+type WaitHandle struct {
+	wait func() error
+	once sync.Once
+	err  error
+}
+
+// NewWaitHandle wraps the channel on which asynchronous work reports its outcome.
+// A nil channel means there is nothing to wait for.
+func NewWaitHandle(done <-chan error) *WaitHandle {
+	if done == nil {
+		return &WaitHandle{wait: func() error { return nil }}
+	}
+	return &WaitHandle{wait: func() error { return <-done }}
+}
+
+// Wait blocks until the outcome is known and returns it.
+func (h *WaitHandle) Wait() error {
+	h.once.Do(func() { h.err = h.wait() })
+	return h.err
+}
+
+// Then derives a handle reporting this one's outcome passed through transform.
+// It is for a layer that has to attribute or collect the outcome before handing
+// it on; the transform runs at most once, when the derived handle is first waited
+// for.
+func (h *WaitHandle) Then(transform func(error) error) *WaitHandle {
+	return &WaitHandle{wait: func() error { return transform(h.Wait()) }}
 }
 
 type LiveDB interface {
