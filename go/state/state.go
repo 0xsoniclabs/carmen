@@ -59,12 +59,13 @@ type State interface {
 	// HasEmptyStorage returns true if the contract has no storage attached to it.
 	HasEmptyStorage(addr common.Address) (bool, error)
 
-	// Apply applies the provided updates to the state content.
-	// The channel signals the completion of any spawned asynchronous operations
-	// like the update of the archive, if there is such.
-	// The channel may be nil if there are no asynchronous operations to be performed.
-	// If the asynchronous operations fail, the error is returned through the channel.
-	Apply(block uint64, update common.Update) (<-chan error, error)
+	// Apply applies the provided updates to the live state and returns the result
+	// as a staged block: applied to the live state, but not yet promoted into the
+	// archive. The caller decides its fate through the returned StagedBlock.
+	//
+	// Several blocks may be staged at once, which lets a caller execute ahead of a
+	// decision it has not taken yet.
+	Apply(block uint64, update common.Update) (StagedBlock, error)
 
 	// GetHash hashes the state.
 	// Deprecated: use GetCommitment instead.

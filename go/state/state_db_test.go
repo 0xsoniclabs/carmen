@@ -4009,6 +4009,14 @@ func TestStateDB_ProvidesTransactionChanges(t *testing.T) {
 	}
 }
 
+// bulkStaged returns the staged block a mocked State hands to a bulk load, which
+// commits it right away.
+func bulkStaged(ctrl *gomock.Controller) *MockStagedBlock {
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(nil), nil)
+	return staged
+}
+
 func TestStateDB_BulkLoadReachesState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
@@ -4022,7 +4030,7 @@ func TestStateDB_BulkLoadReachesState(t *testing.T) {
 		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(14)}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: code}},
 		Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-	})
+	}).Return(bulkStaged(ctrl), nil)
 	mock.EXPECT().Flush().Return(nil)
 	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
@@ -4110,7 +4118,7 @@ func TestStateDB_BulkLoadCloseReportsFlushIssues(t *testing.T) {
 	state := NewMockState(ctrl)
 
 	injectedError := fmt.Errorf("injected error")
-	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(bulkStaged(ctrl), nil)
 	state.EXPECT().Flush().Return(injectedError)
 
 	bulk := bulkLoad{
@@ -4131,7 +4139,7 @@ func TestStateDB_BulkLoadCloseReportsHashingIssues(t *testing.T) {
 	state := NewMockState(ctrl)
 
 	injectedError := fmt.Errorf("injected error")
-	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(bulkStaged(ctrl), nil)
 	state.EXPECT().Flush().Return(nil)
 	state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
 
@@ -4155,7 +4163,9 @@ func TestStateDB_ThereCanBeMultipleBulkLoadPhases(t *testing.T) {
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	mock.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
+	mock.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(uint64, common.Update) (StagedBlock, error) { return bulkStaged(ctrl), nil },
+	).AnyTimes()
 	mock.EXPECT().Flush().Times(N).Return(nil)
 	mock.EXPECT().GetCommitment().Times(N).DoAndReturn(func() future.Future[result.Result[common.Hash]] {
 		return future.Immediate(result.Ok(common.Hash{}))
@@ -4243,7 +4253,7 @@ func TestBulkLoad_CloseResetsLocalCache(t *testing.T) {
 		mock.EXPECT().GetBalance(address1).Return(balance1, nil),
 		mock.EXPECT().GetBalance(address2).Return(balance1, nil),
 		mock.EXPECT().GetBalance(address3).Return(balance1, nil),
-		mock.EXPECT().Apply(uint64(1), gomock.Any()),
+		mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(bulkStaged(ctrl), nil),
 		mock.EXPECT().Flush(),
 		mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 	)
@@ -4306,7 +4316,7 @@ func TestStateDB_EffectsOfBulkLoadAreSeenByStateDB(t *testing.T) {
 	state.EXPECT().GetCodeSize(addr).Return(0, nil)
 	gomock.InOrder(
 		state.EXPECT().GetBalance(addr).Return(amount.New(), nil),
-		state.EXPECT().Apply(gomock.Any(), gomock.Any()),
+		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(bulkStaged(ctrl), nil),
 		state.EXPECT().Flush(),
 		state.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 		state.EXPECT().GetBalance(addr).Return(balance1, nil),
@@ -4923,11 +4933,11 @@ func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
 
 		applyDone := make(chan error)
 
+		staged := NewMockStagedBlock(ctrl)
+		staged.EXPECT().Commit().Return(NewWaitHandle(applyDone), nil)
+
 		mock.EXPECT().Check().AnyTimes()
-		mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
-			func(_ uint64, _ common.Update) (<-chan error, error) {
-				return applyDone, nil
-			})
+		mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 		done := db.EndBlock(1)
 		if done == nil {
@@ -4985,11 +4995,11 @@ func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker_WhenApplyReturnsChanne
 	injectedError := fmt.Errorf("injected error")
 	applyDone := make(chan error)
 
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(applyDone), nil)
+
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
-		func(_ uint64, _ common.Update) (<-chan error, error) {
-			return applyDone, nil
-		})
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 	done := db.EndBlock(1)
 	if done == nil {
@@ -5019,11 +5029,13 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 
 	applyDone := make(chan error)
 
+	// Committing reports an issue the state collected earlier and still hands out
+	// the handle on the archive write, which then fails as well.
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(applyDone), injectedError1)
+
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
-		func(_ uint64, _ common.Update) (<-chan error, error) {
-			return applyDone, injectedError1
-		})
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 	done := db.EndBlock(1)
 	if done == nil {
