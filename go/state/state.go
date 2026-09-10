@@ -182,33 +182,25 @@ func (h *WaitHandle) Then(transform func(error) error) *WaitHandle {
 	return &WaitHandle{wait: func() error { return transform(h.Wait()) }}
 }
 
-// NewIrreversibleBlock returns a StagedBlock for a state that applies a block the
-// moment Apply is called and offers no way to take it back. Commit has nothing
-// left to do but hand out a handle on whatever asynchronous work the state
-// started, reporting on the given channel (pass nil if there is none), and
-// Rollback reports that this state does not support it.
+// irreversibleBlock is a StagedBlock for a state that doesn't support staging.
+// Commit has nothing left to do but hand out a handle on whatever asynchronous work the state
+// started, reporting on the given channel, and Rollback reports that this state does not support it.
 //
 // It serves the state implementations that neither maintain an archive nor stage:
 // their staged sequence is always empty, so no ordering rule can be broken and
 // every block is final the moment it is applied.
-//
-// The hash function must report the root of this block. Reading the live root when
-// asked instead would make a handle kept across a later block report that block's
-// root. A state that computes its root asynchronously can resolve the value when
-// the function is first called.
-func NewIrreversibleBlock(block uint64, hash func() common.Hash, done <-chan error) StagedBlock {
-	return &irreversibleBlock{block: block, hash: hash, done: done}
-}
-
 type irreversibleBlock struct {
 	block uint64
 	hash  func() common.Hash
 	done  <-chan error
 
-	// committed rejects a second decision. Committing this block does nothing, but
-	// a caller that decides twice is making the same mistake it would be told about
-	// on a staging state, and should hear about it on either.
+	// committed rejects a second decision, informing the caller
+	// of a misuse of the interface.
 	committed atomic.Bool
+}
+
+func NewIrreversibleBlock(block uint64, hash func() common.Hash, done <-chan error) StagedBlock {
+	return &irreversibleBlock{block: block, hash: hash, done: done}
 }
 
 func (b *irreversibleBlock) StateHash() common.Hash {

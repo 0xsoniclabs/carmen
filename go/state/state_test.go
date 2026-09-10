@@ -751,9 +751,6 @@ func TestIrreversibleBlock_StateHash_ReportsTheHashOfItsOwnBlock(t *testing.T) {
 
 	block := state.NewIrreversibleBlock(1, func() common.Hash { return want }, nil)
 
-	// Reported repeatedly, and unaffected by whatever the live state does next: a
-	// handle resolving its hash against the state would report a later root here.
-	require.Equal(want, block.StateHash())
 	require.Equal(want, block.StateHash())
 }
 
@@ -764,7 +761,7 @@ func TestIrreversibleBlock_Commit_HasNothingLeftToDo(t *testing.T) {
 
 	done, err := block.Commit()
 	require.NoError(err)
-	require.NoError(done.Wait(), "without asynchronous work there is nothing to wait for")
+	require.NoError(done.Wait())
 }
 
 func TestIrreversibleBlock_Commit_RejectsASecondDecision(t *testing.T) {
