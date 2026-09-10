@@ -96,6 +96,9 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return s.state.HasEmptyStorage(addr)
 }
 
+// Apply is synchronized, and so is the StagedBlock it returns: the handle is
+// wrapped so that deciding it re-enters this wrapper's lock, keeping Commit and
+// Rollback mutually exclusive with every other access to the underlying state.
 func (s *syncedState) Apply(block uint64, update common.Update) (StagedBlock, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,6 +185,9 @@ func (b *syncedStagedBlock) StateHash() common.Hash {
 func (b *syncedStagedBlock) Commit() (*WaitHandle, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	// The handle is returned as is: waiting on it only reads a channel Commit
+	// established and touches no state guarded by the lock, and holding the lock
+	// for the duration of an archive write would stall every other operation.
 	return b.block.Commit()
 }
 

@@ -102,7 +102,8 @@ func Benchmark_Long_vs_Short_Flush_Period(b *testing.B) {
 			}
 
 			db.EndTransaction()
-			db.EndBlock(12)
+			_, err = db.EndBlock(12)
+			require.NoError(b, err)
 
 			if err := db.Check(); err != nil {
 				b.Errorf("update failed with unexpected error: %v", err)
