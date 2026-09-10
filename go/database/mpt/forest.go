@@ -550,12 +550,6 @@ func (s *Forest) Flush() error {
 	s.releaseQueue <- EmptyId() // signals a sync request
 	<-s.releaseSync
 
-	// Consume potential operation and release errors.
-	errs := []error{
-		s.CheckErrors(),
-		s.collectReleaseWorkerErrors(),
-	}
-
 	// Get snapshot of set of dirty Node IDs.
 	ids := make([]NodeId, 0, 1<<16)
 	s.nodeCache.ForEach(func(id NodeId, node *shared.Shared[Node]) {
@@ -567,10 +561,13 @@ func (s *Forest) Flush() error {
 		}
 	})
 
-	errs = append(errs, s.flushDirtyIds(ids))
-
+	// Only errors produced by this flush are recorded. Previously recorded
+	// errors are already part of the list and must not be re-added, since
+	// each addition would nest the whole list once more, doubling its size
+	// on every flush.
 	err := errors.Join(
-		errors.Join(errs...),
+		s.collectReleaseWorkerErrors(),
+		s.flushDirtyIds(ids),
 		s.writeBuffer.Flush(),
 		s.accounts.Flush(),
 		s.branches.Flush(),
@@ -582,7 +579,9 @@ func (s *Forest) Flush() error {
 		s.addError(err)
 	}
 
-	return err
+	// The result covers all issues encountered so far, including
+	// the ones recorded before this flush.
+	return s.CheckErrors()
 }
 
 func (s *Forest) flushDirtyIds(ids []NodeId) error {
