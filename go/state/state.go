@@ -129,8 +129,8 @@ type StagedBlock interface {
 	StateHash() common.Hash
 
 	// Commit promotes this block into the archive. It returns as soon as the write
-	// is under way, without waiting for it to complete; the returned handle is
-	// what waits for it. The handle is never nil when the error is.
+	// is under way, without waiting for it to complete; the returned handle allows
+	// waiting for it. The handle is never nil when the error is.
 	//
 	// It reports an error if this is not the oldest staged block, or if the block
 	// has already been committed or rolled back.
