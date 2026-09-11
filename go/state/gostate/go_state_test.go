@@ -587,7 +587,7 @@ func TestState_Apply_TakesTheBlockBackWhenHashingFails(t *testing.T) {
 // through Apply, which on this branch decides every block at once, and returns
 // the handle for it. Block n is given n undo operations and the root {n}, so a
 // test can tell the blocks apart by what is reverted.
-func stagedForTest(s *GoState, block uint64, hints common.Releaser) *stagedBlockHandle {
+func stagedForTest(s *GoState, block uint64, hints common.Releaser) state.StagedBlock {
 	return s.stageBlock(&stagedBlock{
 		block: block,
 		hash:  common.Hash{byte(block)},
@@ -601,9 +601,9 @@ func TestStagedBlockHandle_StaleOneDoesNotDecideAReplacementBlock(t *testing.T) 
 	// the identity of its staging, not by these values, so no replacement may be
 	// decided by it, however much the two have in common.
 	tests := map[string]stagedBlock{
-		"same block number, different root": {block: 1, hash: common.Hash{0xFF}},
-		"same root, different block number": {block: 2, hash: common.Hash{1}},
-		"same block number and root":        {block: 1, hash: common.Hash{1}},
+		"same block number different root": {block: 1, hash: common.Hash{0xFF}},
+		"same root different block number": {block: 2, hash: common.Hash{1}},
+		"same block number and root":       {block: 1, hash: common.Hash{1}},
 	}
 
 	for name, replacement := range tests {
@@ -616,15 +616,15 @@ func TestStagedBlockHandle_StaleOneDoesNotDecideAReplacementBlock(t *testing.T) 
 			s := &GoState{live: liveDB}
 			// stagedForTest sets the block hash to byte(block)
 			stale := stagedForTest(s, 1, nil)
-			require.NoError(s.revertNewest())
+			require.NoError(s.rollbackStaged(stale.(*stagedBlockHandle)))
 			fresh := s.stageBlock(&replacement)
 
 			_, err := stale.Commit()
 			require.ErrorIs(err, state.ErrStagedBlockMisuse)
-			require.ErrorContains(err, "not staged")
+			require.ErrorContains(err, "cannot commit")
 			err = stale.Rollback()
 			require.ErrorIs(err, state.ErrStagedBlockMisuse)
-			require.ErrorContains(err, "not staged")
+			require.ErrorContains(err, "cannot roll back")
 
 			_, err = fresh.Commit()
 			require.NoError(err)

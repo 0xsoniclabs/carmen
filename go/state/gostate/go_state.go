@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -43,9 +44,9 @@ type GoState struct {
 	// NOTE: this is unbounded, and may cause memory pressure.
 	staged     []*stagedBlock
 	stagedLock sync.Mutex
-	// stagedIds hands out the identity of each staged block, see stagedBlock.id.
+	// nextStagedId hands out the identity of each staged block, see stagedBlock.id.
 	// It is guarded by stagedLock.
-	stagedIds uint64
+	nextStagedId uint64
 
 	stateError     error // collect errors occurred during operation
 	stateErrorLock sync.RWMutex
@@ -268,6 +269,7 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 	}
 
 	handle := s.stageBlock(&stagedBlock{
+		state:  s,
 		block:  block,
 		hash:   hash,
 		update: update,
@@ -298,13 +300,13 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 
 // stageBlock appends the block to the staged queue and returns the handle a
 // caller decides it with.
-func (s *GoState) stageBlock(block *stagedBlock) *stagedBlockHandle {
+func (s *GoState) stageBlock(block *stagedBlock) state.StagedBlock {
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
-	s.stagedIds++
-	block.id = s.stagedIds
+	s.nextStagedId++
+	block.id = s.nextStagedId
 	s.staged = append(s.staged, block)
-	return &stagedBlockHandle{state: s, id: block.id, hash: block.hash}
+	return block.GetHandle()
 }
 
 // commitStaged promotes the block the handle stands for into the archive. It
@@ -329,13 +331,13 @@ func (s *GoState) commitStaged(handle *stagedBlockHandle) (*state.WaitHandle, er
 		if block.hints != nil {
 			block.hints.Release()
 		}
-		return state.NewWaitHandle(nil), s.getStateError()
+		return state.NewWaitHandle(nil), nil
 	}
 
 	done := make(chan error, 1)
 	s.archiveWriter <- archiveUpdate{block.block, &block.update, block.hints, done}
 	s.drainArchiveErrors()
-	return state.NewWaitHandle(done), s.getStateError()
+	return state.NewWaitHandle(done), nil
 }
 
 // rollbackStaged takes the block the handle stands for back from the LiveDB. It
@@ -349,27 +351,21 @@ func (s *GoState) rollbackStaged(handle *stagedBlockHandle) error {
 		return handle.decidedError("roll back")
 	}
 	last := len(s.staged) - 1
-	if last < 0 || !s.staged[last].isFor(handle) {
+	lastBlock := s.staged[last]
+	if last < 0 || !lastBlock.isFor(handle) {
 		return s.misplacedError("roll back", handle, "newest")
 	}
 	handle.status = stagedRolledBack
-	return s.revertNewest()
-}
-
-// revertNewest takes the newest staged block back from the LiveDB. It must be
-// called while holding stagedLock, with at least one block staged.
-func (s *GoState) revertNewest() error {
-	last := len(s.staged) - 1
-	block := s.staged[last]
 	s.staged = s.staged[:last]
 
-	if block.hints != nil {
-		block.hints.Release()
+	if lastBlock.hints != nil {
+		lastBlock.hints.Release()
 	}
-	if err := s.live.RevertLastBlock(block.undo); err != nil {
+	if err := s.live.RevertLastBlock(lastBlock.undo); err != nil {
 		s.addStateError(err)
+		return err
 	}
-	return s.getStateError()
+	return nil
 }
 
 // misplacedError explains that the handle's block is not at the end of the
@@ -416,12 +412,17 @@ func (s *GoState) drainArchiveErrors() {
 // commit, the undo operations to replay on rollback, and the identity the
 // block's handle is matched by.
 type stagedBlock struct {
+	state  *GoState
 	id     uint64
 	block  uint64
 	hash   common.Hash
 	update common.Update
 	undo   []func() error
 	hints  common.Releaser
+}
+
+func (b *stagedBlock) GetHandle() *stagedBlockHandle {
+	return &stagedBlockHandle{state: b.state, id: b.id, hash: b.hash}
 }
 
 // isFor reports whether the block is the one the handle stands for.
@@ -506,10 +507,10 @@ func (s *GoState) Flush() error {
 func (s *GoState) rollbackUndecidedBlocks() {
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
-	for len(s.staged) > 0 {
+	for _, block := range slices.Backward(s.staged) {
 		// The error is ignored: it is already recorded in the state error, which
 		// Close reports through its final Check.
-		_ = s.revertNewest()
+		_ = s.rollbackStaged(block.GetHandle())
 	}
 }
 
