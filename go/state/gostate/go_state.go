@@ -37,9 +37,7 @@ type GoState struct {
 
 	// staged holds the blocks applied to the LiveDB whose fate is not yet decided,
 	// oldest first, with everything either decision needs. A commit consumes the
-	// front, a rollback the back. The queue is guarded by its own lock rather than
-	// by the surrounding syncedState, because the handles a caller decides with
-	// do not pass through that wrapper. A decision holds the lock from consuming
+	// front, a rollback the back. A decision holds the lock from consuming
 	// its block to acting on it, so that the order in which blocks leave the
 	// queue is the order in which they reach the archive or are reverted.
 	// NOTE: this is unbounded, and may cause memory pressure.
