@@ -238,7 +238,11 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 	if err != nil {
 		// A failed update may have partially mutated the live state, and its undo
 		// list is the only way back (see LiveDB.Apply). Reverting it leaves the
-		// live state at the last complete block.
+		// live state at the last complete block. The hints are released as well:
+		// an update that fails while hashing has already allocated them.
+		if archiveUpdateHints != nil {
+			archiveUpdateHints.Release()
+		}
 		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
 			s.addStateError(revertErr)
 		}
@@ -296,11 +300,8 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 
 // consumeOldest removes the given block from the front of the staged sequence,
 // rejecting the call if it is not the oldest staged block or was already
-// consumed.
+// consumed. It must be called while holding stagedLock.
 func (s *GoState) consumeOldest(block *stagedBlock) error {
-	s.stagedLock.Lock()
-	defer s.stagedLock.Unlock()
-
 	if block.status != stagedPending {
 		return block.consumedError("commit")
 	}
@@ -314,11 +315,8 @@ func (s *GoState) consumeOldest(block *stagedBlock) error {
 
 // consumeNewest removes the given block from the back of the staged sequence,
 // rejecting the call if it is not the newest staged block or was already
-// consumed.
+// consumed. It must be called while holding stagedLock.
 func (s *GoState) consumeNewest(block *stagedBlock) error {
-	s.stagedLock.Lock()
-	defer s.stagedLock.Unlock()
-
 	if block.status != stagedPending {
 		return block.consumedError("roll back")
 	}
@@ -384,6 +382,12 @@ func (b *stagedBlock) StateHash() common.Hash {
 }
 
 func (b *stagedBlock) Commit() (*state.WaitHandle, error) {
+	// The lock is held until the update has been handed to the archive writer.
+	// Releasing it in between would let a concurrent commit of the next block
+	// consume the queue behind this one and yet reach the writer first.
+	b.state.stagedLock.Lock()
+	defer b.state.stagedLock.Unlock()
+
 	if err := b.state.consumeOldest(b); err != nil {
 		return nil, err
 	}
@@ -406,6 +410,11 @@ func (b *stagedBlock) Commit() (*state.WaitHandle, error) {
 }
 
 func (b *stagedBlock) Rollback() error {
+	// The lock is held until the block has been reverted, for the same reason
+	// Commit holds it: the undo operations only compose in queue order.
+	b.state.stagedLock.Lock()
+	defer b.state.stagedLock.Unlock()
+
 	if err := b.state.consumeNewest(b); err != nil {
 		return err
 	}
@@ -460,28 +469,25 @@ func (s *GoState) Flush() error {
 
 // rollbackUndecidedBlocks takes back every staged block whose fate was never
 // decided, newest first.
-func (s *GoState) rollbackUndecidedBlocks() error {
+func (s *GoState) rollbackUndecidedBlocks() {
 	for {
 		s.stagedLock.Lock()
 		if len(s.staged) == 0 {
 			s.stagedLock.Unlock()
-			return nil
+			return
 		}
 		newest := s.staged[len(s.staged)-1]
 		s.stagedLock.Unlock()
 
-		// Rollback consumes the block and collects any revert error in the
-		// state error, which Close reports through its final Check.
-		err := newest.Rollback()
-		if err != nil {
-			return err
-		}
+		// The error is ignored because the error
+		// is already recorded in the state error.
+		_ = newest.Rollback()
 	}
 }
 
 func (s *GoState) Close() error {
+	s.rollbackUndecidedBlocks()
 	s.addStateError(errors.Join(
-		s.rollbackUndecidedBlocks(),
 		s.Flush(),
 		s.live.Close(),
 	))

@@ -542,9 +542,12 @@ func TestState_Apply_RevertsThePartialUpdateWhenTheLiveDbFails(t *testing.T) {
 
 	// A failed update returns the undo operations of its partial mutations; Apply
 	// must replay them rather than leave a half-applied block in the live state.
+	// An update that fails while hashing has also allocated its archive hints
+	// already, and those must be released rather than leaked.
 	undo := make([]func() error, 3)
+	hints := &countingReleaser{}
 	reverted := false
-	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(undo, nil, injectedErr)
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(undo, hints, injectedErr)
 	liveDB.EXPECT().RevertLastBlock(gomock.Len(len(undo))).DoAndReturn(func([]func() error) error {
 		reverted = true
 		return nil
@@ -555,6 +558,7 @@ func TestState_Apply_RevertsThePartialUpdateWhenTheLiveDbFails(t *testing.T) {
 	_, err := db.Apply(1, common.Update{})
 	require.ErrorIs(err, injectedErr)
 	require.True(reverted, "the partial update must be reverted")
+	require.Equal(1, hints.releases, "the archive hints must be released")
 }
 
 func TestState_Apply_TakesTheBlockBackWhenHashingFails(t *testing.T) {
@@ -577,6 +581,212 @@ func TestState_Apply_TakesTheBlockBackWhenHashingFails(t *testing.T) {
 	_, err := db.Apply(1, common.Update{})
 	require.ErrorIs(err, injectedErr)
 	require.Equal(1, hints.releases, "the archive hints must be released")
+}
+
+// stagedForTest puts a block into the staged queue of a state without going
+// through Apply, which on this branch decides every block at once. Block n is
+// given n undo operations, so a test can tell the blocks apart by what is
+// reverted.
+func stagedForTest(s *GoState, block uint64, hints common.Releaser) *stagedBlock {
+	staged := &stagedBlock{
+		state: s,
+		block: block,
+		undo:  make([]func() error, block),
+		hints: hints,
+	}
+	s.staged = append(s.staged, staged)
+	return staged
+}
+
+func TestStagedBlock_Commit_ConsumesTheOldestBlockOnly(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+
+	s := &GoState{live: liveDB}
+	first := stagedForTest(s, 1, nil)
+	second := stagedForTest(s, 2, nil)
+
+	_, err := second.Commit()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse, "committing before the older staged block must be rejected")
+	require.ErrorContains(err, "not the oldest")
+
+	_, err = first.Commit()
+	require.NoError(err)
+	_, err = second.Commit()
+	require.NoError(err)
+	require.Empty(s.staged)
+}
+
+func TestStagedBlock_Rollback_TakesBlocksBackNewestFirst(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+
+	// Every undo operation restores a value read before its own block ran, so
+	// block 2 must be reverted before block 1.
+	gomock.InOrder(
+		liveDB.EXPECT().RevertLastBlock(gomock.Len(2)).Return(nil),
+		liveDB.EXPECT().RevertLastBlock(gomock.Len(1)).Return(nil),
+	)
+
+	s := &GoState{live: liveDB}
+	first := stagedForTest(s, 1, nil)
+	second := stagedForTest(s, 2, nil)
+
+	err := first.Rollback()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse, "rolling back before the newer staged block must be rejected")
+	require.ErrorContains(err, "not the newest")
+
+	require.NoError(second.Rollback())
+	require.NoError(first.Rollback())
+	require.Empty(s.staged)
+}
+
+func TestStagedBlock_DecidingTwiceIsRejected(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
+
+	s := &GoState{live: liveDB}
+	committed := stagedForTest(s, 1, nil)
+	rolledBack := stagedForTest(s, 2, nil)
+
+	_, err := committed.Commit()
+	require.NoError(err)
+	_, err = committed.Commit()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse, "a block must not be committed twice")
+	require.ErrorContains(err, "already been committed")
+	err = committed.Rollback()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse, "a committed block must not be rolled back")
+	require.ErrorContains(err, "already been committed")
+
+	require.NoError(rolledBack.Rollback())
+	err = rolledBack.Rollback()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse, "a block must not be rolled back twice")
+	require.ErrorContains(err, "already been rolled back")
+	_, err = rolledBack.Commit()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse, "a rolled back block must not be committed")
+	require.ErrorContains(err, "already been rolled back")
+}
+
+func TestStagedBlock_Rollback_ReleasesTheArchiveHints(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().RevertLastBlock(gomock.Any()).Return(nil)
+
+	hints := &countingReleaser{}
+	s := &GoState{live: liveDB}
+	staged := stagedForTest(s, 1, hints)
+
+	// A rolled back block never reaches the archive, so nobody else would
+	// release what the LiveDB allocated for it.
+	require.NoError(staged.Rollback())
+	require.Equal(1, hints.releases)
+}
+
+func TestState_Apply_ReleasesTheArchiveHintsWithoutAnArchive(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+
+	hints := &countingReleaser{}
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, hints, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+
+	db := newGoState(liveDB, nil, nil)
+
+	// Without an archive nobody consumes the hints, so committing the block
+	// releases them.
+	_, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+	require.Equal(1, hints.releases)
+}
+
+func TestState_Apply_HandsTheArchiveHintsToTheWriter(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	archiveDB := archive.NewMockArchive(ctrl)
+
+	hints := &countingReleaser{}
+	liveDB.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, hints, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil).AnyTimes()
+	// The archive receives exactly the hints the LiveDB produced for the block,
+	// and the writer releases them once it is done with them.
+	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), hints).DoAndReturn(
+		func(uint64, common.Update, common.Releaser) error {
+			require.Equal(0, hints.releases, "the hints must still be live while the archive uses them")
+			return nil
+		})
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	done, err := db.Apply(1, common.Update{})
+	require.NoError(err)
+	require.NoError(<-done)
+	require.NoError(db.Close()) // < the writer has finished by the time Close returns
+	require.Equal(1, hints.releases)
+}
+
+func TestGoState_Close_RollsBackUndecidedBlocksNewestFirst(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().Flush().Return(nil)
+	liveDB.EXPECT().Close().Return(nil)
+	gomock.InOrder(
+		liveDB.EXPECT().RevertLastBlock(gomock.Len(2)).Return(nil),
+		liveDB.EXPECT().RevertLastBlock(gomock.Len(1)).Return(nil),
+	)
+
+	hints := []*countingReleaser{{}, {}}
+	s := &GoState{live: liveDB}
+	first := stagedForTest(s, 1, hints[0])
+	second := stagedForTest(s, 2, hints[1])
+
+	require.NoError(s.Close())
+	require.Empty(s.staged)
+	for i, h := range hints {
+		require.Equal(1, h.releases, "the hints of block %d must be released", i+1)
+	}
+
+	// The handles were consumed by Close, so late decisions are ordinary misuse
+	// errors instead of operations on a closed state.
+	_, err := first.Commit()
+	require.ErrorIs(err, state.ErrStagedBlockMisuse)
+	require.ErrorIs(second.Rollback(), state.ErrStagedBlockMisuse)
+}
+
+func TestGoState_Close_RollsBackEveryUndecidedBlockDespiteAnEarlierIssue(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().Flush().Return(nil)
+	liveDB.EXPECT().Close().Return(nil)
+	gomock.InOrder(
+		liveDB.EXPECT().RevertLastBlock(gomock.Len(2)).Return(nil),
+		liveDB.EXPECT().RevertLastBlock(gomock.Len(1)).Return(nil),
+	)
+
+	s := &GoState{live: liveDB}
+	stagedForTest(s, 1, nil)
+	stagedForTest(s, 2, nil)
+
+	// A successful Rollback reports the issue the state has collected. Close must
+	// not take that for a failed rollback and stop, leaving the older block
+	// applied on a live state about to be closed.
+	injected := fmt.Errorf("injected error")
+	s.addStateError(injected)
+
+	require.ErrorIs(s.Close(), injected)
+	require.Empty(s.staged)
 }
 
 func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
