@@ -598,10 +598,12 @@ func stagedForTest(s *GoState, block uint64, hints common.Releaser) *stagedBlock
 
 func TestStagedBlockHandle_StaleOneDoesNotDecideAReplacementBlock(t *testing.T) {
 	// The stale handle stands for block 1 with root {1}. A handle is matched by
-	// both keys, so a block sharing only one of them must not be decided by it.
+	// the identity of its staging, not by these values, so no replacement may be
+	// decided by it, however much the two have in common.
 	tests := map[string]stagedBlock{
 		"same block number, different root": {block: 1, hash: common.Hash{0xFF}},
 		"same root, different block number": {block: 2, hash: common.Hash{1}},
+		"same block number and root":        {block: 1, hash: common.Hash{1}},
 	}
 
 	for name, replacement := range tests {
@@ -987,10 +989,19 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
 
+	// The first archive write is held back until both blocks are applied, so
+	// that neither failure can surface before the second Apply and both are
+	// gathered by the time the second block's write completes.
+	release := make(chan struct{})
+
 	firstErr := fmt.Errorf("injectedError1")
 	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil).AnyTimes()
 	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil, nil)
-	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).Return(firstErr)
+	archiveDB.EXPECT().Add(uint64(1), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(uint64, common.Update, common.Releaser) error {
+			<-release
+			return firstErr
+		})
 
 	secondErr := fmt.Errorf("injectedError2")
 	liveDB.EXPECT().Apply(uint64(2), gomock.Any()).Return(nil, nil, nil)
@@ -1003,6 +1014,8 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 
 	archiveWriteDone, err := db.Apply(2, common.Update{})
 	require.NoError(t, err)
+
+	close(release)
 	err = <-archiveWriteDone
 	require.ErrorIs(t, err, firstErr)
 	require.ErrorIs(t, err, secondErr)

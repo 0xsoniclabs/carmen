@@ -45,6 +45,9 @@ type GoState struct {
 	// NOTE: this is unbounded, and may cause memory pressure.
 	staged     []*stagedBlock
 	stagedLock sync.Mutex
+	// stagedIds hands out the identity of each staged block, see stagedBlock.id.
+	// It is guarded by stagedLock.
+	stagedIds uint64
 
 	stateError     error // collect errors occurred during operation
 	stateErrorLock sync.RWMutex
@@ -300,8 +303,10 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 func (s *GoState) stageBlock(block *stagedBlock) *stagedBlockHandle {
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
+	s.stagedIds++
+	block.id = s.stagedIds
 	s.staged = append(s.staged, block)
-	return &stagedBlockHandle{state: s, block: block.block, hash: block.hash}
+	return &stagedBlockHandle{state: s, id: block.id, hash: block.hash}
 }
 
 // commitStaged promotes the block the handle stands for into the archive. It
@@ -375,13 +380,13 @@ func (s *GoState) revertNewest() error {
 func (s *GoState) misplacedError(operation string, handle *stagedBlockHandle, end string) error {
 	index := s.indexOf(handle)
 	if index < 0 {
-		return fmt.Errorf("%w: cannot %s block %d: it is not staged", state.ErrStagedBlockMisuse, operation, handle.block)
+		return fmt.Errorf("%w: cannot %s block %x: it is not staged", state.ErrStagedBlockMisuse, operation, handle.hash)
 	}
 	distance := index // < blocks between it and the oldest
 	if end == "newest" {
 		distance = len(s.staged) - 1 - index
 	}
-	return fmt.Errorf("%w: cannot %s block %d: it is not the %s staged block, %d block(s) are staged between them", state.ErrStagedBlockMisuse, operation, handle.block, end, distance)
+	return fmt.Errorf("%w: cannot %s block %d: it is not the %s staged block, %d block(s) are staged between them", state.ErrStagedBlockMisuse, operation, s.staged[index].block, end, distance)
 }
 
 // indexOf reports the position of the handle's block in the staged sequence,
@@ -410,9 +415,10 @@ func (s *GoState) drainArchiveErrors() {
 
 // stagedBlock is what the state retains for a block applied to the LiveDB whose
 // fate is not yet decided: the update and its hints to hand to the archive on
-// commit, the undo operations to replay on rollback, and the keys the block's
-// handle is matched by.
+// commit, the undo operations to replay on rollback, and the identity the
+// block's handle is matched by.
 type stagedBlock struct {
+	id     uint64
 	block  uint64
 	hash   common.Hash
 	update common.Update
@@ -420,16 +426,13 @@ type stagedBlock struct {
 	hints  common.Releaser
 }
 
-// isFor reports whether the block is the one the handle stands for. The root is
-// checked along with the number, since a rolled back block can be replaced by a
-// different block at the same height.
+// isFor reports whether the block is the one the handle stands for.
 func (b *stagedBlock) isFor(handle *stagedBlockHandle) bool {
-	return b.block == handle.block && b.hash == handle.hash
+	return b.id == handle.id
 }
 
 // stagedStatus tracks which of the two terminal operations a handle has already
-// seen, so that a second one reports an error rather than acting twice, and so
-// that a stale handle can never match a later block with the same keys.
+// seen, so that a second one reports an error rather than acting twice.
 type stagedStatus int
 
 const (
@@ -442,7 +445,7 @@ const (
 // It's an opaque object identifying a staged block.
 type stagedBlockHandle struct {
 	state *GoState
-	block uint64
+	id    uint64
 	hash  common.Hash
 
 	status stagedStatus // guarded by state.stagedLock
@@ -466,7 +469,7 @@ func (h *stagedBlockHandle) decidedError(operation string) error {
 	if h.status == stagedRolledBack {
 		decision = "rolled back"
 	}
-	return fmt.Errorf("%w: cannot %s block %d: it has already been %s", state.ErrStagedBlockMisuse, operation, h.block, decision)
+	return fmt.Errorf("%w: cannot %s block %x: it has already been %s", state.ErrStagedBlockMisuse, operation, h.hash, decision)
 }
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory
