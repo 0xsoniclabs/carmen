@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"slices"
 	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
@@ -269,7 +268,6 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 	}
 
 	handle := s.stageBlock(&stagedBlock{
-		state:  s,
 		block:  block,
 		hash:   hash,
 		update: update,
@@ -303,6 +301,7 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 func (s *GoState) stageBlock(block *stagedBlock) state.StagedBlock {
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
+	block.state = s
 	s.nextStagedId++
 	block.id = s.nextStagedId
 	s.staged = append(s.staged, block)
@@ -351,17 +350,30 @@ func (s *GoState) rollbackStaged(handle *stagedBlockHandle) error {
 		return handle.decidedError("roll back")
 	}
 	last := len(s.staged) - 1
-	lastBlock := s.staged[last]
-	if last < 0 || !lastBlock.isFor(handle) {
+	if last < 0 || !s.staged[last].isFor(handle) {
 		return s.misplacedError("roll back", handle, "newest")
 	}
 	handle.status = stagedRolledBack
+	return s.revertNewest()
+}
+
+// revertNewest takes the newest staged block back from the LiveDB and reports a
+// failure to do so, which it also records in the state error. It must be called
+// while holding stagedLock.
+func (s *GoState) revertNewest() error {
+	last := len(s.staged) - 1
+	if last < 0 {
+		return fmt.Errorf("%w: cannot roll back: no block is staged", state.ErrStagedBlockMisuse)
+	}
+	block := s.staged[last]
 	s.staged = s.staged[:last]
 
-	if lastBlock.hints != nil {
-		lastBlock.hints.Release()
+	// A rolled back block never reaches the archive, so nobody else would
+	// release its hints.
+	if block.hints != nil {
+		block.hints.Release()
 	}
-	if err := s.live.RevertLastBlock(lastBlock.undo); err != nil {
+	if err := s.live.RevertLastBlock(block.undo); err != nil {
 		s.addStateError(err)
 		return err
 	}
@@ -507,10 +519,10 @@ func (s *GoState) Flush() error {
 func (s *GoState) rollbackUndecidedBlocks() {
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
-	for _, block := range slices.Backward(s.staged) {
+	for len(s.staged) > 0 {
 		// The error is ignored: it is already recorded in the state error, which
 		// Close reports through its final Check.
-		_ = s.rollbackStaged(block.GetHandle())
+		_ = s.revertNewest()
 	}
 }
 

@@ -774,6 +774,13 @@ func TestStagedBlockHandle_DecidingTwiceIsRejected(t *testing.T) {
 	require.ErrorContains(err, "already been rolled back")
 }
 
+func TestGoState_RevertNewest_ReportsAnEmptyQueue(t *testing.T) {
+	s := &GoState{}
+	err := s.revertNewest()
+	require.ErrorIs(t, err, state.ErrStagedBlockMisuse)
+	require.ErrorContains(t, err, "no block is staged")
+}
+
 func TestStagedBlockHandle_Rollback_ReleasesTheArchiveHints(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
