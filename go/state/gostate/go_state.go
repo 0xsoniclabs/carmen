@@ -281,6 +281,11 @@ func (s *GoState) Apply(block uint64, update common.Update) (<-chan error, error
 	if err != nil {
 		return nil, err
 	}
+
+	if err := s.getStateError(); err != nil {
+		return nil, err
+	}
+
 	if s.archive == nil {
 		return nil, nil // no archive, nothing to wait for
 	}
