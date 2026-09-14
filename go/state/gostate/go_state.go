@@ -17,6 +17,7 @@ import (
 	"io"
 	"runtime"
 	"sync"
+	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -490,7 +491,20 @@ func (h *stagedBlockHandle) decidedError(operation string) error {
 
 // GetMemoryFootprint provides sizes of individual components of the state in the memory
 func (s *GoState) GetMemoryFootprint() *common.MemoryFootprint {
-	mf := common.NewMemoryFootprint(0)
+	mf := common.NewMemoryFootprint(unsafe.Sizeof(*s))
+
+	s.stagedLock.Lock()
+	staged := uintptr(cap(s.staged)) * unsafe.Sizeof((*stagedBlock)(nil))
+	for _, block := range s.staged {
+		staged += unsafe.Sizeof(*block) - unsafe.Sizeof(block.update)
+		staged += block.update.GetMemoryFootprint().Total()
+		staged += uintptr(cap(block.undo)) * unsafe.Sizeof((func() error)(nil))
+	}
+	s.stagedLock.Unlock()
+	stagedFootprint := common.NewMemoryFootprint(staged)
+	stagedFootprint.SetNote("excluding the values captured by the undo operations and the archive hints")
+	mf.AddChild("staged", stagedFootprint)
+
 	mf.AddChild("live", s.live.GetMemoryFootprint())
 	if s.archive != nil {
 		mf.AddChild("archive", s.archive.GetMemoryFootprint())

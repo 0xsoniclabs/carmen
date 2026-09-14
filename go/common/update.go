@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 )
@@ -180,6 +181,18 @@ func (u *Update) String() string {
 	}
 	fmt.Fprintf(&builder, "}")
 	return builder.String()
+}
+
+func (u *Update) GetMemoryFootprint() *MemoryFootprint {
+	size := unsafe.Sizeof(*u)
+	size += uintptr(cap(u.Balances)) * unsafe.Sizeof(BalanceUpdate{})
+	size += uintptr(cap(u.Nonces)) * unsafe.Sizeof(NonceUpdate{})
+	size += uintptr(cap(u.Codes)) * unsafe.Sizeof(CodeUpdate{})
+	size += uintptr(cap(u.Slots)) * unsafe.Sizeof(SlotUpdate{})
+	for _, code := range u.Codes {
+		size += uintptr(cap(code.Code))
+	}
+	return NewMemoryFootprint(size)
 }
 
 // UpdateTarget is an interface for State implementations offering individual

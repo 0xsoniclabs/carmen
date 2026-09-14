@@ -19,6 +19,7 @@ import (
 	"sync"
 	"testing"
 	"testing/synctest"
+	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -699,6 +700,29 @@ func TestState_Apply_CollectsARevertFailureAfterAFailedHashing(t *testing.T) {
 	require.ErrorIs(err, hashErr)
 	require.ErrorIs(err, revertErr)
 	require.Equal(1, hints.releases, "the archive hints must be released even if the revert fails")
+}
+
+func TestGoState_GetMemoryFootprint_CountsWhatStagedBlocksRetain(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().GetMemoryFootprint().Return(common.NewMemoryFootprint(0)).AnyTimes()
+
+	s := &GoState{live: liveDB}
+	empty := s.GetMemoryFootprint().GetChild("staged").Total()
+
+	// A block retains its update and one undo operation per mutation.
+	update := common.Update{
+		Balances: make([]common.BalanceUpdate, 2),
+		Codes:    []common.CodeUpdate{{Code: make([]byte, 10)}},
+	}
+	s.stageBlock(&stagedBlock{update: update, undo: make([]func() error, 3)})
+
+	want := unsafe.Sizeof((*stagedBlock)(nil)) + // < the queue's slot
+		unsafe.Sizeof(stagedBlock{}) - unsafe.Sizeof(update) + update.GetMemoryFootprint().Total() +
+		3*unsafe.Sizeof((func() error)(nil))
+	got := s.GetMemoryFootprint().GetChild("staged").Total() - empty
+	require.Equal(want, got)
 }
 
 func TestStagedBlockHandle_Commit_ConsumesTheOldestBlockOnly(t *testing.T) {
