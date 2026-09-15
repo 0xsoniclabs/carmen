@@ -38,8 +38,6 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 		update := common.Update{
 			Balances: []common.BalanceUpdate{{Account: common.Address{byte(block)}, Balance: amount.New(100)}},
 		}
-		// The block is committed: applying it only makes it live, and this test
-		// turns on the archive keeping up with the live state.
 		staged, err := db.Apply(block, update)
 		if err != nil {
 			t.Fatalf("cannot add block: %v", err)
@@ -138,7 +136,7 @@ func TestScheme5_Close_RollsBackStagedBlocksSoTheStateCanBeReopened(t *testing.T
 	require.NoError(db.Close())
 
 	db, err = newGoMemoryState(params)
-	require.NoError(err, "the database must reopen after closing with staged blocks")
+	require.NoError(err)
 	defer func() {
 		require.NoError(db.Close())
 	}()

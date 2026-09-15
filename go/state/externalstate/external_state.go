@@ -249,10 +249,10 @@ func (s *ExternalState) Apply(block uint64, update common.Update) (state.StagedB
 	for _, change := range update.Codes {
 		s.codeCache.Set(change.Account, change.Code)
 	}
-	// The root is taken now: it is the root of this block, and reading it later
-	// would report the root of whichever block came after.
-	hash, _ := s.GetHash() // < the error is reported through GetCommitment
-	// `ExternalState` does not support undo, so we return an irreversible block.
+	hash, err := s.GetHash()
+	if err != nil {
+		return nil, err
+	}
 	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 

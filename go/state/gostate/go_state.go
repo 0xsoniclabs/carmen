@@ -272,8 +272,6 @@ func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, 
 		hints:  archiveUpdateHints,
 	})
 
-	s.stagedLock.Lock()
-	defer s.stagedLock.Unlock()
 	return handle, nil
 }
 
