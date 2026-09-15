@@ -204,12 +204,9 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-// Apply applies the provided updates to the state content.
-// returns a channel for synchronization.
-//
-// The channel signals the completion of any spawned asynchronous operations
-// like the update of the backend.
-// The channel will be nil if the backend state is nil.
+// Apply applies the provided updates to the state content and forwards them to
+// the backend, if any. The returned block is irreversible; waiting on its
+// commit signals the completion of the backend update.
 func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
@@ -251,8 +248,11 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 			},
 		}
 	}
+	// The commitment is requested right behind the update, so that it is the
+	// root of this block, whatever is applied before the handle is read.
+	commitment := s.GetCommitment()
 	return state.NewIrreversibleBlock(block, func() common.Hash {
-		hash, _ := s.GetHash() // < the error is collected by, and reported through, Check
+		hash, _ := commitment.Await().Get()
 		return hash
 	}, done), nil
 }

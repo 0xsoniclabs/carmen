@@ -1555,7 +1555,7 @@ func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 
 	staged, err := st.Apply(1, update)
 	if err != nil {
-		t.Errorf("failed to apply update: %v", err)
+		t.Fatalf("failed to apply update: %v", err)
 	}
 	// The update only reaches the archive once the block is committed.
 	if _, err := staged.Commit(); err != nil {
@@ -1586,4 +1586,29 @@ type countingReleaser struct {
 
 func (r *countingReleaser) Release() {
 	r.releases++
+}
+
+func TestStagedBlockHandle_Commit_CollectsAnArchiveErrorReportedEarlier(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil, nil)
+	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
+
+	// The archive writer is stood in for by its channels: an error it reported
+	// is waiting to be collected, and the block handed to it is not processed.
+	injected := fmt.Errorf("archive write failed")
+	archiveErrors := make(chan error, 1)
+	archiveErrors <- injected
+	s := &GoState{
+		live:               liveDB,
+		archive:            archive.NewMockArchive(ctrl),
+		archiveWriter:      make(chan archiveUpdate, 1),
+		archiveWriterError: archiveErrors,
+	}
+
+	staged, err := s.Apply(1, common.Update{})
+	require.NoError(t, err)
+	_, err = staged.Commit()
+	require.NoError(t, err)
+	require.ErrorIs(t, s.getStateError(), injected)
 }

@@ -1323,8 +1323,11 @@ func (s *stateDB) EndBlock(block uint64) <-chan error {
 
 	// Send the update to the state.
 	staged, err := s.state.Apply(block, update)
+	if err == nil && staged == nil {
+		err = fmt.Errorf("state applied block %d without returning a staged block", block)
+	}
 	var errRelay chan error
-	if err == nil && staged != nil {
+	if err == nil {
 		// Nothing can decide a block's fate through this StateDB yet, so the block
 		// is committed the moment it is applied.
 		var archiveDone *WaitHandle

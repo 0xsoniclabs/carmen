@@ -65,6 +65,8 @@ type State interface {
 	//
 	// Several blocks may be staged at once, which lets a caller execute ahead of a
 	// decision it has not taken yet.
+	//
+	// Whether a block can actually be taken back is implementation-dependent.
 	Apply(block uint64, update common.Update) (StagedBlock, error)
 
 	// GetHash hashes the state.

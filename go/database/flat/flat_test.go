@@ -315,7 +315,7 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		},
 	}
 
-	commands := make(chan command, 1)
+	commands := make(chan command, 2) // < the update and the commitment request
 	state := &State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
@@ -377,6 +377,7 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 	backendBlock := state.NewIrreversibleBlock(block, func() common.Hash { return common.Hash{} }, nil)
 	gomock.InOrder(
 		backend.EXPECT().Apply(block, update).Return(backendBlock, nil),
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 		backend.EXPECT().Close(),
 	)
 
@@ -409,6 +410,7 @@ func TestState_Apply_WaitReturns_WhenBackendUpdateIsDone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		backend := state.NewMockState(ctrl)
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))).AnyTimes() // < requested by every Apply
 
 		started := false
 		// The backend reports the outcome of its write on this channel; closing it
@@ -488,6 +490,7 @@ func TestState_Apply_RollbackIsRejected(t *testing.T) {
 func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))).AnyTimes() // < requested by every Apply
 	issue := errors.New("backend apply failed")
 
 	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -1176,4 +1179,41 @@ func TestMemoryFootprintOfMap_GivesApproximationBasedOnKeyValueTypes(t *testing.
 	}
 	footprint = memoryFootprintOfMap(int16ToByteMap)
 	require.EqualValues(t, footprint.Total(), (2+1)*3)
+}
+
+func TestState_Apply_StagedBlockReportsTheRootTheBackendComputes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	hash := common.Hash{1, 2, 3}
+	gomock.InOrder(
+		backend.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil),
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash))),
+	)
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	block, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Equal(t, hash, block.StateHash())
+}
+
+func TestState_Apply_BackendWithoutStagedBlock_IsReported(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))).AnyTimes() // < requested by every Apply
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	staged, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	done, err := staged.Commit()
+	require.NoError(t, err)
+
+	require.ErrorContains(t, done.Wait(), "without returning a staged block")
+	require.ErrorContains(t, flatState.Check(), "without returning a staged block")
 }
