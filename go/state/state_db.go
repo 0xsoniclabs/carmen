@@ -124,7 +124,9 @@ type StateDB interface {
 	// EndBlock collects the pending changes into a block and applies them to the
 	// live state, returning the block as staged: its content is live, but it is not
 	// yet part of the archive. The caller commits or rolls it back through the
-	// returned StagedBlock; until it does, the block can still be taken back.
+	// returned StagedBlock. Whether the block can actually be taken back depends on
+	// the underlying State, see State.Apply: over an irreversible one, Rollback is
+	// rejected.
 	//
 	// An archive failure reported by the handle Commit returns is also accumulated
 	// and reported by Check().

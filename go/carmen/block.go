@@ -92,7 +92,11 @@ func (c *headBlockContext) Commit() error {
 		err = fmt.Errorf("state db ended block %d without returning a staged block", c.block)
 	}
 	if err == nil {
-		_, err = staged.Commit()
+		if _, err = staged.Commit(); err != nil {
+			// The block is live but was not kept; take it back, so that the head
+			// does not show a block the archive never receives.
+			err = errors.Join(err, staged.Rollback())
+		}
 	}
 	c.db.headStateCommitLock.Unlock()
 	headStateCommitLockReleased = true

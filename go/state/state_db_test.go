@@ -5220,10 +5220,6 @@ func setExpectationForEmptyAccount(t *testing.T, mock *MockState, address common
 	mock.EXPECT().GetCodeSize(address).Return(0, nil).AnyTimes()
 }
 
-// endBlockAndDiscardStaged ends the block, asserts that it was applied to the
-// state, and leaves the resulting staged block undecided. It serves the tests
-// that only need the block's content to reach the state; tests that care about
-// the staged block itself call EndBlock directly.
 // failedWrite is the handle of an archive write that has already failed with err.
 func failedWrite(err error) *WaitHandle {
 	done := make(chan error, 1)
@@ -5232,6 +5228,10 @@ func failedWrite(err error) *WaitHandle {
 	return NewWaitHandle(done)
 }
 
+// endBlockAndDiscardStaged ends the block, asserts that it was applied to the
+// state, and leaves the resulting staged block undecided. It serves the tests
+// that only need the block's content to reach the state; tests that care about
+// the staged block itself call EndBlock directly.
 func endBlockAndDiscardStaged(t *testing.T, db StateDB, block uint64) {
 	t.Helper()
 	_, err := db.EndBlock(block)
