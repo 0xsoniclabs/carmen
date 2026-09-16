@@ -96,10 +96,14 @@ func (s *syncedState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return s.state.HasEmptyStorage(addr)
 }
 
-func (s *syncedState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *syncedState) Apply(block uint64, update common.Update) (StagedBlock, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state.Apply(block, update)
+	staged, err := s.state.Apply(block, update)
+	if err != nil || staged == nil {
+		return staged, err
+	}
+	return &syncedStagedBlock{block: staged, mu: &s.mu}, nil
 }
 
 func (s *syncedState) GetHash() (common.Hash, error) {
@@ -158,4 +162,31 @@ func (s *syncedState) Export(ctx context.Context, out io.Writer, scratchDir stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.state.Export(ctx, out, scratchDir)
+}
+
+// syncedStagedBlock routes a staged block's decision operations through the same
+// lock as the surrounding syncedState, so that promoting or reverting a block is
+// mutually exclusive with any concurrent read, Apply, or other decision on the
+// underlying state.
+type syncedStagedBlock struct {
+	block StagedBlock
+	mu    *sync.Mutex
+}
+
+func (b *syncedStagedBlock) StateHash() common.Hash {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.block.StateHash()
+}
+
+func (b *syncedStagedBlock) Commit() (*WaitHandle, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.block.Commit()
+}
+
+func (b *syncedStagedBlock) Rollback() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.block.Rollback()
 }

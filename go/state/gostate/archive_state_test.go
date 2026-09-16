@@ -323,3 +323,8 @@ func TestArchiveState_Export_NonWritableScratchDirFails(t *testing.T) {
 	_, err = archive.Export(context.Background(), bytes.NewBuffer(nil), scratchDir)
 	require.Error(err, "export must fail when scratch dir is not writable")
 }
+
+func TestArchiveState_Apply_IsNotSupported(t *testing.T) {
+	archive := &ArchiveState{}
+	require.Panics(t, func() { _, _ = archive.Apply(1, common.Update{}) })
+}

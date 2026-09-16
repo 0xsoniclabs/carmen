@@ -23,6 +23,7 @@ import "C"
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -74,6 +75,8 @@ type ExternalState struct {
 	codeCache *common.LruCache[common.Address, []byte]
 	// The foreign language implementation
 	bindings externalBindings
+	// hashError collects the failures to hash an applied block, see Apply.
+	hashError error
 }
 
 func newState(impl string, params state.Parameters, bindings externalBindings) (state.State, error) {
@@ -235,7 +238,7 @@ func (s *ExternalState) GetCommitment() future.Future[result.Result[common.Hash]
 	return future.Immediate(result.Ok(hash))
 }
 
-func (s *ExternalState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *ExternalState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 	if err := update.Normalize(); err != nil {
 		return nil, err
 	}
@@ -249,7 +252,13 @@ func (s *ExternalState) Apply(block uint64, update common.Update) (<-chan error,
 	for _, change := range update.Codes {
 		s.codeCache.Set(change.Account, change.Code)
 	}
-	return nil, nil
+	// The update is applied and cannot be taken back, so a failure to hash it
+	// does not fail the block: it is recorded and reported through Check.
+	hash, err := s.GetHash()
+	if err != nil {
+		s.hashError = errors.Join(s.hashError, fmt.Errorf("failed to hash block %d: %w", block, err))
+	}
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 func (s *ExternalState) Flush() error {
@@ -342,8 +351,8 @@ func (s *ExternalState) GetArchiveBlockHeight() (uint64, bool, error) {
 }
 
 func (s *ExternalState) Check() error {
-	// TODO: implement, see https://github.com/Fantom-foundation/Carmen/issues/313
-	return nil
+	// TODO: collect the external state's issues, see https://github.com/Fantom-foundation/Carmen/issues/313
+	return s.hashError
 }
 
 func (s *ExternalState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {

@@ -218,9 +218,15 @@ func TestRunBenchmarkState_ApplyError(t *testing.T) {
 
 	const methods = 3
 	for i := 0; i <= methods; i++ {
+		// A successful Apply always yields a staged block. It is declared before the
+		// mock state shadows the package name, and is ignored on the rounds where
+		// Apply is made to fail.
+		staged := state.NewMockStagedBlock(ctrl)
+		staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil).AnyTimes()
+
 		state := state.NewMockState(ctrl)
 		state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), getError(i, 1)).AnyTimes()
-		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, getError(i, 2)).AnyTimes()
+		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, getError(i, 2)).AnyTimes()
 		state.EXPECT().GetCommitment().DoAndReturn(func() future.Future[result.Result[common.Hash]] {
 			return future.Immediate(result.Err[common.Hash](getError(i, 3)))
 		}).AnyTimes()
@@ -234,4 +240,38 @@ func TestRunBenchmarkState_ApplyError(t *testing.T) {
 
 		require.ErrorAs(t, err, &injectedError)
 	}
+}
+
+func TestRunBenchmarkState_MissingStagedBlockIsReported(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	state := state.NewMockState(ctrl)
+	state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	_, err := runBenchmarkState(state, "/tmp", benchmarkParams{
+		numBlocks:          1,
+		numReadsPerBlock:   1,
+		numInsertsPerBlock: 1,
+		reportInterval:     1,
+	}, func(string, ...any) {})
+	require.ErrorContains(t, err, "without returning a staged block")
+}
+
+func TestRunBenchmarkState_CommitErrorIsForwarded(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	injected := fmt.Errorf("injected error")
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(nil, injected)
+	state := state.NewMockState(ctrl)
+	state.EXPECT().GetBalance(gomock.Any()).Return(amount.New(), nil).AnyTimes()
+	state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, nil)
+
+	_, err := runBenchmarkState(state, "/tmp", benchmarkParams{
+		numBlocks:          1,
+		numReadsPerBlock:   1,
+		numInsertsPerBlock: 1,
+		reportInterval:     1,
+	}, func(string, ...any) {})
+	require.ErrorContains(t, err, "error committing block 0")
+	require.ErrorContains(t, err, injected.Error())
 }

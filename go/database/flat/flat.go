@@ -204,13 +204,10 @@ func (s *State) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-// Apply applies the provided updates to the state content.
-// returns a channel for synchronization.
-//
-// The channel signals the completion of any spawned asynchronous operations
-// like the update of the backend.
-// The channel will be nil if the backend state is nil.
-func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
+// Apply applies the provided updates to the state content and forwards them to
+// the backend, if any. The returned block is irreversible; waiting on its
+// commit signals the completion of the backend update.
+func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, error) {
 	zone := tracy.ZoneBegin("State.Apply")
 	defer zone.End()
 
@@ -251,7 +248,22 @@ func (s *State) Apply(block uint64, data common.Update) (<-chan error, error) {
 			},
 		}
 	}
-	return done, nil
+	// The commitment is requested right behind the update, so that it is the
+	// root of this block, whatever is applied before the handle is read.
+	commitment := s.GetCommitment()
+	var once sync.Once
+	var hash common.Hash
+	return state.NewIrreversibleBlock(block, func() common.Hash {
+		// A future is consumed once; the root is kept for later reads, and a
+		// failed commitment is reported through Check.
+		once.Do(func() {
+			var err error
+			if hash, err = commitment.Await().Get(); err != nil {
+				s.issues.HandleIssue(fmt.Errorf("failed to compute the root of block %d: %w", block, err))
+			}
+		})
+		return hash
+	}, done), nil
 }
 
 func (s *State) GetHash() (common.Hash, error) {
@@ -278,16 +290,29 @@ func processCommands(
 	for command := range commands {
 		if command.update != nil {
 			zone := tracy.ZoneBegin("State.Update")
-			backendChan, err := backend.Apply(command.update.block, command.update.data)
+			staged, err := backend.Apply(command.update.block, command.update.data)
+			if err == nil && staged == nil {
+				// Reported rather than dereferenced: this loop runs on its own
+				// goroutine, where a nil staged block would take the process down.
+				err = fmt.Errorf("backend applied block %d without returning a staged block", command.update.block)
+			}
+			var backendDone *state.WaitHandle
+			if err == nil {
+				// The flat state applies a block as it arrives and offers no way
+				// back, so the backend block is committed straight away.
+				backendDone, err = staged.Commit()
+			}
+			// Register the apply/commit error with the collector so that Check
+			// reports it even when no caller waits on the done channel.
 			issues.HandleIssue(err)
 			if command.update.done != nil {
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.
 				go func(err error) {
-					if backendChan != nil {
-						// wait for the backend sync channel and forward
-						// both errors into the update synch channel.
-						syncError := <-backendChan
+					if backendDone != nil {
+						// wait for the backend write and forward both errors into
+						// the update synch channel.
+						syncError := backendDone.Wait()
 						issues.HandleIssue(syncError)
 						err = errors.Join(err, syncError)
 					}

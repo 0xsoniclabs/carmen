@@ -315,7 +315,7 @@ func TestState_Apply_SetsValuesInLocalMaps(t *testing.T) {
 		},
 	}
 
-	commands := make(chan command, 1)
+	commands := make(chan command, 2) // < the update and the commitment request
 	state := &State{
 		accounts: make(map[common.Address]account),
 		storage:  make(map[slotKey]common.Value),
@@ -374,8 +374,10 @@ func TestState_Apply_IsForwardedToBackend(t *testing.T) {
 		},
 	}
 
+	backendBlock := state.NewIrreversibleBlock(block, func() common.Hash { return common.Hash{} }, nil)
 	gomock.InOrder(
-		backend.EXPECT().Apply(block, update),
+		backend.EXPECT().Apply(block, update).Return(backendBlock, nil),
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 		backend.EXPECT().Close(),
 	)
 
@@ -404,93 +406,109 @@ func TestState_Apply_IgnoresMissingBackend(t *testing.T) {
 	require.NoError(t, flatState.Close())
 }
 
-func TestState_Apply_SyncChannelCloses_WhenArchiveUpdateIsDone(t *testing.T) {
+func TestState_Apply_WaitReturns_WhenBackendUpdateIsDone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		backend := state.NewMockState(ctrl)
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))).AnyTimes() // < requested by every Apply
 
 		started := false
-		release := make(chan struct{})
-		backendApplyDone := make(chan error)
+		// The backend reports the outcome of its write on this channel; closing it
+		// stands for a write that completed successfully.
+		release := make(chan error)
+
+		backendBlock := state.NewMockStagedBlock(ctrl)
+		backendBlock.EXPECT().Commit().Return(state.NewWaitHandle(release), nil)
 
 		backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(_, _ any) (<-chan error, error) {
+			func(_, _ any) (state.StagedBlock, error) {
 				started = true
-				<-release
-				return backendApplyDone, nil
+				return backendBlock, nil
 			},
 		)
 
 		backend.EXPECT().Close()
 
-		state, err := NewState(t.TempDir(), backend)
+		flatState, err := NewState(t.TempDir(), backend)
 		require.NoError(t, err)
 
-		applyDone, err := state.Apply(1, common.Update{})
+		staged, err := flatState.Apply(1, common.Update{})
 		require.NoError(t, err)
-		require.NotNil(t, applyDone)
+		done, err := staged.Commit()
+		require.NoError(t, err)
+
+		waitReturned := make(chan struct{})
+		go func() {
+			defer close(waitReturned)
+			require.NoError(t, done.Wait())
+		}()
 
 		// Wait until the update blocks in the backend update.
-		close(backendApplyDone)
 		synctest.Wait()
 		require.True(t, started)
 		select {
-		case <-applyDone:
-			t.Errorf("ApplyDone finished before backend update was released")
+		case <-waitReturned:
+			t.Errorf("Wait returned before the backend update was released")
 		default:
 			// success
 		}
 
-		// Release the backend update and wait for the applyDone to finish.
+		// Release the backend update and wait for the Wait to return.
 		close(release)
 		synctest.Wait()
 
 		select {
-		case <-applyDone:
+		case <-waitReturned:
 			// success
 		default:
-			t.Errorf("ApplyDone did not finish after backend update was released")
+			t.Errorf("Wait did not return after the backend update was released")
 		}
 
-		require.NoError(t, state.Close())
+		require.NoError(t, flatState.Close())
 	})
 }
 
-func TestState_Apply_NoBackend_ReturnsNilChannel(t *testing.T) {
+func TestState_Apply_NoBackend_WaitReturnsImmediately(t *testing.T) {
 	flatState, err := NewState(t.TempDir(), nil)
 	require.NoError(t, err)
-	applyDone, err := flatState.Apply(1, common.Update{})
+	staged, err := flatState.Apply(1, common.Update{})
 	require.NoError(t, err)
-	require.Nil(t, applyDone)
+	done, err := staged.Commit()
+	require.NoError(t, err)
+	require.NoError(t, done.Wait())
+}
+
+func TestState_Apply_RollbackIsRejected(t *testing.T) {
+	flatState, err := NewState(t.TempDir(), nil)
+	require.NoError(t, err)
+	staged, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Error(t, staged.Rollback(),
+		"the flat state applies blocks immediately and must not claim to roll them back")
 }
 
 func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))).AnyTimes() // < requested by every Apply
 	issue := errors.New("backend apply failed")
-	syncIssue := errors.New("sync channel issue")
-	backendSyncChann := make(chan error, 1)
-	backendSyncChann <- syncIssue
 
 	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_, _ any) (<-chan error, error) {
-			return backendSyncChann, issue
+		func(_, _ any) (state.StagedBlock, error) {
+			return nil, issue
 		},
 	)
 
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)
 
-	applyDone, err := flatState.Apply(1, common.Update{})
+	staged, err := flatState.Apply(1, common.Update{})
 	require.NoError(t, err)
-	require.NotNil(t, applyDone)
+	done, err := staged.Commit()
+	require.NoError(t, err)
 
-	got := <-applyDone
-	require.ErrorIs(t, got, issue)
-	require.ErrorIs(t, got, syncIssue)
-	errors := flatState.Check()
-	require.ErrorIs(t, errors, issue)
-	require.ErrorIs(t, errors, syncIssue)
+	require.ErrorIs(t, done.Wait(), issue)
+	require.ErrorIs(t, flatState.Check(), issue)
 }
 
 func TestState_GetHash_IsForwardedToBackendGetCommitment(t *testing.T) {
@@ -1161,4 +1179,77 @@ func TestMemoryFootprintOfMap_GivesApproximationBasedOnKeyValueTypes(t *testing.
 	}
 	footprint = memoryFootprintOfMap(int16ToByteMap)
 	require.EqualValues(t, footprint.Total(), (2+1)*3)
+}
+
+func TestState_Apply_StagedBlockReportsTheRootTheBackendComputes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	hash := common.Hash{1, 2, 3}
+	gomock.InOrder(
+		backend.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil),
+		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash))),
+	)
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	block, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Equal(t, hash, block.StateHash())
+}
+
+func TestState_Apply_StateHashCanBeReadRepeatedly(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	hash := common.Hash{1, 2, 3}
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, nil)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash)))
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	block, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Equal(t, hash, block.StateHash())
+	require.Equal(t, hash, block.StateHash(), "the root must survive a second read")
+}
+
+func TestState_Apply_FailedCommitmentIsReportedThroughCheck(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	issue := errors.New("commitment failed")
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, nil)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](issue)))
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	block, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Equal(t, common.Hash{}, block.StateHash())
+	require.ErrorIs(t, flatState.Check(), issue)
+}
+
+func TestState_Apply_BackendWithoutStagedBlock_IsReported(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))).AnyTimes() // < requested by every Apply
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	staged, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	done, err := staged.Commit()
+	require.NoError(t, err)
+
+	require.ErrorContains(t, done.Wait(), "without returning a staged block")
+	require.ErrorContains(t, flatState.Check(), "without returning a staged block")
 }

@@ -185,7 +185,7 @@ func TestStateDB_RecreatingAnAccountSetsStorageToZero(t *testing.T) {
 		Nonces: []common.NonceUpdate{{Account: address1}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 		Slots:  []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	db.SetState(address1, key1, val1)
@@ -249,7 +249,7 @@ func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 			{Account: address1, Key: key2, Value: common.Value{}},
 			{Account: address1, Key: key1, Value: common.Value{}},
 		},
-	})
+	}).DoAndReturn(committable)
 
 	// First transaction creates an account and sets some storage values.
 	db.BeginTransaction()
@@ -314,7 +314,7 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 			{Account: address1, Key: key2, Value: common.Value{}},
 			{Account: address1, Key: key1, Value: val2},
 		},
-	})
+	}).DoAndReturn(committable)
 
 	if got := db.GetState(address1, key1); got != val1 {
 		t.Errorf("Wrong initial state, wanted %v, got %v", val1, got)
@@ -371,7 +371,7 @@ func TestStateDB_EndBlock_ClearedSlotsWithKnownStoredValueAreWrittenAsZero(t *te
 	// written to purge the retained value, even without any SetState call.
 	state.EXPECT().Apply(uint64(1), common.Update{
 		Slots: []common.SlotUpdate{{Account: address, Key: key1, Value: common.Value{}}},
-	}).Return(nil, nil)
+	}).DoAndReturn(committable)
 
 	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
 	stateDB.BeginTransaction()
@@ -399,7 +399,7 @@ func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *tes
 	state.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address, Nonce: common.ToNonce(5)}},
 		Codes:  []common.CodeUpdate{{Account: address, Code: []byte{}}},
-	}).Return(nil, nil)
+	}).DoAndReturn(committable)
 
 	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
 	stateDB.BeginTransaction()
@@ -517,7 +517,7 @@ func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues
 	// The leftover stored value of the deleted account is explicitly zeroed.
 	mock.EXPECT().Apply(uint64(0), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
-	})
+	}).DoAndReturn(committable)
 	mock.EXPECT().GetStorage(address1, key1).Times(1).Return(val2, nil)
 
 	db.BeginBlock()
@@ -559,7 +559,7 @@ func TestStateDB_StorageDataOfDestroyedAccountIsNotVisibleInNextTransactionOrBlo
 	mock.EXPECT().GetCodeSize(addr).AnyTimes()
 	mock.EXPECT().GetStorage(addr, key).AnyTimes()
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(gomock.Any(), common.Update{}).AnyTimes()
+	mock.EXPECT().Apply(gomock.Any(), common.Update{}).DoAndReturn(committable).AnyTimes()
 
 	for range 5 {
 		// Create a contract in a transaction, add data, and destroy the contract.
@@ -723,7 +723,7 @@ func TestStateDB_RollingBackSuicideRestoresValues(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
 	mock.EXPECT().GetStorage(address1, key2).Return(val2, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	// In the transaction we delete and restore the account.
 	db.BeginTransaction()
@@ -768,7 +768,7 @@ func TestStateDB_DestroyingAndRecreatingAnAccountInTheSameTransactionCallsDelete
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	// In a transaction we destroy the account and recreate it. This should cause
 	// the account to be deleted and re-initialized in the StateDB at the end of
@@ -801,7 +801,7 @@ func TestStateDB_DoubleDestroyedAccountThatIsOnceRolledBackIsStillCleared(t *tes
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	// In a transaction we destroy the account, re-create it, destroy it and roll back
 	// the second destroy; After this, the account still needs to be cleared at the
@@ -1011,7 +1011,7 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 			{Account: address1, Key: key2, Value: val2},
 			{Account: address1, Key: key1, Value: common.Value{}},
 		},
-	})
+	}).DoAndReturn(committable)
 
 	// The changes are applied to the state at the end of the block.
 	db.EndTransaction()
@@ -1126,7 +1126,7 @@ func TestStateDB_SuicideIsExecutedAtEndOfTransaction(t *testing.T) {
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Nonces:   []common.NonceUpdate{{Account: address1}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetNonce(address1, 5)
 	db.SetCode(address1, []byte{1, 2, 3})
@@ -1148,7 +1148,7 @@ func TestStateDB_SuicideCanBeCanceledThroughRollback(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(5)}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{1, 2, 3}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetNonce(address1, 5)
 	db.SetCode(address1, []byte{1, 2, 3})
@@ -1172,7 +1172,7 @@ func TestStateDB_CreatedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	db.SetNonce(address1, 1) // the account must not be empty
@@ -1191,8 +1191,8 @@ func TestStateDB_CreatedAccountsAreForgottenAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
-	mock.EXPECT().Apply(uint64(2), common.Update{})
+	}).DoAndReturn(committable)
+	mock.EXPECT().Apply(uint64(2), common.Update{}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	db.SetNonce(address1, 1)
@@ -1209,8 +1209,8 @@ func TestStateDB_CreatedAccountsAreDiscardedOnEndOfAbortedTransaction(t *testing
 	// Needs to check whether the account already existed before the creation.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
-	mock.EXPECT().Apply(uint64(2), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
+	mock.EXPECT().Apply(uint64(2), common.Update{}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	db.AbortTransaction()
@@ -1230,7 +1230,7 @@ func TestStateDB_DeletedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(0)}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.Suicide(address1)
 	db.EndTransaction()
@@ -1245,7 +1245,7 @@ func TestStateDB_DeletedAccountsRetainCodeUntilEndOfTransaction(t *testing.T) {
 	// The new account is deleted at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	code := []byte{1, 2, 3}
 	db.CreateAccount(address1)
@@ -1281,7 +1281,7 @@ func TestStateDB_DeletedAccountsAreIgnoredAtAbortedTransaction(t *testing.T) {
 	// Simulate a non-existing account.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.Suicide(address1)
 	db.AbortTransaction()
@@ -1296,7 +1296,7 @@ func TestStateDB_CreatedAndDeletedAccountsAreDeletedAtEndOfTransaction(t *testin
 	// The new account is deleted at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	db.Suicide(address1)
@@ -1312,7 +1312,7 @@ func TestStateDB_CreatedAndDeletedAccountsAreIgnoredAtAbortedTransaction(t *test
 	// Simulate a non-existing account.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	db.Suicide(address1)
@@ -1366,7 +1366,7 @@ func TestStateDB_SettingTheBalanceCreatesAccount(t *testing.T) {
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Balances: []common.BalanceUpdate{{Account: address1, Balance: addedBalance}},
-	})
+	}).DoAndReturn(committable)
 
 	db.AddBalance(address1, addedBalance)
 	if !db.Exist(address1) {
@@ -1384,7 +1384,7 @@ func TestStateDB_AddingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *testi
 	// Initially, the account does not exist, and it is not created, since it remains empty.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.AddBalance(address1, amount.New())
 	if !db.Exist(address1) {
@@ -1402,7 +1402,7 @@ func TestStateDB_SubtractingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *
 	// Initially, the account does not exist, and it is not created, since it remains empty.
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.SubBalance(address1, amount.New())
 	if !db.Exist(address1) {
@@ -1459,7 +1459,7 @@ func TestStateDB_SettingTheNonceMakesAccountNonEmpty(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.CreateAccount(address1)
 	if !db.Empty(address1) {
@@ -1483,7 +1483,7 @@ func TestStateDB_SettingTheNonceToZeroMakesAccountEmpty(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
 	mock.EXPECT().GetNonce(address1).Return(common.Nonce{0}, nil)
 	mock.EXPECT().GetCodeSize(address1).Return(0, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	if !db.Empty(address1) {
 		t.Errorf("Empty account not recognized as such")
@@ -1506,7 +1506,7 @@ func TestStateDB_CreatesAccountOnNonceSetting(t *testing.T) {
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetNonce(address1, 1)
 	if !db.Exist(address1) {
@@ -1608,8 +1608,8 @@ func TestStateDB_BalanceIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 	balance = amount.New(12)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Balances: []common.BalanceUpdate{{Account: address1, Balance: balance}},
-	})
-	mock.EXPECT().Apply(uint64(2), common.Update{})
+	}).DoAndReturn(committable)
+	mock.EXPECT().Apply(uint64(2), common.Update{}).DoAndReturn(committable)
 
 	db.AddBalance(address1, amount.New(2))
 	db.EndTransaction()
@@ -1634,7 +1634,7 @@ func TestStateDB_BalanceOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 	balance = amount.New(14)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Balances: []common.BalanceUpdate{{Account: address1, Balance: balance}},
-	})
+	}).DoAndReturn(committable)
 
 	db.AddBalance(address1, amount.New(5))
 	db.SubBalance(address1, amount.New(3))
@@ -1654,7 +1654,7 @@ func TestStateDB_BalanceUnchangedValuesAreNotWritten(t *testing.T) {
 	// Balance is only read, never written.
 	balance := amount.New(10)
 	mock.EXPECT().GetBalance(address1).Return(balance, nil)
-	mock.EXPECT().Apply(uint64(2), common.Update{})
+	mock.EXPECT().Apply(uint64(2), common.Update{}).DoAndReturn(committable)
 
 	db.AddBalance(address1, amount.New(10))
 	db.SubBalance(address1, amount.New(5))
@@ -1673,7 +1673,7 @@ func TestStateDB_BalanceIsNotWrittenToStateIfTransactionIsAborted(t *testing.T) 
 	// Balance is only read, never written.
 	balance := amount.New(10)
 	mock.EXPECT().GetBalance(address1).Return(balance, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.AddBalance(address1, amount.New(10))
 	db.AbortTransaction()
@@ -1754,7 +1754,7 @@ func TestStateDB_NonceOfADeletedAccountIsZero(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
 		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 
 	// Also the fetch of the Nonce value in the second transaction is expected.
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -1909,8 +1909,8 @@ func TestStateDB_NoncesIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 	// The updated value is expected to be written to the state.
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(10)}},
-	})
-	mock.EXPECT().Apply(uint64(2), common.Update{})
+	}).DoAndReturn(committable)
+	mock.EXPECT().Apply(uint64(2), common.Update{}).DoAndReturn(committable)
 	// SetNonce create the account if it does not exist
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -1933,7 +1933,7 @@ func TestStateDB_NoncesOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 	// Only the last value is to be written to the state.
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
-	})
+	}).DoAndReturn(committable)
 	// SetNonce create the account if it does not exist
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -1953,7 +1953,7 @@ func TestStateDB_NoncesUnchangedValuesAreNotWritten(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 
 	// Nonce is only read, never written.
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(10), nil)
 	// SetNonce create the account if it does not exist
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -1972,7 +1972,7 @@ func TestStateDB_NoncesIsNotWrittenToStateIfTransactionIsAborted(t *testing.T) {
 	// SetNonce create the account if it does not exist
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.SetNonce(address1, 10)
 	db.AbortTransaction()
@@ -2059,7 +2059,7 @@ func TestStateDB_ImplicitAccountCreatedBySetStateIsDroppedSinceEmptyIfNothingEls
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetState(address1, key1, val1)
 	db.EndTransaction()
@@ -2205,7 +2205,7 @@ func TestStateDB_UpdatedValuesAreCommittedToStateAtEndBlock(t *testing.T) {
 			{Account: address1, Key: key1, Value: val1},
 			{Account: address1, Key: key2, Value: val2},
 		},
-	}})
+	}}).DoAndReturn(committable)
 
 	db.SetState(address1, key1, val1)
 	db.SetState(address1, key2, val2)
@@ -2222,7 +2222,7 @@ func TestStateDB_RevertedValuesAreNotCommitted(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetState(address1, key1, val1)
 	snapshot := db.Snapshot()
@@ -2240,7 +2240,7 @@ func TestStateDB_NothingIsCommittedOnTransactionAbort(t *testing.T) {
 	// Should test whether the account exists, nothing else.
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.SetState(address1, key1, val1)
 	db.SetState(address1, key2, val2)
@@ -2257,7 +2257,7 @@ func TestStateDB_OnlyFinalValueIsStored(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val3}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetState(address1, key1, val1)
 	db.SetState(address1, key1, val2)
@@ -2276,7 +2276,7 @@ func TestStateDB_UndoneValueUpdateIsNotStored(t *testing.T) {
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	val := db.GetState(address1, key1)
 	db.SetState(address1, key1, val2)
@@ -2332,13 +2332,13 @@ func TestStateDB_CanBeUsedForMultipleBlocks(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Times(3).Return(balance1, nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-	})
+	}).DoAndReturn(committable)
 	mock.EXPECT().Apply(uint64(2), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val2}},
-	})
+	}).DoAndReturn(committable)
 	mock.EXPECT().Apply(uint64(3), common.Update{
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: val3}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetState(address1, key1, val1)
 	db.EndTransaction()
@@ -2418,7 +2418,7 @@ func TestStateDB_ReadCodesAreNotStored(t *testing.T) {
 
 	want := []byte{0xAC, 0xDC}
 	mock.EXPECT().GetCode(address1).Return(want, nil)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.GetCode(address1)
 	db.EndTransaction()
@@ -2438,7 +2438,7 @@ func TestStateDB_UpdatedCodesAreStored(t *testing.T) {
 	want := []byte{0xAC, 0xDC}
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Codes: []common.CodeUpdate{{Account: address1, Code: want}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetCode(address1, want)
 	db.EndTransaction()
@@ -2458,8 +2458,8 @@ func TestStateDB_UpdatedCodesAreStoredOnlyOnce(t *testing.T) {
 	want := []byte{0xAC, 0xDC}
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Codes: []common.CodeUpdate{{Account: address1, Code: want}},
-	})
-	mock.EXPECT().Apply(uint64(2), common.Update{})
+	}).DoAndReturn(committable)
+	mock.EXPECT().Apply(uint64(2), common.Update{}).DoAndReturn(committable)
 	db.SetCode(address1, want)
 	db.EndTransaction()
 	db.EndBlock(1)
@@ -2486,7 +2486,7 @@ func TestStateDB_CodeCanBeUpdated_In_Each_Block(t *testing.T) {
 		hashes = append(hashes, common.GetKeccak256Hash(code))
 		applyCalls = append(applyCalls, mock.EXPECT().Apply(uint64(i), common.Update{
 			Codes: []common.CodeUpdate{{Account: address1, Code: code}},
-		}))
+		}).DoAndReturn(committable))
 		getCodeHashCalls = append(getCodeHashCalls, mock.EXPECT().GetCodeHash(address1).Return(hashes[i], nil))
 		getCodeCalls = append(getCodeCalls, mock.EXPECT().GetCode(address1).Return(code, nil))
 	}
@@ -2524,7 +2524,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Block(t *testing.T) {
 	// stored to state only for the last update
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Codes: []common.CodeUpdate{{Account: address1, Code: codes[len(codes)-1]}},
-	})
+	}).DoAndReturn(committable)
 	mock.EXPECT().GetCodeHash(address1).Return(hashes[len(hashes)-1], nil)
 	mock.EXPECT().GetCode(address1).Return(codes[len(codes)-1], nil)
 
@@ -2558,7 +2558,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Transaction(t *testing.T) {
 	// stored to state only for the last update
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Codes: []common.CodeUpdate{{Account: address1, Code: codes[len(codes)-1]}},
-	})
+	}).DoAndReturn(committable)
 	mock.EXPECT().GetCodeHash(address1).Return(hashes[len(hashes)-1], nil)
 	mock.EXPECT().GetCode(address1).Return(codes[len(codes)-1], nil)
 
@@ -2586,7 +2586,7 @@ func TestStateDB_SettingCodesCreatesAccountsImplicitly(t *testing.T) {
 	want := []byte{0xAC, 0xDC}
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Codes: []common.CodeUpdate{{Account: address1, Code: want}},
-	})
+	}).DoAndReturn(committable)
 
 	db.SetCode(address1, want)
 	db.EndTransaction()
@@ -3199,7 +3199,7 @@ func TestStateDB_DeletesEmptyAccountsEip161(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{
 		Balances: []common.BalanceUpdate{{Account: address1}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-	})
+	}).DoAndReturn(committable)
 	db.EndBlock(1)
 }
 
@@ -3212,7 +3212,7 @@ func TestStateDB_NeverCreatesEmptyAccountsEip161(t *testing.T) {
 	setExpectationForEmptyAccount(t, mock, address1)
 	setExpectationForEmptyAccount(t, mock, address2)
 	setExpectationForEmptyAccount(t, mock, address3)
-	mock.EXPECT().Apply(uint64(1), common.Update{})
+	mock.EXPECT().Apply(uint64(1), common.Update{}).DoAndReturn(committable)
 
 	db.BeginBlock()
 	db.BeginTransaction()
@@ -3246,7 +3246,7 @@ func TestStateDB_SuicidedAccountNotRecreatedBySettingBalance(t *testing.T) {
 		// The slot written after the suicide has an unknown stored value, so
 		// an explicit zero-write is emitted for it after the clearing.
 		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
-	})
+	}).DoAndReturn(committable)
 
 	// The account is suicided
 	db.Suicide(address1)
@@ -3533,7 +3533,7 @@ func TestStateDB_LogsAreResetAtEndOfBlock(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(0), common.Update{})
+	mock.EXPECT().Apply(uint64(0), common.Update{}).DoAndReturn(committable)
 
 	log1 := &common.Log{Address: address1}
 	log2 := &common.Log{Address: address2}
@@ -3788,7 +3788,7 @@ func TestStateDB_NoApplyWhenErrorsHaveBeenEncountered(t *testing.T) {
 	issue := fmt.Errorf("injected issue")
 	state.EXPECT().GetNonce(address1).Return(common.Nonce{1}, nil)
 	state.EXPECT().GetNonce(address2).Return(common.Nonce{}, issue)
-	state.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil)
+	state.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(committable)
 
 	db.GetNonce(address1)
 	db.EndBlock(1)
@@ -4009,6 +4009,20 @@ func TestStateDB_ProvidesTransactionChanges(t *testing.T) {
 	}
 }
 
+// bulkStaged returns the staged block a mocked State hands to a bulk load, which
+// commits it right away.
+// committable stands in for a state's Apply in tests that do not look at the
+// staged block: every block applied can be committed, and nothing else.
+func committable(uint64, common.Update) (StagedBlock, error) {
+	return NewIrreversibleBlock(0, func() common.Hash { return common.Hash{} }, nil), nil
+}
+
+func bulkStaged(ctrl *gomock.Controller) *MockStagedBlock {
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(nil), nil)
+	return staged
+}
+
 func TestStateDB_BulkLoadReachesState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
@@ -4022,7 +4036,7 @@ func TestStateDB_BulkLoadReachesState(t *testing.T) {
 		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(14)}},
 		Codes:    []common.CodeUpdate{{Account: address1, Code: code}},
 		Slots:    []common.SlotUpdate{{Account: address1, Key: key1, Value: val1}},
-	})
+	}).Return(bulkStaged(ctrl), nil)
 	mock.EXPECT().Flush().Return(nil)
 	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
@@ -4110,7 +4124,7 @@ func TestStateDB_BulkLoadCloseReportsFlushIssues(t *testing.T) {
 	state := NewMockState(ctrl)
 
 	injectedError := fmt.Errorf("injected error")
-	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(bulkStaged(ctrl), nil)
 	state.EXPECT().Flush().Return(injectedError)
 
 	bulk := bulkLoad{
@@ -4131,7 +4145,7 @@ func TestStateDB_BulkLoadCloseReportsHashingIssues(t *testing.T) {
 	state := NewMockState(ctrl)
 
 	injectedError := fmt.Errorf("injected error")
-	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(bulkStaged(ctrl), nil)
 	state.EXPECT().Flush().Return(nil)
 	state.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](injectedError)))
 
@@ -4155,7 +4169,9 @@ func TestStateDB_ThereCanBeMultipleBulkLoadPhases(t *testing.T) {
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
 
-	mock.EXPECT().Apply(gomock.Any(), gomock.Any()).AnyTimes()
+	mock.EXPECT().Apply(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(uint64, common.Update) (StagedBlock, error) { return bulkStaged(ctrl), nil },
+	).AnyTimes()
 	mock.EXPECT().Flush().Times(N).Return(nil)
 	mock.EXPECT().GetCommitment().Times(N).DoAndReturn(func() future.Future[result.Result[common.Hash]] {
 		return future.Immediate(result.Ok(common.Hash{}))
@@ -4243,7 +4259,7 @@ func TestBulkLoad_CloseResetsLocalCache(t *testing.T) {
 		mock.EXPECT().GetBalance(address1).Return(balance1, nil),
 		mock.EXPECT().GetBalance(address2).Return(balance1, nil),
 		mock.EXPECT().GetBalance(address3).Return(balance1, nil),
-		mock.EXPECT().Apply(uint64(1), gomock.Any()),
+		mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(bulkStaged(ctrl), nil),
 		mock.EXPECT().Flush(),
 		mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 	)
@@ -4306,7 +4322,7 @@ func TestStateDB_EffectsOfBulkLoadAreSeenByStateDB(t *testing.T) {
 	state.EXPECT().GetCodeSize(addr).Return(0, nil)
 	gomock.InOrder(
 		state.EXPECT().GetBalance(addr).Return(amount.New(), nil),
-		state.EXPECT().Apply(gomock.Any(), gomock.Any()),
+		state.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(bulkStaged(ctrl), nil),
 		state.EXPECT().Flush(),
 		state.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{}))),
 		state.EXPECT().GetBalance(addr).Return(balance1, nil),
@@ -4923,11 +4939,11 @@ func TestStateDB_EndBlock_ForwardsApplyDoneChannel(t *testing.T) {
 
 		applyDone := make(chan error)
 
+		staged := NewMockStagedBlock(ctrl)
+		staged.EXPECT().Commit().Return(NewWaitHandle(applyDone), nil)
+
 		mock.EXPECT().Check().AnyTimes()
-		mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
-			func(_ uint64, _ common.Update) (<-chan error, error) {
-				return applyDone, nil
-			})
+		mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 		done := db.EndBlock(1)
 		if done == nil {
@@ -4985,11 +5001,11 @@ func TestStateDB_EndBlock_CollectsSyncErrorInIssueTracker_WhenApplyReturnsChanne
 	injectedError := fmt.Errorf("injected error")
 	applyDone := make(chan error)
 
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(applyDone), nil)
+
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
-		func(_ uint64, _ common.Update) (<-chan error, error) {
-			return applyDone, nil
-		})
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 	done := db.EndBlock(1)
 	if done == nil {
@@ -5019,11 +5035,13 @@ func TestStateDB_EndBlock_CollectsMultipleSyncErrorsInIssueTracker(t *testing.T)
 
 	applyDone := make(chan error)
 
+	// Committing reports an issue the state collected earlier and still hands out
+	// the handle on the archive write, which then fails as well.
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(applyDone), injectedError1)
+
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(1), gomock.Any()).DoAndReturn(
-		func(_ uint64, _ common.Update) (<-chan error, error) {
-			return applyDone, injectedError1
-		})
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 	done := db.EndBlock(1)
 	if done == nil {
@@ -5047,7 +5065,7 @@ func TestStateDB_EndBlock_ClearsUndoList(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
 	state.EXPECT().Check().AnyTimes()
-	state.EXPECT().Apply(uint64(12), gomock.Any()).Return(nil, nil)
+	state.EXPECT().Apply(uint64(12), gomock.Any()).DoAndReturn(committable)
 
 	stateDB := CreateCustomStateDBUsing(state, 10).(*stateDB)
 	stateDB.undo = []func(){nil, nil, nil}
@@ -5100,4 +5118,25 @@ func setExpectationForEmptyAccount(t *testing.T, mock *MockState, address common
 	mock.EXPECT().GetBalance(address).Return(amount.New(), nil)
 	mock.EXPECT().GetNonce(address).Return(common.Nonce{}, nil).AnyTimes()
 	mock.EXPECT().GetCodeSize(address).Return(0, nil).AnyTimes()
+}
+
+func TestStateDB_BulkLoadCloseReportsAMissingStagedBlock(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(nil, nil)
+
+	bulk := bulkLoad{block: 12, db: createStateDBWith(state, 0, true)}
+	require.ErrorContains(t, bulk.Close(), "without returning a staged block")
+}
+
+func TestStateDB_BulkLoadCloseReportsCommitIssues(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	state := NewMockState(ctrl)
+	injectedError := fmt.Errorf("injected error")
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(nil, injectedError)
+	state.EXPECT().Apply(uint64(12), common.Update{}).Return(staged, nil)
+
+	bulk := bulkLoad{block: 12, db: createStateDBWith(state, 0, true)}
+	require.ErrorIs(t, bulk.Close(), injectedError)
 }

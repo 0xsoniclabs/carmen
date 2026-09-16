@@ -204,7 +204,7 @@ func (s *verkleState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
-func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *verkleState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 
 	// Aggregate changes to the account data.
 	modifiedAccounts := map[common.Address]*accountData{}
@@ -303,7 +303,11 @@ func (s *verkleState) Apply(block uint64, update common.Update) (<-chan error, e
 	}
 	s.root = rootNode
 
-	return nil, nil
+	hash, err := s.GetHash()
+	if err != nil {
+		return nil, err
+	}
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 func (s *verkleState) GetHash() (common.Hash, error) {
