@@ -432,7 +432,6 @@ func TestState_Apply_WaitReturns_WhenBackendUpdateIsDone(t *testing.T) {
 				return backendBlock, nil
 			},
 		)
-		backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
 		backend.EXPECT().Close()
 
@@ -540,7 +539,6 @@ func TestState_Apply_BackendApplyReturnsError_IsForwarded(t *testing.T) {
 			return nil, issue
 		},
 	)
-	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(common.Hash{})))
 
 	flatState, err := NewState(t.TempDir(), backend)
 	require.NoError(t, err)

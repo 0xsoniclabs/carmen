@@ -253,9 +253,9 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 	commitment := s.GetCommitment()
 
 	return state.NewIrreversibleBlock(block, func() func() common.Hash {
+		var once sync.Once
+		var hash common.Hash
 		return func() common.Hash {
-			var once sync.Once
-			var hash common.Hash
 			// A hashing error is collected by the backend and reported through Check.
 			once.Do(func() {
 				var err error
