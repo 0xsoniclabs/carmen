@@ -1200,6 +1200,42 @@ func TestState_Apply_StagedBlockReportsTheRootTheBackendComputes(t *testing.T) {
 	require.Equal(t, hash, block.StateHash())
 }
 
+func TestState_Apply_StateHashCanBeReadRepeatedly(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	hash := common.Hash{1, 2, 3}
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, nil)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash)))
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	block, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Equal(t, hash, block.StateHash())
+	require.Equal(t, hash, block.StateHash(), "the root must survive a second read")
+}
+
+func TestState_Apply_FailedCommitmentIsReportedThroughCheck(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+	staged := state.NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(state.NewWaitHandle(nil), nil)
+	issue := errors.New("commitment failed")
+	backend.EXPECT().Apply(gomock.Any(), gomock.Any()).Return(staged, nil)
+	backend.EXPECT().GetCommitment().Return(future.Immediate(result.Err[common.Hash](issue)))
+
+	flatState, err := NewState(t.TempDir(), backend)
+	require.NoError(t, err)
+
+	block, err := flatState.Apply(1, common.Update{})
+	require.NoError(t, err)
+	require.Equal(t, common.Hash{}, block.StateHash())
+	require.ErrorIs(t, flatState.Check(), issue)
+}
+
 func TestState_Apply_BackendWithoutStagedBlock_IsReported(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	backend := state.NewMockState(ctrl)

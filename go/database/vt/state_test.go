@@ -422,12 +422,24 @@ func (s *comparingState) GetBalance(address common.Address) (amount.Amount, erro
 	})
 }
 
-func (s *comparingState) Apply(block uint64, update common.Update) (<-chan error, error) {
+func (s *comparingState) Apply(block uint64, update common.Update) (state.StagedBlock, error) {
 	s.t.Helper()
-	return nil, s.action(func(state state.State) error {
-		_, err := state.Apply(block, update)
-		return err
+	// The comparison never takes a block back, so both wrapped blocks are
+	// committed right away; the returned block reports the root they agree on.
+	hash, err := getCmpStateValue(s, func(state state.State) (common.Hash, error) {
+		staged, err := state.Apply(block, update)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		if _, err := staged.Commit(); err != nil {
+			return common.Hash{}, err
+		}
+		return staged.StateHash(), nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return state.NewIrreversibleBlock(block, func() common.Hash { return hash }, nil), nil
 }
 
 //

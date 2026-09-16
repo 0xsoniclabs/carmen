@@ -251,8 +251,17 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 	// The commitment is requested right behind the update, so that it is the
 	// root of this block, whatever is applied before the handle is read.
 	commitment := s.GetCommitment()
+	var once sync.Once
+	var hash common.Hash
 	return state.NewIrreversibleBlock(block, func() common.Hash {
-		hash, _ := commitment.Await().Get()
+		// A future is consumed once; the root is kept for later reads, and a
+		// failed commitment is reported through Check.
+		once.Do(func() {
+			var err error
+			if hash, err = commitment.Await().Get(); err != nil {
+				s.issues.HandleIssue(fmt.Errorf("failed to compute the root of block %d: %w", block, err))
+			}
+		})
 		return hash
 	}, done), nil
 }
@@ -293,7 +302,6 @@ func processCommands(
 				// back, so the backend block is committed straight away.
 				backendDone, err = staged.Commit()
 			}
-			committed := err == nil
 			// Register the apply/commit error with the collector so that Check
 			// reports it even when no caller waits on the done channel.
 			issues.HandleIssue(err)
@@ -301,7 +309,7 @@ func processCommands(
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.
 				go func(err error) {
-					if committed {
+					if backendDone != nil {
 						// wait for the backend write and forward both errors into
 						// the update synch channel.
 						syncError := backendDone.Wait()
