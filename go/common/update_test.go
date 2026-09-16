@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/stretchr/testify/require"
@@ -517,5 +518,26 @@ func Test_insertOrdered(t *testing.T) {
 				t.Errorf("expected %v, got %v", tc.expected, updatedList)
 			}
 		})
+	}
+}
+
+func TestUpdate_GetMemoryFootprint_CountsTheChangesAndTheCodes(t *testing.T) {
+	require := require.New(t)
+	empty := Update{}
+	require.Equal(unsafe.Sizeof(empty), empty.GetMemoryFootprint().Total())
+
+	update := Update{
+		Balances: make([]BalanceUpdate, 2),
+		Nonces:   make([]NonceUpdate, 3),
+		Codes:    []CodeUpdate{{Code: make([]byte, 10)}, {Code: make([]byte, 20)}},
+		Slots:    make([]SlotUpdate, 4),
+	}
+	want := unsafe.Sizeof(update) +
+		2*unsafe.Sizeof(BalanceUpdate{}) +
+		3*unsafe.Sizeof(NonceUpdate{}) +
+		2*unsafe.Sizeof(CodeUpdate{}) + 10 + 20 +
+		4*unsafe.Sizeof(SlotUpdate{})
+	if got := update.GetMemoryFootprint().Total(); got != want {
+		t.Errorf("wanted %d bytes, got %d", want, got)
 	}
 }
