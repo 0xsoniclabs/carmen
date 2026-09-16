@@ -250,7 +250,7 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 	// Immediately request the commitment.
 	// Commands are processed in order, and no other thread can send commands
 	// while `Apply` is running if wrapped into a `syncedState`.
-	committment := s.GetCommitment()
+	commitment := s.GetCommitment()
 
 	return state.NewIrreversibleBlock(block, func() func() common.Hash {
 		return func() common.Hash {
@@ -259,7 +259,7 @@ func (s *State) Apply(block uint64, data common.Update) (state.StagedBlock, erro
 			// A hashing error is collected by the backend and reported through Check.
 			once.Do(func() {
 				var err error
-				hash, err = committment.Await().Get()
+				hash, err = commitment.Await().Get()
 				if err != nil {
 					s.issues.HandleIssue(fmt.Errorf("failed to compute the root of block %d: %w", block, err))
 					return
