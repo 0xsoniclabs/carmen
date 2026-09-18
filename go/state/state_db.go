@@ -1325,9 +1325,6 @@ func (s *stateDB) EndBlock(block uint64) (StagedBlock, error) {
 	// Send the update to the state.
 	staged, err := s.state.Apply(block, update)
 	if err == nil && staged == nil {
-		// Reported rather than wrapped: a wrapper around a nil block is itself
-		// non-nil, so it would pass a caller's nil check and only fail once the
-		// block is decided on.
 		err = fmt.Errorf("state applied block %d without returning a staged block", block)
 	}
 	if err != nil {
@@ -1353,9 +1350,6 @@ type stateDbStagedBlock struct {
 func (b *stateDbStagedBlock) Commit() (*WaitHandle, error) {
 	done, err := b.StagedBlock.Commit()
 	if err != nil {
-		// Not collected here: a misuse is a mistake in the calling code and leaves
-		// the state intact, and any other error is one the state has already
-		// collected itself.
 		return nil, err
 	}
 	// Only the outcome of the archive write is an issue of this StateDB.
