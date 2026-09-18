@@ -49,7 +49,7 @@ func TestStress_CanHandleLargeBlock(t *testing.T) {
 			}
 
 			db.EndTransaction()
-			keepBlock(t, db, 12)
+			endAndCommitBlock(t, db, 12)
 
 			if err := db.Check(); err != nil {
 				t.Errorf("update failed with unexpected error: %v", err)
@@ -88,7 +88,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			db.CreateAccount(addr)
 			db.SetNonce(addr, 5)
 			db.EndTransaction()
-			keepBlock(t, db, 0)
+			endAndCommitBlock(t, db, 0)
 
 			// Fill slots in batches.
 			block := uint64(1)
@@ -101,7 +101,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 					counter++
 				}
 				db.EndTransaction()
-				keepBlock(t, db, block)
+				endAndCommitBlock(t, db, block)
 				block++
 			}
 
@@ -110,7 +110,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			db.BeginTransaction()
 			db.Suicide(addr)
 			db.EndTransaction()
-			keepBlock(t, db, block)
+			endAndCommitBlock(t, db, block)
 			block++
 
 			db.BeginBlock()
@@ -119,7 +119,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 				t.Errorf("unexpected exist result, wanted %v, got %v", want, got)
 			}
 			db.EndTransaction()
-			keepBlock(t, db, block)
+			endAndCommitBlock(t, db, block)
 
 			if err := db.Check(); err != nil {
 				t.Errorf("update failed with unexpected error: %v", err)

@@ -31,13 +31,13 @@ import (
 
 func TestStagedBlock_StateHash_ReportsTheRootOfItsOwnBlock(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		first := stageNonce(t, db, 1, 10)
+		first := stageNonce(t, db, address1, 1, 10)
 		firstHash := db.GetHash()
 		require.Equal(t, firstHash, first.StateHash())
 
 		// Staging a second block moves the live root on, but the first block must
 		// keep reporting the root it produced.
-		second := stageNonce(t, db, 2, 20)
+		second := stageNonce(t, db, address1, 2, 20)
 		require.NotEqual(t, firstHash, db.GetHash())
 		require.Equal(t, firstHash, first.StateHash(),
 			"an older staged block must not report the root of a newer one")
@@ -47,8 +47,8 @@ func TestStagedBlock_StateHash_ReportsTheRootOfItsOwnBlock(t *testing.T) {
 
 func TestStagedBlock_Commit_OutOfOrderIsRejected(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		first := stageNonce(t, db, 1, 10)
-		second := stageNonce(t, db, 2, 20)
+		first := stageNonce(t, db, address1, 1, 10)
+		second := stageNonce(t, db, address1, 2, 20)
 
 		_, err := second.Commit()
 		require.Error(t, err, "committing before the older staged block must be rejected")
@@ -67,7 +67,7 @@ func TestStagedBlock_Commit_PromotesBlocksToTheArchiveInOrder(t *testing.T) {
 
 		staged := []state.StagedBlock{}
 		for i := uint64(1); i <= 3; i++ {
-			staged = append(staged, stageNonce(t, db, i, i*10))
+			staged = append(staged, stageNonce(t, db, address1, i, i*10))
 		}
 
 		// Nothing may have reached the archive while the blocks were merely staged.
@@ -103,7 +103,7 @@ func TestStagedBlock_Commit_WaitWithoutArchiveReturnsImmediately(t *testing.T) {
 			t.Skip("state maintains an archive")
 		}
 
-		staged := stageNonce(t, db, 1, 10)
+		staged := stageNonce(t, db, address1, 1, 10)
 		done, err := staged.Commit()
 		require.NoError(t, err)
 		require.NoError(t, done.Wait(), "waiting on a state without an archive must not block or fail")
@@ -114,7 +114,7 @@ func TestStagedBlock_Rollback_RestoresThePreviousState(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
 		initialHash := db.GetHash()
 
-		staged := stageNonce(t, db, 1, 10)
+		staged := stageNonce(t, db, address1, 1, 10)
 		require.NotEqual(t, initialHash, db.GetHash(), "staging a block must advance the live state")
 		require.Equal(t, db.GetHash(), staged.StateHash(), "the staged block must report the root it produced")
 
@@ -135,7 +135,7 @@ func TestStagedBlock_Rollback_TakesSeveralBlocksBackNewestFirst(t *testing.T) {
 		staged := []state.StagedBlock{}
 		hashes := []common.Hash{}
 		for i := uint64(1); i <= 3; i++ {
-			staged = append(staged, stageNonce(t, db, i, i*10))
+			staged = append(staged, stageNonce(t, db, address1, i, i*10))
 			hashes = append(hashes, db.GetHash())
 		}
 
@@ -154,7 +154,7 @@ func TestStagedBlock_Rollback_AllowsReExecutionProducingTheSameRoots(t *testing.
 		staged := []state.StagedBlock{}
 		want := []common.Hash{}
 		for i := uint64(1); i <= 3; i++ {
-			staged = append(staged, stageNonce(t, db, i, i*10))
+			staged = append(staged, stageNonce(t, db, address1, i, i*10))
 			want = append(want, db.GetHash())
 		}
 
@@ -165,7 +165,7 @@ func TestStagedBlock_Rollback_AllowsReExecutionProducingTheSameRoots(t *testing.
 
 		// ...and re-execute the very same blocks.
 		for i := uint64(1); i <= 3; i++ {
-			block := stageNonce(t, db, i, i*10)
+			block := stageNonce(t, db, address1, i, i*10)
 			require.Equal(t, want[i-1], db.GetHash(), "re-executed block %d produced a different root", i)
 			require.Equal(t, want[i-1], block.StateHash())
 		}
@@ -174,8 +174,8 @@ func TestStagedBlock_Rollback_AllowsReExecutionProducingTheSameRoots(t *testing.
 
 func TestStagedBlock_Rollback_OutOfOrderIsRejected(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		first := stageNonce(t, db, 1, 10)
-		second := stageNonce(t, db, 2, 20)
+		first := stageNonce(t, db, address1, 1, 10)
+		second := stageNonce(t, db, address1, 2, 20)
 
 		require.Error(t, first.Rollback(), "rolling back before the newer staged block must be rejected")
 		require.NoError(t, second.Rollback())
@@ -190,12 +190,12 @@ func TestStagedBlock_Rollback_KeepsTheBlockOutOfTheArchive(t *testing.T) {
 		}
 
 		// Produce a block at height 1, then take it back...
-		require.NoError(t, stageNonce(t, db, 1, 10).Rollback())
+		require.NoError(t, stageNonce(t, db, address1, 1, 10).Rollback())
 
 		// ...and produce a different block at the same height. The archive is
 		// append-only and rejects a height it has already seen, so this only works
 		// because the rolled back block never reached it.
-		second := stageNonce(t, db, 1, 20)
+		second := stageNonce(t, db, address1, 1, 20)
 		done, err := second.Commit()
 		require.NoError(t, err)
 		require.NoError(t, done.Wait())
@@ -216,14 +216,14 @@ func TestStagedBlock_Rollback_KeepsTheBlockOutOfTheArchive(t *testing.T) {
 
 func TestStagedBlock_CommitAndRollback_DecidingTwiceIsRejected(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		committed := stageNonce(t, db, 1, 10)
+		committed := stageNonce(t, db, address1, 1, 10)
 		_, err := committed.Commit()
 		require.NoError(t, err)
 		_, err = committed.Commit()
 		require.Error(t, err, "a block must not be committed twice")
 		require.Error(t, committed.Rollback(), "a committed block must not be rolled back")
 
-		rolledBack := stageNonce(t, db, 2, 20)
+		rolledBack := stageNonce(t, db, address1, 2, 20)
 		require.NoError(t, rolledBack.Rollback())
 		require.Error(t, rolledBack.Rollback(), "a block must not be rolled back twice")
 		_, err = rolledBack.Commit()
@@ -266,7 +266,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			db.SetCode(addr2, []byte{4, 5, 6})
 			db.SetCode(addr3, []byte{7, 8, 9})
 			db.EndTransaction()
-			keepBlock(t, db, 0)
+			endAndCommitBlock(t, db, 0)
 
 			// Second block: check balances and modify them.
 			db.BeginBlock()
@@ -286,7 +286,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			db.SubBalance(addr3, maxBalance)
 
 			db.EndTransaction()
-			keepBlock(t, db, 1)
+			endAndCommitBlock(t, db, 1)
 			require.NoError(t, db.Check(), "state DB check failed after block 1")
 
 			// Third block: check modified balances.
@@ -304,7 +304,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			}
 
 			db.EndTransaction()
-			keepBlock(t, db, 2)
+			endAndCommitBlock(t, db, 2)
 			require.NoError(t, db.Check(), "state DB check failed after block 2")
 
 			if err := db.Flush(); err != nil {
@@ -434,7 +434,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 				}
 				db.SetNonce(address, 2)
 				db.EndTransaction()
-				keepBlock(t, db, uint64(i*2+1))
+				endAndCommitBlock(t, db, uint64(i*2+1))
 			}
 		})
 	}
@@ -458,7 +458,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 		}()
 		mod(ref)
 		ref.EndTransaction()
-		keepBlock(t, ref, 0)
+		endAndCommitBlock(t, ref, 0)
 		want[s] = ref.GetHash()
 	}
 	for i := range 3 {
@@ -487,7 +487,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 
 				mod(stateDb)
 				stateDb.EndTransaction()
-				keepBlock(t, stateDb, 0)
+				endAndCommitBlock(t, stateDb, 0)
 				if got := stateDb.GetHash(); want[config.config.Schema] != got {
 					t.Errorf("Invalid hash, wanted %v, got %v", want, got)
 				}
@@ -611,7 +611,7 @@ func TestPersistentStateDB(t *testing.T) {
 			}
 
 			stateDb.EndTransaction()
-			keepBlock(t, stateDb, 0)
+			endAndCommitBlock(t, stateDb, 0)
 			stateDb.BeginBlock()
 			stateDb.BeginTransaction()
 
@@ -627,7 +627,7 @@ func TestPersistentStateDB(t *testing.T) {
 			}
 
 			stateDb.EndTransaction()
-			keepBlock(t, stateDb, 1)
+			endAndCommitBlock(t, stateDb, 1)
 			stateDb.EndEpoch(1)
 
 			if err := stateDb.Close(); err != nil {
@@ -791,7 +791,7 @@ func TestStateDBArchive(t *testing.T) {
 
 			stateDb.BeginBlock()
 			stateDb.AddBalance(address1, amount.New(22))
-			keepBlock(t, stateDb, 1)
+			endAndCommitBlock(t, stateDb, 1)
 
 			if err := stateDb.Flush(); err != nil { // wait until archives are written
 				t.Fatalf("failed to flush StateDB; %s", err)
@@ -936,7 +936,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				}
 				db.EndTransaction()
 			}
-			keepBlock(t, db, 0)
+			endAndCommitBlock(t, db, 0)
 
 			// In the next block we have two transactions:
 			db.BeginBlock()
@@ -993,7 +993,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				db.EndTransaction()
 
 			}
-			keepBlock(t, db, 1)
+			endAndCommitBlock(t, db, 1)
 
 			// Check the state after the block.
 			db.BeginBlock()
@@ -1004,7 +1004,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				}
 				db.EndTransaction()
 			}
-			keepBlock(t, db, 2)
+			endAndCommitBlock(t, db, 2)
 		})
 	}
 }
@@ -1032,7 +1032,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 				statedb.CreateAccount(address)
 				statedb.AddBalance(address, balance)
 				statedb.EndTransaction()
-				keepBlock(t, statedb, blockNum)
+				endAndCommitBlock(t, statedb, blockNum)
 			}
 
 			// Case 1: deleted account because is empty
@@ -1041,7 +1041,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.BeginTransaction()
 			statedb.SubBalance(address1, balance1)
 			statedb.EndTransaction()
-			keepBlock(t, statedb, 1)
+			endAndCommitBlock(t, statedb, 1)
 
 			require.False(statedb.Exist(address1))
 		})
@@ -1107,7 +1107,7 @@ func executeOpOnCleanStateDB(t *testing.T, config namedStateConfig, op func(stat
 	db.BeginTransaction()
 	op(db)
 	db.EndTransaction()
-	keepBlock(t, db, 0)
+	endAndCommitBlock(t, db, 0)
 	return db.GetHash()
 }
 
@@ -1203,13 +1203,13 @@ func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
 				db.BeginTransaction()
 				op(db)
 				db.EndTransaction()
-				keepBlock(t, db, 0)
+				endAndCommitBlock(t, db, 0)
 
 				db.BeginBlock()
 				db.BeginTransaction()
 				require.True(db.Exist(address1))
 				db.EndTransaction()
-				keepBlock(t, db, 1)
+				endAndCommitBlock(t, db, 1)
 			})
 		}
 	}
@@ -1260,10 +1260,7 @@ func forEachStagingState(t *testing.T, test func(t *testing.T, config namedState
 	}
 }
 
-// keepBlock ends the block and keeps it. Ending a block only makes its content
-// live; committing is what makes it part of the archive as well, and a test seeding
-// a state wants both.
-func keepBlock(t *testing.T, db state.StateDB, block uint64) {
+func endAndCommitBlock(t *testing.T, db state.StateDB, block uint64) {
 	t.Helper()
 	staged, err := db.EndBlock(block)
 	require.NoError(t, err)
@@ -1272,13 +1269,13 @@ func keepBlock(t *testing.T, db state.StateDB, block uint64) {
 	require.NoError(t, done.Wait())
 }
 
-// stageNonce stages one block setting the nonce of address1 to a value identifying
-// that block, and returns the staged block.
-func stageNonce(t *testing.T, db state.StateDB, block uint64, nonce uint64) state.StagedBlock {
+// stageNonce creates a block an updates the nonce of the given account.
+// It returns the staged block, which can be committed or discarded.
+func stageNonce(t *testing.T, db state.StateDB, address common.Address, block uint64, nonce uint64) state.StagedBlock {
 	t.Helper()
 	db.BeginBlock()
 	db.BeginTransaction()
-	db.SetNonce(address1, nonce)
+	db.SetNonce(address, nonce)
 	db.EndTransaction()
 	staged, err := db.EndBlock(block)
 	require.NoError(t, err)
