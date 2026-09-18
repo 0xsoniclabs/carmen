@@ -5047,7 +5047,27 @@ func TestStateDB_EndBlock_ClearsUndoList(t *testing.T) {
 	require.Empty(t, stateDB.undo)
 }
 
+func TestStateDbStagedBlock_Commit_CommitsTheStagedBlock(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Commit().Return(NewWaitHandle(nil), nil)
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
+
+	block, err := db.EndBlock(1)
+	require.NoError(err)
+	done, err := block.Commit()
+	require.NoError(err)
+	require.NoError(done.Wait())
+}
+
 func TestStateDbStagedBlock_Commit_CollectsAnArchiveFailureAsAnIssue(t *testing.T) {
+	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
 	db := CreateStateDBUsing(mock)
@@ -5061,71 +5081,13 @@ func TestStateDbStagedBlock_Commit_CollectsAnArchiveFailureAsAnIssue(t *testing.
 	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
 
 	block, err := db.EndBlock(1)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(err)
 	done, err := block.Commit()
-	if err != nil {
-		t.Fatalf("unexpected error committing: %v", err)
-	}
+	require.NoError(err)
 
-	// The failure is collected only once someone waits for it: the handle is what
-	// carries the outcome, and the StateDB learns of it on the way through.
-	if err := db.Check(); err != nil {
-		t.Errorf("expected no issue before the outcome is waited for, got %v", err)
-	}
-	if err := done.Wait(); !errors.Is(err, injectedError) {
-		t.Errorf("expected Wait to report %v, got %v", injectedError, err)
-	}
-	if err := db.Check(); !errors.Is(err, injectedError) {
-		t.Errorf("expected error %v to be tracked, got %v", injectedError, err)
-	}
-}
-
-func TestStateDbStagedBlock_Rollback_DropsTheCachedState(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	staged := NewMockStagedBlock(ctrl)
-	staged.EXPECT().Rollback().Return(nil)
-
-	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
-
-	balanceReads := 0
-	mock.EXPECT().GetBalance(address1).DoAndReturn(func(common.Address) (amount.Amount, error) {
-		balanceReads++
-		return amount.New(), nil
-	}).AnyTimes()
-	mock.EXPECT().GetNonce(address1).Return(common.Nonce{}, nil).AnyTimes()
-	mock.EXPECT().GetCodeSize(address1).Return(0, nil).AnyTimes()
-
-	db.BeginBlock()
-	db.BeginTransaction()
-	db.AddBalance(address1, amount.New(10))
-	db.EndTransaction()
-
-	block, err := db.EndBlock(1)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	readsWhileLive := balanceReads
-
-	if err := block.Rollback(); err != nil {
-		t.Fatalf("unexpected error rolling back: %v", err)
-	}
-
-	// The balance cached while the block was live was read from a state that has
-	// just been taken back, so it must be re-read rather than served from cache.
-	db.BeginBlock()
-	db.BeginTransaction()
-	if got := db.GetBalance(address1); !got.IsZero() {
-		t.Errorf("expected the balance to be zero again after the rollback, got %v", got)
-	}
-	if balanceReads <= readsWhileLive {
-		t.Errorf("expected the balance to be re-read from the state after the rollback, but it was served from the cache")
-	}
+	require.NoError(db.Check())
+	require.ErrorIs(done.Wait(), injectedError)
+	require.ErrorIs(db.Check(), injectedError)
 }
 
 func TestStateDbStagedBlock_Commit_ReportsMisuseWithoutCollectingIt(t *testing.T) {
@@ -5144,13 +5106,64 @@ func TestStateDbStagedBlock_Commit_ReportsMisuseWithoutCollectingIt(t *testing.T
 	block, err := db.EndBlock(1)
 	require.NoError(err)
 
-	// Misusing the staged block is a mistake in the calling code and leaves the
-	// state intact, so it is reported to the caller without becoming an issue of
-	// this StateDB.
 	done, err := block.Commit()
 	require.ErrorIs(err, ErrStagedBlockMisuse)
 	require.Nil(done)
 	require.NoError(db.Check())
+}
+
+func TestStateDbStagedBlock_Rollback_DropsTheCachedState(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := createStateDBWith(mock, 10, true)
+
+	staged := NewMockStagedBlock(ctrl)
+	staged.EXPECT().Rollback().Return(nil)
+
+	mock.EXPECT().Check().AnyTimes()
+	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(staged, nil)
+	mock.EXPECT().GetCodeSize(gomock.Any()).Return(0, nil).AnyTimes()
+
+	db.accounts[address1] = &accountState{}
+	db.balances[address1] = &balanceValue{}
+	db.nonces[address1] = &nonceValue{}
+	db.data.Put(slotId{address1, key1}, &slotValue{})
+	db.clearedAccounts[address1] = noClearing
+	db.logsInBlock = 10
+	db.undo = []func(){func() {}}
+	db.reincarnation[address1] = 1
+	db.refund = 100
+	db.transientStorage.Put(slotId{address1, key1}, val1)
+	db.emptyCandidates = append(db.emptyCandidates, address1)
+	db.logs = append(db.logs, &common.Log{Address: address1})
+	db.createdContracts[address1] = struct{}{}
+	db.accessedAddresses[address1] = true
+	db.accessedSlots.Put(slotId{address1, key1}, true)
+
+	db.BeginBlock()
+	db.BeginTransaction()
+	db.EndTransaction()
+	block, err := db.EndBlock(1)
+	require.NoError(err)
+
+	require.NoError(block.Rollback())
+
+	require.Empty(db.accounts)
+	require.Empty(db.balances)
+	require.Empty(db.nonces)
+	require.Zero(db.data.Size())
+	require.Empty(db.clearedAccounts)
+	require.Zero(db.logsInBlock)
+	require.Empty(db.undo)
+	require.Empty(db.reincarnation)
+	require.Zero(db.refund)
+	require.Zero(db.transientStorage.Size())
+	require.Empty(db.emptyCandidates)
+	require.Empty(db.logs)
+	require.Empty(db.createdContracts)
+	require.Empty(db.accessedAddresses)
+	require.Zero(db.accessedSlots.Size())
 }
 
 func TestStateDbStagedBlock_Rollback_ReportsAFailureWithItsBlock(t *testing.T) {

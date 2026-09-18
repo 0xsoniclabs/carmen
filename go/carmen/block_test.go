@@ -218,6 +218,46 @@ func TestHeadBlockContext_CannotCommit_WhenTransactionRunning(t *testing.T) {
 	}
 }
 
+func TestHeadBlockContext_Commit_ReportsAFailedDecisionAndKeepsTheHead(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	stateDB := state.NewMockStateDB(ctrl)
+	stateDB.EXPECT().Check().Return(nil).AnyTimes()
+	stateDB.EXPECT().ResetBlockContext().AnyTimes()
+
+	// A misuse of the staged block is reported but deliberately not collected by
+	// Check, so Commit has to carry it out itself.
+	injected := fmt.Errorf("%w: injected", state.ErrStagedBlockMisuse)
+	rollbackFailed := fmt.Errorf("rollback failed")
+	for name, rollbackErr := range map[string]error{"rolled back": nil, "rollback fails": rollbackFailed} {
+		t.Run(name, func(t *testing.T) {
+			staged := state.NewMockStagedBlock(ctrl)
+			gomock.InOrder(
+				staged.EXPECT().Commit().Return(nil, injected),
+				staged.EXPECT().Rollback().Return(rollbackErr), // < the block is taken back
+			)
+			stateDB.EXPECT().EndBlock(gomock.Any()).Return(staged, nil)
+
+			db := &database{db: state.NewMockState(ctrl), lastBlock: -1}
+			db.headStateInUse = true
+			context := &headBlockContext{
+				commonContext: commonContext{db: db},
+				block:         5,
+				state:         stateDB,
+			}
+
+			err := context.Commit()
+			require.ErrorIs(err, injected)
+			if rollbackErr != nil {
+				require.ErrorIs(err, rollbackErr)
+			}
+			require.Equal(int64(-1), db.lastBlock,
+				"the head must not advance past a block that was not committed")
+		})
+	}
+}
+
 func TestHistoricBlockContext_BeginTransaction_ClosedBlock_Fail(t *testing.T) {
 	block := initHistoricBlockContext(t)
 
@@ -344,46 +384,6 @@ func initBlockContexts() map[string]func(t *testing.T) blockContext {
 		"historicBlockContext": func(t *testing.T) blockContext {
 			return initHistoricBlockContext(t)
 		},
-	}
-}
-
-func TestHeadBlockContext_Commit_ReportsAFailedDecisionAndKeepsTheHead(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-
-	stateDB := state.NewMockStateDB(ctrl)
-	stateDB.EXPECT().Check().Return(nil).AnyTimes()
-	stateDB.EXPECT().ResetBlockContext().AnyTimes()
-
-	// A misuse of the staged block is reported but deliberately not collected by
-	// Check, so Commit has to carry it out itself.
-	injected := fmt.Errorf("%w: injected", state.ErrStagedBlockMisuse)
-	rollbackFailed := fmt.Errorf("rollback failed")
-	for name, rollbackErr := range map[string]error{"rolled back": nil, "rollback fails": rollbackFailed} {
-		t.Run(name, func(t *testing.T) {
-			staged := state.NewMockStagedBlock(ctrl)
-			gomock.InOrder(
-				staged.EXPECT().Commit().Return(nil, injected),
-				staged.EXPECT().Rollback().Return(rollbackErr), // < the block is taken back
-			)
-			stateDB.EXPECT().EndBlock(gomock.Any()).Return(staged, nil)
-
-			db := &database{db: state.NewMockState(ctrl), lastBlock: -1}
-			db.headStateInUse = true
-			context := &headBlockContext{
-				commonContext: commonContext{db: db},
-				block:         5,
-				state:         stateDB,
-			}
-
-			err := context.Commit()
-			require.ErrorIs(err, injected)
-			if rollbackErr != nil {
-				require.ErrorIs(err, rollbackErr)
-			}
-			require.Equal(int64(-1), db.lastBlock,
-				"the head must not advance past a block that was not committed")
-		})
 	}
 }
 

@@ -29,25 +29,7 @@ import (
 	_ "github.com/0xsoniclabs/carmen/go/state/gostate/experimental"
 )
 
-func TestCarmen_StagedBlock_RollbackRestoresThePreviousState(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		initialHash := db.GetHash()
-
-		staged := stageNonce(t, db, 1, 10)
-		require.NotEqual(t, initialHash, db.GetHash(), "staging a block must advance the live state")
-		require.Equal(t, db.GetHash(), staged.StateHash(), "the staged block must report the root it produced")
-
-		require.NoError(t, staged.Rollback())
-		require.Equal(t, initialHash, db.GetHash())
-
-		db.BeginBlock()
-		db.BeginTransaction()
-		require.Zero(t, db.GetNonce(address1),
-			"the nonce must be zero again after the block was rolled back")
-	})
-}
-
-func TestCarmen_StagedBlock_StateHashReportsTheRootOfItsOwnBlock(t *testing.T) {
+func TestStagedBlock_StateHash_ReportsTheRootOfItsOwnBlock(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
 		first := stageNonce(t, db, 1, 10)
 		firstHash := db.GetHash()
@@ -63,51 +45,7 @@ func TestCarmen_StagedBlock_StateHashReportsTheRootOfItsOwnBlock(t *testing.T) {
 	})
 }
 
-func TestCarmen_StagedBlock_SeveralBlocksCanBeStagedAndRolledBack(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		initialHash := db.GetHash()
-
-		staged := []state.StagedBlock{}
-		hashes := []common.Hash{}
-		for i := uint64(1); i <= 3; i++ {
-			staged = append(staged, stageNonce(t, db, i, i*10))
-			hashes = append(hashes, db.GetHash())
-		}
-
-		// Rolling back newest first must retrace the roots exactly.
-		for i := 2; i >= 0; i-- {
-			require.Equal(t, hashes[i], db.GetHash())
-			require.NoError(t, staged[i].Rollback())
-		}
-		require.Equal(t, initialHash, db.GetHash())
-	})
-}
-
-func TestCarmen_StagedBlock_ReExecutionAfterRollbackReproducesTheSameRoots(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		// Stage three blocks and remember the root each of them produced.
-		staged := []state.StagedBlock{}
-		want := []common.Hash{}
-		for i := uint64(1); i <= 3; i++ {
-			staged = append(staged, stageNonce(t, db, i, i*10))
-			want = append(want, db.GetHash())
-		}
-
-		// Take them all back...
-		for i := 2; i >= 0; i-- {
-			require.NoError(t, staged[i].Rollback())
-		}
-
-		// ...and re-execute the very same blocks.
-		for i := uint64(1); i <= 3; i++ {
-			block := stageNonce(t, db, i, i*10)
-			require.Equal(t, want[i-1], db.GetHash(), "re-executed block %d produced a different root", i)
-			require.Equal(t, want[i-1], block.StateHash())
-		}
-	})
-}
-
-func TestCarmen_StagedBlock_CommitOutOfOrderIsRejected(t *testing.T) {
+func TestStagedBlock_Commit_OutOfOrderIsRejected(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
 		first := stageNonce(t, db, 1, 10)
 		second := stageNonce(t, db, 2, 20)
@@ -121,35 +59,7 @@ func TestCarmen_StagedBlock_CommitOutOfOrderIsRejected(t *testing.T) {
 	})
 }
 
-func TestCarmen_StagedBlock_RollbackOutOfOrderIsRejected(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		first := stageNonce(t, db, 1, 10)
-		second := stageNonce(t, db, 2, 20)
-
-		require.Error(t, first.Rollback(), "rolling back before the newer staged block must be rejected")
-		require.NoError(t, second.Rollback())
-		require.NoError(t, first.Rollback())
-	})
-}
-
-func TestCarmen_StagedBlock_DecidingTwiceIsRejected(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		committed := stageNonce(t, db, 1, 10)
-		_, err := committed.Commit()
-		require.NoError(t, err)
-		_, err = committed.Commit()
-		require.Error(t, err, "a block must not be committed twice")
-		require.Error(t, committed.Rollback(), "a committed block must not be rolled back")
-
-		rolledBack := stageNonce(t, db, 2, 20)
-		require.NoError(t, rolledBack.Rollback())
-		require.Error(t, rolledBack.Rollback(), "a block must not be rolled back twice")
-		_, err = rolledBack.Commit()
-		require.Error(t, err, "a rolled back block must not be committed")
-	})
-}
-
-func TestCarmen_StagedBlock_CommitPromotesBlocksToTheArchiveInOrder(t *testing.T) {
+func TestStagedBlock_Commit_PromotesBlocksToTheArchiveInOrder(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, config namedStateConfig, s state.State, db state.StateDB) {
 		if config.config.Archive == state.NoArchive {
 			t.Skip("state maintains no archive")
@@ -187,7 +97,93 @@ func TestCarmen_StagedBlock_CommitPromotesBlocksToTheArchiveInOrder(t *testing.T
 	})
 }
 
-func TestCarmen_StagedBlock_RolledBackBlockNeverReachesTheArchive(t *testing.T) {
+func TestStagedBlock_Commit_WaitWithoutArchiveReturnsImmediately(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, config namedStateConfig, _ state.State, db state.StateDB) {
+		if config.config.Archive != state.NoArchive {
+			t.Skip("state maintains an archive")
+		}
+
+		staged := stageNonce(t, db, 1, 10)
+		done, err := staged.Commit()
+		require.NoError(t, err)
+		require.NoError(t, done.Wait(), "waiting on a state without an archive must not block or fail")
+	})
+}
+
+func TestStagedBlock_Rollback_RestoresThePreviousState(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+		initialHash := db.GetHash()
+
+		staged := stageNonce(t, db, 1, 10)
+		require.NotEqual(t, initialHash, db.GetHash(), "staging a block must advance the live state")
+		require.Equal(t, db.GetHash(), staged.StateHash(), "the staged block must report the root it produced")
+
+		require.NoError(t, staged.Rollback())
+		require.Equal(t, initialHash, db.GetHash())
+
+		db.BeginBlock()
+		db.BeginTransaction()
+		require.Zero(t, db.GetNonce(address1),
+			"the nonce must be zero again after the block was rolled back")
+	})
+}
+
+func TestStagedBlock_Rollback_TakesSeveralBlocksBackNewestFirst(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+		initialHash := db.GetHash()
+
+		staged := []state.StagedBlock{}
+		hashes := []common.Hash{}
+		for i := uint64(1); i <= 3; i++ {
+			staged = append(staged, stageNonce(t, db, i, i*10))
+			hashes = append(hashes, db.GetHash())
+		}
+
+		// Rolling back newest first must retrace the roots exactly.
+		for i := 2; i >= 0; i-- {
+			require.Equal(t, hashes[i], db.GetHash())
+			require.NoError(t, staged[i].Rollback())
+		}
+		require.Equal(t, initialHash, db.GetHash())
+	})
+}
+
+func TestStagedBlock_Rollback_AllowsReExecutionProducingTheSameRoots(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+		// Stage three blocks and remember the root each of them produced.
+		staged := []state.StagedBlock{}
+		want := []common.Hash{}
+		for i := uint64(1); i <= 3; i++ {
+			staged = append(staged, stageNonce(t, db, i, i*10))
+			want = append(want, db.GetHash())
+		}
+
+		// Take them all back...
+		for i := 2; i >= 0; i-- {
+			require.NoError(t, staged[i].Rollback())
+		}
+
+		// ...and re-execute the very same blocks.
+		for i := uint64(1); i <= 3; i++ {
+			block := stageNonce(t, db, i, i*10)
+			require.Equal(t, want[i-1], db.GetHash(), "re-executed block %d produced a different root", i)
+			require.Equal(t, want[i-1], block.StateHash())
+		}
+	})
+}
+
+func TestStagedBlock_Rollback_OutOfOrderIsRejected(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+		first := stageNonce(t, db, 1, 10)
+		second := stageNonce(t, db, 2, 20)
+
+		require.Error(t, first.Rollback(), "rolling back before the newer staged block must be rejected")
+		require.NoError(t, second.Rollback())
+		require.NoError(t, first.Rollback())
+	})
+}
+
+func TestStagedBlock_Rollback_KeepsTheBlockOutOfTheArchive(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, config namedStateConfig, s state.State, db state.StateDB) {
 		if config.config.Archive == state.NoArchive {
 			t.Skip("state maintains no archive")
@@ -218,19 +214,22 @@ func TestCarmen_StagedBlock_RolledBackBlockNeverReachesTheArchive(t *testing.T) 
 	})
 }
 
-func TestCarmen_StagedBlock_WaitWithoutArchiveReturnsImmediately(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, config namedStateConfig, _ state.State, db state.StateDB) {
-		if config.config.Archive != state.NoArchive {
-			t.Skip("state maintains an archive")
-		}
-
-		staged := stageNonce(t, db, 1, 10)
-		done, err := staged.Commit()
+func TestStagedBlock_CommitAndRollback_DecidingTwiceIsRejected(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+		committed := stageNonce(t, db, 1, 10)
+		_, err := committed.Commit()
 		require.NoError(t, err)
-		require.NoError(t, done.Wait(), "waiting on a state without an archive must not block or fail")
+		_, err = committed.Commit()
+		require.Error(t, err, "a block must not be committed twice")
+		require.Error(t, committed.Rollback(), "a committed block must not be rolled back")
+
+		rolledBack := stageNonce(t, db, 2, 20)
+		require.NoError(t, rolledBack.Rollback())
+		require.Error(t, rolledBack.Rollback(), "a block must not be rolled back twice")
+		_, err = rolledBack.Commit()
+		require.Error(t, err, "a rolled back block must not be committed")
 	})
 }
-
 func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 	addr1 := common.Address{1}
 	addr2 := common.Address{2}
