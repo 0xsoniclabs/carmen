@@ -24,8 +24,8 @@ import (
 
 // TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination checks
 // that rolling staged blocks back restores the live state exactly, for every
-// combination of state-mutating operations spread across the blocks. It is
-// exhaustive and runs only nightly.
+// combination of state-mutating operations and every way of splitting them into
+// blocks. It is exhaustive and runs only nightly.
 func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t *testing.T) {
 	if !nightly.IsNightly() {
 		t.Skip("exhaustive combination test runs only nightly")
@@ -40,24 +40,16 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 	addresses := []common.Address{address1, address2, address3}
 	keys := []common.Key{key1, key2, key3}
 
-	// Operations that delete an account are intentionally left out, because a block
-	// rollback cannot reverse a deletion, and every way these operations would delete
-	// an account across separate blocks is a state the EVM itself cannot construct:
-	//
-	//   - Self-destruct (state.SuicideOp): EIP-6780, which Carmen follows, only lets a
-	//     self-destruct delete an account created within the same block. Operations
-	//     here are spread across separate blocks, so a self-destruct could never share
-	//     a block with the creation it would have to undo, and thus could never
-	//     trigger a valid deletion.
-	//   - Account creation (state.CreateAccountOp): CREATE at an address that already
-	//     has code or a nonce is a collision the EVM rejects (EIP-684); and a creation
-	//     that leaves the account empty (no code, nonce, or balance) is pruned at the
-	//     block boundary, deleting it. Either way the account ends up deleted through a
-	//     path real execution does not take.
-	//
-	// Reversing account creation and same-block self-destruct belongs in dedicated
-	// same-block tests. What remains below are the value-updating operations, whose
-	// undo a block rollback must reverse exactly.
+	// Operations that can delete an account are left out: an update that leaves a
+	// storage-owning account empty releases its storage, which the LiveDB cannot
+	// restore on rollback (see MptState.RevertLastBlock). Real execution never
+	// produces such an update, but these operations would:
+	//   - state.CreateAccountOp on an existing contract resets nonce and code while
+	//     keeping the balance, a CREATE collision the EVM rejects (EIP-684).
+	//   - state.SuicideOp, combined with the above, empties and recreates accounts
+	//     in orders no contract can execute.
+	// The one deletion EIP-6780 permits, a contract created and destroyed within one
+	// transaction, has a dedicated test below.
 	operationWithAddress := map[string]func(db state.StateDB, rng *rand.Rand, args state.OpArgs){
 		"setNonce":   state.SetNonceOp,
 		"setCode":    state.SetCodeOp,
@@ -141,8 +133,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 				// root its block found when it started.
 				for i, s := range slices.Backward(staged) {
 					require.NoError(s.Rollback())
-					require.Equal(hashesBefore[i], db.GetHash(),
-						"rolling back block %d must restore its predecessor's root", i)
+					require.Equal(hashesBefore[i], db.GetHash())
 				}
 			})
 		}
@@ -150,9 +141,8 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 }
 
 // TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState covers
-// the one deletion EIP-6780 still permits: an account created and self-destructed
-// within the same transaction. The combination test cannot reach this case because it
-// spreads its operations over separate blocks.
+// the one deletion EIP-6780 permits: an account created and self-destructed within
+// the same transaction. The combination test excludes the operations producing it.
 func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
 		require := require.New(t)
@@ -167,11 +157,14 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		initialHash := db.GetHash()
 
 		// Create a contract with storage and destroy it again, all in one
-		// transaction. The account never existed outside this block, so the block
-		// nets out to no change at all.
+		// transaction, as the EVM does: CreateContract marks it as created in this
+		// transaction, which is what makes its self-destruct a deletion under
+		// EIP-6780. The block nets out to no change at all.
 		db.BeginBlock()
 		db.BeginTransaction()
 		db.CreateAccount(address1)
+		db.CreateContract(address1)
+		require.True(db.IsNewContract(address1))
 		db.SetNonce(address1, 1)
 		db.AddBalance(address1, balance1)
 		db.SetCode(address1, []byte{0x01})
@@ -182,13 +175,12 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		require.NoError(err)
 
 		require.NoError(staged.Rollback())
-		require.Equal(initialHash, db.GetHash(),
-			"rolling the block back must restore the state it found")
+		require.Equal(initialHash, db.GetHash())
 
 		db.BeginBlock()
 		db.BeginTransaction()
-		require.False(db.Exist(address1), "the destroyed account must not exist after the rollback")
-		require.Equal(balance1, db.GetBalance(address2), "the seeded account must be untouched")
+		require.False(db.Exist(address1))
+		require.Equal(balance1, db.GetBalance(address2))
 		db.EndTransaction()
 	})
 }
