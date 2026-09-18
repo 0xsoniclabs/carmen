@@ -162,7 +162,7 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		db.BeginTransaction()
 		db.AddBalance(address2, balance1)
 		db.EndTransaction()
-		keepBlock(t, db, 1)
+		endAndCommitBlock(t, db, 1)
 
 		initialHash := db.GetHash()
 
