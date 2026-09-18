@@ -75,19 +75,34 @@ func (c *headBlockContext) Commit() error {
 		return fmt.Errorf("cannot commit invalid block context")
 	}
 
-	// Obtain exclusive (write) access to the head state.
-	c.db.headStateCommitLock.Lock()
-	headStateCommitLockReleased := false
-	defer func() {
-		// release the lock in case EndBlock panics.
-		if !headStateCommitLockReleased {
-			c.db.headStateCommitLock.Unlock()
+	// Ending the block only applies it to the live state. A block committed through
+	// this API is kept, so it is promoted into the archive as well. Both happen under
+	// exclusive (write) access to the head state, released before the head moves on.
+	err := func() error {
+		c.db.headStateCommitLock.Lock()
+		defer c.db.headStateCommitLock.Unlock()
+
+		staged, err := c.state.EndBlock(uint64(c.block))
+		if err != nil {
+			return err
 		}
+		if staged == nil {
+			return fmt.Errorf("state db ended block %d without returning a staged block", c.block)
+		}
+		if _, err := staged.Commit(); err != nil {
+			// The block is live but was not kept; take it back, so that the head
+			// does not show a block the archive never receives.
+			return errors.Join(err, staged.Rollback())
+		}
+		return nil
 	}()
 
-	c.state.EndBlock(uint64(c.block))
-	c.db.headStateCommitLock.Unlock()
-	headStateCommitLockReleased = true
+	// The head only moves on once the block is committed. A misuse of the staged
+	// block is reported but not collected by Check, so relying on end() alone would
+	// let this report success for a block that never reached the archive.
+	if err != nil {
+		return errors.Join(err, c.end()) // < invalidates this context
+	}
 
 	c.db.moveBlockNumber(c.block)
 
