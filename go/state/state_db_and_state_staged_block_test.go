@@ -169,10 +169,12 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		db.AddBalance(address1, balance1)
 		db.SetCode(address1, []byte{0x01})
 		db.SetState(address1, key1, val1)
+		db.AddBalance(address2, balance2)
 		require.True(db.Suicide(address1))
 		db.EndTransaction()
 		staged, err := db.EndBlock(2)
 		require.NoError(err)
+		require.NotEqual(initialHash, staged.StateHash())
 
 		require.NoError(staged.Rollback())
 		require.Equal(initialHash, db.GetHash())
