@@ -294,16 +294,14 @@ func (s *GoState) commitStaged(handle *stagedBlockHandle) (*state.WaitHandle, er
 	s.stagedLock.Lock()
 	defer s.stagedLock.Unlock()
 
-	// A poisoned state promotes nothing: the block stays staged and is rolled
-	// back when the state is closed, so the archive never grows past a failure.
-	if err := s.getStateError(); err != nil {
-		return nil, err
-	}
 	if handle.status != stagedPending {
 		return nil, handle.decidedError("commit")
 	}
 	if len(s.staged) == 0 || !s.staged[0].isFor(handle) {
 		return nil, s.misplacedError("commit", handle, "oldest")
+	}
+	if err := s.getStateError(); err != nil {
+		return nil, err
 	}
 	block := s.staged[0]
 	s.staged = s.staged[1:]
