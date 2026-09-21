@@ -514,6 +514,27 @@ func TestState_Flush_Or_Close_Corrupted_Archive_Detected(t *testing.T) {
 	}
 }
 
+func TestGoState_Flush_ReportsAnArchiveFlushFailure(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	injected := fmt.Errorf("injected error")
+
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil)
+
+	archiveDB := archive.NewMockArchive(ctrl)
+	archiveDB.EXPECT().Flush().Return(injected).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil)
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	require.ErrorIs(db.Flush(), injected)
+	require.ErrorIs(db.Check(), injected)
+	require.ErrorIs(db.Close(), injected)
+}
+
 func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
@@ -1056,6 +1077,7 @@ func TestState_Apply_NoArchive_WaitReturnsImmediately(t *testing.T) {
 }
 
 func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
+	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
@@ -1069,11 +1091,12 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 	db := newGoState(liveDB, archiveDB, []func(){})
 
 	staged, err := db.Apply(1, common.Update{})
-	require.NoError(t, err)
+	require.NoError(err)
 	done, err := staged.Commit()
-	require.NoError(t, err)
+	require.NoError(err)
 
-	require.ErrorIs(t, done.Wait(), injectedErr)
+	require.ErrorIs(done.Wait(), injectedErr)
+	require.ErrorIs(db.Check(), injectedErr, "state is not poisoned")
 }
 
 func TestState_Apply_ReportsEachArchiveWriteOnItsOwnChannel(t *testing.T) {
@@ -1550,6 +1573,49 @@ func TestState_All_Archive_Operations_May_Cause_Failure(t *testing.T) {
 
 	if err := db.Close(); !errors.Is(err, injectedErr) {
 		t.Errorf("closing databse should fail")
+	}
+}
+
+// TestGoState_Operations_AreRefusedOnAPoisonedState checks that a state which
+// has met a fault refuses every operation guarded by the state error, without
+// reaching the LiveDB or the archive.
+func TestGoState_OperationsAreRefusedOnAPoisonedState(t *testing.T) {
+	injected := fmt.Errorf("injected error")
+	addr := common.Address{0xA}
+	key := common.Key{0xB}
+
+	tests := map[string]struct {
+		operation func(s *GoState) error
+	}{
+		"GetBalance":            {func(s *GoState) error { _, err := s.GetBalance(addr); return err }},
+		"GetNonce":              {func(s *GoState) error { _, err := s.GetNonce(addr); return err }},
+		"GetStorage":            {func(s *GoState) error { _, err := s.GetStorage(addr, key); return err }},
+		"GetCode":               {func(s *GoState) error { _, err := s.GetCode(addr); return err }},
+		"GetCodeSize":           {func(s *GoState) error { _, err := s.GetCodeSize(addr); return err }},
+		"GetCodeHash":           {func(s *GoState) error { _, err := s.GetCodeHash(addr); return err }},
+		"HasEmptyStorage":       {func(s *GoState) error { _, err := s.HasEmptyStorage(addr); return err }},
+		"GetHash":               {func(s *GoState) error { _, err := s.GetHash(); return err }},
+		"GetCommitment":         {func(s *GoState) error { _, err := s.GetCommitment().Await().Get(); return err }},
+		"Apply":                 {func(s *GoState) error { _, err := s.Apply(1, common.Update{}); return err }},
+		"Commit":                {func(s *GoState) error { _, err := stagedForTest(s, 1, nil).Commit(); return err }},
+		"GetArchiveState":       {func(s *GoState) error { _, err := s.GetArchiveState(0); return err }},
+		"GetArchiveBlockHeight": {func(s *GoState) error { _, _, err := s.GetArchiveBlockHeight(); return err }},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			liveDB := state.NewMockLiveDB(ctrl)
+			archiveDB := archive.NewMockArchive(ctrl)
+
+			s := &GoState{live: liveDB, archive: archiveDB}
+			s.addStateError(injected)
+
+			require.ErrorIs(test.operation(s), injected)
+			require.ErrorIs(s.Check(), injected)
+		})
 	}
 }
 
