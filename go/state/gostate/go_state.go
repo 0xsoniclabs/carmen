@@ -53,9 +53,8 @@ type GoState struct {
 
 	// Channels are only present if archive is enabled.
 	archiveWriter          chan<- archiveUpdate
-	archiveWriterFlushDone <-chan bool
+	archiveWriterFlushDone <-chan error
 	archiveWriterDone      <-chan bool
-	archiveWriterError     <-chan error
 }
 
 func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) state.State {
@@ -69,32 +68,32 @@ func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) st
 	// If there is an archive, start an asynchronous archive writer routine.
 	if archive != nil {
 		in := make(chan archiveUpdate, 10)
-		flush := make(chan bool)
+		flush := make(chan error)
 		done := make(chan bool)
-		err := make(chan error, 10)
 
 		go func() {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 			defer close(flush)
 			defer close(done)
-			// Process all incoming updates, no not stop on errors.
+			// Process all incoming updates, do not stop on errors: a failure is
+			// recorded in the state error, which refuses every later change.
 			for update := range in {
-				// If there is no update, the state is asking for a flush signal.
+				// If there is no update, the state is asking for a flush signal; the
+				// outcome is reported to Flush, which records it.
 				if update.update == nil {
-					if issue := res.archive.Flush(); issue != nil {
-						err <- issue
-					}
-					flush <- true
+					flush <- res.archive.Flush()
 				} else {
-					// Otherwise, process the update.
+					// Otherwise, process the update. Its outcome is recorded here and
+					// reported to whoever waits for this write; it is this write's
+					// outcome alone, the health of the state is Check's business.
 					issue := res.archive.Add(update.block, *update.update, update.updateHints)
 					if issue != nil {
-						err <- issue
+						res.addStateError(issue)
 					}
 					if update.done != nil {
-						if stateErrors := res.Check(); stateErrors != nil {
-							update.done <- stateErrors
+						if issue != nil {
+							update.done <- issue
 						}
 						close(update.done)
 					}
@@ -108,7 +107,6 @@ func newGoState(live state.LiveDB, archive archive.Archive, cleanup []func()) st
 		res.archiveWriter = in
 		res.archiveWriterDone = done
 		res.archiveWriterFlushDone = flush
-		res.archiveWriterError = err
 	}
 
 	return state.WrapIntoSyncedState(res)
@@ -131,9 +129,9 @@ func (s *GoState) GetBalance(address common.Address) (amount.Amount, error) {
 	balance, err := s.live.GetBalance(address)
 	if err != nil {
 		s.addStateError(err)
+		return balance, err
 	}
-
-	return balance, s.getStateError()
+	return balance, nil
 }
 
 func (s *GoState) GetNonce(address common.Address) (common.Nonce, error) {
@@ -144,8 +142,9 @@ func (s *GoState) GetNonce(address common.Address) (common.Nonce, error) {
 	nonce, err := s.live.GetNonce(address)
 	if err != nil {
 		s.addStateError(err)
+		return nonce, err
 	}
-	return nonce, s.getStateError()
+	return nonce, nil
 }
 
 func (s *GoState) GetStorage(address common.Address, key common.Key) (common.Value, error) {
@@ -156,8 +155,9 @@ func (s *GoState) GetStorage(address common.Address, key common.Key) (common.Val
 	val, err := s.live.GetStorage(address, key)
 	if err != nil {
 		s.addStateError(err)
+		return val, err
 	}
-	return val, s.getStateError()
+	return val, nil
 }
 
 func (s *GoState) GetCode(address common.Address) ([]byte, error) {
@@ -168,8 +168,9 @@ func (s *GoState) GetCode(address common.Address) ([]byte, error) {
 	code, err := s.live.GetCode(address)
 	if err != nil {
 		s.addStateError(err)
+		return code, err
 	}
-	return code, s.getStateError()
+	return code, nil
 }
 
 func (s *GoState) GetCodeSize(address common.Address) (int, error) {
@@ -180,8 +181,9 @@ func (s *GoState) GetCodeSize(address common.Address) (int, error) {
 	size, err := s.live.GetCodeSize(address)
 	if err != nil {
 		s.addStateError(err)
+		return size, err
 	}
-	return size, s.getStateError()
+	return size, nil
 }
 
 func (s *GoState) GetCodeHash(address common.Address) (common.Hash, error) {
@@ -192,8 +194,9 @@ func (s *GoState) GetCodeHash(address common.Address) (common.Hash, error) {
 	h, err := s.live.GetCodeHash(address)
 	if err != nil {
 		s.addStateError(err)
+		return h, err
 	}
-	return h, s.getStateError()
+	return h, nil
 }
 
 func (s *GoState) HasEmptyStorage(addr common.Address) (bool, error) {
@@ -204,8 +207,9 @@ func (s *GoState) HasEmptyStorage(addr common.Address) (bool, error) {
 	empty, err := s.live.HasEmptyStorage(addr)
 	if err != nil {
 		s.addStateError(err)
+		return empty, err
 	}
-	return empty, s.getStateError()
+	return empty, nil
 }
 
 func (s *GoState) GetHash() (common.Hash, error) {
@@ -243,11 +247,9 @@ func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, 
 		if archiveUpdateHints != nil {
 			archiveUpdateHints.Release()
 		}
-		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
-			s.addStateError(revertErr)
-		}
+		err = errors.Join(err, s.live.RevertLastBlock(undoList))
 		s.addStateError(err)
-		return nil, s.getStateError()
+		return nil, err
 	}
 
 	hash, err := s.live.GetHash()
@@ -257,11 +259,9 @@ func (s *GoState) Apply(block uint64, update common.Update) (state.StagedBlock, 
 		if archiveUpdateHints != nil {
 			archiveUpdateHints.Release()
 		}
-		if revertErr := s.live.RevertLastBlock(undoList); revertErr != nil {
-			s.addStateError(revertErr)
-		}
+		err = errors.Join(err, s.live.RevertLastBlock(undoList))
 		s.addStateError(err)
-		return nil, s.getStateError()
+		return nil, err
 	}
 
 	handle := s.stageBlock(&stagedBlock{
@@ -300,6 +300,9 @@ func (s *GoState) commitStaged(handle *stagedBlockHandle) (*state.WaitHandle, er
 	if len(s.staged) == 0 || !s.staged[0].isFor(handle) {
 		return nil, s.misplacedError("commit", handle, "oldest")
 	}
+	if err := s.getStateError(); err != nil {
+		return nil, err
+	}
 	block := s.staged[0]
 	s.staged = s.staged[1:]
 	handle.status = stagedCommitted
@@ -314,7 +317,6 @@ func (s *GoState) commitStaged(handle *stagedBlockHandle) (*state.WaitHandle, er
 
 	done := make(chan error, 1)
 	s.archiveWriter <- archiveUpdate{block.block, &block.update, block.hints, done}
-	s.drainArchiveErrors()
 	return state.NewWaitHandle(done), nil
 }
 
@@ -383,19 +385,6 @@ func (s *GoState) indexOf(handle *stagedBlockHandle) int {
 		}
 	}
 	return -1
-}
-
-// drainArchiveErrors collects the errors the archive writer reported so far
-// without waiting for any pending write.
-func (s *GoState) drainArchiveErrors() {
-	for {
-		select {
-		case err := <-s.archiveWriterError:
-			s.addStateError(err)
-		default:
-			return
-		}
-	}
 }
 
 // stagedBlock is what the state retains for a block applied to the LiveDB whose
@@ -485,20 +474,20 @@ func (s *GoState) GetMemoryFootprint() *common.MemoryFootprint {
 	return mf
 }
 
+// Flush writes the live state and the archive to disk. It reports the health of
+// the state as Check does, since a flush is the point at which callers learn
+// about faults the archive writer met in the meantime.
 func (s *GoState) Flush() error {
 	if s.archiveWriter != nil {
 		// Signal to the archive worker that a flush should be conducted.
 		s.archiveWriter <- archiveUpdate{}
 	}
 
-	err := s.live.Flush()
-	if err != nil {
-		s.addStateError(err)
-	}
+	s.addStateError(s.live.Flush())
 
 	if s.archiveWriter != nil {
 		// Wait until the flush was processed.
-		<-s.archiveWriterFlushDone
+		s.addStateError(<-s.archiveWriterFlushDone)
 	}
 
 	return s.Check()
@@ -518,12 +507,12 @@ func (s *GoState) rollbackUndecidedBlocks() {
 	}
 }
 
+// Close shuts the state down and reports everything that went wrong during its
+// lifetime, including what went wrong shutting down.
 func (s *GoState) Close() error {
 	s.rollbackUndecidedBlocks()
-	s.addStateError(errors.Join(
-		s.Flush(),
-		s.live.Close(),
-	))
+	_ = s.Flush() // < faults are recorded by Flush itself, not again here
+	s.addStateError(s.live.Close())
 
 	// Shut down archive writer background worker.
 	if s.archiveWriter != nil {
@@ -560,8 +549,9 @@ func (s *GoState) GetArchiveState(block uint64) (as state.State, err error) {
 	}
 	lastBlock, empty, err := s.archive.GetBlockHeight()
 	if err != nil {
-		s.addStateError(fmt.Errorf("failed to get last block in the archive: %w", err))
-		return nil, s.getStateError()
+		err = fmt.Errorf("failed to get last block in the archive: %w", err)
+		s.addStateError(err)
+		return nil, err
 	}
 	if empty {
 		return nil, fmt.Errorf("block %d is not present in the archive (archive is empty)", block)
@@ -584,26 +574,17 @@ func (s *GoState) GetArchiveBlockHeight() (uint64, bool, error) {
 	}
 	lastBlock, empty, err := s.archive.GetBlockHeight()
 	if err != nil {
-		s.addStateError(fmt.Errorf("failed to get last block in the archive: %w", err))
-		return 0, false, s.getStateError()
+		err = fmt.Errorf("failed to get last block in the archive: %w", err)
+		s.addStateError(err)
+		return 0, false, err
 	}
 	return lastBlock, empty, nil
 }
 
+// Check reports every fault the state has met so far. A state with a fault is
+// poisoned: it refuses to change, so that neither the live state nor the
+// archive is built on top of something that is not trusted any more.
 func (s *GoState) Check() error {
-	// drain errors from archive if present
-	// but does not wait
-	if s.archive != nil {
-		var done bool
-		for !done {
-			select {
-			case err := <-s.archiveWriterError:
-				s.addStateError(err)
-			default:
-				done = true
-			}
-		}
-	}
 	return s.getStateError()
 }
 
@@ -615,8 +596,12 @@ func (s *GoState) CreateWitnessProof(address common.Address, keys ...common.Key)
 	panic("not implemented")
 }
 
-// addStateError adds the provided error to the state error, ensuring thread safety.
+// addStateError records the error as a fault of the state, ensuring thread
+// safety. A nil error records nothing.
 func (s *GoState) addStateError(err error) {
+	if err == nil {
+		return
+	}
 	s.stateErrorLock.Lock()
 	defer s.stateErrorLock.Unlock()
 	s.stateError = errors.Join(s.stateError, err)

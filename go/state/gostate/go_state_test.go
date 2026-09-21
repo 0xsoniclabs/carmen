@@ -514,6 +514,27 @@ func TestState_Flush_Or_Close_Corrupted_Archive_Detected(t *testing.T) {
 	}
 }
 
+func TestGoState_Flush_ReportsAnArchiveFlushFailure(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+
+	injected := fmt.Errorf("injected error")
+
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().Flush().Return(nil).AnyTimes()
+	liveDB.EXPECT().Close().Return(nil)
+
+	archiveDB := archive.NewMockArchive(ctrl)
+	archiveDB.EXPECT().Flush().Return(injected).AnyTimes()
+	archiveDB.EXPECT().Close().Return(nil)
+
+	db := newGoState(liveDB, archiveDB, nil)
+
+	require.ErrorIs(db.Flush(), injected)
+	require.ErrorIs(db.Check(), injected)
+	require.ErrorIs(db.Close(), injected)
+}
+
 func TestState_Apply_CannotCallRepeatedly_OnError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
@@ -729,6 +750,44 @@ func TestGoState_GetMemoryFootprint_CountsWhatStagedBlocksRetain(t *testing.T) {
 		3*unsafe.Sizeof((func() error)(nil))
 	got := s.GetMemoryFootprint().GetChild("staged").Total() - empty
 	require.Equal(want, got)
+}
+
+func TestStagedBlockHandle_Commit_IsRefusedOnAPoisonedState(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+
+	hints := &countingReleaser{}
+	s := &GoState{live: liveDB}
+	staged := stagedForTest(s, 1, hints)
+
+	// Once the state has met a fault, nothing is promoted into the archive any
+	// more: the block stays staged, with its hints, for Close to roll back.
+	injected := fmt.Errorf("injected error")
+	s.addStateError(injected)
+
+	_, err := staged.Commit()
+	require.ErrorIs(err, injected)
+	require.Len(s.staged, 1)
+	require.Equal(0, hints.releases)
+}
+
+func TestGoState_Close_DoesNotRecordAKnownFaultTwice(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	liveDB := state.NewMockLiveDB(ctrl)
+	liveDB.EXPECT().Flush().Return(nil)
+	liveDB.EXPECT().Close().Return(nil)
+
+	s := &GoState{live: liveDB}
+	injected := fmt.Errorf("injected error")
+	s.addStateError(injected)
+
+	// Close flushes, and Flush reports every fault so far; folding that report
+	// back into the state would list each fault a second time.
+	err := s.Close()
+	require.ErrorIs(err, injected)
+	require.Equal(1, strings.Count(err.Error(), injected.Error()))
 }
 
 func TestStagedBlockHandle_Commit_ConsumesTheOldestBlockOnly(t *testing.T) {
@@ -1018,6 +1077,7 @@ func TestState_Apply_NoArchive_WaitReturnsImmediately(t *testing.T) {
 }
 
 func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
+	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
@@ -1031,21 +1091,21 @@ func TestState_Apply_ArchiveError_Propagated(t *testing.T) {
 	db := newGoState(liveDB, archiveDB, []func(){})
 
 	staged, err := db.Apply(1, common.Update{})
-	require.NoError(t, err)
+	require.NoError(err)
 	done, err := staged.Commit()
-	require.NoError(t, err)
+	require.NoError(err)
 
-	require.ErrorIs(t, done.Wait(), injectedErr)
+	require.ErrorIs(done.Wait(), injectedErr)
+	require.ErrorIs(db.Check(), injectedErr, "state is not poisoned")
 }
 
-func TestState_Apply_GathersOldErrors(t *testing.T) {
+func TestState_Apply_ReportsEachArchiveWriteOnItsOwnChannel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	liveDB := state.NewMockLiveDB(ctrl)
 	archiveDB := archive.NewMockArchive(ctrl)
 
 	// The first archive write is held back until both blocks are applied, so
-	// that neither failure can surface before the second Apply and both are
-	// gathered by the time the second block's write completes.
+	// that the first failure cannot poison the state before the second Apply.
 	release := make(chan struct{})
 
 	firstErr := fmt.Errorf("injectedError1")
@@ -1066,19 +1126,26 @@ func TestState_Apply_GathersOldErrors(t *testing.T) {
 
 	first, err := db.Apply(1, common.Update{})
 	require.NoError(t, err)
-	_, err = first.Commit()
+	firstDone, err := first.Commit()
 	require.NoError(t, err)
-
 	second, err := db.Apply(2, common.Update{})
 	require.NoError(t, err)
 	secondDone, err := second.Commit()
 	require.NoError(t, err)
-
 	close(release)
+
+	// Each handle reports the outcome of its own write only; the health of the
+	// state, which both failures poison, is what Check reports.
+	err = firstDone.Wait()
+	require.ErrorIs(t, err, firstErr)
+	require.NotErrorIs(t, err, secondErr)
 	err = secondDone.Wait()
+	require.ErrorIs(t, err, secondErr)
+	require.NotErrorIs(t, err, firstErr)
+
+	err = db.Check()
 	require.ErrorIs(t, err, firstErr)
 	require.ErrorIs(t, err, secondErr)
-	require.ErrorContains(t, err, errors.Join(firstErr, secondErr).Error())
 }
 
 func TestState_StagedBlock_EveryWaiterReportsTheArchiveOutcome(t *testing.T) {
@@ -1381,9 +1448,8 @@ func TestGoState_StateError_AccessFromMainAndArchiveGoroutine(t *testing.T) {
 		// Ensure the archive goroutine is blocked inside Add.
 		synctest.Wait()
 
-		// Release Add so it returns an error. The archive goroutine
-		// will send the error to archiveWriterError, then call
-		// Check() which drains it and *writes* stateError.
+		// Release Add so it returns an error, which the archive goroutine
+		// records in stateError.
 		close(addRelease)
 
 		// Read stateError from the main goroutine at the same time.
@@ -1510,6 +1576,49 @@ func TestState_All_Archive_Operations_May_Cause_Failure(t *testing.T) {
 	}
 }
 
+// TestGoState_Operations_AreRefusedOnAPoisonedState checks that a state which
+// has met a fault refuses every operation guarded by the state error, without
+// reaching the LiveDB or the archive.
+func TestGoState_OperationsAreRefusedOnAPoisonedState(t *testing.T) {
+	injected := fmt.Errorf("injected error")
+	addr := common.Address{0xA}
+	key := common.Key{0xB}
+
+	tests := map[string]struct {
+		operation func(s *GoState) error
+	}{
+		"GetBalance":            {func(s *GoState) error { _, err := s.GetBalance(addr); return err }},
+		"GetNonce":              {func(s *GoState) error { _, err := s.GetNonce(addr); return err }},
+		"GetStorage":            {func(s *GoState) error { _, err := s.GetStorage(addr, key); return err }},
+		"GetCode":               {func(s *GoState) error { _, err := s.GetCode(addr); return err }},
+		"GetCodeSize":           {func(s *GoState) error { _, err := s.GetCodeSize(addr); return err }},
+		"GetCodeHash":           {func(s *GoState) error { _, err := s.GetCodeHash(addr); return err }},
+		"HasEmptyStorage":       {func(s *GoState) error { _, err := s.HasEmptyStorage(addr); return err }},
+		"GetHash":               {func(s *GoState) error { _, err := s.GetHash(); return err }},
+		"GetCommitment":         {func(s *GoState) error { _, err := s.GetCommitment().Await().Get(); return err }},
+		"Apply":                 {func(s *GoState) error { _, err := s.Apply(1, common.Update{}); return err }},
+		"Commit":                {func(s *GoState) error { _, err := stagedForTest(s, 1, nil).Commit(); return err }},
+		"GetArchiveState":       {func(s *GoState) error { _, err := s.GetArchiveState(0); return err }},
+		"GetArchiveBlockHeight": {func(s *GoState) error { _, _, err := s.GetArchiveBlockHeight(); return err }},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			liveDB := state.NewMockLiveDB(ctrl)
+			archiveDB := archive.NewMockArchive(ctrl)
+
+			s := &GoState{live: liveDB, archive: archiveDB}
+			s.addStateError(injected)
+
+			require.ErrorIs(test.operation(s), injected)
+			require.ErrorIs(s.Check(), injected)
+		})
+	}
+}
+
 func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	expected := common.Update{
 		Slots: []common.SlotUpdate{
@@ -1592,29 +1701,4 @@ type countingReleaser struct {
 
 func (r *countingReleaser) Release() {
 	r.releases++
-}
-
-func TestStagedBlockHandle_Commit_CollectsAnArchiveErrorReportedEarlier(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	liveDB := state.NewMockLiveDB(ctrl)
-	liveDB.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil, nil)
-	liveDB.EXPECT().GetHash().Return(common.Hash{}, nil)
-
-	// The archive writer is stood in for by its channels: an error it reported
-	// is waiting to be collected, and the block handed to it is not processed.
-	injected := fmt.Errorf("archive write failed")
-	archiveErrors := make(chan error, 1)
-	archiveErrors <- injected
-	s := &GoState{
-		live:               liveDB,
-		archive:            archive.NewMockArchive(ctrl),
-		archiveWriter:      make(chan archiveUpdate, 1),
-		archiveWriterError: archiveErrors,
-	}
-
-	staged, err := s.Apply(1, common.Update{})
-	require.NoError(t, err)
-	_, err = staged.Commit()
-	require.NoError(t, err)
-	require.ErrorIs(t, s.getStateError(), injected)
 }
