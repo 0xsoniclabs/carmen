@@ -1349,7 +1349,7 @@ type stateDbStagedBlock struct {
 
 func (b *stateDbStagedBlock) Commit() (*WaitHandle, error) {
 	done, err := b.StagedBlock.Commit()
-	if err != nil {
+	if err != nil || done == nil {
 		return nil, err
 	}
 	// Only the outcome of the archive write is an issue of this StateDB.

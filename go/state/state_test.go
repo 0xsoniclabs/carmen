@@ -802,6 +802,11 @@ func TestIrreversibleBlock_Rollback_IsRejected(t *testing.T) {
 	require.ErrorContains(err, "block 7")
 }
 
+func TestWaitHandle_NewWaitHandle_IsNilWithoutWork(t *testing.T) {
+	require := require.New(t)
+	require.Nil(state.NewWaitHandle(nil))
+}
+
 func TestWaitHandle_Wait_ReturnsImmediatelyWithoutWork(t *testing.T) {
 	require.NoError(t, state.NewWaitHandle(nil).Wait())
 }
@@ -889,6 +894,16 @@ func TestWaitHandle_Then_TransformsTheOutcomeOnce(t *testing.T) {
 		require.ErrorContains(err, "attributed")
 	}
 	require.Equal(1, calls)
+}
+
+func TestWaitHandle_Then_DerivesFromANilHandle(t *testing.T) {
+	require := require.New(t)
+	var absent *state.WaitHandle
+	derived := absent.Then(func(err error) error {
+		require.NoError(err)
+		return nil
+	})
+	require.NoError(derived.Wait())
 }
 
 // applyAndCommitBlock applies the given update to the state and commits it to the archive.
