@@ -151,7 +151,7 @@ type StagedBlock interface {
 
 // WaitHandle is the outcome of the archive write a Commit started. Wait blocks
 // until the write has completed and reports how it went.
-// It is nil-safe, meaning that calling functions on it is a no-op.
+// A nil *WaitHandle is valid: Wait reports success, and Then can derive from it.
 //
 // Every caller of Wait, however many and however late, gets the same outcome. The
 // asynchronous work reports it once, on a channel closed afterwards, so reading
