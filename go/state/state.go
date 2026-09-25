@@ -166,17 +166,20 @@ type WaitHandle struct {
 // A nil channel means there is nothing to wait for, and yields a nil handle.
 func NewWaitHandle(done <-chan error) *WaitHandle {
 	if done == nil {
-		return nil
+		return &WaitHandle{}
 	}
 	return &WaitHandle{wait: func() error { return <-done }}
 }
 
 // Wait blocks until the outcome is known and returns it.
 func (h *WaitHandle) Wait() error {
-	if h == nil {
+	if h.wait == nil {
 		return nil
 	}
-	h.once.Do(func() { h.err = h.wait() })
+
+	h.once.Do(func() {
+		h.err = h.wait()
+	})
 	return h.err
 }
 

@@ -313,11 +313,13 @@ func processCommands(
 				// Do no block the command processing loop while waiting for the
 				// backend asynchronous update to complete.
 				go func(err error) {
-					// Wait for the backend write, if one was started, and forward
-					// both errors into the update synch channel.
-					syncError := backendDone.Wait()
-					issues.HandleIssue(syncError)
-					err = errors.Join(err, syncError)
+					if backendDone != nil {
+						// wait for the backend write and forward both errors into
+						// the update synch channel.
+						syncError := backendDone.Wait()
+						issues.HandleIssue(syncError)
+						err = errors.Join(err, syncError)
+					}
 					command.update.done <- err
 					close(command.update.done)
 				}(err)
