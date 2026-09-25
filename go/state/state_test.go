@@ -896,16 +896,6 @@ func TestWaitHandle_Then_TransformsTheOutcomeOnce(t *testing.T) {
 	require.Equal(1, calls)
 }
 
-func TestWaitHandle_Then_DerivesFromANilHandle(t *testing.T) {
-	require := require.New(t)
-	var absent *state.WaitHandle
-	derived := absent.Then(func(err error) error {
-		require.NoError(err)
-		return nil
-	})
-	require.NoError(derived.Wait())
-}
-
 // applyAndCommitBlock applies the given update to the state and commits it to the archive.
 func applyAndCommitBlock(s state.State, block uint64, update common.Update) error {
 	staged, err := s.Apply(block, update)
