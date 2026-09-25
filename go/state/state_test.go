@@ -802,8 +802,13 @@ func TestIrreversibleBlock_Rollback_IsRejected(t *testing.T) {
 	require.ErrorContains(err, "block 7")
 }
 
+func TestWaitHandle_NewWaitHandle_ReturnsEmptyObjectWithoutChannel(t *testing.T) {
+	require.Equal(t, state.NewWaitHandle(nil), &state.WaitHandle{})
+}
+
 func TestWaitHandle_Wait_ReturnsImmediatelyWithoutWork(t *testing.T) {
 	require.NoError(t, state.NewWaitHandle(nil).Wait())
+
 }
 
 func TestWaitHandle_Wait_BlocksUntilTheOutcomeIsReported(t *testing.T) {

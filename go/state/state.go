@@ -134,8 +134,8 @@ type StagedBlock interface {
 	StateHash() common.Hash
 
 	// Commit promotes this block into the archive. It returns as soon as the write
-	// is under way, without waiting for it to complete; the returned handle allows
-	// waiting for it. The handle is never nil when the error is.
+	// is under way, without waiting for it to complete; the optional returned handle
+	// allows waiting for it.
 	//
 	// It reports an error if this is not the oldest staged block, or if the block
 	// has already been committed or rolled back.
@@ -150,8 +150,8 @@ type StagedBlock interface {
 }
 
 // WaitHandle is the outcome of the archive write a Commit started. Wait blocks
-// until the write has completed and reports how it went; it returns immediately
-// if there was nothing to write, as on a state that maintains no archive.
+// until the write has completed and reports how it went.
+// A nil *WaitHandle is valid: Wait reports success, and Then can derive from it.
 //
 // Every caller of Wait, however many and however late, gets the same outcome. The
 // asynchronous work reports it once, on a channel closed afterwards, so reading
@@ -163,17 +163,23 @@ type WaitHandle struct {
 }
 
 // NewWaitHandle wraps the channel on which asynchronous work reports its outcome.
-// A nil channel means there is nothing to wait for.
+// A nil channel means there is nothing to wait for, and yields a nil handle.
 func NewWaitHandle(done <-chan error) *WaitHandle {
 	if done == nil {
-		return &WaitHandle{wait: func() error { return nil }}
+		return &WaitHandle{}
 	}
 	return &WaitHandle{wait: func() error { return <-done }}
 }
 
 // Wait blocks until the outcome is known and returns it.
 func (h *WaitHandle) Wait() error {
-	h.once.Do(func() { h.err = h.wait() })
+	if h.wait == nil {
+		return nil
+	}
+
+	h.once.Do(func() {
+		h.err = h.wait()
+	})
 	return h.err
 }
 
