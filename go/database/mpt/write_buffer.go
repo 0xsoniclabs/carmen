@@ -237,6 +237,14 @@ func (b *writeBuffer) tryEmptyBuffer() {
 		// updated. Such nodes can not be written to the disk.
 		b.bufferMutex.Unlock()
 
+		if handle.Get() == nil { // DIAGNOSTICS: report and drop the broken entry.
+			reportNilNode("writeBuffer.tryEmptyBuffer", "Shared[Node] holds a nil Node interface", id, node, nil)
+			b.bufferMutex.Lock()
+			delete(b.buffer, id)
+			b.bufferMutex.Unlock()
+			handle.Release()
+			continue
+		}
 		if handle.Get().IsDirty() {
 			if err := b.sink.Write(id, handle.AsViewHandle()); err != nil {
 				b.errsMutex.Lock()

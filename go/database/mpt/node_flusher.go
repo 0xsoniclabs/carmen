@@ -72,9 +72,19 @@ func startNodeFlusher(cache NodeCache, sink NodeSink, config nodeFlusherConfig) 
 				case <-shutdown:
 					return
 				case <-ticker.C():
-					if err := tryFlushDirtyNodes(cache, sink); err != nil {
-						res.errs = append(res.errs, err)
-					}
+					// DIAGNOSTICS: report panics (with all goroutine stacks)
+					// before re-raising them, see nil_node_diagnostics.go.
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								reportPanic("node flusher", r)
+								panic(r)
+							}
+						}()
+						if err := tryFlushDirtyNodes(cache, sink); err != nil {
+							res.errs = append(res.errs, err)
+						}
+					}()
 				}
 			}
 		}()
@@ -95,11 +105,22 @@ func tryFlushDirtyNodes(cache NodeCache, sink NodeSink) error {
 	// Collect a list of dirty nodes to be flushed.
 	dirtyIds := make([]NodeId, 0, 1_000_000)
 	cache.ForEach(func(id NodeId, node *shared.Shared[Node]) {
+		// DIAGNOSTICS: skip and report broken cache entries, see nil_node_diagnostics.go.
+		if node == nil {
+			reportNilNode("node flusher (collecting dirty nodes)", "nil *Shared[Node] provided by cache", id, nil, cache)
+			return
+		}
 		handle, success := node.TryGetViewHandle()
 		if !success {
 			return
 		}
-		dirty := handle.Get().IsDirty()
+		value := handle.Get()
+		if value == nil {
+			handle.Release()
+			reportNilNode("node flusher (collecting dirty nodes)", "Shared[Node] holds a nil Node interface", id, node, cache)
+			return
+		}
+		dirty := value.IsDirty()
 		handle.Release()
 		if !dirty {
 			return
@@ -124,6 +145,13 @@ func tryFlushDirtyNodes(cache NodeCache, sink NodeSink) error {
 		// continue with the next node.
 		handle, success := node.TryGetWriteHandle()
 		if !success {
+			continue
+		}
+
+		// DIAGNOSTICS: skip and report broken cache entries.
+		if handle.Get() == nil {
+			handle.Release()
+			reportNilNode("node flusher (writing dirty nodes)", "Shared[Node] holds a nil Node interface", id, node, cache)
 			continue
 		}
 

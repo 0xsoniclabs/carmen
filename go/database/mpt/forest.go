@@ -558,8 +558,19 @@ func (s *Forest) Flush() error {
 	// Get snapshot of set of dirty Node IDs.
 	ids := make([]NodeId, 0, 1<<16)
 	s.nodeCache.ForEach(func(id NodeId, node *shared.Shared[Node]) {
+		// DIAGNOSTICS: skip and report broken cache entries, see nil_node_diagnostics.go.
+		if node == nil {
+			reportNilNode("Forest.Flush (collecting dirty nodes)", "nil *Shared[Node] provided by cache", id, nil, s.nodeCache)
+			return
+		}
 		handle := node.GetViewHandle()
-		dirty := handle.Get().IsDirty()
+		value := handle.Get()
+		if value == nil {
+			handle.Release()
+			reportNilNode("Forest.Flush (collecting dirty nodes)", "Shared[Node] holds a nil Node interface", id, node, s.nodeCache)
+			return
+		}
+		dirty := value.IsDirty()
 		handle.Release()
 		if dirty {
 			ids = append(ids, id)
@@ -594,6 +605,11 @@ func (s *Forest) flushDirtyIds(ids []NodeId) error {
 		if present {
 			handle := node.GetWriteHandle()
 			node := handle.Get()
+			if node == nil { // DIAGNOSTICS
+				handle.Release()
+				reportNilNode("Forest.flushDirtyIds", "Shared[Node] holds a nil Node interface", id, nil, s.nodeCache)
+				continue
+			}
 			err := s.flushNode(id, node)
 			if err == nil {
 				node.MarkClean()
@@ -902,7 +918,17 @@ func (s *Forest) addToCacheHoldingTransferMutex(ref *NodeReference, node *shared
 	// Replacing the element in the already thread safe node cache needs to be
 	// guarded by the `getTransferMutex` since an evicted node has to
 	// be moved to the write buffer in an atomic step.
+	// DIAGNOSTICS: verify the node handed to the cache (see nil_node_diagnostics.go).
+	// The check is done before the insertion, which is the last point at which
+	// the origin of a broken node can be identified from the stack trace.
+	checkSharedNode("Forest.addToCache (node to be inserted)", ref.Id(), node, s.nodeCache)
 	current, present, evictedId, evictedNode, evicted := s.nodeCache.GetOrSet(ref, node)
+	if present {
+		checkSharedNode("Forest.addToCache (node already present in cache)", ref.Id(), current, s.nodeCache)
+	}
+	if evicted {
+		checkSharedNode("Forest.addToCache (evicted node)", evictedId, evictedNode, s.nodeCache)
+	}
 	if present {
 		// If a present element is re-used, it needs to be touched to be at the
 		// head of the cache's LRU queue -- just like a newly inserted node
@@ -915,7 +941,12 @@ func (s *Forest) addToCacheHoldingTransferMutex(ref *NodeReference, node *shared
 
 	// Clean nodes can be ignored, dirty nodes need to be written.
 	if handle, ok := evictedNode.TryGetViewHandle(); ok {
-		dirty := handle.Get().IsDirty()
+		value := handle.Get()
+		if value == nil { // DIAGNOSTICS: already reported above; do not crash.
+			handle.Release()
+			return current, present || recoveredFromBuffer
+		}
+		dirty := value.IsDirty()
 		handle.Release()
 		if !dirty {
 			return current, present || recoveredFromBuffer
