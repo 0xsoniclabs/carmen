@@ -12,6 +12,7 @@ package mpt
 
 import (
 	"bytes"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -32,8 +33,14 @@ func setUpDiagnosticsTest(t *testing.T) (logs *bytes.Buffer, dumpDir string) {
 	diagIncidentCount.Store(0)
 	diagDumpCount.Store(0)
 	logs = &bytes.Buffer{}
-	log.SetOutput(logs)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	diagOutputMutex.Lock()
+	diagOutput = logs
+	diagOutputMutex.Unlock()
+	t.Cleanup(func() {
+		diagOutputMutex.Lock()
+		diagOutput = os.Stderr
+		diagOutputMutex.Unlock()
+	})
 	return logs, dumpDir
 }
 
@@ -186,6 +193,22 @@ func TestDiagnostics_FlusherPanicIsReportedAndReraised(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join(dumpDir, "carmen-diag-panic-*.txt"))
 	require.NoError(t, err)
 	require.Len(t, files, 1)
+}
+
+func TestDiagnostics_ReportsAreIndependentOfStandardLogger(t *testing.T) {
+	logs, _ := setUpDiagnosticsTest(t)
+
+	// The host program (Sonic) routes the standard logger through a handler
+	// with a level filter. Simulate a logger that drops everything.
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	reportNilNode("test", "test reason", ValueId(1), nil, nil)
+	reportPanic("test", "test panic")
+
+	out := logs.String()
+	require.Contains(t, out, "CARMEN-DIAG: broken node detected")
+	require.Contains(t, out, "CARMEN-DIAG: panic in test: test panic")
 }
 
 func TestDiagnostics_DumpFilesAreLimited(t *testing.T) {

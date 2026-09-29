@@ -28,15 +28,19 @@ package mpt
 //
 // Environment variables:
 //   CARMEN_DIAG_DIR  directory for the dump files (default: os.TempDir())
+//
+// Reports are written directly to os.Stderr (not through the log package), so
+// they are shown regardless of the verbosity configured in the host program.
 
 import (
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -56,7 +60,26 @@ const (
 var (
 	diagIncidentCount atomic.Uint64
 	diagDumpCount     atomic.Uint64
+
+	// diagOutput is where reports are written. It deliberately bypasses the
+	// standard log package: in Sonic the standard logger is routed through
+	// geth's log handler, which drops these messages if the configured
+	// verbosity is above INFO. Writing to stderr directly makes the reports
+	// independent of the log level. Tests replace the writer.
+	diagOutput io.Writer = os.Stderr
+	// Serializes writes so that concurrent reports do not interleave.
+	diagOutputMutex sync.Mutex
 )
+
+// diagPrint writes a report to diagOutput, bypassing any log level filtering.
+func diagPrint(msg string) {
+	diagOutputMutex.Lock()
+	defer diagOutputMutex.Unlock()
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	_, _ = io.WriteString(diagOutput, msg)
+}
 
 // isBrokenSharedNode checks the given shared node. It returns a non-empty
 // reason if the node is nil or holds a nil Node. If the node is currently
@@ -117,7 +140,7 @@ func reportNilNode(where, reason string, id NodeId, node *shared.Shared[Node], c
 	} else {
 		fmt.Fprintf(&sb, "  full dump (all goroutines): not written (limit reached or error)\n")
 	}
-	log.Print(sb.String())
+	diagPrint(sb.String())
 }
 
 // reportPanic logs a panic observed in a background goroutine, including the
@@ -131,7 +154,7 @@ func reportPanic(where string, value any) {
 	if path := writeDumpFile("panic", sb.String()); path != "" {
 		fmt.Fprintf(&sb, "  full dump (all goroutines): %s\n", path)
 	}
-	log.Print(sb.String())
+	diagPrint(sb.String())
 }
 
 // writeDumpFile writes the given header followed by the stacks of all
@@ -160,7 +183,7 @@ func writeDumpFile(kind, header string) string {
 	}
 	content := header + "\n==== all goroutines ====\n" + string(buf)
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		log.Printf("%sfailed to write dump file %s: %v", diagLogPrefix, path, err)
+		diagPrint(fmt.Sprintf("%sfailed to write dump file %s: %v", diagLogPrefix, path, err))
 		return ""
 	}
 	return path
