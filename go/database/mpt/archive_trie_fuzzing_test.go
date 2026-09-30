@@ -846,6 +846,7 @@ func (c *archiveTrieAccountStorageFuzzingContext) DeleteAccount(address tinyAddr
 type archiveTrieAccountFuzzingCampaign[T ~byte, C any] struct {
 	registry    fuzzing.OpsFactoryRegistry[T, C]
 	archiveTrie *ArchiveTrie
+	closeTrie   func() error // closes archiveTrie once; further calls are no-ops
 	init        func(fuzzing.OpsFactoryRegistry[T, C]) []fuzzing.OperationSequence[C]
 	create      func(*ArchiveTrie) *C
 	cleanup     func(fuzzing.TestingT, *C)
@@ -861,12 +862,27 @@ func (c *archiveTrieAccountFuzzingCampaign[T, C]) Init() []fuzzing.OperationSequ
 // CreateContext creates a new context for the archiveTrieAccountFuzzingCampaign.
 // It opens an archive trie at a temporary directory, assigns it to c.archiveTrie, and returns
 // the created context.
+//
+// The trie is also closed through t.Cleanup. Cleanup is only reached when every
+// operation succeeded, but in fuzzing mode thousands of executions share one worker
+// process, and an execution that aborts early (a panic in an operation, a Fatalf)
+// would otherwise leave the trie open with its background goroutines and files.
 func (c *archiveTrieAccountFuzzingCampaign[T, C]) CreateContext(t fuzzing.TestingT) *C {
 	path := t.TempDir()
 	archiveTrie, err := OpenArchiveTrie(path, S5LiveConfig, NodeCacheConfig{Capacity: 10_000}, ArchiveConfig{})
 	if err != nil {
 		t.Fatalf("failed to open archive trie: %v", err)
 	}
+	closed := false
+	c.closeTrie = func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return archiveTrie.Close()
+	}
+	// Registered after TempDir, so it runs before the directory is removed.
+	t.Cleanup(func() { _ = c.closeTrie() })
 	c.archiveTrie = archiveTrie
 	return c.create(archiveTrie)
 }
@@ -889,7 +905,7 @@ func (c *archiveTrieAccountFuzzingCampaign[T, C]) Cleanup(t fuzzing.TestingT, co
 	if err := c.archiveTrie.Check(); err != nil {
 		t.Errorf("trie verification fails: \n%s", err)
 	}
-	if err := c.archiveTrie.Close(); err != nil {
+	if err := c.closeTrie(); err != nil {
 		t.Fatalf("cannot close file: %s", err)
 	}
 }

@@ -185,10 +185,11 @@ const (
 // liveTrieAccountFuzzingCampaign defines each campaign.
 // It defines callback methods to initialize the campaign, and to create context for each campaign loop.
 type liveTrieAccountFuzzingCampaign[T ~byte, C any] struct {
-	registry fuzzing.OpsFactoryRegistry[T, C]
-	liveTrie *LiveTrie
-	init     func(fuzzing.OpsFactoryRegistry[T, C]) []fuzzing.OperationSequence[C]
-	create   func(*LiveTrie) *C
+	registry  fuzzing.OpsFactoryRegistry[T, C]
+	liveTrie  *LiveTrie
+	closeTrie func() error // closes liveTrie once; further calls are no-ops
+	init      func(fuzzing.OpsFactoryRegistry[T, C]) []fuzzing.OperationSequence[C]
+	create    func(*LiveTrie) *C
 }
 
 // liveTrieAccountFuzzingContext represents the context for fuzzing account operations on a LiveTrie.
@@ -204,12 +205,27 @@ func (c *liveTrieAccountFuzzingCampaign[T, C]) Init() []fuzzing.OperationSequenc
 
 // CreateContext creates a new context for the liveTrieAccountFuzzingCampaign.
 // It creates a temporary directory and opens a LiveTrie using that directory.
+//
+// The trie is also closed through t.Cleanup. Cleanup is only reached when every
+// operation succeeded, but in fuzzing mode thousands of executions share one worker
+// process, and an execution that aborts early (a panic in an operation, a Fatalf)
+// would otherwise leave the trie open with its background goroutines and files.
 func (c *liveTrieAccountFuzzingCampaign[T, C]) CreateContext(t fuzzing.TestingT) *C {
 	path := t.TempDir()
 	liveTrie, err := OpenFileLiveTrie(path, S5LiveConfig, NodeCacheConfig{Capacity: 10_000})
 	if err != nil {
 		t.Fatalf("failed to open live trie: %v", err)
 	}
+	closed := false
+	c.closeTrie = func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return liveTrie.Close()
+	}
+	// Registered after TempDir, so it runs before the directory is removed.
+	t.Cleanup(func() { _ = c.closeTrie() })
 	c.liveTrie = liveTrie
 	return c.create(liveTrie)
 }
@@ -228,7 +244,7 @@ func (c *liveTrieAccountFuzzingCampaign[T, C]) Cleanup(t fuzzing.TestingT, _ *C)
 	if err := c.liveTrie.Check(); err != nil {
 		t.Errorf("trie verification fails: \n%s", err)
 	}
-	if err := c.liveTrie.Close(); err != nil {
+	if err := c.closeTrie(); err != nil {
 		t.Fatalf("cannot close file: %s", err)
 	}
 }
