@@ -21,6 +21,24 @@ def entryPoint
 def fuzzPackage
 def checkedOut
 
+// fuzzWorkers is the validated Parallel parameter. It falls back to the parameter's default for
+// the first build after the parameter was added, which Jenkins runs before registering it.
+def fuzzWorkers() {
+    String workers = (params.Parallel ?: '4').toString()
+    if (!workers.isInteger() || workers.toInteger() < 1) {
+        error("Parallel=${workers} is not a positive integer")
+    }
+    return workers
+}
+
+// fuzzMemLimit splits goMemLimit() - 90% of the agent's RAM - evenly between the fuzzing
+// coordinator and its `workers` worker processes. Every worker is a process of its own that
+// inherits GOMEMLIMIT, so a limit sized for the whole box would let each of them grow to the
+// whole box before its garbage collector pushes back.
+def fuzzMemLimit(String workers) {
+    return goMemLimit().toLong().intdiv(workers.toInteger() + 1).toString()
+}
+
 pipeline {
     agent {
         dockerfile {
@@ -46,7 +64,10 @@ pipeline {
     environment {
         CC = 'clang-19'
         CXX = 'clang++-19'
-        GOMEMLIMIT = goMemLimit()
+        // `go test -fuzz` runs as many worker processes as -parallel says, and reads the flag
+        // from GOFLAGS like every other go test flag; go build and go vet ignore it.
+        GOFLAGS = "-parallel=${fuzzWorkers()}"
+        GOMEMLIMIT = fuzzMemLimit(fuzzWorkers())
         // The corpus lives in $GOCACHE/fuzz and the container is thrown away after every build, so
         // the cache has to sit in the workspace, which the agent keeps.
         GOCACHE = "${env.WORKSPACE}/.gocache"
@@ -58,6 +79,13 @@ pipeline {
             defaultValue: '',
             description: 'Fuzzer entry point to run. Empty - which is what the daily run leaves it - ' +
                 'means the one that has gone longest without a turn.'
+        )
+        string(
+            name: 'Parallel',
+            defaultValue: '4',
+            description: 'Number of fuzz worker processes (go test -parallel). Inputs of a few ' +
+                'hundred KB need about 1 GB per worker; GOMEMLIMIT is split evenly between the ' +
+                'coordinator and the workers.'
         )
         string(
             name: 'FuzzTime',
