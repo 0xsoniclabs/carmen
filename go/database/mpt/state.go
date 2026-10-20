@@ -230,9 +230,15 @@ func (s *MptState) SetBalance(address common.Address, balance amount.Amount) (er
 
 	err = s.trie.SetAccountInfo(address, info)
 	if err != nil {
+		s.trie.invalidateTotalSupply()
 		return err
 	}
+	s.trie.adjustTotalSupply(oldInfo.Balance, balance)
 
+	s.recordUndo(func() error {
+		s.trie.adjustTotalSupply(balance, oldInfo.Balance)
+		return nil
+	})
 	s.recordUndo(s.undoAccountInfo(address, exists, oldInfo))
 	return nil
 }

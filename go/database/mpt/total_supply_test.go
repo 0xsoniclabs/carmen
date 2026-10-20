@@ -11,6 +11,7 @@
 package mpt
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -21,7 +22,7 @@ import (
 func TestMptState_TotalSupply_EmptyStateHasZeroSupply(t *testing.T) {
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
 	require.NoError(t, err)
-	defer state.Close()
+	defer func() { require.NoError(t, state.Close()) }()
 
 	total, err := state.TotalSupply()
 	require.NoError(t, err)
@@ -31,7 +32,7 @@ func TestMptState_TotalSupply_EmptyStateHasZeroSupply(t *testing.T) {
 func TestMptState_TotalSupply_SumsBalancesOfAllAccountsIgnoringStorage(t *testing.T) {
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
 	require.NoError(t, err)
-	defer state.Close()
+	defer func() { require.NoError(t, state.Close()) }()
 
 	want := amount.New()
 	for i := range 100 {
@@ -51,11 +52,156 @@ func TestMptState_TotalSupply_SumsBalancesOfAllAccountsIgnoringStorage(t *testin
 func TestMptState_TotalSupply_OverflowIsReported(t *testing.T) {
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
 	require.NoError(t, err)
-	defer state.Close()
+	defer func() { require.NoError(t, state.Close()) }()
 
 	require.NoError(t, state.SetBalance(common.Address{1}, amount.Max()))
 	require.NoError(t, state.SetBalance(common.Address{2}, amount.New(1)))
 
 	_, err = state.TotalSupply()
 	require.ErrorIs(t, err, errTotalSupplyOverflow)
+}
+
+func TestMptState_TotalSupply_IsMaintainedIncrementally(t *testing.T) {
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, state.Close()) }()
+
+	// The first query computes and starts tracking the supply.
+	total, err := state.TotalSupply()
+	require.NoError(t, err)
+	require.Equal(t, amount.New(), total)
+
+	_, known := state.trie.getTotalSupply()
+	require.True(t, known)
+
+	rnd := rand.New(rand.NewSource(42))
+	for block := range 50 {
+		update := common.Update{}
+		for range 20 {
+			addr := common.Address{byte(rnd.Intn(30))}
+			switch rnd.Intn(4) {
+			case 0:
+				// Deletes the account if it has no nonce.
+				update.AppendBalanceUpdate(addr, amount.New())
+			case 1:
+				update.AppendNonceUpdate(addr, common.ToNonce(uint64(rnd.Intn(2))))
+			default:
+				update.AppendBalanceUpdate(addr, amount.New(uint64(rnd.Intn(1000))))
+			}
+		}
+		// The update is not normalized, so ensure that it is applied as is.
+		_, _, err := state.Apply(uint64(block), &update)
+		require.NoError(t, err)
+
+		got, err := state.TotalSupply()
+		require.NoError(t, err)
+		want, err := state.computeTotalSupply()
+		require.NoError(t, err)
+		require.Equal(t, want, got, "block %d", block)
+	}
+}
+
+func TestMptState_TotalSupply_IsPersisted(t *testing.T) {
+	dir := t.TempDir()
+	state, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	require.NoError(t, state.SetBalance(common.Address{1}, amount.New(10)))
+	_, err = state.TotalSupply()
+	require.NoError(t, err)
+	require.NoError(t, state.SetBalance(common.Address{2}, amount.New(5)))
+	require.NoError(t, state.Close())
+
+	state, err = OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, state.Close()) }()
+
+	// The value is available without traversing the trie.
+	total, known := state.trie.getTotalSupply()
+	require.True(t, known)
+	require.Equal(t, amount.New(15), total)
+}
+
+func TestMptState_TotalSupply_UnknownValueIsComputedForExistingState(t *testing.T) {
+	dir := t.TempDir()
+	state, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	// Balances set before the supply is tracked.
+	require.NoError(t, state.SetBalance(common.Address{1}, amount.New(10)))
+	require.NoError(t, state.Close())
+
+	state, err = OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, state.Close()) }()
+
+	_, known := state.trie.getTotalSupply()
+	require.False(t, known)
+
+	require.NoError(t, state.SetBalance(common.Address{2}, amount.New(5)))
+	total, err := state.TotalSupply()
+	require.NoError(t, err)
+	require.Equal(t, amount.New(15), total)
+}
+
+func TestMptState_TotalSupply_IsRestoredByRevertLastBlock(t *testing.T) {
+	require := require.New(t)
+	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
+
+	setup := common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(100)}},
+	}
+	_, _, err = state.Apply(0, &setup)
+	require.NoError(err)
+	// The first query starts tracking the supply.
+	want, err := state.TotalSupply()
+	require.NoError(err)
+	require.Equal(amount.New(100), want)
+
+	// The update modifies an existing account and creates a new one.
+	update := common.Update{
+		Balances: []common.BalanceUpdate{
+			{Account: common.Address{1}, Balance: amount.New(30)},
+			{Account: common.Address{2}, Balance: amount.New(50)},
+		},
+	}
+	undo, _, err := state.Apply(1, &update)
+	require.NoError(err)
+	total, err := state.TotalSupply()
+	require.NoError(err)
+	require.Equal(amount.New(80), total)
+
+	require.NoError(state.RevertLastBlock(undo))
+
+	total, known := state.trie.getTotalSupply()
+	require.True(known)
+	require.Equal(want, total)
+}
+
+func TestLiveTrie_AdjustTotalSupply_InconsistentUpdatesInvalidateValue(t *testing.T) {
+	tests := map[string]struct{ initial, old, new amount.Amount }{
+		"underflow": {amount.New(1), amount.New(2), amount.New(0)},
+		"overflow":  {amount.Max(), amount.New(0), amount.New(1)},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			trie := &LiveTrie{}
+			trie.setTotalSupply(test.initial)
+			trie.adjustTotalSupply(test.old, test.new)
+			_, known := trie.getTotalSupply()
+			require.False(t, known)
+		})
+	}
+}
+
+func TestLiveTrie_AdjustTotalSupply_UnknownValueStaysUnknown(t *testing.T) {
+	trie := &LiveTrie{}
+	trie.adjustTotalSupply(amount.New(1), amount.New(2))
+	_, known := trie.getTotalSupply()
+	require.False(t, known)
+}
+
+func TestMetadata_TotalSupply_InvalidValueIsRejected(t *testing.T) {
+	_, err := (&metadata{TotalSupply: "abc"}).getTotalSupply()
+	require.Error(t, err)
 }
