@@ -43,6 +43,9 @@ const (
 
 	// ExportNotSupported is returned by State implementation if it does not support Export.
 	ExportNotSupported = common.ConstError("export not supported")
+
+	// TotalSupplyNotSupported is returned by State implementations that do not support TotalSupply.
+	TotalSupplyNotSupported = common.ConstError("total supply not supported")
 )
 
 // NewState is the public interface for creating Carmen state instances. If for the

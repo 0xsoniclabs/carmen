@@ -428,6 +428,16 @@ func (s *State) Export(ctx context.Context, out io.Writer, scratchDir string) (c
 	return s.backend.Export(ctx, out, scratchDir)
 }
 
+func (s *State) TotalSupply() (amount.Amount, error) {
+	if err := s.sync(); err != nil {
+		return amount.New(), err
+	}
+	if s.backend == nil {
+		return amount.New(), state.TotalSupplyNotSupported
+	}
+	return s.backend.TotalSupply()
+}
+
 // --- Helpers ---
 
 // issueCollector collects issues encountered during background processing.

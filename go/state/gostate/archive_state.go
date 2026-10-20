@@ -163,6 +163,10 @@ func (s *ArchiveState) GetMemoryFootprint() *common.MemoryFootprint {
 	return common.NewMemoryFootprint(unsafe.Sizeof(*s))
 }
 
+func (s *ArchiveState) TotalSupply() (amount.Amount, error) {
+	return amount.New(), state.TotalSupplyNotSupported
+}
+
 func (s *ArchiveState) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	if err := s.archiveError; err != nil {
 		return common.Hash{}, err

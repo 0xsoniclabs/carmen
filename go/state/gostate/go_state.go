@@ -390,6 +390,25 @@ func (s *GoState) Export(context.Context, io.Writer, string) (common.Hash, error
 	return common.Hash{}, state.ExportNotSupported
 }
 
+func (s *GoState) TotalSupply() (amount.Amount, error) {
+	if err := s.getStateError(); err != nil {
+		return amount.New(), err
+	}
+
+	supplier, ok := s.live.(interface {
+		TotalSupply() (amount.Amount, error)
+	})
+	if !ok {
+		return amount.New(), state.TotalSupplyNotSupported
+	}
+
+	total, err := supplier.TotalSupply()
+	if err != nil {
+		s.addStateError(err)
+	}
+	return total, s.getStateError()
+}
+
 func (s *GoState) CreateWitnessProof(address common.Address, keys ...common.Key) (witness.Proof, error) {
 	panic("not implemented")
 }

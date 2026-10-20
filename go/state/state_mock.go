@@ -332,6 +332,21 @@ func (mr *MockStateMockRecorder) HasEmptyStorage(addr any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasEmptyStorage", reflect.TypeOf((*MockState)(nil).HasEmptyStorage), addr)
 }
 
+// TotalSupply mocks base method.
+func (m *MockState) TotalSupply() (amount.Amount, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TotalSupply")
+	ret0, _ := ret[0].(amount.Amount)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TotalSupply indicates an expected call of TotalSupply.
+func (mr *MockStateMockRecorder) TotalSupply() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalSupply", reflect.TypeOf((*MockState)(nil).TotalSupply))
+}
+
 // MockLiveDB is a mock of LiveDB interface.
 type MockLiveDB struct {
 	ctrl     *gomock.Controller

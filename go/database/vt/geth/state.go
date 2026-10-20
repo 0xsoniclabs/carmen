@@ -389,6 +389,10 @@ func (s *verkleState) CreateWitnessProof(address common.Address, keys ...common.
 	panic("not implemented")
 }
 
+func (s *verkleState) TotalSupply() (amount.Amount, error) {
+	return amount.New(), state.TotalSupplyNotSupported
+}
+
 func (s *verkleState) Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error) {
 	panic("not implemented")
 }

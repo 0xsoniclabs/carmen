@@ -1231,3 +1231,46 @@ type _Reader interface {
 type _Writer interface {
 	io.Writer
 }
+
+func TestState_TotalSupply_SyncsAndForwardsToBackend(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	backend := state.NewMockState(ctrl)
+
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
+
+	backend.EXPECT().TotalSupply().Return(amount.New(42), nil)
+
+	flatState := &State{
+		backend:  backend,
+		commands: make(chan command, 1),
+		syncs:    syncs,
+	}
+
+	total, err := flatState.TotalSupply()
+	require.NoError(t, err)
+	require.Equal(t, amount.New(42), total)
+}
+
+func TestState_TotalSupply_IssueReportedBySyncIsForwarded(t *testing.T) {
+	issue := errors.New("test issue")
+
+	syncs := make(chan struct{}, 1)
+	syncs <- struct{}{}
+
+	flatState := &State{
+		commands: make(chan command, 1),
+		syncs:    syncs,
+	}
+	flatState.issues.HandleIssue(issue)
+
+	_, err := flatState.TotalSupply()
+	require.ErrorIs(t, err, issue)
+}
+
+func TestState_TotalSupply_NotSupportedWithoutBackend(t *testing.T) {
+	flatState := &State{}
+
+	_, err := flatState.TotalSupply()
+	require.ErrorIs(t, err, state.TotalSupplyNotSupported)
+}

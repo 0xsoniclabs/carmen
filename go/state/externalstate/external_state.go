@@ -374,6 +374,10 @@ func (s *ExternalState) HasEmptyStorage(addr common.Address) (bool, error) {
 	return true, nil
 }
 
+func (s *ExternalState) TotalSupply() (amount.Amount, error) {
+	return amount.New(), state.TotalSupplyNotSupported
+}
+
 func (s *ExternalState) Export(context.Context, io.Writer, string) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
 }

@@ -1347,6 +1347,21 @@ func (mr *MockStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockStateDB)(nil).Suicide), arg0)
 }
 
+// TotalSupply mocks base method.
+func (m *MockStateDB) TotalSupply() (amount.Amount, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TotalSupply")
+	ret0, _ := ret[0].(amount.Amount)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TotalSupply indicates an expected call of TotalSupply.
+func (mr *MockStateDBMockRecorder) TotalSupply() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalSupply", reflect.TypeOf((*MockStateDB)(nil).TotalSupply))
+}
+
 // MockNonCommittableStateDB is a mock of NonCommittableStateDB interface.
 type MockNonCommittableStateDB struct {
 	ctrl     *gomock.Controller
