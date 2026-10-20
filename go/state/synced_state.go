@@ -173,6 +173,12 @@ func (s *syncedState) CreateWitnessProof(address common.Address, keys ...common.
 	return s.state.CreateWitnessProof(address, keys...)
 }
 
+func (s *syncedState) TotalSupply() (amount.Amount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state.TotalSupply()
+}
+
 func (s *syncedState) Export(ctx context.Context, out io.Writer) (common.Hash, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -3760,6 +3760,35 @@ func TestStateDB_GetArchiveBlockHeightReturnsHeightOfArchive(t *testing.T) {
 	}
 }
 
+func TestStateDB_TotalSupply_ForwardsResultOfState(t *testing.T) {
+	issue := errors.New("test issue")
+	tests := map[string]struct {
+		total amount.Amount
+		err   error
+	}{
+		"success": {amount.New(123), nil},
+		"failure": {amount.New(), issue},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			state := NewMockState(ctrl)
+			db := CreateStateDBUsing(state)
+
+			state.EXPECT().TotalSupply().Return(test.total, test.err)
+
+			total, err := db.TotalSupply()
+			if want, got := test.total, total; want != got {
+				t.Errorf("unexpected total supply, wanted %v, got %v", want, got)
+			}
+			if want, got := test.err, err; want != got {
+				t.Errorf("unexpected error, wanted %v, got %v", want, got)
+			}
+		})
+	}
+}
+
 func TestStateDB_ProvidesTransactionChanges(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)

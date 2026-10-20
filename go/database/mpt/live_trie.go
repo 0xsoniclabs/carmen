@@ -15,11 +15,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"unsafe"
 
 	"github.com/Fantom-foundation/Carmen/go/common"
+	"github.com/Fantom-foundation/Carmen/go/common/amount"
 	"github.com/Fantom-foundation/Carmen/go/common/witness"
 )
 
@@ -36,6 +38,9 @@ type LiveTrie struct {
 	root NodeReference
 	// The file name for storing trie metadata.
 	metaDataFile string
+	// The sum of all account balances in this trie, maintained incrementally
+	// by the owning MptState. It is nil if the value is not known (yet).
+	totalSupply *amount.Amount
 }
 
 // OpenInMemoryLiveTrie loads trie information from the given directory and
@@ -105,10 +110,15 @@ func makeTrie(
 	if err != nil {
 		return nil, err
 	}
+	totalSupply, err := metadata.getTotalSupply()
+	if err != nil {
+		return nil, err
+	}
 	return &LiveTrie{
 		root:         NewNodeReference(metadata.RootNode),
 		metaDataFile: metaDataFile,
 		forest:       forest,
+		totalSupply:  totalSupply,
 	}, nil
 }
 
@@ -206,10 +216,12 @@ func (s *LiveTrie) Flush() error {
 	}
 
 	// Update on-disk meta-data.
-	metadata, err := json.Marshal(metadata{
+	meta := metadata{
 		RootNode: s.root.Id(),
 		RootHash: hash,
-	})
+	}
+	meta.setTotalSupply(s.totalSupply)
+	metadata, err := json.Marshal(meta)
 
 	if err == nil {
 		if err := os.WriteFile(s.metaDataFile, metadata, 0600); err != nil {
@@ -218,6 +230,45 @@ func (s *LiveTrie) Flush() error {
 	}
 
 	return errors.Join(err, s.forest.Flush())
+}
+
+// getTotalSupply returns the maintained sum of all balances, if known.
+func (s *LiveTrie) getTotalSupply() (amount.Amount, bool) {
+	if s.totalSupply == nil {
+		return amount.New(), false
+	}
+	return *s.totalSupply, true
+}
+
+// setTotalSupply registers the sum of all balances to be maintained from now on.
+func (s *LiveTrie) setTotalSupply(value amount.Amount) {
+	s.totalSupply = &value
+}
+
+// adjustTotalSupply updates the maintained total supply for a balance change
+// of a single account. If the total supply is not known, this is a no-op. If
+// the update is inconsistent with the maintained value, it is dropped such
+// that it will be recomputed when needed.
+func (s *LiveTrie) adjustTotalSupply(oldBalance, newBalance amount.Amount) {
+	if s.totalSupply == nil {
+		return
+	}
+	total, underflow := amount.SubUnderflow(*s.totalSupply, oldBalance)
+	if underflow {
+		s.totalSupply = nil
+		return
+	}
+	total, overflow := amount.AddOverflow(total, newBalance)
+	if overflow {
+		s.totalSupply = nil
+		return
+	}
+	s.totalSupply = &total
+}
+
+// invalidateTotalSupply drops the maintained total supply.
+func (s *LiveTrie) invalidateTotalSupply() {
+	s.totalSupply = nil
 }
 
 func (s *LiveTrie) Close() error {
@@ -258,6 +309,32 @@ func (s *LiveTrie) Check() error {
 type metadata struct {
 	RootNode NodeId
 	RootHash common.Hash
+	// TotalSupply is the decimal representation of the sum of all balances.
+	// It is omitted if unknown.
+	TotalSupply string `json:",omitempty"`
+}
+
+func (m *metadata) getTotalSupply() (*amount.Amount, error) {
+	if m.TotalSupply == "" {
+		return nil, nil
+	}
+	value, ok := new(big.Int).SetString(m.TotalSupply, 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid total supply in metadata: %q", m.TotalSupply)
+	}
+	total, err := amount.NewFromBigInt(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid total supply in metadata: %w", err)
+	}
+	return &total, nil
+}
+
+func (m *metadata) setTotalSupply(value *amount.Amount) {
+	if value == nil {
+		m.TotalSupply = ""
+		return
+	}
+	m.TotalSupply = value.String()
 }
 
 // getLiveTrieMetadataPath returns the path to the LiveTrie's metadata file of

@@ -288,6 +288,10 @@ func (cs *CppState) CreateWitnessProof(address common.Address, keys ...common.Ke
 	panic("not implemented")
 }
 
+func (cs *CppState) TotalSupply() (amount.Amount, error) {
+	return amount.New(), state.TotalSupplyNotSupported
+}
+
 func (cs *CppState) Export(context.Context, io.Writer) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
 }

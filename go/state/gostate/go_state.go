@@ -374,6 +374,25 @@ func (s *GoState) Export(context.Context, io.Writer) (common.Hash, error) {
 	return common.Hash{}, state.ExportNotSupported
 }
 
+func (s *GoState) TotalSupply() (amount.Amount, error) {
+	if err := s.stateError; err != nil {
+		return amount.New(), err
+	}
+
+	supplier, ok := s.live.(interface {
+		TotalSupply() (amount.Amount, error)
+	})
+	if !ok {
+		return amount.New(), state.TotalSupplyNotSupported
+	}
+
+	total, err := supplier.TotalSupply()
+	if err != nil {
+		s.stateError = errors.Join(s.stateError, err)
+	}
+	return total, s.stateError
+}
+
 func (s *GoState) CreateSnapshot() (backend.Snapshot, error) {
 	components := s.live.GetSnapshotableComponents()
 	if components == nil {

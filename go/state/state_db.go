@@ -142,6 +142,13 @@ type StateDB interface {
 	// GetMemoryFootprint computes an approximation of the memory used by this state.
 	GetMemoryFootprint() *common.MemoryFootprint
 
+	// TotalSupply computes the sum of the balances of all accounts in the
+	// committed state. It should be called outside of any block; uncommitted
+	// changes are not included. The operation traverses the whole state, may
+	// take a long time, and blocks other operations on the state while running.
+	// An error is returned if the underlying state does not support it.
+	TotalSupply() (amount.Amount, error)
+
 	ResetBlockContext()
 }
 
@@ -1361,6 +1368,10 @@ func (s *stateDB) GetArchiveStateDB(block uint64) (NonCommittableStateDB, error)
 		return nil, err
 	}
 	return CreateNonCommittableStateDBUsing(archiveState), nil
+}
+
+func (s *stateDB) TotalSupply() (amount.Amount, error) {
+	return s.state.TotalSupply()
 }
 
 func (s *stateDB) GetArchiveBlockHeight() (uint64, bool, error) {

@@ -222,7 +222,16 @@ func (s *MptState) Exists(address common.Address) (bool, error) {
 }
 
 func (s *MptState) DeleteAccount(address common.Address) error {
-	return s.trie.SetAccountInfo(address, AccountInfo{})
+	info, _, err := s.trie.GetAccountInfo(address)
+	if err != nil {
+		return err
+	}
+	if err := s.trie.SetAccountInfo(address, AccountInfo{}); err != nil {
+		s.trie.invalidateTotalSupply()
+		return err
+	}
+	s.trie.adjustTotalSupply(info.Balance, amount.New())
+	return nil
 }
 
 func (s *MptState) GetBalance(address common.Address) (balance amount.Amount, err error) {
@@ -241,11 +250,17 @@ func (s *MptState) SetBalance(address common.Address, balance amount.Amount) (er
 	if info.Balance == balance {
 		return nil
 	}
+	oldBalance := info.Balance
 	info.Balance = balance
 	if !exists {
 		info.CodeHash = emptyCodeHash
 	}
-	return s.trie.SetAccountInfo(address, info)
+	if err := s.trie.SetAccountInfo(address, info); err != nil {
+		s.trie.invalidateTotalSupply()
+		return err
+	}
+	s.trie.adjustTotalSupply(oldBalance, balance)
+	return nil
 }
 
 func (s *MptState) GetNonce(address common.Address) (nonce common.Nonce, err error) {
