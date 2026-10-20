@@ -114,6 +114,13 @@ type State interface {
 	// Temporary staging data is placed under scratchDir.
 	// If successful, expected root hash is returned.
 	Export(ctx context.Context, out io.Writer, scratchDir string) (common.Hash, error)
+
+	// TotalSupply computes the sum of the balances of all accounts in the
+	// committed state. The operation traverses the whole state, may take a
+	// long time, and blocks other operations on this state while running.
+	// TotalSupplyNotSupported is returned if the implementation does not
+	// support this operation.
+	TotalSupply() (amount.Amount, error)
 }
 
 // StagedBlock is a block that has been applied to the live state but is not yet
