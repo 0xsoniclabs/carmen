@@ -20,10 +20,27 @@ import (
 // range of the amount type.
 var errTotalSupplyOverflow = errors.New("total supply overflows the amount range")
 
-// TotalSupply computes the sum of the balances of all accounts in the state.
-// The whole account trie is traversed, which may take a considerable amount of
-// time for large states. Storage tries are skipped.
+// TotalSupply provides the sum of the balances of all accounts in the state.
+// The value is maintained incrementally while balances are updated and is
+// persisted with the trie meta-data. If it is not known yet, e.g. for states
+// created before it was tracked, it is computed by traversing the whole
+// account trie, which may take a considerable amount of time for large
+// states, and maintained from then on.
 func (s *MptState) TotalSupply() (amount.Amount, error) {
+	if total, known := s.trie.getTotalSupply(); known {
+		return total, nil
+	}
+	total, err := s.computeTotalSupply()
+	if err != nil {
+		return amount.New(), err
+	}
+	s.trie.setTotalSupply(total)
+	return total, nil
+}
+
+// computeTotalSupply sums up the balances of all accounts by traversing the
+// account trie. Storage tries are skipped.
+func (s *MptState) computeTotalSupply() (amount.Amount, error) {
 	var (
 		total    amount.Amount
 		overflow bool
