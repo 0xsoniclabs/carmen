@@ -66,7 +66,32 @@ func TestTrieStatistics_Visit_CountsEmptyTrie(t *testing.T) {
 	stats := &trieStatistics{}
 	require.NoError(trie.VisitTrie(mpt.ReadAccess{}, stats))
 
-	require.Equal(trieStatistics{empty: 1}, *stats)
+	require.Equal(uint64(1), stats.empty)
+	require.Zero(stats.accounts + stats.branches + stats.extensions + stats.values)
+}
+
+func TestTrieStatistics_Visit_ScanMatchesTreeWalkOnLiveTrie(t *testing.T) {
+	require := require.New(t)
+
+	dir := t.TempDir()
+	trie, err := mpt.OpenFileLiveTrie(dir, mpt.S5LiveConfig, mpt.NodeCacheConfig{})
+	require.NoError(err)
+	for i := range 100 {
+		addr := common.Address{byte(i)}
+		require.NoError(trie.SetAccountInfo(addr, mpt.AccountInfo{Nonce: common.ToNonce(1)}))
+		require.NoError(trie.SetValue(addr, common.Key{byte(i)}, common.Value{1}))
+	}
+	// Deleting an account frees nodes, which the scan must skip.
+	require.NoError(trie.SetAccountInfo(common.Address{1}, mpt.AccountInfo{}))
+
+	walked := &trieStatistics{}
+	require.NoError(trie.VisitTrie(mpt.ReadAccess{}, walked))
+	require.NoError(trie.Close())
+
+	scanned := &trieStatistics{}
+	require.NoError(mpt.VisitForestNodes(dir, mpt.S5LiveConfig, scanned))
+
+	require.Equal(walked, scanned)
 }
 
 func TestTrieStatistics_String_PrintsCountsAndBranchFill(t *testing.T) {
@@ -105,17 +130,25 @@ func TestTrieStats_Run_SucceedsOnLiveTrie(t *testing.T) {
 }
 
 func TestTrieStats_Run_SucceedsOnArchiveTrie(t *testing.T) {
-	require := require.New(t)
+	tests := map[string][]string{
+		"scan":              {},
+		"walk single block": {"--block-height", "0"},
+	}
+	for name, flags := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
 
-	dir := t.TempDir()
-	archive, err := mpt.OpenArchiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
-	require.NoError(err)
-	require.NoError(archive.Add(0, common.Update{
-		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}},
-	}, nil))
-	require.NoError(archive.Close())
+			dir := t.TempDir()
+			archive, err := mpt.OpenArchiveTrie(dir, mpt.S5ArchiveConfig, mpt.NodeCacheConfig{}, mpt.ArchiveConfig{})
+			require.NoError(err)
+			require.NoError(archive.Add(0, common.Update{
+				Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}},
+			}, nil))
+			require.NoError(archive.Close())
 
-	require.NoError(runTrieStats("--block-height", "0", dir))
+			require.NoError(runTrieStats(append(flags, dir)...))
+		})
+	}
 }
 
 func TestTrieStats_Run_FailsWithoutDirectory(t *testing.T) {

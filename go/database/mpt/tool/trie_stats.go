@@ -25,7 +25,7 @@ var TrieStats = cli.Command{
 	Action:    diagnostics.AddPerformanceDiagnosticsAction(trieStats, &diagnosticsFlag, &cpuProfileFlag, &traceFlag),
 	Name:      "trie-stats",
 	Flags:     []cli.Flag{&blockHeightFlag},
-	Usage:     "prints node type counts and branch node fill levels of the live or archive trie",
+	Usage:     "prints node type counts and branch node fill levels; scans all nodes on disk, or walks the archive trie at --block-height",
 	ArgsUsage: "[--block-height <height>] <directory>",
 }
 
@@ -112,6 +112,18 @@ func trieStats(context *cli.Context) (retErr error) {
 		return err
 	}
 
+	stats := &trieStatistics{loggingBlockHeight: 10000}
+
+	// A linear scan of the node files is much faster than a tree walk, but
+	// for archives it covers all blocks. Walk the tree for a single block.
+	if !context.IsSet(blockHeightFlag.Name) {
+		if err := mpt.VisitForestNodes(dir, mptInfo.Config, stats); err != nil {
+			return fmt.Errorf("failed to scan nodes: %w", err)
+		}
+		fmt.Print(stats.String())
+		return nil
+	}
+
 	trie, err := openTrie(context, dir, mptInfo)
 	if err != nil {
 		return err
@@ -120,7 +132,6 @@ func trieStats(context *cli.Context) (retErr error) {
 		retErr = errors.Join(retErr, trie.Close())
 	}()
 
-	stats := &trieStatistics{loggingBlockHeight: 10000}
 	if err := trie.VisitTrie(mpt.ReadAccess{}, stats); err != nil {
 		return fmt.Errorf("failed to visit trie: %w", err)
 	}
