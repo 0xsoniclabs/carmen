@@ -38,11 +38,18 @@ type trieStatistics struct {
 	empty      uint64
 
 	// branchFill[i] is the number of branch nodes with i non-empty children.
-	branchFill [17]uint64
+	branchFill         [17]uint64
+	loggingBlockHeight uint64
+	blockSeen          uint64
 }
 
 // Visit registers the given node in the statistics.
 func (s *trieStatistics) Visit(node mpt.Node, _ mpt.NodeInfo) mpt.VisitResponse {
+	s.blockSeen += 1
+	if s.blockSeen == s.loggingBlockHeight {
+		fmt.Printf("Visited %d nodes at block height %d\n", s.accounts+s.branches+s.extensions+s.values+s.empty, s.loggingBlockHeight)
+		s.blockSeen = 0
+	}
 	switch n := node.(type) {
 	case *mpt.AccountNode:
 		s.accounts++
@@ -113,7 +120,7 @@ func trieStats(context *cli.Context) (retErr error) {
 		retErr = errors.Join(retErr, trie.Close())
 	}()
 
-	stats := &trieStatistics{}
+	stats := &trieStatistics{loggingBlockHeight: 10000}
 	if err := trie.VisitTrie(mpt.ReadAccess{}, stats); err != nil {
 		return fmt.Errorf("failed to visit trie: %w", err)
 	}
