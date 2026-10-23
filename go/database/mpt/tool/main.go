@@ -52,6 +52,7 @@ var (
 		&StressTestCmd,
 		&Reset,
 		&TotalSupplyCmd,
+		&TrieStats,
 	}
 )
 

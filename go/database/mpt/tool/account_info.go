@@ -239,6 +239,13 @@ func (t *LiveOrArchiveTrie) VisitAccountStorage(addr common.Address, access mpt.
 	return t.archiveTrie.VisitAccountStorage(t.block, addr, access, visitor)
 }
 
+func (t *LiveOrArchiveTrie) VisitTrie(access mpt.AccessMode, visitor mpt.NodeVisitor) error {
+	if t.liveTrie != nil {
+		return t.liveTrie.VisitTrie(access, visitor)
+	}
+	return t.archiveTrie.VisitTrie(t.block, access, visitor)
+}
+
 func (t *LiveOrArchiveTrie) Close() error {
 	if t.liveTrie != nil {
 		return t.liveTrie.Close()
