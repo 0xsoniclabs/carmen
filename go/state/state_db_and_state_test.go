@@ -1174,6 +1174,51 @@ func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *test
 	}
 }
 
+func TestStateDB_SuicidedAccountRetainingBalance_BecomesBalanceOnlyAccount(t *testing.T) {
+	selfDestruct := func(s state.StateDB) {
+		s.CreateAccount(address1)
+		s.CreateContract(address1)
+		s.SetNonce(address1, 1)
+		s.SetCode(address1, []byte{1, 2, 3})
+		s.SetState(address1, key1, val1)
+		s.AddBalance(address1, amount.New(12))
+		s.Suicide(address1)
+	}
+	for _, config := range initStates() {
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			// Verkle tries keep cleared storage slots, so the hash differs in schema 6.
+			if config.config.Schema != 6 {
+				retained := executeOpOnCleanStateDB(t, config, selfDestruct)
+				balanceOnly := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
+					// CreateAccount sets empty code, which is required.
+					s.CreateAccount(address1)
+					s.AddBalance(address1, amount.New(12))
+				})
+				require.Equal(balanceOnly, retained)
+			}
+
+			s, err := config.createState(t.TempDir())
+			require.NoError(err)
+			db := state.CreateStateDBUsing(s)
+			defer func() {
+				require.NoError(db.Close())
+			}()
+			db.BeginBlock()
+			selfDestruct(db)
+			db.EndTransaction()
+			endAndCommitBlock(t, db, 0)
+
+			require.True(db.Exist(address1))
+			require.Equal(amount.New(12), db.GetBalance(address1))
+			require.Zero(db.GetNonce(address1))
+			require.Empty(db.GetCode(address1))
+			require.Equal(common.Value{}, db.GetState(address1, key1))
+		})
+	}
+}
+
 func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
 	ops := map[string]func(s state.StateDB){
 		"Balance": func(s state.StateDB) {
