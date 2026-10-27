@@ -407,27 +407,42 @@ func (a *ArchiveTrie) HasEmptyStorage(block uint64, addr common.Address) (bool, 
 
 // GetDiff computes the difference between the given source and target blocks.
 func (a *ArchiveTrie) GetDiff(srcBlock, trgBlock uint64) (Diff, error) {
+	before, after, err := a.getRoots(srcBlock, trgBlock)
+	if err != nil {
+		return Diff{}, err
+	}
+	return GetDiff(a.forest, &before, &after)
+}
+
+// VisitBranchClones calls visit for every branch node of the target block that
+// replaces a different branch node at the same position of the source block.
+func (a *ArchiveTrie) VisitBranchClones(srcBlock, trgBlock uint64, visit func(beforeId, afterId NodeId, before, after *BranchNode)) error {
+	before, after, err := a.getRoots(srcBlock, trgBlock)
+	if err != nil {
+		return err
+	}
+	return VisitBranchClones(a.forest, &before, &after, visit)
+}
+
+// getRoots returns the root references of the given source and target blocks.
+func (a *ArchiveTrie) getRoots(srcBlock, trgBlock uint64) (NodeReference, NodeReference, error) {
 	a.rootsMutex.Lock()
+	defer a.rootsMutex.Unlock()
 	if srcBlock >= uint64(a.roots.length()) {
-		a.rootsMutex.Unlock()
-		return Diff{}, fmt.Errorf("source block %d not present in archive, highest block is %d", srcBlock, a.roots.length()-1)
+		return NodeReference{}, NodeReference{}, fmt.Errorf("source block %d not present in archive, highest block is %d", srcBlock, a.roots.length()-1)
 	}
 	if trgBlock >= uint64(a.roots.length()) {
-		a.rootsMutex.Unlock()
-		return Diff{}, fmt.Errorf("target block %d not present in archive, highest block is %d", trgBlock, a.roots.length()-1)
+		return NodeReference{}, NodeReference{}, fmt.Errorf("target block %d not present in archive, highest block is %d", trgBlock, a.roots.length()-1)
 	}
 	before, err := a.roots.get(srcBlock)
 	if err != nil {
-		a.rootsMutex.Unlock()
-		return Diff{}, err
+		return NodeReference{}, NodeReference{}, err
 	}
 	after, err := a.roots.get(trgBlock)
 	if err != nil {
-		a.rootsMutex.Unlock()
-		return Diff{}, err
+		return NodeReference{}, NodeReference{}, err
 	}
-	a.rootsMutex.Unlock()
-	return GetDiff(a.forest, &before.NodeRef, &after.NodeRef)
+	return before.NodeRef, after.NodeRef, nil
 }
 
 // GetDiffForBlock computes the diff introduced by the given block compared to its

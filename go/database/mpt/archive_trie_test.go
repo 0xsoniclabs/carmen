@@ -3889,3 +3889,38 @@ func BenchmarkArchiveFlush_Roots(b *testing.B) {
 		}
 	}
 }
+
+func TestArchiveTrie_VisitBranchClones_ReportsReplacedBranches(t *testing.T) {
+	require := require.New(t)
+
+	archive, err := OpenArchiveTrie(t.TempDir(), S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+	require.NoError(err)
+	defer func() {
+		require.NoError(archive.Close())
+	}()
+
+	// Enough accounts to form branches below the root, then touch one.
+	update := common.Update{}
+	for i := range 64 {
+		update.Balances = append(update.Balances, common.BalanceUpdate{Account: common.Address{byte(i)}, Balance: amount.New(1)})
+	}
+	require.NoError(archive.Add(0, update, nil))
+	require.NoError(archive.Add(1, common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(2)}},
+	}, nil))
+
+	var mutex sync.Mutex
+	clones := 0
+	require.NoError(archive.VisitBranchClones(0, 1, func(beforeId, afterId NodeId, before, after *BranchNode) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		clones++
+		require.NotEqual(beforeId, afterId)
+		require.NotEqual(before.GetChildren(), after.GetChildren())
+	}))
+	require.NotZero(clones)
+
+	require.NoError(archive.VisitBranchClones(1, 1, func(NodeId, NodeId, *BranchNode, *BranchNode) {
+		t.Error("no clones expected between identical blocks")
+	}))
+}

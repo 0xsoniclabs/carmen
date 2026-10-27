@@ -83,19 +83,41 @@ func GetDiff(
 	before *NodeReference,
 	after *NodeReference,
 ) (Diff, error) {
-	context := &diffContext{
-		source:      source,
-		result:      Diff{},
-		resultMutex: &sync.Mutex{},
-		workers:     make(chan struct{}, runtime.NumCPU()),
-		wg:          &sync.WaitGroup{},
-		errs:        make(chan error, 1),
+	context := newDiffContext(source, nil)
+	if err := runDiff(context, before, after); err != nil {
+		return nil, err
 	}
+	return context.result, nil
+}
 
+// VisitBranchClones calls visit for every branch node of the after trie that
+// replaces a different branch node at the same position of the before trie.
+// The visitor is called concurrently.
+func VisitBranchClones(
+	source NodeSource,
+	before *NodeReference,
+	after *NodeReference,
+	visit func(beforeId, afterId NodeId, before, after *BranchNode),
+) error {
+	return runDiff(newDiffContext(source, visit), before, after)
+}
+
+func newDiffContext(source NodeSource, onBranchClone func(beforeId, afterId NodeId, before, after *BranchNode)) *diffContext {
+	return &diffContext{
+		source:        source,
+		result:        Diff{},
+		resultMutex:   &sync.Mutex{},
+		workers:       make(chan struct{}, runtime.NumCPU()),
+		wg:            &sync.WaitGroup{},
+		errs:          make(chan error, 1),
+		onBranchClone: onBranchClone,
+	}
+}
+
+func runDiff(context *diffContext, before, after *NodeReference) error {
 	if before.Id() == after.Id() {
-		return context.result, nil
+		return nil
 	}
-
 	err := collectDiff(context, triePosition{ref: *before}, triePosition{ref: *after})
 	context.wg.Wait()
 	if err == nil {
@@ -104,10 +126,7 @@ func GetDiff(
 		default:
 		}
 	}
-	if err != nil {
-		return nil, err
-	}
-	return context.result, nil
+	return err
 }
 
 // -----
@@ -199,6 +218,7 @@ type diffContext struct {
 	workers        chan struct{} // a semaphore bounding the number of goroutines
 	wg             *sync.WaitGroup
 	errs           chan error // keeps the first error of any goroutine
+	onBranchClone  func(beforeId, afterId NodeId, before, after *BranchNode)
 }
 
 // collectChild diffs the given positions in a new goroutine if a worker slot
@@ -222,6 +242,22 @@ func (c *diffContext) collectChild(before, after triePosition) error {
 	}
 }
 
+// visitBranchClone reports the branch nodes at the given positions to the hook.
+func (c *diffContext) visitBranchClone(before, after triePosition) error {
+	beforeHandle, err := before.getReadAccess(c.source)
+	if err != nil {
+		return err
+	}
+	defer beforeHandle.Release()
+	afterHandle, err := after.getReadAccess(c.source)
+	if err != nil {
+		return err
+	}
+	defer afterHandle.Release()
+	c.onBranchClone(before.id(), after.id(), beforeHandle.Get().(*BranchNode), afterHandle.Get().(*BranchNode))
+	return nil
+}
+
 // setAccountDiff stores the diff of the given account.
 func (c *diffContext) setAccountDiff(address common.Address, diff *AccountDiff) {
 	c.resultMutex.Lock()
@@ -242,6 +278,12 @@ func collectDiff(
 
 	if before.isLeaf() && after.isLeaf() {
 		return collectDiffFromLeafs(context, before, after)
+	}
+
+	if context.onBranchClone != nil && before.id().IsBranch() && after.id().IsBranch() {
+		if err := context.visitBranchClone(before, after); err != nil {
+			return err
+		}
 	}
 
 	for i := range Nibble(16) {

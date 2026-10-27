@@ -54,6 +54,7 @@ var (
 		&TotalSupplyCmd,
 		&TrieStats,
 		&Diff,
+		&DeltaStats,
 	}
 )
 
