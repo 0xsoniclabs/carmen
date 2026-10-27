@@ -61,9 +61,9 @@ func (t *transactionContext) SelfDestruct(address Address) {
 	}
 }
 
-func (t *transactionContext) SelfDestructEIP8246(address Address) {
+func (t *transactionContext) SelfDestructPreAmsterdam(address Address) {
 	if t.state != nil {
-		t.state.SuicideEIP8246(common.Address(address))
+		t.state.SuicidePreAmsterdam(common.Address(address))
 	}
 }
 

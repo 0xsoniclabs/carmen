@@ -38,7 +38,7 @@ type VmStateDB interface {
 	CreateContract(common.Address)
 	IsNewContract(common.Address) bool
 	Suicide(common.Address) bool
-	SuicideEIP8246(common.Address) bool
+	SuicidePreAmsterdam(common.Address) bool
 	HasSuicided(common.Address) bool
 
 	// Balance
@@ -602,17 +602,17 @@ func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
 	return true
 }
 
-// Suicide marks the given account as suicided and burns its balance,
-// including any balance received before the end of the transaction.
+// Suicide marks the given account as suicided, leaving its balance untouched (EIP-8246).
 // The account still exist until the end of the transaction.
 func (s *stateDB) Suicide(addr common.Address) bool {
-	return s.suicide(addr, true)
+	return s.suicide(addr, false)
 }
 
-// SuicideEIP8246 marks the given account as suicided, leaving its balance untouched.
+// SuicidePreAmsterdam marks the given account as suicided and burns its balance,
+// including any balance received before the end of the transaction.
 // The account still exist until the end of the transaction.
-func (s *stateDB) SuicideEIP8246(addr common.Address) bool {
-	return s.suicide(addr, false)
+func (s *stateDB) SuicidePreAmsterdam(addr common.Address) bool {
+	return s.suicide(addr, true)
 }
 
 func (s *stateDB) suicide(addr common.Address, burnBalance bool) bool {

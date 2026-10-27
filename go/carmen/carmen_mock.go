@@ -861,16 +861,16 @@ func (mr *MockTransactionContextMockRecorder) SelfDestruct(arg0 any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelfDestruct", reflect.TypeOf((*MockTransactionContext)(nil).SelfDestruct), arg0)
 }
 
-// SelfDestructEIP8246 mocks base method.
-func (m *MockTransactionContext) SelfDestructEIP8246(arg0 Address) {
+// SelfDestructPreAmsterdam mocks base method.
+func (m *MockTransactionContext) SelfDestructPreAmsterdam(arg0 Address) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SelfDestructEIP8246", arg0)
+	m.ctrl.Call(m, "SelfDestructPreAmsterdam", arg0)
 }
 
-// SelfDestructEIP8246 indicates an expected call of SelfDestructEIP8246.
-func (mr *MockTransactionContextMockRecorder) SelfDestructEIP8246(arg0 any) *gomock.Call {
+// SelfDestructPreAmsterdam indicates an expected call of SelfDestructPreAmsterdam.
+func (mr *MockTransactionContextMockRecorder) SelfDestructPreAmsterdam(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelfDestructEIP8246", reflect.TypeOf((*MockTransactionContext)(nil).SelfDestructEIP8246), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelfDestructPreAmsterdam", reflect.TypeOf((*MockTransactionContext)(nil).SelfDestructPreAmsterdam), arg0)
 }
 
 // SetCode mocks base method.
