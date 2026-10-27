@@ -252,9 +252,15 @@ type TransactionContext interface {
 	// and there is no associated code with this account.
 	Empty(Address) bool
 
-	// SelfDestruct invalidates the account with the given address.
-	// It clears its balance, and marks the account as destructed.
+	// SelfDestruct marks the account with the given address as destructed.
+	// At the end of the transaction, its nonce, code, and storage are cleared.
+	// The account is deleted, unless it holds a balance, which it retains (EIP-8246).
 	SelfDestruct(Address)
+
+	// SelfDestructPreAmsterdam invalidates the account with the given address.
+	// It clears its balance, including any balance received before the end
+	// of the transaction, and marks the account as destructed.
+	SelfDestructPreAmsterdam(Address)
 
 	// HasSelfDestructed checks if the account with the given address
 	// was destructed.

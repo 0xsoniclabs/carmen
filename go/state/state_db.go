@@ -38,6 +38,7 @@ type VmStateDB interface {
 	CreateContract(common.Address)
 	IsNewContract(common.Address) bool
 	Suicide(common.Address) bool
+	SuicidePreAmsterdam(common.Address) bool
 	HasSuicided(common.Address) bool
 
 	// Balance
@@ -223,6 +224,10 @@ type stateDB struct {
 	// A list of accounts to be deleted at the end of the transaction.
 	accountsToDelete []common.Address
 
+	// The set of suicided accounts whose balance is burned at the end of the
+	// transaction (self-destructs before EIP-8246).
+	accountsToBurn map[common.Address]struct{}
+
 	// Tracks the clearing state of individual accounts.
 	clearedAccounts map[common.Address]accountClearingState
 
@@ -291,10 +296,12 @@ type accountLifeCycleState int
 //    Exists -- EndTransaction --> NonExisting    // if account was empty
 //
 //    Suicided -- CreateAccount --> Exists
-//    Suicided -- EndTransaction --> NonExisting
+//    Suicided -- EndTransaction --> NonExisting  // if account has no balance
+//    Suicided -- EndTransaction --> Exists       // if account has a balance (EIP-8246)
 //
 // Accounts with the state Suicided can only exist during a transaction. At the end of a
-// transaction, Suicided accounts transition automatically into NonExisting accounts.
+// transaction, Suicided accounts are cleared and transition automatically into NonExisting
+// accounts, unless they retain a balance (EIP-8246), becoming balance-only accounts.
 
 const (
 	accountNonExisting    accountLifeCycleState = 1
@@ -478,6 +485,7 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
 		writtenSlots:      map[*slotValue]bool{},
 		accountsToDelete:  make([]common.Address, 0, 100),
+		accountsToBurn:    make(map[common.Address]struct{}),
 		undo:              make([]func(), 0, 100),
 		clearedAccounts:   make(map[common.Address]accountClearingState),
 		createdContracts:  make(map[common.Address]struct{}),
@@ -594,17 +602,36 @@ func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
 	return true
 }
 
-// Suicide marks the given account as suicided.
-// This clears the account balance.
-// The account still exist until the state is committed.
+// Suicide marks the given account as suicided, leaving its balance untouched (EIP-8246).
+// The account still exist until the end of the transaction.
 func (s *stateDB) Suicide(addr common.Address) bool {
+	return s.suicide(addr, false)
+}
+
+// SuicidePreAmsterdam marks the given account as suicided and burns its balance,
+// including any balance received before the end of the transaction.
+// The account still exist until the end of the transaction.
+func (s *stateDB) SuicidePreAmsterdam(addr common.Address) bool {
+	return s.suicide(addr, true)
+}
+
+func (s *stateDB) suicide(addr common.Address, burnBalance bool) bool {
 	if !s.Exist(addr) {
 		return false
 	}
 
 	s.setAccountState(addr, accountSelfDestructed)
 
-	s.resetBalance(addr)
+	if burnBalance {
+		s.resetBalance(addr)
+		if _, present := s.accountsToBurn[addr]; !present {
+			s.accountsToBurn[addr] = struct{}{}
+			s.undo = append(s.undo, func() {
+				delete(s.accountsToBurn, addr)
+			})
+		}
+	}
+
 	deleteListLength := len(s.accountsToDelete)
 	s.accountsToDelete = append(s.accountsToDelete, addr)
 	s.undo = append(s.undo, func() {
@@ -1135,11 +1162,9 @@ func (s *stateDB) EndTransaction() {
 	// Delete accounts scheduled for deletion - by suicide or because they are empty.
 	if len(s.accountsToDelete) > 0 {
 		for _, addr := range s.accountsToDelete {
-			// Transition accounts marked by suicide to be deleted.
+			// Accounts marked by suicide are cleared even if they have been recreated before.
 			if s.HasSuicided(addr) {
 				oldClearedAccountState, oldExists := s.clearedAccounts[addr]
-				s.setAccountState(addr, accountNonExisting)
-				s.setCodeInternal(addr, []byte{})
 				s.clearedAccounts[addr] = pendingClearing
 				s.undo = append(s.undo, func() {
 					revertOrDelete(s.clearedAccounts, addr, oldExists, oldClearedAccountState)
@@ -1153,8 +1178,15 @@ func (s *stateDB) EndTransaction() {
 			// Note: storage state is handled through the clearedAccount map
 			// the clearing of the data and storedDataCache at various phases
 			// of the block processing.
-			s.setAccountState(addr, accountNonExisting)
-			s.resetBalance(addr) // reset balance if balance is set after suicide
+			// A suicided account retains its balance (EIP-8246), so only an account without one ceases to exist.
+			if _, burn := s.accountsToBurn[addr]; burn {
+				s.resetBalance(addr)
+			}
+			if s.GetBalance(addr).IsZero() {
+				s.setAccountState(addr, accountNonExisting)
+			} else {
+				s.setAccountState(addr, accountExists)
+			}
 			s.setNonceInternal(addr, 0)
 			s.setCodeInternal(addr, []byte{})
 
@@ -1457,6 +1489,7 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 
 	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(s.transientStorage.Size())*(slotIdSize+valueSize)))
 	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(s.accountsToDelete))*(addressSize)))
+	mf.AddChild("accountsToBurn", common.NewMemoryFootprint(uintptr(len(s.accountsToBurn))*(addressSize)))
 	mf.AddChild("clearedAccounts", common.NewMemoryFootprint(uintptr(len(s.clearedAccounts))*(addressSize+unsafe.Sizeof(accountClearingState(0)))))
 	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(s.createdContracts))*(addressSize)))
 
@@ -1494,6 +1527,7 @@ func (s *stateDB) resetTransactionContext() {
 	s.emptyCandidates = s.emptyCandidates[0:0]
 	s.logs = s.logs[0:0]
 	s.createdContracts = make(map[common.Address]struct{})
+	clear(s.accountsToBurn)
 }
 
 func (s *stateDB) ResetBlockContext() {
