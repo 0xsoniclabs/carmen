@@ -53,6 +53,7 @@ var (
 		&Reset,
 		&TotalSupplyCmd,
 		&TrieStats,
+		&Diff,
 	}
 )
 

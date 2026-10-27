@@ -144,7 +144,7 @@ def print_best_specializations(node_name, counts, sizes):
         )
 
         print(f"Num Specializations: {num_specializations}")
-        print(f"Min cost: {min_cost}")
+        print(f"Min cost: {format_size(min_cost)}")
         print(f"Specializations: {best_specializations}\n")
         if PRINT_TABLE:
             table = []
@@ -224,6 +224,15 @@ def load_data():
     return inner_counts, inner_node_sizes, leaf_counts, leaf_node_sizes
 
 
-inner_counts, inner_node_sizes, leaf_counts, leaf_node_sizes = load_data()
-print_best_specializations("Inner", inner_counts, inner_node_sizes)
-print_best_specializations("Leaf", leaf_counts, leaf_node_sizes)
+def format_size(size: int) -> str:
+    """Return the given size in bytes as a human-readable string."""
+    for unit, factor in (("GB", 1e9), ("MB", 1e6), ("KB", 1e3)):
+        if size >= factor:
+            return f"{size / factor:.2f} {unit}"
+    return f"{size} B"
+
+
+if __name__ == "__main__":
+    inner_counts, inner_node_sizes, leaf_counts, leaf_node_sizes = load_data()
+    print_best_specializations("Inner", inner_counts, inner_node_sizes)
+    print_best_specializations("Leaf", leaf_counts, leaf_node_sizes)
