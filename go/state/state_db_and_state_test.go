@@ -530,7 +530,7 @@ func TestCarmenStateHashIsDeterministicForMultipleAccountModifications(t *testin
 		s.CreateAccount(address2)
 		s.CreateAccount(address3)
 		s.Suicide(address2)
-		s.Suicide(address1)
+		s.SuicideEIP8246(address1)
 	})
 }
 
@@ -1159,11 +1159,11 @@ func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *test
 			require := require.New(t)
 			explicitCreation := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				s.CreateAccount(address1)
-				s.Suicide(address1)
+				s.SuicideEIP8246(address1)
 			})
 			implicitCreation := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				s.SetNonce(address1, 1)
-				s.Suicide(address1)
+				s.SuicideEIP8246(address1)
 			})
 			emptyState := executeOpOnCleanStateDB(t, config, func(s state.StateDB) {
 				// Do nothing
@@ -1174,7 +1174,7 @@ func TestStateDB_DeleteAccountCreatedInSameTransactionDoesNotChangeState(t *test
 	}
 }
 
-func TestStateDB_SuicidedAccountRetainingBalance_BecomesBalanceOnlyAccount(t *testing.T) {
+func TestStateDB_SuicideEIP8246_TurnsAccountWithBalanceIntoBalanceOnlyAccount(t *testing.T) {
 	selfDestruct := func(s state.StateDB) {
 		s.CreateAccount(address1)
 		s.CreateContract(address1)
@@ -1182,7 +1182,7 @@ func TestStateDB_SuicidedAccountRetainingBalance_BecomesBalanceOnlyAccount(t *te
 		s.SetCode(address1, []byte{1, 2, 3})
 		s.SetState(address1, key1, val1)
 		s.AddBalance(address1, amount.New(12))
-		s.Suicide(address1)
+		s.SuicideEIP8246(address1)
 	}
 	for _, config := range initStates() {
 		t.Run(config.name(), func(t *testing.T) {

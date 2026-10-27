@@ -609,6 +609,20 @@ func (mr *MockVmStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockVmStateDB)(nil).Suicide), arg0)
 }
 
+// SuicideEIP8246 mocks base method.
+func (m *MockVmStateDB) SuicideEIP8246(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SuicideEIP8246", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// SuicideEIP8246 indicates an expected call of SuicideEIP8246.
+func (mr *MockVmStateDBMockRecorder) SuicideEIP8246(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuicideEIP8246", reflect.TypeOf((*MockVmStateDB)(nil).SuicideEIP8246), arg0)
+}
+
 // MockStateDB is a mock of StateDB interface.
 type MockStateDB struct {
 	ctrl     *gomock.Controller
@@ -1348,6 +1362,20 @@ func (mr *MockStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockStateDB)(nil).Suicide), arg0)
 }
 
+// SuicideEIP8246 mocks base method.
+func (m *MockStateDB) SuicideEIP8246(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SuicideEIP8246", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// SuicideEIP8246 indicates an expected call of SuicideEIP8246.
+func (mr *MockStateDBMockRecorder) SuicideEIP8246(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuicideEIP8246", reflect.TypeOf((*MockStateDB)(nil).SuicideEIP8246), arg0)
+}
+
 // MockNonCommittableStateDB is a mock of NonCommittableStateDB interface.
 type MockNonCommittableStateDB struct {
 	ctrl     *gomock.Controller
@@ -1981,6 +2009,20 @@ func (m *MockNonCommittableStateDB) Suicide(arg0 common.Address) bool {
 func (mr *MockNonCommittableStateDBMockRecorder) Suicide(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Suicide", reflect.TypeOf((*MockNonCommittableStateDB)(nil).Suicide), arg0)
+}
+
+// SuicideEIP8246 mocks base method.
+func (m *MockNonCommittableStateDB) SuicideEIP8246(arg0 common.Address) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SuicideEIP8246", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// SuicideEIP8246 indicates an expected call of SuicideEIP8246.
+func (mr *MockNonCommittableStateDBMockRecorder) SuicideEIP8246(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuicideEIP8246", reflect.TypeOf((*MockNonCommittableStateDB)(nil).SuicideEIP8246), arg0)
 }
 
 // MockBulkLoad is a mock of BulkLoad interface.

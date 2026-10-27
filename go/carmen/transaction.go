@@ -61,6 +61,12 @@ func (t *transactionContext) SelfDestruct(address Address) {
 	}
 }
 
+func (t *transactionContext) SelfDestructEIP8246(address Address) {
+	if t.state != nil {
+		t.state.SuicideEIP8246(common.Address(address))
+	}
+}
+
 func (t *transactionContext) HasSelfDestructed(address Address) bool {
 	if t.state != nil {
 		return t.state.HasSuicided(common.Address(address))
