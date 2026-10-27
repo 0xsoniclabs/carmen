@@ -14,9 +14,11 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
@@ -82,15 +84,27 @@ func GetDiff(
 	after *NodeReference,
 ) (Diff, error) {
 	context := &diffContext{
-		source: source,
-		result: Diff{},
+		source:      source,
+		result:      Diff{},
+		resultMutex: &sync.Mutex{},
+		workers:     make(chan struct{}, runtime.NumCPU()),
+		wg:          &sync.WaitGroup{},
+		errs:        make(chan error, 1),
 	}
 
 	if before.Id() == after.Id() {
 		return context.result, nil
 	}
 
-	if err := collectDiff(context, triePosition{ref: *before}, triePosition{ref: *after}); err != nil {
+	err := collectDiff(context, triePosition{ref: *before}, triePosition{ref: *after})
+	context.wg.Wait()
+	if err == nil {
+		select {
+		case err = <-context.errs:
+		default:
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	return context.result, nil
@@ -174,10 +188,45 @@ func (p *triePosition) getChild(source NodeSource, nibble Nibble) (triePosition,
 
 // ------
 
+// diffContext is the per-goroutine state of a diff traversal. Copies share
+// the result, the worker slots and the error channel, but not the current
+// account.
 type diffContext struct {
 	source         NodeSource
 	currentAccount *common.Address
 	result         Diff
+	resultMutex    *sync.Mutex
+	workers        chan struct{} // a semaphore bounding the number of goroutines
+	wg             *sync.WaitGroup
+	errs           chan error // keeps the first error of any goroutine
+}
+
+// collectChild diffs the given positions in a new goroutine if a worker slot
+// is free, otherwise in the calling goroutine.
+func (c *diffContext) collectChild(before, after triePosition) error {
+	select {
+	case c.workers <- struct{}{}:
+		child := *c
+		c.wg.Go(func() {
+			defer func() { <-c.workers }()
+			if err := collectDiff(&child, before, after); err != nil {
+				select {
+				case c.errs <- err:
+				default:
+				}
+			}
+		})
+		return nil
+	default:
+		return collectDiff(c, before, after)
+	}
+}
+
+// setAccountDiff stores the diff of the given account.
+func (c *diffContext) setAccountDiff(address common.Address, diff *AccountDiff) {
+	c.resultMutex.Lock()
+	defer c.resultMutex.Unlock()
+	c.result[address] = diff
 }
 
 var emptyNodeReference = NewNodeReference(EmptyId())
@@ -204,7 +253,7 @@ func collectDiff(
 		if err != nil {
 			return err
 		}
-		if err := collectDiff(context, lhs, rhs); err != nil {
+		if err := context.collectChild(lhs, rhs); err != nil {
 			return err
 		}
 	}
@@ -307,12 +356,13 @@ func collectDiffFromLeafs(context *diffContext, before triePosition, after trieP
 			*diff.Code = afterNode.info.CodeHash
 		}
 		if !diff.Empty() {
-			context.result[afterNode.address] = diff
+			context.setAccountDiff(afterNode.address, diff)
 		}
 
 		// Also collect storage differences.
 		if beforeNode.storage.Id() != afterNode.storage.Id() {
-			context.currentAccount = &afterNode.address
+			address := afterNode.address
+			context.currentAccount = &address
 			return collectDiff(context, triePosition{ref: beforeNode.storage}, triePosition{ref: afterNode.storage})
 		}
 		return nil
@@ -368,9 +418,10 @@ func recordAddedAccount(
 		*diff.Code = account.info.CodeHash
 	}
 	if !diff.Empty() {
-		context.result[account.address] = diff
+		context.setAccountDiff(account.address, diff)
 	}
-	context.currentAccount = &account.address
+	address := account.address
+	context.currentAccount = &address
 	return collectDiff(context, triePosition{ref: emptyNodeReference}, triePosition{ref: account.storage})
 }
 
@@ -379,6 +430,8 @@ func recordValueUpdate(
 	key common.Key,
 	value common.Value,
 ) {
+	context.resultMutex.Lock()
+	defer context.resultMutex.Unlock()
 	diff := context.result[*context.currentAccount]
 	if diff == nil {
 		diff = &AccountDiff{}
@@ -402,8 +455,9 @@ func recordDeletedAccount(
 		Nonce:   &emptyNonce,
 		Code:    &emptyCodeHash,
 	}
-	context.result[account.address] = diff
+	context.setAccountDiff(account.address, diff)
 	// Also record the deletion of all storage entries.
-	context.currentAccount = &account.address
+	address := account.address
+	context.currentAccount = &address
 	return collectDiff(context, triePosition{ref: account.storage}, triePosition{ref: emptyNodeReference})
 }

@@ -13,6 +13,7 @@ package mpt
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -457,9 +458,9 @@ func TestDiff_ErrorsArePropagated(t *testing.T) {
 
 			countingContext := NewMockNodeSource(ctrl)
 
-			numCalls := 0
+			numCalls := atomic.Int64{}
 			countingContext.EXPECT().getReadAccess(gomock.Any()).AnyTimes().DoAndReturn(func(ref *NodeReference) (shared.ReadHandle[Node], error) {
-				numCalls++
+				numCalls.Add(1)
 				return ctxt.getReadAccess(ref)
 			})
 			countingContext.EXPECT().getConfig().AnyTimes().Return(ctxt.getConfig())
@@ -473,12 +474,11 @@ func TestDiff_ErrorsArePropagated(t *testing.T) {
 			}
 
 			injectedError := fmt.Errorf("injected error")
-			for i := 0; i < numCalls; i++ {
-				calls := 0
+			for i := range numCalls.Load() {
+				calls := atomic.Int64{}
 				injectionContext := NewMockNodeSource(ctrl)
 				injectionContext.EXPECT().getReadAccess(gomock.Any()).AnyTimes().DoAndReturn(func(ref *NodeReference) (shared.ReadHandle[Node], error) {
-					if calls < i {
-						calls++
+					if calls.Add(1) <= i {
 						return ctxt.getReadAccess(ref)
 					}
 					return shared.ReadHandle[Node]{}, injectedError
@@ -487,7 +487,7 @@ func TestDiff_ErrorsArePropagated(t *testing.T) {
 
 				_, err := GetDiff(injectionContext, &before, &after)
 				if !errors.Is(err, injectedError) {
-					t.Errorf("missing expected error injected at position %d of %d, wanted %v, got %v", i, numCalls, injectedError, err)
+					t.Errorf("missing expected error injected at position %d of %d, wanted %v, got %v", i, numCalls.Load(), injectedError, err)
 				}
 			}
 
