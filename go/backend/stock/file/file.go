@@ -404,6 +404,20 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		}
 	}
 
+	// A stock that never took part in a checkpoint and holds no data can
+	// adopt any checkpoint, since its state at that checkpoint is empty.
+	if s.lastCheckpoint == 0 && s.numValueSlots == 0 && s.freelist.Size() == 0 {
+		err := utils.WriteJsonFile(getCommittedCheckpointFile(s.directory), checkpointMetaData{
+			Checkpoint: checkpoint,
+			Metadata:   s.getMetadata(),
+		})
+		if err != nil {
+			return err
+		}
+		s.lastCheckpoint = checkpoint
+		return nil
+	}
+
 	// Otherwise, the requested checkpoint can not be guaranteed.
 	return fmt.Errorf("unable to guarantee availability of checkpoint %d", checkpoint)
 }
@@ -493,6 +507,12 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	// If the stock is at the requested commit, everything is fine.
 	committed := getCommittedCheckpointFile(s.directory)
 	pending := getPendingCheckpointFile(s.directory)
+
+	// A stock that does not exist yet has nothing to restore.
+	_, values, _ := getFileNames(s.directory)
+	if !exists(committed) && !exists(pending) && !exists(values) {
+		return nil
+	}
 
 	var checkpointData checkpointMetaData
 	if exists(committed) {

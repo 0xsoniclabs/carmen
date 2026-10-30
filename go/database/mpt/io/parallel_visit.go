@@ -530,6 +530,12 @@ func (f *stockNodeSourceFactory) open() (nodeSource, error) {
 	}
 	toClose = append(toClose, branches)
 
+	branchDeltas, err := file.OpenReadOnlyStock[uint64, mpt.BranchNode](path.Join(f.directory, "branch_deltas"), f.config.GetDeltaBranchEncoder())
+	if err != nil {
+		return nil, closeWithErr(err)
+	}
+	toClose = append(toClose, branchDeltas)
+
 	extensions, err := file.OpenReadOnlyStock[uint64, mpt.ExtensionNode](path.Join(f.directory, "extensions"), eEncoder)
 	if err != nil {
 		return nil, closeWithErr(err)
@@ -543,19 +549,21 @@ func (f *stockNodeSourceFactory) open() (nodeSource, error) {
 	toClose = append(toClose, values)
 
 	return &stockNodeSource{
-		accounts:   accounts,
-		branches:   branches,
-		extensions: extensions,
-		values:     values,
+		accounts:     accounts,
+		branches:     branches,
+		branchDeltas: branchDeltas,
+		extensions:   extensions,
+		values:       values,
 	}, nil
 }
 
 // stockNodeSource is a nodeSource implementation that uses stock to access nodes.
 type stockNodeSource struct {
-	accounts   stock.ReadOnly[uint64, mpt.AccountNode]
-	branches   stock.ReadOnly[uint64, mpt.BranchNode]
-	extensions stock.ReadOnly[uint64, mpt.ExtensionNode]
-	values     stock.ReadOnly[uint64, mpt.ValueNode]
+	accounts     stock.ReadOnly[uint64, mpt.AccountNode]
+	branches     stock.ReadOnly[uint64, mpt.BranchNode]
+	branchDeltas stock.ReadOnly[uint64, mpt.BranchNode]
+	extensions   stock.ReadOnly[uint64, mpt.ExtensionNode]
+	values       stock.ReadOnly[uint64, mpt.ValueNode]
 }
 
 func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
@@ -566,6 +574,18 @@ func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
 	if id.IsAccount() {
 		res, err := s.accounts.Get(pos)
 		return &res, err
+	}
+	if id.IsDeltaBranch() {
+		res, err := s.branchDeltas.Get(pos)
+		if err != nil {
+			return nil, err
+		}
+		base, err := s.branches.Get(res.GetDeltaBase().Index())
+		if err != nil {
+			return nil, err
+		}
+		res.ApplyDeltaBase(&base)
+		return &res, nil
 	}
 	if id.IsBranch() {
 		res, err := s.branches.Get(pos)
@@ -586,6 +606,7 @@ func (s *stockNodeSource) Close() error {
 	return errors.Join(
 		s.accounts.Close(),
 		s.branches.Close(),
+		s.branchDeltas.Close(),
 		s.extensions.Close(),
 		s.values.Close(),
 	)

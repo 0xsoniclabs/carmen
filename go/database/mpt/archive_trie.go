@@ -121,6 +121,7 @@ func OpenArchiveTrie(
 		checkpointDir,
 		forest.accounts,
 		forest.branches,
+		forest.branchDeltas,
 		forest.extensions,
 		forest.values,
 		state.codes,
@@ -575,10 +576,11 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retEr
 
 	// Restore the last checkpoint created by the archive.
 	rootRestorer := getRootListRestorer(directory)
-	accountsDir, branchesDir, extensionsDir, valuesDir := getForestDirectories(directory)
+	accountsDir, branchesDir, branchDeltasDir, extensionsDir, valuesDir := getForestDirectories(directory)
 	restorers := []checkpoint.Restorer{
 		file.GetRestorer(accountsDir),
 		file.GetRestorer(branchesDir),
+		file.GetRestorer(branchDeltasDir),
 		file.GetRestorer(extensionsDir),
 		file.GetRestorer(valuesDir),
 		getCodeRestorer(directory),

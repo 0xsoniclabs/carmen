@@ -648,6 +648,34 @@ func TestStock_GuaranteeCheckpoint_FailsOnCorruptedPendingFile(t *testing.T) {
 	}
 }
 
+func TestStock_GuaranteeCheckpoint_EmptyStockAdoptsCheckpoint(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	require.NoError(s.Close())
+
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
+	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
+}
+
+func TestStock_GuaranteeCheckpoint_NonEmptyStockWithoutCheckpointFails(t *testing.T) {
+	require := require.New(t)
+	s, err := openStock[int, int](stock.IntEncoder{}, t.TempDir())
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+
+	_, err = s.New()
+	require.NoError(err)
+	require.Error(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+}
+
 func TestStock_Prepare_FailsOnFailedFlush(t *testing.T) {
 	dir := t.TempDir()
 	s, err := openStock[int, int](stock.IntEncoder{}, dir)
@@ -753,6 +781,13 @@ func TestStock_Abort_FailsOnIoIssues(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRestore_MissingStockHasNothingToRestore(t *testing.T) {
+	require := require.New(t)
+	dir := filepath.Join(t.TempDir(), "missing")
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+	require.NoDirExists(dir)
 }
 
 func TestRestore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {

@@ -89,10 +89,11 @@ type Forest struct {
 	config MptConfig
 
 	// The stock containers managing individual node types.
-	branches   stock.Stock[uint64, BranchNode]
-	extensions stock.Stock[uint64, ExtensionNode]
-	accounts   stock.Stock[uint64, AccountNode]
-	values     stock.Stock[uint64, ValueNode]
+	branches     stock.Stock[uint64, BranchNode]
+	branchDeltas stock.Stock[uint64, BranchNode] // branches stored as deltas of a base branch
+	extensions   stock.Stock[uint64, ExtensionNode]
+	accounts     stock.Stock[uint64, AccountNode]
+	values       stock.Stock[uint64, ValueNode]
 
 	// Indicates whether all values in the stock should be considered
 	// frozen, and thus immutable as required for the archive case or
@@ -142,7 +143,7 @@ func OpenInMemoryForest(directory string, mptConfig MptConfig, forestConfig Fore
 
 	success := false
 	var err error
-	closers := make(closers, 0, 4)
+	closers := make(closers, 0, 5)
 	defer func() {
 		// if opening the forest was not successful, close all opened stocks.
 		if !success {
@@ -156,6 +157,12 @@ func OpenInMemoryForest(directory string, mptConfig MptConfig, forestConfig Fore
 		return nil, err
 	}
 	closers = append(closers, branches)
+
+	branchDeltas, err := memory.OpenStock[uint64, BranchNode](mptConfig.GetDeltaBranchEncoder(), directory+"/branch_deltas")
+	if err != nil {
+		return nil, err
+	}
+	closers = append(closers, branchDeltas)
 
 	extensions, err := memory.OpenStock[uint64, ExtensionNode](extensionEncoder, directory+"/extensions")
 	if err != nil {
@@ -176,7 +183,7 @@ func OpenInMemoryForest(directory string, mptConfig MptConfig, forestConfig Fore
 	closers = append(closers, values)
 
 	success = true
-	return makeForest(mptConfig, branches, extensions, accounts, values, forestConfig)
+	return makeForest(mptConfig, branches, branchDeltas, extensions, accounts, values, forestConfig)
 }
 
 func OpenFileForest(directory string, mptConfig MptConfig, forestConfig ForestConfig) (*Forest, error) {
@@ -186,7 +193,7 @@ func OpenFileForest(directory string, mptConfig MptConfig, forestConfig ForestCo
 
 	success := false
 	var err error
-	closers := make(closers, 0, 4)
+	closers := make(closers, 0, 5)
 	defer func() {
 		// if opening the forest was not successful, close all opened stocks.
 		if !success {
@@ -194,13 +201,19 @@ func OpenFileForest(directory string, mptConfig MptConfig, forestConfig ForestCo
 		}
 	}()
 
-	accountsDir, branchsDir, extensionsDir, valuesDir := getForestDirectories(directory)
+	accountsDir, branchsDir, branchDeltasDir, extensionsDir, valuesDir := getForestDirectories(directory)
 	accountEncoder, branchEncoder, extensionEncoder, valueEncoder := mptConfig.GetEncoders()
 	branches, err := file.OpenStock[uint64, BranchNode](branchEncoder, branchsDir)
 	if err != nil {
 		return nil, err
 	}
 	closers = append(closers, branches)
+
+	branchDeltas, err := file.OpenStock[uint64, BranchNode](mptConfig.GetDeltaBranchEncoder(), branchDeltasDir)
+	if err != nil {
+		return nil, err
+	}
+	closers = append(closers, branchDeltas)
 
 	extensions, err := file.OpenStock[uint64, ExtensionNode](extensionEncoder, extensionsDir)
 	if err != nil {
@@ -221,7 +234,7 @@ func OpenFileForest(directory string, mptConfig MptConfig, forestConfig ForestCo
 	closers = append(closers, values)
 
 	success = true
-	return makeForest(mptConfig, branches, extensions, accounts, values, forestConfig)
+	return makeForest(mptConfig, branches, branchDeltas, extensions, accounts, values, forestConfig)
 }
 
 // closers is a shortcut for the list of io.Closer.
@@ -268,6 +281,7 @@ func checkForestMetadata(directory string, config MptConfig, mode StorageMode) (
 func makeForest(
 	mptConfig MptConfig,
 	branches stock.Stock[uint64, BranchNode],
+	branchDeltas stock.Stock[uint64, BranchNode],
 	extensions stock.Stock[uint64, ExtensionNode],
 	accounts stock.Stock[uint64, AccountNode],
 	values stock.Stock[uint64, ValueNode],
@@ -295,6 +309,7 @@ func makeForest(
 	res := &Forest{
 		config:        mptConfig,
 		branches:      synced.Sync(branches),
+		branchDeltas:  synced.Sync(branchDeltas),
 		extensions:    synced.Sync(extensions),
 		accounts:      synced.Sync(accounts),
 		values:        synced.Sync(values),
@@ -571,6 +586,7 @@ func (s *Forest) Flush() error {
 		s.writeBuffer.Flush(),
 		s.accounts.Flush(),
 		s.branches.Flush(),
+		s.branchDeltas.Flush(),
 		s.extensions.Flush(),
 		s.values.Flush(),
 	)
@@ -629,6 +645,7 @@ func (s *Forest) Close() error {
 		s.writeBuffer.Close(),
 		s.accounts.Close(),
 		s.branches.Close(),
+		s.branchDeltas.Close(),
 		s.extensions.Close(),
 		s.values.Close(),
 	)
@@ -658,6 +675,7 @@ func (s *Forest) GetMemoryFootprint() *common.MemoryFootprint {
 	mf := common.NewMemoryFootprint(unsafe.Sizeof(*s))
 	mf.AddChild("accounts", s.accounts.GetMemoryFootprint())
 	mf.AddChild("branches", s.branches.GetMemoryFootprint())
+	mf.AddChild("branchDeltas", s.branchDeltas.GetMemoryFootprint())
 	mf.AddChild("extensions", s.extensions.GetMemoryFootprint())
 	mf.AddChild("values", s.values.GetMemoryFootprint())
 	mf.AddChild("cache", s.nodeCache.GetMemoryFootprint())
@@ -739,6 +757,17 @@ func (s *Forest) getSharedNode(ref *NodeReference) (*shared.Shared[Node], error)
 	} else if id.IsAccount() {
 		value, e := s.accounts.Get(id.Index())
 		node, err = &value, e
+	} else if id.IsDeltaBranch() {
+		value, e := s.branchDeltas.Get(id.Index())
+		if e == nil {
+			// The base is fetched through the regular path, which takes the
+			// transfer mutex itself; a concurrent fetch of this delta yields
+			// the same content and is resolved when adding it to the cache.
+			s.nodeTransferMutex.Unlock()
+			e = s.loadDeltaBase(&value)
+			s.nodeTransferMutex.Lock()
+		}
+		node, err = &value, e
 	} else if id.IsBranch() {
 		value, e := s.branches.Get(id.Index())
 		node, err = &value, e
@@ -765,6 +794,23 @@ func (s *Forest) getSharedNode(ref *NodeReference) (*shared.Shared[Node], error)
 	// if there has been a concurrent fetch, use the other value
 	instance, _ := s.addToCacheHoldingTransferMutex(ref, shared.MakeShared[Node](node))
 	return instance, nil
+}
+
+// loadDeltaBase completes a delta branch loaded from disk with the children
+// of its base.
+func (s *Forest) loadDeltaBase(node *BranchNode) error {
+	baseRef := NewNodeReference(node.base)
+	handle, err := s.getReadAccess(&baseRef)
+	if err != nil {
+		return err
+	}
+	defer handle.Release()
+	base, ok := handle.Get().(*BranchNode)
+	if !ok {
+		return fmt.Errorf("delta base %v is not a branch node", node.base)
+	}
+	node.applyDeltaBase(base)
+	return nil
 }
 
 func getAccess[H any](
@@ -946,6 +992,8 @@ func (s *Forest) flushNode(id NodeId, node Node) error {
 		return s.values.Set(id.Index(), *node.(*ValueNode))
 	} else if id.IsAccount() {
 		return s.accounts.Set(id.Index(), *node.(*AccountNode))
+	} else if id.IsDeltaBranch() {
+		return s.branchDeltas.Set(id.Index(), *node.(*BranchNode))
 	} else if id.IsBranch() {
 		return s.branches.Set(id.Index(), *node.(*BranchNode))
 	} else if id.IsExtension() {
@@ -976,6 +1024,22 @@ func (s *Forest) createBranch() (NodeReference, shared.WriteHandle[Node], error)
 		return NodeReference{}, shared.WriteHandle[Node]{}, err
 	}
 	ref := NewNodeReference(BranchId(i))
+	node := new(BranchNode)
+	instance, present := s.addToCache(&ref, shared.MakeShared[Node](node))
+	if present {
+		write := instance.GetWriteHandle()
+		*write.Get().(*BranchNode) = *node
+		write.Release()
+	}
+	return ref, instance.GetWriteHandle(), err
+}
+
+func (s *Forest) createDeltaBranch() (NodeReference, shared.WriteHandle[Node], error) {
+	i, err := s.branchDeltas.New()
+	if err != nil {
+		return NodeReference{}, shared.WriteHandle[Node]{}, err
+	}
+	ref := NewNodeReference(DeltaBranchId(i))
 	node := new(BranchNode)
 	instance, present := s.addToCache(&ref, shared.MakeShared[Node](node))
 	if present {
@@ -1034,6 +1098,9 @@ func (s *Forest) release(ref *NodeReference) error {
 	if id.IsAccount() {
 		return s.accounts.Delete(id.Index())
 	}
+	if id.IsDeltaBranch() {
+		return s.branchDeltas.Delete(id.Index())
+	}
 	if id.IsBranch() {
 		return s.branches.Delete(id.Index())
 	}
@@ -1054,10 +1121,11 @@ func (s *Forest) releaseTrieAsynchronous(ref NodeReference) {
 }
 
 func getForestDirectories(root string) (
-	accounts, branches, extensions, values string,
+	accounts, branches, branchDeltas, extensions, values string,
 ) {
 	return filepath.Join(root, "accounts"),
 		filepath.Join(root, "branches"),
+		filepath.Join(root, "branch_deltas"),
 		filepath.Join(root, "extensions"),
 		filepath.Join(root, "values")
 }

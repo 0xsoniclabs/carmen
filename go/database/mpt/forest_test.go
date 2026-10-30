@@ -453,6 +453,9 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 					values.EXPECT().New().AnyTimes().Return(uint64(0), injectedErr)
 
 					branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas.EXPECT().Flush().AnyTimes()
+					branchDeltas.EXPECT().Close().AnyTimes()
 					branches.EXPECT().Get(gomock.Any()).AnyTimes().Return(BranchNode{}, nil)
 					branches.EXPECT().New().AnyTimes().Return(uint64(0), injectedErr)
 
@@ -1016,6 +1019,9 @@ func TestForest_getMutableNodeByPath_TypeOfNodesReachable(t *testing.T) {
 					values.EXPECT().Get(gomock.Any()).AnyTimes().Return(ValueNode{}, nil)
 
 					branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas.EXPECT().Flush().AnyTimes()
+					branchDeltas.EXPECT().Close().AnyTimes()
 					branches.EXPECT().Get(gomock.Any()).AnyTimes().Return(BranchNode{}, nil)
 
 					extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
@@ -1523,6 +1529,9 @@ func TestForest_ReleaserReleasesNodesOnlyOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 	values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -1530,6 +1539,7 @@ func TestForest_ReleaserReleasesNodesOnlyOnce(t *testing.T) {
 	forest, err := makeForest(
 		MptConfig{Hashing: DirectHashing},
 		branches,
+		branchDeltas,
 		extensions,
 		accounts,
 		values,
@@ -1607,6 +1617,9 @@ func testForest_WriteBufferRecoveryIsThreadSafe(t *testing.T, withConcurrentNode
 	ctrl := gomock.NewController(t)
 
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 	values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -1623,6 +1636,7 @@ func testForest_WriteBufferRecoveryIsThreadSafe(t *testing.T, withConcurrentNode
 	forest, err := makeForest(
 		MptConfig{Hashing: DirectHashing},
 		branches,
+		branchDeltas,
 		extensions,
 		accounts,
 		values,
@@ -1738,11 +1752,15 @@ func openFileShadowForest(directory string, mptConfig MptConfig, forestConfig Fo
 	if err != nil {
 		return nil, err
 	}
+	branchDeltas, err := memory.OpenStock[uint64, BranchNode](mptConfig.GetDeltaBranchEncoder(), directory+"/branch_deltas")
+	if err != nil {
+		return nil, err
+	}
 	branches := shadow.MakeShadowStock(branchesA, branchesB)
 	extensions := shadow.MakeShadowStock(extensionsA, extensionsB)
 	accounts := shadow.MakeShadowStock(accountsA, accountsB)
 	values := shadow.MakeShadowStock(valuesA, valuesB)
-	return makeForest(mptConfig, branches, extensions, accounts, values, forestConfig)
+	return makeForest(mptConfig, branches, branchDeltas, extensions, accounts, values, forestConfig)
 }
 
 func TestForest_NodeHandlingDoesNotDeadlock(t *testing.T) {
@@ -1761,6 +1779,9 @@ func TestForest_NodeHandlingDoesNotDeadlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 	values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -1777,6 +1798,7 @@ func TestForest_NodeHandlingDoesNotDeadlock(t *testing.T) {
 	forest, err := makeForest(
 		MptConfig{Hashing: DirectHashing},
 		branches,
+		branchDeltas,
 		extensions,
 		accounts,
 		values,
@@ -2111,6 +2133,9 @@ func TestForest_ErrorsAreForwardedAndCollected(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+			branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+			branchDeltas.EXPECT().Flush().AnyTimes()
+			branchDeltas.EXPECT().Close().AnyTimes()
 			extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 			accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 			values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -2118,6 +2143,7 @@ func TestForest_ErrorsAreForwardedAndCollected(t *testing.T) {
 			forest, err := makeForest(
 				MptConfig{Hashing: DirectHashing},
 				branches,
+				branchDeltas,
 				extensions,
 				accounts,
 				values,
@@ -2155,6 +2181,9 @@ func TestForest_MultipleErrorsCanBeCollected(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 	values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -2162,6 +2191,7 @@ func TestForest_MultipleErrorsCanBeCollected(t *testing.T) {
 	forest, err := makeForest(
 		MptConfig{Hashing: DirectHashing},
 		branches,
+		branchDeltas,
 		extensions,
 		accounts,
 		values,
@@ -2222,6 +2252,9 @@ func TestForest_CollectedErrorsAreReportedInFlushAndClose(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 	values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -2229,6 +2262,7 @@ func TestForest_CollectedErrorsAreReportedInFlushAndClose(t *testing.T) {
 	forest, err := makeForest(
 		MptConfig{Hashing: DirectHashing},
 		branches,
+		branchDeltas,
 		extensions,
 		accounts,
 		values,
@@ -2273,6 +2307,9 @@ func TestForest_FailingFlush_Invalidates_Forest(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 	accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
 	values := stock.NewMockStock[uint64, ValueNode](ctrl)
@@ -2280,6 +2317,7 @@ func TestForest_FailingFlush_Invalidates_Forest(t *testing.T) {
 	forest, err := makeForest(
 		MptConfig{Hashing: DirectHashing},
 		branches,
+		branchDeltas,
 		extensions,
 		accounts,
 		values,
@@ -2791,6 +2829,9 @@ func testVisitPathToStorage(t *testing.T, forest *Forest, keys []common.Key, sto
 func TestForest_RecoversNodesFromWriteBuffer(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Flush().AnyTimes()
+	branchDeltas.EXPECT().Close().AnyTimes()
 	buffer := NewMockWriteBuffer(ctrl)
 
 	var branch1 *shared.Shared[Node]

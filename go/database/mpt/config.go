@@ -89,6 +89,14 @@ func GetConfigByName(name string) (MptConfig, bool) {
 	return MptConfig{}, false
 }
 
+// GetDeltaBranchEncoder returns the encoder for branch nodes stored as deltas.
+func (c MptConfig) GetDeltaBranchEncoder() stock.ValueEncoder[BranchNode] {
+	if c.HashStorageLocation == HashStoredWithParent {
+		return BranchDeltaNodeEncoderWithChildHashes{}
+	}
+	return BranchDeltaNodeEncoderWithNodeHash{}
+}
+
 // GetEncoders returns the value encoders for the given MPT configuration.
 func (c MptConfig) GetEncoders() (
 	stock.ValueEncoder[AccountNode],
