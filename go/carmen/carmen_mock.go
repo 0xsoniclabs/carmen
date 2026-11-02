@@ -837,6 +837,18 @@ func (mr *MockTransactionContextMockRecorder) IsSlotInAccessList(arg0, arg1 any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSlotInAccessList", reflect.TypeOf((*MockTransactionContext)(nil).IsSlotInAccessList), arg0, arg1)
 }
 
+// Prepare mocks base method.
+func (m *MockTransactionContext) Prepare(arg0 Rules) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Prepare", arg0)
+}
+
+// Prepare indicates an expected call of Prepare.
+func (mr *MockTransactionContextMockRecorder) Prepare(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockTransactionContext)(nil).Prepare), arg0)
+}
+
 // RevertToSnapshot mocks base method.
 func (m *MockTransactionContext) RevertToSnapshot(arg0 int) {
 	m.ctrl.T.Helper()

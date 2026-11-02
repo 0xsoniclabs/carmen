@@ -86,6 +86,9 @@ type VmStateDB interface {
 	RevertToSnapshot(int)
 
 	BeginTransaction()
+	// Prepare sets the rules of the current transaction. They apply until the end of
+	// the transaction; without a call, the rules before Amsterdam apply.
+	Prepare(common.Rules)
 	EndTransaction()
 
 	// InterTxSnapshot creates a restore point to the last executed transaction. Returns an identifier of the created snapshot to be used for reverting to it.
@@ -230,6 +233,9 @@ type stateDB struct {
 	// to mark eligible accounts to be self-destructed according to EIP-6780.
 	createdContracts map[common.Address]struct{}
 
+	// The protocol rules of the current transaction.
+	rules common.Rules
+
 	// A list of operations undoing modifications applied on the inner state if a snapshot revert needs to be performed.
 	undo []func()
 
@@ -291,10 +297,12 @@ type accountLifeCycleState int
 //    Exists -- EndTransaction --> NonExisting    // if account was empty
 //
 //    Suicided -- CreateAccount --> Exists
-//    Suicided -- EndTransaction --> NonExisting
+//    Suicided -- EndTransaction --> NonExisting  // if account has no balance
+//    Suicided -- EndTransaction --> Exists       // if account has a balance (from Amsterdam on, EIP-8246)
 //
 // Accounts with the state Suicided can only exist during a transaction. At the end of a
-// transaction, Suicided accounts transition automatically into NonExisting accounts.
+// transaction, Suicided accounts are cleared and transition automatically into NonExisting
+// accounts. From Amsterdam on, accounts retaining a balance become balance-only accounts instead.
 
 const (
 	accountNonExisting    accountLifeCycleState = 1
@@ -595,8 +603,8 @@ func (s *stateDB) createAccountIfNotExists(addr common.Address) bool {
 }
 
 // Suicide marks the given account as suicided.
-// This clears the account balance.
-// The account still exist until the state is committed.
+// Before Amsterdam, this clears the account balance; from Amsterdam on, the balance is retained (EIP-8246).
+// The account still exists until the end of the transaction.
 func (s *stateDB) Suicide(addr common.Address) bool {
 	if !s.Exist(addr) {
 		return false
@@ -604,7 +612,9 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 
 	s.setAccountState(addr, accountSelfDestructed)
 
-	s.resetBalance(addr)
+	if !s.rules.IsAmsterdam {
+		s.resetBalance(addr)
+	}
 	deleteListLength := len(s.accountsToDelete)
 	s.accountsToDelete = append(s.accountsToDelete, addr)
 	s.undo = append(s.undo, func() {
@@ -1106,6 +1116,10 @@ func (s *stateDB) BeginTransaction() {
 	// Ignored
 }
 
+func (s *stateDB) Prepare(rules common.Rules) {
+	s.rules = rules
+}
+
 func (s *stateDB) EndTransaction() {
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
@@ -1135,11 +1149,9 @@ func (s *stateDB) EndTransaction() {
 	// Delete accounts scheduled for deletion - by suicide or because they are empty.
 	if len(s.accountsToDelete) > 0 {
 		for _, addr := range s.accountsToDelete {
-			// Transition accounts marked by suicide to be deleted.
+			// Accounts marked by suicide are cleared even if they have been recreated before.
 			if s.HasSuicided(addr) {
 				oldClearedAccountState, oldExists := s.clearedAccounts[addr]
-				s.setAccountState(addr, accountNonExisting)
-				s.setCodeInternal(addr, []byte{})
 				s.clearedAccounts[addr] = pendingClearing
 				s.undo = append(s.undo, func() {
 					revertOrDelete(s.clearedAccounts, addr, oldExists, oldClearedAccountState)
@@ -1153,8 +1165,15 @@ func (s *stateDB) EndTransaction() {
 			// Note: storage state is handled through the clearedAccount map
 			// the clearing of the data and storedDataCache at various phases
 			// of the block processing.
-			s.setAccountState(addr, accountNonExisting)
-			s.resetBalance(addr) // reset balance if balance is set after suicide
+			if !s.rules.IsAmsterdam {
+				s.resetBalance(addr) // reset balance if balance is set after suicide
+			}
+			// From Amsterdam on, a suicided account retains its balance (EIP-8246), so only an account without one ceases to exist.
+			if s.GetBalance(addr).IsZero() {
+				s.setAccountState(addr, accountNonExisting)
+			} else {
+				s.setAccountState(addr, accountExists)
+			}
 			s.setNonceInternal(addr, 0)
 			s.setCodeInternal(addr, []byte{})
 
@@ -1494,6 +1513,7 @@ func (s *stateDB) resetTransactionContext() {
 	s.emptyCandidates = s.emptyCandidates[0:0]
 	s.logs = s.logs[0:0]
 	s.createdContracts = make(map[common.Address]struct{})
+	s.rules = common.Rules{}
 }
 
 func (s *stateDB) ResetBlockContext() {

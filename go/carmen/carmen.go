@@ -229,10 +229,14 @@ type HistoricBlockContext interface {
 // Methods of this interface are not thread safe.
 type TransactionContext interface {
 
+	// Prepare sets the protocol rules of this transaction.
+	// Without a call, the rules before Amsterdam apply.
+	Prepare(Rules)
+
 	// CreateAccount creates a new account with the given address.
-	// If the account already exists, its fields are emptied.
-	// It means balance is set to zero, nonce is set to zero,
-	// associated code is removed, and storage is cleared.
+	// If the account already exists, its nonce is set to zero,
+	// associated code is removed, and storage is cleared, but its
+	// balance is kept.
 	CreateAccount(Address)
 
 	// CreateContract marks an account with the given address as a contract.
@@ -252,8 +256,12 @@ type TransactionContext interface {
 	// and there is no associated code with this account.
 	Empty(Address) bool
 
-	// SelfDestruct invalidates the account with the given address.
-	// It clears its balance, and marks the account as destructed.
+	// SelfDestruct marks the account with the given address as destructed.
+	// At the end of the transaction, its nonce, code, and storage are cleared.
+	// Before Amsterdam, it clears its balance, including any balance received
+	// until the end of the transaction, and the account is deleted.
+	// From Amsterdam on (EIP-8246), the account retains its balance and is
+	// deleted only if the balance is zero.
 	SelfDestruct(Address)
 
 	// HasSelfDestructed checks if the account with the given address
@@ -480,6 +488,9 @@ type Value common.Value
 
 // Hash is a 32byte hash.
 type Hash common.Hash
+
+// Rules are the protocol rules of a transaction that affect the state.
+type Rules = common.Rules
 
 type Tribool tribool.Tribool
 

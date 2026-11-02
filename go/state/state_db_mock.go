@@ -485,6 +485,18 @@ func (mr *MockVmStateDBMockRecorder) IsSlotInAccessList(arg0, arg1 any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSlotInAccessList", reflect.TypeOf((*MockVmStateDB)(nil).IsSlotInAccessList), arg0, arg1)
 }
 
+// Prepare mocks base method.
+func (m *MockVmStateDB) Prepare(arg0 common.Rules) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Prepare", arg0)
+}
+
+// Prepare indicates an expected call of Prepare.
+func (mr *MockVmStateDBMockRecorder) Prepare(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockVmStateDB)(nil).Prepare), arg0)
+}
+
 // RevertToInterTxSnapshot mocks base method.
 func (m *MockVmStateDB) RevertToInterTxSnapshot(id InterTxSnapshotID) {
 	m.ctrl.T.Helper()
@@ -1198,6 +1210,18 @@ func (mr *MockStateDBMockRecorder) IsSlotInAccessList(arg0, arg1 any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSlotInAccessList", reflect.TypeOf((*MockStateDB)(nil).IsSlotInAccessList), arg0, arg1)
 }
 
+// Prepare mocks base method.
+func (m *MockStateDB) Prepare(arg0 common.Rules) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Prepare", arg0)
+}
+
+// Prepare indicates an expected call of Prepare.
+func (mr *MockStateDBMockRecorder) Prepare(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockStateDB)(nil).Prepare), arg0)
+}
+
 // ResetBlockContext mocks base method.
 func (m *MockStateDB) ResetBlockContext() {
 	m.ctrl.T.Helper()
@@ -1845,6 +1869,18 @@ func (m *MockNonCommittableStateDB) IsSlotInAccessList(arg0 common.Address, arg1
 func (mr *MockNonCommittableStateDBMockRecorder) IsSlotInAccessList(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSlotInAccessList", reflect.TypeOf((*MockNonCommittableStateDB)(nil).IsSlotInAccessList), arg0, arg1)
+}
+
+// Prepare mocks base method.
+func (m *MockNonCommittableStateDB) Prepare(arg0 common.Rules) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Prepare", arg0)
+}
+
+// Prepare indicates an expected call of Prepare.
+func (mr *MockNonCommittableStateDBMockRecorder) Prepare(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockNonCommittableStateDB)(nil).Prepare), arg0)
 }
 
 // Release mocks base method.

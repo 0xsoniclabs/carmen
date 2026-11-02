@@ -22,6 +22,12 @@ type transactionContext struct {
 	state        state.VmStateDB
 }
 
+func (t *transactionContext) Prepare(rules Rules) {
+	if t.state != nil {
+		t.state.Prepare(rules)
+	}
+}
+
 func (t *transactionContext) CreateAccount(address Address) {
 	if t.state != nil {
 		t.state.CreateAccount(common.Address(address))

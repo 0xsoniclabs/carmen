@@ -129,6 +129,7 @@ func TestDatabase_AbortedTransactionsHaveNoEffect(t *testing.T) {
 func TestTransaction_Operations_Passthrough(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockVmStateDB(ctrl)
+	stateDB.EXPECT().Prepare(gomock.Any())
 	stateDB.EXPECT().CreateAccount(gomock.Any())
 	stateDB.EXPECT().CreateContract(gomock.Any())
 	stateDB.EXPECT().IsNewContract(gomock.Any())
@@ -177,6 +178,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 	var address Address
 	var key Key
 	var value Value
+	tx.Prepare(Rules{IsAmsterdam: true})
 	tx.CreateAccount(address)
 	tx.CreateContract(address)
 	tx.IsNewContract(address)
@@ -239,6 +241,7 @@ func TestTransaction_AfterCommitAllOperationsAreNoops(t *testing.T) {
 	var address Address
 	var key Key
 	var value Value
+	tx.Prepare(Rules{IsAmsterdam: true})
 	tx.CreateAccount(address)
 	tx.CreateContract(address)
 	tx.IsNewContract(address)

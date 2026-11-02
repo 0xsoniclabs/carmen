@@ -1076,6 +1076,147 @@ func TestStateDB_SuicideRemovesBalanceFromAccount(t *testing.T) {
 	}
 }
 
+func TestStateDB_Suicide_FromAmsterdamOnRetainsBalanceOfAccount(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
+	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
+
+	db.Prepare(common.Rules{IsAmsterdam: true})
+	db.SetNonce(address1, 1)
+	db.SetCode(address1, []byte{1, 2, 3})
+	require.Equal(val1, db.GetState(address1, key1))
+
+	require.True(db.Suicide(address1))
+	require.Equal(amount.New(12), db.GetBalance(address1))
+
+	db.EndTransaction()
+
+	require.True(db.Exist(address1))
+	require.False(db.HasSuicided(address1))
+	require.Equal(amount.New(12), db.GetBalance(address1))
+	require.Zero(db.GetNonce(address1))
+	require.Empty(db.GetCode(address1))
+	require.Equal(common.Value{}, db.GetState(address1, key1))
+	require.True(db.HasEmptyStorage(address1))
+}
+
+func TestStateDB_Suicide_FromAmsterdamOnRetainsBalanceReceivedAfterSuicide(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+
+	db.Prepare(common.Rules{IsAmsterdam: true})
+	db.SubBalance(address1, balance1)
+	require.True(db.Suicide(address1))
+	db.AddBalance(address1, amount.New(12))
+
+	db.EndTransaction()
+
+	require.True(db.Exist(address1))
+	require.False(db.HasSuicided(address1))
+	require.Equal(amount.New(12), db.GetBalance(address1))
+}
+
+func TestStateDB_Suicide_FromAmsterdamOnRetainsBalanceOfContractCreatedInTransaction(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	mock.EXPECT().Check().AnyTimes()
+	setExpectationForEmptyAccount(t, mock, address1)
+	mock.EXPECT().Apply(uint64(1), common.Update{
+		Balances: []common.BalanceUpdate{{Account: address1, Balance: amount.New(12)}},
+		Nonces:   []common.NonceUpdate{{Account: address1}},
+		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Slots:    []common.SlotUpdate{{Account: address1, Key: key1}},
+	}).Return(NewMockStagedBlock(ctrl), nil)
+
+	db.Prepare(common.Rules{IsAmsterdam: true})
+	db.CreateAccount(address1)
+	db.CreateContract(address1)
+	db.SetNonce(address1, 1)
+	db.SetCode(address1, []byte{1, 2, 3})
+	db.SetState(address1, key1, val1)
+	db.AddBalance(address1, amount.New(12))
+	db.Suicide(address1)
+	db.EndTransaction()
+
+	require.True(db.Exist(address1))
+	require.Equal(amount.New(12), db.GetBalance(address1))
+
+	endBlockAndDiscardStaged(t, db, 1)
+}
+
+func TestStateDB_Suicide_FromAmsterdamOnDeletesAccountWithoutBalance(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	setExpectationForEmptyAccount(t, mock, address1)
+
+	db.Prepare(common.Rules{IsAmsterdam: true})
+	db.CreateAccount(address1)
+	db.CreateContract(address1)
+	db.SetNonce(address1, 1)
+	db.Suicide(address1)
+	db.EndTransaction()
+
+	require.False(db.Exist(address1))
+}
+
+func TestStateDB_Prepare_RulesApplyUntilEndOfTransaction(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
+
+	db.Prepare(common.Rules{IsAmsterdam: true})
+	db.EndTransaction()
+
+	require.True(db.Suicide(address1))
+	require.True(db.GetBalance(address1).IsZero())
+}
+
+func TestStateDB_RevertToInterTxSnapshot_RestoresAccountSuicidedFromAmsterdamOn(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock)
+
+	setExpectationForEmptyAccount(t, mock, address1)
+
+	db.CreateAccount(address1)
+	db.SetNonce(address1, 1)
+	db.SetCode(address1, []byte{1, 2, 3})
+	db.SetState(address1, key1, val1)
+	db.AddBalance(address1, amount.New(12))
+	db.EndTransaction()
+
+	snapshot := db.InterTxSnapshot()
+	db.Prepare(common.Rules{IsAmsterdam: true})
+	db.Suicide(address1)
+	db.EndTransaction()
+	db.RevertToInterTxSnapshot(snapshot)
+
+	require.True(db.Exist(address1))
+	require.False(db.HasSuicided(address1))
+	require.Equal(amount.New(12), db.GetBalance(address1))
+	require.Equal(uint64(1), db.GetNonce(address1))
+	require.Equal([]byte{1, 2, 3}, db.GetCode(address1))
+	require.Equal(val1, db.GetState(address1, key1))
+}
+
 func TestStateDB_SuicideCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
