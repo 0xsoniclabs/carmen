@@ -159,7 +159,8 @@ type blockContext interface {
 	// returns error, otherwise it is committed.
 	// This method does not require the caller to drive the lifecycle of the transaction context,
 	// as the context is opened and closed within this method call.
-	RunTransaction(run func(TransactionContext) error) error
+	// The revision selects the fork rules for committing the transaction.
+	RunTransaction(revision state.Revision, run func(TransactionContext) error) error
 }
 
 // HeadBlockContext provides an environment to create a new head-block of the blockchain.
@@ -385,8 +386,8 @@ type TransactionContext interface {
 	// changes are only persisted when committing the enclosing block.
 	// A call to Commit also implicitly releases underlying resources,
 	// invalidating this instance. The instance should be discarded after
-	// this call.
-	Commit() error
+	// this call. The revision selects the fork rules for finalizing the transaction.
+	Commit(state.Revision) error
 
 	// Abort releases underlying resources without committing results. This
 	// invalidates this instance, which should be discarded after this call.

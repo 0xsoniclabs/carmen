@@ -36,7 +36,7 @@ func TestBlockContext_CanCreateSequenceOfTransactions(t *testing.T) {
 						t.Fatalf("failed to abort transaction %d: %v", i, err)
 					}
 				} else {
-					if err := tx.Commit(); err != nil {
+					if err := tx.Commit(state.LatestRevision()); err != nil {
 						t.Fatalf("failed to commit transaction %d: %v", i, err)
 					}
 				}
@@ -80,7 +80,7 @@ func TestBlockContext_RunTransaction_Parallel(t *testing.T) {
 			for i := range loops {
 				go func(i int) {
 					defer wg.Done()
-					if err := block.RunTransaction(func(context TransactionContext) error {
+					if err := block.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 						counter++
 						return nil
 					}); err == nil {
@@ -116,7 +116,7 @@ func TestBlockContext_BeginTransaction_Parallel(t *testing.T) {
 					ctx, err := block.BeginTransaction()
 					if err == nil {
 						success.Add(1)
-						if err := ctx.Commit(); err != nil {
+						if err := ctx.Commit(state.LatestRevision()); err != nil {
 							t.Errorf("cannot commit transaction: %v", err)
 						}
 					}
@@ -138,7 +138,7 @@ func TestHeadBlockContext_RunTransaction_ProducesError(t *testing.T) {
 			block := factory(t)
 
 			injectedErr := fmt.Errorf("injectedError")
-			if err := block.RunTransaction(func(context TransactionContext) error {
+			if err := block.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				return injectedErr
 			}); !errors.Is(err, injectedErr) {
 				t.Errorf("running transaction should fail: %v", err)
@@ -166,7 +166,7 @@ func TestHeadBlockContext_RunTransaction_ClosedBlock_Fail(t *testing.T) {
 		t.Fatalf("cannot commit block: %v", err)
 	}
 
-	if err := block.RunTransaction(func(context TransactionContext) error {
+	if err := block.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 		return nil
 	}); err == nil {
 		t.Errorf("starting transaction on closed block should fail")
@@ -277,7 +277,7 @@ func TestHistoricBlockContext_RunTransaction_ClosedBlock_Fail(t *testing.T) {
 		t.Fatalf("cannot commit block: %v", err)
 	}
 
-	if err := block.RunTransaction(func(context TransactionContext) error {
+	if err := block.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 		return nil
 	}); err == nil {
 		t.Errorf("starting transaction on closed block should fail")
@@ -317,7 +317,7 @@ func TestDatabase_AbortedBlocksHaveNoEffect(t *testing.T) {
 		t.Fatalf("failed to start a transaction: %v", err)
 	}
 	tx.SetNonce(Address{}, 12)
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Fatalf("unexpected error during commit: %v", err)
 	}
 	if err := block.Abort(); err != nil {
@@ -337,7 +337,7 @@ func TestDatabase_AbortedBlocksHaveNoEffect(t *testing.T) {
 		t.Errorf("unexpected result after abort, want %d, got %d", want, got)
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Fatalf("unexpected error during commit: %v", err)
 	}
 	if err := block.Abort(); err != nil {
@@ -387,11 +387,22 @@ func initBlockContexts() map[string]func(t *testing.T) blockContext {
 	}
 }
 
+func TestBlockContext_RunTransaction_CommitsWithGivenRevision(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	block := NewMockHeadBlockContext(ctrl)
+	tx := NewMockTransactionContext(ctrl)
+	block.EXPECT().BeginTransaction().Return(tx, nil)
+	tx.EXPECT().Commit(state.CANCUN)
+
+	require.NoError(runTransaction(block, state.CANCUN, func(TransactionContext) error { return nil }))
+}
+
 func initHeadBlockContext(t *testing.T) HeadBlockContext {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockStateDB(ctrl)
 	stateDB.EXPECT().Check().Return(nil).AnyTimes()
-	stateDB.EXPECT().EndTransaction().AnyTimes()
+	stateDB.EXPECT().EndTransaction(state.LatestRevision()).AnyTimes()
 	// A state db that applies a block always yields a staged block to decide on;
 	// committing it is what keeps the block.
 	staged := state.NewMockStagedBlock(ctrl)
@@ -415,7 +426,7 @@ func initHistoricBlockContext(t *testing.T) HistoricBlockContext {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockNonCommittableStateDB(ctrl)
 	stateDB.EXPECT().Check().Return(nil).AnyTimes()
-	stateDB.EXPECT().EndTransaction().AnyTimes()
+	stateDB.EXPECT().EndTransaction(state.LatestRevision()).AnyTimes()
 	stateDB.EXPECT().Release().AnyTimes()
 	stateDB.EXPECT().AbortTransaction().AnyTimes()
 

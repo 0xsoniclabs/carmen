@@ -101,7 +101,7 @@ func Benchmark_Long_vs_Short_Flush_Period(b *testing.B) {
 				db.SetNonce(addr, 12)
 			}
 
-			db.EndTransaction()
+			db.EndTransaction(LatestRevision())
 			staged, err := db.EndBlock(12)
 			require.NoError(b, err)
 			done, err := staged.Commit()

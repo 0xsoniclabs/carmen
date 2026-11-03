@@ -42,13 +42,13 @@ func TestStateDB_InterTxSnapshot_ReturnsSnapshotID(t *testing.T) {
 
 	// Empty transaction does not increment snapshot ID
 	state.BeginTransaction()
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	snapshotID2 := state.InterTxSnapshot()
 	require.Equal(InterTxSnapshotID(0), snapshotID2)
 
 	state.BeginTransaction()
 	state.SetCode(common.Address{}, []byte{0x1})
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	snapshotID3 := state.InterTxSnapshot()
 	require.Equal(InterTxSnapshotID(2), snapshotID3)
 }
@@ -70,7 +70,7 @@ func TestStateDB_RevertToInterTxSnapshot_RecordsErrorIfInvalidSnapshotID(t *test
 
 	state.BeginTransaction()
 	state.SetCode(common.Address{}, []byte{0x1})
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	state.RevertToInterTxSnapshot(10)
 	require.EqualError(state.Check(), "cannot revert to inter-transaction snapshot: the snapshot point is ahead of the last recorded one")
 }
@@ -127,7 +127,7 @@ func UpdatingWrittenSlots(t *testing.T, state *stateDB, beginOp func(state *stat
 	beginOp(state)
 	entry := slotValue{committed: common.Value{0x1}, current: common.Value{0x2}}
 	state.writtenSlots[&entry] = true
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 
 	require.Equal(entry.committed, common.Value{0x2})
 
@@ -144,7 +144,7 @@ func AddingEmptyAccountWithoutState(t *testing.T, state *stateDB, beginOp func(s
 	backup := state.InterTxSnapshot()
 	beginOp(state)
 	state.emptyCandidates = append(state.emptyCandidates, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	require.Equal(state.clearedAccounts[addr], cleared)
 
 	state.RevertToInterTxSnapshot(backup)
@@ -162,7 +162,7 @@ func AddingEmptyAccountWithState(t *testing.T, state *stateDB, beginOp func(stat
 	beginOp(state)
 	state.clearedAccounts[addr] = noClearing
 	state.emptyCandidates = append(state.emptyCandidates, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	require.Equal(state.clearedAccounts[addr], cleared)
 
 	state.RevertToInterTxSnapshot(backup)
@@ -179,7 +179,7 @@ func DeletingSuicidedAccountWithoutState(t *testing.T, state *stateDB, beginOp f
 	beginOp(state)
 	state.accounts[addr] = &accountState{current: accountSelfDestructed}
 	state.accountsToDelete = append(state.accountsToDelete, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	require.Equal(state.clearedAccounts[addr], cleared)
 
 	state.RevertToInterTxSnapshot(backup)
@@ -197,7 +197,7 @@ func DeletingSuicidedAccountWithState(t *testing.T, state *stateDB, beginOp func
 	state.clearedAccounts[addr] = noClearing
 	state.accounts[addr] = &accountState{current: accountSelfDestructed}
 	state.accountsToDelete = append(state.accountsToDelete, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	require.Equal(state.clearedAccounts[addr], cleared)
 
 	state.RevertToInterTxSnapshot(backup)
@@ -224,7 +224,7 @@ func DeletingAccountWithData(t *testing.T, state *stateDB, beginOp func(state *s
 
 	beginOp(state)
 	state.accountsToDelete = append(state.accountsToDelete, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 
 	require.Equal(state.clearedAccounts[addr], cleared)
 	// The stored value and its known flag are not touched by the clearing;
@@ -249,7 +249,7 @@ func DeletingAccountWithoutState(t *testing.T, state *stateDB, beginOp func(stat
 
 	beginOp(state)
 	state.accountsToDelete = append(state.accountsToDelete, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	require.Equal(state.clearedAccounts[addr], cleared)
 
 	state.RevertToInterTxSnapshot(backup)
@@ -266,7 +266,7 @@ func DeletingAccountWithState(t *testing.T, state *stateDB, beginOp func(state *
 	beginOp(state)
 	state.clearedAccounts[addr] = noClearing
 	state.accountsToDelete = append(state.accountsToDelete, addr)
-	state.EndTransaction()
+	state.EndTransaction(LatestRevision())
 	require.Equal(state.clearedAccounts[addr], cleared)
 
 	state.RevertToInterTxSnapshot(backup)
@@ -358,7 +358,7 @@ func TestStateDB_RevertToInterTxSnapshot_RevertsStateCorrectly(t *testing.T) {
 				for _, op := range opList {
 					op.Execute(ctx.state, ctx.rng)
 				}
-				ctx.state.EndTransaction()
+				ctx.state.EndTransaction(LatestRevision())
 
 				statesToCheck = append(statesToCheck, InterTxSnapshotWithStateCheck{
 					stateBackup: oldStateDB,

@@ -64,7 +64,7 @@ func TestCarmen_BlockProcessing(t *testing.T) {
 	}
 	tx.CreateAccount(Address{1})
 	tx.SetNonce(Address{1}, 12)
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Fatalf("failed to finish transaction: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestCarmen_BlockProcessing(t *testing.T) {
 	if want, got := uint64(12), tx.GetNonce(Address{1}); want != got {
 		t.Errorf("unexpected nonce, wanted %v, got %v", want, got)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Fatalf("failed to finish transaction: %v", err)
 	}
 
@@ -113,7 +113,7 @@ func TestCarmen_HeadBlockQuery(t *testing.T) {
 	block := uint64(0)
 	incrementNonce := func() {
 		err := db.AddBlock(block, func(ctxt HeadBlockContext) error {
-			return ctxt.RunTransaction(func(ctxt TransactionContext) error {
+			return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 				nonce := ctxt.GetNonce(Address{})
 				ctxt.SetNonce(Address{}, nonce+1)
 				return nil
@@ -157,12 +157,12 @@ func TestCarmen_ArchiveQuery(t *testing.T) {
 	err = errors.Join(
 		db.AddBlock(1, func(ctxt HeadBlockContext) error {
 			return errors.Join(
-				ctxt.RunTransaction(func(ctxt TransactionContext) error {
+				ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 					ctxt.CreateAccount(Address{1})
 					ctxt.SetNonce(Address{1}, 12)
 					return nil
 				}),
-				ctxt.RunTransaction(func(ctxt TransactionContext) error {
+				ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 					ctxt.CreateAccount(Address{2})
 					ctxt.SetNonce(Address{2}, 14)
 					return nil
@@ -171,7 +171,7 @@ func TestCarmen_ArchiveQuery(t *testing.T) {
 		}),
 		db.AddBlock(3, func(ctxt HeadBlockContext) error {
 			return errors.Join(
-				ctxt.RunTransaction(func(ctxt TransactionContext) error {
+				ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 					ctxt.CreateAccount(Address{3})
 					ctxt.SetNonce(Address{3}, 16)
 					return nil
@@ -219,7 +219,7 @@ func TestCarmen_ArchiveQuery(t *testing.T) {
 	// Query archive state information (functional style).
 	err = errors.Join(
 		db.QueryBlock(0, func(ctxt HistoricBlockContext) error {
-			return ctxt.RunTransaction(func(ctxt TransactionContext) error {
+			return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 				if want, got := uint64(0), ctxt.GetNonce(Address{1}); want != got {
 					t.Errorf("unexpected nonce, wanted %v, got %v", want, got)
 				}
@@ -233,7 +233,7 @@ func TestCarmen_ArchiveQuery(t *testing.T) {
 			})
 		}),
 		db.QueryBlock(1, func(ctxt HistoricBlockContext) error {
-			return ctxt.RunTransaction(func(ctxt TransactionContext) error {
+			return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 				if want, got := uint64(12), ctxt.GetNonce(Address{1}); want != got {
 					t.Errorf("unexpected nonce, wanted %v, got %v", want, got)
 				}
@@ -247,7 +247,7 @@ func TestCarmen_ArchiveQuery(t *testing.T) {
 			})
 		}),
 		db.QueryBlock(2, func(ctxt HistoricBlockContext) error {
-			return ctxt.RunTransaction(func(ctxt TransactionContext) error {
+			return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 				if want, got := uint64(12), ctxt.GetNonce(Address{1}); want != got {
 					t.Errorf("unexpected nonce, wanted %v, got %v", want, got)
 				}
@@ -261,7 +261,7 @@ func TestCarmen_ArchiveQuery(t *testing.T) {
 			})
 		}),
 		db.QueryBlock(3, func(ctxt HistoricBlockContext) error {
-			return ctxt.RunTransaction(func(ctxt TransactionContext) error {
+			return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 				if want, got := uint64(12), ctxt.GetNonce(Address{1}); want != got {
 					t.Errorf("unexpected nonce, wanted %v, got %v", want, got)
 				}

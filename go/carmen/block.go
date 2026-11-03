@@ -59,8 +59,8 @@ func (c *headBlockContext) BeginTransaction() (TransactionContext, error) {
 	}, nil
 }
 
-func (c *headBlockContext) RunTransaction(run func(TransactionContext) error) error {
-	return runTransaction(c, run)
+func (c *headBlockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+	return runTransaction(c, revision, run)
 }
 
 func (c *headBlockContext) Commit() error {
@@ -153,8 +153,8 @@ func (c *archiveBlockContext) BeginTransaction() (TransactionContext, error) {
 	}, nil
 }
 
-func (c *archiveBlockContext) RunTransaction(run func(TransactionContext) error) error {
-	return runTransaction(c, run)
+func (c *archiveBlockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+	return runTransaction(c, revision, run)
 }
 
 func (c *archiveBlockContext) GetProof(address Address, keys ...Key) (WitnessProof, error) {
@@ -207,7 +207,7 @@ func (c *archiveBlockContext) Close() error {
 	return err
 }
 
-func runTransaction(blockContext blockContext, run func(TransactionContext) error) error {
+func runTransaction(blockContext blockContext, revision state.Revision, run func(TransactionContext) error) error {
 	ctxt, err := blockContext.BeginTransaction()
 	if err != nil {
 		return fmt.Errorf("failed to create transaction: %w", err)
@@ -218,5 +218,5 @@ func runTransaction(blockContext blockContext, run func(TransactionContext) erro
 			ctxt.Abort(),
 		)
 	}
-	return ctxt.Commit()
+	return ctxt.Commit(revision)
 }

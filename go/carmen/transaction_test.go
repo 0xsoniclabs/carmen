@@ -15,13 +15,15 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/state"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
-func TestTransaction_Cannot_Commit_Twice(t *testing.T) {
+func TestTransaction_Commit_EndsTransactionWithGivenRevision(t *testing.T) {
+	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockVmStateDB(ctrl)
-	stateDB.EXPECT().EndTransaction()
+	stateDB.EXPECT().EndTransaction(state.CANCUN)
 	stateDB.EXPECT().Check()
 
 	tx := &transactionContext{
@@ -31,11 +33,27 @@ func TestTransaction_Cannot_Commit_Twice(t *testing.T) {
 		state: stateDB,
 	}
 
-	if err := tx.Commit(); err != nil {
+	require.NoError(tx.Commit(state.CANCUN))
+}
+
+func TestTransaction_Cannot_Commit_Twice(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	stateDB := state.NewMockVmStateDB(ctrl)
+	stateDB.EXPECT().EndTransaction(state.LatestRevision())
+	stateDB.EXPECT().Check()
+
+	tx := &transactionContext{
+		blockContext: &commonContext{
+			transactionActive: true,
+		},
+		state: stateDB,
+	}
+
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Errorf("cannot commit transaction: %v", err)
 	}
 
-	if err := tx.Commit(); err == nil {
+	if err := tx.Commit(state.LatestRevision()); err == nil {
 		t.Errorf("commit should fail")
 	}
 }
@@ -57,7 +75,7 @@ func TestTransaction_Cannot_Commit_After_Abort(t *testing.T) {
 		t.Errorf("cannot abort transaction: %v", err)
 	}
 
-	if err := tx.Commit(); err == nil {
+	if err := tx.Commit(state.LatestRevision()); err == nil {
 		t.Errorf("commit should fail")
 	}
 }
@@ -164,7 +182,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 	stateDB.EXPECT().RevertToSnapshot(10)
 	stateDB.EXPECT().HasEmptyStorage(gomock.Any())
 
-	stateDB.EXPECT().EndTransaction()
+	stateDB.EXPECT().EndTransaction(state.LatestRevision())
 	stateDB.EXPECT().Check()
 
 	tx := &transactionContext{
@@ -213,7 +231,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 	tx.Snapshot()
 	tx.RevertToSnapshot(10)
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Errorf("cannot commit transaction: %v", err)
 	}
 
@@ -222,7 +240,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 func TestTransaction_AfterCommitAllOperationsAreNoops(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockVmStateDB(ctrl)
-	stateDB.EXPECT().EndTransaction()
+	stateDB.EXPECT().EndTransaction(state.LatestRevision())
 	stateDB.EXPECT().Check()
 
 	tx := &transactionContext{
@@ -232,7 +250,7 @@ func TestTransaction_AfterCommitAllOperationsAreNoops(t *testing.T) {
 		state: stateDB,
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(state.LatestRevision()); err != nil {
 		t.Errorf("cannot commit transaction: %v", err)
 	}
 

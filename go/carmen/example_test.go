@@ -22,6 +22,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/carmen"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/io"
+	"github.com/0xsoniclabs/carmen/go/state"
 )
 
 func ExampleDatabase_AddBlock() {
@@ -36,7 +37,7 @@ func ExampleDatabase_AddBlock() {
 
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, carmen.NewAmount(100))
 			fmt.Printf("Transaction executed")
@@ -81,7 +82,7 @@ func ExampleDatabase_BeginBlock() {
 	tctx.CreateAccount(carmen.Address{1})
 	tctx.AddBalance(carmen.Address{1}, carmen.NewAmount(100))
 
-	if err := tctx.Commit(); err != nil {
+	if err := tctx.Commit(state.LatestRevision()); err != nil {
 		log.Fatalf("cannot commit transaction: %v", err)
 	}
 
@@ -135,7 +136,7 @@ func ExampleDatabase_QueryHistoricState() {
 
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1, 2, 3})
 			context.AddBalance(carmen.Address{1, 2, 3}, carmen.NewAmount(100))
 			return nil
@@ -182,7 +183,7 @@ func ExampleDatabase_QueryBlock() {
 
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, carmen.NewAmount(100))
 			return nil
@@ -201,7 +202,7 @@ func ExampleDatabase_QueryBlock() {
 
 	// query history block
 	if err := db.QueryBlock(5, func(ctxt carmen.HistoricBlockContext) error {
-		return ctxt.RunTransaction(func(ctxt carmen.TransactionContext) error {
+		return ctxt.RunTransaction(state.LatestRevision(), func(ctxt carmen.TransactionContext) error {
 			balance := ctxt.GetBalance(carmen.Address{1})
 			if got, want := balance, carmen.NewAmount(100); got != want {
 				log.Fatalf("balance does not match: %d != %d", got, want)
@@ -236,7 +237,7 @@ func ExampleDatabase_GetHistoricContext() {
 
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, carmen.NewAmount(100))
 			return nil
@@ -305,7 +306,7 @@ func ExampleHistoricBlockContext_GetProof() {
 	// Add N blocks with one address and storage slot each
 	for i := range N {
 		if err := db.AddBlock(uint64(i), func(context carmen.HeadBlockContext) error {
-			if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 				context.CreateAccount(carmen.Address{byte(i)})
 				context.AddBalance(carmen.Address{byte(i)}, carmen.NewAmount(uint64(i)))
 				context.SetState(carmen.Address{byte(i)}, carmen.Key{byte(i)}, carmen.Value{byte(i)})
@@ -429,7 +430,7 @@ func ExampleWitnessProof_GetStorageElements() {
 
 	// Add only one block with one address and storage
 	if err := db.AddBlock(0, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, carmen.NewAmount(1))
 			context.SetState(carmen.Address{1}, carmen.Key{1}, carmen.Value{1})
@@ -532,7 +533,7 @@ func ExampleHistoricBlockContext_Export() {
 	}
 
 	if err := db.AddBlock(uint64(1), func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{byte(1)})
 			context.AddBalance(carmen.Address{byte(1)}, carmen.NewAmount(uint64(1)))
 			context.SetState(carmen.Address{byte(1)}, carmen.Key{byte(1)}, carmen.Value{byte(1)})

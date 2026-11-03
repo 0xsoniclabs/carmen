@@ -405,7 +405,7 @@ func TestDatabase_BulkLoadProducesBlocks(t *testing.T) {
 	err = errors.Join(
 		db.QueryBlock(11, func(bc HistoricBlockContext) error {
 			return errors.Join(
-				bc.RunTransaction(func(tc TransactionContext) error {
+				bc.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 					if tc.Exist(Address{1}) {
 						t.Errorf("account 1 should not exist")
 					}
@@ -418,7 +418,7 @@ func TestDatabase_BulkLoadProducesBlocks(t *testing.T) {
 		}),
 		db.QueryBlock(12, func(bc HistoricBlockContext) error {
 			return errors.Join(
-				bc.RunTransaction(func(tc TransactionContext) error {
+				bc.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 					if !tc.Exist(Address{1}) {
 						t.Errorf("account 1 should exist")
 					}
@@ -870,7 +870,7 @@ func TestDatabase_GetProof(t *testing.T) {
 	for i := range numBlocks {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			for j := range numAccounts {
-				if err := context.RunTransaction(func(tc TransactionContext) error {
+				if err := context.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 					addr := Address{byte(j)}
 					tc.CreateAccount(addr)
 					tc.SetCode(addr, []byte{byte(j)})
@@ -1012,7 +1012,7 @@ func TestDatabase_GetProof_Serialise_Deserialize(t *testing.T) {
 	for i := range numBlocks {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			for j := range numAccounts {
-				if err := context.RunTransaction(func(tc TransactionContext) error {
+				if err := context.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 					addr := Address{byte(j)}
 					tc.CreateAccount(addr)
 					tc.SetNonce(addr, uint64(i<<8+j+1))
@@ -1127,7 +1127,7 @@ func TestDatabase_GetProof_Extract_SubProofs(t *testing.T) {
 
 	if err := db.AddBlock(0, func(context HeadBlockContext) error {
 		for j := 1; j < numAccounts; j++ { // first account will not exist
-			if err := context.RunTransaction(func(tc TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 				addr := Address{byte(j)}
 				tc.CreateAccount(addr)
 				tc.SetNonce(addr, uint64(j))
@@ -1393,7 +1393,7 @@ func TestDatabase_CloseDB_Unfinished_Proof_CannotCloseDb(t *testing.T) {
 	}
 
 	if err := db.AddBlock(1, func(context HeadBlockContext) error {
-		if err := context.RunTransaction(func(tc TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 			addr := Address{1}
 			tc.CreateAccount(addr)
 			tc.SetNonce(addr, uint64(1))
@@ -1446,7 +1446,7 @@ func TestDatabase_ClosedBlock_CannotGetProof(t *testing.T) {
 	}
 
 	if err := db.AddBlock(1, func(context HeadBlockContext) error {
-		if err := context.RunTransaction(func(tc TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(tc TransactionContext) error {
 			addr := Address{1}
 			tc.CreateAccount(addr)
 			tc.SetNonce(addr, uint64(1))
@@ -1809,7 +1809,7 @@ func TestDatabase_Historic_Block_Available(t *testing.T) {
 
 	addr := Address{1}
 	if err := db.AddBlock(0, func(context HeadBlockContext) error {
-		if err := context.RunTransaction(func(context TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 			context.CreateAccount(addr)
 			context.AddBalance(addr, NewAmount(1000))
 			return nil
@@ -1825,7 +1825,7 @@ func TestDatabase_Historic_Block_Available(t *testing.T) {
 	for i := 1; i < loops; i++ {
 		// cannot start the same block
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
-			if err := context.RunTransaction(func(context TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				context.AddBalance(addr, NewAmount(100))
 				return nil
 			}); err != nil {
@@ -1845,7 +1845,7 @@ func TestDatabase_Historic_Block_Available(t *testing.T) {
 	// query historic blocks
 	for i := range loops {
 		err := db.QueryBlock(uint64(i), func(context HistoricBlockContext) error {
-			if err := context.RunTransaction(func(context TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				if got, want := context.GetBalance(addr), NewAmount(uint64(i*100)+1000); got != want {
 					t.Errorf("balance does not match for block: %d, got: %d != wanted: %d", i, got, want)
 				}
@@ -1985,7 +1985,7 @@ func TestDatabase_Async_AddBlock_QueryHistory_Close_ShouldNotThrowUnexpectedErro
 
 	addBlock := func(block uint64) error {
 		return db.AddBlock(block, func(context HeadBlockContext) error {
-			if err := context.RunTransaction(func(context TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				addr := Address{byte(block)}
 				context.CreateAccount(addr)
 				context.AddBalance(addr, NewAmount(100))
@@ -2160,7 +2160,7 @@ func TestDatabase_Async_QueryHead_Accesses_ConsistentState(t *testing.T) {
 	for i := 1; i <= numBlocks; i++ {
 		block := uint64(i)
 		err := db.AddBlock(block, func(context HeadBlockContext) error {
-			if err := context.RunTransaction(func(context TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				// In all blocks the nonces of both accounts are identical.
 				context.SetNonce(addr1, block)
 				context.SetNonce(addr2, block)
@@ -2279,7 +2279,7 @@ func TestDatabase_ArchiveCanBeAccessedAsync(t *testing.T) {
 		for i := 1; i <= numBlocks; i++ {
 			block := uint64(i)
 			err := db.AddBlock(block, func(context HeadBlockContext) error {
-				if err := context.RunTransaction(func(context TransactionContext) error {
+				if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 					// In all blocks, the nonces of both accounts are identical.
 					context.SetNonce(addr1, block)
 					return nil
@@ -2323,7 +2323,7 @@ func TestDatabase_Export(t *testing.T) {
 
 	for i := range N {
 		if err = db.AddBlock(uint64(i), func(context HeadBlockContext) error {
-			if err = context.RunTransaction(func(context TransactionContext) error {
+			if err = context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				context.CreateAccount(Address{byte(i)})
 				context.AddBalance(Address{byte(i)}, NewAmount(uint64(i)))
 				context.SetState(Address{byte(i)}, Key{byte(i)}, Value{byte(i)})
@@ -2434,7 +2434,7 @@ func TestHeadBlockContext_Can_Update_Code(t *testing.T) {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			// insert transactions updating code
 			for j := range transactions {
-				if err := context.RunTransaction(func(context TransactionContext) error {
+				if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 					code[0] = byte(j)
 					context.SetCode(addr, code)
 					// updated code must be available in the same transaction
@@ -2445,7 +2445,7 @@ func TestHeadBlockContext_Can_Update_Code(t *testing.T) {
 				}
 
 				// updated code must be available in the same block at the end of each transaction
-				if err := context.RunTransaction(func(context TransactionContext) error {
+				if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 					check(t, context, addr, code, Hash(common.Keccak256(code)))
 					return nil
 				}); err != nil {
@@ -2492,7 +2492,7 @@ func TestDatabase_Codes_Versioned_Archive(t *testing.T) {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
 			// insert transactions updating code
 			for j := range transactions {
-				if err := context.RunTransaction(func(context TransactionContext) error {
+				if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 					code[0] = byte(j)
 					context.SetCode(addr, code)
 					return nil
@@ -2588,7 +2588,7 @@ func TestDatabase_Archive_Query_Proof_While_Updating_Race_Detection(t *testing.T
 
 	for i := range blocks {
 		if err := db.AddBlock(uint64(i), func(context HeadBlockContext) error {
-			if err := context.RunTransaction(func(context TransactionContext) error {
+			if err := context.RunTransaction(state.LatestRevision(), func(context TransactionContext) error {
 				context.AddBalance(addr, NewAmount(uint64(i)))
 				for j := range keys {
 					key := Key{byte(j), byte(j >> 8), byte(i), byte(i >> 8)}

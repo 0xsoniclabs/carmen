@@ -209,7 +209,8 @@ func (db *database) GetHistoricStateHash(block uint64) (Hash, error) {
 
 func (db *database) QueryHistoricState(block uint64, query func(QueryContext)) error {
 	return db.QueryBlock(block, func(ctxt HistoricBlockContext) error {
-		return ctxt.RunTransaction(func(ctxt TransactionContext) error {
+		// The query is read-only, so the revision has no effect.
+		return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
 			query(ctxt.(*transactionContext))
 			return nil
 		})

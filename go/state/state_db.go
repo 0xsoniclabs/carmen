@@ -86,7 +86,8 @@ type VmStateDB interface {
 	RevertToSnapshot(int)
 
 	BeginTransaction()
-	EndTransaction()
+	// EndTransaction finalizes the current transaction according to the given revision.
+	EndTransaction(Revision)
 
 	// InterTxSnapshot creates a restore point to the last executed transaction. Returns an identifier of the created snapshot to be used for reverting to it.
 	InterTxSnapshot() InterTxSnapshotID
@@ -1106,7 +1107,7 @@ func (s *stateDB) BeginTransaction() {
 	// Ignored
 }
 
-func (s *stateDB) EndTransaction() {
+func (s *stateDB) EndTransaction(Revision) {
 	// Updated committed state of storage.
 	for value := range s.writtenSlots {
 		oldValueCommitted := value.committed
