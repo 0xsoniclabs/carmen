@@ -387,15 +387,40 @@ func initBlockContexts() map[string]func(t *testing.T) blockContext {
 	}
 }
 
-func TestBlockContext_RunTransaction_CommitsWithGivenRevision(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	block := NewMockHeadBlockContext(ctrl)
-	tx := NewMockTransactionContext(ctrl)
-	block.EXPECT().BeginTransaction().Return(tx, nil)
-	tx.EXPECT().Commit(state.CANCUN)
+func TestHeadBlockContext_RunTransaction_ForwardsRevisionToState(t *testing.T) {
+	for revision := state.CANCUN; revision <= state.LatestRevision(); revision++ {
+		t.Run(fmt.Sprintf("revision_%d", revision), func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			stateDB := state.NewMockStateDB(ctrl)
+			stateDB.EXPECT().EndTransaction(revision)
+			stateDB.EXPECT().Check()
+			block := &headBlockContext{
+				commonContext: commonContext{db: &database{}},
+				state:         stateDB,
+			}
 
-	require.NoError(runTransaction(block, state.CANCUN, func(TransactionContext) error { return nil }))
+			require.NoError(block.RunTransaction(revision, func(TransactionContext) error { return nil }))
+		})
+	}
+}
+
+func TestArchiveBlockContext_RunTransaction_ForwardsRevisionToState(t *testing.T) {
+	for revision := state.CANCUN; revision <= state.LatestRevision(); revision++ {
+		t.Run(fmt.Sprintf("revision_%d", revision), func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			stateDB := state.NewMockNonCommittableStateDB(ctrl)
+			stateDB.EXPECT().EndTransaction(revision)
+			stateDB.EXPECT().Check()
+			block := &archiveBlockContext{
+				commonContext: commonContext{db: &database{}},
+				state:         stateDB,
+			}
+
+			require.NoError(block.RunTransaction(revision, func(TransactionContext) error { return nil }))
+		})
+	}
 }
 
 func initHeadBlockContext(t *testing.T) HeadBlockContext {

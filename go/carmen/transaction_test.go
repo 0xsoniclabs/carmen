@@ -11,6 +11,7 @@
 package carmen
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -20,20 +21,24 @@ import (
 )
 
 func TestTransaction_Commit_EndsTransactionWithGivenRevision(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	stateDB := state.NewMockVmStateDB(ctrl)
-	stateDB.EXPECT().EndTransaction(state.CANCUN)
-	stateDB.EXPECT().Check()
+	for revision := state.CANCUN; revision <= state.LatestRevision(); revision++ {
+		t.Run(fmt.Sprintf("revision_%d", revision), func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			stateDB := state.NewMockVmStateDB(ctrl)
+			stateDB.EXPECT().EndTransaction(revision)
+			stateDB.EXPECT().Check()
 
-	tx := &transactionContext{
-		blockContext: &commonContext{
-			transactionActive: true,
-		},
-		state: stateDB,
+			tx := &transactionContext{
+				blockContext: &commonContext{
+					transactionActive: true,
+				},
+				state: stateDB,
+			}
+
+			require.NoError(tx.Commit(revision))
+		})
 	}
-
-	require.NoError(tx.Commit(state.CANCUN))
 }
 
 func TestTransaction_Cannot_Commit_Twice(t *testing.T) {

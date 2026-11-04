@@ -15,7 +15,10 @@ go get -u github.com/0xsoniclabs/carmen/go
 ```
 2. Import the public interface
 ```
-import "github.com/0xsoniclabs/carmen/go/carmen"
+import (
+	"github.com/0xsoniclabs/carmen/go/carmen"
+	"github.com/0xsoniclabs/carmen/go/state"
+)
 ```
 
 
@@ -47,7 +50,7 @@ func ExampleDatabase_AddBlock() {
 	}
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, big.NewInt(100))
 			fmt.Printf("Transaction executed")
@@ -92,7 +95,7 @@ func ExampleDatabase_BeginBlock() {
 	}
 	tctx.CreateAccount(carmen.Address{1})
 	tctx.AddBalance(carmen.Address{1}, big.NewInt(100))
-	if err := tctx.Commit(); err != nil {
+	if err := tctx.Commit(state.LatestRevision()); err != nil {
 		log.Fatalf("cannot commit transaction: %v", err)
 	}
 	if err := bctx.Commit(); err != nil {
@@ -128,7 +131,7 @@ func ExampleDatabase_QueryBlock() {
 	}
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, big.NewInt(100))
 			return nil
@@ -145,7 +148,7 @@ func ExampleDatabase_QueryBlock() {
 	}
 	// query history block
 	if err := db.QueryBlock(5, func(ctxt carmen.HistoricBlockContext) error {
-		return ctxt.RunTransaction(func(ctxt carmen.TransactionContext) error {
+		return ctxt.RunTransaction(state.LatestRevision(), func(ctxt carmen.TransactionContext) error {
 			balance := ctxt.GetBalance(carmen.Address{1})
 			if got, want := balance, big.NewInt(100); got.Cmp(want) != 0 {
 				log.Fatalf("balance does not match: %d != %d", got, want)
@@ -182,7 +185,7 @@ func ExampleDatabase_GetHistoricContext() {
 	}
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1})
 			context.AddBalance(carmen.Address{1}, big.NewInt(100))
 			return nil
@@ -275,7 +278,7 @@ func ExampleDatabase_QueryHistoricState() {
 	}
 	// Add a new block
 	if err := db.AddBlock(5, func(context carmen.HeadBlockContext) error {
-		if err := context.RunTransaction(func(context carmen.TransactionContext) error {
+		if err := context.RunTransaction(state.LatestRevision(), func(context carmen.TransactionContext) error {
 			context.CreateAccount(carmen.Address{1, 2, 3})
 			context.AddBalance(carmen.Address{1, 2, 3}, big.NewInt(100))
 			return nil

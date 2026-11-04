@@ -387,7 +387,7 @@ type TransactionContext interface {
 	// A call to Commit also implicitly releases underlying resources,
 	// invalidating this instance. The instance should be discarded after
 	// this call. The revision selects the fork rules for finalizing the transaction.
-	Commit(state.Revision) error
+	Commit(revision state.Revision) error
 
 	// Abort releases underlying resources without committing results. This
 	// invalidates this instance, which should be discarded after this call.

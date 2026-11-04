@@ -209,11 +209,13 @@ func (db *database) GetHistoricStateHash(block uint64) (Hash, error) {
 
 func (db *database) QueryHistoricState(block uint64, query func(QueryContext)) error {
 	return db.QueryBlock(block, func(ctxt HistoricBlockContext) error {
-		// The query is read-only, so the revision has no effect.
-		return ctxt.RunTransaction(state.LatestRevision(), func(ctxt TransactionContext) error {
-			query(ctxt.(*transactionContext))
-			return nil
-		})
+		tx, err := ctxt.BeginTransaction()
+		if err != nil {
+			return fmt.Errorf("failed to create transaction: %w", err)
+		}
+		query(tx.(*transactionContext))
+		// The query is read-only, so there is nothing to commit.
+		return tx.Abort()
 	})
 }
 

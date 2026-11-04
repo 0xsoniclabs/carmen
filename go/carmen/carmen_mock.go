@@ -562,17 +562,17 @@ func (mr *MockTransactionContextMockRecorder) ClearAccessList() *gomock.Call {
 }
 
 // Commit mocks base method.
-func (m *MockTransactionContext) Commit(arg0 state.Revision) error {
+func (m *MockTransactionContext) Commit(revision state.Revision) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Commit", arg0)
+	ret := m.ctrl.Call(m, "Commit", revision)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Commit indicates an expected call of Commit.
-func (mr *MockTransactionContextMockRecorder) Commit(arg0 any) *gomock.Call {
+func (mr *MockTransactionContextMockRecorder) Commit(revision any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockTransactionContext)(nil).Commit), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockTransactionContext)(nil).Commit), revision)
 }
 
 // CreateAccount mocks base method.
