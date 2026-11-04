@@ -89,9 +89,11 @@ func GetConfigByName(name string) (MptConfig, bool) {
 	return MptConfig{}, false
 }
 
-// GetEncoders returns the value encoders for the given MPT configuration.
+// GetEncoders returns the value encoders for the given MPT configuration,
+// for account, branch, delta branch, extension, and value nodes.
 func (c MptConfig) GetEncoders() (
 	stock.ValueEncoder[AccountNode],
+	stock.ValueEncoder[BranchNode],
 	stock.ValueEncoder[BranchNode],
 	stock.ValueEncoder[ExtensionNode],
 	stock.ValueEncoder[ValueNode],
@@ -102,22 +104,26 @@ func (c MptConfig) GetEncoders() (
 		if c.TrackSuffixLengthsInLeafNodes {
 			return AccountNodeWithPathLengthEncoderWithChildHash{},
 				BranchNodeEncoderWithChildHashes{},
+				BranchDeltaNodeEncoderWithChildHashes{},
 				ExtensionNodeEncoderWithChildHash{},
 				ValueNodeWithPathLengthEncoderWithoutNodeHash{}
 		}
 		return AccountNodeEncoderWithChildHash{},
 			BranchNodeEncoderWithChildHashes{},
+			BranchDeltaNodeEncoderWithChildHashes{},
 			ExtensionNodeEncoderWithChildHash{},
 			ValueNodeEncoderWithoutNodeHash{}
 	case HashStoredWithNode:
 		if c.TrackSuffixLengthsInLeafNodes {
 			return AccountNodeWithPathLengthEncoderWithNodeHash{},
 				BranchNodeEncoderWithNodeHash{},
+				BranchDeltaNodeEncoderWithNodeHash{},
 				ExtensionNodeEncoderWithNodeHash{},
 				ValueNodeWithPathLengthEncoderWithNodeHash{}
 		}
 		return AccountNodeEncoderWithNodeHash{},
 			BranchNodeEncoderWithNodeHash{},
+			BranchDeltaNodeEncoderWithNodeHash{},
 			ExtensionNodeEncoderWithNodeHash{},
 			ValueNodeEncoderWithNodeHash{}
 	default:

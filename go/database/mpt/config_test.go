@@ -18,14 +18,17 @@ import (
 
 func TestMptConfig_GetEncoders(t *testing.T) {
 	for _, config := range allMptConfigs {
-		a1, b1, e1, v1 := config.GetEncoders()
-		a2, b2, e2, v2 := getExpectedEncoders(config)
+		a1, b1, d1, e1, v1 := config.GetEncoders()
+		a2, b2, d2, e2, v2 := getExpectedEncoders(config)
 
 		if a1 != a2 {
 			t.Errorf("unexpected account node encoder, got %v, want %v", a1, a2)
 		}
 		if b1 != b2 {
 			t.Errorf("unexpected branch node encoder, got %v, want %v", b1, b2)
+		}
+		if d1 != d2 {
+			t.Errorf("unexpected delta branch node encoder, got %v, want %v", d1, d2)
 		}
 		if e1 != e2 {
 			t.Errorf("unexpected extension node encoder, got %v, want %v", e1, e2)
@@ -39,6 +42,7 @@ func TestMptConfig_GetEncoders(t *testing.T) {
 func getExpectedEncoders(config MptConfig) (
 	stock.ValueEncoder[AccountNode],
 	stock.ValueEncoder[BranchNode],
+	stock.ValueEncoder[BranchNode],
 	stock.ValueEncoder[ExtensionNode],
 	stock.ValueEncoder[ValueNode],
 ) {
@@ -47,22 +51,26 @@ func getExpectedEncoders(config MptConfig) (
 		if config.TrackSuffixLengthsInLeafNodes {
 			return AccountNodeWithPathLengthEncoderWithChildHash{},
 				BranchNodeEncoderWithChildHashes{},
+				BranchDeltaNodeEncoderWithChildHashes{},
 				ExtensionNodeEncoderWithChildHash{},
 				ValueNodeWithPathLengthEncoderWithoutNodeHash{}
 		}
 		return AccountNodeEncoderWithChildHash{},
 			BranchNodeEncoderWithChildHashes{},
+			BranchDeltaNodeEncoderWithChildHashes{},
 			ExtensionNodeEncoderWithChildHash{},
 			ValueNodeEncoderWithoutNodeHash{}
 	case HashStoredWithNode:
 		if config.TrackSuffixLengthsInLeafNodes {
 			return AccountNodeWithPathLengthEncoderWithNodeHash{},
 				BranchNodeEncoderWithNodeHash{},
+				BranchDeltaNodeEncoderWithNodeHash{},
 				ExtensionNodeEncoderWithNodeHash{},
 				ValueNodeWithPathLengthEncoderWithNodeHash{}
 		}
 		return AccountNodeEncoderWithNodeHash{},
 			BranchNodeEncoderWithNodeHash{},
+			BranchDeltaNodeEncoderWithNodeHash{},
 			ExtensionNodeEncoderWithNodeHash{},
 			ValueNodeEncoderWithNodeHash{}
 	default:

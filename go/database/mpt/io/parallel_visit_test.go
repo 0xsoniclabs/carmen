@@ -487,7 +487,7 @@ func TestOpenSource_Failing_MissingFiles(t *testing.T) {
 
 				dir := t.TempDir()
 				fmt.Printf("%s %s %s\n", config.Name, test, dir)
-				aEnc, bEnc, eEnc, vEnc := config.GetEncoders()
+				aEnc, bEnc, _, eEnc, vEnc := config.GetEncoders()
 				// create all stocks first
 				stock1, err := file.OpenStock[uint64, mpt.AccountNode](aEnc, path.Join(dir, "accounts"))
 				if err != nil {
