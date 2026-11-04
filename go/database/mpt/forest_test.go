@@ -754,12 +754,10 @@ func TestForest_getAccess_Fails(t *testing.T) {
 	}
 }
 
-func TestForest_getReadAccess_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
+func TestForest_getReadAccess_FailsIfDeltaBaseIsNotABranch(t *testing.T) {
 	bases := map[string]NodeId{
 		"empty":   EmptyId(),
 		"account": AccountId(1),
-		"itself":  DeltaBranchId(2),
-		"delta":   DeltaBranchId(3),
 	}
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
@@ -785,9 +783,40 @@ func TestForest_getReadAccess_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
 
 						ref := NewNodeReference(DeltaBranchId(2))
 						_, err = forest.getReadAccess(&ref)
-						require.ErrorContains(err, "is not a full branch node")
+						require.ErrorContains(err, "is not a branch node")
 					})
 				}
+			}
+		}
+	}
+}
+
+func TestForest_getReadAccess_FailsIfDeltaIsItsOwnBase(t *testing.T) {
+	for _, variant := range variants {
+		for _, config := range allMptConfigs {
+			for forestConfigName, forestConfig := range forestConfigs {
+				t.Run(fmt.Sprintf("%s-%s-%s", variant.name, config.Name, forestConfigName), func(t *testing.T) {
+					require := require.New(t)
+					forest, err := variant.factory(t.TempDir(), config, forestConfig)
+					require.NoError(err)
+					defer func() {
+						require.NoError(forest.Close())
+					}()
+
+					ctrl := gomock.NewController(t)
+					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: DeltaBranchId(2)}, nil).Times(deltaChainLimit)
+
+					branchDeltasBackup := forest.branchDeltas
+					defer func() {
+						forest.branchDeltas = branchDeltasBackup
+					}()
+					forest.branchDeltas = branchDeltas
+
+					ref := NewNodeReference(DeltaBranchId(2))
+					_, err = forest.getReadAccess(&ref)
+					require.ErrorContains(err, "exceeds the delta chain limit")
+				})
 			}
 		}
 	}

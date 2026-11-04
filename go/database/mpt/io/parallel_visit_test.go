@@ -159,13 +159,12 @@ func TestNodeSource_CanRead_Nodes(t *testing.T) {
 	}
 }
 
-func TestNodeSource_get_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
+func TestNodeSource_get_FailsIfDeltaBaseIsNotABranch(t *testing.T) {
 	tests := map[string]mpt.NodeId{
 		"empty":     mpt.EmptyId(),
 		"account":   mpt.AccountId(0),
 		"extension": mpt.ExtensionId(0),
 		"value":     mpt.ValueId(0),
-		"delta":     mpt.DeltaBranchId(0),
 	}
 	for name, base := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -204,7 +203,7 @@ func TestNodeSource_get_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
 			defer func() { require.NoError(source.Close()) }()
 
 			_, err = source.get(mpt.DeltaBranchId(0))
-			require.ErrorContains(err, "is not a full branch node")
+			require.ErrorContains(err, "is not a branch node")
 		})
 	}
 }

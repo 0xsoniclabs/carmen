@@ -184,6 +184,8 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 				base := NewNodeReference(n.base)
 				if err := checkId(&base); err != nil {
 					errs = append(errs, err)
+				} else if n.chainLength > deltaChainLimit {
+					errs = append(errs, fmt.Errorf("delta node exceeds the chain limit: %d", n.chainLength))
 				}
 			}
 			return errors.Join(errs...)
@@ -887,21 +889,36 @@ func (missingBranchStock) Close() error {
 }
 
 // deltaBranchStock is a stock of delta branches completing every loaded node
-// with the children of its base.
+// with the children of its base, following the chain of deltas to the full branch.
 type deltaBranchStock struct {
 	stock.Stock[uint64, BranchNode]
 	branches stock.Stock[uint64, BranchNode]
 }
 
 func (s deltaBranchStock) Get(index uint64) (BranchNode, error) {
+	return s.get(index, 0)
+}
+
+// get loads the delta at the given index, which is depth deltas below the
+// delta requested first.
+func (s deltaBranchStock) get(index uint64, depth int) (BranchNode, error) {
 	node, err := s.Stock.Get(index)
 	if err != nil {
 		return BranchNode{}, err
 	}
-	if !node.base.IsBranch() || node.base.IsDeltaBranch() {
-		return BranchNode{}, fmt.Errorf("delta base %v is not a full branch node", node.base)
+	if !node.base.IsBranch() {
+		return BranchNode{}, fmt.Errorf("delta base %v is not a branch node", node.base)
 	}
-	base, err := s.branches.Get(node.base.Index())
+	var base BranchNode
+	if node.base.IsDeltaBranch() {
+		// A longer chain is invalid and could be a cycle.
+		if depth+1 >= deltaChainLimit {
+			return BranchNode{}, fmt.Errorf("delta base %v exceeds the delta chain limit", node.base)
+		}
+		base, err = s.get(node.base.Index(), depth+1)
+	} else {
+		base, err = s.branches.Get(node.base.Index())
+	}
 	if err != nil {
 		return BranchNode{}, err
 	}

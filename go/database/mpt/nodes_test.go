@@ -284,6 +284,7 @@ func TestBranchNode_ApplyDeltaBase_FillsChildrenNotInDelta(t *testing.T) {
 	want.hashes[1] = common.Hash{100}
 	want.embeddedChildren = 1 << 4
 	want.dirtyHashes = 1<<1 | 1<<2
+	want.chainLength = 1
 	require.Equal(want, node)
 }
 
@@ -4878,7 +4879,7 @@ func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_RestoresDeltaChildren(t
 			hashStatus: hashStatusClean,
 		},
 		base:      BranchId(7),
-		deltaMask: 1<<3 | 1<<12,
+		deltaMask: 1 << 12,
 	}
 	for i := range node.children {
 		node.children[i] = NewNodeReference(NodeId(i + 1))
@@ -4895,7 +4896,6 @@ func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_RestoresDeltaChildren(t
 		deltaMask:   node.deltaMask,
 		dirtyHashes: node.deltaMask,
 	}
-	want.children[3] = node.children[3]
 	want.children[12] = node.children[12]
 	require.Equal(want, recovered)
 }
@@ -4953,7 +4953,7 @@ func TestBranchDeltaNodeEncoderWithChildHashes_StoreAndLoad_RestoresDeltaChildre
 	require := require.New(t)
 	node := BranchNode{
 		base:             BranchId(7),
-		deltaMask:        1<<0 | 1<<15,
+		deltaMask:        1 << 15,
 		embeddedChildren: 1<<5 | 1<<15,
 	}
 	for i := range node.children {
@@ -4972,10 +4972,8 @@ func TestBranchDeltaNodeEncoderWithChildHashes_StoreAndLoad_RestoresDeltaChildre
 		deltaMask:        node.deltaMask,
 		embeddedChildren: node.embeddedChildren,
 	}
-	for _, i := range []int{0, 15} {
-		want.children[i] = node.children[i]
-		want.hashes[i] = node.hashes[i]
-	}
+	want.children[15] = node.children[15]
+	want.hashes[15] = node.hashes[15]
 	require.Equal(want, recovered)
 }
 

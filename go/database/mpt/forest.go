@@ -725,6 +725,12 @@ func (s *Forest) getConfig() MptConfig {
 }
 
 func (s *Forest) getSharedNode(ref *NodeReference) (*shared.Shared[Node], error) {
+	return s.getSharedNodeInChain(ref, 0)
+}
+
+// getSharedNodeInChain is getSharedNode for a node that is the base of depth
+// deltas being loaded.
+func (s *Forest) getSharedNodeInChain(ref *NodeReference, depth int) (*shared.Shared[Node], error) {
 	res, found := s.nodeCache.Get(ref)
 	if found {
 		return res, nil
@@ -770,7 +776,7 @@ func (s *Forest) getSharedNode(ref *NodeReference) (*shared.Shared[Node], error)
 			// transfer mutex itself; a concurrent fetch of this delta yields
 			// the same content and is resolved when adding it to the cache.
 			s.nodeTransferMutex.Unlock()
-			e = s.loadDeltaBase(&value)
+			e = s.loadDeltaBase(&value, depth)
 			s.nodeTransferMutex.Lock()
 		}
 		node, err = &value, e
@@ -802,16 +808,19 @@ func (s *Forest) getSharedNode(ref *NodeReference) (*shared.Shared[Node], error)
 	return instance, nil
 }
 
-// loadDeltaBase completes a delta branch loaded from disk with the children
-// of its base.
-func (s *Forest) loadDeltaBase(node *BranchNode) error {
-	// Any other base is invalid; a delta as base could also form a cycle.
-	if !node.base.IsBranch() || node.base.IsDeltaBranch() {
-		return fmt.Errorf("delta base %v is not a full branch node", node.base)
+// loadDeltaBase completes a delta branch loaded from disk, which is the base
+// of depth deltas being loaded, with the children of its base.
+func (s *Forest) loadDeltaBase(node *BranchNode, depth int) error {
+	if !node.base.IsBranch() {
+		return fmt.Errorf("delta base %v is not a branch node", node.base)
+	}
+	// A longer chain is invalid and could be a cycle.
+	if node.base.IsDeltaBranch() && depth+1 >= deltaChainLimit {
+		return fmt.Errorf("delta base %v exceeds the delta chain limit", node.base)
 	}
 	// The base's hashes are copied, so hashing has to be excluded as well.
 	baseRef := NewNodeReference(node.base)
-	handle, err := s.getViewAccess(&baseRef)
+	handle, err := s.getViewAccessInChain(&baseRef, depth+1)
 	if err != nil {
 		return err
 	}
@@ -823,11 +832,12 @@ func (s *Forest) loadDeltaBase(node *BranchNode) error {
 func getAccess[H any](
 	f *Forest,
 	ref *NodeReference,
+	depth int,
 	getAccess func(*shared.Shared[Node]) H,
 	release func(H),
 	def H,
 ) (H, error) {
-	instance, err := f.getSharedNode(ref)
+	instance, err := f.getSharedNodeInChain(ref, depth)
 	if err != nil {
 		return def, err
 	}
@@ -837,7 +847,7 @@ func getAccess[H any](
 		// has not changed). This is not super efficient, and may be improved
 		// in the future by merging this functionality into called operations.
 		res := getAccess(instance)
-		if actual, err := f.getSharedNode(ref); err == nil && actual == instance {
+		if actual, err := f.getSharedNodeInChain(ref, depth); err == nil && actual == instance {
 			return res, nil
 		} else if err != nil {
 			release(res)
@@ -850,7 +860,7 @@ func getAccess[H any](
 }
 
 func (s *Forest) getReadAccess(ref *NodeReference) (shared.ReadHandle[Node], error) {
-	return getAccess(s, ref,
+	return getAccess(s, ref, 0,
 		func(s *shared.Shared[Node]) shared.ReadHandle[Node] {
 			return s.GetReadHandle()
 		},
@@ -862,7 +872,13 @@ func (s *Forest) getReadAccess(ref *NodeReference) (shared.ReadHandle[Node], err
 }
 
 func (s *Forest) getViewAccess(ref *NodeReference) (shared.ViewHandle[Node], error) {
-	return getAccess(s, ref,
+	return s.getViewAccessInChain(ref, 0)
+}
+
+// getViewAccessInChain is getViewAccess for a node that is the base of depth
+// deltas being loaded.
+func (s *Forest) getViewAccessInChain(ref *NodeReference, depth int) (shared.ViewHandle[Node], error) {
+	return getAccess(s, ref, depth,
 		func(s *shared.Shared[Node]) shared.ViewHandle[Node] {
 			return s.GetViewHandle()
 		},
@@ -874,7 +890,7 @@ func (s *Forest) getViewAccess(ref *NodeReference) (shared.ViewHandle[Node], err
 }
 
 func (s *Forest) getHashAccess(ref *NodeReference) (shared.HashHandle[Node], error) {
-	return getAccess(s, ref,
+	return getAccess(s, ref, 0,
 		func(s *shared.Shared[Node]) shared.HashHandle[Node] {
 			return s.GetHashHandle()
 		},
@@ -886,7 +902,7 @@ func (s *Forest) getHashAccess(ref *NodeReference) (shared.HashHandle[Node], err
 }
 
 func (s *Forest) getWriteAccess(ref *NodeReference) (shared.WriteHandle[Node], error) {
-	return getAccess(s, ref,
+	return getAccess(s, ref, 0,
 		func(n *shared.Shared[Node]) shared.WriteHandle[Node] {
 			// When gaining write access to nodes, they need to be touched to make sure
 			// modified nodes are at the head of the cache's LRU queue to be evicted last.

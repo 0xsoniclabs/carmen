@@ -581,14 +581,14 @@ func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
 			return nil, err
 		}
 		baseId := res.GetDeltaBase()
-		if !baseId.IsBranch() || baseId.IsDeltaBranch() {
-			return nil, fmt.Errorf("delta base %v is not a full branch node", baseId)
+		if !baseId.IsBranch() {
+			return nil, fmt.Errorf("delta base %v is not a branch node", baseId)
 		}
-		base, err := s.branches.Get(baseId.Index())
+		base, err := s.get(baseId)
 		if err != nil {
 			return nil, err
 		}
-		res.ApplyDeltaBase(&base)
+		res.ApplyDeltaBase(base.(*mpt.BranchNode))
 		return &res, nil
 	}
 	if id.IsBranch() {

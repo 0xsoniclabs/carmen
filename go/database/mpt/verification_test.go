@@ -457,7 +457,6 @@ func TestVerification_BranchDeltaWithInvalidBaseIsDetected(t *testing.T) {
 		"account":   func(base NodeId) NodeId { return AccountId(base.Index()) },
 		"extension": func(base NodeId) NodeId { return ExtensionId(base.Index()) },
 		"value":     func(base NodeId) NodeId { return ValueId(base.Index()) },
-		"delta":     func(base NodeId) NodeId { return DeltaBranchId(base.Index()) },
 	}
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -470,10 +469,25 @@ func TestVerification_BranchDeltaWithInvalidBaseIsDetected(t *testing.T) {
 				})
 
 				err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
-				require.ErrorContains(err, "is not a full branch node")
+				require.ErrorContains(err, "is not a branch node")
 			})
 		})
 	}
+}
+
+func TestVerification_BranchDeltaBeingItsOwnBaseIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		// The first delta of a new stock is the one at index 0.
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			node.base = DeltaBranchId(0)
+		})
+
+		err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
+		require.ErrorContains(err, "exceeds the delta chain limit")
+	})
 }
 
 func TestVerification_BranchDeltaWithMissingBaseIsDetected(t *testing.T) {
