@@ -273,7 +273,7 @@ func (t *transactionContext) HasEmptyStorage(addr Address) bool {
 	return false
 }
 
-func (t *transactionContext) Commit(revision state.Revision) error {
+func (t *transactionContext) Commit(revision Revision) error {
 	if t.state == nil {
 		return fmt.Errorf("transaction context is invalid")
 	}

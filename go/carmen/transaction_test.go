@@ -21,7 +21,7 @@ import (
 )
 
 func TestTransaction_Commit_EndsTransactionWithGivenRevision(t *testing.T) {
-	for revision := state.CANCUN; revision <= state.LatestRevision(); revision++ {
+	for revision := CANCUN; revision <= LatestRevision(); revision++ {
 		t.Run(fmt.Sprintf("revision_%d", revision), func(t *testing.T) {
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
@@ -44,7 +44,7 @@ func TestTransaction_Commit_EndsTransactionWithGivenRevision(t *testing.T) {
 func TestTransaction_Cannot_Commit_Twice(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockVmStateDB(ctrl)
-	stateDB.EXPECT().EndTransaction(state.LatestRevision())
+	stateDB.EXPECT().EndTransaction(LatestRevision())
 	stateDB.EXPECT().Check()
 
 	tx := &transactionContext{
@@ -54,11 +54,11 @@ func TestTransaction_Cannot_Commit_Twice(t *testing.T) {
 		state: stateDB,
 	}
 
-	if err := tx.Commit(state.LatestRevision()); err != nil {
+	if err := tx.Commit(LatestRevision()); err != nil {
 		t.Errorf("cannot commit transaction: %v", err)
 	}
 
-	if err := tx.Commit(state.LatestRevision()); err == nil {
+	if err := tx.Commit(LatestRevision()); err == nil {
 		t.Errorf("commit should fail")
 	}
 }
@@ -80,7 +80,7 @@ func TestTransaction_Cannot_Commit_After_Abort(t *testing.T) {
 		t.Errorf("cannot abort transaction: %v", err)
 	}
 
-	if err := tx.Commit(state.LatestRevision()); err == nil {
+	if err := tx.Commit(LatestRevision()); err == nil {
 		t.Errorf("commit should fail")
 	}
 }
@@ -187,7 +187,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 	stateDB.EXPECT().RevertToSnapshot(10)
 	stateDB.EXPECT().HasEmptyStorage(gomock.Any())
 
-	stateDB.EXPECT().EndTransaction(state.LatestRevision())
+	stateDB.EXPECT().EndTransaction(LatestRevision())
 	stateDB.EXPECT().Check()
 
 	tx := &transactionContext{
@@ -236,7 +236,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 	tx.Snapshot()
 	tx.RevertToSnapshot(10)
 
-	if err := tx.Commit(state.LatestRevision()); err != nil {
+	if err := tx.Commit(LatestRevision()); err != nil {
 		t.Errorf("cannot commit transaction: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestTransaction_Operations_Passthrough(t *testing.T) {
 func TestTransaction_AfterCommitAllOperationsAreNoops(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	stateDB := state.NewMockVmStateDB(ctrl)
-	stateDB.EXPECT().EndTransaction(state.LatestRevision())
+	stateDB.EXPECT().EndTransaction(LatestRevision())
 	stateDB.EXPECT().Check()
 
 	tx := &transactionContext{
@@ -255,7 +255,7 @@ func TestTransaction_AfterCommitAllOperationsAreNoops(t *testing.T) {
 		state: stateDB,
 	}
 
-	if err := tx.Commit(state.LatestRevision()); err != nil {
+	if err := tx.Commit(LatestRevision()); err != nil {
 		t.Errorf("cannot commit transaction: %v", err)
 	}
 

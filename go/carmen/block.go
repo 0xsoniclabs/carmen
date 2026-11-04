@@ -59,7 +59,7 @@ func (c *headBlockContext) BeginTransaction() (TransactionContext, error) {
 	}, nil
 }
 
-func (c *headBlockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+func (c *headBlockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	return runTransaction(c, revision, run)
 }
 
@@ -153,7 +153,7 @@ func (c *archiveBlockContext) BeginTransaction() (TransactionContext, error) {
 	}, nil
 }
 
-func (c *archiveBlockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+func (c *archiveBlockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	return runTransaction(c, revision, run)
 }
 
@@ -207,7 +207,7 @@ func (c *archiveBlockContext) Close() error {
 	return err
 }
 
-func runTransaction(blockContext blockContext, revision state.Revision, run func(TransactionContext) error) error {
+func runTransaction(blockContext blockContext, revision Revision, run func(TransactionContext) error) error {
 	ctxt, err := blockContext.BeginTransaction()
 	if err != nil {
 		return fmt.Errorf("failed to create transaction: %w", err)

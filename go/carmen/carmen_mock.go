@@ -14,7 +14,6 @@ import (
 	io "io"
 	reflect "reflect"
 
-	state "github.com/0xsoniclabs/carmen/go/state"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -255,7 +254,7 @@ func (mr *MockblockContextMockRecorder) BeginTransaction() *gomock.Call {
 }
 
 // RunTransaction mocks base method.
-func (m *MockblockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+func (m *MockblockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RunTransaction", revision, run)
 	ret0, _ := ret[0].(error)
@@ -336,7 +335,7 @@ func (mr *MockHeadBlockContextMockRecorder) Commit() *gomock.Call {
 }
 
 // RunTransaction mocks base method.
-func (m *MockHeadBlockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+func (m *MockHeadBlockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RunTransaction", revision, run)
 	ret0, _ := ret[0].(error)
@@ -438,7 +437,7 @@ func (mr *MockHistoricBlockContextMockRecorder) GetProof(address any, keys ...an
 }
 
 // RunTransaction mocks base method.
-func (m *MockHistoricBlockContext) RunTransaction(revision state.Revision, run func(TransactionContext) error) error {
+func (m *MockHistoricBlockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RunTransaction", revision, run)
 	ret0, _ := ret[0].(error)
@@ -562,7 +561,7 @@ func (mr *MockTransactionContextMockRecorder) ClearAccessList() *gomock.Call {
 }
 
 // Commit mocks base method.
-func (m *MockTransactionContext) Commit(revision state.Revision) error {
+func (m *MockTransactionContext) Commit(revision Revision) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Commit", revision)
 	ret0, _ := ret[0].(error)
