@@ -822,16 +822,22 @@ type BranchNode struct {
 	dirtyHashes      uint16            // a bit mask marking hashes as dirty; 0 .. clean, 1 .. dirty
 	embeddedChildren uint16            // a bit mask marking children as embedded; 0 .. not, 1 .. embedded
 	frozenChildren   uint16            // a bit mask marking frozen children; not persisted
-	// A delta branch is a clone of a frozen full branch, its base, that is
-	// persisted as the base ID and the children differing from it. In memory
-	// it holds all children, so only the encoders and the cloning code need
-	// to know about the base.
-	base      NodeId // the full branch this node is a delta of; empty if this is a full branch
-	deltaMask uint16 // a bit mask marking children differing from the base
+	// A delta branch is a clone of a frozen branch, its base, that is
+	// persisted as the base ID and the children differing from it. The base
+	// is a full branch or a delta itself, forming a chain ending in a full
+	// branch. In memory a delta holds all children, so only the encoders and
+	// the cloning code need to know about the base.
+	base        NodeId // the branch this node is a delta of; empty if this is a full branch
+	deltaMask   uint16 // a bit mask marking children differing from the base
+	chainLength uint8  // the number of deltas from the last full branch up to this node; not persisted
 }
 
 // deltaSlots is the number of children a delta branch can hold on disk.
-const deltaSlots = 2
+const deltaSlots = 1
+
+// deltaChainLimit is the maximum number of deltas between a full branch and
+// a delta, bounding the loads needed to complete a delta from disk.
+const deltaChainLimit = 16
 
 func (n *BranchNode) isDelta() bool {
 	return !n.base.IsEmpty()
@@ -856,6 +862,7 @@ func (n *BranchNode) ApplyDeltaBase(base *BranchNode) {
 
 // applyDeltaBase fills in all children not covered by the delta from the base.
 func (n *BranchNode) applyDeltaBase(base *BranchNode) {
+	n.chainLength = base.chainLength + 1
 	for i := range byte(16) {
 		if n.deltaMask&(1<<i) != 0 {
 			continue
@@ -872,9 +879,11 @@ func (n *BranchNode) applyDeltaBase(base *BranchNode) {
 }
 
 // cloneForChange creates a mutable copy of this frozen node able to hold a
-// change of the child at the given index, as a delta if the slots allow it.
+// change of the child at the given index: a delta sharing this node's base if
+// the slots allow it, a delta of this node if the chain limit allows it, or
+// a full branch otherwise.
 func (n *BranchNode) cloneForChange(manager NodeManager, thisRef *NodeReference, index byte) (NodeReference, shared.WriteHandle[Node], error) {
-	asDelta := !n.isDelta() || n.fitsDelta(index)
+	asDelta := n.fitsDelta(index) || n.chainLength < deltaChainLimit
 	create := manager.createBranch
 	if asDelta {
 		create = manager.createDeltaBranch
@@ -888,9 +897,11 @@ func (n *BranchNode) cloneForChange(manager NodeManager, thisRef *NodeReference,
 	if !asDelta {
 		newNode.base = EmptyId()
 		newNode.deltaMask = 0
-	} else if !n.isDelta() {
+		newNode.chainLength = 0
+	} else if !n.isDelta() || !n.fitsDelta(index) {
 		newNode.base = thisRef.Id()
 		newNode.deltaMask = 0
+		newNode.chainLength = n.chainLength + 1
 	}
 	if asDelta {
 		newNode.deltaMask |= 1 << index
@@ -993,6 +1004,7 @@ func (n *BranchNode) setNextNode(
 		*newNode = *n
 		newNode.base = EmptyId()
 		newNode.deltaMask = 0
+		newNode.chainLength = 0
 		n.nodeBase.Release()
 		if err := manager.release(thisRef); err != nil {
 			return NodeReference{}, false, err
@@ -1239,11 +1251,14 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 		errs = append(errs, fmt.Errorf("node %v has an insufficient number of child nodes: %d", thisRef.Id(), numChildren))
 	}
 	if n.isDelta() {
-		if !n.base.IsBranch() || n.base.IsDeltaBranch() {
+		if !n.base.IsBranch() {
 			errs = append(errs, fmt.Errorf("node %v has an invalid delta base %v", thisRef.Id(), n.base))
 		}
 		if bits.OnesCount16(n.deltaMask) > deltaSlots {
 			errs = append(errs, fmt.Errorf("node %v exceeds the delta slots: %016b", thisRef.Id(), n.deltaMask))
+		}
+		if n.chainLength > deltaChainLimit {
+			errs = append(errs, fmt.Errorf("node %v exceeds the delta chain limit: %d", thisRef.Id(), n.chainLength))
 		}
 	}
 	return errors.Join(errs...)

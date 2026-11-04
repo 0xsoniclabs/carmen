@@ -3890,7 +3890,7 @@ func BenchmarkArchiveFlush_Roots(b *testing.B) {
 	}
 }
 
-func TestArchiveTrie_Add_StoresClonedBranchesAsDeltasOfTheLastFullBranch(t *testing.T) {
+func TestArchiveTrie_Add_StoresClonedBranchesAsDeltaChains(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
@@ -3920,8 +3920,9 @@ func TestArchiveTrie_Add_StoresClonedBranchesAsDeltasOfTheLastFullBranch(t *test
 		return update
 	}
 
-	// Block 0 fills all root children, block 1 and 2 each change one child,
-	// block 3 changes three children in one block, exceeding the delta slots.
+	// Block 0 fills all root children, block 1 and 2 each change a different
+	// child, chaining a delta on the delta, block 3 changes three children in
+	// one block, exceeding the delta slots.
 	all := make([]common.Address, 0, 256)
 	for _, addrs := range byNibble {
 		all = append(all, addrs...)
@@ -3948,7 +3949,7 @@ func TestArchiveTrie_Add_StoresClonedBranchesAsDeltasOfTheLastFullBranch(t *test
 	require.True(rootOf(2).IsDeltaBranch())
 	require.False(rootOf(3).IsDeltaBranch())
 	require.Equal(rootOf(0), baseOf(rootOf(1)))
-	require.Equal(rootOf(0), baseOf(rootOf(2)))
+	require.Equal(rootOf(1), baseOf(rootOf(2)))
 	require.NoError(archive.Close())
 
 	// Deltas are completed from their base when loaded from disk.
@@ -3972,6 +3973,72 @@ func TestArchiveTrie_Add_StoresClonedBranchesAsDeltasOfTheLastFullBranch(t *test
 				require.NoError(err)
 				require.Equal(amount.New(want), balance)
 			}
+		}
+	}
+	require.NoError(archive.Close())
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
+
+func TestArchiveTrie_Add_StartsANewFullBranchWhenTheDeltaChainReachesTheLimit(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+	require.NoError(err)
+
+	// Two accounts under different root children; alternating updates to
+	// them do not fit the delta slots, so every block adds a link to the chain.
+	addrs := [2]common.Address{{1}, {2}}
+	for AddressToNibblePath(addrs[0], archive.forest)[0] == AddressToNibblePath(addrs[1], archive.forest)[0] {
+		addrs[1][0]++
+	}
+	const blocks = 2*(deltaChainLimit+1) + 1
+	balances := [2]amount.Amount{amount.New(1), amount.New(1)}
+	want := make([][2]amount.Amount, blocks)
+	require.NoError(archive.Add(0, common.Update{Balances: []common.BalanceUpdate{
+		{Account: addrs[0], Balance: balances[0]},
+		{Account: addrs[1], Balance: balances[1]},
+	}}, nil))
+	want[0] = balances
+	for block := uint64(1); block < blocks; block++ {
+		balances[block%2] = amount.New(block + 1)
+		require.NoError(archive.Add(block, common.Update{Balances: []common.BalanceUpdate{
+			{Account: addrs[block%2], Balance: balances[block%2]},
+		}}, nil))
+		want[block] = balances
+	}
+
+	rootOf := func(block uint64) NodeId {
+		root, err := archive.roots.get(block)
+		require.NoError(err)
+		return root.NodeRef.Id()
+	}
+	baseOf := func(id NodeId) NodeId {
+		ref := NewNodeReference(id)
+		handle, err := archive.forest.getReadAccess(&ref)
+		require.NoError(err)
+		defer handle.Release()
+		return handle.Get().(*BranchNode).base
+	}
+	require.False(rootOf(0).IsDeltaBranch())
+	for block := uint64(1); block < blocks; block++ {
+		if block%(deltaChainLimit+1) == 0 {
+			require.False(rootOf(block).IsDeltaBranch())
+		} else {
+			require.True(rootOf(block).IsDeltaBranch())
+			require.Equal(rootOf(block-1), baseOf(rootOf(block)))
+		}
+	}
+	require.NoError(archive.Close())
+
+	// Deltas are completed through the chain when loaded from disk.
+	archive, err = OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+	require.NoError(err)
+	for block := range uint64(blocks) {
+		for i, addr := range addrs {
+			balance, err := archive.GetBalance(block, addr)
+			require.NoError(err)
+			require.Equal(want[block][i], balance)
 		}
 	}
 	require.NoError(archive.Close())
