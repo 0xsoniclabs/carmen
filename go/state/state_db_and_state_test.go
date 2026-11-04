@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -230,6 +231,64 @@ func TestStagedBlock_CommitAndRollback_DecidingTwiceIsRejected(t *testing.T) {
 		require.Error(t, err, "a rolled back block must not be committed")
 	})
 }
+func TestStateDB_TotalSupply_MatchesSumOfBalancesOverRandomBlocks(t *testing.T) {
+	for _, config := range initStates() {
+		t.Run(config.name(), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			s, err := config.createState(t.TempDir())
+			require.NoError(err)
+			db := state.CreateStateDBUsing(s)
+			defer func() {
+				require.NoError(db.Close())
+			}()
+			skipIfTotalSupplyIsNotSupported(t, db)
+
+			rnd := rand.New(rand.NewPCG(42, 42))
+			for block := uint64(1); block <= 300; block++ {
+				staged := stageRandomBalanceBlock(t, rnd, db, block)
+				done, err := staged.Commit()
+				require.NoError(err)
+				require.NoError(done.Wait())
+				requireTotalSupplyIsSumOfBalances(t, s, db)
+			}
+		})
+	}
+}
+
+func TestStateDB_TotalSupply_StaysConsistentOverRandomCommitsAndRollbacks(t *testing.T) {
+	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, s state.State, db state.StateDB) {
+		require := require.New(t)
+		skipIfTotalSupplyIsNotSupported(t, db)
+
+		rnd := rand.New(rand.NewPCG(42, 42))
+		pending := []state.StagedBlock{}
+		for block := uint64(1); block <= 300; block++ {
+			switch rnd.IntN(5) {
+			case 0:
+				// Roll back one or more of the most recent blocks, newest first.
+				for range rnd.IntN(len(pending) + 1) {
+					last := len(pending) - 1
+					require.NoError(pending[last].Rollback())
+					pending = pending[:last]
+					requireTotalSupplyIsSumOfBalances(t, s, db)
+				}
+			case 1:
+				for _, staged := range pending {
+					done, err := staged.Commit()
+					require.NoError(err)
+					require.NoError(done.Wait())
+				}
+				pending = pending[:0]
+				requireTotalSupplyIsSumOfBalances(t, s, db)
+			default:
+				pending = append(pending, stageRandomBalanceBlock(t, rnd, db, block))
+				requireTotalSupplyIsSumOfBalances(t, s, db)
+			}
+		}
+	})
+}
+
 func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 	addr1 := common.Address{1}
 	addr2 := common.Address{2}
@@ -1280,4 +1339,74 @@ func stageNonce(t *testing.T, db state.StateDB, address common.Address, block ui
 	staged, err := db.EndBlock(block)
 	require.NoError(t, err)
 	return staged
+}
+
+// totalSupplyTestAddresses are the accounts touched by the total supply tests.
+var totalSupplyTestAddresses = func() []common.Address {
+	addresses := make([]common.Address, 30)
+	for i := range addresses {
+		addresses[i] = common.Address{byte(i + 1)}
+	}
+	return addresses
+}()
+
+// skipIfTotalSupplyIsNotSupported skips the test for states without total
+// supply. On the others, the call starts tracking the supply.
+func skipIfTotalSupplyIsNotSupported(t *testing.T, db state.StateDB) {
+	t.Helper()
+	if _, err := db.TotalSupply(); errors.Is(err, state.TotalSupplyNotSupported) {
+		t.Skip("total supply not supported")
+	}
+}
+
+// stageRandomBalanceBlock stages a block of random balance, nonce and code
+// changes on the total supply test accounts.
+func stageRandomBalanceBlock(t *testing.T, rnd *rand.Rand, db state.StateDB, block uint64) state.StagedBlock {
+	t.Helper()
+	// Storage is left out: rolling back a block that empties an account cannot
+	// restore its storage, which real blocks never trigger (see
+	// MptState.RevertLastBlock), and storage does not affect the supply.
+	db.BeginBlock()
+	for range 1 + rnd.IntN(5) {
+		db.BeginTransaction()
+		for range 1 + rnd.IntN(10) {
+			address := totalSupplyTestAddresses[rnd.IntN(len(totalSupplyTestAddresses))]
+			switch rnd.IntN(6) {
+			case 0:
+				// Deletes the account at the end of the block if it has no nonce
+				// and no code.
+				db.SubBalance(address, db.GetBalance(address))
+			case 1:
+				balance := db.GetBalance(address)
+				if !balance.IsZero() {
+					db.SubBalance(address, amount.New(rnd.Uint64N(balance.Uint64())+1))
+				}
+			case 2:
+				db.SetNonce(address, rnd.Uint64N(2))
+			case 3:
+				db.SetCode(address, []byte{byte(rnd.IntN(3))})
+			default:
+				db.AddBalance(address, amount.New(rnd.Uint64N(1_000_000)))
+			}
+		}
+		db.EndTransaction()
+	}
+	staged, err := db.EndBlock(block)
+	require.NoError(t, err)
+	return staged
+}
+
+// requireTotalSupplyIsSumOfBalances checks the total supply against the
+// balances of the total supply test accounts.
+func requireTotalSupplyIsSumOfBalances(t *testing.T, s state.State, db state.StateDB) {
+	t.Helper()
+	want := amount.New()
+	for _, address := range totalSupplyTestAddresses {
+		balance, err := s.GetBalance(address)
+		require.NoError(t, err)
+		want = amount.Add(want, balance)
+	}
+	got, err := db.TotalSupply()
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }
