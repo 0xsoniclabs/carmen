@@ -26,12 +26,14 @@ import (
 //
 //   - the value is 0 ... empty node
 //   - the value has a binary suffix of 0 ... branch node
+//   - a branch node with bit 47 set ... delta branch node
 //   - the value has a binary suffix of 01 ... value node
 //   - the value has a binary suffix of 011 ... account node
 //   - the value has a binary suffix of 111 ... extension node
 //
-// This allows to address 2^63 different branch nodes, 2^62 different values
-// and 2^61 account and extension nodes, sufficient for any foreseeable future.
+// This allows to address 2^46 different branch nodes of each kind, 2^62
+// different values and 2^61 account and extension nodes, sufficient for any
+// foreseeable future.
 type NodeId uint64
 
 // EmptyId returns the node ID representing the empty node.
@@ -42,6 +44,16 @@ func EmptyId() NodeId {
 // BranchId returns the NodeID of the branch node with the given index.
 func BranchId(index uint64) NodeId {
 	return NodeId((index + 1) << 1)
+}
+
+// deltaBranchFlag marks a branch node stored as a delta of a base branch.
+// The bit is within the 48 bits of the on-disk id encoding and was never set
+// by earlier versions, keeping existing databases readable.
+const deltaBranchFlag = NodeId(1) << 47
+
+// DeltaBranchId returns the NodeID of the delta branch node with the given index.
+func DeltaBranchId(index uint64) NodeId {
+	return BranchId(index) | deltaBranchFlag
 }
 
 // ExtensionId returns the NodeID of the extension node with the given index.
@@ -64,9 +76,14 @@ func (n NodeId) IsEmpty() bool {
 	return n == 0
 }
 
-// IsBranch is true if node n is addressing a branch node.
+// IsBranch is true if node n is addressing a branch node, including delta branches.
 func (n NodeId) IsBranch() bool {
 	return !n.IsEmpty() && (n&0b1 == 0b0)
+}
+
+// IsDeltaBranch is true if node n is addressing a branch node stored as a delta.
+func (n NodeId) IsDeltaBranch() bool {
+	return n.IsBranch() && n&deltaBranchFlag != 0
 }
 
 // IsExtension is true if node n is addressing an extension node.
@@ -87,7 +104,7 @@ func (n NodeId) IsValue() bool {
 // Index returns the index of the addressed node type.
 func (n NodeId) Index() uint64 {
 	if n.IsBranch() {
-		return uint64(n>>1) - 1
+		return uint64((n&^deltaBranchFlag)>>1) - 1
 	}
 	if n.IsValue() {
 		return uint64(n >> 2)
@@ -101,6 +118,9 @@ func (n NodeId) String() string {
 	}
 	if n.IsAccount() {
 		return fmt.Sprintf("A-%d", n.Index())
+	}
+	if n.IsDeltaBranch() {
+		return fmt.Sprintf("D-%d", n.Index())
 	}
 	if n.IsBranch() {
 		return fmt.Sprintf("B-%d", n.Index())
