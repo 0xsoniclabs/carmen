@@ -180,8 +180,8 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 				base := NewNodeReference(n.base)
 				if err := checkId(&base); err != nil {
 					errs = append(errs, err)
-				} else if n.base.IsDeltaBranch() {
-					errs = append(errs, fmt.Errorf("delta node has a delta as base: %v", n.base))
+				} else if n.chainLength > deltaChainLimit {
+					errs = append(errs, fmt.Errorf("delta node exceeds the chain limit: %d", n.chainLength))
 				}
 			}
 			return errors.Join(errs...)
@@ -853,7 +853,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 }
 
 // deltaBranchStock is a stock of delta branches completing every loaded node
-// with the children of its base.
+// with the children of its base, following the chain of deltas to the full branch.
 type deltaBranchStock struct {
 	stock.Stock[uint64, BranchNode]
 	branches stock.Stock[uint64, BranchNode]
@@ -864,7 +864,12 @@ func (s deltaBranchStock) Get(index uint64) (BranchNode, error) {
 	if err != nil {
 		return BranchNode{}, err
 	}
-	base, err := s.branches.Get(node.base.Index())
+	var base BranchNode
+	if node.base.IsDeltaBranch() {
+		base, err = s.Get(node.base.Index())
+	} else {
+		base, err = s.branches.Get(node.base.Index())
+	}
 	if err != nil {
 		return BranchNode{}, err
 	}

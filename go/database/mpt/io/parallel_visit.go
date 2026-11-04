@@ -580,11 +580,11 @@ func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		base, err := s.branches.Get(res.GetDeltaBase().Index())
+		base, err := s.get(res.GetDeltaBase())
 		if err != nil {
 			return nil, err
 		}
-		res.ApplyDeltaBase(&base)
+		res.ApplyDeltaBase(base.(*mpt.BranchNode))
 		return &res, nil
 	}
 	if id.IsBranch() {
