@@ -466,6 +466,33 @@ func (s *Forest) VisitTrie(rootRef *NodeReference, mode AccessMode, visitor Node
 	return err
 }
 
+func (s *Forest) VisitNodes(kinds NodeKinds, visitor NodeVisitor) error {
+	visits := []struct {
+		kind  NodeKinds
+		visit func() (bool, error)
+	}{
+		{AccountNodes, func() (bool, error) { return visitStock(s.accounts, AccountId, visitor) }},
+		{BranchNodes, func() (bool, error) { return visitStock(s.branches, BranchId, visitor) }},
+		{ExtensionNodes, func() (bool, error) { return visitStock(s.extensions, ExtensionId, visitor) }},
+		{ValueNodes, func() (bool, error) { return visitStock(s.values, ValueId, visitor) }},
+	}
+	for _, v := range visits {
+		if kinds&v.kind == 0 {
+			continue
+		}
+		aborted, err := v.visit()
+		if err != nil {
+			err = fmt.Errorf("error during node visit: %w", err)
+			s.addError(err)
+			return err
+		}
+		if aborted {
+			return nil
+		}
+	}
+	return nil
+}
+
 func (s *Forest) updateHashesFor(ref *NodeReference) (common.Hash, *NodeHashes, error) {
 	hash, hints, err := s.hasher.updateHashes(ref, s)
 	if err != nil {
@@ -1098,4 +1125,29 @@ func ReadForestMetadata(filename string) (ForestMetadata, bool, error) {
 		return meta, false, err
 	}
 	return meta, true, nil
+}
+
+// visitStock visits every node stored in the given stock and reports whether
+// the visitor aborted the visit.
+func visitStock[N any, P interface {
+	*N
+	Node
+}](nodes stock.Stock[uint64, N], toId func(uint64) NodeId, visitor NodeVisitor) (bool, error) {
+	ids, err := nodes.GetIds()
+	if err != nil {
+		return false, err
+	}
+	for i := ids.GetLowerBound(); i < ids.GetUpperBound(); i++ {
+		if !ids.Contains(i) {
+			continue
+		}
+		node, err := nodes.Get(i)
+		if err != nil {
+			return false, err
+		}
+		if visitor.Visit(P(&node), NodeInfo{Id: toId(i)}) == VisitResponseAbort {
+			return true, nil
+		}
+	}
+	return false, nil
 }

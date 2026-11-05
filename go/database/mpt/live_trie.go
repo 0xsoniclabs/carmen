@@ -42,6 +42,9 @@ type LiveTrie struct {
 	// The sum of all account balances in this trie, maintained incrementally
 	// by the owning MptState. It is nil if the value is not known (yet).
 	totalSupply *amount.Amount
+	// The storage mode of the forest. In immutable mode, the forest also
+	// retains the nodes of older tries.
+	storageMode StorageMode
 }
 
 // OpenInMemoryLiveTrie loads trie information from the given directory and
@@ -130,6 +133,7 @@ func makeTrie(
 		metaDataFile: metaDataFile,
 		forest:       forest,
 		totalSupply:  totalSupply,
+		storageMode:  forest.storageMode,
 	}, nil
 }
 
@@ -191,6 +195,16 @@ func (s *LiveTrie) setHashes(hashes *NodeHashes) error {
 
 func (s *LiveTrie) VisitTrie(mode AccessMode, visitor NodeVisitor) error {
 	return s.forest.VisitTrie(&s.root, mode, visitor)
+}
+
+// VisitNodes visits every stored node of the given kinds in storage order.
+// The trie is flushed first, so all of its modifications are visible.
+func (s *LiveTrie) VisitNodes(kinds NodeKinds, visitor NodeVisitor) error {
+	// Flushing also updates the hashes, which storing nodes requires.
+	if err := s.Flush(); err != nil {
+		return err
+	}
+	return s.forest.VisitNodes(kinds, visitor)
 }
 
 // VisitAccountStorage visits the storage nodes of an account with the given address.

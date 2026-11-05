@@ -925,6 +925,51 @@ func TestForest_Flush_DoesNotAccumulateRecordedErrors(t *testing.T) {
 	}
 }
 
+func TestForest_VisitNodes_VisitsStoredNodesOfSelectedKinds(t *testing.T) {
+	tests := map[string]struct {
+		kinds          NodeKinds
+		accounts, vals int
+	}{
+		"none":                {kinds: 0},
+		"accounts":            {kinds: AccountNodes, accounts: 3},
+		"values":              {kinds: ValueNodes, vals: 2},
+		"accounts and values": {kinds: AccountNodes | ValueNodes, accounts: 3, vals: 2},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			forest := newForestWithAccountsAndValues(t)
+
+			accounts, vals := 0, 0
+			require.NoError(forest.VisitNodes(test.kinds, MakeVisitor(func(node Node, info NodeInfo) VisitResponse {
+				switch node.(type) {
+				case *AccountNode:
+					require.True(info.Id.IsAccount())
+					accounts++
+				case *ValueNode:
+					require.True(info.Id.IsValue())
+					vals++
+				}
+				return VisitResponseContinue
+			})))
+			require.Equal(test.accounts, accounts)
+			require.Equal(test.vals, vals)
+		})
+	}
+}
+
+func TestForest_VisitNodes_AbortStopsTheVisit(t *testing.T) {
+	require := require.New(t)
+	forest := newForestWithAccountsAndValues(t)
+
+	visited := 0
+	require.NoError(forest.VisitNodes(AccountNodes|ValueNodes, MakeVisitor(func(Node, NodeInfo) VisitResponse {
+		visited++
+		return VisitResponseAbort
+	})))
+	require.Equal(1, visited)
+}
+
 func TestForest_flushNode_EmptyId(t *testing.T) {
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
@@ -2855,4 +2900,29 @@ func TestForest_RecoversNodesFromWriteBuffer(t *testing.T) {
 		t.Fatalf("unexpected node: got %p, want %p", restored, original)
 	}
 	handle.Release()
+}
+
+// newForestWithAccountsAndValues creates a flushed forest holding three
+// accounts, one of which has two storage slots.
+func newForestWithAccountsAndValues(t *testing.T) *Forest {
+	t.Helper()
+	require := require.New(t)
+	forestConfig := ForestConfig{Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenInMemoryForest(t.TempDir(), S5LiveConfig, forestConfig)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(forest.Close()) })
+
+	root := NewNodeReference(EmptyId())
+	for i := range 3 {
+		root, err = forest.SetAccountInfo(&root, common.Address{byte(i)}, AccountInfo{Nonce: common.ToNonce(1)})
+		require.NoError(err)
+	}
+	for i := range 2 {
+		root, err = forest.SetValue(&root, common.Address{0}, common.Key{byte(i)}, common.Value{1})
+		require.NoError(err)
+	}
+	_, _, err = forest.updateHashesFor(&root)
+	require.NoError(err)
+	require.NoError(forest.Flush())
+	return forest
 }

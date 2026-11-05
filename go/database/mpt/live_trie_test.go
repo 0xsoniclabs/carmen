@@ -329,6 +329,36 @@ func TestLiveTrie_VisitAccount(t *testing.T) {
 	}
 }
 
+func TestLiveTrie_VisitNodes_SeesUnflushedChanges(t *testing.T) {
+	tests := map[string]func(directory string, config MptConfig, cacheConfig NodeCacheConfig) (*LiveTrie, error){
+		"memory": OpenInMemoryLiveTrie,
+		"file":   OpenFileLiveTrie,
+	}
+	for name, open := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			trie, err := open(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+			require.NoError(err)
+			defer func() { require.NoError(trie.Close()) }()
+
+			for i := range 3 {
+				require.NoError(trie.SetAccountInfo(common.Address{byte(i)}, AccountInfo{Balance: amount.New(uint64(i + 1))}))
+			}
+			require.NoError(trie.Flush())
+			// Changes after the last flush must be visible, deleted accounts not.
+			require.NoError(trie.SetAccountInfo(common.Address{0}, AccountInfo{}))
+			require.NoError(trie.SetAccountInfo(common.Address{1}, AccountInfo{Balance: amount.New(20)}))
+
+			balances := []amount.Amount{}
+			require.NoError(trie.VisitNodes(AccountNodes, MakeVisitor(func(node Node, _ NodeInfo) VisitResponse {
+				balances = append(balances, node.(*AccountNode).Info().Balance)
+				return VisitResponseContinue
+			})))
+			require.ElementsMatch([]amount.Amount{amount.New(20), amount.New(3)}, balances)
+		})
+	}
+}
+
 func TestLiveTrie_Cannot_Flush_Metadata(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
