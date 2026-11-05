@@ -314,6 +314,11 @@ func TestState_CreateWitnessProof_ReturnsNotSupportedError(t *testing.T) {
 	require.ErrorContains(t, err, "witness proof not supported yet")
 }
 
+func TestState_TotalSupply_IsNotSupported(t *testing.T) {
+	_, err := newState().TotalSupply()
+	require.ErrorIs(t, err, state.TotalSupplyNotSupported)
+}
+
 func TestState_Export_PanicsAsNotImplemented(t *testing.T) {
 	require := require.New(t)
 	state := newState()

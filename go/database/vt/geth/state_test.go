@@ -149,3 +149,8 @@ func TestState_ProducesConsistentHash(t *testing.T) {
 	require.Equal(hashes[0], hashes[1])
 	require.Equal(hashes[1], hashes[2])
 }
+
+func TestState_TotalSupply_IsNotSupported(t *testing.T) {
+	_, err := (&verkleState{}).TotalSupply()
+	require.ErrorIs(t, err, state.TotalSupplyNotSupported)
+}

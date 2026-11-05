@@ -24,6 +24,7 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/0xsoniclabs/carmen/go/database/mpt"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -1619,6 +1620,56 @@ func TestGoState_OperationsAreRefusedOnAPoisonedState(t *testing.T) {
 	}
 }
 
+func TestGoState_TotalSupply_S5SumsBalances(t *testing.T) {
+	mptState, err := mpt.OpenGoMemoryState(t.TempDir(), mpt.S5LiveConfig, mpt.NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	require.NoError(t, mptState.SetBalance(common.Address{1}, amount.New(5)))
+	require.NoError(t, mptState.SetBalance(common.Address{2}, amount.New(7)))
+
+	s := newGoState(&goSchema5{MptState: mptState}, nil, nil)
+	defer func() { require.NoError(t, s.Close()) }()
+
+	total, err := s.TotalSupply()
+	require.NoError(t, err)
+	require.Equal(t, amount.New(12), total)
+	require.NoError(t, s.Check())
+}
+
+func TestGoState_TotalSupply_LiveDBWithoutSupportIsNotSupported(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	live := state.NewMockLiveDB(ctrl)
+	live.EXPECT().Flush()
+	live.EXPECT().Close()
+
+	s := newGoState(live, nil, nil)
+	defer func() { require.NoError(t, s.Close()) }()
+
+	_, err := s.TotalSupply()
+	require.ErrorIs(t, err, state.TotalSupplyNotSupported)
+}
+
+func TestGoState_TotalSupply_PreviousStateErrorIsReported(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	live := state.NewMockLiveDB(ctrl)
+
+	issue := errors.New("test issue")
+	goState := &GoState{live: live}
+	goState.addStateError(issue)
+
+	_, err := goState.TotalSupply()
+	require.ErrorIs(t, err, issue)
+}
+
+func TestGoState_TotalSupply_LiveDBErrorIsRecordedAsStateError(t *testing.T) {
+	require := require.New(t)
+	issue := errors.New("test issue")
+	goState := &GoState{live: failingTotalSupplyLiveDB{err: issue}}
+
+	_, err := goState.TotalSupply()
+	require.ErrorIs(err, issue)
+	require.ErrorIs(goState.getStateError(), issue)
+}
+
 func TestUpdate_Update_Normalised_Seen_In_Archive(t *testing.T) {
 	expected := common.Update{
 		Slots: []common.SlotUpdate{
@@ -1701,4 +1752,14 @@ type countingReleaser struct {
 
 func (r *countingReleaser) Release() {
 	r.releases++
+}
+
+// failingTotalSupplyLiveDB is a LiveDB whose total supply always fails.
+type failingTotalSupplyLiveDB struct {
+	state.LiveDB
+	err error
+}
+
+func (l failingTotalSupplyLiveDB) TotalSupply() (amount.Amount, error) {
+	return amount.New(), l.err
 }

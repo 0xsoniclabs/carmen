@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -102,4 +103,15 @@ func TestSyncedStagedBlock_DecidesUnderTheStateLock(t *testing.T) {
 			tc.decide(block)
 		})
 	}
+}
+
+func TestSyncedState_TotalSupply_ForwardsResultOfInnerState(t *testing.T) {
+	require := require.New(t)
+	issue := errors.New("test issue")
+	inner := NewMockState(gomock.NewController(t))
+	inner.EXPECT().TotalSupply().Return(amount.New(5), issue)
+
+	total, err := WrapIntoSyncedState(inner).TotalSupply()
+	require.ErrorIs(err, issue)
+	require.Equal(amount.New(5), total)
 }

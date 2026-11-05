@@ -165,6 +165,11 @@ func TestState_ArchiveState_FailingOperation_InvalidatesArchive(t *testing.T) {
 	}
 }
 
+func TestArchiveState_TotalSupply_IsNotSupported(t *testing.T) {
+	_, err := (&ArchiveState{}).TotalSupply()
+	require.ErrorIs(t, err, state.TotalSupplyNotSupported)
+}
+
 func TestArchiveState_Export_ErrorsAreCaught(t *testing.T) {
 	injectedErr := errors.New("injectedError")
 	tests := []struct {

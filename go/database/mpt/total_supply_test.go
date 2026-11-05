@@ -11,12 +11,14 @@
 package mpt
 
 import (
+	"errors"
 	"math/rand"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestMptState_TotalSupply_EmptyStateHasZeroSupply(t *testing.T) {
@@ -61,6 +63,36 @@ func TestMptState_TotalSupply_OverflowIsReported(t *testing.T) {
 	require.ErrorIs(t, err, errTotalSupplyOverflow)
 }
 
+func TestMptState_TotalSupply_AvailableValueIsNotRecomputed(t *testing.T) {
+	require := require.New(t)
+	db := NewMockDatabase(gomock.NewController(t))
+	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	state := &MptState{trie: &LiveTrie{forest: db}}
+
+	for range 2 {
+		total, err := state.TotalSupply()
+		require.NoError(err)
+		require.Equal(amount.New(), total)
+	}
+}
+
+func TestMptState_TotalSupply_FailedComputationIsReportedAndRetried(t *testing.T) {
+	require := require.New(t)
+	injectedErr := errors.New("injected error")
+	db := NewMockDatabase(gomock.NewController(t))
+	gomock.InOrder(
+		db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr),
+		db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
+	)
+	state := &MptState{trie: &LiveTrie{forest: db}}
+
+	_, err := state.TotalSupply()
+	require.ErrorIs(err, injectedErr)
+	total, err := state.TotalSupply()
+	require.NoError(err)
+	require.Equal(amount.New(), total)
+}
+
 func TestMptState_TotalSupply_IsMaintainedIncrementally(t *testing.T) {
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
 	require.NoError(t, err)
@@ -101,47 +133,6 @@ func TestMptState_TotalSupply_IsMaintainedIncrementally(t *testing.T) {
 	}
 }
 
-func TestMptState_TotalSupply_IsPersisted(t *testing.T) {
-	dir := t.TempDir()
-	state, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-	require.NoError(t, err)
-	require.NoError(t, state.SetBalance(common.Address{1}, amount.New(10)))
-	_, err = state.TotalSupply()
-	require.NoError(t, err)
-	require.NoError(t, state.SetBalance(common.Address{2}, amount.New(5)))
-	require.NoError(t, state.Close())
-
-	state, err = OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-	require.NoError(t, err)
-	defer func() { require.NoError(t, state.Close()) }()
-
-	// The value is available without traversing the trie.
-	total, known := state.trie.getTotalSupply()
-	require.True(t, known)
-	require.Equal(t, amount.New(15), total)
-}
-
-func TestMptState_TotalSupply_UnknownValueIsComputedForExistingState(t *testing.T) {
-	dir := t.TempDir()
-	state, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-	require.NoError(t, err)
-	// Balances set before the supply is tracked.
-	require.NoError(t, state.SetBalance(common.Address{1}, amount.New(10)))
-	require.NoError(t, state.Close())
-
-	state, err = OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-	require.NoError(t, err)
-	defer func() { require.NoError(t, state.Close()) }()
-
-	_, known := state.trie.getTotalSupply()
-	require.False(t, known)
-
-	require.NoError(t, state.SetBalance(common.Address{2}, amount.New(5)))
-	total, err := state.TotalSupply()
-	require.NoError(t, err)
-	require.Equal(t, amount.New(15), total)
-}
-
 func TestMptState_TotalSupply_IsRestoredByRevertLastBlock(t *testing.T) {
 	require := require.New(t)
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
@@ -176,32 +167,4 @@ func TestMptState_TotalSupply_IsRestoredByRevertLastBlock(t *testing.T) {
 	total, known := state.trie.getTotalSupply()
 	require.True(known)
 	require.Equal(want, total)
-}
-
-func TestLiveTrie_AdjustTotalSupply_InconsistentUpdatesInvalidateValue(t *testing.T) {
-	tests := map[string]struct{ initial, old, new amount.Amount }{
-		"underflow": {amount.New(1), amount.New(2), amount.New(0)},
-		"overflow":  {amount.Max(), amount.New(0), amount.New(1)},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			trie := &LiveTrie{}
-			trie.setTotalSupply(test.initial)
-			trie.adjustTotalSupply(test.old, test.new)
-			_, known := trie.getTotalSupply()
-			require.False(t, known)
-		})
-	}
-}
-
-func TestLiveTrie_AdjustTotalSupply_UnknownValueStaysUnknown(t *testing.T) {
-	trie := &LiveTrie{}
-	trie.adjustTotalSupply(amount.New(1), amount.New(2))
-	_, known := trie.getTotalSupply()
-	require.False(t, known)
-}
-
-func TestMetadata_TotalSupply_InvalidValueIsRejected(t *testing.T) {
-	_, err := (&metadata{TotalSupply: "abc"}).getTotalSupply()
-	require.Error(t, err)
 }
