@@ -594,6 +594,18 @@ func TestVerifyFileForest_PassingNilAsObserverDoesNotFail(t *testing.T) {
 	})
 }
 
+func TestVerifyFileForest_IncorrectTotalSupplyIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		incorrect := amount.New(N - 1)
+		checkSupply := func(source *verificationNodeSource, observer VerificationObserver) error {
+			return verifyTotalSupply(source, incorrect, observer)
+		}
+		err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}, checkSupply)
+		require.ErrorContains(err, "inconsistent total supply")
+	})
+}
+
 func TestVerification_DifferentExtraHashInCodeFileIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
 		testHash := common.Keccak256([]byte{3})
@@ -728,7 +740,12 @@ func TestVerification_VerifyValidMptState(t *testing.T) {
 
 func TestVerification_CanInterrupt(t *testing.T) {
 	type verifyFunc func(context.Context, string, MptConfig, iter_utils.ResultSeq2[uint64, Root], VerificationObserver) error
-	tests := map[string]verifyFunc{"VerifyMptState": VerifyMptState, "VerifyFileForest": verifyFileForest}
+	tests := map[string]verifyFunc{
+		"VerifyMptState": VerifyMptState,
+		"VerifyFileForest": func(ctx context.Context, directory string, config MptConfig, roots iter_utils.ResultSeq2[uint64, Root], observer VerificationObserver) error {
+			return verifyFileForest(ctx, directory, config, roots, observer)
+		},
+	}
 
 	for name, verify := range tests {
 		runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
@@ -844,6 +861,7 @@ func modifyNode[N any](t *testing.T, directory string, encoder stock.ValueEncode
 	}
 }
 
+// fillTestForest initializes a forest with N accounts, each of them with N storage values
 func fillTestForest(dir string, config MptConfig) (roots []Root, err error) {
 
 	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
@@ -855,7 +873,7 @@ func fillTestForest(dir string, config MptConfig) (roots []Root, err error) {
 	root := NewNodeReference(EmptyId())
 	for i := range N {
 		addr := common.Address{byte(i)}
-		root, err = forest.SetAccountInfo(&root, addr, AccountInfo{Nonce: common.ToNonce(1), CodeHash: common.Keccak256([]byte{1})})
+		root, err = forest.SetAccountInfo(&root, addr, AccountInfo{Nonce: common.ToNonce(1), Balance: amount.New(uint64(1)), CodeHash: common.Keccak256([]byte{1})})
 		if err != nil {
 			return nil, err
 		}

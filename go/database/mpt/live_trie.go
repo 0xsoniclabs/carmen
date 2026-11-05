@@ -96,7 +96,16 @@ func VerifyFileLiveTrie(ctx context.Context, directory string, config MptConfig,
 		NodeRef: NewNodeReference(metadata.RootNode),
 		Hash:    metadata.RootHash,
 	}}))
-	return verifyFileForest(ctx, directory, config, roots, observer)
+	totalSupply, err := metadata.getTotalSupply()
+	if err != nil {
+		return err
+	}
+	if totalSupply == nil {
+		return verifyFileForest(ctx, directory, config, roots, observer)
+	}
+	return verifyFileForest(ctx, directory, config, roots, observer, func(source *verificationNodeSource, observer VerificationObserver) error {
+		return verifyTotalSupply(source, *totalSupply, observer)
+	})
 }
 
 func makeTrie(

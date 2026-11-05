@@ -12,6 +12,7 @@ package mpt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -1056,6 +1057,42 @@ func TestLiveTrie_VerificationOfLiveTrieWithCorruptedFileFails(t *testing.T) {
 	}
 }
 
+func TestLiveTrie_VerifyFileLiveTrie_AcceptsMatchingTotalSupply(t *testing.T) {
+	for _, config := range allMptConfigs {
+		t.Run(config.Name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			createLiveStateWithTotalSupply(t, dir, config)
+
+			// A nil observer must be accepted by the total supply check.
+			require.NoError(VerifyFileLiveTrie(context.Background(), dir, config, nil))
+		})
+	}
+}
+
+func TestLiveTrie_VerifyFileLiveTrie_DetectsMismatchingTotalSupply(t *testing.T) {
+	for _, config := range allMptConfigs {
+		t.Run(config.Name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			createLiveStateWithTotalSupply(t, dir, config)
+
+			filename := getLiveTrieMetadataPath(dir)
+			meta, exists, err := readMetadata(filename)
+			require.NoError(err)
+			require.True(exists)
+			require.NotEmpty(meta.TotalSupply)
+			meta.TotalSupply = "1"
+			data, err := json.Marshal(meta)
+			require.NoError(err)
+			require.NoError(os.WriteFile(filename, data, 0600))
+
+			err = VerifyFileLiveTrie(context.Background(), dir, config, NilVerificationObserver{})
+			require.ErrorContains(err, "inconsistent total supply")
+		})
+	}
+}
+
 func TestLiveTrie_HasEmptyStorage(t *testing.T) {
 	addr := common.Address{0x1}
 	ctrl := gomock.NewController(t)
@@ -1217,4 +1254,23 @@ func BenchmarkValueInsertionInFileTrie(b *testing.B) {
 			b.StopTimer()
 		})
 	}
+}
+
+// createLiveStateWithTotalSupply creates a live state in the given directory
+// that stores its total supply and contains deleted accounts.
+func createLiveStateWithTotalSupply(t *testing.T, dir string, config MptConfig) {
+	t.Helper()
+	require := require.New(t)
+	state, err := OpenGoFileState(dir, config, NodeCacheConfig{Capacity: 1024})
+	require.NoError(err)
+	for i := range 50 {
+		require.NoError(state.SetBalance(common.Address{byte(i)}, amount.New(uint64(i+1))))
+	}
+	_, err = state.TotalSupply()
+	require.NoError(err)
+	// Deleted accounts release their nodes, which must not be counted.
+	for i := 0; i < 50; i += 3 {
+		require.NoError(state.SetBalance(common.Address{byte(i)}, amount.New()))
+	}
+	require.NoError(state.Close())
 }
