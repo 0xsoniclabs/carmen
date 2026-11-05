@@ -255,7 +255,9 @@ type TransactionContext interface {
 
 	// SelfDestruct marks the account with the given address as destructed.
 	// At the end of the transaction, its nonce, code, and storage are cleared.
-	// The account is deleted, unless it holds a balance, which it retains (EIP-8246).
+	// Before AMSTERDAM, its balance is burned and the account is deleted. From
+	// AMSTERDAM on, the account retains its balance (EIP-8246) and is deleted
+	// only if the balance is zero. The revision is the one passed to Commit.
 	SelfDestruct(Address)
 
 	// HasSelfDestructed checks if the account with the given address
