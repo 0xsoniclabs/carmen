@@ -150,3 +150,35 @@ func TestStateDB_Suicide_ClearsSubsequentWritesByRevision(t *testing.T) {
 		})
 	}
 }
+
+func TestStateDB_SuicideAndCreateAccount_RecreatedAccountRetainsBalanceInAllRevisions(t *testing.T) {
+	for name, revision := range map[string]Revision{
+		"BeforeAmsterdam": AMSTERDAM - 1,
+		"Amsterdam":       AMSTERDAM,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			mock := NewMockState(ctrl)
+			db := CreateStateDBUsing(mock)
+			mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
+			mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
+			db.SetNonce(address1, 1)
+			db.SetCode(address1, []byte{1, 2, 3})
+			require.Equal(val1, db.GetState(address1, key1))
+			require.True(db.Suicide(address1))
+			db.CreateAccount(address1)
+			require.False(db.HasSuicided(address1))
+			require.Equal(amount.New(12), db.GetBalance(address1))
+			db.AddBalance(address1, amount.New(5))
+			db.EndTransaction(revision)
+			// The account is no longer suicided at the end of the transaction, so its balance is not burned.
+			require.True(db.Exist(address1))
+			require.Equal(amount.New(17), db.GetBalance(address1))
+			require.Zero(db.GetNonce(address1))
+			require.Empty(db.GetCode(address1))
+			require.Equal(common.Value{}, db.GetState(address1, key1))
+			require.True(db.HasEmptyStorage(address1))
+		})
+	}
+}

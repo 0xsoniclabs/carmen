@@ -4677,7 +4677,6 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 		accounts:        make(map[common.Address]*accountState),
 		balances:        make(map[common.Address]*balanceValue),
 		clearedAccounts: make(map[common.Address]accountClearingState),
-		accountsToBurn:  make(map[common.Address]struct{}),
 		state:           st,
 	}
 
@@ -4722,7 +4721,6 @@ func TestStateDB_ResetTransactionContext_ClearsTransactionState(t *testing.T) {
 	require.NotEmpty(db.emptyCandidates)
 	require.NotEmpty(db.logs)
 	require.NotEmpty(db.createdContracts)
-	require.NotEmpty(db.accountsToBurn)
 
 	db.resetTransactionContext()
 
@@ -4733,7 +4731,6 @@ func TestStateDB_ResetTransactionContext_ClearsTransactionState(t *testing.T) {
 	require.Empty(db.emptyCandidates)
 	require.Empty(db.logs)
 	require.Empty(db.createdContracts)
-	require.Empty(db.accountsToBurn)
 }
 
 func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing.T) {

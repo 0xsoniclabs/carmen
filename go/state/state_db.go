@@ -224,10 +224,6 @@ type stateDB struct {
 	// A list of accounts to be deleted at the end of the transaction.
 	accountsToDelete []common.Address
 
-	// The set of suicided accounts, whose balance is burned at the end of the
-	// transaction before Amsterdam (EIP-8246).
-	accountsToBurn map[common.Address]struct{}
-
 	// Tracks the clearing state of individual accounts.
 	clearedAccounts map[common.Address]accountClearingState
 
@@ -485,7 +481,6 @@ func createStateDBWith(state State, storedDataCacheCapacity int, canApplyChanges
 		accessedSlots:     common.NewFastMap[slotId, bool](slotHasher{}),
 		writtenSlots:      map[*slotValue]bool{},
 		accountsToDelete:  make([]common.Address, 0, 100),
-		accountsToBurn:    make(map[common.Address]struct{}),
 		undo:              make([]func(), 0, 100),
 		clearedAccounts:   make(map[common.Address]accountClearingState),
 		createdContracts:  make(map[common.Address]struct{}),
@@ -610,13 +605,6 @@ func (s *stateDB) Suicide(addr common.Address) bool {
 	}
 
 	s.setAccountState(addr, accountSelfDestructed)
-
-	if _, present := s.accountsToBurn[addr]; !present {
-		s.accountsToBurn[addr] = struct{}{}
-		s.undo = append(s.undo, func() {
-			delete(s.accountsToBurn, addr)
-		})
-	}
 
 	deleteListLength := len(s.accountsToDelete)
 	s.accountsToDelete = append(s.accountsToDelete, addr)
@@ -1165,7 +1153,7 @@ func (s *stateDB) EndTransaction(revision Revision) {
 			// the clearing of the data and storedDataCache at various phases
 			// of the block processing.
 			// A suicided account retains its balance (EIP-8246), so only an account without one ceases to exist.
-			if _, burn := s.accountsToBurn[addr]; burn && revision < AMSTERDAM {
+			if s.HasSuicided(addr) && revision < AMSTERDAM {
 				s.resetBalance(addr)
 			}
 			if s.GetBalance(addr).IsZero() {
@@ -1475,7 +1463,6 @@ func (s *stateDB) GetMemoryFootprint() *common.MemoryFootprint {
 
 	mf.AddChild("transientStorage", common.NewMemoryFootprint(uintptr(s.transientStorage.Size())*(slotIdSize+valueSize)))
 	mf.AddChild("accountsToDelete", common.NewMemoryFootprint(uintptr(len(s.accountsToDelete))*(addressSize)))
-	mf.AddChild("accountsToBurn", common.NewMemoryFootprint(uintptr(len(s.accountsToBurn))*(addressSize)))
 	mf.AddChild("clearedAccounts", common.NewMemoryFootprint(uintptr(len(s.clearedAccounts))*(addressSize+unsafe.Sizeof(accountClearingState(0)))))
 	mf.AddChild("createdContracts", common.NewMemoryFootprint(uintptr(len(s.createdContracts))*(addressSize)))
 
@@ -1513,7 +1500,6 @@ func (s *stateDB) resetTransactionContext() {
 	s.emptyCandidates = s.emptyCandidates[0:0]
 	s.logs = s.logs[0:0]
 	s.createdContracts = make(map[common.Address]struct{})
-	clear(s.accountsToBurn)
 }
 
 func (s *stateDB) ResetBlockContext() {
