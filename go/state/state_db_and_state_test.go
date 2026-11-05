@@ -265,7 +265,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			db.SetCode(addr1, []byte{1, 2, 3})
 			db.SetCode(addr2, []byte{4, 5, 6})
 			db.SetCode(addr3, []byte{7, 8, 9})
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, 0)
 
 			// Second block: check balances and modify them.
@@ -285,7 +285,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			db.AddBalance(addr2, maxBalance)
 			db.SubBalance(addr3, maxBalance)
 
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, 1)
 			require.NoError(t, db.Check(), "state DB check failed after block 1")
 
@@ -303,7 +303,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 				t.Errorf("unexpected balance, wanted %v, got %v", want, got)
 			}
 
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, 2)
 			require.NoError(t, db.Check(), "state DB check failed after block 2")
 
@@ -433,7 +433,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 					t.Errorf("account should exist")
 				}
 				db.SetNonce(address, 2)
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, db, uint64(i*2+1))
 			}
 		})
@@ -457,7 +457,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 			}
 		}()
 		mod(ref)
-		ref.EndTransaction()
+		ref.EndTransaction(state.LatestRevision())
 		endAndCommitBlock(t, ref, 0)
 		want[s] = ref.GetHash()
 	}
@@ -486,7 +486,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 				}()
 
 				mod(stateDb)
-				stateDb.EndTransaction()
+				stateDb.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, stateDb, 0)
 				if got := stateDb.GetHash(); want[config.config.Schema] != got {
 					t.Errorf("Invalid hash, wanted %v, got %v", want, got)
@@ -610,7 +610,7 @@ func TestPersistentStateDB(t *testing.T) {
 				stateDb.SetState(address1, toKey(uint64(i)), val)
 			}
 
-			stateDb.EndTransaction()
+			stateDb.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, stateDb, 0)
 			stateDb.BeginBlock()
 			stateDb.BeginTransaction()
@@ -626,7 +626,7 @@ func TestPersistentStateDB(t *testing.T) {
 				stateDb.SetState(address2, toKey(uint64(i)), val)
 			}
 
-			stateDb.EndTransaction()
+			stateDb.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, stateDb, 1)
 			stateDb.EndEpoch(1)
 
@@ -871,7 +871,7 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 						// Perform a read + update operation.
 						stateDb.AddBalance(address1, amount.New(1))
 						stateDb.SetCode(address1, []byte{})
-						stateDb.EndTransaction()
+						stateDb.EndTransaction(state.LatestRevision())
 						if isPrimary {
 							if staged, err := stateDb.(state.StateDB).EndBlock(uint64(block)); err == nil {
 								_, _ = staged.Commit() // < errors surface through Check below
@@ -934,7 +934,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 					db.SetNonce(address, 1)
 					db.SetState(address, key, value)
 				}
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 			}
 			endAndCommitBlock(t, db, 0)
 
@@ -955,7 +955,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 					require.Equal(t, uint64(1), db.GetNonce(address))
 
 				}
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 
 				// 2. Create the same account again.
 				db.BeginTransaction()
@@ -981,7 +981,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 					// not automatically removed at the end of the block.
 					db.SetNonce(address, 1)
 				}
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 
 				// 3. The view on the re-born account after the end of the transaction.
 				db.BeginTransaction()
@@ -990,7 +990,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 					// not re-evaluated until the end of the block.
 					require.True(t, db.HasEmptyStorage(address))
 				}
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 
 			}
 			endAndCommitBlock(t, db, 1)
@@ -1002,7 +1002,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				{
 					require.False(t, db.HasEmptyStorage(address))
 				}
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 			}
 			endAndCommitBlock(t, db, 2)
 		})
@@ -1031,7 +1031,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 				statedb.BeginBlock()
 				statedb.CreateAccount(address)
 				statedb.AddBalance(address, balance)
-				statedb.EndTransaction()
+				statedb.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, statedb, blockNum)
 			}
 
@@ -1040,7 +1040,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 			statedb.BeginBlock()
 			statedb.BeginTransaction()
 			statedb.SubBalance(address1, balance1)
-			statedb.EndTransaction()
+			statedb.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, statedb, 1)
 
 			require.False(statedb.Exist(address1))
@@ -1072,7 +1072,7 @@ func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
 			statedb.BeginBlock()
 			statedb.BeginTransaction()
 			statedb.AddBalance(address1, amount.New(10))
-			statedb.EndTransaction()
+			statedb.EndTransaction(state.LatestRevision())
 			staged, err := statedb.EndBlock(0)
 			require.NoError(err)
 			done, err := staged.Commit()
@@ -1106,7 +1106,7 @@ func executeOpOnCleanStateDB(t *testing.T, config namedStateConfig, op func(stat
 	db.BeginBlock()
 	db.BeginTransaction()
 	op(db)
-	db.EndTransaction()
+	db.EndTransaction(state.LatestRevision())
 	endAndCommitBlock(t, db, 0)
 	return db.GetHash()
 }
@@ -1202,13 +1202,13 @@ func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
 				db.BeginBlock()
 				db.BeginTransaction()
 				op(db)
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, db, 0)
 
 				db.BeginBlock()
 				db.BeginTransaction()
 				require.True(db.Exist(address1))
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, db, 1)
 			})
 		}
@@ -1276,7 +1276,7 @@ func stageNonce(t *testing.T, db state.StateDB, address common.Address, block ui
 	db.BeginBlock()
 	db.BeginTransaction()
 	db.SetNonce(address, nonce)
-	db.EndTransaction()
+	db.EndTransaction(state.LatestRevision())
 	staged, err := db.EndBlock(block)
 	require.NoError(t, err)
 	return staged

@@ -120,7 +120,7 @@ func TestStateDB_AccountsCanBeCreatedAndDeleted(t *testing.T) {
 	}
 
 	// The account should stop existing at the end of the transaction
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	if db.Exist(address1) {
@@ -256,7 +256,7 @@ func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 	db.SetNonce(address1, 1)
 	db.SetState(address1, key1, val1)
 	db.SetState(address1, key2, val2)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// In the second transaction we delete and restore the account.
 	db.BeginTransaction()
@@ -287,7 +287,7 @@ func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 		t.Errorf("Wrong state value, wanted %v, got %v", zero, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -345,13 +345,13 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 	if got := db.GetState(address1, key1); got != val2 {
 		t.Errorf("Wrong state, wanted %v, got %v", val2, got)
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	if got := db.GetState(address1, key1); got != val2 {
 		t.Errorf("Wrong post-end-of-transaction state, wanted %v, got %v", val2, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 123)
 }
 
@@ -376,7 +376,7 @@ func TestStateDB_EndBlock_ClearedSlotsWithKnownStoredValueAreWrittenAsZero(t *te
 	stateDB.BeginTransaction()
 	stateDB.GetState(address, key1) // caches the stored value val1
 	stateDB.CreateAccount(address)  // clears the storage
-	stateDB.EndTransaction()
+	stateDB.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, stateDB, 1)
 }
 
@@ -406,7 +406,7 @@ func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *tes
 	stateDB.CreateAccount(address)                       // clears the storage
 	stateDB.SetState(address, key1, val1)                // sets the slot back to its stored value
 	stateDB.SetNonce(address, 5)                         // keeps the account alive
-	stateDB.EndTransaction()
+	stateDB.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, stateDB, 1)
 
 	// The stored data cache entry carries the incremented reincarnation, so
@@ -419,7 +419,7 @@ func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *tes
 	// The value remains visible in the next block.
 	stateDB.BeginTransaction()
 	require.Equal(val1, stateDB.GetState(address, key1))
-	stateDB.EndTransaction()
+	stateDB.EndTransaction(LatestRevision())
 }
 
 func TestStateDB_DestroyingRecreatedAccountIsNotResettingClearingState(t *testing.T) {
@@ -479,7 +479,7 @@ func TestStateDB_StorageOfDestroyedAccountIsStillAccessibleTillEndOfTransaction(
 		t.Errorf("expected no change of value due to suicide till end of transaction, wanted %v, got %v", val2, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	db.BeginTransaction()
 
@@ -499,7 +499,7 @@ func TestStateDB_StorageOfDestroyedAccountIsStillAccessibleTillEndOfTransaction(
 		t.Errorf("expected storage to be reset at end of transaction; wanted %v, got %v", zero, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 }
 
 func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues(t *testing.T) {
@@ -525,7 +525,7 @@ func TestStateDB_QueryingStoredDataOfDestroyedAccountIsNotReturningDeletedValues
 	got := db.GetState(address1, key1)      // Load a value in the storadDataCache
 	db.SubBalance(address1, amount.New(10)) // Empty the account
 	require.Equal(got, val2)
-	db.EndTransaction() // Account will be deleted because empty
+	db.EndTransaction(LatestRevision()) // Account will be deleted because empty
 	endBlockAndDiscardStaged(t, db, 0)
 
 	// The stored data cache reflects the zeroed value with the current reincarnation.
@@ -569,12 +569,12 @@ func TestStateDB_StorageDataOfDestroyedAccountIsNotVisibleInNextTransactionOrBlo
 		db.SetState(addr, key, val)
 		require.Equal(val, db.GetState(addr, key))
 		db.Suicide(addr)
-		db.EndTransaction()
+		db.EndTransaction(LatestRevision())
 
 		// The modified state should be deleted.
 		db.BeginTransaction()
 		require.Zero(db.GetState(addr, key))
-		db.EndTransaction()
+		db.EndTransaction(LatestRevision())
 
 		// The modified state should also be deleted in the next block.
 		endBlockAndDiscardStaged(t, db, 12)
@@ -582,7 +582,7 @@ func TestStateDB_StorageDataOfDestroyedAccountIsNotVisibleInNextTransactionOrBlo
 		db.BeginBlock()
 		db.BeginTransaction()
 		require.Zero(db.GetState(addr, key))
-		db.EndTransaction()
+		db.EndTransaction(LatestRevision())
 		endBlockAndDiscardStaged(t, db, 14)
 	}
 }
@@ -632,7 +632,7 @@ func TestStateDB_ClearedAndTaintedAccountsAreTrackedCorrectly(t *testing.T) {
 		t.Errorf("unexpected clearing state, wanted %v, got %v", want, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	if want, got := cleared, db.(*stateDB).clearedAccounts[address1]; want != got {
 		t.Errorf("unexpected clearing state, wanted %v, got %v", want, got)
@@ -749,7 +749,7 @@ func TestStateDB_RollingBackSuicideRestoresValues(t *testing.T) {
 		t.Errorf("Wrong state value, wanted %v, got %v", val2, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1) // < no change is send to the DB
 }
 
@@ -782,7 +782,7 @@ func TestStateDB_DestroyingAndRecreatingAnAccountInTheSameTransactionCallsDelete
 	db.CreateAccount(address1)
 	db.SetNonce(address1, 1)
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -819,7 +819,7 @@ func TestStateDB_DoubleDestroyedAccountThatIsOnceRolledBackIsStillCleared(t *tes
 	db.Suicide(address1)
 	db.RevertToSnapshot(snapshot)
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -929,7 +929,7 @@ func TestStateDB_SuicideIndicatesExistingAccountAsBeingDeleted(t *testing.T) {
 	}
 
 	// The account should really stop existing at the end of the transaction.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// Deleting it a second time indicates the account as already deleted.
@@ -956,7 +956,7 @@ func TestStateDB_SetCodeShouldNotStopSuicide(t *testing.T) {
 	db.SetCode(address1, []byte{})
 
 	// The account should really stop existing at the end of the transaction.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// Deleting it a second time indicates the account as already deleted.
@@ -980,7 +980,7 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 	}
 
 	// The account start to be considered deleted at the end of a transaction.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// Adding balance should re-create the account.
@@ -993,7 +993,7 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 	}
 
 	// The account start to be considered deleted at the end of a transaction.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// Adding balance should re-create the account again.
@@ -1013,7 +1013,7 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	// The changes are applied to the state at the end of the block.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1132,7 +1132,7 @@ func TestStateDB_SuicideIsExecutedAtEndOfTransaction(t *testing.T) {
 
 	db.Suicide(address1)
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1156,7 +1156,7 @@ func TestStateDB_SuicideCanBeCanceledThroughRollback(t *testing.T) {
 	db.Suicide(address1)
 	db.RevertToSnapshot(snapshot)
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1175,7 +1175,7 @@ func TestStateDB_CreatedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 
 	db.CreateAccount(address1)
 	db.SetNonce(address1, 1) // the account must not be empty
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1195,7 +1195,7 @@ func TestStateDB_CreatedAccountsAreForgottenAtEndOfBlock(t *testing.T) {
 
 	db.CreateAccount(address1)
 	db.SetNonce(address1, 1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 	endBlockAndDiscardStaged(t, db, 2)
 }
@@ -1232,7 +1232,7 @@ func TestStateDB_DeletedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.Suicide(address1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1249,7 +1249,7 @@ func TestStateDB_DeletedAccountsRetainCodeUntilEndOfTransaction(t *testing.T) {
 	code := []byte{1, 2, 3}
 	db.CreateAccount(address1)
 	db.SetCode(address1, code)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	if got := db.GetCode(address1); !bytes.Equal(got, code) {
 		t.Errorf("retrieved wrong code, got %v, wanted %v", got, code)
@@ -1262,7 +1262,7 @@ func TestStateDB_DeletedAccountsRetainCodeUntilEndOfTransaction(t *testing.T) {
 		t.Errorf("retrieved wrong code, got %v, wanted %v", got, code)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// Now the code should be gone.
 	if got := db.GetCode(address1); len(got) != 0 {
@@ -1299,7 +1299,7 @@ func TestStateDB_CreatedAndDeletedAccountsAreDeletedAtEndOfTransaction(t *testin
 
 	db.CreateAccount(address1)
 	db.Suicide(address1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1371,7 +1371,7 @@ func TestStateDB_SettingTheBalanceCreatesAccount(t *testing.T) {
 	if !db.Exist(address1) {
 		t.Errorf("Account does not exist after adding balance")
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1389,7 +1389,7 @@ func TestStateDB_AddingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *testi
 	if !db.Exist(address1) {
 		t.Errorf("Account does not exist after adding balance")
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1408,7 +1408,7 @@ func TestStateDB_SubtractingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *
 		t.Errorf("Account does not exist after subtracting balance")
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1470,7 +1470,7 @@ func TestStateDB_SettingTheNonceMakesAccountNonEmpty(t *testing.T) {
 	if db.Empty(address1) {
 		t.Errorf("Account with nonce != 0 is still considered empty")
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1493,7 +1493,7 @@ func TestStateDB_SettingTheNonceToZeroMakesAccountEmpty(t *testing.T) {
 	if !db.Empty(address1) {
 		t.Errorf("Account with nonce == 0 should be considered empty")
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1513,7 +1513,7 @@ func TestStateDB_CreatesAccountOnNonceSetting(t *testing.T) {
 	if !db.Exist(address1) {
 		t.Errorf("Account does not exist after setting the nonce")
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1613,11 +1613,11 @@ func TestStateDB_BalanceIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().Apply(uint64(2), common.Update{}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.AddBalance(address1, amount.New(2))
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 
 	// The second end-of-block should not trigger yet another update.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 2)
 }
 
@@ -1639,9 +1639,9 @@ func TestStateDB_BalanceOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 
 	db.AddBalance(address1, amount.New(5))
 	db.SubBalance(address1, amount.New(3))
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.AddBalance(address1, amount.New(2))
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1660,7 +1660,7 @@ func TestStateDB_BalanceUnchangedValuesAreNotWritten(t *testing.T) {
 	db.AddBalance(address1, amount.New(10))
 	db.SubBalance(address1, amount.New(5))
 	db.SubBalance(address1, amount.New(5))
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 2)
 }
 
@@ -1764,7 +1764,7 @@ func TestStateDB_NonceOfADeletedAccountIsZero(t *testing.T) {
 	// Create an account and set the nonce.
 	db.CreateAccount(address1)
 	db.SetNonce(address1, 12)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 
 	// Fetch the nonce in a new transaction.
@@ -1781,7 +1781,7 @@ func TestStateDB_NonceOfADeletedAccountIsZero(t *testing.T) {
 		t.Errorf("error retrieving nonce, wanted %v, got %v", want, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// The suicide was completed and the nonce is zero.
 	want = 0
@@ -1818,7 +1818,7 @@ func TestStateDB_NonceOfADeletedAccountGetsResetAtEndOfTransaction(t *testing.T)
 		t.Errorf("error retrieving nonce, wanted %v, got %v", want, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// After the end of the transaction, the nonce is zero.
 	want = 0
@@ -1916,11 +1916,11 @@ func TestStateDB_NoncesIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
 	db.SetNonce(address1, 10)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 
 	// The second end-of-transaction should not trigger yet another update.
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 2)
 }
 
@@ -1940,9 +1940,9 @@ func TestStateDB_NoncesOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 
 	db.SetNonce(address1, 10)
 	db.SetNonce(address1, 11)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.SetNonce(address1, 12)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -1961,7 +1961,7 @@ func TestStateDB_NoncesUnchangedValuesAreNotWritten(t *testing.T) {
 
 	value := db.GetNonce(address1)
 	db.SetNonce(address1, value)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2063,7 +2063,7 @@ func TestStateDB_ImplicitAccountCreatedBySetStateIsDroppedSinceEmptyIfNothingEls
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.SetState(address1, key1, val1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2082,21 +2082,21 @@ func TestStateDB_EmptyAccountsDeletedAtEndOfTransactionsAreCleaned(t *testing.T)
 	if db.GetState(address1, key1) != val1 {
 		t.Errorf("failed to set state to non-existing account")
 	}
-	db.EndTransaction() // < should delete the account and its state
+	db.EndTransaction(LatestRevision()) // < should delete the account and its state
 
 	db.BeginTransaction()
 	if db.GetState(address1, key1) != (common.Value{}) {
 		t.Errorf("storage of empty account was not cleaned at end of the first transaction")
 	}
 	db.SetState(address1, key1, val1)
-	db.EndTransaction() // < should be again deleted
+	db.EndTransaction(LatestRevision()) // < should be again deleted
 
 	db.BeginTransaction()
 	if db.GetState(address1, key1) != (common.Value{}) {
 		t.Errorf("storage of empty account was not cleaned at end of the second transaction")
 	}
 	db.SetState(address1, key1, val1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 }
 
 func TestStateDB_FetchedCommittedValueIsNotResetInRollback(t *testing.T) {
@@ -2210,7 +2210,7 @@ func TestStateDB_UpdatedValuesAreCommittedToStateAtEndBlock(t *testing.T) {
 
 	db.SetState(address1, key1, val1)
 	db.SetState(address1, key2, val2)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2229,7 +2229,7 @@ func TestStateDB_RevertedValuesAreNotCommitted(t *testing.T) {
 	snapshot := db.Snapshot()
 	db.SetState(address1, key2, val2)
 	db.RevertToSnapshot(snapshot)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2262,9 +2262,9 @@ func TestStateDB_OnlyFinalValueIsStored(t *testing.T) {
 
 	db.SetState(address1, key1, val1)
 	db.SetState(address1, key1, val2)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.SetState(address1, key1, val3)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2281,9 +2281,9 @@ func TestStateDB_UndoneValueUpdateIsNotStored(t *testing.T) {
 
 	val := db.GetState(address1, key1)
 	db.SetState(address1, key1, val2)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.SetState(address1, key1, val)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2307,7 +2307,7 @@ func TestStateDB_ValueIsCommittedAtEndOfTransaction(t *testing.T) {
 		t.Errorf("expected current value to be %v, got %v", val2, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	if got := db.GetCommittedState(address1, key1); got != val2 {
 		t.Errorf("expected committed value to be %v, got %v", val2, got)
@@ -2342,13 +2342,13 @@ func TestStateDB_CanBeUsedForMultipleBlocks(t *testing.T) {
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.SetState(address1, key1, val1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 	db.SetState(address1, key1, val2)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 2)
 	db.SetState(address1, key1, val3)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 3)
 }
 
@@ -2422,7 +2422,7 @@ func TestStateDB_ReadCodesAreNotStored(t *testing.T) {
 	mock.EXPECT().Apply(uint64(1), common.Update{}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.GetCode(address1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2442,7 +2442,7 @@ func TestStateDB_UpdatedCodesAreStored(t *testing.T) {
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.SetCode(address1, want)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2462,11 +2462,11 @@ func TestStateDB_UpdatedCodesAreStoredOnlyOnce(t *testing.T) {
 	}).Return(NewMockStagedBlock(ctrl), nil)
 	mock.EXPECT().Apply(uint64(2), common.Update{}).Return(NewMockStagedBlock(ctrl), nil)
 	db.SetCode(address1, want)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 
 	// No store on second time
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 2)
 }
 
@@ -2501,7 +2501,7 @@ func TestStateDB_CodeCanBeUpdated_In_Each_Block(t *testing.T) {
 		db.BeginTransaction()
 		db.SetCode(address1, codes[i])
 		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
-		db.EndTransaction()
+		db.EndTransaction(LatestRevision())
 		checkCode(t, db, address1, codes[i], hashes[i]) // available after the transaction
 		endBlockAndDiscardStaged(t, db, uint64(i))
 		checkCode(t, db, address1, codes[i], hashes[i]) // available after the block
@@ -2534,7 +2534,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Block(t *testing.T) {
 		db.BeginTransaction()
 		db.SetCode(address1, codes[i])
 		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
-		db.EndTransaction()
+		db.EndTransaction(LatestRevision())
 		checkCode(t, db, address1, codes[i], hashes[i]) // available after the transaction
 	}
 	endBlockAndDiscardStaged(t, db, uint64(1))
@@ -2569,7 +2569,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Transaction(t *testing.T) {
 		db.SetCode(address1, codes[i])
 		checkCode(t, db, address1, codes[i], hashes[i]) // available in the same transaction
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	checkCode(t, db, address1, codes[len(codes)-1], hashes[len(hashes)-1]) // available after the transaction
 	endBlockAndDiscardStaged(t, db, uint64(1))
 	checkCode(t, db, address1, codes[len(codes)-1], hashes[len(hashes)-1]) // available after the block
@@ -2590,7 +2590,7 @@ func TestStateDB_SettingCodesCreatesAccountsImplicitly(t *testing.T) {
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.SetCode(address1, want)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
@@ -2653,7 +2653,7 @@ func TestStateDB_CodeSizeOfADeletedAccountIsZeroAfterEndOfTransaction(t *testing
 		t.Errorf("error retrieving code size, wanted %v, got %v", want, got)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// Now the code should be gone.
 	want = 0
@@ -2916,7 +2916,7 @@ func TestStateDB_RefundIsResetAtTransactionEnd(t *testing.T) {
 	if got := db.GetRefund(); got != 12 {
 		t.Errorf("failed to update refund, wanted %v, got %v", want, got)
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	if got := db.GetRefund(); got != 0 {
 		t.Errorf("refund after end of transaction is not 0, got: %v", got)
 	}
@@ -3009,7 +3009,7 @@ func TestStateDB_AccessedAddressesAreResetAtTransactionEnd(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	db.AddAddressToAccessList(address1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	if db.IsAddressInAccessList(address1) {
 		t.Errorf("Accessed addresses not cleared at end of transaction")
 	}
@@ -3150,7 +3150,7 @@ func TestStateDB_AccessedSlotsAreResetAtTransactionEnd(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	db.AddSlotToAccessList(address1, key1)
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	if a, b := db.IsSlotInAccessList(address1, key1); a || b {
 		t.Errorf("Accessed slot not cleared at end of transaction")
 	}
@@ -3189,12 +3189,12 @@ func TestStateDB_DeletesEmptyAccountsEip161(t *testing.T) {
 	db.SubBalance(address1, amount.New(12))
 
 	// The account should be deleted at the end of the transaction
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 	if db.Exist(address1) {
 		t.Errorf("Empty account have not been deleted at the end of the transaction")
 	}
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// The account is deleted in the state at the end of the block
 	mock.EXPECT().Apply(uint64(1), common.Update{
@@ -3225,7 +3225,7 @@ func TestStateDB_NeverCreatesEmptyAccountsEip161(t *testing.T) {
 	// create account 3 by setting code, but setting it to empty immediately
 	db.SetCode(address3, []byte{0x12})
 	db.SetCode(address3, []byte{})
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	endBlockAndDiscardStaged(t, db, 1)
 }
@@ -3275,7 +3275,7 @@ func TestStateDB_SuicidedAccountNotRecreatedBySettingBalance(t *testing.T) {
 		t.Errorf("changed storage lost")
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// After the end of transaction, the account should be deleted
 	if db.HasSuicided(address1) {
@@ -3399,7 +3399,7 @@ func TestStateDB_ResetClearsInternalState(t *testing.T) {
 		t.Errorf("unexpected error, wanted %v, got %v", injectedErr, err)
 	}
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 
 	// re-cycle the same state
 	db.resetState(state)
@@ -4436,7 +4436,7 @@ func TestStateDB_TransientStorage_IsClearedAfterCallingEndTransaction(t *testing
 
 	undoListlen := len(db.undo)
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	if got, want := db.GetTransientState(address1, key1), valEmpty; got != want {
 		t.Errorf("unexpected value, wanted %v, got %v", want, got)
 	}
@@ -4558,7 +4558,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 	require.True(t, db.IsNewContract(address1),
 		"account no longer marked as new in same transaction")
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// the contract account should stop existing at the end of the transaction
@@ -4583,7 +4583,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testin
 		"account not marked as new contract after CreateContract call")
 
 	// start next transaction
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	require.False(t, db.IsNewContract(address1),
@@ -4600,7 +4600,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testin
 	require.False(t, db.IsNewContract(address1),
 		"account marked as new contract in new transaction")
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// the contract account should stop existing at the end of the transaction
@@ -4630,7 +4630,7 @@ func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 
 	require.False(t, db.Exist(address1), "contract exists after rollback")
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	// the contract account should stop existing after the rollback
@@ -4663,7 +4663,7 @@ func TestStateDB_ContractIsNoLongerMarkedAsNewAfterRollback(t *testing.T) {
 
 	require.False(t, db.Exist(address1), "contract exists after rollback")
 
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	db.BeginTransaction()
 
 	require.False(t, db.IsNewContract(address1),
@@ -5143,7 +5143,7 @@ func TestStateDbStagedBlock_Rollback_DropsTheCachedState(t *testing.T) {
 
 	db.BeginBlock()
 	db.BeginTransaction()
-	db.EndTransaction()
+	db.EndTransaction(LatestRevision())
 	block, err := db.EndBlock(1)
 	require.NoError(err)
 

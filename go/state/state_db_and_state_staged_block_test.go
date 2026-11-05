@@ -123,7 +123,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 					for _, op := range group {
 						op.Execute(db, rng)
 					}
-					db.EndTransaction()
+					db.EndTransaction(state.LatestRevision())
 					sb, err := db.EndBlock(block)
 					require.NoError(err)
 					staged = append(staged, sb)
@@ -151,7 +151,7 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		db.BeginBlock()
 		db.BeginTransaction()
 		db.AddBalance(address2, balance1)
-		db.EndTransaction()
+		db.EndTransaction(state.LatestRevision())
 		endAndCommitBlock(t, db, 1)
 
 		initialHash := db.GetHash()
@@ -171,7 +171,7 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		db.SetState(address1, key1, val1)
 		db.AddBalance(address2, balance2)
 		require.True(db.Suicide(address1))
-		db.EndTransaction()
+		db.EndTransaction(state.LatestRevision())
 		staged, err := db.EndBlock(2)
 		require.NoError(err)
 		require.NotEqual(initialHash, staged.StateHash())
@@ -183,6 +183,6 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		db.BeginTransaction()
 		require.False(db.Exist(address1))
 		require.Equal(balance1, db.GetBalance(address2))
-		db.EndTransaction()
+		db.EndTransaction(state.LatestRevision())
 	})
 }

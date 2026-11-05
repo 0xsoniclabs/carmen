@@ -193,15 +193,15 @@ func (mr *MockVmStateDBMockRecorder) Empty(arg0 any) *gomock.Call {
 }
 
 // EndTransaction mocks base method.
-func (m *MockVmStateDB) EndTransaction() {
+func (m *MockVmStateDB) EndTransaction(arg0 Revision) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "EndTransaction")
+	m.ctrl.Call(m, "EndTransaction", arg0)
 }
 
 // EndTransaction indicates an expected call of EndTransaction.
-func (mr *MockVmStateDBMockRecorder) EndTransaction() *gomock.Call {
+func (mr *MockVmStateDBMockRecorder) EndTransaction(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTransaction", reflect.TypeOf((*MockVmStateDB)(nil).EndTransaction))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTransaction", reflect.TypeOf((*MockVmStateDB)(nil).EndTransaction), arg0)
 }
 
 // Exist mocks base method.
@@ -847,15 +847,15 @@ func (mr *MockStateDBMockRecorder) EndEpoch(number any) *gomock.Call {
 }
 
 // EndTransaction mocks base method.
-func (m *MockStateDB) EndTransaction() {
+func (m *MockStateDB) EndTransaction(arg0 Revision) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "EndTransaction")
+	m.ctrl.Call(m, "EndTransaction", arg0)
 }
 
 // EndTransaction indicates an expected call of EndTransaction.
-func (mr *MockStateDBMockRecorder) EndTransaction() *gomock.Call {
+func (mr *MockStateDBMockRecorder) EndTransaction(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTransaction", reflect.TypeOf((*MockStateDB)(nil).EndTransaction))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTransaction", reflect.TypeOf((*MockStateDB)(nil).EndTransaction), arg0)
 }
 
 // Exist mocks base method.
@@ -1555,15 +1555,15 @@ func (mr *MockNonCommittableStateDBMockRecorder) Empty(arg0 any) *gomock.Call {
 }
 
 // EndTransaction mocks base method.
-func (m *MockNonCommittableStateDB) EndTransaction() {
+func (m *MockNonCommittableStateDB) EndTransaction(arg0 Revision) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "EndTransaction")
+	m.ctrl.Call(m, "EndTransaction", arg0)
 }
 
 // EndTransaction indicates an expected call of EndTransaction.
-func (mr *MockNonCommittableStateDBMockRecorder) EndTransaction() *gomock.Call {
+func (mr *MockNonCommittableStateDBMockRecorder) EndTransaction(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTransaction", reflect.TypeOf((*MockNonCommittableStateDB)(nil).EndTransaction))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTransaction", reflect.TypeOf((*MockNonCommittableStateDB)(nil).EndTransaction), arg0)
 }
 
 // Exist mocks base method.

@@ -273,12 +273,12 @@ func (t *transactionContext) HasEmptyStorage(addr Address) bool {
 	return false
 }
 
-func (t *transactionContext) Commit() error {
+func (t *transactionContext) Commit(revision Revision) error {
 	if t.state == nil {
 		return fmt.Errorf("transaction context is invalid")
 	}
-	t.state.EndTransaction() // < commits changes
-	return t.end()           // < releases resources
+	t.state.EndTransaction(revision) // < commits changes
+	return t.end()                   // < releases resources
 }
 
 func (t *transactionContext) Abort() error {

@@ -1686,7 +1686,7 @@ func runAddBlock(block uint64, stateDB state.StateDB) {
 	stateDB.SetState(addr, key, common.Value{123})
 	stateDB.SetCode(addr, make([]byte, 80))
 	stateDB.SetNonce(addr, 1)
-	stateDB.EndTransaction()
+	stateDB.EndTransaction(state.LatestRevision())
 	staged, err := stateDB.EndBlock(block)
 	if err != nil {
 		return // < collected by, and reported through, the state's Check

@@ -254,17 +254,17 @@ func (mr *MockblockContextMockRecorder) BeginTransaction() *gomock.Call {
 }
 
 // RunTransaction mocks base method.
-func (m *MockblockContext) RunTransaction(run func(TransactionContext) error) error {
+func (m *MockblockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunTransaction", run)
+	ret := m.ctrl.Call(m, "RunTransaction", revision, run)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RunTransaction indicates an expected call of RunTransaction.
-func (mr *MockblockContextMockRecorder) RunTransaction(run any) *gomock.Call {
+func (mr *MockblockContextMockRecorder) RunTransaction(revision, run any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTransaction", reflect.TypeOf((*MockblockContext)(nil).RunTransaction), run)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTransaction", reflect.TypeOf((*MockblockContext)(nil).RunTransaction), revision, run)
 }
 
 // MockHeadBlockContext is a mock of HeadBlockContext interface.
@@ -335,17 +335,17 @@ func (mr *MockHeadBlockContextMockRecorder) Commit() *gomock.Call {
 }
 
 // RunTransaction mocks base method.
-func (m *MockHeadBlockContext) RunTransaction(run func(TransactionContext) error) error {
+func (m *MockHeadBlockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunTransaction", run)
+	ret := m.ctrl.Call(m, "RunTransaction", revision, run)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RunTransaction indicates an expected call of RunTransaction.
-func (mr *MockHeadBlockContextMockRecorder) RunTransaction(run any) *gomock.Call {
+func (mr *MockHeadBlockContextMockRecorder) RunTransaction(revision, run any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTransaction", reflect.TypeOf((*MockHeadBlockContext)(nil).RunTransaction), run)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTransaction", reflect.TypeOf((*MockHeadBlockContext)(nil).RunTransaction), revision, run)
 }
 
 // MockHistoricBlockContext is a mock of HistoricBlockContext interface.
@@ -437,17 +437,17 @@ func (mr *MockHistoricBlockContextMockRecorder) GetProof(address any, keys ...an
 }
 
 // RunTransaction mocks base method.
-func (m *MockHistoricBlockContext) RunTransaction(run func(TransactionContext) error) error {
+func (m *MockHistoricBlockContext) RunTransaction(revision Revision, run func(TransactionContext) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunTransaction", run)
+	ret := m.ctrl.Call(m, "RunTransaction", revision, run)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RunTransaction indicates an expected call of RunTransaction.
-func (mr *MockHistoricBlockContextMockRecorder) RunTransaction(run any) *gomock.Call {
+func (mr *MockHistoricBlockContextMockRecorder) RunTransaction(revision, run any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTransaction", reflect.TypeOf((*MockHistoricBlockContext)(nil).RunTransaction), run)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunTransaction", reflect.TypeOf((*MockHistoricBlockContext)(nil).RunTransaction), revision, run)
 }
 
 // MockTransactionContext is a mock of TransactionContext interface.
@@ -561,17 +561,17 @@ func (mr *MockTransactionContextMockRecorder) ClearAccessList() *gomock.Call {
 }
 
 // Commit mocks base method.
-func (m *MockTransactionContext) Commit() error {
+func (m *MockTransactionContext) Commit(revision Revision) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Commit")
+	ret := m.ctrl.Call(m, "Commit", revision)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Commit indicates an expected call of Commit.
-func (mr *MockTransactionContextMockRecorder) Commit() *gomock.Call {
+func (mr *MockTransactionContextMockRecorder) Commit(revision any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockTransactionContext)(nil).Commit))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockTransactionContext)(nil).Commit), revision)
 }
 
 // CreateAccount mocks base method.

@@ -48,7 +48,7 @@ func TestStress_CanHandleLargeBlock(t *testing.T) {
 				db.SetNonce(addr, 12)
 			}
 
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, 12)
 
 			if err := db.Check(); err != nil {
@@ -87,7 +87,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			db.BeginTransaction()
 			db.CreateAccount(addr)
 			db.SetNonce(addr, 5)
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, 0)
 
 			// Fill slots in batches.
@@ -100,7 +100,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 					db.SetState(addr, toKey(counter), val1)
 					counter++
 				}
-				db.EndTransaction()
+				db.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, db, block)
 				block++
 			}
@@ -109,7 +109,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			db.BeginBlock()
 			db.BeginTransaction()
 			db.Suicide(addr)
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, block)
 			block++
 
@@ -118,7 +118,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			if want, got := false, db.Exist(addr); want != got {
 				t.Errorf("unexpected exist result, wanted %v, got %v", want, got)
 			}
-			db.EndTransaction()
+			db.EndTransaction(state.LatestRevision())
 			endAndCommitBlock(t, db, block)
 
 			if err := db.Check(); err != nil {
