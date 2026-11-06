@@ -115,10 +115,24 @@ func TestStateDB_Suicide_RevertToInterTxSnapshot(t *testing.T) {
 }
 
 func TestStateDB_Suicide_ClearsSubsequentWritesByRevision(t *testing.T) {
-	for name, revision := range map[string]Revision{
-		"BeforeAmsterdam": AMSTERDAM - 1,
-		"Amsterdam":       AMSTERDAM,
-	} {
+	tests := map[string]struct {
+		revision            Revision
+		balanceAfterSuicide amount.Amount
+		accountExists       bool
+	}{
+		"BeforeAmsterdam/WritesAfterSuicideAreCleared": {
+			revision:            AMSTERDAM - 1,
+			balanceAfterSuicide: amount.New(),
+			accountExists:       false,
+		},
+		"AfterAmsterdam/OnlyBalanceSurvivesSubsequentWrites": {
+			revision:            AMSTERDAM,
+			balanceAfterSuicide: amount.New(17),
+			accountExists:       true,
+		},
+	}
+
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
@@ -135,14 +149,10 @@ func TestStateDB_Suicide_ClearsSubsequentWritesByRevision(t *testing.T) {
 			db.SetCode(address1, []byte{0x12, 0x34})
 			db.SetState(address1, key1, val2)
 			require.True(db.HasSuicided(address1))
-			db.EndTransaction(revision)
-			wantBalance := amount.New()
-			if revision >= AMSTERDAM {
-				wantBalance = amount.New(17)
-			}
-			require.Equal(!wantBalance.IsZero(), db.Exist(address1))
+			db.EndTransaction(test.revision)
+			require.Equal(test.accountExists, db.Exist(address1))
 			require.False(db.HasSuicided(address1))
-			require.Equal(wantBalance, db.GetBalance(address1))
+			require.Equal(test.balanceAfterSuicide, db.GetBalance(address1))
 			require.Zero(db.GetNonce(address1))
 			require.Empty(db.GetCode(address1))
 			require.Equal(common.Value{}, db.GetState(address1, key1))
@@ -152,10 +162,24 @@ func TestStateDB_Suicide_ClearsSubsequentWritesByRevision(t *testing.T) {
 }
 
 func TestStateDB_SuicideAndCreateAccount_RecreatedAccountRetainsBalanceInAllRevisions(t *testing.T) {
-	for name, revision := range map[string]Revision{
-		"BeforeAmsterdam": AMSTERDAM - 1,
-		"Amsterdam":       AMSTERDAM,
-	} {
+	tests := map[string]struct {
+		revision            Revision
+		balanceAfterSuicide amount.Amount
+		accountExists       bool
+	}{
+		"BeforeAmsterdam/RecreatedAccountRetainsBalance": {
+			revision:            AMSTERDAM - 1,
+			balanceAfterSuicide: amount.New(17),
+			accountExists:       true,
+		},
+		"AfterAmsterdam/RecreatedAccountRetainsBalance": {
+			revision:            AMSTERDAM,
+			balanceAfterSuicide: amount.New(17),
+			accountExists:       true,
+		},
+	}
+
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
@@ -171,10 +195,10 @@ func TestStateDB_SuicideAndCreateAccount_RecreatedAccountRetainsBalanceInAllRevi
 			require.False(db.HasSuicided(address1))
 			require.Equal(amount.New(12), db.GetBalance(address1))
 			db.AddBalance(address1, amount.New(5))
-			db.EndTransaction(revision)
+			db.EndTransaction(test.revision)
 			// The account is no longer suicided at the end of the transaction, so its balance is not burned.
-			require.True(db.Exist(address1))
-			require.Equal(amount.New(17), db.GetBalance(address1))
+			require.Equal(test.accountExists, db.Exist(address1))
+			require.Equal(test.balanceAfterSuicide, db.GetBalance(address1))
 			require.Zero(db.GetNonce(address1))
 			require.Empty(db.GetCode(address1))
 			require.Equal(common.Value{}, db.GetState(address1, key1))

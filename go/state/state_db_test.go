@@ -1065,33 +1065,6 @@ func TestStateDB_SuicideIndicatesDeletedAccountAsNotBeingDeleted(t *testing.T) {
 	}
 }
 
-func TestStateDB_Suicide_RetainsBalanceOfAccount(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
-	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
-
-	db.SetNonce(address1, 1)
-	db.SetCode(address1, []byte{1, 2, 3})
-	require.Equal(val1, db.GetState(address1, key1))
-
-	require.True(db.Suicide(address1))
-	require.Equal(amount.New(12), db.GetBalance(address1))
-
-	db.EndTransaction(LatestRevision())
-
-	require.True(db.Exist(address1))
-	require.False(db.HasSuicided(address1))
-	require.Equal(amount.New(12), db.GetBalance(address1))
-	require.Zero(db.GetNonce(address1))
-	require.Empty(db.GetCode(address1))
-	require.Equal(common.Value{}, db.GetState(address1, key1))
-	require.True(db.HasEmptyStorage(address1))
-}
-
 func TestStateDB_Suicide_RetainsBalanceOfContractCreatedInTransaction(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
