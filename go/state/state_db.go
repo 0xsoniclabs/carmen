@@ -293,7 +293,7 @@ type accountLifeCycleState int
 //
 //    Suicided -- CreateAccount --> Exists
 //    Suicided -- EndTransaction --> NonExisting  // if account has no balance
-//    Suicided -- EndTransaction --> Exists       // if account has a balance (EIP-8246)
+//    Suicided -- EndTransaction --> Exists       // if account has a balance (since EIP-8246)
 //
 // Accounts with the state Suicided can only exist during a transaction. At the end of a
 // transaction, Suicided accounts are cleared and transition automatically into NonExisting
