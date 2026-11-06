@@ -145,6 +145,7 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 // the one deletion EIP-6780 permits: an account created and self-destructed within
 // the same transaction. The combination test excludes the operations producing it.
 func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState(t *testing.T) {
+	balanceBefore := balance1
 	tests := map[string]struct {
 		revision            state.Revision
 		balanceAfterSuicide amount.Amount
@@ -157,7 +158,7 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 		},
 		"AfterAmsterdam/AccountRetainsBalance": {
 			revision:            state.AMSTERDAM,
-			balanceAfterSuicide: balance1,
+			balanceAfterSuicide: balanceBefore,
 			accountExists:       true,
 		},
 	}
@@ -170,7 +171,7 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 				// Seed an unrelated account so the state is not empty to begin with.
 				db.BeginBlock()
 				db.BeginTransaction()
-				db.AddBalance(address2, balance1)
+				db.AddBalance(address2, balanceBefore)
 				db.EndTransaction(state.LatestRevision())
 				endAndCommitBlock(t, db, 1)
 
@@ -187,10 +188,10 @@ func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState
 				db.CreateContract(address1)
 				require.True(db.IsNewContract(address1))
 				db.SetNonce(address1, 1)
-				db.AddBalance(address1, balance1)
+				db.AddBalance(address1, balanceBefore)
 				db.SetCode(address1, []byte{0x01})
 				db.SetState(address1, key1, val1)
-				db.AddBalance(address2, balance2)
+				db.AddBalance(address2, balanceBefore)
 				require.True(db.Suicide(address1))
 				db.EndTransaction(test.revision)
 				require.Equal(test.accountExists, db.Exist(address1))

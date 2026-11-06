@@ -206,3 +206,48 @@ func TestStateDB_SuicideAndCreateAccount_RecreatedAccountRetainsBalanceInAllRevi
 		})
 	}
 }
+
+func TestStateDB_SuicideAndCreateAccountAndSuicide_BurnsBalanceByRevision(t *testing.T) {
+	tests := map[string]struct {
+		revision            Revision
+		balanceAfterSuicide amount.Amount
+		accountExists       bool
+	}{
+		"BeforeAmsterdam/BalanceBurnedAndAccountDeleted": {
+			revision:            AMSTERDAM - 1,
+			balanceAfterSuicide: amount.New(),
+			accountExists:       false,
+		},
+		"AfterAmsterdam/BalanceRetainedAndAccountExists": {
+			revision:            AMSTERDAM,
+			balanceAfterSuicide: amount.New(17),
+			accountExists:       true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			mock := NewMockState(ctrl)
+			db := CreateStateDBUsing(mock)
+			mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
+			mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
+			db.SetNonce(address1, 1)
+			db.SetCode(address1, []byte{1, 2, 3})
+			require.Equal(val1, db.GetState(address1, key1))
+			require.True(db.Suicide(address1))
+			db.CreateAccount(address1)
+			db.AddBalance(address1, amount.New(5))
+			require.True(db.Suicide(address1))
+			require.True(db.HasSuicided(address1))
+			db.EndTransaction(test.revision)
+			require.Equal(test.accountExists, db.Exist(address1))
+			require.Equal(test.balanceAfterSuicide, db.GetBalance(address1))
+			require.Zero(db.GetNonce(address1))
+			require.Empty(db.GetCode(address1))
+			require.Equal(common.Value{}, db.GetState(address1, key1))
+			require.True(db.HasEmptyStorage(address1))
+		})
+	}
+}
