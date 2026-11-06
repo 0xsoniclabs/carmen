@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
+	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/state"
 	"github.com/0xsoniclabs/carmen/go/tests/nightly"
 	"github.com/stretchr/testify/require"
@@ -144,45 +145,70 @@ func TestCarmen_StagedBlock_RollbackRestoresStateForEveryOperationCombination(t 
 // the one deletion EIP-6780 permits: an account created and self-destructed within
 // the same transaction. The combination test excludes the operations producing it.
 func TestCarmen_StagedBlock_RollbackOfASameBlockCreateAndSuicideRestoresTheState(t *testing.T) {
-	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
-		require := require.New(t)
+	balanceBefore := balance1
+	tests := map[string]struct {
+		revision            state.Revision
+		balanceAfterSuicide amount.Amount
+		accountExists       bool
+	}{
+		"BeforeAmsterdam/AccountIsDeleted": {
+			revision:            state.AMSTERDAM - 1, // Latest before
+			balanceAfterSuicide: amount.New(),
+			accountExists:       false,
+		},
+		"AfterAmsterdam/AccountRetainsBalance": {
+			revision:            state.AMSTERDAM,
+			balanceAfterSuicide: balanceBefore,
+			accountExists:       true,
+		},
+	}
 
-		// Seed an unrelated account so the state is not empty to begin with.
-		db.BeginBlock()
-		db.BeginTransaction()
-		db.AddBalance(address2, balance1)
-		db.EndTransaction(state.LatestRevision())
-		endAndCommitBlock(t, db, 1)
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			forEachStagingState(t, func(t *testing.T, _ namedStateConfig, _ state.State, db state.StateDB) {
+				require := require.New(t)
 
-		initialHash := db.GetHash()
+				// Seed an unrelated account so the state is not empty to begin with.
+				db.BeginBlock()
+				db.BeginTransaction()
+				db.AddBalance(address2, balanceBefore)
+				db.EndTransaction(state.LatestRevision())
+				endAndCommitBlock(t, db, 1)
 
-		// Create a contract with storage and destroy it again, all in one
-		// transaction, as the EVM does: CreateContract marks it as created in this
-		// transaction, which is what makes its self-destruct a deletion under
-		// EIP-6780. The block nets out to no change at all.
-		db.BeginBlock()
-		db.BeginTransaction()
-		db.CreateAccount(address1)
-		db.CreateContract(address1)
-		require.True(db.IsNewContract(address1))
-		db.SetNonce(address1, 1)
-		db.AddBalance(address1, balance1)
-		db.SetCode(address1, []byte{0x01})
-		db.SetState(address1, key1, val1)
-		db.AddBalance(address2, balance2)
-		require.True(db.Suicide(address1))
-		db.EndTransaction(state.LatestRevision())
-		staged, err := db.EndBlock(2)
-		require.NoError(err)
-		require.NotEqual(initialHash, staged.StateHash())
+				initialHash := db.GetHash()
 
-		require.NoError(staged.Rollback())
-		require.Equal(initialHash, db.GetHash())
+				// Create a contract with storage and destroy it again, all in one
+				// transaction, as the EVM does: CreateContract marks it as created in
+				// this transaction, which is what makes its self-destruct a deletion
+				// under EIP-6780. From Amsterdam on, it retains its balance instead
+				// (EIP-8246).
+				db.BeginBlock()
+				db.BeginTransaction()
+				db.CreateAccount(address1)
+				db.CreateContract(address1)
+				require.True(db.IsNewContract(address1))
+				db.SetNonce(address1, 1)
+				db.AddBalance(address1, balanceBefore)
+				db.SetCode(address1, []byte{0x01})
+				db.SetState(address1, key1, val1)
+				db.AddBalance(address2, balanceBefore)
+				require.True(db.Suicide(address1))
+				db.EndTransaction(test.revision)
+				require.Equal(test.accountExists, db.Exist(address1))
+				require.Equal(test.balanceAfterSuicide, db.GetBalance(address1))
+				staged, err := db.EndBlock(2)
+				require.NoError(err)
+				require.NotEqual(initialHash, staged.StateHash())
 
-		db.BeginBlock()
-		db.BeginTransaction()
-		require.False(db.Exist(address1))
-		require.Equal(balance1, db.GetBalance(address2))
-		db.EndTransaction(state.LatestRevision())
-	})
+				require.NoError(staged.Rollback())
+				require.Equal(initialHash, db.GetHash())
+
+				db.BeginBlock()
+				db.BeginTransaction()
+				require.False(db.Exist(address1))
+				require.Equal(balance1, db.GetBalance(address2))
+				db.EndTransaction(state.LatestRevision())
+			})
+		})
+	}
 }
