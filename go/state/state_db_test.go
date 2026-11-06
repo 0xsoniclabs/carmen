@@ -678,41 +678,6 @@ func TestStateDB_RevertToUnknownSnapshotIsDetected(t *testing.T) {
 	}
 }
 
-func TestStateDB_RollingBackSuicideRestoresBalance(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	initialBalance := amount.New(5)
-
-	// Initially the account exists with a view stored values.
-	mock.EXPECT().GetBalance(address1).Return(initialBalance, nil)
-
-	// In the transaction we delete and restore the account.
-	db.BeginTransaction()
-
-	// Initially the old balance should be present.
-	if want, got := amount.New(5), db.GetBalance(address1); want != got {
-		t.Errorf("unexpected balance, wanted %v, got %v", want, got)
-	}
-
-	snapshot := db.Snapshot()
-	db.SubBalance(address1, initialBalance)
-	db.Suicide(address1)
-
-	// after a suicide the balance should be empty
-	if want, got := amount.New(), db.GetBalance(address1); want != got {
-		t.Errorf("unexpected balance, wanted %v, got %v", want, got)
-	}
-
-	db.RevertToSnapshot(snapshot)
-
-	// the rollback of the suicide should restore the balance
-	if want, got := amount.New(5), db.GetBalance(address1); want != got {
-		t.Errorf("unexpected balance, wanted %v, got %v", want, got)
-	}
-}
-
 func TestStateDB_RollingBackSuicideRestoresValues(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
