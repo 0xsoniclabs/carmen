@@ -837,7 +837,7 @@ const deltaSlots = 1
 
 // deltaChainLimit is the maximum number of deltas between a full branch and
 // a delta, bounding the loads needed to complete a delta from disk.
-const deltaChainLimit = 16
+const deltaChainLimit = 4
 
 func (n *BranchNode) isDelta() bool {
 	return !n.base.IsEmpty()
