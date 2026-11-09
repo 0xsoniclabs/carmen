@@ -298,7 +298,8 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 	zero := common.Value{}
 
 	// Initially the account exists with some state.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(1), nil)
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
 	mock.EXPECT().GetStorage(address1, key2).Return(val2, nil)
@@ -306,9 +307,8 @@ func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) 
 	// At the end the account is recreated with the new state. The slot key2,
 	// known to hold val2 in the DB, is explicitly zeroed by the clearing.
 	mock.EXPECT().Apply(uint64(123), common.Update{
-		Balances: []common.BalanceUpdate{{Account: address1}},
-		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
-		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(12)}},
+		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 		Slots: []common.SlotUpdate{
 			{Account: address1, Key: key2, Value: common.Value{}},
 			{Account: address1, Key: key1, Value: val2},
@@ -678,40 +678,6 @@ func TestStateDB_RevertToUnknownSnapshotIsDetected(t *testing.T) {
 	}
 }
 
-func TestStateDB_RollingBackSuicideRestoresBalance(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	initialBalance := amount.New(5)
-
-	// Initially the account exists with a view stored values.
-	mock.EXPECT().GetBalance(address1).Return(initialBalance, nil)
-
-	// In the transaction we delete and restore the account.
-	db.BeginTransaction()
-
-	// Initially the old balance should be present.
-	if want, got := amount.New(5), db.GetBalance(address1); want != got {
-		t.Errorf("unexpected balance, wanted %v, got %v", want, got)
-	}
-
-	snapshot := db.Snapshot()
-	db.Suicide(address1)
-
-	// after a suicide the balance should be empty
-	if want, got := amount.New(), db.GetBalance(address1); want != got {
-		t.Errorf("unexpected balance, wanted %v, got %v", want, got)
-	}
-
-	db.RevertToSnapshot(snapshot)
-
-	// the rollback of the suicide should restore the balance
-	if want, got := amount.New(5), db.GetBalance(address1); want != got {
-		t.Errorf("unexpected balance, wanted %v, got %v", want, got)
-	}
-}
-
 func TestStateDB_RollingBackSuicideRestoresValues(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
@@ -759,14 +725,14 @@ func TestStateDB_DestroyingAndRecreatingAnAccountInTheSameTransactionCallsDelete
 	db := CreateStateDBUsing(mock)
 
 	// Initially the account exists with a view stored values.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(2), nil)
 	mock.EXPECT().Check().AnyTimes()
 
 	// The account is to be re-created.
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		Balances: []common.BalanceUpdate{{Account: address1}},
-		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	// In a transaction we destroy the account and recreate it. This should cause
@@ -792,14 +758,14 @@ func TestStateDB_DoubleDestroyedAccountThatIsOnceRolledBackIsStillCleared(t *tes
 	db := CreateStateDBUsing(mock)
 
 	// Initially the account exists with a view stored values.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(2), nil)
 	mock.EXPECT().Check().AnyTimes()
 
 	// The account is to be re-created.
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		Balances: []common.BalanceUpdate{{Account: address1}},
-		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
-		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(1)}},
+		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	// In a transaction we destroy the account, re-create it, destroy it and roll back
@@ -916,7 +882,8 @@ func TestStateDB_SuicideIndicatesExistingAccountAsBeingDeleted(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	// Simulate an existing account.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(1), nil)
 
 	// An existing account is indicated as being deleted.
 	if exists := db.Suicide(address1); !exists {
@@ -944,7 +911,7 @@ func TestStateDB_SetCodeShouldNotStopSuicide(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	// Simulate an existing account.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
 	mock.EXPECT().GetNonce(address1).Return(common.Nonce{1}, nil)
 
 	// An existing account is indicated as being deleted.
@@ -971,7 +938,8 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 	db := CreateStateDBUsing(mock)
 
 	// Simulate an existing account.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(1), nil)
 	mock.EXPECT().Check().AnyTimes()
 
 	// An existing account is indicated as being deleted.
@@ -988,6 +956,7 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 	db.SetState(address1, key1, val1)
 
 	// Deleting it a second time indicates the account as already deleted.
+	db.SubBalance(address1, amount.New(123))
 	if exists := db.Suicide(address1); !exists {
 		t.Errorf("suicide indicates that re-created account does not exist")
 	}
@@ -1055,24 +1024,60 @@ func TestStateDB_SuicideIndicatesDeletedAccountAsNotBeingDeleted(t *testing.T) {
 	}
 }
 
-func TestStateDB_SuicideRemovesBalanceFromAccount(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	// Simulate an existing account.
-	b12 := amount.New(12)
-
-	mock.EXPECT().GetBalance(address1).Return(b12, nil)
-
-	if got, want := db.GetBalance(address1), amount.New(12); got != want {
-		t.Errorf("invalid initial balance, wanted %v, got %v", want, got)
+func TestStateDB_Suicide_WritesBalanceOfContractCreatedInTransactionByRevision(t *testing.T) {
+	tests := map[string]struct {
+		revision      Revision
+		balance       amount.Amount
+		accountExists bool
+		update        common.Update
+	}{
+		// The account is created and deleted within the block, so nothing but the cleared slot is written.
+		"BeforeAmsterdam/BalanceBurned": {
+			revision:      AMSTERDAM - 1,
+			balance:       amount.New(),
+			accountExists: false,
+			update: common.Update{
+				Slots: []common.SlotUpdate{{Account: address1, Key: key1}},
+			},
+		},
+		"AfterAmsterdam/BalanceRetained": {
+			revision:      AMSTERDAM,
+			balance:       amount.New(12),
+			accountExists: true,
+			update: common.Update{
+				Balances: []common.BalanceUpdate{{Account: address1, Balance: amount.New(12)}},
+				Nonces:   []common.NonceUpdate{{Account: address1}},
+				Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+				Slots:    []common.SlotUpdate{{Account: address1, Key: key1}},
+			},
+		},
 	}
 
-	db.Suicide(address1)
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			mock := NewMockState(ctrl)
+			db := CreateStateDBUsing(mock)
 
-	if got, want := db.GetBalance(address1), amount.New(); got != want {
-		t.Errorf("invalid balance after account destruction, wanted %v, got %v", want, got)
+			mock.EXPECT().Check().AnyTimes()
+			setExpectationForEmptyAccount(t, mock, address1)
+			mock.EXPECT().Apply(uint64(1), test.update).Return(NewMockStagedBlock(ctrl), nil)
+
+			db.CreateAccount(address1)
+			db.CreateContract(address1)
+			db.SetNonce(address1, 1)
+			db.SetCode(address1, []byte{1, 2, 3})
+			db.SetState(address1, key1, val1)
+			db.AddBalance(address1, amount.New(12))
+			db.Suicide(address1)
+			db.EndTransaction(test.revision)
+
+			require.Equal(test.accountExists, db.Exist(address1))
+			require.Equal(test.balance, db.GetBalance(address1))
+
+			endBlockAndDiscardStaged(t, db, 1)
+		})
 	}
 }
 
@@ -1097,10 +1102,6 @@ func TestStateDB_SuicideCanBeRolledBack(t *testing.T) {
 		t.Errorf("Account is not marked as suicided after suicide")
 	}
 
-	if got := db.GetBalance(address1); !got.IsZero() {
-		t.Errorf("Balance of account not cleared")
-	}
-
 	db.RevertToSnapshot(snapshot)
 	if !db.Exist(address1) {
 		t.Errorf("Account remains deleted after rollback")
@@ -1120,11 +1121,11 @@ func TestStateDB_SuicideIsExecutedAtEndOfTransaction(t *testing.T) {
 
 	// the nonce and code will be set at the end of the block since suicide is canceled.
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(1), nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		Balances: []common.BalanceUpdate{{Account: address1}},
-		Nonces:   []common.NonceUpdate{{Account: address1}},
-		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Nonces: []common.NonceUpdate{{Account: address1}},
+		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.SetNonce(address1, 5)
@@ -1224,11 +1225,11 @@ func TestStateDB_DeletedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 
 	// The new account is deleted at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(1), nil)
 	mock.EXPECT().Apply(uint64(1), common.Update{
-		Balances: []common.BalanceUpdate{{Account: address1}},
-		Nonces:   []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(0)}},
-		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
+		Nonces: []common.NonceUpdate{{Account: address1, Nonce: common.ToNonce(0)}},
+		Codes:  []common.CodeUpdate{{Account: address1, Code: []byte{}}},
 	}).Return(NewMockStagedBlock(ctrl), nil)
 
 	db.Suicide(address1)
@@ -3230,73 +3231,6 @@ func TestStateDB_NeverCreatesEmptyAccountsEip161(t *testing.T) {
 	endBlockAndDiscardStaged(t, db, 1)
 }
 
-func TestStateDB_SuicidedAccountNotRecreatedBySettingBalance(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
-
-	mock.EXPECT().Check().AnyTimes()
-
-	// Simulate a existing account.
-	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
-	// The account will be deleted.
-	mock.EXPECT().Apply(uint64(1), common.Update{
-		Balances: []common.BalanceUpdate{{Account: address1}},
-		Nonces:   []common.NonceUpdate{{Account: address1}},
-		Codes:    []common.CodeUpdate{{Account: address1, Code: []byte{}}},
-		// The slot written after the suicide has an unknown stored value, so
-		// an explicit zero-write is emitted for it after the clearing.
-		Slots: []common.SlotUpdate{{Account: address1, Key: key1, Value: common.Value{}}},
-	}).Return(NewMockStagedBlock(ctrl), nil)
-
-	// The account is suicided
-	db.Suicide(address1)
-	// Writes into suicided account should be lost, account should not be created
-	db.AddBalance(address1, amount.New(12))
-	db.SetNonce(address1, 4321)
-	db.SetCode(address1, []byte{0x12, 0x34})
-	db.SetState(address1, key1, val1)
-
-	// The account must stay marked for removing
-	if !db.HasSuicided(address1) {
-		t.Errorf("address is no longer suicided")
-	}
-	// Until the end of transaction, account needs to behave as usual
-	if db.GetBalance(address1) != amount.New(12) {
-		t.Errorf("changed balance lost")
-	}
-	if db.GetNonce(address1) != 4321 {
-		t.Errorf("changed nonce lost")
-	}
-	if !bytes.Equal(db.GetCode(address1), []byte{0x12, 0x34}) {
-		t.Errorf("changed code lost")
-	}
-	if db.GetState(address1, key1) != val1 {
-		t.Errorf("changed storage lost")
-	}
-
-	db.EndTransaction(LatestRevision())
-
-	// After the end of transaction, the account should be deleted
-	if db.HasSuicided(address1) {
-		t.Errorf("address is suicided even after deleting")
-	}
-	if !db.GetBalance(address1).IsZero() {
-		t.Errorf("balance not deleted")
-	}
-	if db.GetNonce(address1) != 0 {
-		t.Errorf("nonce not deleted")
-	}
-	if len(db.GetCode(address1)) != 0 {
-		t.Errorf("code not deleted")
-	}
-	if db.GetState(address1, key1) != (common.Value{}) {
-		t.Errorf("storage not deleted")
-	}
-
-	endBlockAndDiscardStaged(t, db, 1)
-}
-
 func TestStateDB_StateDBCanNotEndABlockIfCommitIsNotAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
@@ -3314,6 +3248,28 @@ func TestStateDB_StateDBCanNotEndABlockIfCommitIsNotAllowed(t *testing.T) {
 	if err := db.Check(); err == nil {
 		t.Errorf("expected error after attempt, got %v", err)
 	}
+}
+
+func TestStateDB_EndTransaction_RecreatedAccountDoesNotStopDeletionOfOthers(t *testing.T) {
+	require := require.New(t)
+	mock := NewMockState(gomock.NewController(t))
+	db := CreateStateDBUsing(mock)
+	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
+	mock.EXPECT().GetBalance(address2).Return(amount.New(), nil)
+	for _, addr := range []common.Address{address1, address2} {
+		mock.EXPECT().GetNonce(addr).Return(common.Nonce{}, nil).AnyTimes()
+		mock.EXPECT().GetCodeSize(addr).Return(0, nil).AnyTimes()
+	}
+	db.SetNonce(address1, 1)
+	db.SetNonce(address2, 1)
+	require.True(db.Suicide(address1))
+	db.CreateAccount(address1)
+	db.SetNonce(address1, 2) // must be non-empty, or the empty-account pass re-marks it for deletion
+	require.True(db.Suicide(address2))
+	db.EndTransaction(LatestRevision())
+	require.False(db.Exist(address2))
+	require.Zero(db.GetNonce(address2))
+	require.Equal(uint64(2), db.GetNonce(address1))
 }
 
 func TestStateDB_ResetClearsInternalState(t *testing.T) {
@@ -4716,6 +4672,43 @@ func TestStateDB_HasEmptyStorage_DestructedContract_ReportEmpty(t *testing.T) {
 	if empty := statedb.HasEmptyStorage(addr); empty {
 		t.Errorf("storage should not yet be empty")
 	}
+}
+
+func TestStateDB_ResetTransactionContext_ClearsTransactionState(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	mock := NewMockState(ctrl)
+	db := CreateStateDBUsing(mock).(*stateDB)
+
+	mock.EXPECT().GetBalance(address1).Return(amount.New(10), nil)
+	setExpectationForEmptyAccount(t, mock, address2)
+
+	db.AddRefund(10)
+	db.AddAddressToAccessList(address1)
+	db.AddSlotToAccessList(address1, key1)
+	db.SetTransientState(address1, key1, val1)
+	db.CreateAccount(address2)
+	db.CreateContract(address2)
+	db.AddLog(&common.Log{})
+	require.True(db.Suicide(address1))
+
+	require.NotZero(db.refund)
+	require.NotEmpty(db.accessedAddresses)
+	require.NotZero(db.accessedSlots.Size())
+	require.NotZero(db.transientStorage.Size())
+	require.NotEmpty(db.emptyCandidates)
+	require.NotEmpty(db.logs)
+	require.NotEmpty(db.createdContracts)
+
+	db.resetTransactionContext()
+
+	require.Zero(db.refund)
+	require.Empty(db.accessedAddresses)
+	require.Zero(db.accessedSlots.Size())
+	require.Zero(db.transientStorage.Size())
+	require.Empty(db.emptyCandidates)
+	require.Empty(db.logs)
+	require.Empty(db.createdContracts)
 }
 
 func TestStateDB_resetReincarnationWhenExceeds_DoesNotResetBelowLimit(t *testing.T) {
