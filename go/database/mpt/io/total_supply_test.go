@@ -20,6 +20,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIO_GetLiveDbTotalSupply(t *testing.T) {
@@ -46,6 +47,30 @@ func TestIO_GetLiveDbTotalSupply(t *testing.T) {
 	if !strings.Contains(buf.String(), "Excluding zero address:    60\n") {
 		t.Errorf("Reported total supply does not match:\n%s", buf.String())
 	}
+}
+
+func TestIO_CalculateLiveTotalSupplyFromFiles_ReportsSupply(t *testing.T) {
+	require := require.New(t)
+	sourceDir := t.TempDir()
+	db := createExampleLiveDB(t, sourceDir)
+	require.NoError(db.SetBalance(common.Address{}, amount.New(5)))
+	require.NoError(db.Close())
+
+	var buf bytes.Buffer
+	logger := Log{logger: log.New(&buf, "", 0), start: time.Now()}
+
+	require.NoError(CalculateLiveTotalSupplyFromFiles(context.Background(), &logger, sourceDir))
+	require.Contains(buf.String(), "Total native token supply: 65\n")
+	require.Contains(buf.String(), "Excluding zero address:    60\n")
+}
+
+func TestIO_CalculateLiveTotalSupplyFromFiles_RejectsArchive(t *testing.T) {
+	require := require.New(t)
+	sourceDir := t.TempDir()
+	createTestArchive(t, sourceDir)
+
+	logger := Log{logger: log.New(&bytes.Buffer{}, "", 0), start: time.Now()}
+	require.Error(CalculateLiveTotalSupplyFromFiles(context.Background(), &logger, sourceDir))
 }
 
 func TestIO_GetArchiveTotalSupply(t *testing.T) {

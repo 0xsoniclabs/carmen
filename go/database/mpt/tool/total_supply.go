@@ -25,7 +25,13 @@ var TotalSupplyCmd = cli.Command{
 	ArgsUsage: "<db director>",
 	Flags: []cli.Flag{
 		&targetBlockFlag,
+		&fileScanFlag,
 	},
+}
+
+var fileScanFlag = cli.BoolFlag{
+	Name:  "file-scan",
+	Usage: "sum the account nodes by scanning the node file linearly instead of traversing the trie, LiveDB only",
 }
 
 func doTotalSupplyCalc(context *cli.Context) error {
@@ -43,6 +49,13 @@ func doTotalSupplyCalc(context *cli.Context) error {
 	logger := io.NewLog()
 
 	ctx := interrupt.CancelOnInterrupt(context.Context)
+
+	if context.Bool(fileScanFlag.Name) {
+		if mptInfo.Mode == mpt.Immutable {
+			return fmt.Errorf("--%s is only supported for LiveDB, the archive node files hold all historic account versions", fileScanFlag.Name)
+		}
+		return io.CalculateLiveTotalSupplyFromFiles(ctx, logger, dir)
+	}
 
 	if mptInfo.Mode == mpt.Immutable {
 		if !context.IsSet(targetBlockFlag.Name) {

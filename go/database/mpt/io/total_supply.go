@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
@@ -61,6 +62,69 @@ func CalculateLiveTotalSupply(ctx context.Context, logger *Log, directory string
 	logger.Printf("Accounts count: %d", visitor.accounts)
 	logger.Printf("Total native token supply: %s", visitor.totalSupply.String())
 	diff := new(uint256.Int).Sub(&visitor.totalSupply, &zeroBalance)
+	logger.Printf("Excluding zero address:    %s", diff.String())
+	return nil
+}
+
+// CalculateLiveTotalSupplyFromFiles sums the balances of all accounts of a
+// LiveDB by scanning its account node file linearly instead of traversing the
+// trie.
+func CalculateLiveTotalSupplyFromFiles(ctx context.Context, logger *Log, directory string) (retErr error) {
+	info, err := CheckMptDirectoryAndGetInfo(directory)
+	if err != nil {
+		return fmt.Errorf("error in input directory: %v", err)
+	}
+
+	if info.Config.Name != mpt.S5LiveConfig.Name {
+		return fmt.Errorf("can only calculate total supply on LiveDB instances, found %v in directory", info.Mode)
+	}
+
+	lock, err := mpt.LockDirectory(directory)
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, lock.Release()) }()
+
+	accountEncoder, _, _, _ := info.Config.GetEncoders()
+	accounts, err := file.OpenStock[uint64, mpt.AccountNode](accountEncoder, directory+"/accounts")
+	if err != nil {
+		return fmt.Errorf("failed to open account nodes: %w", err)
+	}
+	defer func() { retErr = errors.Join(retErr, accounts.Close()) }()
+
+	ids, err := accounts.GetIds()
+	if err != nil {
+		return fmt.Errorf("failed to get account node ids: %w", err)
+	}
+
+	logger.Printf("Calculating total supply...")
+	progress := logger.NewProgressTracker("visited %d accounts, %.2f accounts/s", 1_000_000)
+	var totalSupply, zeroBalance uint256.Int
+	var count uint64
+	for i := ids.GetLowerBound(); i < ids.GetUpperBound(); i++ {
+		if interrupt.IsCancelled(ctx) {
+			return interrupt.ErrCanceled
+		}
+		if !ids.Contains(i) {
+			continue
+		}
+		node, err := accounts.Get(i)
+		if err != nil {
+			return fmt.Errorf("failed to read account node %d: %w", i, err)
+		}
+		balance := node.Info().Balance.Uint256()
+		totalSupply.Add(&totalSupply, &balance)
+		if node.Address() == (common.Address{}) {
+			zeroBalance = balance
+		}
+		count++
+		progress.Step(1)
+	}
+
+	logger.Printf("Calculated for: %s", directory)
+	logger.Printf("Accounts count: %d", count)
+	logger.Printf("Total native token supply: %s", totalSupply.String())
+	diff := new(uint256.Int).Sub(&totalSupply, &zeroBalance)
 	logger.Printf("Excluding zero address:    %s", diff.String())
 	return nil
 }
