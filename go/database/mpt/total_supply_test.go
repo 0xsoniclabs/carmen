@@ -13,7 +13,6 @@ package mpt
 import (
 	"errors"
 	"math/rand"
-	"path/filepath"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -67,11 +66,8 @@ func TestMptState_TotalSupply_OverflowIsReported(t *testing.T) {
 func TestMptState_TotalSupply_AvailableValueIsNotRecomputed(t *testing.T) {
 	require := require.New(t)
 	db := NewMockDatabase(gomock.NewController(t))
-	// Computing the supply flushes the trie first.
-	db.EXPECT().updateHashesFor(gomock.Any()).AnyTimes()
-	db.EXPECT().Flush().AnyTimes()
-	db.EXPECT().VisitNodes(gomock.Any(), gomock.Any()).Return(nil).Times(1)
-	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(t.TempDir(), "meta.json")}}
+	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	state := &MptState{trie: &LiveTrie{forest: db}}
 
 	for range 2 {
 		total, err := state.TotalSupply()
@@ -84,28 +80,17 @@ func TestMptState_TotalSupply_FailedComputationIsReportedAndRetried(t *testing.T
 	require := require.New(t)
 	injectedErr := errors.New("injected error")
 	db := NewMockDatabase(gomock.NewController(t))
-	// Computing the supply flushes the trie first.
-	db.EXPECT().updateHashesFor(gomock.Any()).AnyTimes()
-	db.EXPECT().Flush().AnyTimes()
 	gomock.InOrder(
-		db.EXPECT().VisitNodes(gomock.Any(), gomock.Any()).Return(injectedErr),
-		db.EXPECT().VisitNodes(gomock.Any(), gomock.Any()).Return(nil),
+		db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr),
+		db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
 	)
-	state := &MptState{trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(t.TempDir(), "meta.json")}}
+	state := &MptState{trie: &LiveTrie{forest: db}}
 
 	_, err := state.TotalSupply()
 	require.ErrorIs(err, injectedErr)
 	total, err := state.TotalSupply()
 	require.NoError(err)
 	require.Equal(amount.New(), total)
-}
-
-func TestMptState_TotalSupply_IsNotSupportedInImmutableMode(t *testing.T) {
-	require := require.New(t)
-	state := &MptState{trie: &LiveTrie{storageMode: Immutable}}
-
-	_, err := state.TotalSupply()
-	require.ErrorIs(err, errTotalSupplyNotSupportedInImmutableMode)
 }
 
 func TestMptState_TotalSupply_IsMaintainedIncrementally(t *testing.T) {

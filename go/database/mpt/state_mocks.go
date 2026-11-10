@@ -244,20 +244,6 @@ func (mr *MockDatabaseMockRecorder) SetValue(rootRef, addr, key, value any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetValue", reflect.TypeOf((*MockDatabase)(nil).SetValue), rootRef, addr, key, value)
 }
 
-// VisitNodes mocks base method.
-func (m *MockDatabase) VisitNodes(kinds NodeKinds, visitor NodeVisitor) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "VisitNodes", kinds, visitor)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// VisitNodes indicates an expected call of VisitNodes.
-func (mr *MockDatabaseMockRecorder) VisitNodes(kinds, visitor any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VisitNodes", reflect.TypeOf((*MockDatabase)(nil).VisitNodes), kinds, visitor)
-}
-
 // VisitTrie mocks base method.
 func (m *MockDatabase) VisitTrie(rootRef *NodeReference, mode AccessMode, visitor NodeVisitor) error {
 	m.ctrl.T.Helper()

@@ -48,17 +48,6 @@ type NodeInfo struct {
 
 type VisitResponse int
 
-// NodeKinds selects the kinds of nodes covered by a forest visit. Kinds can be
-// combined using a bitwise or.
-type NodeKinds uint8
-
-const (
-	AccountNodes NodeKinds = 1 << iota
-	BranchNodes
-	ExtensionNodes
-	ValueNodes
-)
-
 const (
 	VisitResponseContinue VisitResponse = 0
 	VisitResponseAbort    VisitResponse = 1

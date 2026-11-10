@@ -70,11 +70,6 @@ type Database interface {
 	// VisitTrie allows for traversing the whole trie under the input root
 	VisitTrie(rootRef *NodeReference, mode AccessMode, visitor NodeVisitor) error
 
-	// VisitNodes visits every stored node of the given kinds in storage order.
-	// Unlike VisitTrie, it is not limited to the nodes reachable from a root.
-	// Modifications not yet flushed are not visible.
-	VisitNodes(kinds NodeKinds, visitor NodeVisitor) error
-
 	// Dump provides a debug print of the whole trie under the input root
 	Dump(rootRef *NodeReference)
 
