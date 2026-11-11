@@ -8,7 +8,7 @@
 // On the date above, in accordance with the Business Source License, use of
 // this software will be governed by the GNU Lesser General Public License v3.
 
-package io
+package mpt
 
 import (
 	"errors"
@@ -21,31 +21,41 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/common/heap"
-	"github.com/0xsoniclabs/carmen/go/database/mpt"
 )
 
-//go:generate mockgen -source parallel_visit.go -destination parallel_visit_mocks.go -package io
+//go:generate mockgen -source parallel_visit.go -destination parallel_visit_mocks.go -package mpt
 
-// visitAll visits all nodes in the trie rooted at the given node in depth-first pre-order order.
+// NoResponseNodeVisitor is a visitor for nodes that cannot steer the visit.
+type NoResponseNodeVisitor interface {
+	// Visit is called for each node encountered while visiting a trie.
+	Visit(Node, NodeInfo) error
+}
+
+// MakeNoResponseVisitor wraps a function into the NoResponseNodeVisitor interface.
+func MakeNoResponseVisitor(visit func(Node, NodeInfo) error) NoResponseNodeVisitor {
+	return &noResponseNodeVisitorFunc{visit}
+}
+
+// VisitTrieFromFiles visits all nodes in the trie rooted at the given node in depth-first pre-order order.
 // This function accesses nodes using its own read-only node source, independently of a potential
 // node source and cache managed by an MPT Forest instance.
 // Thus, the caller needs to make sure that any concurrently open MPTs have been flushed
 // before calling this function to avoid reading out-dated or inconsistent data.
-func visitAll(
+func VisitTrieFromFiles(
 	directory string,
-	config mpt.MptConfig,
-	root mpt.NodeId,
-	visitor noResponseNodeVisitor,
+	config MptConfig,
+	root NodeId,
+	visitor NoResponseNodeVisitor,
 	pruneStorage bool,
 ) error {
 	return visitAllWithSources(&stockNodeSourceFactory{directory, config}, root, visitor, pruneStorage)
 }
 
-// visitAllWithSources is an internal implementation of visitAll that allows to provide a custom node source factory.
+// visitAllWithSources is an internal implementation of VisitTrieFromFiles that allows to provide a custom node source factory.
 func visitAllWithSources(
 	sourceFactory nodeSourceFactory,
-	root mpt.NodeId,
-	visitor noResponseNodeVisitor,
+	root NodeId,
+	visitor NoResponseNodeVisitor,
 	pruneStorage bool,
 ) error {
 	return visitAllWithConfig(sourceFactory, root, visitor, visitAllConfig{
@@ -65,8 +75,8 @@ type visitAllConfig struct {
 
 func visitAllWithConfig(
 	sourceFactory nodeSourceFactory,
-	root mpt.NodeId,
-	visitor noResponseNodeVisitor,
+	root NodeId,
+	visitor NoResponseNodeVisitor,
 	config visitAllConfig,
 ) error {
 	// The idea is to have workers processing a common queue of needed
@@ -88,7 +98,7 @@ func visitAllWithConfig(
 
 	type request struct {
 		position *position
-		id       mpt.NodeId
+		id       NodeId
 	}
 
 	requestsMutex := sync.Mutex{}
@@ -97,11 +107,11 @@ func visitAllWithConfig(
 	})
 
 	type response struct {
-		node mpt.Node
+		node Node
 		err  error
 		main bool // response comes from the main thread
 	}
-	responses := map[mpt.NodeId]response{}
+	responses := map[NodeId]response{}
 	responsesMutex := sync.Mutex{}
 	responsesConsumedCond := sync.NewCond(&responsesMutex)
 	defer responsesConsumedCond.Broadcast() // < free potential waiting workers
@@ -139,7 +149,7 @@ func visitAllWithConfig(
 
 		// derive child nodes to be fetched
 		switch node := node.(type) {
-		case *mpt.BranchNode:
+		case *BranchNode:
 			children := node.GetChildren()
 			requestsMutex.Lock()
 			for i, child := range children {
@@ -151,13 +161,13 @@ func visitAllWithConfig(
 				requests.Add(request{pos, child.Id()})
 			}
 			requestsMutex.Unlock()
-		case *mpt.ExtensionNode:
+		case *ExtensionNode:
 			next := node.GetNext()
 			requestsMutex.Lock()
 			pos := req.position.child(0)
 			requests.Add(request{pos, next.Id()})
 			requestsMutex.Unlock()
-		case *mpt.AccountNode:
+		case *AccountNode:
 			if !config.pruneStorage {
 				storage := node.GetStorage()
 				id := storage.Id()
@@ -255,7 +265,7 @@ func visitAllWithConfig(
 	// This loop does not perform any I/O, and instead it queries
 	// the workers for the nodes.
 	// This provides a performance boost.
-	stack := []mpt.NodeId{root}
+	stack := []NodeId{root}
 	for len(stack) > 0 {
 		cur := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -293,12 +303,12 @@ func visitAllWithConfig(
 			break
 		}
 
-		if visitErr := visitor.Visit(res.node, mpt.NodeInfo{Id: cur}); visitErr != nil {
+		if visitErr := visitor.Visit(res.node, NodeInfo{Id: cur}); visitErr != nil {
 			err = visitErr
 			break
 		}
 		switch node := res.node.(type) {
-		case *mpt.BranchNode:
+		case *BranchNode:
 			children := node.GetChildren()
 			for i := len(children) - 1; i >= 0; i-- {
 				id := children[i].Id()
@@ -306,10 +316,10 @@ func visitAllWithConfig(
 					stack = append(stack, id)
 				}
 			}
-		case *mpt.ExtensionNode:
+		case *ExtensionNode:
 			next := node.GetNext()
 			stack = append(stack, next.Id())
-		case *mpt.AccountNode:
+		case *AccountNode:
 			if !config.pruneStorage {
 				storage := node.GetStorage()
 				id := storage.Id()
@@ -498,13 +508,13 @@ type nodeSourceFactory interface {
 // It provides read-only access to nodes by their ids.
 type nodeSource interface {
 	io.Closer
-	get(mpt.NodeId) (mpt.Node, error)
+	get(NodeId) (Node, error)
 }
 
 // stockNodeSourceFactory is a nodeSourceFactory implementation that creates stock backed sources to access nodes.
 type stockNodeSourceFactory struct {
 	directory string
-	config    mpt.MptConfig
+	config    MptConfig
 }
 
 func (f *stockNodeSourceFactory) open() (nodeSource, error) {
@@ -518,25 +528,25 @@ func (f *stockNodeSourceFactory) open() (nodeSource, error) {
 
 	aEncoder, bEncoder, eEncoder, vEncoder := f.config.GetEncoders()
 
-	accounts, err := file.OpenReadOnlyStock[uint64, mpt.AccountNode](path.Join(f.directory, "accounts"), aEncoder)
+	accounts, err := file.OpenReadOnlyStock[uint64, AccountNode](path.Join(f.directory, "accounts"), aEncoder)
 	if err != nil {
 		return nil, closeWithErr(err)
 	}
 	toClose = append(toClose, accounts)
 
-	branches, err := file.OpenReadOnlyStock[uint64, mpt.BranchNode](path.Join(f.directory, "branches"), bEncoder)
+	branches, err := file.OpenReadOnlyStock[uint64, BranchNode](path.Join(f.directory, "branches"), bEncoder)
 	if err != nil {
 		return nil, closeWithErr(err)
 	}
 	toClose = append(toClose, branches)
 
-	extensions, err := file.OpenReadOnlyStock[uint64, mpt.ExtensionNode](path.Join(f.directory, "extensions"), eEncoder)
+	extensions, err := file.OpenReadOnlyStock[uint64, ExtensionNode](path.Join(f.directory, "extensions"), eEncoder)
 	if err != nil {
 		return nil, closeWithErr(err)
 	}
 	toClose = append(toClose, extensions)
 
-	values, err := file.OpenReadOnlyStock[uint64, mpt.ValueNode](path.Join(f.directory, "values"), vEncoder)
+	values, err := file.OpenReadOnlyStock[uint64, ValueNode](path.Join(f.directory, "values"), vEncoder)
 	if err != nil {
 		return nil, closeWithErr(err)
 	}
@@ -552,16 +562,16 @@ func (f *stockNodeSourceFactory) open() (nodeSource, error) {
 
 // stockNodeSource is a nodeSource implementation that uses stock to access nodes.
 type stockNodeSource struct {
-	accounts   stock.ReadOnly[uint64, mpt.AccountNode]
-	branches   stock.ReadOnly[uint64, mpt.BranchNode]
-	extensions stock.ReadOnly[uint64, mpt.ExtensionNode]
-	values     stock.ReadOnly[uint64, mpt.ValueNode]
+	accounts   stock.ReadOnly[uint64, AccountNode]
+	branches   stock.ReadOnly[uint64, BranchNode]
+	extensions stock.ReadOnly[uint64, ExtensionNode]
+	values     stock.ReadOnly[uint64, ValueNode]
 }
 
-func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
+func (s *stockNodeSource) get(id NodeId) (Node, error) {
 	pos := id.Index()
 	if id.IsEmpty() {
-		return mpt.EmptyNode{}, nil
+		return EmptyNode{}, nil
 	}
 	if id.IsAccount() {
 		res, err := s.accounts.Get(pos)
@@ -589,4 +599,12 @@ func (s *stockNodeSource) Close() error {
 		s.extensions.Close(),
 		s.values.Close(),
 	)
+}
+
+type noResponseNodeVisitorFunc struct {
+	visit func(Node, NodeInfo) error
+}
+
+func (v *noResponseNodeVisitorFunc) Visit(node Node, info NodeInfo) error {
+	return v.visit(node, info)
 }

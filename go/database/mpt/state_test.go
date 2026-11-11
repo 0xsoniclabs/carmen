@@ -365,20 +365,6 @@ func TestState_StateModifications_Failing(t *testing.T) {
 	}
 }
 
-func TestMptState_SetBalance_FailedUpdateInvalidatesTotalSupply(t *testing.T) {
-	require := require.New(t)
-	injectedErr := errors.New("injected error")
-	db := NewMockDatabase(gomock.NewController(t))
-	db.EXPECT().GetAccountInfo(gomock.Any(), gomock.Any()).Return(AccountInfo{}, false, nil)
-	db.EXPECT().SetAccountInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(NodeReference{}, injectedErr)
-	state := &MptState{trie: &LiveTrie{forest: db}}
-	state.trie.setTotalSupply(amount.New(10))
-
-	require.ErrorIs(state.SetBalance(common.Address{1}, amount.New(5)), injectedErr)
-	_, known := state.trie.getTotalSupply()
-	require.False(known)
-}
-
 func TestState_HasEmptyStorage(t *testing.T) {
 	addr := common.Address{0x1}
 	ctrl := gomock.NewController(t)

@@ -72,7 +72,7 @@ func (mr *MockmptStateVisitorMockRecorder) GetHash() *gomock.Call {
 }
 
 // Visit mocks base method.
-func (m *MockmptStateVisitor) Visit(visitor noResponseNodeVisitor, pruneStorage bool) error {
+func (m *MockmptStateVisitor) Visit(visitor mpt.NoResponseNodeVisitor, pruneStorage bool) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Visit", visitor, pruneStorage)
 	ret0, _ := ret[0].(error)
@@ -83,42 +83,4 @@ func (m *MockmptStateVisitor) Visit(visitor noResponseNodeVisitor, pruneStorage 
 func (mr *MockmptStateVisitorMockRecorder) Visit(visitor, pruneStorage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Visit", reflect.TypeOf((*MockmptStateVisitor)(nil).Visit), visitor, pruneStorage)
-}
-
-// MocknoResponseNodeVisitor is a mock of noResponseNodeVisitor interface.
-type MocknoResponseNodeVisitor struct {
-	ctrl     *gomock.Controller
-	recorder *MocknoResponseNodeVisitorMockRecorder
-	isgomock struct{}
-}
-
-// MocknoResponseNodeVisitorMockRecorder is the mock recorder for MocknoResponseNodeVisitor.
-type MocknoResponseNodeVisitorMockRecorder struct {
-	mock *MocknoResponseNodeVisitor
-}
-
-// NewMocknoResponseNodeVisitor creates a new mock instance.
-func NewMocknoResponseNodeVisitor(ctrl *gomock.Controller) *MocknoResponseNodeVisitor {
-	mock := &MocknoResponseNodeVisitor{ctrl: ctrl}
-	mock.recorder = &MocknoResponseNodeVisitorMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MocknoResponseNodeVisitor) EXPECT() *MocknoResponseNodeVisitorMockRecorder {
-	return m.recorder
-}
-
-// Visit mocks base method.
-func (m *MocknoResponseNodeVisitor) Visit(arg0 mpt.Node, arg1 mpt.NodeInfo) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Visit", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Visit indicates an expected call of Visit.
-func (mr *MocknoResponseNodeVisitorMockRecorder) Visit(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Visit", reflect.TypeOf((*MocknoResponseNodeVisitor)(nil).Visit), arg0, arg1)
 }

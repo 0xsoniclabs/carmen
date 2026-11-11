@@ -21,7 +21,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/common"
-	"github.com/0xsoniclabs/carmen/go/common/amount"
 	"github.com/0xsoniclabs/carmen/go/common/interrupt"
 	"github.com/0xsoniclabs/carmen/go/common/iter_utils"
 	"github.com/0xsoniclabs/carmen/go/database/mpt/shared"
@@ -94,8 +93,7 @@ func VerifyMptState(ctx context.Context, directory string, config MptConfig, roo
 //   - all required files are present and can be read
 //   - all referenced nodes are present
 //   - all hashes are consistent
-//   - all given extra checks pass
-func verifyFileForest(ctx context.Context, directory string, config MptConfig, roots iter_utils.ResultSeq2[uint64, Root], observer VerificationObserver, extraChecks ...func(*verificationNodeSource, VerificationObserver) error) (res error) {
+func verifyFileForest(ctx context.Context, directory string, config MptConfig, roots iter_utils.ResultSeq2[uint64, Root], observer VerificationObserver) (res error) {
 	if observer == nil {
 		observer = NilVerificationObserver{}
 	}
@@ -112,15 +110,7 @@ func verifyFileForest(ctx context.Context, directory string, config MptConfig, r
 		return err
 	}
 	defer func() { res = errors.Join(res, source.Close()) }()
-	if err := verifyForest(directory, config, roots, source, observer); err != nil {
-		return err
-	}
-	for _, check := range extraChecks {
-		if err := check(source, observer); err != nil {
-			return err
-		}
-	}
-	return nil
+	return verifyForest(directory, config, roots, source, observer)
 }
 
 func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq2[uint64, Root], source *verificationNodeSource, observer VerificationObserver) (res error) {
@@ -737,31 +727,6 @@ type verificationNodeSource struct {
 	overwriteNode Node
 
 	numberOfNodesIterated uint64
-}
-
-// verifyTotalSupply checks that the given total supply matches the sum of the
-// balances of all accounts in the source.
-func verifyTotalSupply(source *verificationNodeSource, want amount.Amount, observer VerificationObserver) error {
-	observer.Progress("Checking total supply ...")
-	// In a live trie, every stored account node is part of the current trie.
-	got := amount.New()
-	overflow := false
-	err := source.forAccountNodes(func(node *AccountNode) error {
-		if !overflow {
-			got, overflow = amount.AddOverflow(got, node.Info().Balance)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if overflow {
-		return errTotalSupplyOverflow
-	}
-	if got != want {
-		return fmt.Errorf("inconsistent total supply, stored %v, sum of balances %v", want, got)
-	}
-	return nil
 }
 
 func openVerificationNodeSource(ctx context.Context, directory string, config MptConfig) (_ *verificationNodeSource, retErr error) {

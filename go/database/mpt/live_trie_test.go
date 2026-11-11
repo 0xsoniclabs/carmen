@@ -12,7 +12,6 @@ package mpt
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -178,26 +177,6 @@ func TestLiveTrie_Cannot_MakeTrie_ClosesForest(t *testing.T) {
 	// forest must be closed after the error
 	if err := forest.Close(); !errors.Is(err, forestClosedErr) {
 		t.Errorf("closing forest should have failed, wanted %v, got %v", forestClosedErr, err)
-	}
-}
-
-func TestLiveTrie_Open_InvalidTotalSupplyIsRejected(t *testing.T) {
-	tests := map[string]string{
-		"not a number":      "abc",
-		"negative":          "-1",
-		"above the maximum": amount.Max().String() + "0",
-	}
-	for name, value := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			dir := t.TempDir()
-			data, err := json.Marshal(metadata{TotalSupply: value})
-			require.NoError(err)
-			require.NoError(os.WriteFile(getLiveTrieMetadataPath(dir), data, 0600))
-
-			_, err = OpenFileLiveTrie(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-			require.ErrorContains(err, "invalid total supply")
-		})
 	}
 }
 
@@ -374,79 +353,6 @@ func TestLiveTrie_Cannot_Flush_Hashes(t *testing.T) {
 	if err := mpt.Flush(); !errors.Is(err, injectedErr) {
 		t.Errorf("flushing trie should have failed, wanted %v, got %v", injectedErr, err)
 	}
-}
-
-func TestLiveTrie_FlushAndOpen_PreservesTotalSupply(t *testing.T) {
-	tests := map[string]*amount.Amount{
-		"unknown": nil,
-		"zero":    new(amount.New()),
-		"maximum": new(amount.Max()),
-	}
-	for name, want := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			dir := t.TempDir()
-			trie, err := OpenFileLiveTrie(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-			require.NoError(err)
-			if want != nil {
-				trie.setTotalSupply(*want)
-			}
-			require.NoError(trie.Close())
-
-			trie, err = OpenFileLiveTrie(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-			require.NoError(err)
-			defer func() { require.NoError(trie.Close()) }()
-			total, known := trie.getTotalSupply()
-			require.Equal(want != nil, known)
-			if want != nil {
-				require.Equal(*want, total)
-			}
-		})
-	}
-}
-
-func TestLiveTrie_AdjustTotalSupply_AppliesBalanceChange(t *testing.T) {
-	tests := map[string]struct{ initial, old, new, want amount.Amount }{
-		"increase": {amount.New(10), amount.New(2), amount.New(5), amount.New(13)},
-		"decrease": {amount.New(10), amount.New(5), amount.New(2), amount.New(7)},
-		// Subtracting before adding avoids an intermediate overflow.
-		"to the maximum": {amount.New(1), amount.New(1), amount.Max(), amount.Max()},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			trie := &LiveTrie{}
-			trie.setTotalSupply(test.initial)
-			trie.adjustTotalSupply(test.old, test.new)
-
-			total, known := trie.getTotalSupply()
-			require.True(known)
-			require.Equal(test.want, total)
-		})
-	}
-}
-
-func TestLiveTrie_AdjustTotalSupply_InconsistentUpdatesInvalidateValue(t *testing.T) {
-	tests := map[string]struct{ initial, old, new amount.Amount }{
-		"underflow": {amount.New(1), amount.New(2), amount.New(0)},
-		"overflow":  {amount.Max(), amount.New(0), amount.New(1)},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			trie := &LiveTrie{}
-			trie.setTotalSupply(test.initial)
-			trie.adjustTotalSupply(test.old, test.new)
-			_, known := trie.getTotalSupply()
-			require.False(t, known)
-		})
-	}
-}
-
-func TestLiveTrie_AdjustTotalSupply_UnknownValueStaysUnknown(t *testing.T) {
-	trie := &LiveTrie{}
-	trie.adjustTotalSupply(amount.New(1), amount.New(2))
-	_, known := trie.getTotalSupply()
-	require.False(t, known)
 }
 
 func TestLiveTrie_NonExistingAccountsHaveEmptyInfo(t *testing.T) {
@@ -1150,49 +1056,6 @@ func TestLiveTrie_VerificationOfLiveTrieWithCorruptedFileFails(t *testing.T) {
 	}
 }
 
-func TestLiveTrie_VerifyFileLiveTrie_AcceptsMatchingTotalSupply(t *testing.T) {
-	for _, config := range allMptConfigs {
-		t.Run(config.Name, func(t *testing.T) {
-			require := require.New(t)
-			dir := t.TempDir()
-			supply := createLiveStateWithTotalSupply(t, dir, config)
-			filename := getLiveTrieMetadataPath(dir)
-			meta, exists, err := readMetadata(filename)
-			require.NoError(err)
-			require.True(exists)
-			metaSupply, err := meta.getTotalSupply()
-			require.NoError(err)
-			require.Equal(supply, *metaSupply)
-
-			// A nil observer must be accepted by the total supply check.
-			require.NoError(VerifyFileLiveTrie(context.Background(), dir, config, nil))
-		})
-	}
-}
-
-func TestLiveTrie_VerifyFileLiveTrie_DetectsMismatchingTotalSupply(t *testing.T) {
-	for _, config := range allMptConfigs {
-		t.Run(config.Name, func(t *testing.T) {
-			require := require.New(t)
-			dir := t.TempDir()
-			supply := createLiveStateWithTotalSupply(t, dir, config)
-
-			filename := getLiveTrieMetadataPath(dir)
-			meta, exists, err := readMetadata(filename)
-			require.NoError(err)
-			require.True(exists)
-			require.NotEmpty(meta.TotalSupply)
-			meta.TotalSupply = amount.Add(supply, amount.New(1)).String()
-			data, err := json.Marshal(meta)
-			require.NoError(err)
-			require.NoError(os.WriteFile(filename, data, 0600))
-
-			err = VerifyFileLiveTrie(context.Background(), dir, config, NilVerificationObserver{})
-			require.ErrorContains(err, "inconsistent total supply")
-		})
-	}
-}
-
 func TestLiveTrie_HasEmptyStorage(t *testing.T) {
 	addr := common.Address{0x1}
 	ctrl := gomock.NewController(t)
@@ -1354,22 +1217,4 @@ func BenchmarkValueInsertionInFileTrie(b *testing.B) {
 			b.StopTimer()
 		})
 	}
-}
-
-// createLiveStateWithTotalSupply creates a live state in the given directory
-// that stores its total supply.
-func createLiveStateWithTotalSupply(t *testing.T, dir string, config MptConfig) amount.Amount {
-	t.Helper()
-	const N = 50
-	require := require.New(t)
-	state, err := OpenGoFileState(dir, config, NodeCacheConfig{Capacity: 1024})
-	require.NoError(err)
-	for i := range N {
-		require.NoError(state.SetBalance(common.Address{byte(i)}, amount.New(uint64(i))))
-	}
-	supply, err := state.TotalSupply()
-	require.Equal(supply, amount.New(uint64(N*(N-1)/2)))
-	require.NoError(err)
-	require.NoError(state.Close())
-	return supply
 }

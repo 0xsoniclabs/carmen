@@ -242,7 +242,7 @@ func TestStateDB_TotalSupply_MatchesSumOfBalancesOverRandomBlocks(t *testing.T) 
 			defer func() {
 				require.NoError(db.Close())
 			}()
-			skipIfTotalSupplyIsNotSupported(t, db)
+			skipIfTotalSupplyIsNotSupported(t, s)
 
 			rnd := rand.New(rand.NewPCG(42, 42))
 			for block := uint64(1); block <= 300; block++ {
@@ -250,7 +250,7 @@ func TestStateDB_TotalSupply_MatchesSumOfBalancesOverRandomBlocks(t *testing.T) 
 				done, err := staged.Commit()
 				require.NoError(err)
 				require.NoError(done.Wait())
-				requireTotalSupplyIsSumOfBalances(t, s, db)
+				requireTotalSupplyIsSumOfBalances(t, s)
 			}
 		})
 	}
@@ -259,7 +259,7 @@ func TestStateDB_TotalSupply_MatchesSumOfBalancesOverRandomBlocks(t *testing.T) 
 func TestStateDB_TotalSupply_StaysConsistentOverRandomCommitsAndRollbacks(t *testing.T) {
 	forEachStagingState(t, func(t *testing.T, _ namedStateConfig, s state.State, db state.StateDB) {
 		require := require.New(t)
-		skipIfTotalSupplyIsNotSupported(t, db)
+		skipIfTotalSupplyIsNotSupported(t, s)
 
 		rnd := rand.New(rand.NewPCG(42, 42))
 		pending := []state.StagedBlock{}
@@ -271,7 +271,7 @@ func TestStateDB_TotalSupply_StaysConsistentOverRandomCommitsAndRollbacks(t *tes
 					last := len(pending) - 1
 					require.NoError(pending[last].Rollback())
 					pending = pending[:last]
-					requireTotalSupplyIsSumOfBalances(t, s, db)
+					requireTotalSupplyIsSumOfBalances(t, s)
 				}
 			case 1:
 				for _, staged := range pending {
@@ -280,10 +280,10 @@ func TestStateDB_TotalSupply_StaysConsistentOverRandomCommitsAndRollbacks(t *tes
 					require.NoError(done.Wait())
 				}
 				pending = pending[:0]
-				requireTotalSupplyIsSumOfBalances(t, s, db)
+				requireTotalSupplyIsSumOfBalances(t, s)
 			default:
 				pending = append(pending, stageRandomBalanceBlock(t, rnd, db, block))
-				requireTotalSupplyIsSumOfBalances(t, s, db)
+				requireTotalSupplyIsSumOfBalances(t, s)
 			}
 		}
 	})
@@ -1352,9 +1352,9 @@ var totalSupplyTestAddresses = func() []common.Address {
 
 // skipIfTotalSupplyIsNotSupported skips the test for states without total
 // supply. On the others, the call starts tracking the supply.
-func skipIfTotalSupplyIsNotSupported(t *testing.T, db state.StateDB) {
+func skipIfTotalSupplyIsNotSupported(t *testing.T, s state.State) {
 	t.Helper()
-	if _, err := db.TotalSupply(); errors.Is(err, state.TotalSupplyNotSupported) {
+	if _, err := s.TotalSupply(); errors.Is(err, state.TotalSupplyNotSupported) {
 		t.Skip("total supply not supported")
 	}
 }
@@ -1398,7 +1398,7 @@ func stageRandomBalanceBlock(t *testing.T, rnd *rand.Rand, db state.StateDB, blo
 
 // requireTotalSupplyIsSumOfBalances checks the total supply against the
 // balances of the total supply test accounts.
-func requireTotalSupplyIsSumOfBalances(t *testing.T, s state.State, db state.StateDB) {
+func requireTotalSupplyIsSumOfBalances(t *testing.T, s state.State) {
 	t.Helper()
 	want := amount.New()
 	for _, address := range totalSupplyTestAddresses {
@@ -1406,7 +1406,7 @@ func requireTotalSupplyIsSumOfBalances(t *testing.T, s state.State, db state.Sta
 		require.NoError(t, err)
 		want = amount.Add(want, balance)
 	}
-	got, err := db.TotalSupply()
+	got, err := s.TotalSupply()
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 }

@@ -12,7 +12,7 @@ package mpt
 
 import (
 	"errors"
-	"math/rand"
+	"path/filepath"
 	"testing"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -66,8 +66,10 @@ func TestMptState_TotalSupply_OverflowIsReported(t *testing.T) {
 func TestMptState_TotalSupply_AvailableValueIsNotRecomputed(t *testing.T) {
 	require := require.New(t)
 	db := NewMockDatabase(gomock.NewController(t))
-	db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
-	state := &MptState{trie: &LiveTrie{forest: db}}
+	db.EXPECT().updateHashesFor(gomock.Any()).AnyTimes()
+	db.EXPECT().getConfig().Return(S5LiveConfig).AnyTimes()
+	db.EXPECT().Flush().Return(nil).Times(1)
+	state := newMptStateWithEmptyNodeFiles(t, db)
 
 	for range 2 {
 		total, err := state.TotalSupply()
@@ -80,11 +82,13 @@ func TestMptState_TotalSupply_FailedComputationIsReportedAndRetried(t *testing.T
 	require := require.New(t)
 	injectedErr := errors.New("injected error")
 	db := NewMockDatabase(gomock.NewController(t))
+	db.EXPECT().updateHashesFor(gomock.Any()).AnyTimes()
+	db.EXPECT().getConfig().Return(S5LiveConfig).AnyTimes()
 	gomock.InOrder(
-		db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(injectedErr),
-		db.EXPECT().VisitTrie(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil),
+		db.EXPECT().Flush().Return(injectedErr),
+		db.EXPECT().Flush().Return(nil),
 	)
-	state := &MptState{trie: &LiveTrie{forest: db}}
+	state := newMptStateWithEmptyNodeFiles(t, db)
 
 	_, err := state.TotalSupply()
 	require.ErrorIs(err, injectedErr)
@@ -93,44 +97,21 @@ func TestMptState_TotalSupply_FailedComputationIsReportedAndRetried(t *testing.T
 	require.Equal(amount.New(), total)
 }
 
-func TestMptState_TotalSupply_IsMaintainedIncrementally(t *testing.T) {
+func TestMptState_TotalSupply_CachedValueIsDroppedByBalanceUpdate(t *testing.T) {
+	require := require.New(t)
 	state, err := OpenGoMemoryState(t.TempDir(), S5LiveConfig, NodeCacheConfig{Capacity: 1024})
-	require.NoError(t, err)
-	defer func() { require.NoError(t, state.Close()) }()
+	require.NoError(err)
+	defer func() { require.NoError(state.Close()) }()
 
-	// The first query computes and starts tracking the supply.
+	require.NoError(state.SetBalance(common.Address{1}, amount.New(10)))
 	total, err := state.TotalSupply()
-	require.NoError(t, err)
-	require.Equal(t, amount.New(), total)
+	require.NoError(err)
+	require.Equal(amount.New(10), total)
 
-	_, known := state.trie.getTotalSupply()
-	require.True(t, known)
-
-	rnd := rand.New(rand.NewSource(42))
-	for block := range 50 {
-		update := common.Update{}
-		for range 20 {
-			addr := common.Address{byte(rnd.Intn(30))}
-			switch rnd.Intn(4) {
-			case 0:
-				// Deletes the account if it has no nonce.
-				update.AppendBalanceUpdate(addr, amount.New())
-			case 1:
-				update.AppendNonceUpdate(addr, common.ToNonce(uint64(rnd.Intn(2))))
-			default:
-				update.AppendBalanceUpdate(addr, amount.New(uint64(rnd.Intn(1000))))
-			}
-		}
-		// The update is not normalized, so ensure that it is applied as is.
-		_, _, err := state.Apply(uint64(block), &update)
-		require.NoError(t, err)
-
-		got, err := state.TotalSupply()
-		require.NoError(t, err)
-		want, err := state.computeTotalSupply()
-		require.NoError(t, err)
-		require.Equal(t, want, got, "block %d", block)
-	}
+	require.NoError(state.SetBalance(common.Address{1}, amount.New(3)))
+	total, err = state.TotalSupply()
+	require.NoError(err)
+	require.Equal(amount.New(3), total)
 }
 
 func TestMptState_TotalSupply_IsRestoredByRevertLastBlock(t *testing.T) {
@@ -144,7 +125,6 @@ func TestMptState_TotalSupply_IsRestoredByRevertLastBlock(t *testing.T) {
 	}
 	_, _, err = state.Apply(0, &setup)
 	require.NoError(err)
-	// The first query starts tracking the supply.
 	want, err := state.TotalSupply()
 	require.NoError(err)
 	require.Equal(amount.New(100), want)
@@ -164,7 +144,17 @@ func TestMptState_TotalSupply_IsRestoredByRevertLastBlock(t *testing.T) {
 
 	require.NoError(state.RevertLastBlock(undo))
 
-	total, known := state.trie.getTotalSupply()
-	require.True(known)
+	total, err = state.TotalSupply()
+	require.NoError(err)
 	require.Equal(want, total)
+}
+
+// newMptStateWithEmptyNodeFiles creates a state on the given forest whose node
+// files hold an empty trie.
+func newMptStateWithEmptyNodeFiles(t *testing.T, db Database) *MptState {
+	dir := t.TempDir()
+	files, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1024})
+	require.NoError(t, err)
+	require.NoError(t, files.Close())
+	return &MptState{directory: dir, trie: &LiveTrie{forest: db, metaDataFile: filepath.Join(dir, "meta.json")}}
 }

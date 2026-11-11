@@ -67,29 +67,11 @@ const (
 type mptStateVisitor interface {
 	// Visit allows for traverse the whole trie.
 	// If pruneStorage is true, the storage nodes are not visited.
-	Visit(visitor noResponseNodeVisitor, pruneStorage bool) error
+	Visit(visitor mpt.NoResponseNodeVisitor, pruneStorage bool) error
 	// GetHash returns the hash of the represented Trie.
 	GetHash() (common.Hash, error)
 	// GetCodeForHash returns byte code for given hash.
 	GetCodeForHash(common.Hash) ([]byte, error)
-}
-
-// noResponseNodeVisitor is a visitor for nodes.
-type noResponseNodeVisitor interface {
-	// Visit is called for each node encountered while visiting a trie.
-	Visit(mpt.Node, mpt.NodeInfo) error
-}
-
-func makeNoResponseVisitor(visit func(mpt.Node, mpt.NodeInfo) error) noResponseNodeVisitor {
-	return &noResponseNodeVisitorFunc{visit}
-}
-
-type noResponseNodeVisitorFunc struct {
-	visit func(mpt.Node, mpt.NodeInfo) error
-}
-
-func (v *noResponseNodeVisitorFunc) Visit(node mpt.Node, info mpt.NodeInfo) error {
-	return v.visit(node, info)
 }
 
 // ExportableArchiveTrie is a wrapper for an ArchiveTrie instance that allows for
@@ -99,13 +81,13 @@ type exportableArchiveTrie struct {
 	block uint64
 }
 
-func (e exportableArchiveTrie) Visit(visitor noResponseNodeVisitor, pruneStorage bool) error {
+func (e exportableArchiveTrie) Visit(visitor mpt.NoResponseNodeVisitor, pruneStorage bool) error {
 	root, err := e.trie.GetBlockRoot(e.block)
 	if err != nil {
 		return err
 	}
 
-	return visitAll(e.trie.Directory(), e.trie.GetConfig(), root, visitor, pruneStorage)
+	return mpt.VisitTrieFromFiles(e.trie.Directory(), e.trie.GetConfig(), root, visitor, pruneStorage)
 }
 
 func (e exportableArchiveTrie) GetHash() (common.Hash, error) {
@@ -123,9 +105,9 @@ type exportableLiveTrie struct {
 	db        *mpt.MptState
 }
 
-func (e *exportableLiveTrie) Visit(visitor noResponseNodeVisitor, pruneStorage bool) error {
+func (e *exportableLiveTrie) Visit(visitor mpt.NoResponseNodeVisitor, pruneStorage bool) error {
 	root := e.db.Root()
-	return visitAll(e.directory, e.db.GetConfig(), root.Id(), visitor, pruneStorage)
+	return mpt.VisitTrieFromFiles(e.directory, e.db.GetConfig(), root.Id(), visitor, pruneStorage)
 }
 
 func (e *exportableLiveTrie) GetHash() (common.Hash, error) {
@@ -467,7 +449,7 @@ func writeReferencedCodes(ctxt context.Context, logger *Log, db mptStateVisitor,
 	// Track the hashes staged so far, so that a code shared by many accounts
 	// is retrieved and staged only once. This keeps hashes in memory, not codes.
 	seen := make(map[common.Hash]struct{})
-	err = db.Visit(makeNoResponseVisitor(func(node mpt.Node, info mpt.NodeInfo) error {
+	err = db.Visit(mpt.MakeNoResponseVisitor(func(node mpt.Node, info mpt.NodeInfo) error {
 		if n, ok := node.(*mpt.AccountNode); ok {
 			if interrupt.IsCancelled(ctxt) {
 				return interrupt.ErrCanceled
