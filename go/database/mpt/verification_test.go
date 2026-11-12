@@ -343,6 +343,56 @@ func TestVerification_BranchChildHashModificationIsDetected(t *testing.T) {
 	})
 }
 
+func TestVerification_BranchDeltaNodeHashModificationIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		if config.HashStorageLocation != HashStoredWithNode {
+			return
+		}
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			node.hash[4]++
+		})
+
+		require.Error(verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}))
+	})
+}
+
+func TestVerification_BranchDeltaChildHashModificationIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		if config.HashStorageLocation != HashStoredWithParent {
+			return
+		}
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			for i := range node.children {
+				if node.deltaMask&(1<<i) != 0 {
+					node.hashes[i][4]++
+					break
+				}
+			}
+		})
+
+		require.Error(verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}))
+	})
+}
+
+func TestVerification_BranchDeltaWithDeltaBaseIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			node.base = DeltaBranchId(node.base.Index())
+		})
+
+		require.Error(verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}))
+	})
+}
+
 func TestVerification_ExtensionPathModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
 		_, _, _, encoder, _ := config.GetEncoders()

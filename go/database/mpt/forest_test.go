@@ -674,6 +674,40 @@ func TestForest_getAccess_Fails(t *testing.T) {
 	}
 }
 
+func TestForest_getReadAccess_FailsIfDeltaBaseIsNotABranch(t *testing.T) {
+	for _, variant := range variants {
+		for _, config := range allMptConfigs {
+			for forestConfigName, forestConfig := range forestConfigs {
+				t.Run(fmt.Sprintf("%s-%s-%s", variant.name, config.Name, forestConfigName), func(t *testing.T) {
+					require := require.New(t)
+					forest, err := variant.factory(t.TempDir(), config, forestConfig)
+					require.NoError(err)
+					defer func() {
+						require.NoError(forest.Close())
+					}()
+
+					ctrl := gomock.NewController(t)
+					accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
+					accounts.EXPECT().Get(uint64(1)).Return(AccountNode{}, nil)
+					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: AccountId(1)}, nil)
+
+					accountsBackup, branchDeltasBackup := forest.accounts, forest.branchDeltas
+					defer func() {
+						forest.accounts, forest.branchDeltas = accountsBackup, branchDeltasBackup
+					}()
+					forest.accounts = accounts
+					forest.branchDeltas = branchDeltas
+
+					ref := NewNodeReference(DeltaBranchId(2))
+					_, err = forest.getReadAccess(&ref)
+					require.ErrorContains(err, "is not a branch node")
+				})
+			}
+		}
+	}
+}
+
 func TestForest_getSharedNode_Fails_Get_Copy(t *testing.T) {
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {

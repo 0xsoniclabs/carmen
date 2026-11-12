@@ -1254,6 +1254,46 @@ func TestBranchNode_CheckDetectsIssues(t *testing.T) {
 	}
 }
 
+func TestBranchNode_Check_AcceptsADeltaOfAFullBranch(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContext(t, ctrl)
+	ref, node := ctxt.Build(&Branch{children: Children{1: &Value{}, 2: &Value{}}})
+	handle := node.GetWriteHandle()
+	defer handle.Release()
+	branch := handle.Get().(*BranchNode)
+	branch.base = BranchId(7)
+	branch.deltaMask = 0b11
+
+	require.NoError(branch.Check(ctxt, &ref, nil))
+}
+
+func TestBranchNode_Check_DetectsInvalidDeltas(t *testing.T) {
+	tests := map[string]struct {
+		base      NodeId
+		deltaMask uint16
+	}{
+		"delta branch base":    {DeltaBranchId(7), 0b11},
+		"account base":         {AccountId(7), 0b11},
+		"too many delta slots": {BranchId(7), 0b111},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			ctxt := newNodeContext(t, ctrl)
+			ref, node := ctxt.Build(&Branch{children: Children{1: &Value{}, 2: &Value{}}})
+			handle := node.GetWriteHandle()
+			defer handle.Release()
+			branch := handle.Get().(*BranchNode)
+			branch.base = test.base
+			branch.deltaMask = test.deltaMask
+
+			require.Error(branch.Check(ctxt, &ref, nil))
+		})
+	}
+}
+
 // ----------------------------------------------------------------------------
 //                              Extension Node
 // ----------------------------------------------------------------------------

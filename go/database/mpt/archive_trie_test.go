@@ -3978,3 +3978,70 @@ func TestArchiveTrie_Add_StoresClonedBranchesAsDeltasOfTheLastFullBranch(t *test
 
 	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
 }
+
+func TestArchiveTrie_Add_ReplacesADeltaExceedingTheSlotsWithinABlock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+	require.NoError(err)
+
+	// Block 0 creates a root branch, block 1 changes one more of its children
+	// than the delta slots allow, so the root delta is replaced within the block.
+	update := common.Update{}
+	changed := map[Nibble]common.Address{}
+	for i := range 256 {
+		addr := common.Address{byte(i)}
+		update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(1)})
+		nibble := AddressToNibblePath(addr, archive.forest)[0]
+		if _, found := changed[nibble]; !found && len(changed) <= deltaSlots {
+			changed[nibble] = addr
+		}
+	}
+	require.Len(changed, deltaSlots+1)
+	require.NoError(archive.Add(0, update, nil))
+	update = common.Update{}
+	for _, addr := range changed {
+		update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(2)})
+	}
+	require.NoError(archive.Add(1, update, nil))
+
+	rootOf := func(block uint64) NodeId {
+		root, err := archive.roots.get(block)
+		require.NoError(err)
+		return root.NodeRef.Id()
+	}
+	baseOf := func(id NodeId) NodeId {
+		ref := NewNodeReference(id)
+		handle, err := archive.forest.getReadAccess(&ref)
+		require.NoError(err)
+		defer handle.Release()
+		return handle.Get().(*BranchNode).base
+	}
+	require.False(rootOf(1).IsDeltaBranch())
+	require.NotEqual(rootOf(0), rootOf(1))
+
+	// The delta made for the first change was released, so no delta is
+	// based on the old root.
+	ids, err := archive.forest.(*Forest).branchDeltas.GetIds()
+	require.NoError(err)
+	for i := ids.GetLowerBound(); i < ids.GetUpperBound(); i++ {
+		if ids.Contains(i) {
+			require.NotEqual(rootOf(0), baseOf(DeltaBranchId(i)))
+		}
+	}
+	require.NoError(archive.Close())
+
+	archive, err = OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
+	require.NoError(err)
+	for _, addr := range changed {
+		balance, err := archive.GetBalance(0, addr)
+		require.NoError(err)
+		require.Equal(amount.New(1), balance)
+		balance, err = archive.GetBalance(1, addr)
+		require.NoError(err)
+		require.Equal(amount.New(2), balance)
+	}
+	require.NoError(archive.Close())
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
