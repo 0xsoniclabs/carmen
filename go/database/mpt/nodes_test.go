@@ -1254,6 +1254,46 @@ func TestBranchNode_CheckDetectsIssues(t *testing.T) {
 	}
 }
 
+func TestBranchNode_Check_AcceptsADeltaOfAFullBranch(t *testing.T) {
+	require := require.New(t)
+	ctrl := gomock.NewController(t)
+	ctxt := newNodeContext(t, ctrl)
+	ref, node := ctxt.Build(&Branch{children: Children{1: &Value{}, 2: &Value{}}})
+	handle := node.GetWriteHandle()
+	defer handle.Release()
+	branch := handle.Get().(*BranchNode)
+	branch.base = BranchId(7)
+	branch.deltaMask = 0b11
+
+	require.NoError(branch.Check(ctxt, &ref, nil))
+}
+
+func TestBranchNode_Check_DetectsInvalidDeltas(t *testing.T) {
+	tests := map[string]struct {
+		base      NodeId
+		deltaMask uint16
+	}{
+		"delta branch base":    {DeltaBranchId(7), 0b11},
+		"account base":         {AccountId(7), 0b11},
+		"too many delta slots": {BranchId(7), 0b111},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			ctxt := newNodeContext(t, ctrl)
+			ref, node := ctxt.Build(&Branch{children: Children{1: &Value{}, 2: &Value{}}})
+			handle := node.GetWriteHandle()
+			defer handle.Release()
+			branch := handle.Get().(*BranchNode)
+			branch.base = test.base
+			branch.deltaMask = test.deltaMask
+
+			require.Error(branch.Check(ctxt, &ref, nil))
+		})
+	}
+}
+
 // ----------------------------------------------------------------------------
 //                              Extension Node
 // ----------------------------------------------------------------------------
@@ -4730,6 +4770,97 @@ func TestBranchNodeEncoderWithChildHashes(t *testing.T) {
 	if !reflect.DeepEqual(node, recovered) {
 		t.Errorf("encoding/decoding failed, wanted %v, got %v", node, recovered)
 	}
+}
+
+func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_RestoresDeltaChildren(t *testing.T) {
+	require := require.New(t)
+	node := BranchNode{
+		nodeBase: nodeBase{
+			hash:       common.Hash{1, 2, 3},
+			hashStatus: hashStatusClean,
+		},
+		base:      BranchId(7),
+		deltaMask: 1<<3 | 1<<12,
+	}
+	for i := range node.children {
+		node.children[i] = NewNodeReference(NodeId(i + 1))
+	}
+	encoder := BranchDeltaNodeEncoderWithNodeHash{}
+	buffer := make([]byte, encoder.GetEncodedSize())
+	require.NoError(encoder.Store(buffer, &node))
+	recovered := BranchNode{}
+	require.NoError(encoder.Load(buffer, &recovered))
+
+	want := BranchNode{
+		nodeBase:    node.nodeBase,
+		base:        node.base,
+		deltaMask:   node.deltaMask,
+		dirtyHashes: node.deltaMask,
+	}
+	want.children[3] = node.children[3]
+	want.children[12] = node.children[12]
+	require.Equal(want, recovered)
+}
+
+func TestBranchDeltaNodeEncoderWithChildHashes_StoreAndLoad_RestoresDeltaChildren(t *testing.T) {
+	require := require.New(t)
+	node := BranchNode{
+		base:             BranchId(7),
+		deltaMask:        1<<0 | 1<<15,
+		embeddedChildren: 1<<5 | 1<<15,
+	}
+	for i := range node.children {
+		node.children[i] = NewNodeReference(NodeId(i + 1))
+		node.hashes[i] = common.Hash{byte(i)}
+	}
+	encoder := BranchDeltaNodeEncoderWithChildHashes{}
+	buffer := make([]byte, encoder.GetEncodedSize())
+	require.NoError(encoder.Store(buffer, &node))
+	recovered := BranchNode{}
+	require.NoError(encoder.Load(buffer, &recovered))
+
+	want := BranchNode{
+		nodeBase:         nodeBase{hashStatus: hashStatusUnknown},
+		base:             node.base,
+		deltaMask:        node.deltaMask,
+		embeddedChildren: node.embeddedChildren,
+	}
+	for _, i := range []int{0, 15} {
+		want.children[i] = node.children[i]
+		want.hashes[i] = node.hashes[i]
+	}
+	require.Equal(want, recovered)
+}
+
+func TestBranchDeltaNodeEncoder_Store_PanicsIfDeltaSlotsAreExceeded(t *testing.T) {
+	require := require.New(t)
+	node := BranchNode{base: BranchId(1), deltaMask: 0b111}
+	buffer := make([]byte, BranchDeltaNodeEncoderWithNodeHash{}.GetEncodedSize())
+	require.Panics(func() { _ = BranchDeltaNodeEncoderWithNodeHash{}.Store(buffer, &node) })
+}
+
+func TestBranchNode_ApplyDeltaBase_FillsChildrenNotInDelta(t *testing.T) {
+	require := require.New(t)
+	base := BranchNode{embeddedChildren: 1 << 1, dirtyHashes: 1 << 2}
+	for i := range base.children {
+		base.children[i] = NewNodeReference(NodeId(i + 1))
+		base.hashes[i] = common.Hash{byte(i)}
+	}
+	node := BranchNode{base: BranchId(0), deltaMask: 1 << 1}
+	node.children[1] = NewNodeReference(NodeId(100))
+	node.hashes[1] = common.Hash{100}
+	node.dirtyHashes = 1 << 1
+
+	node.ApplyDeltaBase(&base)
+
+	want := base
+	want.base = BranchId(0)
+	want.deltaMask = 1 << 1
+	want.children[1] = NewNodeReference(NodeId(100))
+	want.hashes[1] = common.Hash{100}
+	want.embeddedChildren = 0
+	want.dirtyHashes = 1<<1 | 1<<2
+	require.Equal(want, node)
 }
 
 func TestBranchNodeEncoderWithNodeHash(t *testing.T) {
