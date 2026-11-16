@@ -86,7 +86,7 @@ func openVerifyStock[I stock.Index, V any](encoder stock.ValueEncoder[V], direct
 
 	// Create new files
 	valueSize := encoder.GetEncodedSize()
-	return &fileStock[I, V]{
+	res := &fileStock[I, V]{
 		encoder:         encoder,
 		directory:       directory,
 		values:          values,
@@ -101,7 +101,16 @@ func openVerifyStock[I stock.Index, V any](encoder stock.ValueEncoder[V], direct
 		lastCheckpoint:               committed.Checkpoint,
 		numValuesCoveredByCheckpoint: I(committed.Metadata.ValueListLength),
 		freeListSizeOfCheckpoint:     int(committed.Metadata.FreeListLength),
-	}, nil
+	}
+
+	// The metadata of a new stock is written right away, since a stock
+	// can not be opened without it.
+	if metafile, _, _ := getFileNames(directory); !exists(metafile) {
+		if err := utils.WriteJsonFile(metafile, res.getMetadata()); err != nil {
+			return nil, errors.Join(err, res.values.Close(), res.freelist.Close())
+		}
+	}
+	return res, nil
 }
 
 // buffer combines a raw data and value buffer required in pairs for Get and Set
@@ -404,6 +413,17 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		}
 	}
 
+	// A stock that never took part in a checkpoint and holds no data can
+	// adopt any checkpoint, since its state at that checkpoint is empty.
+	// This allows adding a stock to a data structure with checkpoints.
+	if s.lastCheckpoint == 0 && s.numValueSlots == 0 {
+		s.lastCheckpoint = checkpoint - 1
+		if err := s.Prepare(checkpoint); err != nil {
+			return err
+		}
+		return s.Commit(checkpoint)
+	}
+
 	// Otherwise, the requested checkpoint can not be guaranteed.
 	return fmt.Errorf("unable to guarantee availability of checkpoint %d", checkpoint)
 }
@@ -493,6 +513,16 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	// If the stock is at the requested commit, everything is fine.
 	committed := getCommittedCheckpointFile(s.directory)
 	pending := getPendingCheckpointFile(s.directory)
+
+	// A stock without checkpoint that is missing or empty has nothing to
+	// restore, since it adopts any checkpoint, see GuaranteeCheckpoint.
+	if !exists(committed) && !exists(pending) {
+		meta, values, _ := getFileNames(s.directory)
+		data, err := utils.ReadJsonFile[metadata](meta)
+		if !exists(values) || (err == nil && data.ValueListLength == 0) {
+			return nil
+		}
+	}
 
 	var checkpointData checkpointMetaData
 	if exists(committed) {

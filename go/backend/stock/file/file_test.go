@@ -95,6 +95,34 @@ func TestFile_Open_CannotMkdir(t *testing.T) {
 	}
 }
 
+func TestFile_Open_NewStockCanBeOpenedAgainWithoutBeingFlushed(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+
+	reopened, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(reopened.Close())
+}
+
+func TestFile_Open_FailsIfMetadataOfNewStockCanNotBeWritten(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	_, values, freelist := getFileNames(dir)
+	require.NoError(os.WriteFile(values, nil, 0600))
+	require.NoError(os.WriteFile(freelist, nil, 0600))
+	require.NoError(os.Chmod(dir, 0500))
+	defer func() { require.NoError(os.Chmod(dir, 0700)) }()
+
+	noVerification := func(stock.ValueEncoder[int], string) (metadata, error) {
+		return metadata{}, nil
+	}
+	_, err := openVerifyStock[int, int](stock.IntEncoder{}, dir, noVerification)
+	require.Error(err)
+}
+
 func TestFile_Open_MissingFile(t *testing.T) {
 	directory := t.TempDir()
 	s, err := initFileStock(directory, 10)
@@ -648,6 +676,148 @@ func TestStock_GuaranteeCheckpoint_FailsOnCorruptedPendingFile(t *testing.T) {
 	}
 }
 
+func TestStock_GuaranteeCheckpoint_EmptyStockAdoptsCheckpoint(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	require.NoFileExists(getPendingCheckpointFile(dir))
+	require.NoError(s.Close())
+
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
+	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
+}
+
+func TestStock_GuaranteeCheckpoint_UsedStockDoesNotAdoptCheckpoint(t *testing.T) {
+	tests := map[string]func(s *fileStock[int, int]) error{
+		"with data": func(s *fileStock[int, int]) error {
+			_, err := s.New()
+			return err
+		},
+		"with released data": func(s *fileStock[int, int]) error {
+			id, err := s.New()
+			return errors.Join(err, s.Delete(id))
+		},
+		"with checkpoint": func(s *fileStock[int, int]) error {
+			return errors.Join(s.Prepare(checkpoint.Checkpoint(1)), s.Commit(checkpoint.Checkpoint(1)))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			s, err := openStock[int, int](stock.IntEncoder{}, t.TempDir())
+			require.NoError(err)
+			defer func() { require.NoError(s.Close()) }()
+			require.NoError(setup(s))
+
+			require.Error(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+		})
+	}
+}
+
+func TestStock_GuaranteeCheckpoint_FailsOnIoIssuesWhenAdoptingCheckpoint(t *testing.T) {
+	tests := map[string]func(t *testing.T, s *fileStock[int, int]) error{
+		"flush": func(_ *testing.T, s *fileStock[int, int]) error {
+			meta, _, _ := getFileNames(s.directory)
+			return os.Chmod(meta, 0400)
+		},
+		"pending checkpoint": func(t *testing.T, s *fileStock[int, int]) error {
+			t.Cleanup(func() { _ = os.Chmod(s.directory, 0700) })
+			return os.Chmod(s.directory, 0500)
+		},
+		"committed checkpoint": func(_ *testing.T, s *fileStock[int, int]) error {
+			return os.MkdirAll(filepath.Join(getCommittedCheckpointFile(s.directory), "sub"), 0700)
+		},
+	}
+	for name, block := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			s, err := openStock[int, int](stock.IntEncoder{}, t.TempDir())
+			require.NoError(err)
+			require.NoError(block(t, s))
+
+			require.Error(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+		})
+	}
+}
+
+func TestStock_GuaranteeCheckpointAndRestore_RestoresAnEmptyStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	id, err := s.New()
+	require.NoError(err)
+	require.NoError(s.Set(id, 1))
+	require.NoError(s.Close())
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
+
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.Zero(s.numValueSlots)
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+}
+
+func TestStock_GuaranteeCheckpoint_NewStockJoinsACoordinatorWithCheckpoints(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	coordinatorDir := filepath.Join(dir, "checkpoint")
+	oldDir := filepath.Join(dir, "old")
+	newDir := filepath.Join(dir, "new")
+
+	// A coordinator with a single stock creates a checkpoint.
+	old, err := openStock[int, int](stock.IntEncoder{}, oldDir)
+	require.NoError(err)
+	_, err = old.New()
+	require.NoError(err)
+	coordinator, err := checkpoint.NewCoordinator(coordinatorDir, old)
+	require.NoError(err)
+	_, err = coordinator.CreateCheckpoint()
+	require.NoError(err)
+	require.NoError(old.Close())
+
+	// A restore before the new stock exists leaves it untouched.
+	require.NoError(checkpoint.Restore(coordinatorDir, GetRestorer(oldDir), GetRestorer(newDir)))
+	require.NoDirExists(newDir)
+
+	// The new stock is accepted next to the old one.
+	old, err = openStock[int, int](stock.IntEncoder{}, oldDir)
+	require.NoError(err)
+	added, err := openStock[int, int](stock.IntEncoder{}, newDir)
+	require.NoError(err)
+	_, err = checkpoint.NewCoordinator(coordinatorDir, old, added)
+	require.NoError(err)
+
+	// Content added after the last checkpoint is dropped by a restore.
+	_, err = added.New()
+	require.NoError(err)
+	require.NoError(old.Close())
+	require.NoError(added.Close())
+	require.NoError(checkpoint.Restore(coordinatorDir, GetRestorer(oldDir), GetRestorer(newDir)))
+
+	// The new stock takes part in the following checkpoints.
+	old, err = openStock[int, int](stock.IntEncoder{}, oldDir)
+	require.NoError(err)
+	defer func() { require.NoError(old.Close()) }()
+	added, err = openStock[int, int](stock.IntEncoder{}, newDir)
+	require.NoError(err)
+	defer func() { require.NoError(added.Close()) }()
+	require.Zero(added.numValueSlots)
+	coordinator, err = checkpoint.NewCoordinator(coordinatorDir, old, added)
+	require.NoError(err)
+	_, err = coordinator.CreateCheckpoint()
+	require.NoError(err)
+}
+
 func TestStock_Prepare_FailsOnFailedFlush(t *testing.T) {
 	dir := t.TempDir()
 	s, err := openStock[int, int](stock.IntEncoder{}, dir)
@@ -1066,6 +1236,10 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 				t.Fatalf("failed to open stock: %v", err)
 			}
 
+			// An empty stock without checkpoint has nothing to restore.
+			_, err = stock.New()
+			require.NoError(t, err)
+
 			// Create a checkpoint from which the stock should be recovered.
 			checkpoint := checkpoint.Checkpoint(1)
 			err = errors.Join(
@@ -1082,6 +1256,75 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 			if err := GetRestorer(dir).Restore(checkpoint); err == nil {
 				t.Errorf("restoration should fail")
 			}
+		})
+	}
+}
+
+func TestRestore_StockWithoutCheckpointAndDataHasNothingToRestore(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"missing stock": func(string) error { return nil },
+		"empty stock": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			return errors.Join(err, s.Close())
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
+
+			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			defer func() { require.NoError(s.Close()) }()
+			require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(3)))
+		})
+	}
+}
+
+func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.Prepare(checkpoint.Checkpoint(1)))
+	require.NoError(s.Close())
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(1)))
+
+	require.FileExists(getCommittedCheckpointFile(dir))
+	require.NoFileExists(getPendingCheckpointFile(dir))
+}
+
+func TestRestore_MissingStockIsNotCreated(t *testing.T) {
+	require := require.New(t)
+	dir := filepath.Join(t.TempDir(), "stock")
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+	require.NoDirExists(dir)
+}
+
+func TestRestore_StockWithDataAndNoCheckpointIsDetected(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"valid metadata": func(string) error { return nil },
+		"corrupted metadata": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.WriteFile(meta, []byte("corrupted"), 0600)
+		},
+	}
+	for name, modify := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			_, err = s.New()
+			require.NoError(err)
+			require.NoError(s.Close())
+			require.NoError(modify(dir))
+
+			require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
 		})
 	}
 }
