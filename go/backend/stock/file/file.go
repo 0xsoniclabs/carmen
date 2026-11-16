@@ -538,7 +538,7 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 		if missing || err != nil {
 			return err
 		}
-		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.ValueListLength == 0 {
+		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.isEmpty() {
 			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
 		}
 	}
@@ -608,6 +608,11 @@ type metadata struct {
 	ValueListLength int
 	FreeListLength  int
 	NumValuesInFile int64
+}
+
+// isEmpty reports whether this is the metadata of a stock holding no data.
+func (m metadata) isEmpty() bool {
+	return m.IndexTypeSize > 0 && m.ValueListLength == 0 && m.FreeListLength == 0 && m.NumValuesInFile == 0
 }
 
 func allZero(data []byte) bool {

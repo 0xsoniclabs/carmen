@@ -1369,6 +1369,22 @@ func TestRestore_StockWithDataAndNoCheckpointIsDetected(t *testing.T) {
 			_, values, _ := getFileNames(dir)
 			return os.Remove(values)
 		},
+		"empty object as metadata": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.WriteFile(meta, []byte("{}"), 0600)
+		},
+		"null as metadata": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.WriteFile(meta, []byte("null"), 0600)
+		},
+		"metadata with values in file only": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return utils.WriteJsonFile(meta, metadata{IndexTypeSize: 8, ValueTypeSize: 4, NumValuesInFile: 1})
+		},
+		"metadata with free list only": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return utils.WriteJsonFile(meta, metadata{IndexTypeSize: 8, ValueTypeSize: 4, FreeListLength: 1})
+		},
 	}
 	for name, modify := range tests {
 		t.Run(name, func(t *testing.T) {
