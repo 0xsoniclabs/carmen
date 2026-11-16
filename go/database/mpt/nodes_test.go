@@ -8368,6 +8368,8 @@ func newNodeContextWithConfig(t *testing.T, ctrl *gomock.Controller, config MptC
 		config:          config,
 	}
 	res.EXPECT().getConfig().AnyTimes().Return(config)
+	// Delta branches are plain branches in these tests; expectations are set on createBranch.
+	res.EXPECT().createDeltaBranch().AnyTimes().DoAndReturn(res.createBranch)
 	res.EXPECT().hashAddress(gomock.Any()).AnyTimes().DoAndReturn(common.Keccak256ForAddress)
 	res.EXPECT().hashKey(gomock.Any()).AnyTimes().DoAndReturn(common.Keccak256ForKey)
 	res.EXPECT().getHashFor(gomock.Any()).AnyTimes().DoAndReturn(func(ref *NodeReference) (common.Hash, error) {
