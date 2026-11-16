@@ -107,7 +107,11 @@ func openVerifyStock[I stock.Index, V any](encoder stock.ValueEncoder[V], direct
 	// can not be opened without it.
 	if metafile, _, _ := getFileNames(directory); !exists(metafile) {
 		if err := utils.WriteJsonFile(metafile, res.getMetadata()); err != nil {
-			return nil, errors.Join(err, res.values.Close(), res.freelist.Close())
+			err = errors.Join(err, res.values.Close(), res.freelist.Close())
+			for _, file := range []string{metafile, valuefile, freelistfile} {
+				_ = os.Remove(file)
+			}
+			return nil, err
 		}
 	}
 	return res, nil
@@ -530,8 +534,9 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	// empty one is restored to the empty state recorded in its metadata.
 	if !exists(committed) && !exists(pending) {
 		meta, values, freelist := getFileNames(s.directory)
-		if !exists(meta) && !exists(values) && !exists(freelist) {
-			return nil
+		missing, err := noneExist(meta, values, freelist)
+		if missing || err != nil {
+			return err
 		}
 		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.ValueListLength == 0 {
 			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
@@ -617,6 +622,19 @@ func allZero(data []byte) bool {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// noneExist reports whether none of the given files exist. Unlike exists, it
+// fails if the presence of a file can not be determined.
+func noneExist(paths ...string) (bool, error) {
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func isDirectory(path string) bool {

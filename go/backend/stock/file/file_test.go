@@ -107,20 +107,21 @@ func TestFile_Open_NewStockCanBeOpenedAgainWithoutBeingFlushed(t *testing.T) {
 	require.NoError(reopened.Close())
 }
 
-func TestFile_Open_FailsIfMetadataOfNewStockCanNotBeWritten(t *testing.T) {
+func TestFile_Open_RemovesFilesOfNewStockIfMetadataCanNotBeWritten(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	_, values, freelist := getFileNames(dir)
-	require.NoError(os.WriteFile(values, nil, 0600))
-	require.NoError(os.WriteFile(freelist, nil, 0600))
-	require.NoError(os.Chmod(dir, 0500))
-	defer func() { require.NoError(os.Chmod(dir, 0700)) }()
+	meta, values, freelist := getFileNames(dir)
+	// A link to a missing directory makes the creation of the file fail.
+	require.NoError(os.Symlink(filepath.Join(dir, "missing", "meta.json"), meta))
 
-	noVerification := func(stock.ValueEncoder[int], string) (metadata, error) {
-		return metadata{}, nil
-	}
-	_, err := openVerifyStock[int, int](stock.IntEncoder{}, dir, noVerification)
+	_, err := openStock[int, int](stock.IntEncoder{}, dir)
 	require.Error(err)
+	require.NoFileExists(values)
+	require.NoFileExists(freelist)
+
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.Close())
 }
 
 func TestFile_Open_MissingFile(t *testing.T) {
@@ -1340,6 +1341,14 @@ func TestRestore_EmptyStockWithoutCheckpointLosesUnrecordedData(t *testing.T) {
 	s, err = openStock[int, int](stock.IntEncoder{}, dir)
 	require.NoError(err)
 	require.NoError(s.Close())
+}
+
+func TestRestore_FailsIfStockCanNotBeAccessed(t *testing.T) {
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "stock")
+	require.NoError(os.WriteFile(path, nil, 0600))
+
+	require.Error(GetRestorer(path).Restore(checkpoint.Checkpoint(3)))
 }
 
 func TestRestore_MissingStockIsNotCreated(t *testing.T) {
