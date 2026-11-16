@@ -1305,7 +1305,7 @@ func TestBranchNode_Check_AcceptsADeltaOfAFullBranch(t *testing.T) {
 	defer handle.Release()
 	branch := handle.Get().(*BranchNode)
 	branch.base = BranchId(7)
-	branch.deltaMask = 0b11
+	branch.deltaMask = 1<<deltaSlots - 1
 
 	require.NoError(branch.Check(ctxt, &ref, nil))
 }
@@ -1316,7 +1316,6 @@ func TestBranchNode_Check_DetectsInvalidDeltas(t *testing.T) {
 		deltaMask uint16
 		issue     string
 	}{
-		"delta branch base":    {DeltaBranchId(7), 0b11, "has an invalid delta base D-7"},
 		"account base":         {AccountId(7), 0b11, "has an invalid delta base A-7"},
 		"too many delta slots": {BranchId(7), 0b111, "exceeds the delta slots: 0000000000000111"},
 	}

@@ -833,7 +833,7 @@ type BranchNode struct {
 }
 
 // deltaSlots is the number of children a delta branch can hold on disk.
-const deltaSlots = 1
+const deltaSlots = 2
 
 // deltaChainLimit is the maximum number of deltas between a full branch and
 // a delta, bounding the loads needed to complete a delta from disk.

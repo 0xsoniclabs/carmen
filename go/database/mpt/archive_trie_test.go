@@ -4031,25 +4031,34 @@ func TestArchiveTrie_Add_StoresClonedBranchesAsDeltaChains(t *testing.T) {
 	accountAt := func(nibble, pos int) common.Address {
 		return byNibble[nibbles[nibble]][pos]
 	}
-	updateOf := func(balance int, addrs ...common.Address) common.Update {
+	updateOf := func(balance int, nibbles ...int) common.Update {
 		update := common.Update{}
-		for _, addr := range addrs {
-			update.Balances = append(update.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(uint64(balance))})
+		for _, nibble := range nibbles {
+			update.Balances = append(update.Balances, common.BalanceUpdate{Account: accountAt(nibble, 0), Balance: amount.New(uint64(balance))})
 		}
 		return update
 	}
-
-	// Block 0 fills all root children, block 1 and 2 each change a different
-	// child, chaining a delta on the delta, block 3 changes three children in
-	// one block, exceeding the delta slots.
-	all := make([]common.Address, 0, 256)
-	for _, addrs := range byNibble {
-		all = append(all, addrs...)
+	nibbleRange := func(from, to int) []int {
+		var out []int
+		for nibble := from; nibble < to; nibble++ {
+			out = append(out, nibble)
+		}
+		return out
 	}
-	require.NoError(archive.Add(0, updateOf(1, all...), nil))
-	require.NoError(archive.Add(1, updateOf(2, accountAt(0, 0)), nil))
-	require.NoError(archive.Add(2, updateOf(3, accountAt(1, 0)), nil))
-	require.NoError(archive.Add(3, updateOf(4, accountAt(2, 0), accountAt(3, 0), accountAt(4, 0)), nil))
+
+	// Block 0 fills all root children, block 1 changes as many as fit a
+	// delta, block 2 one more, chaining a delta on the delta, and block 3 one
+	// more than fit in one block, exceeding the delta slots.
+	all := common.Update{}
+	for _, addrs := range byNibble {
+		for _, addr := range addrs {
+			all.Balances = append(all.Balances, common.BalanceUpdate{Account: addr, Balance: amount.New(1)})
+		}
+	}
+	require.NoError(archive.Add(0, all, nil))
+	require.NoError(archive.Add(1, updateOf(2, nibbleRange(0, deltaSlots)...), nil))
+	require.NoError(archive.Add(2, updateOf(3, deltaSlots), nil))
+	require.NoError(archive.Add(3, updateOf(4, nibbleRange(deltaSlots+1, 2*deltaSlots+2)...), nil))
 
 	rootOf := func(block uint64) NodeId {
 		root, err := archive.roots.get(block)
@@ -4080,11 +4089,11 @@ func TestArchiveTrie_Add_StoresClonedBranchesAsDeltaChains(t *testing.T) {
 				want := uint64(1)
 				if pos == 0 {
 					switch {
-					case nibble == 0 && block >= 1:
+					case nibble < deltaSlots && block >= 1:
 						want = 2
-					case nibble == 1 && block >= 2:
+					case nibble == deltaSlots && block >= 2:
 						want = 3
-					case nibble >= 2 && nibble <= 4 && block >= 3:
+					case nibble > deltaSlots && nibble < 2*deltaSlots+2 && block >= 3:
 						want = 4
 					}
 				}
@@ -4105,25 +4114,35 @@ func TestArchiveTrie_Add_StartsANewFullBranchWhenTheDeltaChainReachesTheLimit(t 
 	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1024}, ArchiveConfig{})
 	require.NoError(err)
 
-	// Two accounts under different root children; alternating updates to
-	// them do not fit the delta slots, so every block adds a link to the chain.
-	addrs := [2]common.Address{{1}, {2}}
-	for AddressToNibblePath(addrs[0], archive.forest)[0] == AddressToNibblePath(addrs[1], archive.forest)[0] {
-		addrs[1][0]++
+	// Accounts under different root children, updated in two alternating
+	// halves of one delta's worth each: neither half fits the delta holding
+	// the other, so every block adds a link to the chain.
+	var addrs [2 * deltaSlots]common.Address
+	seen := map[Nibble]bool{}
+	for i, next := 0, (common.Address{1}); i < len(addrs); next[0]++ {
+		if nibble := AddressToNibblePath(next, archive.forest)[0]; !seen[nibble] {
+			seen[nibble] = true
+			addrs[i] = next
+			i++
+		}
 	}
 	const blocks = 2*(deltaChainLimit+1) + 1
-	balances := [2]amount.Amount{amount.New(1), amount.New(1)}
-	want := make([][2]amount.Amount, blocks)
-	require.NoError(archive.Add(0, common.Update{Balances: []common.BalanceUpdate{
-		{Account: addrs[0], Balance: balances[0]},
-		{Account: addrs[1], Balance: balances[1]},
-	}}, nil))
+	var balances [len(addrs)]amount.Amount
+	want := make([][len(addrs)]amount.Amount, blocks)
+	var updates []common.BalanceUpdate
+	for i, addr := range addrs {
+		balances[i] = amount.New(1)
+		updates = append(updates, common.BalanceUpdate{Account: addr, Balance: balances[i]})
+	}
+	require.NoError(archive.Add(0, common.Update{Balances: updates}, nil))
 	want[0] = balances
 	for block := uint64(1); block < blocks; block++ {
-		balances[block%2] = amount.New(block + 1)
-		require.NoError(archive.Add(block, common.Update{Balances: []common.BalanceUpdate{
-			{Account: addrs[block%2], Balance: balances[block%2]},
-		}}, nil))
+		updates = updates[:0]
+		for i := int(block%2) * deltaSlots; i < int(block%2+1)*deltaSlots; i++ {
+			balances[i] = amount.New(block + 1)
+			updates = append(updates, common.BalanceUpdate{Account: addrs[i], Balance: balances[i]})
+		}
+		require.NoError(archive.Add(block, common.Update{Balances: updates}, nil))
 		want[block] = balances
 	}
 
