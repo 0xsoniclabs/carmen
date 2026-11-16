@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	"slices"
 
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -820,6 +821,42 @@ type BranchNode struct {
 	dirtyHashes      uint16            // a bit mask marking hashes as dirty; 0 .. clean, 1 .. dirty
 	embeddedChildren uint16            // a bit mask marking children as embedded; 0 .. not, 1 .. embedded
 	frozenChildren   uint16            // a bit mask marking frozen children; not persisted
+	// A delta branch is a clone of a frozen full branch, its base, that is
+	// persisted as the base ID and the children differing from it. In memory
+	// it holds all children, so only the encoders and the cloning code need
+	// to know about the base.
+	base      NodeId // the full branch this node is a delta of; empty if this is a full branch
+	deltaMask uint16 // a bit mask marking children differing from the base
+}
+
+// deltaSlots is the number of children a delta branch can hold on disk.
+const deltaSlots = 2
+
+func (n *BranchNode) isDelta() bool {
+	return !n.base.IsEmpty()
+}
+
+// GetDeltaBase returns the ID of the full branch this node is a delta of, or
+// the empty ID for a full branch.
+func (n *BranchNode) GetDeltaBase() NodeId {
+	return n.base
+}
+
+// ApplyDeltaBase fills in all children not covered by the delta from the base.
+func (n *BranchNode) ApplyDeltaBase(base *BranchNode) {
+	for i := range byte(16) {
+		if n.deltaMask&(1<<i) != 0 {
+			continue
+		}
+		n.children[i] = base.children[i]
+		n.hashes[i] = base.hashes[i]
+		n.setEmbedded(i, base.isEmbedded(i))
+		if base.isChildHashDirty(i) {
+			n.markChildHashDirty(i)
+		} else {
+			n.markChildHashClean(i)
+		}
+	}
 }
 
 func (n *BranchNode) GetChildren() *[16]NodeReference {
@@ -1143,12 +1180,20 @@ func (n *BranchNode) Check(source NodeSource, thisRef *NodeReference, _ []Nibble
 	if numChildren < 2 {
 		errs = append(errs, fmt.Errorf("node %v has an insufficient number of child nodes: %d", thisRef.Id(), numChildren))
 	}
+	if n.isDelta() {
+		if !n.base.IsBranch() || n.base.IsDeltaBranch() {
+			errs = append(errs, fmt.Errorf("node %v has an invalid delta base %v", thisRef.Id(), n.base))
+		}
+		if bits.OnesCount16(n.deltaMask) > deltaSlots {
+			errs = append(errs, fmt.Errorf("node %v exceeds the delta slots: %016b", thisRef.Id(), n.deltaMask))
+		}
+	}
 	return errors.Join(errs...)
 }
 
 func (n *BranchNode) Dump(out io.Writer, source NodeSource, thisRef *NodeReference, indent string) error {
 	errs := []error{}
-	if _, err := fmt.Fprintf(out, "%sBranch (ID: %v, dirty: %t, frozen: %t, Dirty: %016b, Embedded: %016b, Frozen: %016b, Hash: %v, hashState: %v):\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.dirtyHashes, n.embeddedChildren, n.frozenChildren, formatHashForDump(n.hash), n.getHashStatus()); err != nil {
+	if _, err := fmt.Fprintf(out, "%sBranch (ID: %v, dirty: %t, frozen: %t, Dirty: %016b, Embedded: %016b, Frozen: %016b, Base: %v, Delta: %016b, Hash: %v, hashState: %v):\n", indent, thisRef.Id(), n.IsDirty(), n.IsFrozen(), n.dirtyHashes, n.embeddedChildren, n.frozenChildren, n.base, n.deltaMask, formatHashForDump(n.hash), n.getHashStatus()); err != nil {
 		errs = append(errs, err)
 	}
 	for i := range n.children {
@@ -2328,6 +2373,121 @@ func (BranchNodeEncoderWithNodeHash) Load(src []byte, node *BranchNode) error {
 	}
 
 	return nil
+}
+
+// BranchDeltaNodeEncoderWithNodeHash encodes a delta branch as its base ID,
+// the delta mask, the node hash and the children marked in the mask.
+type BranchDeltaNodeEncoderWithNodeHash struct{}
+
+func (BranchDeltaNodeEncoderWithNodeHash) GetEncodedSize() int {
+	idSize := NodeIdEncoder{}.GetEncodedSize()
+	return idSize + 2 + common.HashSize + deltaSlots*idSize
+}
+
+func (BranchDeltaNodeEncoderWithNodeHash) Store(dst []byte, node *BranchNode) error {
+	if !node.hasCleanHash() {
+		panic("unable to store branch node with dirty hash")
+	}
+	dst = storeDeltaHeader(dst, node)
+	copy(dst, node.hash[:])
+	storeDeltaChildren(dst[common.HashSize:], node, false)
+	return nil
+}
+
+func (BranchDeltaNodeEncoderWithNodeHash) Load(src []byte, node *BranchNode) error {
+	src = loadDeltaHeader(src, node)
+	copy(node.hash[:], src)
+	node.hashStatus = hashStatusClean
+	loadDeltaChildren(src[common.HashSize:], node, false)
+	// Child hashes are not stored, see BranchNodeEncoderWithNodeHash.
+	for i := range byte(16) {
+		if node.deltaMask&(1<<i) != 0 && !node.children[i].Id().IsEmpty() {
+			node.markChildHashDirty(i)
+		}
+	}
+	return nil
+}
+
+// BranchDeltaNodeEncoderWithChildHashes encodes a delta branch as its base ID,
+// the delta mask, the embedded mask, and the children marked in the mask with
+// their hashes.
+type BranchDeltaNodeEncoderWithChildHashes struct{}
+
+func (BranchDeltaNodeEncoderWithChildHashes) GetEncodedSize() int {
+	idSize := NodeIdEncoder{}.GetEncodedSize()
+	return idSize + 2 + 2 + deltaSlots*(idSize+common.HashSize)
+}
+
+func (BranchDeltaNodeEncoderWithChildHashes) Store(dst []byte, node *BranchNode) error {
+	if node.dirtyHashes != 0 {
+		panic("unable to store branch node with dirty hash")
+	}
+	dst = storeDeltaHeader(dst, node)
+	binary.BigEndian.PutUint16(dst, node.embeddedChildren)
+	storeDeltaChildren(dst[2:], node, true)
+	return nil
+}
+
+func (BranchDeltaNodeEncoderWithChildHashes) Load(src []byte, node *BranchNode) error {
+	src = loadDeltaHeader(src, node)
+	node.embeddedChildren = binary.BigEndian.Uint16(src)
+	loadDeltaChildren(src[2:], node, true)
+	node.hashStatus = hashStatusUnknown
+	return nil
+}
+
+func storeDeltaHeader(dst []byte, node *BranchNode) []byte {
+	if bits.OnesCount16(node.deltaMask) > deltaSlots {
+		panic("unable to store delta branch node exceeding the delta slots")
+	}
+	encoder := NodeIdEncoder{}
+	encoder.Store(dst, &node.base)
+	dst = dst[encoder.GetEncodedSize():]
+	binary.BigEndian.PutUint16(dst, node.deltaMask)
+	return dst[2:]
+}
+
+func loadDeltaHeader(src []byte, node *BranchNode) []byte {
+	encoder := NodeIdEncoder{}
+	encoder.Load(src, &node.base)
+	src = src[encoder.GetEncodedSize():]
+	node.deltaMask = binary.BigEndian.Uint16(src)
+	return src[2:]
+}
+
+// storeDeltaChildren writes the children marked in the delta mask in index order.
+func storeDeltaChildren(dst []byte, node *BranchNode, withHashes bool) {
+	encoder := NodeIdEncoder{}
+	for i := range 16 {
+		if node.deltaMask&(1<<i) == 0 {
+			continue
+		}
+		encoder.Store(dst, &node.children[i].id)
+		dst = dst[encoder.GetEncodedSize():]
+		if withHashes {
+			copy(dst, node.hashes[i][:])
+			dst = dst[common.HashSize:]
+		}
+	}
+}
+
+// loadDeltaChildren reads the children marked in the delta mask; the others
+// are to be filled in from the base, see BranchNode.ApplyDeltaBase.
+func loadDeltaChildren(src []byte, node *BranchNode, withHashes bool) {
+	encoder := NodeIdEncoder{}
+	for i := range 16 {
+		if node.deltaMask&(1<<i) == 0 {
+			continue
+		}
+		var id NodeId
+		encoder.Load(src, &id)
+		node.children[i] = NewNodeReference(id)
+		src = src[encoder.GetEncodedSize():]
+		if withHashes {
+			copy(node.hashes[i][:], src)
+			src = src[common.HashSize:]
+		}
+	}
 }
 
 type BranchNodeEncoderWithChildHashes struct{}
