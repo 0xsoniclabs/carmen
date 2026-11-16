@@ -27,7 +27,6 @@ import (
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -156,20 +155,6 @@ func TestNodeSource_CanRead_Nodes(t *testing.T) {
 			})
 		})
 	}
-}
-
-func TestNodeSource_get_FailsForADeltaBranch(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	forest, err := mpt.OpenFileForest(dir, mpt.S5LiveConfig, mpt.ForestConfig{Mode: mpt.Mutable, NodeCacheConfig: mpt.NodeCacheConfig{Capacity: 1024}})
-	require.NoError(err)
-	require.NoError(forest.Close())
-	source, err := (&stockNodeSourceFactory{directory: dir, config: mpt.S5LiveConfig}).open()
-	require.NoError(err)
-	defer func() { require.NoError(source.Close()) }()
-
-	_, err = source.get(mpt.DeltaBranchId(0))
-	require.ErrorContains(err, "delta branch node D-0 is not supported")
 }
 
 func TestVisit_CanHandleSlowConsumer(t *testing.T) {
