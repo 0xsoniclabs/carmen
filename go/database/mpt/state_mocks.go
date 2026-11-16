@@ -290,6 +290,22 @@ func (mr *MockDatabaseMockRecorder) createBranch() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "createBranch", reflect.TypeOf((*MockDatabase)(nil).createBranch))
 }
 
+// createDeltaBranch mocks base method.
+func (m *MockDatabase) createDeltaBranch() (NodeReference, shared.WriteHandle[Node], error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "createDeltaBranch")
+	ret0, _ := ret[0].(NodeReference)
+	ret1, _ := ret[1].(shared.WriteHandle[Node])
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// createDeltaBranch indicates an expected call of createDeltaBranch.
+func (mr *MockDatabaseMockRecorder) createDeltaBranch() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "createDeltaBranch", reflect.TypeOf((*MockDatabase)(nil).createDeltaBranch))
+}
+
 // createExtension mocks base method.
 func (m *MockDatabase) createExtension() (NodeReference, shared.WriteHandle[Node], error) {
 	m.ctrl.T.Helper()
