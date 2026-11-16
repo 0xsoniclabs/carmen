@@ -694,6 +694,27 @@ func TestStock_GuaranteeCheckpoint_EmptyStockAdoptsCheckpoint(t *testing.T) {
 	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
 }
 
+func TestStock_GuaranteeCheckpoint_InterruptedAdoptionIsCompleted(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	// An adoption interrupted before its commit leaves a pending checkpoint.
+	require.NoError(utils.WriteJsonFile(getPendingCheckpointFile(dir), checkpointMetaData{
+		Checkpoint: 5,
+		Metadata:   s.getMetadata(),
+	}))
+	require.NoError(s.Close())
+
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	require.NoFileExists(getPendingCheckpointFile(dir))
+	require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
+	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
+}
+
 func TestStock_GuaranteeCheckpoint_UsedStockDoesNotAdoptCheckpoint(t *testing.T) {
 	tests := map[string]func(s *fileStock[int, int]) error{
 		"with data": func(s *fileStock[int, int]) error {
@@ -743,6 +764,7 @@ func TestStock_GuaranteeCheckpoint_FailsOnIoIssuesWhenAdoptingCheckpoint(t *test
 			require.NoError(block(t, s))
 
 			require.Error(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+			require.Zero(s.lastCheckpoint)
 		})
 	}
 }
@@ -1298,6 +1320,28 @@ func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 	require.NoFileExists(getPendingCheckpointFile(dir))
 }
 
+func TestRestore_EmptyStockWithoutCheckpointLosesUnrecordedData(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.Close())
+	_, values, freelist := getFileNames(dir)
+	require.NoError(os.WriteFile(values, make([]byte, 4096), 0600))
+	require.NoError(os.WriteFile(freelist, make([]byte, 8), 0600))
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+
+	for _, file := range []string{values, freelist} {
+		info, err := os.Stat(file)
+		require.NoError(err)
+		require.Zero(info.Size())
+	}
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.Close())
+}
+
 func TestRestore_MissingStockIsNotCreated(t *testing.T) {
 	require := require.New(t)
 	dir := filepath.Join(t.TempDir(), "stock")
@@ -1311,6 +1355,10 @@ func TestRestore_StockWithDataAndNoCheckpointIsDetected(t *testing.T) {
 		"corrupted metadata": func(dir string) error {
 			meta, _, _ := getFileNames(dir)
 			return os.WriteFile(meta, []byte("corrupted"), 0600)
+		},
+		"missing values file": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return os.Remove(values)
 		},
 	}
 	for name, modify := range tests {

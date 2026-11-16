@@ -401,6 +401,19 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		return nil
 	}
 
+	// A stock that never took part in a checkpoint and holds no data can
+	// adopt any checkpoint, since its state at that checkpoint is empty.
+	// This allows adding a stock to a data structure with checkpoints.
+	adopting := s.lastCheckpoint == 0 && s.numValueSlots == 0
+	if adopting {
+		s.lastCheckpoint = checkpoint - 1
+		defer func() {
+			if s.lastCheckpoint != checkpoint {
+				s.lastCheckpoint = 0
+			}
+		}()
+	}
+
 	// If the stock is behind the requested commit, it can be brought up to date.
 	pendingFile := getPendingCheckpointFile(s.directory)
 	if exists(pendingFile) {
@@ -413,11 +426,7 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		}
 	}
 
-	// A stock that never took part in a checkpoint and holds no data can
-	// adopt any checkpoint, since its state at that checkpoint is empty.
-	// This allows adding a stock to a data structure with checkpoints.
-	if s.lastCheckpoint == 0 && s.numValueSlots == 0 {
-		s.lastCheckpoint = checkpoint - 1
+	if adopting {
 		if err := s.Prepare(checkpoint); err != nil {
 			return err
 		}
@@ -514,17 +523,21 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	committed := getCommittedCheckpointFile(s.directory)
 	pending := getPendingCheckpointFile(s.directory)
 
-	// A stock without checkpoint that is missing or empty has nothing to
-	// restore, since it adopts any checkpoint, see GuaranteeCheckpoint.
+	var checkpointData checkpointMetaData
+
+	// A stock without checkpoint adopts any checkpoint if it is empty, see
+	// GuaranteeCheckpoint. A missing stock has nothing to restore, and an
+	// empty one is restored to the empty state recorded in its metadata.
 	if !exists(committed) && !exists(pending) {
-		meta, values, _ := getFileNames(s.directory)
-		data, err := utils.ReadJsonFile[metadata](meta)
-		if !exists(values) || (err == nil && data.ValueListLength == 0) {
+		meta, values, freelist := getFileNames(s.directory)
+		if !exists(meta) && !exists(values) && !exists(freelist) {
 			return nil
+		}
+		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.ValueListLength == 0 {
+			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
 		}
 	}
 
-	var checkpointData checkpointMetaData
 	if exists(committed) {
 		if data, err := utils.ReadJsonFile[checkpointMetaData](committed); err == nil {
 			checkpointData = data
