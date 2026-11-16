@@ -242,6 +242,7 @@ type NodeManager interface {
 
 	createAccount() (NodeReference, shared.WriteHandle[Node], error)
 	createBranch() (NodeReference, shared.WriteHandle[Node], error)
+	createDeltaBranch() (NodeReference, shared.WriteHandle[Node], error)
 	createExtension() (NodeReference, shared.WriteHandle[Node], error)
 	createValue() (NodeReference, shared.WriteHandle[Node], error)
 

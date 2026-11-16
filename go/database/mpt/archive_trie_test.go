@@ -31,6 +31,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/kv_file"
+	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -290,6 +291,26 @@ func TestArchiveTrie_Open_Fails_Wrong_Codes(t *testing.T) {
 		_ = archive.Close()
 		t.Errorf("opening archive should not succeed")
 	}
+}
+
+func TestArchiveTrie_Open_AddsTheDeltaStockToAnArchiveWithCheckpoints(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{CheckpointInterval: 1})
+	require.NoError(err)
+	require.NoError(archive.Add(3, common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(4)}},
+	}, nil))
+	for block := range uint64(4) {
+		balance, err := archive.GetBalance(block, common.Address{1})
+		require.NoError(err)
+		require.Equal(amount.New(block+1), balance)
+	}
+	require.NoError(archive.Close())
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
 }
 
 func TestArchiveTrie_Open_Fails_InconsistentCheckpoints(t *testing.T) {
@@ -2970,6 +2991,104 @@ func TestArchiveTrie_RestoreBlockHeightRestoresArchiveMetaData(t *testing.T) {
 	if err := archive.Close(); err != nil {
 		t.Fatalf("failed to close archive: %v", err)
 	}
+}
+
+func TestArchiveTrie_RestoreBlockHeight_RestoresAnArchiveWithoutDeltaStockCheckpoint(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"missing delta stock": func(string) error { return nil },
+		"interrupted creation of the delta stock": func(dir string) error {
+			return os.MkdirAll(filepath.Join(dir, "branch_deltas.tmp", "sub"), 0700)
+		},
+		"delta stock added at the last checkpoint": func(dir string) error {
+			archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{CheckpointInterval: 100})
+			if err != nil {
+				return err
+			}
+			return errors.Join(
+				archive.Add(3, common.Update{
+					Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(4)}},
+				}, nil),
+				archive.Close(),
+			)
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			createArchiveWithoutDeltaStock(t, dir)
+			require.NoError(setup(dir))
+
+			require.NoError(RestoreBlockHeight(dir, S5ArchiveConfig, 2))
+
+			archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+			require.NoError(err)
+			defer func() { require.NoError(archive.Close()) }()
+			height, empty, err := archive.GetBlockHeight()
+			require.NoError(err)
+			require.False(empty)
+			require.EqualValues(2, height)
+			balance, err := archive.GetBalance(2, common.Address{1})
+			require.NoError(err)
+			require.Equal(amount.New(3), balance)
+		})
+	}
+}
+
+func TestArchiveTrie_OpenAndRestoreBlockHeight_DetectADeltaStockWithoutCheckpoint(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+	_, _, encoder, _, _ := S5ArchiveConfig.GetEncoders()
+	stock, err := file.OpenStock[uint64, BranchNode](encoder, filepath.Join(dir, "branch_deltas"))
+	require.NoError(err)
+	require.NoError(stock.Close())
+
+	_, err = OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.ErrorContains(err, "unable to guarantee availability of checkpoint 2")
+	require.NoError(ForceUnlockDirectory(dir))
+	err = RestoreBlockHeight(dir, S5ArchiveConfig, 2)
+	require.ErrorContains(err, "unable to locate checkpoint data for checkpoint 2")
+}
+
+func TestArchiveTrie_RestoreBlockHeight_RecoversAnArchiveWithoutDeltaStockAfterAFailedOpen(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+	// The corrupted metadata of the trie makes the open fail after the
+	// stocks are opened.
+	require.NoError(os.WriteFile(getLiveTrieMetadataPath(dir), []byte("corrupted"), 0600))
+	_, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.Error(err)
+	require.NoError(ForceUnlockDirectory(dir))
+	_, err = OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.ErrorContains(err, "dirty")
+
+	require.NoError(RestoreBlockHeight(dir, S5ArchiveConfig, 2))
+
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	balance, err := archive.GetBalance(2, common.Address{1})
+	require.NoError(err)
+	require.Equal(amount.New(3), balance)
+	require.NoError(archive.Close())
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
+
+// createArchiveWithoutDeltaStock creates an archive with a checkpoint at its
+// last block, 2, as it was created before the introduction of delta branches.
+func createArchiveWithoutDeltaStock(t *testing.T, dir string) {
+	t.Helper()
+	require := require.New(t)
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{CheckpointInterval: 1})
+	require.NoError(err)
+	for block := range uint64(3) {
+		require.NoError(archive.Add(block, common.Update{
+			Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(block + 1)}},
+		}, nil))
+	}
+	require.NoError(archive.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
 }
 
 func TestArchiveTrie_RestoreBlockHeight_DetectsIssuesAndForwardsThose(t *testing.T) {
