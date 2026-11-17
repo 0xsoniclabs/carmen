@@ -559,6 +559,7 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	if checkpointData.Checkpoint != checkpoint && !exists(committed) {
 		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.isEmpty() {
 			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
+			recoveringPending = false // The pending checkpoint file is not needed, since the stock is empty and need to be truncated.
 		}
 	}
 
