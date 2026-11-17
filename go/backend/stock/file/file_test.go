@@ -1263,7 +1263,7 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 	}
 }
 
-func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
+func TestStock_Restore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	s, err := openStock[int, int](stock.IntEncoder{}, dir)
@@ -1277,7 +1277,7 @@ func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 	require.NoFileExists(getPendingCheckpointFile(dir))
 }
 
-func TestRestore_FailsIfStockCanNotBeAccessed(t *testing.T) {
+func TestStock_Restore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 	tests := map[string]func(dir string) error{
 		"directory is a file": func(dir string) error {
 			return os.WriteFile(dir, nil, 0600)
@@ -1298,14 +1298,14 @@ func TestRestore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 	}
 }
 
-func TestRestore_MissingStockIsNotCreated(t *testing.T) {
+func TestStock_Restore_MissingStockIsNotCreated(t *testing.T) {
 	require := require.New(t)
 	dir := filepath.Join(t.TempDir(), "stock")
 	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
 	require.NoDirExists(dir)
 }
 
-func TestRestore_StockThatWasNeverFlushedHasNothingToRestore(t *testing.T) {
+func TestStock_Restore_StockThatWasNeverFlushedHasNothingToRestore(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	_, values, freelist := getFileNames(dir)
@@ -1320,7 +1320,7 @@ func TestRestore_StockThatWasNeverFlushedHasNothingToRestore(t *testing.T) {
 	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(3)))
 }
 
-func TestRestore_StockWithoutCheckpointIsDetected(t *testing.T) {
+func TestStock_Restore_StockWithoutCheckpointIsDetected(t *testing.T) {
 	tests := map[string]func(s *fileStock[int, int]) error{
 		"empty stock": func(s *fileStock[int, int]) error {
 			return s.Close()
