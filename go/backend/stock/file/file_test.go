@@ -681,23 +681,18 @@ func TestStock_GuaranteeCheckpoint_EmptyStockAdoptsCheckpoint(t *testing.T) {
 	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
 }
 
-func TestStock_GuaranteeCheckpoint_InterruptedAdoptionIsCompleted(t *testing.T) {
+func TestStock_GuaranteeCheckpoint_InterruptedAdoptionIsRepeated(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	s, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	// An adoption interrupted before its commit leaves a pending checkpoint.
-	require.NoError(utils.WriteJsonFile(getPendingCheckpointFile(dir), checkpointMetaData{
-		Checkpoint: 5,
-		Metadata:   s.getMetadata(),
-	}))
-	require.NoError(s.Close())
+	// An adoption interrupted while writing leaves an incomplete temporary file.
+	temporaryFile := getCommittedCheckpointFile(dir) + ".tmp"
+	require.NoError(os.WriteFile(temporaryFile, []byte(`{"Checkpoint":`), 0600))
 
-	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
 	require.NoError(err)
 	defer func() { require.NoError(s.Close()) }()
 	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
-	require.NoFileExists(getPendingCheckpointFile(dir))
+	require.NoFileExists(temporaryFile)
 	require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
 	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
 }
@@ -731,8 +726,9 @@ func TestStock_GuaranteeCheckpoint_UsedStockDoesNotAdoptCheckpoint(t *testing.T)
 
 func TestStock_GuaranteeCheckpoint_FailsOnIoIssuesWhenAdoptingCheckpoint(t *testing.T) {
 	tests := map[string]func(t *testing.T, s *fileStock[int, int]) error{
-		"pending checkpoint": func(t *testing.T, s *fileStock[int, int]) error {
-			t.Cleanup(func() { _ = os.Chmod(s.directory, 0700) })
+		"temporary file": func(t *testing.T, s *fileStock[int, int]) error {
+			require := require.New(t)
+			t.Cleanup(func() { require.NoError(os.Chmod(s.directory, 0700)) })
 			return os.Chmod(s.directory, 0500)
 		},
 		"committed checkpoint": func(_ *testing.T, s *fileStock[int, int]) error {
@@ -744,6 +740,8 @@ func TestStock_GuaranteeCheckpoint_FailsOnIoIssuesWhenAdoptingCheckpoint(t *test
 			require := require.New(t)
 			s, err := openStock[int, int](stock.IntEncoder{}, t.TempDir())
 			require.NoError(err)
+			// The stock is closed after the cleanup of the blocked operation.
+			t.Cleanup(func() { require.NoError(s.Close()) })
 			require.NoError(block(t, s))
 
 			require.Error(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
@@ -1279,6 +1277,23 @@ func TestStock_Restore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 	require.NoFileExists(getPendingCheckpointFile(dir))
 }
 
+func TestStock_Restore_NeverFlushedStockWithPendingCheckpointIsRestored(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	_, values, freelist := getFileNames(dir)
+	require.NoError(os.WriteFile(values, nil, 0600))
+	require.NoError(os.WriteFile(freelist, nil, 0600))
+	require.NoError(utils.WriteJsonFile(getPendingCheckpointFile(dir), checkpointMetaData{
+		Checkpoint: 1,
+		Metadata:   metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4},
+	}))
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(1)))
+
+	require.FileExists(getCommittedCheckpointFile(dir))
+	require.NoFileExists(getPendingCheckpointFile(dir))
+}
+
 func TestStock_Restore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 	tests := map[string]func(dir string) error{
 		"directory is a file": func(dir string) error {
@@ -1287,9 +1302,6 @@ func TestStock_Restore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 		"data file is a link to itself": func(dir string) error {
 			_, values, _ := getFileNames(dir)
 			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
-		},
-		"pending checkpoint can not be removed": func(dir string) error {
-			return os.MkdirAll(filepath.Join(getPendingCheckpointFile(dir), "sub"), 0700)
 		},
 	}
 	for name, setup := range tests {
@@ -1327,17 +1339,12 @@ func TestStock_Restore_StockThatWasNeverFlushedHasNothingToRestore(t *testing.T)
 
 func TestStock_Restore_InterruptedAdoptionIsRecovered(t *testing.T) {
 	tests := map[string]func(s *fileStock[int, int]) error{
-		"before commit": func(s *fileStock[int, int]) error {
-			return utils.WriteJsonFile(getPendingCheckpointFile(s.directory), checkpointMetaData{
-				Checkpoint: 5,
-				Metadata:   s.getMetadata(),
-			})
+		"while writing the checkpoint": func(s *fileStock[int, int]) error {
+			temporaryFile := getCommittedCheckpointFile(s.directory) + ".tmp"
+			return os.WriteFile(temporaryFile, []byte(`{"Checkpoint":`), 0600)
 		},
-		"after commit": func(s *fileStock[int, int]) error {
+		"after the checkpoint is written": func(s *fileStock[int, int]) error {
 			return s.GuaranteeCheckpoint(checkpoint.Checkpoint(5))
-		},
-		"while writing pending checkpoint": func(s *fileStock[int, int]) error {
-			return os.WriteFile(getPendingCheckpointFile(s.directory), []byte(`{"Checkpoint":`), 0600)
 		},
 	}
 	for name, adopt := range tests {
@@ -1370,8 +1377,15 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsReset(t *testing.T) {
 			return s.Close()
 		},
 		"closed after failed adoption": func(s *fileStock[int, int]) error {
+			temporaryFile := getCommittedCheckpointFile(s.directory) + ".tmp"
+			return errors.Join(os.WriteFile(temporaryFile, []byte(`{"Checkpoint":`), 0600), s.Close())
+		},
+		"closed with pending checkpoint of another block": func(s *fileStock[int, int]) error {
 			pending := getPendingCheckpointFile(s.directory)
-			return errors.Join(os.WriteFile(pending, []byte(`{"Checkpoint":`), 0600), s.Close())
+			return errors.Join(utils.WriteJsonFile(pending, checkpointMetaData{
+				Checkpoint: 1,
+				Metadata:   s.getMetadata(),
+			}), s.Close())
 		},
 	}
 	for name, setup := range tests {
@@ -1400,14 +1414,35 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsReset(t *testing.T) {
 }
 
 func TestStock_Restore_EmptyStockWithOtherCheckpointIsDetected(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	s, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(1)))
-	require.NoError(s.Close())
+	tests := map[string]func(dir string) error{
+		"flushed": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			if err != nil {
+				return err
+			}
+			return errors.Join(s.GuaranteeCheckpoint(checkpoint.Checkpoint(1)), s.Close())
+		},
+		"never flushed": func(dir string) error {
+			_, values, freelist := getFileNames(dir)
+			return errors.Join(
+				os.WriteFile(values, nil, 0600),
+				os.WriteFile(freelist, nil, 0600),
+				utils.WriteJsonFile(getCommittedCheckpointFile(dir), checkpointMetaData{
+					Checkpoint: 1,
+					Metadata:   metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4},
+				}),
+			)
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			require.NoError(setup(dir))
 
-	require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+			require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+		})
+	}
 }
 
 func TestStock_Restore_StockWithoutCheckpointIsDetected(t *testing.T) {
@@ -1444,6 +1479,31 @@ func TestStock_Restore_StockWithoutCheckpointIsDetected(t *testing.T) {
 			require.NoError(modify(dir))
 
 			require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+		})
+	}
+}
+
+func TestFile_MetadataIsEmpty_AcceptsValidMetadataWithoutData(t *testing.T) {
+	require := require.New(t)
+	require.True(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4}.isEmpty())
+}
+
+func TestFile_MetadataIsEmpty_RejectsInvalidMetadataOrData(t *testing.T) {
+	valid := metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4}
+	tests := map[string]func(m *metadata){
+		"other version":  func(m *metadata) { m.Version++ },
+		"no index size":  func(m *metadata) { m.IndexTypeSize = 0 },
+		"no value size":  func(m *metadata) { m.ValueTypeSize = 0 },
+		"values":         func(m *metadata) { m.ValueListLength = 1 },
+		"free list":      func(m *metadata) { m.FreeListLength = 1 },
+		"values in file": func(m *metadata) { m.NumValuesInFile = 1 },
+	}
+	for name, modify := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			m := valid
+			modify(&m)
+			require.False(m.isEmpty())
 		})
 	}
 }
@@ -1514,31 +1574,6 @@ func TestFile_IsNewStock_FailsIfFilesCanNotBeAccessed(t *testing.T) {
 			isNew, err := isNewStock(dir)
 			require.Error(err)
 			require.False(isNew)
-		})
-	}
-}
-
-func TestFile_MetadataIsEmpty_AcceptsValidMetadataWithoutData(t *testing.T) {
-	require := require.New(t)
-	require.True(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4}.isEmpty())
-}
-
-func TestFile_MetadataIsEmpty_RejectsInvalidMetadataOrData(t *testing.T) {
-	valid := metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4}
-	tests := map[string]func(m *metadata){
-		"other version":  func(m *metadata) { m.Version++ },
-		"no index size":  func(m *metadata) { m.IndexTypeSize = 0 },
-		"no value size":  func(m *metadata) { m.ValueTypeSize = 0 },
-		"values":         func(m *metadata) { m.ValueListLength = 1 },
-		"free list":      func(m *metadata) { m.FreeListLength = 1 },
-		"values in file": func(m *metadata) { m.NumValuesInFile = 1 },
-	}
-	for name, modify := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			m := valid
-			modify(&m)
-			require.False(m.isEmpty())
 		})
 	}
 }

@@ -392,19 +392,6 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		return nil
 	}
 
-	// A stock that never took part in a checkpoint and holds no data can
-	// adopt any checkpoint, since its state at that checkpoint is empty.
-	// This allows adding a stock to a data structure with checkpoints.
-	adopting := s.lastCheckpoint == 0 && s.numValueSlots == 0
-	if adopting {
-		s.lastCheckpoint = checkpoint - 1
-		defer func() {
-			if s.lastCheckpoint != checkpoint {
-				s.lastCheckpoint = 0
-			}
-		}()
-	}
-
 	// If the stock is behind the requested commit, it can be brought up to date.
 	pendingFile := getPendingCheckpointFile(s.directory)
 	if exists(pendingFile) {
@@ -417,17 +404,26 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		}
 	}
 
-	// Unlike Prepare, nothing is flushed, so the metadata is not written
-	// before the checkpoint is recorded.
-	if adopting {
-		err := utils.WriteJsonFile(pendingFile, checkpointMetaData{
+	// A stock that never took part in a checkpoint and holds no data can
+	// adopt any checkpoint, since its state at that checkpoint is empty.
+	// This allows adding a stock to a data structure with checkpoints.
+	// The checkpoint is written to a temporary file first, such that an
+	// interrupted adoption does not leave an incomplete checkpoint.
+	if s.lastCheckpoint == 0 && s.numValueSlots == 0 {
+		committedFile := getCommittedCheckpointFile(s.directory)
+		temporaryFile := committedFile + ".tmp"
+		err := utils.WriteJsonFile(temporaryFile, checkpointMetaData{
 			Checkpoint: checkpoint,
 			Metadata:   s.getMetadata(),
 		})
 		if err != nil {
 			return err
 		}
-		return s.Commit(checkpoint)
+		if err := os.Rename(temporaryFile, committedFile); err != nil {
+			return err
+		}
+		s.lastCheckpoint = checkpoint
+		return nil
 	}
 
 	// Otherwise, the requested checkpoint can not be guaranteed.
@@ -523,18 +519,10 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	var checkpointData checkpointMetaData
 
 	// A stock that was never flushed has nothing to restore. It adopts the
-	// checkpoint when it is opened, see GuaranteeCheckpoint. A pending
-	// checkpoint can only be left by an interrupted adoption, and is dropped.
-	if !exists(committed) {
-		isNew, err := isNewStock(s.directory)
-		if err != nil {
+	// checkpoint when it is opened, see GuaranteeCheckpoint.
+	if !exists(committed) && !exists(pending) {
+		if isNew, err := isNewStock(s.directory); isNew || err != nil {
 			return err
-		}
-		if isNew {
-			if err := os.Remove(pending); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			return nil
 		}
 	}
 

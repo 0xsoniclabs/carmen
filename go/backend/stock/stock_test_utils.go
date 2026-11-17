@@ -637,9 +637,8 @@ func testMissingCheckpointIsDetected(t *testing.T, factory NamedStockFactory) {
 		t.Fatalf("failed to open stock: %v", err)
 	}
 	// An empty stock may adopt any checkpoint, a stock with content may not.
-	if _, err := stock.New(); err != nil {
-		t.Fatalf("failed to add element: %v", err)
-	}
+	_, err = stock.New()
+	require.NoError(t, err)
 
 	checkpoint := checkpoint.Checkpoint(1)
 
