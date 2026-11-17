@@ -95,35 +95,6 @@ func TestFile_Open_CannotMkdir(t *testing.T) {
 	}
 }
 
-func TestFile_Open_NewStockCanBeOpenedAgainWithoutBeingFlushed(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	s, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	defer func() { require.NoError(s.Close()) }()
-
-	reopened, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	require.NoError(reopened.Close())
-}
-
-func TestFile_Open_RemovesFilesOfNewStockIfMetadataCanNotBeWritten(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	meta, values, freelist := getFileNames(dir)
-	// A link to a missing directory makes the creation of the file fail.
-	require.NoError(os.Symlink(filepath.Join(dir, "missing", "meta.json"), meta))
-
-	_, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.Error(err)
-	require.NoFileExists(values)
-	require.NoFileExists(freelist)
-
-	s, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	require.NoError(s.Close())
-}
-
 func TestFile_Open_MissingFile(t *testing.T) {
 	directory := t.TempDir()
 	s, err := initFileStock(directory, 10)
@@ -747,7 +718,7 @@ func TestStock_GuaranteeCheckpoint_FailsOnIoIssuesWhenAdoptingCheckpoint(t *test
 	tests := map[string]func(t *testing.T, s *fileStock[int, int]) error{
 		"flush": func(_ *testing.T, s *fileStock[int, int]) error {
 			meta, _, _ := getFileNames(s.directory)
-			return os.Chmod(meta, 0400)
+			return os.MkdirAll(filepath.Join(meta, "sub"), 0700)
 		},
 		"pending checkpoint": func(t *testing.T, s *fileStock[int, int]) error {
 			t.Cleanup(func() { _ = os.Chmod(s.directory, 0700) })
@@ -1259,10 +1230,6 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 				t.Fatalf("failed to open stock: %v", err)
 			}
 
-			// An empty stock without checkpoint has nothing to restore.
-			_, err = stock.New()
-			require.NoError(t, err)
-
 			// Create a checkpoint from which the stock should be recovered.
 			checkpoint := checkpoint.Checkpoint(1)
 			err = errors.Join(
@@ -1283,30 +1250,6 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 	}
 }
 
-func TestRestore_StockWithoutCheckpointAndDataHasNothingToRestore(t *testing.T) {
-	tests := map[string]func(dir string) error{
-		"missing stock": func(string) error { return nil },
-		"empty stock": func(dir string) error {
-			s, err := openStock[int, int](stock.IntEncoder{}, dir)
-			return errors.Join(err, s.Close())
-		},
-	}
-	for name, setup := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			dir := filepath.Join(t.TempDir(), "stock")
-			require.NoError(setup(dir))
-
-			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
-
-			s, err := openStock[int, int](stock.IntEncoder{}, dir)
-			require.NoError(err)
-			defer func() { require.NoError(s.Close()) }()
-			require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(3)))
-		})
-	}
-}
-
 func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1319,28 +1262,6 @@ func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 
 	require.FileExists(getCommittedCheckpointFile(dir))
 	require.NoFileExists(getPendingCheckpointFile(dir))
-}
-
-func TestRestore_EmptyStockWithoutCheckpointLosesUnrecordedData(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	s, err := openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	require.NoError(s.Close())
-	_, values, freelist := getFileNames(dir)
-	require.NoError(os.WriteFile(values, make([]byte, 4096), 0600))
-	require.NoError(os.WriteFile(freelist, make([]byte, 8), 0600))
-
-	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
-
-	for _, file := range []string{values, freelist} {
-		info, err := os.Stat(file)
-		require.NoError(err)
-		require.Zero(info.Size())
-	}
-	s, err = openStock[int, int](stock.IntEncoder{}, dir)
-	require.NoError(err)
-	require.NoError(s.Close())
 }
 
 func TestRestore_FailsIfStockCanNotBeAccessed(t *testing.T) {
@@ -1358,44 +1279,27 @@ func TestRestore_MissingStockIsNotCreated(t *testing.T) {
 	require.NoDirExists(dir)
 }
 
-func TestRestore_StockWithDataAndNoCheckpointIsDetected(t *testing.T) {
-	tests := map[string]func(dir string) error{
-		"valid metadata": func(string) error { return nil },
-		"corrupted metadata": func(dir string) error {
-			meta, _, _ := getFileNames(dir)
-			return os.WriteFile(meta, []byte("corrupted"), 0600)
+func TestRestore_StockWithoutCheckpointIsDetected(t *testing.T) {
+	tests := map[string]func(s *fileStock[int, int]) error{
+		"empty stock": func(s *fileStock[int, int]) error {
+			return s.Close()
 		},
-		"missing values file": func(dir string) error {
-			_, values, _ := getFileNames(dir)
-			return os.Remove(values)
+		"stock with data": func(s *fileStock[int, int]) error {
+			_, err := s.New()
+			return errors.Join(err, s.Close())
 		},
-		"empty object as metadata": func(dir string) error {
-			meta, _, _ := getFileNames(dir)
-			return os.WriteFile(meta, []byte("{}"), 0600)
-		},
-		"null as metadata": func(dir string) error {
-			meta, _, _ := getFileNames(dir)
-			return os.WriteFile(meta, []byte("null"), 0600)
-		},
-		"metadata with values in file only": func(dir string) error {
-			meta, _, _ := getFileNames(dir)
-			return utils.WriteJsonFile(meta, metadata{IndexTypeSize: 8, ValueTypeSize: 4, NumValuesInFile: 1})
-		},
-		"metadata with free list only": func(dir string) error {
-			meta, _, _ := getFileNames(dir)
-			return utils.WriteJsonFile(meta, metadata{IndexTypeSize: 8, ValueTypeSize: 4, FreeListLength: 1})
+		"stock without metadata": func(s *fileStock[int, int]) error {
+			meta, _, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Remove(meta))
 		},
 	}
-	for name, modify := range tests {
+	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			dir := t.TempDir()
 			s, err := openStock[int, int](stock.IntEncoder{}, dir)
 			require.NoError(err)
-			_, err = s.New()
-			require.NoError(err)
-			require.NoError(s.Close())
-			require.NoError(modify(dir))
+			require.NoError(setup(s))
 
 			require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
 		})

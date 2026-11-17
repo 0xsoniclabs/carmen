@@ -86,7 +86,7 @@ func openVerifyStock[I stock.Index, V any](encoder stock.ValueEncoder[V], direct
 
 	// Create new files
 	valueSize := encoder.GetEncodedSize()
-	res := &fileStock[I, V]{
+	return &fileStock[I, V]{
 		encoder:         encoder,
 		directory:       directory,
 		values:          values,
@@ -101,20 +101,7 @@ func openVerifyStock[I stock.Index, V any](encoder stock.ValueEncoder[V], direct
 		lastCheckpoint:               committed.Checkpoint,
 		numValuesCoveredByCheckpoint: I(committed.Metadata.ValueListLength),
 		freeListSizeOfCheckpoint:     int(committed.Metadata.FreeListLength),
-	}
-
-	// The metadata of a new stock is written right away, since a stock
-	// can not be opened without it.
-	if metafile, _, _ := getFileNames(directory); !exists(metafile) {
-		if err := utils.WriteJsonFile(metafile, res.getMetadata()); err != nil {
-			err = errors.Join(err, res.values.Close(), res.freelist.Close())
-			for _, file := range []string{metafile, valuefile, freelistfile} {
-				_ = os.Remove(file)
-			}
-			return nil, err
-		}
-	}
-	return res, nil
+	}, nil
 }
 
 // buffer combines a raw data and value buffer required in pairs for Get and Set
@@ -529,17 +516,12 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 	var checkpointData checkpointMetaData
 
-	// A stock without checkpoint adopts any checkpoint if it is empty, see
-	// GuaranteeCheckpoint. A missing stock has nothing to restore, and an
-	// empty one is restored to the empty state recorded in its metadata.
+	// A stock that was never created has nothing to restore. It adopts the
+	// checkpoint when it is opened, see GuaranteeCheckpoint.
 	if !exists(committed) && !exists(pending) {
-		meta, values, freelist := getFileNames(s.directory)
-		missing, err := noneExist(meta, values, freelist)
+		missing, err := noneExist(getFileNames(s.directory))
 		if missing || err != nil {
 			return err
-		}
-		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.isEmpty() {
-			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
 		}
 	}
 
@@ -608,11 +590,6 @@ type metadata struct {
 	ValueListLength int
 	FreeListLength  int
 	NumValuesInFile int64
-}
-
-// isEmpty reports whether this is the metadata of a stock holding no data.
-func (m metadata) isEmpty() bool {
-	return m.IndexTypeSize > 0 && m.ValueListLength == 0 && m.FreeListLength == 0 && m.NumValuesInFile == 0
 }
 
 func allZero(data []byte) bool {
