@@ -524,8 +524,17 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	// A stock without data and checkpoint has nothing to restore. It adopts
 	// the checkpoint when it is opened, see GuaranteeCheckpoint.
 	if !exists(committed) && !exists(pending) {
-		if isNew, err := isNewStock(s.directory); isNew || err != nil {
+		isNew, err := isNewStock(s.directory)
+		if err != nil {
 			return err
+		}
+		if isNew {
+			// An interrupted flush may have left an incomplete page of values.
+			_, values, _ := getFileNames(s.directory)
+			if err := os.Truncate(values, 0); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			return nil
 		}
 	}
 

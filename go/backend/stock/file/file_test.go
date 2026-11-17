@@ -1303,6 +1303,10 @@ func TestStock_Restore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 			_, values, _ := getFileNames(dir)
 			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
 		},
+		"values file can not be truncated": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.WriteFile(values, nil, 0400))
+		},
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1371,7 +1375,7 @@ func TestStock_Restore_InterruptedAdoptionIsRecovered(t *testing.T) {
 	}
 }
 
-func TestStock_Restore_EmptyStockWithoutCheckpointHasNothingToRestore(t *testing.T) {
+func TestStock_Restore_EmptyStockWithoutCheckpointIsRestored(t *testing.T) {
 	tests := map[string]func(s *fileStock[int, int]) error{
 		"closed before adoption": func(s *fileStock[int, int]) error {
 			return s.Close()
@@ -1379,6 +1383,10 @@ func TestStock_Restore_EmptyStockWithoutCheckpointHasNothingToRestore(t *testing
 		"closed after failed adoption": func(s *fileStock[int, int]) error {
 			temporaryFile := getCommittedCheckpointFile(s.directory) + ".tmp"
 			return errors.Join(os.WriteFile(temporaryFile, []byte(`{"Checkpoint":`), 0600), s.Close())
+		},
+		"closed with an incomplete page of values": func(s *fileStock[int, int]) error {
+			_, values, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Truncate(values, 100))
 		},
 	}
 	for name, setup := range tests {
