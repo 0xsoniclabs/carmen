@@ -1371,7 +1371,7 @@ func TestStock_Restore_InterruptedAdoptionIsRecovered(t *testing.T) {
 	}
 }
 
-func TestStock_Restore_EmptyStockWithoutCheckpointIsReset(t *testing.T) {
+func TestStock_Restore_EmptyStockWithoutCheckpointHasNothingToRestore(t *testing.T) {
 	tests := map[string]func(s *fileStock[int, int]) error{
 		"closed before adoption": func(s *fileStock[int, int]) error {
 			return s.Close()
@@ -1379,13 +1379,6 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsReset(t *testing.T) {
 		"closed after failed adoption": func(s *fileStock[int, int]) error {
 			temporaryFile := getCommittedCheckpointFile(s.directory) + ".tmp"
 			return errors.Join(os.WriteFile(temporaryFile, []byte(`{"Checkpoint":`), 0600), s.Close())
-		},
-		"closed with pending checkpoint of another block": func(s *fileStock[int, int]) error {
-			pending := getPendingCheckpointFile(s.directory)
-			return errors.Join(utils.WriteJsonFile(pending, checkpointMetaData{
-				Checkpoint: 1,
-				Metadata:   s.getMetadata(),
-			}), s.Close())
 		},
 	}
 	for name, setup := range tests {
@@ -1398,11 +1391,6 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsReset(t *testing.T) {
 
 			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
 
-			_, values, _ := getFileNames(dir)
-			info, err := os.Stat(values)
-			require.NoError(err)
-			require.Zero(info.Size())
-			require.NoFileExists(getPendingCheckpointFile(dir))
 			s, err = openStock[int, int](stock.IntEncoder{}, dir)
 			require.NoError(err)
 			defer func() { require.NoError(s.Close()) }()
@@ -1508,19 +1496,31 @@ func TestFile_MetadataIsEmpty_RejectsInvalidMetadataOrData(t *testing.T) {
 	}
 }
 
-func TestFile_IsNewStock_AcceptsStockWithoutMetadataAndData(t *testing.T) {
-	tests := map[string][]string{
+func TestFile_IsNewStock_AcceptsStockWithoutData(t *testing.T) {
+	empty, err := json.Marshal(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4})
+	require.NoError(t, err)
+	tests := map[string]map[string][]byte{
 		"no files":             {},
-		"empty values file":    {fileNameValues},
-		"empty free list file": {fileNameFreeList},
-		"empty data files":     {fileNameValues, fileNameFreeList},
+		"empty values file":    {fileNameValues: nil},
+		"empty free list file": {fileNameFreeList: nil},
+		"empty data files":     {fileNameValues: nil, fileNameFreeList: nil},
+		"flushed while empty": {
+			fileNameMetadata: empty,
+			fileNameValues:   make([]byte, 4096),
+			fileNameFreeList: nil,
+		},
+		"flushed while empty and truncated": {
+			fileNameMetadata: empty,
+			fileNameValues:   nil,
+			fileNameFreeList: nil,
+		},
 	}
 	for name, files := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			dir := t.TempDir()
-			for _, file := range files {
-				require.NoError(os.WriteFile(filepath.Join(dir, file), nil, 0600))
+			for file, content := range files {
+				require.NoError(os.WriteFile(filepath.Join(dir, file), content, 0600))
 			}
 
 			isNew, err := isNewStock(dir)
@@ -1530,11 +1530,42 @@ func TestFile_IsNewStock_AcceptsStockWithoutMetadataAndData(t *testing.T) {
 	}
 }
 
-func TestFile_IsNewStock_RejectsStockWithMetadataOrData(t *testing.T) {
+func TestFile_IsNewStock_RejectsStockWithData(t *testing.T) {
+	empty, err := json.Marshal(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4})
+	require.NoError(t, err)
+	used, err := json.Marshal(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4, ValueListLength: 1})
+	require.NoError(t, err)
 	tests := map[string]map[string][]byte{
-		"metadata":            {fileNameMetadata: nil},
 		"values with data":    {fileNameValues: {1}},
 		"free list with data": {fileNameFreeList: {1}},
+		"corrupted metadata": {
+			fileNameMetadata: nil,
+			fileNameValues:   nil,
+			fileNameFreeList: nil,
+		},
+		"metadata with data": {
+			fileNameMetadata: used,
+			fileNameValues:   make([]byte, 4096),
+			fileNameFreeList: nil,
+		},
+		"flushed while empty with two pages of values": {
+			fileNameMetadata: empty,
+			fileNameValues:   make([]byte, 2*4096),
+			fileNameFreeList: nil,
+		},
+		"flushed while empty with free list": {
+			fileNameMetadata: empty,
+			fileNameValues:   make([]byte, 4096),
+			fileNameFreeList: {1},
+		},
+		"flushed while empty without values file": {
+			fileNameMetadata: empty,
+			fileNameFreeList: nil,
+		},
+		"flushed while empty without free list file": {
+			fileNameMetadata: empty,
+			fileNameValues:   make([]byte, 4096),
+		},
 	}
 	for name, files := range tests {
 		t.Run(name, func(t *testing.T) {

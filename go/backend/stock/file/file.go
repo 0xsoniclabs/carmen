@@ -131,11 +131,14 @@ func VerifyStock[I stock.Index, V any](directory string, encoder stock.ValueEnco
 func verifyStockInternal[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string) (metadata, error) {
 	var meta metadata
 
-	// A stock that was never flushed is empty and thus consistent.
-	if isNew, err := isNewStock(directory); isNew || err != nil {
-		return meta, err
-	}
+	// A stock that was never flushed is empty and thus consistent. A stock
+	// with metadata is always checked against it.
 	metafile, valuefile, freelistfile := getFileNames(directory)
+	if !exists(metafile) {
+		if isNew, err := isNewStock(directory); isNew || err != nil {
+			return meta, err
+		}
+	}
 
 	// Missing files are a problem.
 	for _, file := range []string{metafile, valuefile, freelistfile} {
@@ -518,8 +521,8 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 	var checkpointData checkpointMetaData
 
-	// A stock that was never flushed has nothing to restore. It adopts the
-	// checkpoint when it is opened, see GuaranteeCheckpoint.
+	// A stock without data and checkpoint has nothing to restore. It adopts
+	// the checkpoint when it is opened, see GuaranteeCheckpoint.
 	if !exists(committed) && !exists(pending) {
 		if isNew, err := isNewStock(s.directory); isNew || err != nil {
 			return err
@@ -539,21 +542,12 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 		}
 	}
 
-	// fix individual files
-	meta, values, freelist := getFileNames(s.directory)
-
-	// A stock without checkpoint whose metadata records no data was closed
-	// before it adopted a checkpoint, and is reset to the empty state.
-	if checkpointData.Checkpoint != checkpoint && !exists(committed) {
-		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.isEmpty() {
-			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
-			recoveringPending = false // The pending checkpoint file is not needed, since the stock is empty and need to be truncated.
-		}
-	}
-
 	if checkpointData.Checkpoint != checkpoint {
 		return fmt.Errorf("unable to locate checkpoint data for checkpoint %d", checkpoint)
 	}
+
+	// fix individual files
+	meta, values, freelist := getFileNames(s.directory)
 
 	// the meta data file can be simply restored from the checkpoint
 	if err := utils.WriteJsonFile(meta, checkpointData.Metadata); err != nil {
@@ -622,19 +616,34 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// isNewStock reports whether the directory holds a stock that was never
-// flushed, which has no metadata and no data.
+// isNewStock reports whether the directory holds a stock without data. This
+// is a stock that was never flushed, or one that was only flushed while empty.
 func isNewStock(directory string) (bool, error) {
 	metafile, valuefile, freelistfile := getFileNames(directory)
-	if _, err := os.Stat(metafile); !errors.Is(err, os.ErrNotExist) {
+	_, err := os.Stat(metafile)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
-	for _, file := range []string{valuefile, freelistfile} {
+	flushed := err == nil
+
+	// The flush of an empty stock writes its metadata and one page of values.
+	valueLimit := int64(0)
+	if flushed {
+		meta, err := utils.ReadJsonFile[metadata](metafile)
+		if err != nil || !meta.isEmpty() {
+			return false, nil
+		}
+		valueLimit = 4096
+	}
+	for file, limit := range map[string]int64{valuefile: valueLimit, freelistfile: 0} {
 		info, err := os.Stat(file)
 		if errors.Is(err, os.ErrNotExist) {
+			if flushed {
+				return false, nil
+			}
 			continue
 		}
-		if err != nil || info.Size() > 0 {
+		if err != nil || info.Size() > limit {
 			return false, err
 		}
 	}
