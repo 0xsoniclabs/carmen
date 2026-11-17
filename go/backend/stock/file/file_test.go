@@ -95,6 +95,19 @@ func TestFile_Open_CannotMkdir(t *testing.T) {
 	}
 }
 
+func TestFile_Open_StockThatWasNeverFlushedCanBeOpened(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	// A stock that was never flushed has empty data files and no metadata.
+	_, values, freelist := getFileNames(dir)
+	require.NoError(os.WriteFile(values, nil, 0600))
+	require.NoError(os.WriteFile(freelist, nil, 0600))
+
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.Close())
+}
+
 func TestFile_Open_MissingFile(t *testing.T) {
 	directory := t.TempDir()
 	s, err := initFileStock(directory, 10)
@@ -1265,11 +1278,24 @@ func TestRestore_EmptyStockWithPendingCheckpointIsRestored(t *testing.T) {
 }
 
 func TestRestore_FailsIfStockCanNotBeAccessed(t *testing.T) {
-	require := require.New(t)
-	path := filepath.Join(t.TempDir(), "stock")
-	require.NoError(os.WriteFile(path, nil, 0600))
+	tests := map[string]func(dir string) error{
+		"directory is a file": func(dir string) error {
+			return os.WriteFile(dir, nil, 0600)
+		},
+		"data file is a link to itself": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
 
-	require.Error(GetRestorer(path).Restore(checkpoint.Checkpoint(3)))
+			require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+		})
+	}
 }
 
 func TestRestore_MissingStockIsNotCreated(t *testing.T) {
@@ -1277,6 +1303,21 @@ func TestRestore_MissingStockIsNotCreated(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "stock")
 	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
 	require.NoDirExists(dir)
+}
+
+func TestRestore_StockThatWasNeverFlushedHasNothingToRestore(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	_, values, freelist := getFileNames(dir)
+	require.NoError(os.WriteFile(values, nil, 0600))
+	require.NoError(os.WriteFile(freelist, nil, 0600))
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(3)))
 }
 
 func TestRestore_StockWithoutCheckpointIsDetected(t *testing.T) {
@@ -1288,9 +1329,10 @@ func TestRestore_StockWithoutCheckpointIsDetected(t *testing.T) {
 			_, err := s.New()
 			return errors.Join(err, s.Close())
 		},
-		"stock without metadata": func(s *fileStock[int, int]) error {
+		"data without metadata": func(s *fileStock[int, int]) error {
 			meta, _, _ := getFileNames(s.directory)
-			return errors.Join(s.Close(), os.Remove(meta))
+			_, err := s.New()
+			return errors.Join(err, s.Close(), os.Remove(meta))
 		},
 	}
 	for name, setup := range tests {
@@ -1302,6 +1344,76 @@ func TestRestore_StockWithoutCheckpointIsDetected(t *testing.T) {
 			require.NoError(setup(s))
 
 			require.Error(GetRestorer(dir).Restore(checkpoint.Checkpoint(3)))
+		})
+	}
+}
+
+func TestFile_IsNewStock_AcceptsStockWithoutMetadataAndData(t *testing.T) {
+	tests := map[string][]string{
+		"no files":             {},
+		"empty values file":    {fileNameValues},
+		"empty free list file": {fileNameFreeList},
+		"empty data files":     {fileNameValues, fileNameFreeList},
+	}
+	for name, files := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			for _, file := range files {
+				require.NoError(os.WriteFile(filepath.Join(dir, file), nil, 0600))
+			}
+
+			isNew, err := isNewStock(dir)
+			require.NoError(err)
+			require.True(isNew)
+		})
+	}
+}
+
+func TestFile_IsNewStock_RejectsStockWithMetadataOrData(t *testing.T) {
+	tests := map[string]map[string][]byte{
+		"metadata":            {fileNameMetadata: nil},
+		"values with data":    {fileNameValues: {1}},
+		"free list with data": {fileNameFreeList: {1}},
+	}
+	for name, files := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			for file, content := range files {
+				require.NoError(os.WriteFile(filepath.Join(dir, file), content, 0600))
+			}
+
+			isNew, err := isNewStock(dir)
+			require.NoError(err)
+			require.False(isNew)
+		})
+	}
+}
+
+func TestFile_IsNewStock_FailsIfFilesCanNotBeAccessed(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"directory is a file": func(dir string) error {
+			return os.WriteFile(dir, nil, 0600)
+		},
+		"values file is a link to itself": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
+		},
+		"free list file is a link to itself": func(dir string) error {
+			_, _, freelist := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(freelist, freelist))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
+
+			isNew, err := isNewStock(dir)
+			require.Error(err)
+			require.False(isNew)
 		})
 	}
 }

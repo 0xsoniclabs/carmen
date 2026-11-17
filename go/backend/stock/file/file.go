@@ -131,11 +131,11 @@ func VerifyStock[I stock.Index, V any](directory string, encoder stock.ValueEnco
 func verifyStockInternal[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string) (metadata, error) {
 	var meta metadata
 
-	// If none of the needed files exist, the stock is empty and thus consistent.
-	metafile, valuefile, freelistfile := getFileNames(directory)
-	if !exists(metafile) && !exists(valuefile) && !exists(freelistfile) {
-		return meta, nil
+	// A stock that was never flushed is empty and thus consistent.
+	if isNew, err := isNewStock(directory); isNew || err != nil {
+		return meta, err
 	}
+	metafile, valuefile, freelistfile := getFileNames(directory)
 
 	// Missing files are a problem.
 	for _, file := range []string{metafile, valuefile, freelistfile} {
@@ -516,11 +516,10 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 	var checkpointData checkpointMetaData
 
-	// A stock that was never created has nothing to restore. It adopts the
+	// A stock that was never flushed has nothing to restore. It adopts the
 	// checkpoint when it is opened, see GuaranteeCheckpoint.
 	if !exists(committed) && !exists(pending) {
-		missing, err := noneExist(getFileNames(s.directory))
-		if missing || err != nil {
+		if isNew, err := isNewStock(s.directory); isNew || err != nil {
 			return err
 		}
 	}
@@ -606,13 +605,19 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// noneExist reports whether none of the given files exist. Unlike exists, it
-// fails if the presence of a file can not be determined.
-func noneExist(paths ...string) (bool, error) {
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return false, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
+// isNewStock reports whether the directory holds a stock that was never
+// flushed, which has no metadata and no data.
+func isNewStock(directory string) (bool, error) {
+	metafile, valuefile, freelistfile := getFileNames(directory)
+	if _, err := os.Stat(metafile); !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	for _, file := range []string{valuefile, freelistfile} {
+		info, err := os.Stat(file)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || info.Size() > 0 {
 			return false, err
 		}
 	}
