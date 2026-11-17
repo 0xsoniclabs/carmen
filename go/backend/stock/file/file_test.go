@@ -1303,9 +1303,9 @@ func TestStock_Restore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 			_, values, _ := getFileNames(dir)
 			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
 		},
-		"values file can not be truncated": func(dir string) error {
-			_, values, _ := getFileNames(dir)
-			return errors.Join(os.Mkdir(dir, 0700), os.WriteFile(values, nil, 0400))
+		"stock file can not be removed": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.MkdirAll(filepath.Join(meta, "sub"), 0700)
 		},
 	}
 	for name, setup := range tests {
@@ -1388,6 +1388,14 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsRestored(t *testing.T) {
 			_, values, _ := getFileNames(s.directory)
 			return errors.Join(s.Close(), os.Truncate(values, 100))
 		},
+		"first flush interrupted before writing metadata": func(s *fileStock[int, int]) error {
+			meta, values, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Truncate(meta, 0), os.Truncate(values, 0))
+		},
+		"first flush interrupted while writing metadata": func(s *fileStock[int, int]) error {
+			meta, values, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Truncate(meta, 10), os.Truncate(values, 0))
+		},
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1399,6 +1407,10 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsRestored(t *testing.T) {
 
 			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
 
+			meta, values, freelist := getFileNames(dir)
+			for _, file := range []string{meta, values, freelist} {
+				require.NoFileExists(file)
+			}
 			s, err = openStock[int, int](stock.IntEncoder{}, dir)
 			require.NoError(err)
 			defer func() { require.NoError(s.Close()) }()
@@ -1522,6 +1534,14 @@ func TestFile_IsNewStock_AcceptsStockWithoutData(t *testing.T) {
 			fileNameValues:   nil,
 			fileNameFreeList: nil,
 		},
+		"empty metadata file": {
+			fileNameMetadata: nil,
+			fileNameValues:   nil,
+			fileNameFreeList: nil,
+		},
+		"incomplete metadata file": {
+			fileNameMetadata: empty[:10],
+		},
 	}
 	for name, files := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1546,8 +1566,13 @@ func TestFile_IsNewStock_RejectsStockWithData(t *testing.T) {
 	tests := map[string]map[string][]byte{
 		"values with data":    {fileNameValues: {1}},
 		"free list with data": {fileNameFreeList: {1}},
-		"corrupted metadata": {
-			fileNameMetadata: nil,
+		"incomplete metadata with a page of values": {
+			fileNameMetadata: empty[:10],
+			fileNameValues:   make([]byte, 4096),
+			fileNameFreeList: nil,
+		},
+		"invalid metadata": {
+			fileNameMetadata: []byte("{}"),
 			fileNameValues:   nil,
 			fileNameFreeList: nil,
 		},

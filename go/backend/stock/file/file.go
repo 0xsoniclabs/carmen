@@ -521,18 +521,20 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 	var checkpointData checkpointMetaData
 
-	// A stock without data and checkpoint has nothing to restore. It adopts
-	// the checkpoint when it is opened, see GuaranteeCheckpoint.
+	// A stock without data and checkpoint has nothing to restore. Its files
+	// are removed, since an interrupted flush may have left them incomplete.
+	// It adopts the checkpoint when it is opened, see GuaranteeCheckpoint.
 	if !exists(committed) && !exists(pending) {
 		isNew, err := isNewStock(s.directory)
 		if err != nil {
 			return err
 		}
 		if isNew {
-			// An interrupted flush may have left an incomplete page of values.
-			_, values, _ := getFileNames(s.directory)
-			if err := os.Truncate(values, 0); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
+			meta, values, freelist := getFileNames(s.directory)
+			for _, file := range []string{meta, values, freelist} {
+				if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
 			}
 			return nil
 		}
@@ -629,19 +631,17 @@ func exists(path string) bool {
 // is a stock that was never flushed, or one that was only flushed while empty.
 func isNewStock(directory string) (bool, error) {
 	metafile, valuefile, freelistfile := getFileNames(directory)
-	_, err := os.Stat(metafile)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-	flushed := err == nil
 
 	// The flush of an empty stock writes its metadata and one page of values.
+	// Metadata that can not be read is left by an interrupted first flush,
+	// which did not reach the data files.
+	flushed := false
 	valueLimit := int64(0)
-	if flushed {
-		meta, err := utils.ReadJsonFile[metadata](metafile)
-		if err != nil || !meta.isEmpty() {
+	if meta, err := utils.ReadJsonFile[metadata](metafile); err == nil {
+		if !meta.isEmpty() {
 			return false, nil
 		}
+		flushed = true
 		valueLimit = 4096
 	}
 	for file, limit := range map[string]int64{valuefile: valueLimit, freelistfile: 0} {
