@@ -755,6 +755,187 @@ func TestStock_Abort_FailsOnIoIssues(t *testing.T) {
 	}
 }
 
+func TestFile_JoinCheckpoint_CreatesAnEmptyStockAtTheCheckpoint(t *testing.T) {
+	require := require.New(t)
+	dir := filepath.Join(t.TempDir(), "stock")
+	require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+	require.NoError(VerifyStock[int](dir, stock.IntEncoder{}))
+
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+	id, err := s.New()
+	require.NoError(err)
+	require.NoError(s.Set(id, 1))
+	require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
+	require.NoError(s.Commit(checkpoint.Checkpoint(6)))
+	require.NoError(s.Close())
+}
+
+func TestFile_JoinCheckpointAndRestore_RestoresTheEmptyStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	id, err := s.New()
+	require.NoError(err)
+	require.NoError(s.Set(id, 1))
+	require.NoError(s.Close())
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
+
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.Zero(s.numValueSlots)
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+}
+
+func TestFile_JoinCheckpoint_ReplacesFilesLeftByAFailedOpen(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"stock that was never flushed": func(dir string) error {
+			_, values, freelist := getFileNames(dir)
+			return errors.Join(os.WriteFile(values, nil, 0600), os.WriteFile(freelist, nil, 0600))
+		},
+		"stock closed while empty": func(string) error {
+			return nil
+		},
+		"incomplete page of values": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return os.Truncate(values, 100)
+		},
+		"incomplete metadata": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.Truncate(meta, 10)
+		},
+		"incomplete metadata without values": func(dir string) error {
+			meta, values, _ := getFileNames(dir)
+			return errors.Join(os.Truncate(meta, 10), os.Truncate(values, 0))
+		},
+		"no metadata": func(dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.Remove(meta)
+		},
+		"interrupted join": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			temporary := getCommittedCheckpointFile(dir) + ".tmp"
+			return errors.Join(os.Remove(values), os.WriteFile(temporary, []byte(`{"Checkpoint":`), 0600))
+		},
+	}
+	for name, modify := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			require.NoError(s.Close())
+			require.NoError(modify(dir))
+
+			require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			require.NoError(VerifyStock[int](dir, stock.IntEncoder{}))
+			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
+			s, err = openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			defer func() { require.NoError(s.Close()) }()
+			require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+		})
+	}
+}
+
+func TestFile_JoinCheckpoint_LeavesAStockWithCheckpointUntouched(t *testing.T) {
+	tests := map[string]func(s *fileStock[int, int]) error{
+		"committed checkpoint": func(s *fileStock[int, int]) error {
+			return errors.Join(s.Prepare(checkpoint.Checkpoint(1)), s.Commit(checkpoint.Checkpoint(1)))
+		},
+		"pending checkpoint": func(s *fileStock[int, int]) error {
+			return s.Prepare(checkpoint.Checkpoint(1))
+		},
+	}
+	for name, createCheckpoint := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			id, err := s.New()
+			require.NoError(err)
+			require.NoError(s.Set(id, 7))
+			require.NoError(createCheckpoint(s))
+			require.NoError(s.Close())
+
+			require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			s, err = openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			defer func() { require.NoError(s.Close()) }()
+			require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(1)))
+			value, err := s.Get(id)
+			require.NoError(err)
+			require.Equal(7, value)
+		})
+	}
+}
+
+func TestFile_JoinCheckpoint_RejectsAStockWithDataAndNoCheckpoint(t *testing.T) {
+	tests := map[string]func(s *fileStock[int, int]) error{
+		"value": func(s *fileStock[int, int]) error {
+			id, err := s.New()
+			return errors.Join(err, s.Set(id, 1))
+		},
+		"zero value": func(s *fileStock[int, int]) error {
+			_, err := s.New()
+			return err
+		},
+		"released value": func(s *fileStock[int, int]) error {
+			id, err := s.New()
+			return errors.Join(err, s.Delete(id))
+		},
+	}
+	for name, fill := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			require.NoError(fill(s))
+			require.NoError(s.Close())
+
+			require.Error(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			require.NoFileExists(getCommittedCheckpointFile(dir))
+			require.NoError(VerifyStock[int](dir, stock.IntEncoder{}))
+		})
+	}
+}
+
+func TestFile_JoinCheckpoint_FailsOnIoIssues(t *testing.T) {
+	tests := map[string]func(t *testing.T, dir string) error{
+		"directory is a file": func(_ *testing.T, dir string) error {
+			return os.WriteFile(dir, nil, 0600)
+		},
+		"file can not be removed": func(_ *testing.T, dir string) error {
+			meta, _, _ := getFileNames(dir)
+			return os.MkdirAll(filepath.Join(meta, "sub"), 0700)
+		},
+		"files can not be written": func(t *testing.T, dir string) error {
+			require := require.New(t)
+			t.Cleanup(func() { require.NoError(os.Chmod(dir, 0700)) })
+			return errors.Join(os.Mkdir(dir, 0700), os.Chmod(dir, 0500))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(t, dir))
+
+			require.Error(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+		})
+	}
+}
+
 func TestRestore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 	for _, name := range []string{"committed", "pending"} {
 		t.Run(name, func(t *testing.T) {
@@ -1082,6 +1263,81 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 			if err := GetRestorer(dir).Restore(checkpoint); err == nil {
 				t.Errorf("restoration should fail")
 			}
+		})
+	}
+}
+
+func TestFile_HoldsNoData_AcceptsDataFilesWithoutData(t *testing.T) {
+	tests := map[string]map[string][]byte{
+		"no files":                   {},
+		"empty data files":           {fileNameValues: nil, fileNameFreeList: nil},
+		"page of zeros":              {fileNameValues: make([]byte, 4096), fileNameFreeList: nil},
+		"incomplete page of zeros":   {fileNameValues: make([]byte, 100)},
+		"metadata is not considered": {fileNameMetadata: []byte("corrupted")},
+	}
+	for name, files := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			for file, content := range files {
+				require.NoError(os.WriteFile(filepath.Join(dir, file), content, 0600))
+			}
+
+			empty, err := holdsNoData(dir)
+			require.NoError(err)
+			require.True(empty)
+		})
+	}
+}
+
+func TestFile_HoldsNoData_RejectsDataFilesWithData(t *testing.T) {
+	tests := map[string]map[string][]byte{
+		"two pages of zeros":      {fileNameValues: make([]byte, 2*4096)},
+		"values other than zero":  {fileNameValues: append(make([]byte, 4095), 1)},
+		"free list with elements": {fileNameFreeList: {0}},
+	}
+	for name, files := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			for file, content := range files {
+				require.NoError(os.WriteFile(filepath.Join(dir, file), content, 0600))
+			}
+
+			empty, err := holdsNoData(dir)
+			require.NoError(err)
+			require.False(empty)
+		})
+	}
+}
+
+func TestFile_HoldsNoData_FailsIfFilesCanNotBeAccessed(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"directory is a file": func(dir string) error {
+			return os.WriteFile(dir, nil, 0600)
+		},
+		"values file is a link to itself": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
+		},
+		"free list file is a link to itself": func(dir string) error {
+			_, _, freelist := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(freelist, freelist))
+		},
+		"values file can not be read": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.WriteFile(values, nil, 0200))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
+
+			empty, err := holdsNoData(dir)
+			require.Error(err)
+			require.False(empty)
 		})
 	}
 }
