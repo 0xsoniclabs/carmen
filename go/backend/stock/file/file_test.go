@@ -1284,6 +1284,9 @@ func TestStock_Restore_FailsIfStockCanNotBeAccessed(t *testing.T) {
 			_, values, _ := getFileNames(dir)
 			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(values, values))
 		},
+		"pending checkpoint can not be removed": func(dir string) error {
+			return os.MkdirAll(filepath.Join(getPendingCheckpointFile(dir), "sub"), 0700)
+		},
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1329,6 +1332,9 @@ func TestStock_Restore_InterruptedAdoptionIsRecovered(t *testing.T) {
 		"after commit": func(s *fileStock[int, int]) error {
 			return s.GuaranteeCheckpoint(checkpoint.Checkpoint(5))
 		},
+		"while writing pending checkpoint": func(s *fileStock[int, int]) error {
+			return os.WriteFile(getPendingCheckpointFile(s.directory), []byte(`{"Checkpoint":`), 0600)
+		},
 	}
 	for name, adopt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1337,9 +1343,10 @@ func TestStock_Restore_InterruptedAdoptionIsRecovered(t *testing.T) {
 			s, err := openStock[int, int](stock.IntEncoder{}, dir)
 			require.NoError(err)
 			require.NoError(adopt(s))
-			// The process stops without flushing the stock.
-			require.NoError(s.values.Close())
-			require.NoError(s.freelist.Close())
+			// The process stops without flushing the stock. Closing the files
+			// would write to them, so it is deferred to the end of the test.
+			crashed := s
+			t.Cleanup(func() { require.NoError(errors.Join(crashed.values.Close(), crashed.freelist.Close())) })
 
 			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
 

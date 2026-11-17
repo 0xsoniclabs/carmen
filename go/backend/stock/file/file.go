@@ -523,10 +523,18 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 	var checkpointData checkpointMetaData
 
 	// A stock that was never flushed has nothing to restore. It adopts the
-	// checkpoint when it is opened, see GuaranteeCheckpoint.
-	if !exists(committed) && !exists(pending) {
-		if isNew, err := isNewStock(s.directory); isNew || err != nil {
+	// checkpoint when it is opened, see GuaranteeCheckpoint. A pending
+	// checkpoint can only be left by an interrupted adoption, and is dropped.
+	if !exists(committed) {
+		isNew, err := isNewStock(s.directory)
+		if err != nil {
 			return err
+		}
+		if isNew {
+			if err := os.Remove(pending); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			return nil
 		}
 	}
 
