@@ -811,12 +811,50 @@ func TestFile_JoinCheckpointAndRestore_RestoresTheEmptyStock(t *testing.T) {
 	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
 }
 
+func TestFile_JoinCheckpoint_LeavesAStockWithCheckpointUntouched(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"joined stock": func(dir string) error {
+			return JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(3))
+		},
+		"stock with committed checkpoint": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			if err != nil {
+				return err
+			}
+			_, err = s.New()
+			return errors.Join(err, s.Prepare(checkpoint.Checkpoint(1)), s.Commit(checkpoint.Checkpoint(1)), s.Close())
+		},
+		"stock with pending checkpoint": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			if err != nil {
+				return err
+			}
+			_, err = s.New()
+			return errors.Join(err, s.Prepare(checkpoint.Checkpoint(1)), s.Close())
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
+			backup := t.TempDir()
+			require.NoError(copyDirectory(dir, backup))
+
+			require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			require.NoError(checkForEqualContent(t, dir, backup))
+			require.NoDirExists(dir + ".tmp")
+		})
+	}
+}
+
 func TestFile_JoinCheckpoint_RejectsAnExistingDirectory(t *testing.T) {
 	tests := map[string]func(dir string) error{
 		"empty directory": func(string) error {
 			return nil
 		},
-		"directory with a stock": func(dir string) error {
+		"stock without checkpoint": func(dir string) error {
 			s, err := openStock[int, int](stock.IntEncoder{}, dir)
 			if err != nil {
 				return err
