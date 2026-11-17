@@ -135,7 +135,7 @@ func verifyStockInternal[I stock.Index, V any](encoder stock.ValueEncoder[V], di
 	// with metadata is always checked against it.
 	metafile, valuefile, freelistfile := getFileNames(directory)
 	if !exists(metafile) {
-		if isNew, err := isNewStock(directory); isNew || err != nil {
+		if empty, err := holdsNoData(directory, 0); empty || err != nil {
 			return meta, err
 		}
 	}
@@ -521,17 +521,18 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 	var checkpointData checkpointMetaData
 
-	// A stock without data and checkpoint has nothing to restore. Its files
-	// are removed, since an interrupted flush may have left them incomplete.
-	// The metadata is removed last, such that an interrupted removal can be
-	// repeated. The stock adopts the checkpoint when it is opened, see
-	// GuaranteeCheckpoint.
+	// A stock without checkpoint whose data files hold no data has nothing to
+	// restore. Its files are removed, whatever state a failed open left them
+	// in, and it adopts the checkpoint when it is opened again, see
+	// GuaranteeCheckpoint. The flush of an empty stock writes one page of
+	// values. The metadata is not considered, and is removed last, such that
+	// an interrupted removal can be repeated.
 	if !exists(committed) && !exists(pending) {
-		isNew, err := isNewStock(s.directory)
+		empty, err := holdsNoData(s.directory, 4096)
 		if err != nil {
 			return err
 		}
-		if isNew {
+		if empty {
 			meta, values, freelist := getFileNames(s.directory)
 			for _, file := range []string{values, freelist, meta} {
 				if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -609,12 +610,6 @@ type metadata struct {
 	NumValuesInFile int64
 }
 
-// isEmpty reports whether this is valid metadata of a stock holding no data.
-func (m metadata) isEmpty() bool {
-	return m.Version == dataFormatVersion && m.IndexTypeSize > 0 && m.ValueTypeSize > 0 &&
-		m.ValueListLength == 0 && m.FreeListLength == 0 && m.NumValuesInFile == 0
-}
-
 func allZero(data []byte) bool {
 	for _, cur := range data {
 		if cur != 0 {
@@ -629,21 +624,11 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// isNewStock reports whether the directory holds a stock without data. This
-// is a stock that was never flushed, or one that was only flushed while empty.
-func isNewStock(directory string) (bool, error) {
-	metafile, valuefile, freelistfile := getFileNames(directory)
-
-	// The flush of an empty stock writes its metadata and one page of values.
-	// Metadata that can not be read is left by an interrupted first flush,
-	// which did not reach the data files.
-	valueLimit := int64(0)
-	if meta, err := utils.ReadJsonFile[metadata](metafile); err == nil {
-		if !meta.isEmpty() {
-			return false, nil
-		}
-		valueLimit = 4096
-	}
+// holdsNoData reports whether the data files of the stock in the given
+// directory hold no data. The values file may have up to valueLimit bytes, as
+// long as all of them are zero.
+func holdsNoData(directory string, valueLimit int64) (bool, error) {
+	_, valuefile, freelistfile := getFileNames(directory)
 	for file, limit := range map[string]int64{valuefile: valueLimit, freelistfile: 0} {
 		info, err := os.Stat(file)
 		if errors.Is(err, os.ErrNotExist) {
@@ -653,7 +638,11 @@ func isNewStock(directory string) (bool, error) {
 			return false, err
 		}
 	}
-	return true, nil
+	content, err := os.ReadFile(valuefile)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	return allZero(content), nil
 }
 
 func isDirectory(path string) bool {

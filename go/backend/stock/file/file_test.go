@@ -1239,9 +1239,10 @@ func TestStock_Restore_FailsOnIoIssues(t *testing.T) {
 				t.Fatalf("failed to open stock: %v", err)
 			}
 
-			// An empty stock without checkpoint is restored to the empty state.
-			_, err = stock.New()
+			// A stock without checkpoint and data has nothing to restore.
+			id, err := stock.New()
 			require.NoError(t, err)
+			require.NoError(t, stock.Set(id, 1))
 
 			// Create a checkpoint from which the stock should be recovered.
 			checkpoint := checkpoint.Checkpoint(1)
@@ -1404,6 +1405,14 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsRestored(t *testing.T) {
 			meta, values, _ := getFileNames(s.directory)
 			return errors.Join(s.Close(), os.Truncate(meta, 10), os.Truncate(values, 0))
 		},
+		"first flush wrote values but incomplete metadata": func(s *fileStock[int, int]) error {
+			meta, _, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Truncate(meta, 10))
+		},
+		"first flush wrote values but no metadata": func(s *fileStock[int, int]) error {
+			meta, _, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Remove(meta))
+		},
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1489,8 +1498,9 @@ func TestStock_Restore_StockWithoutCheckpointIsDetected(t *testing.T) {
 			dir := t.TempDir()
 			s, err := openStock[int, int](stock.IntEncoder{}, dir)
 			require.NoError(err)
-			_, err = s.New()
+			id, err := s.New()
 			require.NoError(err)
+			require.NoError(s.Set(id, 1))
 			require.NoError(s.Close())
 			require.NoError(modify(dir))
 
@@ -1499,130 +1509,79 @@ func TestStock_Restore_StockWithoutCheckpointIsDetected(t *testing.T) {
 	}
 }
 
-func TestFile_MetadataIsEmpty_AcceptsValidMetadataWithoutData(t *testing.T) {
-	require := require.New(t)
-	require.True(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4}.isEmpty())
-}
-
-func TestFile_MetadataIsEmpty_RejectsInvalidMetadataOrData(t *testing.T) {
-	valid := metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4}
-	tests := map[string]func(m *metadata){
-		"other version":  func(m *metadata) { m.Version++ },
-		"no index size":  func(m *metadata) { m.IndexTypeSize = 0 },
-		"no value size":  func(m *metadata) { m.ValueTypeSize = 0 },
-		"values":         func(m *metadata) { m.ValueListLength = 1 },
-		"free list":      func(m *metadata) { m.FreeListLength = 1 },
-		"values in file": func(m *metadata) { m.NumValuesInFile = 1 },
-	}
-	for name, modify := range tests {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			m := valid
-			modify(&m)
-			require.False(m.isEmpty())
-		})
-	}
-}
-
-func TestFile_IsNewStock_AcceptsStockWithoutData(t *testing.T) {
-	empty, err := json.Marshal(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4})
-	require.NoError(t, err)
-	tests := map[string]map[string][]byte{
+func TestFile_HoldsNoData_AcceptsDataFilesWithoutData(t *testing.T) {
+	tests := map[string]struct {
+		valueLimit int64
+		files      map[string][]byte
+	}{
 		"no files":             {},
-		"empty values file":    {fileNameValues: nil},
-		"empty free list file": {fileNameFreeList: nil},
-		"empty data files":     {fileNameValues: nil, fileNameFreeList: nil},
-		"flushed while empty": {
-			fileNameMetadata: empty,
-			fileNameValues:   make([]byte, 4096),
-			fileNameFreeList: nil,
+		"empty values file":    {files: map[string][]byte{fileNameValues: nil}},
+		"empty free list file": {files: map[string][]byte{fileNameFreeList: nil}},
+		"empty data files":     {files: map[string][]byte{fileNameValues: nil, fileNameFreeList: nil}},
+		"page of zeros within the limit": {
+			valueLimit: 4096,
+			files:      map[string][]byte{fileNameValues: make([]byte, 4096), fileNameFreeList: nil},
 		},
-		"flushed while empty and truncated": {
-			fileNameMetadata: empty,
-			fileNameValues:   nil,
-			fileNameFreeList: nil,
+		"incomplete page of zeros within the limit": {
+			valueLimit: 4096,
+			files:      map[string][]byte{fileNameValues: make([]byte, 100)},
 		},
-		"flushed while empty without values file": {
-			fileNameMetadata: empty,
-			fileNameFreeList: nil,
-		},
-		"flushed while empty without data files": {
-			fileNameMetadata: empty,
-		},
-		"empty metadata file": {
-			fileNameMetadata: nil,
-			fileNameValues:   nil,
-			fileNameFreeList: nil,
-		},
-		"incomplete metadata file": {
-			fileNameMetadata: empty[:10],
+		"metadata is not considered": {
+			files: map[string][]byte{fileNameMetadata: []byte("corrupted")},
 		},
 	}
-	for name, files := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			dir := t.TempDir()
-			for file, content := range files {
+			for file, content := range test.files {
 				require.NoError(os.WriteFile(filepath.Join(dir, file), content, 0600))
 			}
 
-			isNew, err := isNewStock(dir)
+			empty, err := holdsNoData(dir, test.valueLimit)
 			require.NoError(err)
-			require.True(isNew)
+			require.True(empty)
 		})
 	}
 }
 
-func TestFile_IsNewStock_RejectsStockWithData(t *testing.T) {
-	empty, err := json.Marshal(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4})
-	require.NoError(t, err)
-	used, err := json.Marshal(metadata{Version: dataFormatVersion, IndexTypeSize: 8, ValueTypeSize: 4, ValueListLength: 1})
-	require.NoError(t, err)
-	tests := map[string]map[string][]byte{
-		"values with data":    {fileNameValues: {1}},
-		"free list with data": {fileNameFreeList: {1}},
-		"incomplete metadata with a page of values": {
-			fileNameMetadata: empty[:10],
-			fileNameValues:   make([]byte, 4096),
-			fileNameFreeList: nil,
+func TestFile_HoldsNoData_RejectsDataFilesWithData(t *testing.T) {
+	tests := map[string]struct {
+		valueLimit int64
+		files      map[string][]byte
+	}{
+		"values beyond the limit": {
+			files: map[string][]byte{fileNameValues: make([]byte, 4096)},
 		},
-		"invalid metadata": {
-			fileNameMetadata: []byte("{}"),
-			fileNameValues:   nil,
-			fileNameFreeList: nil,
+		"two pages of zeros": {
+			valueLimit: 4096,
+			files:      map[string][]byte{fileNameValues: make([]byte, 2*4096)},
 		},
-		"metadata with data": {
-			fileNameMetadata: used,
-			fileNameValues:   make([]byte, 4096),
-			fileNameFreeList: nil,
+		"values other than zero within the limit": {
+			valueLimit: 4096,
+			files:      map[string][]byte{fileNameValues: append(make([]byte, 4095), 1)},
 		},
-		"flushed while empty with two pages of values": {
-			fileNameMetadata: empty,
-			fileNameValues:   make([]byte, 2*4096),
-			fileNameFreeList: nil,
-		},
-		"flushed while empty with free list": {
-			fileNameMetadata: empty,
-			fileNameValues:   make([]byte, 4096),
-			fileNameFreeList: {1},
+		"free list with data": {
+			valueLimit: 4096,
+			files:      map[string][]byte{fileNameFreeList: {0}},
 		},
 	}
-	for name, files := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			dir := t.TempDir()
-			for file, content := range files {
+			for file, content := range test.files {
 				require.NoError(os.WriteFile(filepath.Join(dir, file), content, 0600))
 			}
 
-			isNew, err := isNewStock(dir)
+			empty, err := holdsNoData(dir, test.valueLimit)
 			require.NoError(err)
-			require.False(isNew)
+			require.False(empty)
 		})
 	}
 }
 
-func TestFile_IsNewStock_FailsIfFilesCanNotBeAccessed(t *testing.T) {
+func TestFile_HoldsNoData_FailsIfFilesCanNotBeAccessed(t *testing.T) {
 	tests := map[string]func(dir string) error{
 		"directory is a file": func(dir string) error {
 			return os.WriteFile(dir, nil, 0600)
@@ -1635,6 +1594,10 @@ func TestFile_IsNewStock_FailsIfFilesCanNotBeAccessed(t *testing.T) {
 			_, _, freelist := getFileNames(dir)
 			return errors.Join(os.Mkdir(dir, 0700), os.Symlink(freelist, freelist))
 		},
+		"values file can not be read": func(dir string) error {
+			_, values, _ := getFileNames(dir)
+			return errors.Join(os.Mkdir(dir, 0700), os.WriteFile(values, nil, 0200))
+		},
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1642,9 +1605,9 @@ func TestFile_IsNewStock_FailsIfFilesCanNotBeAccessed(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "stock")
 			require.NoError(setup(dir))
 
-			isNew, err := isNewStock(dir)
+			empty, err := holdsNoData(dir, 4096)
 			require.Error(err)
-			require.False(isNew)
+			require.False(empty)
 		})
 	}
 }
