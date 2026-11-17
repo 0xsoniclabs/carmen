@@ -669,6 +669,8 @@ func TestStock_GuaranteeCheckpoint_EmptyStockAdoptsCheckpoint(t *testing.T) {
 
 	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
 	require.NoFileExists(getPendingCheckpointFile(dir))
+	meta, _, _ := getFileNames(dir)
+	require.NoFileExists(meta)
 	require.NoError(s.Close())
 
 	s, err = openStock[int, int](stock.IntEncoder{}, dir)
@@ -729,10 +731,6 @@ func TestStock_GuaranteeCheckpoint_UsedStockDoesNotAdoptCheckpoint(t *testing.T)
 
 func TestStock_GuaranteeCheckpoint_FailsOnIoIssuesWhenAdoptingCheckpoint(t *testing.T) {
 	tests := map[string]func(t *testing.T, s *fileStock[int, int]) error{
-		"flush": func(_ *testing.T, s *fileStock[int, int]) error {
-			meta, _, _ := getFileNames(s.directory)
-			return os.MkdirAll(filepath.Join(meta, "sub"), 0700)
-		},
 		"pending checkpoint": func(t *testing.T, s *fileStock[int, int]) error {
 			t.Cleanup(func() { _ = os.Chmod(s.directory, 0700) })
 			return os.Chmod(s.directory, 0500)
@@ -1318,6 +1316,41 @@ func TestStock_Restore_StockThatWasNeverFlushedHasNothingToRestore(t *testing.T)
 	require.NoError(err)
 	defer func() { require.NoError(s.Close()) }()
 	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(3)))
+}
+
+func TestStock_Restore_InterruptedAdoptionIsRecovered(t *testing.T) {
+	tests := map[string]func(s *fileStock[int, int]) error{
+		"before commit": func(s *fileStock[int, int]) error {
+			return utils.WriteJsonFile(getPendingCheckpointFile(s.directory), checkpointMetaData{
+				Checkpoint: 5,
+				Metadata:   s.getMetadata(),
+			})
+		},
+		"after commit": func(s *fileStock[int, int]) error {
+			return s.GuaranteeCheckpoint(checkpoint.Checkpoint(5))
+		},
+	}
+	for name, adopt := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			require.NoError(adopt(s))
+			// The process stops without flushing the stock.
+			require.NoError(s.values.Close())
+			require.NoError(s.freelist.Close())
+
+			require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
+
+			s, err = openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			defer func() { require.NoError(s.Close()) }()
+			require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+			require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
+			require.NoError(s.Commit(checkpoint.Checkpoint(6)))
+		})
+	}
 }
 
 func TestStock_Restore_StockWithoutCheckpointIsDetected(t *testing.T) {

@@ -417,8 +417,14 @@ func (s *fileStock[I, V]) GuaranteeCheckpoint(checkpoint checkpoint.Checkpoint) 
 		}
 	}
 
+	// Unlike Prepare, nothing is flushed, so the metadata is not written
+	// before the checkpoint is recorded.
 	if adopting {
-		if err := s.Prepare(checkpoint); err != nil {
+		err := utils.WriteJsonFile(pendingFile, checkpointMetaData{
+			Checkpoint: checkpoint,
+			Metadata:   s.getMetadata(),
+		})
+		if err != nil {
 			return err
 		}
 		return s.Commit(checkpoint)
