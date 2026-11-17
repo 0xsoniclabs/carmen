@@ -523,7 +523,9 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 
 	// A stock without data and checkpoint has nothing to restore. Its files
 	// are removed, since an interrupted flush may have left them incomplete.
-	// It adopts the checkpoint when it is opened, see GuaranteeCheckpoint.
+	// The metadata is removed last, such that an interrupted removal can be
+	// repeated. The stock adopts the checkpoint when it is opened, see
+	// GuaranteeCheckpoint.
 	if !exists(committed) && !exists(pending) {
 		isNew, err := isNewStock(s.directory)
 		if err != nil {
@@ -531,7 +533,7 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 		}
 		if isNew {
 			meta, values, freelist := getFileNames(s.directory)
-			for _, file := range []string{meta, values, freelist} {
+			for _, file := range []string{values, freelist, meta} {
 				if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 					return err
 				}
@@ -635,21 +637,16 @@ func isNewStock(directory string) (bool, error) {
 	// The flush of an empty stock writes its metadata and one page of values.
 	// Metadata that can not be read is left by an interrupted first flush,
 	// which did not reach the data files.
-	flushed := false
 	valueLimit := int64(0)
 	if meta, err := utils.ReadJsonFile[metadata](metafile); err == nil {
 		if !meta.isEmpty() {
 			return false, nil
 		}
-		flushed = true
 		valueLimit = 4096
 	}
 	for file, limit := range map[string]int64{valuefile: valueLimit, freelistfile: 0} {
 		info, err := os.Stat(file)
 		if errors.Is(err, os.ErrNotExist) {
-			if flushed {
-				return false, nil
-			}
 			continue
 		}
 		if err != nil || info.Size() > limit {

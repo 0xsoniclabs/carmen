@@ -1388,6 +1388,14 @@ func TestStock_Restore_EmptyStockWithoutCheckpointIsRestored(t *testing.T) {
 			_, values, _ := getFileNames(s.directory)
 			return errors.Join(s.Close(), os.Truncate(values, 100))
 		},
+		"restore interrupted after removing values": func(s *fileStock[int, int]) error {
+			_, values, _ := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Remove(values))
+		},
+		"restore interrupted after removing data files": func(s *fileStock[int, int]) error {
+			_, values, freelist := getFileNames(s.directory)
+			return errors.Join(s.Close(), os.Remove(values), os.Remove(freelist))
+		},
 		"first flush interrupted before writing metadata": func(s *fileStock[int, int]) error {
 			meta, values, _ := getFileNames(s.directory)
 			return errors.Join(s.Close(), os.Truncate(meta, 0), os.Truncate(values, 0))
@@ -1534,6 +1542,13 @@ func TestFile_IsNewStock_AcceptsStockWithoutData(t *testing.T) {
 			fileNameValues:   nil,
 			fileNameFreeList: nil,
 		},
+		"flushed while empty without values file": {
+			fileNameMetadata: empty,
+			fileNameFreeList: nil,
+		},
+		"flushed while empty without data files": {
+			fileNameMetadata: empty,
+		},
 		"empty metadata file": {
 			fileNameMetadata: nil,
 			fileNameValues:   nil,
@@ -1590,14 +1605,6 @@ func TestFile_IsNewStock_RejectsStockWithData(t *testing.T) {
 			fileNameMetadata: empty,
 			fileNameValues:   make([]byte, 4096),
 			fileNameFreeList: {1},
-		},
-		"flushed while empty without values file": {
-			fileNameMetadata: empty,
-			fileNameFreeList: nil,
-		},
-		"flushed while empty without free list file": {
-			fileNameMetadata: empty,
-			fileNameValues:   make([]byte, 4096),
 		},
 	}
 	for name, files := range tests {
