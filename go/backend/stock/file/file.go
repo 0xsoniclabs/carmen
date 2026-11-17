@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"unsafe"
 
@@ -481,13 +480,11 @@ func (s *fileStock[I, V]) Abort(checkpoint checkpoint.Checkpoint) error {
 }
 
 // JoinCheckpoint creates an empty stock that took part in the given checkpoint.
-// This allows adding a stock to a data structure with checkpoints. An existing
-// stock is left as it is.
+// This allows adding a stock to a data structure with checkpoints. The directory
+// of the stock must not exist.
 func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string, checkpoint checkpoint.Checkpoint) error {
-	metafile, valuefile, freelistfile := getFileNames(directory)
-	committed, pending := getCommittedCheckpointFile(directory), getPendingCheckpointFile(directory)
-	if slices.ContainsFunc([]string{metafile, valuefile, freelistfile, committed, pending}, exists) {
-		return nil
+	if _, err := os.Stat(directory); err == nil {
+		return fmt.Errorf("unable to create stock, directory %s exists", directory)
 	}
 
 	// The stock is created in a temporary directory and moved into place, such
@@ -499,7 +496,7 @@ func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directo
 		ValueTypeSize: encoder.GetEncodedSize(),
 	}
 	temporary := filepath.Clean(directory) + ".tmp"
-	metafile, valuefile, freelistfile = getFileNames(temporary)
+	metafile, valuefile, freelistfile := getFileNames(temporary)
 	err := errors.Join(
 		os.RemoveAll(temporary),
 		os.MkdirAll(temporary, 0700),
@@ -510,13 +507,6 @@ func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directo
 	)
 	if err != nil {
 		return err
-	}
-	// A rename can not replace a directory. An empty one is removed first, any
-	// other content is not touched.
-	if isDirectory(directory) {
-		if err := os.Remove(directory); err != nil {
-			return err
-		}
 	}
 	return os.Rename(temporary, directory)
 }
