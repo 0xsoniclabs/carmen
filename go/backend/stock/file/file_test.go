@@ -760,7 +760,7 @@ func TestFile_JoinCheckpoint_CreatesAnEmptyStockAtTheCheckpoint(t *testing.T) {
 		"missing directory": func(string) error {
 			return nil
 		},
-		"interrupted join": func(dir string) error {
+		"next to other directories": func(dir string) error {
 			return os.MkdirAll(filepath.Join(dir+".tmp", "sub"), 0700)
 		},
 	}
@@ -770,9 +770,15 @@ func TestFile_JoinCheckpoint_CreatesAnEmptyStockAtTheCheckpoint(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "stock")
 			require.NoError(setup(dir))
 
+			siblings, err := os.ReadDir(filepath.Dir(dir))
+			require.NoError(err)
+
 			require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
 
-			require.NoDirExists(dir + ".tmp")
+			// Only the stock is added, nothing else is created or removed.
+			entries, err := os.ReadDir(filepath.Dir(dir))
+			require.NoError(err)
+			require.Len(entries, len(siblings)+1)
 			files, err := os.ReadDir(dir)
 			require.NoError(err)
 			require.Len(files, 4)
@@ -844,7 +850,9 @@ func TestFile_JoinCheckpoint_LeavesAStockWithCheckpointUntouched(t *testing.T) {
 			require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
 
 			require.NoError(checkForEqualContent(t, dir, backup))
-			require.NoDirExists(dir + ".tmp")
+			temporary, err := filepath.Glob(dir + ".tmp-*")
+			require.NoError(err)
+			require.Empty(temporary)
 		})
 	}
 }
@@ -874,7 +882,9 @@ func TestFile_JoinCheckpoint_RejectsAnExistingDirectory(t *testing.T) {
 			require.Error(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
 
 			require.NoError(checkForEqualContent(t, dir, backup))
-			require.NoDirExists(dir + ".tmp")
+			temporary, err := filepath.Glob(dir + ".tmp-*")
+			require.NoError(err)
+			require.Empty(temporary)
 		})
 	}
 }
@@ -884,11 +894,16 @@ func TestFile_JoinCheckpoint_FailsOnIoIssues(t *testing.T) {
 		"parent is a file": func(_ *testing.T, dir string) error {
 			return os.WriteFile(filepath.Dir(dir), nil, 0600)
 		},
-		"stock can not be created": func(t *testing.T, dir string) error {
+		"temporary directory can not be created": func(t *testing.T, dir string) error {
 			require := require.New(t)
 			parent := filepath.Dir(dir)
 			t.Cleanup(func() { require.NoError(os.Chmod(parent, 0700)) })
 			return errors.Join(os.Mkdir(parent, 0700), os.Chmod(parent, 0500))
+		},
+		"stock can not be moved into place": func(_ *testing.T, dir string) error {
+			// A link to a missing target is not a directory, but can not be
+			// replaced by one.
+			return errors.Join(os.Mkdir(filepath.Dir(dir), 0700), os.Symlink(dir+"-missing", dir))
 		},
 	}
 	for name, setup := range tests {
@@ -898,6 +913,10 @@ func TestFile_JoinCheckpoint_FailsOnIoIssues(t *testing.T) {
 			require.NoError(setup(t, dir))
 
 			require.Error(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			temporary, err := filepath.Glob(dir + ".tmp-*")
+			require.NoError(err)
+			require.Empty(temporary)
 		})
 	}
 }

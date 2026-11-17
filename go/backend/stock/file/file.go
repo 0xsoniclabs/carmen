@@ -493,26 +493,30 @@ func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directo
 
 	// The stock is created in a temporary directory and moved into place, such
 	// that it exists either completely or not at all.
+	temporary, err := os.MkdirTemp(filepath.Dir(directory), filepath.Base(directory)+".tmp-*")
+	if err != nil {
+		return err
+	}
 	var index I
 	meta := metadata{
 		Version:       dataFormatVersion,
 		IndexTypeSize: int(unsafe.Sizeof(index)),
 		ValueTypeSize: encoder.GetEncodedSize(),
 	}
-	temporary := filepath.Clean(directory) + ".tmp"
 	metafile, valuefile, freelistfile := getFileNames(temporary)
-	err := errors.Join(
-		os.RemoveAll(temporary),
-		os.MkdirAll(temporary, 0700),
+	err = errors.Join(
 		utils.WriteJsonFile(metafile, meta),
 		os.WriteFile(valuefile, nil, 0600),
 		os.WriteFile(freelistfile, nil, 0600),
 		utils.WriteJsonFile(getCommittedCheckpointFile(temporary), checkpointMetaData{Checkpoint: checkpoint, Metadata: meta}),
 	)
-	if err != nil {
-		return err
+	if err == nil {
+		err = os.Rename(temporary, directory)
 	}
-	return os.Rename(temporary, directory)
+	if err != nil {
+		return errors.Join(err, os.RemoveAll(temporary))
+	}
+	return nil
 }
 
 func GetRestorer(directory string) *fileStockRestorer {
