@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -480,54 +481,44 @@ func (s *fileStock[I, V]) Abort(checkpoint checkpoint.Checkpoint) error {
 }
 
 // JoinCheckpoint creates an empty stock that took part in the given checkpoint.
-// This allows adding a stock to a data structure with checkpoints. A stock that
-// already took part in a checkpoint is left as it is.
+// This allows adding a stock to a data structure with checkpoints. An existing
+// stock is left as it is.
 func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string, checkpoint checkpoint.Checkpoint) error {
-	committed := getCommittedCheckpointFile(directory)
-	if exists(committed) || exists(getPendingCheckpointFile(directory)) {
+	metafile, valuefile, freelistfile := getFileNames(directory)
+	committed, pending := getCommittedCheckpointFile(directory), getPendingCheckpointFile(directory)
+	if slices.ContainsFunc([]string{metafile, valuefile, freelistfile, committed, pending}, exists) {
 		return nil
 	}
 
-	// Files left by an earlier attempt to open the stock are replaced. Any
-	// other content is not touched, since its checkpoint may have been lost.
-	metafile, valuefile, freelistfile := getFileNames(directory)
-	empty, err := holdsNoData(directory)
-	if err != nil {
-		return err
-	}
-	// Slots holding zeros are data, if readable metadata records them.
-	if data, err := utils.ReadJsonFile[metadata](metafile); err == nil && data.ValueListLength != 0 {
-		empty = false
-	}
-	if !empty {
-		return fmt.Errorf("unable to add stock %s to checkpoint %d, it holds data without a checkpoint", directory, checkpoint)
-	}
-	for _, file := range []string{valuefile, freelistfile, metafile} {
-		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-
+	// The stock is created in a temporary directory and moved into place, such
+	// that it exists either completely or not at all.
 	var index I
 	meta := metadata{
 		Version:       dataFormatVersion,
 		IndexTypeSize: int(unsafe.Sizeof(index)),
 		ValueTypeSize: encoder.GetEncodedSize(),
 	}
-	// The checkpoint is renamed into place as the last step, such that an
-	// interrupted creation is repeated by the next call.
-	temporary := committed + ".tmp"
-	err = errors.Join(
-		os.MkdirAll(directory, 0700),
+	temporary := filepath.Clean(directory) + ".tmp"
+	metafile, valuefile, freelistfile = getFileNames(temporary)
+	err := errors.Join(
+		os.RemoveAll(temporary),
+		os.MkdirAll(temporary, 0700),
 		utils.WriteJsonFile(metafile, meta),
 		os.WriteFile(valuefile, nil, 0600),
 		os.WriteFile(freelistfile, nil, 0600),
-		utils.WriteJsonFile(temporary, checkpointMetaData{Checkpoint: checkpoint, Metadata: meta}),
+		utils.WriteJsonFile(getCommittedCheckpointFile(temporary), checkpointMetaData{Checkpoint: checkpoint, Metadata: meta}),
 	)
 	if err != nil {
 		return err
 	}
-	return os.Rename(temporary, committed)
+	// A rename can not replace a directory. An empty one is removed first, any
+	// other content is not touched.
+	if isDirectory(directory) {
+		if err := os.Remove(directory); err != nil {
+			return err
+		}
+	}
+	return os.Rename(temporary, directory)
 }
 
 func GetRestorer(directory string) *fileStockRestorer {
@@ -625,27 +616,6 @@ func allZero(data []byte) bool {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// holdsNoData reports whether the data files of the stock in the given
-// directory are missing or hold nothing but the page of zeros written by the
-// flush of an empty stock.
-func holdsNoData(directory string) (bool, error) {
-	_, valuefile, freelistfile := getFileNames(directory)
-	for file, limit := range map[string]int64{valuefile: 4096, freelistfile: 0} {
-		info, err := os.Stat(file)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil || info.Size() > limit {
-			return false, err
-		}
-	}
-	content, err := os.ReadFile(valuefile)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-	return allZero(content), nil
 }
 
 func isDirectory(path string) bool {
