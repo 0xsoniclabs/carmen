@@ -551,12 +551,20 @@ func (s *fileStockRestorer) Restore(checkpoint checkpoint.Checkpoint) error {
 		}
 	}
 
+	// fix individual files
+	meta, values, freelist := getFileNames(s.directory)
+
+	// A stock without checkpoint whose metadata records no data was closed
+	// before it adopted a checkpoint, and is reset to the empty state.
+	if checkpointData.Checkpoint != checkpoint && !exists(committed) {
+		if data, err := utils.ReadJsonFile[metadata](meta); err == nil && data.isEmpty() {
+			checkpointData = checkpointMetaData{Checkpoint: checkpoint, Metadata: data}
+		}
+	}
+
 	if checkpointData.Checkpoint != checkpoint {
 		return fmt.Errorf("unable to locate checkpoint data for checkpoint %d", checkpoint)
 	}
-
-	// fix individual files
-	meta, values, freelist := getFileNames(s.directory)
 
 	// the meta data file can be simply restored from the checkpoint
 	if err := utils.WriteJsonFile(meta, checkpointData.Metadata); err != nil {
@@ -603,6 +611,12 @@ type metadata struct {
 	ValueListLength int
 	FreeListLength  int
 	NumValuesInFile int64
+}
+
+// isEmpty reports whether this is valid metadata of a stock holding no data.
+func (m metadata) isEmpty() bool {
+	return m.Version == dataFormatVersion && m.IndexTypeSize > 0 && m.ValueTypeSize > 0 &&
+		m.ValueListLength == 0 && m.FreeListLength == 0 && m.NumValuesInFile == 0
 }
 
 func allZero(data []byte) bool {
