@@ -772,6 +772,63 @@ func TestForest_CreateDeltaBranchAndGetReadAccess_CompletesDeltaFromItsBase(t *t
 	}
 }
 
+func TestForest_getSharedNode_ConcurrentFetchesOfADeltaYieldTheSameNode(t *testing.T) {
+	require := require.New(t)
+	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
+	require.NoError(err)
+	defer func() { require.NoError(forest.Close()) }()
+
+	base := BranchNode{}
+	base.children[5] = NewNodeReference(ValueId(9))
+	delta := BranchNode{base: BranchId(1), deltaMask: 1 << 3}
+	delta.children[3] = NewNodeReference(ValueId(7))
+
+	ctrl := gomock.NewController(t)
+	fetched := make(chan struct{})
+	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branches.EXPECT().Get(uint64(1)).Return(base, nil)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Get(uint64(2)).DoAndReturn(func(uint64) (BranchNode, error) {
+		fetched <- struct{}{}
+		return delta, nil
+	}).Times(2)
+
+	branchesBackup, branchDeltasBackup := forest.branches, forest.branchDeltas
+	defer func() {
+		forest.branches, forest.branchDeltas = branchesBackup, branchDeltasBackup
+	}()
+	forest.branches, forest.branchDeltas = branches, branchDeltas
+
+	// While the base is held, a fetch of the delta can not complete, such
+	// that the second fetch does not find the delta in the cache.
+	baseRef := NewNodeReference(BranchId(1))
+	baseHandle, err := forest.getWriteAccess(&baseRef)
+	require.NoError(err)
+
+	var nodes [2]*shared.Shared[Node]
+	var errs [2]error
+	var wg sync.WaitGroup
+	for i := range nodes {
+		wg.Go(func() {
+			ref := NewNodeReference(DeltaBranchId(2))
+			nodes[i], errs[i] = forest.getSharedNode(&ref)
+		})
+	}
+	<-fetched
+	<-fetched
+	baseHandle.Release()
+	wg.Wait()
+
+	require.NoError(errors.Join(errs[:]...))
+	require.Same(nodes[0], nodes[1])
+	handle := nodes[0].GetReadHandle()
+	defer handle.Release()
+	node := handle.Get().(*BranchNode)
+	require.Equal(ValueId(7), node.children[3].Id())
+	require.Equal(ValueId(9), node.children[5].Id())
+}
+
 func TestForest_getSharedNode_Fails_Get_Copy(t *testing.T) {
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
