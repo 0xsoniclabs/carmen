@@ -11,7 +11,10 @@
 package mpt
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNodeId_DefaultIdIsEmptyId(t *testing.T) {
@@ -46,7 +49,8 @@ func TestNodeId_AccountIdsAreAccountIds(t *testing.T) {
 }
 
 func TestNodeId_BranchIdsAreBranchIds(t *testing.T) {
-	for i := uint64(1); i < 1<<63; i <<= 1 {
+	// Bit 47 of a branch ID marks delta branches, see deltaBranchFlag.
+	for i := uint64(1); i < 1<<46; i <<= 1 {
 		id := BranchId(i)
 		if !id.IsBranch() {
 			t.Errorf("branch ID not properly recognized")
@@ -67,6 +71,25 @@ func TestNodeId_BranchIdsAreBranchIds(t *testing.T) {
 		if id.IsValue() {
 			t.Errorf("branch ID should not be classified as a value")
 		}
+	}
+}
+
+func TestNodeId_DeltaBranchIdsAreDeltaBranchIds(t *testing.T) {
+	require := require.New(t)
+	for i := uint64(1); i < 1<<46; i <<= 1 {
+		id := DeltaBranchId(i)
+		require.True(id.IsDeltaBranch())
+		require.True(id.IsBranch())
+		require.Equal(i, id.Index())
+
+		require.False(BranchId(i).IsDeltaBranch())
+		require.NotEqual(BranchId(i), id)
+		require.Equal(fmt.Sprintf("D-%d", i), id.String())
+
+		require.False(id.IsEmpty())
+		require.False(id.IsAccount())
+		require.False(id.IsExtension())
+		require.False(id.IsValue())
 	}
 }
 
@@ -134,7 +157,7 @@ func TestNodeID_EncodingAndDecoding(t *testing.T) {
 	var buffer [6]byte
 	encoder := NodeIdEncoder{}
 	for i := range uint64(100) {
-		for _, id := range []NodeId{NodeId(0), ValueId(i), AccountId(i), BranchId(i), ExtensionId(i)} {
+		for _, id := range []NodeId{NodeId(0), ValueId(i), AccountId(i), BranchId(i), DeltaBranchId(i), ExtensionId(i)} {
 			encoder.Store(buffer[:], &id)
 			restored := NodeId(12345)
 			if encoder.Load(buffer[:], &restored); restored != id {
