@@ -2395,7 +2395,11 @@ func (BranchDeltaNodeEncoderWithNodeHash) Store(dst []byte, node *BranchNode) er
 }
 
 func (BranchDeltaNodeEncoderWithNodeHash) Load(src []byte, node *BranchNode) error {
-	src = loadDeltaHeader(src, node)
+	src, err := loadDeltaHeader(src, node)
+	if err != nil {
+		return err
+	}
+	node.dirtyHashes = 0
 	copy(node.hash[:], src)
 	node.hashStatus = hashStatusClean
 	loadDeltaChildren(src[common.HashSize:], node, false)
@@ -2429,7 +2433,10 @@ func (BranchDeltaNodeEncoderWithChildHashes) Store(dst []byte, node *BranchNode)
 }
 
 func (BranchDeltaNodeEncoderWithChildHashes) Load(src []byte, node *BranchNode) error {
-	src = loadDeltaHeader(src, node)
+	src, err := loadDeltaHeader(src, node)
+	if err != nil {
+		return err
+	}
 	node.embeddedChildren = binary.BigEndian.Uint16(src)
 	loadDeltaChildren(src[2:], node, true)
 	node.hashStatus = hashStatusUnknown
@@ -2447,12 +2454,16 @@ func storeDeltaHeader(dst []byte, node *BranchNode) []byte {
 	return dst[2:]
 }
 
-func loadDeltaHeader(src []byte, node *BranchNode) []byte {
+func loadDeltaHeader(src []byte, node *BranchNode) ([]byte, error) {
 	encoder := NodeIdEncoder{}
 	encoder.Load(src, &node.base)
 	src = src[encoder.GetEncodedSize():]
 	node.deltaMask = binary.BigEndian.Uint16(src)
-	return src[2:]
+	// The mask decides how many children are read, so it must fit the record.
+	if bits.OnesCount16(node.deltaMask) > deltaSlots {
+		return nil, fmt.Errorf("delta branch node exceeds the delta slots: %016b", node.deltaMask)
+	}
+	return src[2:], nil
 }
 
 // storeDeltaChildren writes the children marked in the delta mask in index order.
