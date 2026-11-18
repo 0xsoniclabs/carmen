@@ -39,9 +39,9 @@ import (
 //	account    [ index, 45 bits          ][011]
 //	extension  [ index, 45 bits          ][111]
 //
-// This allows to address 2^46 branches, 2^46 delta branches, 2^46 values and
-// 2^45 accounts and extensions, sufficient for any foreseeable future. None
-// of these limits is checked.
+// This allows to address 2^46-1 branches, 2^46-1 delta branches, 2^46 values
+// and 2^45 accounts and extensions, sufficient for any foreseeable future.
+// None of these limits is checked.
 type NodeId uint64
 
 // EmptyId returns the node ID representing the empty node.
