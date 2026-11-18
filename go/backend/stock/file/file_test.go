@@ -755,6 +755,152 @@ func TestStock_Abort_FailsOnIoIssues(t *testing.T) {
 	}
 }
 
+func TestFile_JoinCheckpoint_CreatesAnEmptyStockAtTheCheckpoint(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"missing directory": func(string) error {
+			return nil
+		},
+		"next to other directories": func(dir string) error {
+			return os.MkdirAll(filepath.Join(dir+".tmp", "sub"), 0700)
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
+
+			siblings, err := os.ReadDir(filepath.Dir(dir))
+			require.NoError(err)
+
+			require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			// Only the stock is added, nothing else is created or removed.
+			entries, err := os.ReadDir(filepath.Dir(dir))
+			require.NoError(err)
+			require.Len(entries, len(siblings)+1)
+			files, err := os.ReadDir(dir)
+			require.NoError(err)
+			require.Len(files, 4)
+			require.NoError(VerifyStock[int](dir, stock.IntEncoder{}))
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			require.NoError(err)
+			defer func() { require.NoError(s.Close()) }()
+			require.Zero(s.numValueSlots)
+			require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+			id, err := s.New()
+			require.NoError(err)
+			require.NoError(s.Set(id, 1))
+			require.NoError(s.Prepare(checkpoint.Checkpoint(6)))
+			require.NoError(s.Commit(checkpoint.Checkpoint(6)))
+		})
+	}
+}
+
+func TestFile_JoinCheckpointAndRestore_RestoresTheEmptyStock(t *testing.T) {
+	require := require.New(t)
+	dir := filepath.Join(t.TempDir(), "stock")
+	require.NoError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+	s, err := openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	id, err := s.New()
+	require.NoError(err)
+	require.NoError(s.Set(id, 1))
+	require.NoError(s.Close())
+
+	require.NoError(GetRestorer(dir).Restore(checkpoint.Checkpoint(5)))
+
+	s, err = openStock[int, int](stock.IntEncoder{}, dir)
+	require.NoError(err)
+	defer func() { require.NoError(s.Close()) }()
+	require.Zero(s.numValueSlots)
+	require.NoError(s.GuaranteeCheckpoint(checkpoint.Checkpoint(5)))
+}
+
+func TestFile_JoinCheckpoint_RejectsAnExistingDirectory(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"empty directory": func(dir string) error {
+			return os.Mkdir(dir, 0700)
+		},
+		"stock without checkpoint": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			if err != nil {
+				return err
+			}
+			_, err = s.New()
+			return errors.Join(err, s.Close())
+		},
+		"joined stock": func(dir string) error {
+			return JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(3))
+		},
+		"stock with committed checkpoint": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			if err != nil {
+				return err
+			}
+			_, err = s.New()
+			return errors.Join(err, s.Prepare(checkpoint.Checkpoint(1)), s.Commit(checkpoint.Checkpoint(1)), s.Close())
+		},
+		"stock with pending checkpoint": func(dir string) error {
+			s, err := openStock[int, int](stock.IntEncoder{}, dir)
+			if err != nil {
+				return err
+			}
+			_, err = s.New()
+			return errors.Join(err, s.Prepare(checkpoint.Checkpoint(1)), s.Close())
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "stock")
+			require.NoError(setup(dir))
+			backup := t.TempDir()
+			require.NoError(copyDirectory(dir, backup))
+
+			require.EqualError(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)),
+				fmt.Sprintf("unable to add stock to checkpoint 5, directory %s exists", dir))
+
+			require.NoError(checkForEqualContent(t, dir, backup))
+			temporary, err := filepath.Glob(dir + ".tmp-*")
+			require.NoError(err)
+			require.Empty(temporary)
+		})
+	}
+}
+
+func TestFile_JoinCheckpoint_FailsOnIoIssues(t *testing.T) {
+	tests := map[string]func(t *testing.T, dir string) error{
+		"parent is a file": func(_ *testing.T, dir string) error {
+			return os.WriteFile(filepath.Dir(dir), nil, 0600)
+		},
+		"temporary directory can not be created": func(t *testing.T, dir string) error {
+			require := require.New(t)
+			parent := filepath.Dir(dir)
+			t.Cleanup(func() { require.NoError(os.Chmod(parent, 0700)) })
+			return errors.Join(os.Mkdir(parent, 0700), os.Chmod(parent, 0500))
+		},
+		"stock can not be moved into place": func(_ *testing.T, dir string) error {
+			// A link to a missing target is not a directory, but can not be
+			// replaced by one.
+			return errors.Join(os.Mkdir(filepath.Dir(dir), 0700), os.Symlink(dir+"-missing", dir))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := filepath.Join(t.TempDir(), "parent", "stock")
+			require.NoError(setup(t, dir))
+
+			require.Error(JoinCheckpoint[int](stock.IntEncoder{}, dir, checkpoint.Checkpoint(5)))
+
+			temporary, err := filepath.Glob(dir + ".tmp-*")
+			require.NoError(err)
+			require.Empty(temporary)
+		})
+	}
+}
+
 func TestRestore_CanRestoreCommittedAndPendingCheckpoint(t *testing.T) {
 	for _, name := range []string{"committed", "pending"} {
 		t.Run(name, func(t *testing.T) {

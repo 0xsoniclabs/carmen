@@ -479,6 +479,43 @@ func (s *fileStock[I, V]) Abort(checkpoint checkpoint.Checkpoint) error {
 	return nil
 }
 
+// JoinCheckpoint creates an empty stock that took part in the given checkpoint.
+// This allows adding a stock to a data structure with checkpoints. A stock that
+// already took part in a checkpoint is left as it is. Any other existing
+// directory is rejected.
+func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string, checkpoint checkpoint.Checkpoint) error {
+	if _, err := os.Stat(directory); err == nil {
+		return fmt.Errorf("unable to add stock to checkpoint %d, directory %s exists", checkpoint, directory)
+	}
+
+	// The stock is created in a temporary directory and moved into place, such
+	// that it exists either completely or not at all.
+	temporary, err := os.MkdirTemp(filepath.Dir(directory), filepath.Base(directory)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	var index I
+	meta := metadata{
+		Version:       dataFormatVersion,
+		IndexTypeSize: int(unsafe.Sizeof(index)),
+		ValueTypeSize: encoder.GetEncodedSize(),
+	}
+	metafile, valuefile, freelistfile := getFileNames(temporary)
+	err = errors.Join(
+		utils.WriteJsonFile(metafile, meta),
+		os.WriteFile(valuefile, nil, 0600),
+		os.WriteFile(freelistfile, nil, 0600),
+		utils.WriteJsonFile(getCommittedCheckpointFile(temporary), checkpointMetaData{Checkpoint: checkpoint, Metadata: meta}),
+	)
+	if err == nil {
+		err = os.Rename(temporary, directory)
+	}
+	if err != nil {
+		return errors.Join(err, os.RemoveAll(temporary))
+	}
+	return nil
+}
+
 func GetRestorer(directory string) *fileStockRestorer {
 	return &fileStockRestorer{
 		directory: directory,
