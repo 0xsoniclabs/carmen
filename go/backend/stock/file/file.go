@@ -484,11 +484,8 @@ func (s *fileStock[I, V]) Abort(checkpoint checkpoint.Checkpoint) error {
 // already took part in a checkpoint is left as it is. Any other existing
 // directory is rejected.
 func JoinCheckpoint[I stock.Index, V any](encoder stock.ValueEncoder[V], directory string, checkpoint checkpoint.Checkpoint) error {
-	if exists(getCommittedCheckpointFile(directory)) || exists(getPendingCheckpointFile(directory)) {
-		return nil
-	}
 	if _, err := os.Stat(directory); err == nil {
-		return fmt.Errorf("unable to add stock to checkpoint %d, directory %s exists without a checkpoint", checkpoint, directory)
+		return fmt.Errorf("unable to add stock to checkpoint %d, directory %s exists", checkpoint, directory)
 	}
 
 	// The stock is created in a temporary directory and moved into place, such
