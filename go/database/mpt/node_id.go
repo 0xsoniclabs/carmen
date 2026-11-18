@@ -26,7 +26,8 @@ import (
 //
 //   - the value is 0 ... empty node
 //   - the value has a binary suffix of 0 ... branch node
-//   - a branch node with bit 47 set ... delta branch node
+//   - the value has bit not 47 set ... full branch node
+//   - the value has bit 47 set ... delta branch node
 //   - the value has a binary suffix of 01 ... value node
 //   - the value has a binary suffix of 011 ... account node
 //   - the value has a binary suffix of 111 ... extension node
