@@ -12,6 +12,7 @@ package mpt
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"reflect"
@@ -4887,11 +4888,20 @@ func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_KeepsHashOfRemovedChild
 	encoder := BranchDeltaNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
 	require.NoError(encoder.Store(buffer, &node))
-	recovered := BranchNode{}
+	recovered := BranchNode{dirtyHashes: 1 << 12}
 	require.NoError(encoder.Load(buffer, &recovered))
 
 	require.True(recovered.children[12].Id().IsEmpty())
 	require.Equal(uint16(1<<3), recovered.dirtyHashes)
+}
+
+func TestBranchDeltaNodeEncoderWithNodeHash_Load_FailsIfDeltaSlotsAreExceeded(t *testing.T) {
+	require := require.New(t)
+	encoder := BranchDeltaNodeEncoderWithNodeHash{}
+	buffer := make([]byte, encoder.GetEncodedSize())
+	binary.BigEndian.PutUint16(buffer[NodeIdEncoder{}.GetEncodedSize():], 0b111)
+	node := BranchNode{}
+	require.ErrorContains(encoder.Load(buffer, &node), "exceeds the delta slots: 0000000000000111")
 }
 
 func TestBranchDeltaNodeEncoderWithChildHashes_GetEncodedSize_FitsHeaderAndDeltaSlotsWithHashes(t *testing.T) {
@@ -4943,6 +4953,15 @@ func TestBranchDeltaNodeEncoderWithChildHashes_StoreAndLoad_RestoresDeltaChildre
 		want.hashes[i] = node.hashes[i]
 	}
 	require.Equal(want, recovered)
+}
+
+func TestBranchDeltaNodeEncoderWithChildHashes_Load_FailsIfDeltaSlotsAreExceeded(t *testing.T) {
+	require := require.New(t)
+	encoder := BranchDeltaNodeEncoderWithChildHashes{}
+	buffer := make([]byte, encoder.GetEncodedSize())
+	binary.BigEndian.PutUint16(buffer[NodeIdEncoder{}.GetEncodedSize():], 0b111)
+	node := BranchNode{}
+	require.ErrorContains(encoder.Load(buffer, &node), "exceeds the delta slots: 0000000000000111")
 }
 
 func TestBranchNodeEncoderWithNodeHash(t *testing.T) {
