@@ -81,16 +81,15 @@ func TestNodeId_DeltaBranchIdsAreDeltaBranchIds(t *testing.T) {
 		require.True(id.IsDeltaBranch())
 		require.True(id.IsBranch())
 		require.Equal(i, id.Index())
+
 		require.False(BranchId(i).IsDeltaBranch())
 		require.NotEqual(BranchId(i), id)
 		require.Equal(fmt.Sprintf("D-%d", i), id.String())
 
-		encoder := NodeIdEncoder{}
-		buffer := make([]byte, encoder.GetEncodedSize())
-		encoder.Store(buffer, &id)
-		var restored NodeId
-		encoder.Load(buffer, &restored)
-		require.Equal(id, restored)
+		require.False(id.IsEmpty())
+		require.False(id.IsAccount())
+		require.False(id.IsExtension())
+		require.False(id.IsValue())
 	}
 }
 
@@ -158,7 +157,7 @@ func TestNodeID_EncodingAndDecoding(t *testing.T) {
 	var buffer [6]byte
 	encoder := NodeIdEncoder{}
 	for i := range uint64(100) {
-		for _, id := range []NodeId{NodeId(0), ValueId(i), AccountId(i), BranchId(i), ExtensionId(i)} {
+		for _, id := range []NodeId{NodeId(0), ValueId(i), AccountId(i), BranchId(i), DeltaBranchId(i), ExtensionId(i)} {
 			encoder.Store(buffer[:], &id)
 			restored := NodeId(12345)
 			if encoder.Load(buffer[:], &restored); restored != id {
