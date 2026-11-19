@@ -167,7 +167,15 @@ func OpenArchiveTrie(
 // If the test passes, the data stored in the respective directory
 // can be considered a valid archive database of the given configuration.
 func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, observer VerificationObserver) (res error) {
-	if err := addDeltaStockToCheckpoint(directory, config); err != nil {
+	lock, err := LockDirectory(directory)
+	if err != nil {
+		return err
+	}
+	err = errors.Join(
+		addDeltaStockToCheckpoint(directory, config),
+		lock.Release(),
+	)
+	if err != nil {
 		return err
 	}
 	roots, err := loadRoots(directory)
@@ -618,30 +626,29 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retEr
 // created before this stock was introduced, such that it takes part in the last
 // checkpoint of the archive.
 func addDeltaStockToCheckpoint(directory string, config MptConfig) error {
+	// An existing stock is covered by the regular checks of the archive.
+	_, _, branchDeltasDir, _, _ := getForestDirectories(directory)
+	if _, err := os.Stat(branchDeltasDir); err == nil {
+		return nil
+	}
+
+	// A stock created for another configuration could not be opened with the
+	// one of the archive.
+	meta, present, err := ReadForestMetadata(directory + "/forest.json")
+	if err != nil {
+		return err
+	}
+	if present && meta.Configuration != config.Name {
+		return fmt.Errorf("unexpected MPT configuration in directory, wanted %v, got %v", config.Name, meta.Configuration)
+	}
+
 	checkpointDir := filepath.Join(directory, fileNameArchiveCheckpointDirectory)
 	coordinator, err := checkpoint.NewCoordinator(checkpointDir)
 	if err != nil {
 		return err
 	}
 	_, _, deltaEncoder, _, _ := config.GetEncoders()
-	_, _, branchDeltasDir, _, _ := getForestDirectories(directory)
-
-	// An existing stock is covered by the regular checks of the archive.
-	if _, err := os.Stat(branchDeltasDir); err == nil {
-		return nil
-	}
-
-	// Without a checkpoint there is nothing to take part in. The stock is
-	// only created, such that it is present like all other stocks.
-	last := coordinator.GetCurrentCheckpoint()
-	if last == 0 {
-		stock, err := file.OpenStock[uint64, BranchNode](deltaEncoder, branchDeltasDir)
-		if err != nil {
-			return err
-		}
-		return stock.Close()
-	}
-	return file.JoinCheckpoint[uint64](deltaEncoder, branchDeltasDir, last)
+	return file.JoinCheckpoint[uint64](deltaEncoder, branchDeltasDir, coordinator.GetCurrentCheckpoint())
 }
 
 func (a *ArchiveTrie) getView(block uint64) (*LiveTrie, error) {

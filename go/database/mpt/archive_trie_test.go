@@ -475,6 +475,19 @@ func TestArchiveTrie_VerifyArchiveTrie_FailsIfTheDeltaStockCanNotBeAdded(t *test
 	require.ErrorContains(err, "failed to create directory")
 }
 
+func TestArchiveTrie_VerifyArchiveTrie_DoesNotAddTheDeltaStockToAnArchiveInUse(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+	lock, err := LockDirectory(dir)
+	require.NoError(err)
+	defer func() { require.NoError(lock.Release()) }()
+
+	err = VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
+	require.ErrorContains(err, "unable to gain exclusive access")
+	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
+}
+
 func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
@@ -3372,11 +3385,17 @@ func TestArchiveTrie_addDeltaStockToCheckpoint_LeavesAnExistingDirectoryUntouche
 	require.Equal(dummyFile, data)
 }
 
+func TestArchiveTrie_addDeltaStockToCheckpoint_RejectsAnArchiveOfAnotherConfiguration(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+
+	err := addDeltaStockToCheckpoint(dir, S5LiveConfig)
+	require.ErrorContains(err, "unexpected MPT configuration in directory, wanted S5-Live, got S5-Archive")
+	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
+}
+
 func TestArchiveTrie_addDeltaStockToCheckpoint_ForwardsIssues(t *testing.T) {
-	makeReadOnly := func(t *testing.T, dir string) error {
-		t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
-		return os.Chmod(dir, 0500)
-	}
 	tests := map[string]struct {
 		sabotage func(t *testing.T, dir string) error
 		issue    string
@@ -3387,19 +3406,17 @@ func TestArchiveTrie_addDeltaStockToCheckpoint_ForwardsIssues(t *testing.T) {
 			},
 			issue: "failed to create directory",
 		},
-		"stock can not be created in an archive without checkpoints": {
-			sabotage: func(t *testing.T, dir string) error {
-				return errors.Join(
-					os.Mkdir(filepath.Join(dir, fileNameArchiveCheckpointDirectory), 0700),
-					makeReadOnly(t, dir),
-				)
+		"forest configuration can not be read": {
+			sabotage: func(_ *testing.T, dir string) error {
+				return os.WriteFile(filepath.Join(dir, "forest.json"), []byte("corrupted"), 0600)
 			},
-			issue: "branch_deltas: permission denied",
+			issue: "invalid character",
 		},
-		"stock can not be created in an archive with checkpoints": {
+		"stock can not be created": {
 			sabotage: func(t *testing.T, dir string) error {
 				createArchiveWithoutDeltaStock(t, dir)
-				return makeReadOnly(t, dir)
+				t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+				return os.Chmod(dir, 0500)
 			},
 			issue: "permission denied",
 		},
