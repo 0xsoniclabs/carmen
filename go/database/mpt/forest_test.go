@@ -683,35 +683,40 @@ func TestForest_getAccess_Fails(t *testing.T) {
 	}
 }
 
-func TestForest_getReadAccess_FailsIfDeltaBaseIsNotABranch(t *testing.T) {
+func TestForest_getReadAccess_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
+	bases := map[string]NodeId{
+		"empty":   EmptyId(),
+		"account": AccountId(1),
+		"itself":  DeltaBranchId(2),
+		"delta":   DeltaBranchId(3),
+	}
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
-				t.Run(fmt.Sprintf("%s-%s-%s", variant.name, config.Name, forestConfigName), func(t *testing.T) {
-					require := require.New(t)
-					forest, err := variant.factory(t.TempDir(), config, forestConfig)
-					require.NoError(err)
-					defer func() {
-						require.NoError(forest.Close())
-					}()
+				for baseName, base := range bases {
+					t.Run(fmt.Sprintf("%s-%s-%s-%s", variant.name, config.Name, forestConfigName, baseName), func(t *testing.T) {
+						require := require.New(t)
+						forest, err := variant.factory(t.TempDir(), config, forestConfig)
+						require.NoError(err)
+						defer func() {
+							require.NoError(forest.Close())
+						}()
 
-					ctrl := gomock.NewController(t)
-					accounts := stock.NewMockStock[uint64, AccountNode](ctrl)
-					accounts.EXPECT().Get(uint64(1)).Return(AccountNode{}, nil)
-					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
-					branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: AccountId(1)}, nil)
+						ctrl := gomock.NewController(t)
+						branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+						branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: base}, nil)
 
-					accountsBackup, branchDeltasBackup := forest.accounts, forest.branchDeltas
-					defer func() {
-						forest.accounts, forest.branchDeltas = accountsBackup, branchDeltasBackup
-					}()
-					forest.accounts = accounts
-					forest.branchDeltas = branchDeltas
+						branchDeltasBackup := forest.branchDeltas
+						defer func() {
+							forest.branchDeltas = branchDeltasBackup
+						}()
+						forest.branchDeltas = branchDeltas
 
-					ref := NewNodeReference(DeltaBranchId(2))
-					_, err = forest.getReadAccess(&ref)
-					require.ErrorContains(err, "is not a branch node")
-				})
+						ref := NewNodeReference(DeltaBranchId(2))
+						_, err = forest.getReadAccess(&ref)
+						require.ErrorContains(err, "is not a full branch node")
+					})
+				}
 			}
 		}
 	}
@@ -836,6 +841,66 @@ func TestForest_getSharedNode_ConcurrentFetchesOfADeltaYieldTheSameNode(t *testi
 	node := handle.Get().(*BranchNode)
 	require.Equal(ValueId(7), node.children[3].Id())
 	require.Equal(ValueId(9), node.children[5].Id())
+}
+
+func TestForest_getSharedNode_ExcludesHashingOfTheBaseWhileCompletingADelta(t *testing.T) {
+	require := require.New(t)
+	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
+	require.NoError(err)
+	defer func() { require.NoError(forest.Close()) }()
+
+	ctrl := gomock.NewController(t)
+	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branches.EXPECT().Get(uint64(1)).Return(BranchNode{}, nil)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: BranchId(1)}, nil)
+
+	branchesBackup, branchDeltasBackup := forest.branches, forest.branchDeltas
+	defer func() {
+		forest.branches, forest.branchDeltas = branchesBackup, branchDeltasBackup
+	}()
+	forest.branches, forest.branchDeltas = branches, branchDeltas
+
+	baseRef := NewNodeReference(BranchId(1))
+	_, err = forest.getSharedNode(&baseRef)
+	require.NoError(err)
+
+	// The base is looked up in the cache before and after access to it is
+	// obtained, which is where the availability of hash access is probed.
+	cache := &hashAccessProbingCache{NodeCache: forest.nodeCache, id: BranchId(1)}
+	defer func() { forest.nodeCache = cache.NodeCache }()
+	forest.nodeCache = cache
+
+	ref := NewNodeReference(DeltaBranchId(2))
+	_, err = forest.getSharedNode(&ref)
+	require.NoError(err)
+	require.Equal([]bool{true, false}, cache.hashAccessAvailable)
+}
+
+func TestForest_getSharedNode_FailsIfTheDeltaBaseCanNotBeLoaded(t *testing.T) {
+	require := require.New(t)
+	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
+	require.NoError(err)
+	defer func() { require.NoError(forest.Close()) }()
+
+	injectedErr := errors.New("injected stock failure")
+	ctrl := gomock.NewController(t)
+	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branches.EXPECT().Get(uint64(1)).Return(BranchNode{}, injectedErr)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: BranchId(1)}, nil)
+
+	branchesBackup, branchDeltasBackup := forest.branches, forest.branchDeltas
+	defer func() {
+		forest.branches, forest.branchDeltas = branchesBackup, branchDeltasBackup
+	}()
+	forest.branches, forest.branchDeltas = branches, branchDeltas
+
+	ref := NewNodeReference(DeltaBranchId(2))
+	_, err = forest.getSharedNode(&ref)
+	require.ErrorIs(err, injectedErr)
 }
 
 func TestForest_getSharedNode_Fails_Get_Copy(t *testing.T) {
@@ -3078,4 +3143,24 @@ func TestForest_RecoversNodesFromWriteBuffer(t *testing.T) {
 		t.Fatalf("unexpected node: got %p, want %p", restored, original)
 	}
 	handle.Release()
+}
+
+// hashAccessProbingCache records for each lookup of the node with the given
+// ID whether hash access to it is available.
+type hashAccessProbingCache struct {
+	NodeCache
+	id                  NodeId
+	hashAccessAvailable []bool
+}
+
+func (c *hashAccessProbingCache) Get(ref *NodeReference) (*shared.Shared[Node], bool) {
+	node, found := c.NodeCache.Get(ref)
+	if found && ref.Id() == c.id {
+		handle, available := node.TryGetHashHandle()
+		if available {
+			handle.Release()
+		}
+		c.hashAccessAvailable = append(c.hashAccessAvailable, available)
+	}
+	return node, found
 }
