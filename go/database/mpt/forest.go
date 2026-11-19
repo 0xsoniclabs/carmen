@@ -799,17 +799,18 @@ func (s *Forest) getSharedNode(ref *NodeReference) (*shared.Shared[Node], error)
 // loadDeltaBase completes a delta branch loaded from disk with the children
 // of its base.
 func (s *Forest) loadDeltaBase(node *BranchNode) error {
+	// Any other base is invalid; a delta as base could also form a cycle.
+	if !node.base.IsBranch() || node.base.IsDeltaBranch() {
+		return fmt.Errorf("delta base %v is not a full branch node", node.base)
+	}
+	// The base's hashes are copied, so hashing has to be excluded as well.
 	baseRef := NewNodeReference(node.base)
-	handle, err := s.getReadAccess(&baseRef)
+	handle, err := s.getViewAccess(&baseRef)
 	if err != nil {
 		return err
 	}
 	defer handle.Release()
-	base, ok := handle.Get().(*BranchNode)
-	if !ok {
-		return fmt.Errorf("delta base %v is not a branch node", node.base)
-	}
-	node.ApplyDeltaBase(base)
+	node.ApplyDeltaBase(handle.Get().(*BranchNode))
 	return nil
 }
 
