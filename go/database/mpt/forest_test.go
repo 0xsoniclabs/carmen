@@ -102,7 +102,7 @@ func TestForest_ErrorsCanBeRecordedAndCheckedConcurrently(t *testing.T) {
 func TestForest_Cannot_Open_Corrupted_Stock_Meta(t *testing.T) {
 	for _, variant := range fileAndMemVariants {
 		for _, config := range allMptConfigs {
-			for _, stockDir := range []string{"branches", "extensions", "accounts", "values"} {
+			for _, stockDir := range []string{"branches", "branch_deltas", "extensions", "accounts", "values"} {
 				t.Run(fmt.Sprintf("%s-%s", variant.name, config.Name), func(t *testing.T) {
 					rootDir := t.TempDir()
 					dir := filepath.Join(rootDir, stockDir)
@@ -173,6 +173,22 @@ func TestForest_Cannot_Open_Meta_DoesNot_Match(t *testing.T) {
 			if _, err := variant.factory(dir, S4LiveConfig, ForestConfig{Mode: Immutable}); err == nil {
 				t.Errorf("opening forest should fail")
 			}
+		})
+	}
+}
+
+func TestForest_OpenFileForest_CreatesTheDeltaStock(t *testing.T) {
+	for _, config := range allMptConfigs {
+		t.Run(config.Name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+			forest, err := OpenFileForest(dir, config, forestConfig)
+			require.NoError(err)
+			require.NoError(forest.Close())
+
+			_, _, deltaEncoder, _, _ := config.GetEncoders()
+			require.NoError(file.VerifyStock[uint64](filepath.Join(dir, "branch_deltas"), deltaEncoder))
 		})
 	}
 }
@@ -435,6 +451,7 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
 				t.Run(fmt.Sprintf("%s-%s-%s", variant.name, config.Name, forestConfigName), func(t *testing.T) {
+					require := require.New(t)
 					directory := t.TempDir()
 
 					forest, err := variant.factory(directory, config, forestConfig)
@@ -459,11 +476,11 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 					values.EXPECT().New().AnyTimes().Return(uint64(0), injectedErr)
 
 					branches := stock.NewMockStock[uint64, BranchNode](ctrl)
-					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
-					branchDeltas.EXPECT().Flush().AnyTimes()
-					branchDeltas.EXPECT().Close().AnyTimes()
 					branches.EXPECT().Get(gomock.Any()).AnyTimes().Return(BranchNode{}, nil)
 					branches.EXPECT().New().AnyTimes().Return(uint64(0), injectedErr)
+
+					branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+					branchDeltas.EXPECT().New().Return(uint64(0), injectedErr)
 
 					extensions := stock.NewMockStock[uint64, ExtensionNode](ctrl)
 					extensions.EXPECT().Get(gomock.Any()).AnyTimes().Return(ExtensionNode{}, nil)
@@ -473,16 +490,19 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 					accountsBackup := forest.accounts
 					valuesBackup := forest.values
 					branchesBackup := forest.branches
+					branchDeltasBackup := forest.branchDeltas
 					extensionsBackup := forest.extensions
 					defer func() {
 						forest.accounts = accountsBackup
 						forest.values = valuesBackup
 						forest.branches = branchesBackup
+						forest.branchDeltas = branchDeltasBackup
 						forest.extensions = extensionsBackup
 					}()
 					forest.accounts = accounts
 					forest.values = values
 					forest.branches = branches
+					forest.branchDeltas = branchDeltas
 					forest.extensions = extensions
 
 					if _, _, err := forest.createAccount(); !errors.Is(err, injectedErr) {
@@ -494,6 +514,8 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 					if _, _, err := forest.createBranch(); !errors.Is(err, injectedErr) {
 						t.Errorf("creating node should fail")
 					}
+					_, _, err = forest.createDeltaBranch()
+					require.ErrorIs(err, injectedErr)
 					if _, _, err := forest.createExtension(); !errors.Is(err, injectedErr) {
 						t.Errorf("creating node should fail")
 					}
@@ -501,6 +523,27 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestForest_createDeltaBranch_ResetsTheNodeOfAReusedId(t *testing.T) {
+	require := require.New(t)
+	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
+	require.NoError(err)
+	defer func() { require.NoError(forest.Close()) }()
+
+	// The released node stays in the cache while its ID is free again.
+	ref, handle, err := forest.createDeltaBranch()
+	require.NoError(err)
+	handle.Get().(*BranchNode).base = BranchId(1)
+	handle.Release()
+	require.NoError(forest.release(&ref))
+
+	reused, handle, err := forest.createDeltaBranch()
+	require.NoError(err)
+	defer handle.Release()
+	require.Equal(ref.Id(), reused.Id())
+	require.Equal(EmptyId(), handle.Get().(*BranchNode).base)
 }
 
 func TestForest_Cannot_Release_Node(t *testing.T) {
@@ -723,66 +766,68 @@ func TestForest_getReadAccess_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
 }
 
 func TestForest_CreateDeltaBranchAndGetReadAccess_CompletesDeltaFromItsBase(t *testing.T) {
-	for _, config := range allMptConfigs {
-		t.Run(config.Name, func(t *testing.T) {
-			require := require.New(t)
-			dir := t.TempDir()
-			forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
-			forest, err := OpenFileForest(dir, config, forestConfig)
-			require.NoError(err)
-
-			root := NewNodeReference(EmptyId())
-			for _, address := range getTestAddresses(16) {
-				root, err = forest.SetAccountInfo(&root, address, AccountInfo{Balance: amount.New(1)})
+	for _, variant := range fileAndMemVariants {
+		for _, config := range allMptConfigs {
+			t.Run(fmt.Sprintf("%s-%s", variant.name, config.Name), func(t *testing.T) {
+				require := require.New(t)
+				dir := t.TempDir()
+				forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+				forest, err := variant.factory(dir, config, forestConfig)
 				require.NoError(err)
-			}
-			_, _, err = forest.updateHashesFor(&root)
-			require.NoError(err)
-			require.True(root.Id().IsBranch())
 
-			baseHandle, err := forest.getReadAccess(&root)
-			require.NoError(err)
-			base := *baseHandle.Get().(*BranchNode)
-			baseHandle.Release()
-			var used []int
-			for i := range base.children {
-				if !base.children[i].Id().IsEmpty() {
-					used = append(used, i)
+				root := NewNodeReference(EmptyId())
+				for _, address := range getTestAddresses(16) {
+					root, err = forest.SetAccountInfo(&root, address, AccountInfo{Balance: amount.New(1)})
+					require.NoError(err)
 				}
-			}
-			require.GreaterOrEqual(len(used), 2)
+				_, _, err = forest.updateHashesFor(&root)
+				require.NoError(err)
+				require.True(root.Id().IsBranch())
 
-			// The delta differs from its base in one child, which points to
-			// another child of the base.
-			deltaRef, deltaHandle, err := forest.createDeltaBranch()
-			require.NoError(err)
-			delta := deltaHandle.Get().(*BranchNode)
-			*delta = base
-			delta.base = root.Id()
-			delta.deltaMask = 1 << used[0]
-			delta.children[used[0]] = base.children[used[1]]
-			delta.hashes[used[0]] = base.hashes[used[1]]
-			delta.markDirty()
-			deltaHandle.Release()
-			_, _, err = forest.updateHashesFor(&deltaRef)
-			require.NoError(err)
-			require.NoError(forest.Close())
+				baseHandle, err := forest.getReadAccess(&root)
+				require.NoError(err)
+				base := *baseHandle.Get().(*BranchNode)
+				baseHandle.Release()
+				var used []int
+				for i := range base.children {
+					if !base.children[i].Id().IsEmpty() {
+						used = append(used, i)
+					}
+				}
+				require.GreaterOrEqual(len(used), 2)
 
-			forest, err = OpenFileForest(dir, config, forestConfig)
-			require.NoError(err)
-			defer func() { require.NoError(forest.Close()) }()
-			handle, err := forest.getReadAccess(&deltaRef)
-			require.NoError(err)
-			defer handle.Release()
+				// The delta differs from its base in one child, which points to
+				// another child of the base.
+				deltaRef, deltaHandle, err := forest.createDeltaBranch()
+				require.NoError(err)
+				delta := deltaHandle.Get().(*BranchNode)
+				*delta = base
+				delta.base = root.Id()
+				delta.deltaMask = 1 << used[0]
+				delta.children[used[0]] = base.children[used[1]]
+				delta.hashes[used[0]] = base.hashes[used[1]]
+				delta.markDirty()
+				deltaHandle.Release()
+				_, _, err = forest.updateHashesFor(&deltaRef)
+				require.NoError(err)
+				require.NoError(forest.Close())
 
-			var want, got [16]NodeId
-			for i := range base.children {
-				want[i] = base.children[i].Id()
-				got[i] = handle.Get().(*BranchNode).children[i].Id()
-			}
-			want[used[0]] = base.children[used[1]].Id()
-			require.Equal(want, got)
-		})
+				forest, err = variant.factory(dir, config, forestConfig)
+				require.NoError(err)
+				defer func() { require.NoError(forest.Close()) }()
+				handle, err := forest.getReadAccess(&deltaRef)
+				require.NoError(err)
+				defer handle.Release()
+
+				var want, got [16]NodeId
+				for i := range base.children {
+					want[i] = base.children[i].Id()
+					got[i] = handle.Get().(*BranchNode).children[i].Id()
+				}
+				want[used[0]] = base.children[used[1]].Id()
+				require.Equal(want, got)
+			})
+		}
 	}
 }
 
@@ -878,29 +923,41 @@ func TestForest_getSharedNode_ExcludesHashingOfTheBaseWhileCompletingADelta(t *t
 	require.Equal([]bool{true, false}, cache.hashAccessAvailable)
 }
 
-func TestForest_getSharedNode_FailsIfTheDeltaBaseCanNotBeLoaded(t *testing.T) {
-	require := require.New(t)
-	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
-	forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
-	require.NoError(err)
-	defer func() { require.NoError(forest.Close()) }()
-
+func TestForest_getSharedNode_FailsIfADeltaOrItsBaseCanNotBeLoaded(t *testing.T) {
 	injectedErr := errors.New("injected stock failure")
-	ctrl := gomock.NewController(t)
-	branches := stock.NewMockStock[uint64, BranchNode](ctrl)
-	branches.EXPECT().Get(uint64(1)).Return(BranchNode{}, injectedErr)
-	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
-	branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: BranchId(1)}, nil)
+	tests := map[string]func(branches, branchDeltas *stock.MockStock[uint64, BranchNode]){
+		"delta": func(_, branchDeltas *stock.MockStock[uint64, BranchNode]) {
+			branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{}, injectedErr)
+		},
+		"base": func(branches, branchDeltas *stock.MockStock[uint64, BranchNode]) {
+			branchDeltas.EXPECT().Get(uint64(2)).Return(BranchNode{base: BranchId(1)}, nil)
+			branches.EXPECT().Get(uint64(1)).Return(BranchNode{}, injectedErr)
+		},
+	}
+	for name, expect := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+			forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
+			require.NoError(err)
+			defer func() { require.NoError(forest.Close()) }()
 
-	branchesBackup, branchDeltasBackup := forest.branches, forest.branchDeltas
-	defer func() {
-		forest.branches, forest.branchDeltas = branchesBackup, branchDeltasBackup
-	}()
-	forest.branches, forest.branchDeltas = branches, branchDeltas
+			ctrl := gomock.NewController(t)
+			branches := stock.NewMockStock[uint64, BranchNode](ctrl)
+			branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+			expect(branches, branchDeltas)
 
-	ref := NewNodeReference(DeltaBranchId(2))
-	_, err = forest.getSharedNode(&ref)
-	require.ErrorIs(err, injectedErr)
+			branchesBackup, branchDeltasBackup := forest.branches, forest.branchDeltas
+			defer func() {
+				forest.branches, forest.branchDeltas = branchesBackup, branchDeltasBackup
+			}()
+			forest.branches, forest.branchDeltas = branches, branchDeltas
+
+			ref := NewNodeReference(DeltaBranchId(2))
+			_, err = forest.getSharedNode(&ref)
+			require.ErrorIs(err, injectedErr)
+		})
+	}
 }
 
 func TestForest_getSharedNode_Fails_Get_Copy(t *testing.T) {
@@ -1158,6 +1215,28 @@ func TestForest_Flush_DoesNotAccumulateRecordedErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestForest_FlushAndClose_ForwardFailuresOfTheDeltaStock(t *testing.T) {
+	require := require.New(t)
+	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenInMemoryForest(t.TempDir(), S5ArchiveConfig, forestConfig)
+	require.NoError(err)
+
+	flushErr := errors.New("injected flush failure")
+	closeErr := errors.New("injected close failure")
+	ctrl := gomock.NewController(t)
+	branchDeltas := stock.NewMockStock[uint64, BranchNode](ctrl)
+	gomock.InOrder(
+		branchDeltas.EXPECT().Flush().Return(flushErr),
+		// Closing the forest flushes it first.
+		branchDeltas.EXPECT().Flush(),
+		branchDeltas.EXPECT().Close().Return(closeErr),
+	)
+	forest.branchDeltas = branchDeltas
+
+	require.ErrorIs(forest.Flush(), flushErr)
+	require.ErrorIs(forest.Close(), closeErr)
 }
 
 func TestForest_flushNode_EmptyId(t *testing.T) {
@@ -1621,7 +1700,7 @@ func TestForest_ProvidesMemoryFoodPrint(t *testing.T) {
 						t.Errorf("memory footprint not provided")
 					}
 
-					for _, memChild := range []string{"accounts", "branches", "extensions", "values", "cache",
+					for _, memChild := range []string{"accounts", "branches", "branchDeltas", "extensions", "values", "cache",
 						"hashedKeysCache", "hashedAddressesCache"} {
 						if footprint.GetChild(memChild) == nil {
 							t.Errorf("memory footprint not provided: %v\ngot: %v", memChild, footprint)
