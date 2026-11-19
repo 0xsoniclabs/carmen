@@ -120,7 +120,7 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 
 	// Verify stock data structures.
 	observer.Progress("Checking meta-data ...")
-	accountEncoder, branchEncoder, extensionEncoder, valueEncoder := config.GetEncoders()
+	accountEncoder, branchEncoder, _, extensionEncoder, valueEncoder := config.GetEncoders()
 	if err := file.VerifyStock[uint64](directory+"/accounts", accountEncoder); err != nil {
 		return err
 	}
@@ -736,7 +736,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 
 	success := false
-	accountEncoder, branchEncoder, extensionEncoder, valueEncoder := config.GetEncoders()
+	accountEncoder, branchEncoder, _, extensionEncoder, valueEncoder := config.GetEncoders()
 	branches, err := file.OpenStock[uint64, BranchNode](branchEncoder, directory+"/branches")
 	if err != nil {
 		return nil, err
