@@ -16,6 +16,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -100,6 +101,17 @@ func TestIO_ExportAndImportAsArchive(t *testing.T) {
 			t.Fatalf("invalid hash for pre-genesis block %d\nwanted %x\n   got %x\n   err %v", i, mpt.EmptyNodeEthereumHash, got, err)
 		}
 	}
+}
+
+func TestIO_Export_SupportsLiveDbWithoutDeltaStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	db := createExampleLiveDB(t, dir)
+	require.NoError(db.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	var buffer bytes.Buffer
+	require.NoError(Export(context.Background(), NewLog(), dir, &buffer, t.TempDir()))
 }
 
 func TestIO_ExportedDataIsDeterministic(t *testing.T) {
