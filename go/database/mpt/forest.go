@@ -214,6 +214,11 @@ func OpenFileForest(directory string, mptConfig MptConfig, forestConfig ForestCo
 		return nil, err
 	}
 	closers = append(closers, branchDeltas)
+	// A stock added to an existing database has no metadata until flushed,
+	// which readers of its directory require.
+	if err = branchDeltas.Flush(); err != nil {
+		return nil, err
+	}
 
 	extensions, err := file.OpenStock[uint64, ExtensionNode](extensionEncoder, extensionsDir)
 	if err != nil {

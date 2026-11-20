@@ -184,8 +184,6 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 				base := NewNodeReference(n.base)
 				if err := checkId(&base); err != nil {
 					errs = append(errs, err)
-				} else if n.base.IsDeltaBranch() {
-					errs = append(errs, fmt.Errorf("delta node has a delta as base: %v", n.base))
 				}
 			}
 			return errors.Join(errs...)
@@ -795,6 +793,11 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 			retErr = errors.Join(retErr, branchDeltas.Close())
 		}
 	}()
+	// A stock added to an existing database has no metadata until flushed,
+	// which the verification of the stock requires.
+	if err := branchDeltas.Flush(); err != nil {
+		return nil, err
+	}
 	extensions, err := file.OpenStock[uint64, ExtensionNode](extensionEncoder, directory+"/extensions")
 	if err != nil {
 		return nil, err
@@ -894,6 +897,9 @@ func (s deltaBranchStock) Get(index uint64) (BranchNode, error) {
 	node, err := s.Stock.Get(index)
 	if err != nil {
 		return BranchNode{}, err
+	}
+	if !node.base.IsBranch() || node.base.IsDeltaBranch() {
+		return BranchNode{}, fmt.Errorf("delta base %v is not a full branch node", node.base)
 	}
 	base, err := s.branches.Get(node.base.Index())
 	if err != nil {
