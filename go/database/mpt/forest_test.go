@@ -193,6 +193,31 @@ func TestForest_OpenFileForest_CreatesTheDeltaStock(t *testing.T) {
 	}
 }
 
+func TestForest_OpenFileForest_DeltaStockIsCompleteWhileTheForestIsOpen(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	forestConfig := ForestConfig{Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenFileForest(dir, S5LiveConfig, forestConfig)
+	require.NoError(err)
+	defer func() { require.NoError(forest.Close()) }()
+
+	_, _, deltaEncoder, _, _ := S5LiveConfig.GetEncoders()
+	require.NoError(file.VerifyStock[uint64](filepath.Join(dir, "branch_deltas"), deltaEncoder))
+}
+
+func TestForest_OpenFileForest_FailsIfTheDeltaStockCanNotBeFlushed(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	forestConfig := ForestConfig{Mode: Mutable, NodeCacheConfig: NodeCacheConfig{Capacity: 1024}}
+	forest, err := OpenFileForest(dir, S5LiveConfig, forestConfig)
+	require.NoError(err)
+	require.NoError(forest.Close())
+	require.NoError(os.Chmod(filepath.Join(dir, "branch_deltas", "meta.json"), 0400))
+
+	_, err = OpenFileForest(dir, S5LiveConfig, forestConfig)
+	require.ErrorIs(err, os.ErrPermission)
+}
+
 func TestForest_OpenAndClose(t *testing.T) {
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {

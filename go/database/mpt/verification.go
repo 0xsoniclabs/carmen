@@ -120,11 +120,14 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 
 	// Verify stock data structures.
 	observer.Progress("Checking meta-data ...")
-	accountEncoder, branchEncoder, _, extensionEncoder, valueEncoder := config.GetEncoders()
+	accountEncoder, branchEncoder, deltaEncoder, extensionEncoder, valueEncoder := config.GetEncoders()
 	if err := file.VerifyStock[uint64](directory+"/accounts", accountEncoder); err != nil {
 		return err
 	}
 	if err := file.VerifyStock[uint64](directory+"/branches", branchEncoder); err != nil {
+		return err
+	}
+	if err := file.VerifyStock[uint64](directory+"/branch_deltas", deltaEncoder); err != nil {
 		return err
 	}
 	if err := file.VerifyStock[uint64](directory+"/extensions", extensionEncoder); err != nil {
@@ -170,6 +173,12 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 			errs := []error{}
 			for i := range n.children {
 				if err := checkId(&n.children[i]); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			if n.isDelta() {
+				base := NewNodeReference(n.base)
+				if err := checkId(&base); err != nil {
 					errs = append(errs, err)
 				}
 			}
@@ -247,37 +256,49 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 		return err
 	}
 
-	err = verifyHashes(
-		"branch", source, source.branches, source.branchIds, emptyNodeHash, roots, observer,
-		func(node *BranchNode) (common.Hash, error) { return hash(node) },
-		func(node *BranchNode) (common.Hash, bool) { return node.GetHash() },
-		func(node Node) (bool, error) { return hasher.isEmbedded(node, source) },
-		func(id NodeId) bool { return id.IsBranch() },
-		func(node *BranchNode, hashes map[NodeId]common.Hash, embedded map[NodeId]bool) {
-			for i := range 16 {
-				child := &node.children[i]
-				if !child.Id().IsEmpty() && embedded[child.Id()] {
-					node.setEmbedded(byte(i), true)
-				}
-				if child := &node.children[i]; !node.isEmbedded(byte(i)) && !child.Id().IsEmpty() {
-					hash, found := hashes[child.Id()]
-					if !found {
-						panic(fmt.Sprintf("missing hash for %v\n", child.Id()))
+	// Delta branches are verified like full branches; their stock completes
+	// them from their base on every Get.
+	for _, branches := range []struct {
+		name   string
+		stock  stock.Stock[uint64, BranchNode]
+		ids    stock.IndexSet[uint64]
+		isType func(NodeId) bool
+	}{
+		{"branch", source.branches, source.branchIds, func(id NodeId) bool { return id.IsBranch() && !id.IsDeltaBranch() }},
+		{"branch delta", source.branchDeltas, source.branchDeltaIds, func(id NodeId) bool { return id.IsDeltaBranch() }},
+	} {
+		err = verifyHashes(
+			branches.name, source, branches.stock, branches.ids, emptyNodeHash, roots, observer,
+			func(node *BranchNode) (common.Hash, error) { return hash(node) },
+			func(node *BranchNode) (common.Hash, bool) { return node.GetHash() },
+			func(node Node) (bool, error) { return hasher.isEmbedded(node, source) },
+			branches.isType,
+			func(node *BranchNode, hashes map[NodeId]common.Hash, embedded map[NodeId]bool) {
+				for i := range 16 {
+					child := &node.children[i]
+					if !child.Id().IsEmpty() && embedded[child.Id()] {
+						node.setEmbedded(byte(i), true)
 					}
-					node.hashes[i] = hash
+					if child := &node.children[i]; !node.isEmbedded(byte(i)) && !child.Id().IsEmpty() {
+						hash, found := hashes[child.Id()]
+						if !found {
+							panic(fmt.Sprintf("missing hash for %v\n", child.Id()))
+						}
+						node.hashes[i] = hash
+					}
 				}
-			}
-			node.dirtyHashes = 0
-		},
-		func(node *BranchNode, ids *nodeIdCollection) {
-			for i := range 16 {
-				// ID may be an embedded child, it will be determined later while hashing
-				ids.Put(node.children[i].Id())
-			}
-		},
-	)
-	if err != nil {
-		return err
+				node.dirtyHashes = 0
+			},
+			func(node *BranchNode, ids *nodeIdCollection) {
+				for i := range 16 {
+					// ID may be an embedded child, it will be determined later while hashing
+					ids.Put(node.children[i].Id())
+				}
+			},
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = verifyHashes(
@@ -410,7 +431,13 @@ func loadNodeHashes(
 	embedded := map[NodeId]bool{}
 	for _, id := range nodeIdsKeys {
 		var node Node
-		if id.IsBranch() {
+		if id.IsDeltaBranch() {
+			n, err := source.branchDeltas.Get(id.Index())
+			if err != nil {
+				return nil, nil, err
+			}
+			node = &n
+		} else if id.IsBranch() {
 			n, err := source.branches.Get(id.Index())
 			if err != nil {
 				return nil, nil, err
@@ -711,15 +738,17 @@ type verificationNodeSource struct {
 
 	directory string
 	// The stock containers managing individual node types.
-	branches   stock.Stock[uint64, BranchNode]
-	extensions stock.Stock[uint64, ExtensionNode]
-	accounts   stock.Stock[uint64, AccountNode]
+	branches     stock.Stock[uint64, BranchNode]
+	branchDeltas stock.Stock[uint64, BranchNode] // completes delta branches from their base, see deltaBranchStock
+	extensions   stock.Stock[uint64, ExtensionNode]
+	accounts     stock.Stock[uint64, AccountNode]
 
 	values stock.Stock[uint64, ValueNode]
 	// The sets of valid IDs of each type.
-	accountIds   stock.IndexSet[uint64]
-	branchIds    stock.IndexSet[uint64]
-	extensionIds stock.IndexSet[uint64]
+	accountIds     stock.IndexSet[uint64]
+	branchIds      stock.IndexSet[uint64]
+	branchDeltaIds stock.IndexSet[uint64]
+	extensionIds   stock.IndexSet[uint64]
 
 	valueIds stock.IndexSet[uint64]
 	// A custom pair of node ID and Node to be overwritten for node resolution.
@@ -736,7 +765,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 
 	success := false
-	accountEncoder, branchEncoder, _, extensionEncoder, valueEncoder := config.GetEncoders()
+	accountEncoder, branchEncoder, deltaEncoder, extensionEncoder, valueEncoder := config.GetEncoders()
 	branches, err := file.OpenStock[uint64, BranchNode](branchEncoder, directory+"/branches")
 	if err != nil {
 		return nil, err
@@ -746,6 +775,20 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 			retErr = errors.Join(retErr, branches.Close())
 		}
 	}()
+	branchDeltas, err := file.OpenStock[uint64, BranchNode](deltaEncoder, directory+"/branch_deltas")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if !success {
+			retErr = errors.Join(retErr, branchDeltas.Close())
+		}
+	}()
+	// A stock added to an existing database has no metadata until flushed,
+	// which the verification of the stock requires.
+	if err := branchDeltas.Flush(); err != nil {
+		return nil, err
+	}
 	extensions, err := file.OpenStock[uint64, ExtensionNode](extensionEncoder, directory+"/extensions")
 	if err != nil {
 		return nil, err
@@ -781,6 +824,10 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	if err != nil {
 		return nil, err
 	}
+	branchDeltaIds, err := branchDeltas.GetIds()
+	if err != nil {
+		return nil, err
+	}
 	extensionIds, err := extensions.GetIds()
 	if err != nil {
 		return nil, err
@@ -791,19 +838,44 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 	success = true
 	return &verificationNodeSource{
-		ctx:          ctx,
-		config:       config,
-		lock:         lock,
-		directory:    directory,
-		accounts:     accounts,
-		branches:     branches,
-		extensions:   extensions,
-		values:       values,
-		accountIds:   accountIds,
-		branchIds:    branchIds,
-		extensionIds: extensionIds,
-		valueIds:     valueIds,
+		ctx:            ctx,
+		config:         config,
+		lock:           lock,
+		directory:      directory,
+		accounts:       accounts,
+		branches:       branches,
+		branchDeltas:   deltaBranchStock{branchDeltas, branches},
+		extensions:     extensions,
+		values:         values,
+		accountIds:     accountIds,
+		branchIds:      branchIds,
+		branchDeltaIds: branchDeltaIds,
+		extensionIds:   extensionIds,
+		valueIds:       valueIds,
 	}, nil
+}
+
+// deltaBranchStock is a stock of delta branches completing every loaded node
+// with the children of its base.
+type deltaBranchStock struct {
+	stock.Stock[uint64, BranchNode]
+	branches stock.Stock[uint64, BranchNode]
+}
+
+func (s deltaBranchStock) Get(index uint64) (BranchNode, error) {
+	node, err := s.Stock.Get(index)
+	if err != nil {
+		return BranchNode{}, err
+	}
+	if !node.base.IsBranch() || node.base.IsDeltaBranch() {
+		return BranchNode{}, fmt.Errorf("delta base %v is not a full branch node", node.base)
+	}
+	base, err := s.branches.Get(node.base.Index())
+	if err != nil {
+		return BranchNode{}, err
+	}
+	node.ApplyDeltaBase(&base)
+	return node, nil
 }
 
 func (s *verificationNodeSource) getConfig() MptConfig {
@@ -820,6 +892,9 @@ func (s *verificationNodeSource) getShared(id NodeId) (*shared.Shared[Node], err
 	} else if id.IsAccount() {
 		account, e := s.accounts.Get(id.Index())
 		node, err = &account, e
+	} else if id.IsDeltaBranch() {
+		branch, e := s.branchDeltas.Get(id.Index())
+		node, err = &branch, e
 	} else if id.IsBranch() {
 		branch, e := s.branches.Get(id.Index())
 		node, err = &branch, e
@@ -868,6 +943,7 @@ func (s *verificationNodeSource) Close() error {
 	err := errors.Join(
 		s.accounts.Close(),
 		s.branches.Close(),
+		s.branchDeltas.Close(),
 		s.extensions.Close(),
 		s.values.Close(),
 	)
@@ -886,6 +962,9 @@ func (s *verificationNodeSource) isValid(id NodeId) bool {
 	}
 	if id.IsAccount() {
 		return s.accountIds.Contains(id.Index())
+	}
+	if id.IsDeltaBranch() {
+		return s.branchDeltaIds.Contains(id.Index())
 	}
 	if id.IsBranch() {
 		return s.branchIds.Contains(id.Index())
@@ -954,6 +1033,17 @@ func (s *verificationNodeSource) forNodes(
 					return err
 				}
 				if err := check(BranchId(i), &branch); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+		for i := s.branchDeltaIds.GetLowerBound(); i < s.branchDeltaIds.GetUpperBound(); i++ {
+			if s.branchDeltaIds.Contains(i) {
+				branch, err := s.branchDeltas.Get(i)
+				if err != nil { // with IO errors => stop immediately
+					return err
+				}
+				if err := check(DeltaBranchId(i), &branch); err != nil {
 					errs = append(errs, err)
 				}
 			}

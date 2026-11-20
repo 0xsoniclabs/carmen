@@ -22,11 +22,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xsoniclabs/carmen/go/backend/stock"
 	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/common"
 	"github.com/0xsoniclabs/carmen/go/common/amount"
 
 	"github.com/0xsoniclabs/carmen/go/database/mpt"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -153,6 +155,56 @@ func TestNodeSource_CanRead_Nodes(t *testing.T) {
 					}
 				}
 			})
+		})
+	}
+}
+
+func TestNodeSource_get_FailsIfDeltaBaseIsNotAFullBranch(t *testing.T) {
+	tests := map[string]mpt.NodeId{
+		"empty":     mpt.EmptyId(),
+		"account":   mpt.AccountId(0),
+		"extension": mpt.ExtensionId(0),
+		"value":     mpt.ValueId(0),
+		"delta":     mpt.DeltaBranchId(0),
+	}
+	for name, base := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			config := mpt.S5LiveConfig
+			dir := t.TempDir()
+			forest, err := mpt.OpenFileForest(dir, config, mpt.ForestConfig{Mode: mpt.Mutable, NodeCacheConfig: mpt.NodeCacheConfig{Capacity: 1024}})
+			require.NoError(err)
+			require.NoError(forest.Close())
+
+			// Branch 0 exists, such that only the type of the base is wrong.
+			_, branchEncoder, deltaEncoder, _, _ := config.GetEncoders()
+			for directory, encoder := range map[string]stock.ValueEncoder[mpt.BranchNode]{
+				"branches":      branchEncoder,
+				"branch_deltas": deltaEncoder,
+			} {
+				nodes, err := file.OpenStock[uint64](encoder, path.Join(dir, directory))
+				require.NoError(err)
+				_, err = nodes.New()
+				require.NoError(err)
+				require.NoError(nodes.Set(0, mpt.BranchNode{}))
+				require.NoError(nodes.Close())
+			}
+
+			// The base is the first entry of an encoded delta node.
+			encodedBase := make([]byte, mpt.NodeIdEncoder{}.GetEncodedSize())
+			mpt.NodeIdEncoder{}.Store(encodedBase, &base)
+			values, err := os.OpenFile(path.Join(dir, "branch_deltas", "values.dat"), os.O_WRONLY, 0600)
+			require.NoError(err)
+			_, err = values.WriteAt(encodedBase, 0)
+			require.NoError(err)
+			require.NoError(values.Close())
+
+			source, err := (&stockNodeSourceFactory{directory: dir, config: config}).open()
+			require.NoError(err)
+			defer func() { require.NoError(source.Close()) }()
+
+			_, err = source.get(mpt.DeltaBranchId(0))
+			require.ErrorContains(err, "is not a full branch node")
 		})
 	}
 }
