@@ -23,8 +23,9 @@ func TestOpenArchive_FailsForNoArchiveIfThereIsAnArchive(t *testing.T) {
 	dir := t.TempDir()
 
 	params := state.Parameters{
-		Directory: dir,
-		Archive:   state.S5Archive,
+		Directory:    dir,
+		Archive:      state.S5Archive,
+		ArchiveCache: 1 << 27,
 	}
 
 	// Create an archive in the directory.

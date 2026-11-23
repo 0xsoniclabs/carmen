@@ -946,6 +946,7 @@ func TestArchiveTrie_Add_UpdateFailsHashing(t *testing.T) {
 }
 
 func TestArchiveTrie_Add_CreatesCheckpointPeriodically(t *testing.T) {
+	t.Parallel()
 	for _, interval := range []int{1, 2, 3, 5, 7, 11} {
 		t.Run(fmt.Sprintf("interval-%d", interval), func(t *testing.T) {
 			dir := t.TempDir()
@@ -2229,6 +2230,7 @@ func TestRootList_CanParticipateToCheckpointOperations(t *testing.T) {
 }
 
 func TestArchiveTrie_QueryLoadTest(t *testing.T) {
+	t.Parallel()
 	// Goal: stress-test an archive with a limited node cache.
 	archive, err := OpenArchiveTrie(t.TempDir(), S5ArchiveConfig, NodeCacheConfig{Capacity: 30_000}, ArchiveConfig{})
 	if err != nil {
@@ -2722,6 +2724,7 @@ func TestArchiveTrie_GetCheckpointBlock_MissingFileIsDetected(t *testing.T) {
 }
 
 func TestArchiveTrie_RestoreBlockHeight(t *testing.T) {
+	t.Parallel()
 
 	addBlocks := func(archive *ArchiveTrie, from int, to int) error {
 		for i := from; i < to; i++ {

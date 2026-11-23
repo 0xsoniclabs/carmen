@@ -104,6 +104,7 @@ func TestVerification_RootIteratorFailureIsDetected(t *testing.T) {
 }
 
 func TestVerification_MissingFileIsDetected(t *testing.T) {
+	t.Parallel()
 	for _, file := range forestFiles {
 		t.Run(file, func(t *testing.T) {
 			runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
@@ -119,6 +120,7 @@ func TestVerification_MissingFileIsDetected(t *testing.T) {
 }
 
 func TestVerification_ModifiedFileIsDetected(t *testing.T) {
+	t.Parallel()
 	for _, file := range forestFiles {
 		t.Run(file, func(t *testing.T) {
 			runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
@@ -727,6 +729,7 @@ func TestVerification_VerifyValidMptState(t *testing.T) {
 }
 
 func TestVerification_CanInterrupt(t *testing.T) {
+	t.Parallel()
 	type verifyFunc func(context.Context, string, MptConfig, iter_utils.ResultSeq2[uint64, Root], VerificationObserver) error
 	tests := map[string]verifyFunc{"VerifyMptState": VerifyMptState, "VerifyFileForest": verifyFileForest}
 

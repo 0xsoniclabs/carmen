@@ -36,7 +36,7 @@ func TestStress_CanHandleLargeBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			db := state.CreateStateDBUsing(s)
+			db := state.CreateTestStateDBUsing(s)
 
 			db.BeginBlock()
 			db.BeginTransaction()
@@ -78,7 +78,7 @@ func TestStress_CanHandleDeleteOfLargeAccount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			db := state.CreateStateDBUsing(s)
+			db := state.CreateTestStateDBUsing(s)
 
 			addr := address1
 

@@ -54,7 +54,7 @@ func TestCarmen_Suicide_EndTransaction(t *testing.T) {
 					require := require.New(t)
 					s, err := config.createState(t.TempDir())
 					require.NoError(err)
-					db := state.CreateStateDBUsing(s)
+					db := state.CreateTestStateDBUsing(s)
 					defer func() {
 						require.NoError(db.Close())
 					}()

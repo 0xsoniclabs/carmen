@@ -59,10 +59,12 @@ func (c *namedStateConfig) name() string {
 
 func (c *namedStateConfig) createState(dir string) (state.State, error) {
 	return c.factory(state.Parameters{
-		Variant:   c.config.Variant,
-		Schema:    c.config.Schema,
-		Archive:   c.config.Archive,
-		Directory: dir,
+		Variant:      c.config.Variant,
+		Schema:       c.config.Schema,
+		Archive:      c.config.Archive,
+		Directory:    dir,
+		LiveCache:    1 << 27,
+		ArchiveCache: 1 << 27,
 	})
 }
 
@@ -1241,12 +1243,15 @@ func TestState_StagedBlock_ConcurrentRollbacksDecideTheBlockOnce(t *testing.T) {
 
 func TestState_StagedBlock_ConcurrentDecisionsAndReadsAreRaceFree(t *testing.T) {
 	require := require.New(t)
-	s, err := newGoMemoryState(state.Parameters{
-		Directory: t.TempDir(),
-		Variant:   VariantGoMemory,
-		Schema:    5,
-		Archive:   state.S5Archive,
-	})
+	config := namedStateConfig{
+		config: state.Configuration{
+			Variant: VariantGoMemory,
+			Schema:  5,
+			Archive: state.S5Archive,
+		},
+		factory: newGoMemoryState,
+	}
+	s, err := config.createState(t.TempDir())
 	require.NoError(err)
 
 	const (

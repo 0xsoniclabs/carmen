@@ -45,7 +45,7 @@ func TestStateDB_Suicide_EndTransaction(t *testing.T) {
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 
 			mock.EXPECT().GetBalance(address1).Return(balance, nil)
 
@@ -84,7 +84,7 @@ func TestStateDB_Suicide_RevertToInterTxSnapshot(t *testing.T) {
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 
 			setExpectationForEmptyAccount(t, mock, address1)
 
@@ -137,7 +137,7 @@ func TestStateDB_Suicide_ClearsSubsequentWritesByRevision(t *testing.T) {
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 			mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
 			mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
 			db.SetNonce(address1, 1)
@@ -184,7 +184,7 @@ func TestStateDB_SuicideAndCreateAccount_RecreatedAccountRetainsBalanceInAllRevi
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 			mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
 			mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
 			db.SetNonce(address1, 1)
@@ -230,7 +230,7 @@ func TestStateDB_SuicideAndCreateAccountAndSuicide_BurnsBalanceByRevision(t *tes
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 			mock.EXPECT().GetBalance(address1).Return(amount.New(12), nil)
 			mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
 			db.SetNonce(address1, 1)

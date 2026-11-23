@@ -31,7 +31,11 @@ func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
 	for config := range carmen.GetAllConfigurations() {
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()
-			db, err := carmen.OpenDatabase(t.TempDir(), config, nil)
+			db, err := carmen.OpenDatabase(t.TempDir(), config, carmen.Properties{
+				carmen.LiveDBCache:  "10",
+				carmen.ArchiveCache: "10",
+				carmen.StorageCache: "10",
+			})
 			if err != nil {
 				t.Fatalf("failed to open database: %v", err)
 			}

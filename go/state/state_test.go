@@ -69,10 +69,12 @@ func (c *namedStateConfig) name() string {
 
 func (c *namedStateConfig) createState(directory string) (state.State, error) {
 	return state.NewState(state.Parameters{
-		Directory: directory,
-		Variant:   c.config.Variant,
-		Schema:    c.config.Schema,
-		Archive:   c.config.Archive,
+		Directory:    directory,
+		Variant:      c.config.Variant,
+		Schema:       c.config.Schema,
+		Archive:      c.config.Archive,
+		LiveCache:    1 << 27,
+		ArchiveCache: 1 << 27,
 	})
 }
 
@@ -120,6 +122,8 @@ func getReferenceStateFor(t *testing.T, params state.Parameters) (state.State, e
 	referenceConfig := params
 	referenceConfig.Variant = gostate.VariantGoMemory
 	referenceConfig.Directory = t.TempDir()
+	referenceConfig.LiveCache = 1 << 27
+	referenceConfig.ArchiveCache = 1 << 27
 	return state.NewState(referenceConfig)
 }
 
