@@ -8125,6 +8125,14 @@ func (m *errorInjectingNodeManager) createBranch() (NodeReference, shared.WriteH
 	return m.NodeManager.createBranch()
 }
 
+func (m *errorInjectingNodeManager) createDeltaBranch() (NodeReference, shared.WriteHandle[Node], error) {
+	if m.counter == m.errorPosition {
+		return NodeReference{}, shared.WriteHandle[Node]{}, m.err
+	}
+	m.counter++
+	return m.NodeManager.createDeltaBranch()
+}
+
 func (m *errorInjectingNodeManager) createExtension() (NodeReference, shared.WriteHandle[Node], error) {
 	if m.counter == m.errorPosition {
 		return NodeReference{}, shared.WriteHandle[Node]{}, m.err
