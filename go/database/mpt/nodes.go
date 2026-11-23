@@ -837,6 +837,12 @@ func (n *BranchNode) isDelta() bool {
 	return !n.base.IsEmpty()
 }
 
+// fitsDelta is true if the child at the given index may be changed without
+// exceeding the delta slots.
+func (n *BranchNode) fitsDelta(index byte) bool {
+	return n.deltaMask&(1<<index) != 0 || bits.OnesCount16(n.deltaMask) < deltaSlots
+}
+
 // GetDeltaBase returns the ID of the full branch this node is a delta of, or
 // the empty ID for a full branch.
 func (n *BranchNode) GetDeltaBase() NodeId {
@@ -858,6 +864,35 @@ func (n *BranchNode) ApplyDeltaBase(base *BranchNode) {
 			n.markChildHashClean(i)
 		}
 	}
+}
+
+// cloneForChange creates a mutable copy of this frozen node able to hold a
+// change of the child at the given index, as a delta if the slots allow it.
+func (n *BranchNode) cloneForChange(manager NodeManager, thisRef *NodeReference, index byte) (NodeReference, shared.WriteHandle[Node], error) {
+	asDelta := !n.isDelta() || n.fitsDelta(index)
+	create := manager.createBranch
+	if asDelta {
+		create = manager.createDeltaBranch
+	}
+	newRef, handle, err := create()
+	if err != nil {
+		return NodeReference{}, shared.WriteHandle[Node]{}, err
+	}
+	newNode := handle.Get().(*BranchNode)
+	*newNode = *n
+	if !asDelta {
+		newNode.base = EmptyId()
+		newNode.deltaMask = 0
+	} else if !n.isDelta() {
+		newNode.base = thisRef.Id()
+		newNode.deltaMask = 0
+	}
+	if asDelta {
+		newNode.deltaMask |= 1 << index
+	}
+	newNode.markDirty()
+	newNode.markMutable()
+	return newRef, handle, nil
 }
 
 func (n *BranchNode) GetChildren() *[16]NodeReference {
@@ -933,6 +968,17 @@ func (n *BranchNode) setNextNode(
 	// If frozen, clone the current node and modify copy.
 	isClone := false
 	if n.IsFrozen() {
+		newRef, handle, err := n.cloneForChange(manager, thisRef, byte(path[0]))
+		if err != nil {
+			return NodeReference{}, false, err
+		}
+		defer handle.Release()
+		n = handle.Get().(*BranchNode)
+		thisRef = &newRef
+		isClone = true
+	} else if n.isDelta() && !n.fitsDelta(byte(path[0])) {
+		// A delta cloned earlier in this block can not hold another change;
+		// it is replaced by a full branch.
 		newRef, handle, err := manager.createBranch()
 		if err != nil {
 			return NodeReference{}, false, err
@@ -940,11 +986,17 @@ func (n *BranchNode) setNextNode(
 		defer handle.Release()
 		newNode := handle.Get().(*BranchNode)
 		*newNode = *n
-		newNode.markDirty()
-		newNode.markMutable()
+		newNode.base = EmptyId()
+		newNode.deltaMask = 0
+		n.nodeBase.Release()
+		if err := manager.release(thisRef); err != nil {
+			return NodeReference{}, false, err
+		}
 		n = newNode
 		thisRef = &newRef
 		isClone = true
+	} else if n.isDelta() {
+		n.deltaMask |= 1 << path[0]
 	}
 
 	wasEmpty := child.Id().IsEmpty()

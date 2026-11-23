@@ -68,6 +68,59 @@ func TestVerification_VerifyValidForest(t *testing.T) {
 	})
 }
 
+func TestVerification_ArchiveWithoutDeltaStockIsValid(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
+
+func TestVerification_ArchiveWithoutDeltaStockAndCheckpointIsValid(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	require.NoError(archive.Add(0, common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(1)}},
+	}, nil))
+	require.NoError(archive.Close())
+	require.NoFileExists(filepath.Join(dir, "checkpoint", "committed"))
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
+
+func TestVerification_LiveTrieWithoutDeltaStockIsValid(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	state, err := OpenGoFileState(dir, S5LiveConfig, NodeCacheConfig{Capacity: 1000})
+	require.NoError(err)
+	require.NoError(state.SetNonce(common.Address{1}, common.ToNonce(1)))
+	require.NoError(state.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	require.NoError(VerifyFileLiveTrie(context.Background(), dir, S5LiveConfig, NilVerificationObserver{}))
+}
+
+func TestVerification_FailureToFlushTheDeltaStockIsReported(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		require.NoError(os.Chmod(filepath.Join(dir, "branch_deltas", "meta.json"), 0400))
+
+		// The verification ends before any check is started.
+		ctrl := gomock.NewController(t)
+		observer := NewMockVerificationObserver(ctrl)
+		gomock.InOrder(
+			observer.EXPECT().StartVerification(),
+			observer.EXPECT().Progress("Obtaining read access to files ..."),
+			observer.EXPECT().EndVerification(gomock.Any()),
+		)
+
+		require.ErrorIs(verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), observer), os.ErrPermission)
+	})
+}
+
 func TestVerification_VerificationObserverIsKeptUpdatedOnEvents(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
 
@@ -340,6 +393,82 @@ func TestVerification_BranchChildHashModificationIsDetected(t *testing.T) {
 		if err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}); err == nil {
 			t.Errorf("Modified node should have been detected")
 		}
+	})
+}
+
+func TestVerification_BranchDeltaNodeHashModificationIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		if config.HashStorageLocation != HashStoredWithNode {
+			return
+		}
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			node.hash[4]++
+		})
+
+		require.Error(verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}))
+	})
+}
+
+func TestVerification_BranchDeltaChildHashModificationIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		if config.HashStorageLocation != HashStoredWithParent {
+			return
+		}
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			for i := range node.children {
+				if node.deltaMask&(1<<i) != 0 {
+					node.hashes[i][4]++
+					break
+				}
+			}
+		})
+
+		require.Error(verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{}))
+	})
+}
+
+func TestVerification_BranchDeltaWithInvalidBaseIsDetected(t *testing.T) {
+	tests := map[string]func(base NodeId) NodeId{
+		"empty":     func(NodeId) NodeId { return EmptyId() },
+		"account":   func(base NodeId) NodeId { return AccountId(base.Index()) },
+		"extension": func(base NodeId) NodeId { return ExtensionId(base.Index()) },
+		"value":     func(base NodeId) NodeId { return ValueId(base.Index()) },
+		"delta":     func(base NodeId) NodeId { return DeltaBranchId(base.Index()) },
+	}
+	for name, change := range tests {
+		t.Run(name, func(t *testing.T) {
+			runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+				require := require.New(t)
+				_, _, encoder, _, _ := config.GetEncoders()
+
+				modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+					node.base = change(node.base)
+				})
+
+				err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
+				require.ErrorContains(err, "is not a full branch node")
+			})
+		})
+	}
+}
+
+func TestVerification_BranchDeltaWithMissingBaseIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		_, _, encoder, _, _ := config.GetEncoders()
+
+		modifyNode(t, dir+"/branch_deltas", encoder, func(node *BranchNode) {
+			node.base = BranchId(1 << 30)
+		})
+
+		err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
+		require.ErrorContains(err, "contains invalid reference to node B-1073741824")
 	})
 }
 
