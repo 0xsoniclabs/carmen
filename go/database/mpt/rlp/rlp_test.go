@@ -186,7 +186,7 @@ func TestDecoder_Corrupted_RLPs(t *testing.T) {
 
 // testEncoder runs a test for encoding an item.
 func testEncoder(t *testing.T, rlp []byte, item Item) {
-	t.Run(fmt.Sprintf("%x->%x", item, rlp), func(t *testing.T) {
+	t.Run(shortHex(item)+"->"+shortHex(rlp), func(t *testing.T) {
 		if got, want := Encode(item), rlp; !bytes.Equal(got, want) {
 			t.Errorf("invalid encoding, wanted %v, got %v, input %v", want, got, rlp)
 		}
@@ -198,7 +198,7 @@ func testEncoder(t *testing.T, rlp []byte, item Item) {
 
 // testDecoder runs a test for decoding an item.
 func testDecoder(t *testing.T, rlp []byte, item Item) {
-	t.Run(fmt.Sprintf("%x->%x", rlp, item), func(t *testing.T) {
+	t.Run(shortHex(rlp)+"->"+shortHex(item), func(t *testing.T) {
 		got, err := Decode(rlp)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -444,4 +444,15 @@ func BenchmarkListEncoding(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Encode(example)
 	}
+}
+
+// shortHex returns the hex encoding of the given data, truncated to keep
+// test names short.
+func shortHex(data any) string {
+	const limit = 64
+	res := fmt.Sprintf("%x", data)
+	if len(res) > limit {
+		return fmt.Sprintf("%s...(%d chars)", res[:limit], len(res))
+	}
+	return res
 }
