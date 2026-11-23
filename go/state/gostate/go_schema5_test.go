@@ -105,14 +105,16 @@ func TestScheme5_Archive_And_Live_Must_Be_InSync(t *testing.T) {
 func TestScheme5_Close_RollsBackStagedBlocksSoTheStateCanBeReopened(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	params := state.Parameters{
-		Directory: dir,
-		Variant:   VariantGoMemory,
-		Schema:    5,
-		Archive:   state.S5Archive,
+	config := namedStateConfig{
+		config: state.Configuration{
+			Variant: VariantGoMemory,
+			Schema:  5,
+			Archive: state.S5Archive,
+		},
+		factory: newGoMemoryState,
 	}
 
-	db, err := newGoMemoryState(params)
+	db, err := config.createState(dir)
 	require.NoError(err)
 
 	// One block is committed; it must survive the shutdown.
@@ -135,7 +137,7 @@ func TestScheme5_Close_RollsBackStagedBlocksSoTheStateCanBeReopened(t *testing.T
 	}
 	require.NoError(db.Close())
 
-	db, err = newGoMemoryState(params)
+	db, err = config.createState(dir)
 	require.NoError(err)
 	defer func() {
 		require.NoError(db.Close())
