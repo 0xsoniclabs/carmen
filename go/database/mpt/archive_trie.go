@@ -90,6 +90,10 @@ func OpenArchiveTrie(
 		return nil, err
 	}
 
+	if err := addDeltaStockToCheckpoint(directory, config); err != nil {
+		return nil, errors.Join(err, roots.Close())
+	}
+
 	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: cacheConfig}
 	forest, err := OpenFileForest(directory, config, forestConfig)
 	if err != nil {
@@ -121,6 +125,7 @@ func OpenArchiveTrie(
 		checkpointDir,
 		forest.accounts,
 		forest.branches,
+		forest.branchDeltas,
 		forest.extensions,
 		forest.values,
 		state.codes,
@@ -162,6 +167,17 @@ func OpenArchiveTrie(
 // If the test passes, the data stored in the respective directory
 // can be considered a valid archive database of the given configuration.
 func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, observer VerificationObserver) (res error) {
+	lock, err := LockDirectory(directory)
+	if err != nil {
+		return err
+	}
+	err = errors.Join(
+		addDeltaStockToCheckpoint(directory, config),
+		lock.Release(),
+	)
+	if err != nil {
+		return err
+	}
 	roots, err := loadRoots(directory)
 	if err != nil {
 		return err
@@ -573,12 +589,17 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retEr
 		}
 	}()
 
+	if err := addDeltaStockToCheckpoint(directory, config); err != nil {
+		return fmt.Errorf("failed to add delta stock to checkpoint: %w", err)
+	}
+
 	// Restore the last checkpoint created by the archive.
 	rootRestorer := getRootListRestorer(directory)
-	accountsDir, branchesDir, extensionsDir, valuesDir := getForestDirectories(directory)
+	accountsDir, branchesDir, branchDeltasDir, extensionsDir, valuesDir := getForestDirectories(directory)
 	restorers := []checkpoint.Restorer{
 		file.GetRestorer(accountsDir),
 		file.GetRestorer(branchesDir),
+		file.GetRestorer(branchDeltasDir),
 		file.GetRestorer(extensionsDir),
 		file.GetRestorer(valuesDir),
 		getCodeRestorer(directory),
@@ -599,6 +620,35 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retEr
 		rootRestorer.truncate(int(block+1)),
 		utils.WriteJsonFile(metaDataFile, metadata{}),
 	)
+}
+
+// addDeltaStockToCheckpoint creates the stock of delta branches for an archive
+// created before this stock was introduced, such that it takes part in the last
+// checkpoint of the archive.
+func addDeltaStockToCheckpoint(directory string, config MptConfig) error {
+	// An existing stock is covered by the regular checks of the archive.
+	_, _, branchDeltasDir, _, _ := getForestDirectories(directory)
+	if _, err := os.Stat(branchDeltasDir); err == nil {
+		return nil
+	}
+
+	// A stock created for another configuration could not be opened with the
+	// one of the archive.
+	meta, present, err := ReadForestMetadata(directory + "/forest.json")
+	if err != nil {
+		return err
+	}
+	if present && meta.Configuration != config.Name {
+		return fmt.Errorf("unexpected MPT configuration in directory, wanted %v, got %v", config.Name, meta.Configuration)
+	}
+
+	checkpointDir := filepath.Join(directory, fileNameArchiveCheckpointDirectory)
+	coordinator, err := checkpoint.NewCoordinator(checkpointDir)
+	if err != nil {
+		return err
+	}
+	_, _, deltaEncoder, _, _ := config.GetEncoders()
+	return file.JoinCheckpoint[uint64](deltaEncoder, branchDeltasDir, coordinator.GetCurrentCheckpoint())
 }
 
 func (a *ArchiveTrie) getView(block uint64) (*LiveTrie, error) {

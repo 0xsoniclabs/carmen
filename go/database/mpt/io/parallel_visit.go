@@ -516,7 +516,7 @@ func (f *stockNodeSourceFactory) open() (nodeSource, error) {
 		return err
 	}
 
-	aEncoder, bEncoder, eEncoder, vEncoder := f.config.GetEncoders()
+	aEncoder, bEncoder, _, eEncoder, vEncoder := f.config.GetEncoders()
 
 	accounts, err := file.OpenReadOnlyStock[uint64, mpt.AccountNode](path.Join(f.directory, "accounts"), aEncoder)
 	if err != nil {
