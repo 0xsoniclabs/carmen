@@ -47,10 +47,12 @@ func TestStateConfigs_AllSetupsCreateDataInCorrectDirectories(t *testing.T) {
 			dir := t.TempDir()
 
 			params := state.Parameters{
-				Variant:   config.Variant,
-				Schema:    config.Schema,
-				Archive:   config.Archive,
-				Directory: dir,
+				Variant:      config.Variant,
+				Schema:       config.Schema,
+				Archive:      config.Archive,
+				Directory:    dir,
+				LiveCache:    1 << 27,
+				ArchiveCache: 1 << 27,
 			}
 
 			db, err := factory(params)

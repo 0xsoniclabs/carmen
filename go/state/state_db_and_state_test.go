@@ -246,7 +246,7 @@ func TestCarmen_CanHandleMaximumBalance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 			}
-			db := state.CreateStateDBUsing(store)
+			db := state.CreateTestStateDBUsing(store)
 			defer func() {
 				if err := db.Close(); err != nil {
 					t.Errorf("failed to close state DB; %s", err)
@@ -376,7 +376,7 @@ func TestCarmenThereCanBeMultipleBulkLoadPhasesOnRealState(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			db := state.CreateStateDBUsing(store)
+			db := state.CreateTestStateDBUsing(store)
 			defer func() {
 				if err := db.Close(); err != nil {
 					t.Errorf("failed to close state DB; %s", err)
@@ -408,7 +408,7 @@ func TestCarmenBulkLoadsCanBeInterleavedWithRegularUpdates(t *testing.T) {
 					t.Fatalf("failed to initialize state %s; %s", config.name(), err)
 				}
 			}
-			db := state.CreateStateDBUsing(store)
+			db := state.CreateTestStateDBUsing(store)
 			defer func() {
 				if err := db.Close(); err != nil {
 					t.Errorf("failed to close state DB; %s", err)
@@ -450,7 +450,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 		if err != nil {
 			t.Fatalf("failed to create reference state: %v", err)
 		}
-		ref := state.CreateStateDBUsing(ref_state)
+		ref := state.CreateTestStateDBUsing(ref_state)
 		defer func() {
 			if err := ref.Close(); err != nil {
 				t.Errorf("failed to close reference state DB; %s", err)
@@ -478,7 +478,7 @@ func testCarmenStateDbHashAfterModification(t *testing.T, mod func(s state.State
 						t.Fatalf("failed to initialize state %s: %v", config.name(), err)
 					}
 				}
-				stateDb := state.CreateStateDBUsing(store)
+				stateDb := state.CreateTestStateDBUsing(store)
 				defer func() {
 					if err := stateDb.Close(); err != nil {
 						t.Errorf("failed to close state DB; %s", err)
@@ -592,7 +592,7 @@ func TestPersistentStateDB(t *testing.T) {
 				}
 			}
 
-			stateDb := state.CreateStateDBUsing(s)
+			stateDb := state.CreateTestStateDBUsing(s)
 
 			stateDb.BeginEpoch()
 			stateDb.BeginBlock()
@@ -655,7 +655,7 @@ func TestStateDBRead(t *testing.T) {
 		}
 	}()
 
-	stateDb := state.CreateStateDBUsing(s)
+	stateDb := state.CreateTestStateDBUsing(s)
 
 	if state := stateDb.Exist(address1); state != true {
 		t.Errorf("Unexpected value, val: %v != %v", state, true)
@@ -778,7 +778,7 @@ func TestStateDBArchive(t *testing.T) {
 				}
 			}()
 
-			stateDb := state.CreateStateDBUsing(s)
+			stateDb := state.CreateTestStateDBUsing(s)
 
 			stateDb.AddBalance(address2, amount.New(22))
 
@@ -854,7 +854,7 @@ func TestStateDBSupportsConcurrentAccesses(t *testing.T) {
 					// Create a state and wait for other go-routines to be ready.
 					var stateDb state.VmStateDB
 					if isPrimary {
-						stateDb = state.CreateStateDBUsing(s)
+						stateDb = state.CreateTestStateDBUsing(s)
 					} else {
 						stateDb = state.CreateNonCommittableStateDBUsing(s)
 					}
@@ -918,7 +918,7 @@ func TestStateDB_HasEmptyStorage_HandlesAccountSelfDestructCorrectly(t *testing.
 				}
 			}()
 
-			db := state.CreateStateDBUsing(s)
+			db := state.CreateTestStateDBUsing(s)
 
 			address := common.Address{1, 2, 3}
 			key := common.Key{4, 5, 6}
@@ -1025,7 +1025,7 @@ func TestStateDB_CallingExistsAfterAccountIsDeletedReturnsFalse(t *testing.T) {
 				require.NoError(s.Close())
 			}()
 
-			statedb := state.CreateStateDBUsing(s)
+			statedb := state.CreateTestStateDBUsing(s)
 
 			createAccountWithBalance := func(address common.Address, balance amount.Amount, blockNum uint64) {
 				statedb.BeginBlock()
@@ -1064,7 +1064,7 @@ func TestStateDB_ArchiveIsSynchronizedWithLiveDB(t *testing.T) {
 
 			s, err := config.createState(dir)
 			require.NoError(err)
-			statedb := state.CreateStateDBUsing(s)
+			statedb := state.CreateTestStateDBUsing(s)
 			defer func() {
 				require.NoError(statedb.Close())
 			}()
@@ -1102,7 +1102,7 @@ func executeOpOnCleanStateDB(t *testing.T, config namedStateConfig, op func(stat
 		require.NoError(s.Close())
 	}()
 
-	db := state.CreateStateDBUsing(s)
+	db := state.CreateTestStateDBUsing(s)
 	db.BeginBlock()
 	db.BeginTransaction()
 	op(db)
@@ -1198,7 +1198,7 @@ func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
 					require.NoError(s.Close())
 				}()
 
-				db := state.CreateStateDBUsing(s)
+				db := state.CreateTestStateDBUsing(s)
 				db.BeginBlock()
 				db.BeginTransaction()
 				op(db)
@@ -1251,7 +1251,7 @@ func forEachStagingState(t *testing.T, test func(t *testing.T, config namedState
 			t.Parallel()
 			s, err := config.createState(t.TempDir())
 			require.NoError(t, err)
-			db := state.CreateStateDBUsing(s)
+			db := state.CreateTestStateDBUsing(s)
 			t.Cleanup(func() {
 				require.NoError(t, db.Close())
 			})

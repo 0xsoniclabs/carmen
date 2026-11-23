@@ -90,12 +90,13 @@ func TestStateDB_CanBeCreatedWithDefaultCacheSize(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
 	CreateCustomStateDBUsing(mock /* request default= */, 0)
+	CreateStateDBUsing(mock)
 }
 
 func TestStateDB_AccountsCanBeCreatedAndDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// the account creation needs to check whether the account exists
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -131,7 +132,7 @@ func TestStateDB_AccountsCanBeCreatedAndDeleted(t *testing.T) {
 func TestStateDB_CreateAccountSetsNonceCodeAndBalanceToZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a non-existing account.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -158,7 +159,7 @@ func TestStateDB_CreateAccountSetsNonceCodeAndBalanceToZero(t *testing.T) {
 func TestStateDB_CreateAccountSetsStorageToZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a non-existing account.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -173,7 +174,7 @@ func TestStateDB_CreateAccountSetsStorageToZero(t *testing.T) {
 func TestStateDB_RecreatingAnAccountSetsStorageToZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a non-existing account.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -205,7 +206,7 @@ func TestStateDB_RecreatingAnAccountSetsStorageToZero(t *testing.T) {
 func TestStateDB_RecreatingAccountSetsNonceCodeAndBalanceToZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a previously deleted account.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -232,7 +233,7 @@ func TestStateDB_RecreatingAccountSetsNonceCodeAndBalanceToZero(t *testing.T) {
 func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 	zero := common.Value{}
 
 	// Initially the account is non-existing, it gets recreated.
@@ -294,7 +295,7 @@ func TestStateDB_RecreatingAccountResetsStorage(t *testing.T) {
 func TestStateDB_RecreatingAccountResetsStorageButRetainsNewState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 	zero := common.Value{}
 
 	// Initially the account exists with some state.
@@ -425,7 +426,7 @@ func TestStateDB_EndBlock_SlotResetToStoredValueAfterClearingStaysVisible(t *tes
 func TestStateDB_DestroyingRecreatedAccountIsNotResettingClearingState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Initially the account exists with some state.
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -453,7 +454,7 @@ func TestStateDB_DestroyingRecreatedAccountIsNotResettingClearingState(t *testin
 func TestStateDB_StorageOfDestroyedAccountIsStillAccessibleTillEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 	zero := common.Value{}
 
 	// Initially the account exists with some values inside.
@@ -590,7 +591,7 @@ func TestStateDB_StorageDataOfDestroyedAccountIsNotVisibleInNextTransactionOrBlo
 func TestStateDB_RollbackToKnownCommittedStateProducesCorrectResult(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().GetStorage(address1, key1).Return(val2, nil)
@@ -616,7 +617,7 @@ func TestStateDB_RollbackToKnownCommittedStateProducesCorrectResult(t *testing.T
 func TestStateDB_ClearedAndTaintedAccountsAreTrackedCorrectly(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -657,7 +658,7 @@ func TestStateDB_RevertToUnknownSnapshotIsDetected(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mock := NewMockState(ctrl)
 		mock.EXPECT().Check().AnyTimes()
-		db := CreateStateDBUsing(mock)
+		db := CreateTestStateDBUsing(mock)
 
 		if err := db.Check(); err != nil {
 			t.Errorf("initial StateDB is not error free")
@@ -681,7 +682,7 @@ func TestStateDB_RevertToUnknownSnapshotIsDetected(t *testing.T) {
 func TestStateDB_RollingBackSuicideRestoresValues(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Initially the account exists with a view stored values.
 	mock.EXPECT().Check().AnyTimes()
@@ -722,7 +723,7 @@ func TestStateDB_RollingBackSuicideRestoresValues(t *testing.T) {
 func TestStateDB_DestroyingAndRecreatingAnAccountInTheSameTransactionCallsDeleteAndCreateAccountOnStateDb(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Initially the account exists with a view stored values.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -755,7 +756,7 @@ func TestStateDB_DestroyingAndRecreatingAnAccountInTheSameTransactionCallsDelete
 func TestStateDB_DoubleDestroyedAccountThatIsOnceRolledBackIsStillCleared(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Initially the account exists with a view stored values.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -792,7 +793,7 @@ func TestStateDB_DoubleDestroyedAccountThatIsOnceRolledBackIsStillCleared(t *tes
 func TestStateDB_RecreatingExistingAccountSetsNonceAndCodeToZeroAndPreservesBalance(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a previously deleted account.
 	b12 := amount.New(12)
@@ -823,7 +824,7 @@ func TestStateDB_RecreatingExistingAccountSetsNonceAndCodeToZeroAndPreservesBala
 func TestStateDB_CreateAccountCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// this test will cause one call to the DB to check for the existence of the account
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -844,7 +845,7 @@ func TestStateDB_CreateAccountCanBeRolledBack(t *testing.T) {
 func TestStateDB_RollingBackAccountCreationRestoresStoredData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// in this test storage value of a pre-existing account is fetched into the
 	// StateDB, then reset as part of a account creation call, and restored during
@@ -879,7 +880,7 @@ func TestStateDB_RollingBackAccountCreationRestoresStoredData(t *testing.T) {
 func TestStateDB_SuicideIndicatesExistingAccountAsBeingDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an existing account.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -908,7 +909,7 @@ func TestStateDB_SuicideIndicatesExistingAccountAsBeingDeleted(t *testing.T) {
 func TestStateDB_SetCodeShouldNotStopSuicide(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an existing account.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -935,7 +936,7 @@ func TestStateDB_SetCodeShouldNotStopSuicide(t *testing.T) {
 func TestStateDB_RepeatedSuicide(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an existing account.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -989,7 +990,7 @@ func TestStateDB_RepeatedSuicide(t *testing.T) {
 func TestStateDB_SuicideIndicatesUnknownAccountAsNotBeingDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an unknown account.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -1008,7 +1009,7 @@ func TestStateDB_SuicideIndicatesUnknownAccountAsNotBeingDeleted(t *testing.T) {
 func TestStateDB_SuicideIndicatesDeletedAccountAsNotBeingDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a deleted account.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -1058,7 +1059,7 @@ func TestStateDB_Suicide_WritesBalanceOfContractCreatedInTransactionByRevision(t
 			require := require.New(t)
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 
 			mock.EXPECT().Check().AnyTimes()
 			setExpectationForEmptyAccount(t, mock, address1)
@@ -1084,7 +1085,7 @@ func TestStateDB_Suicide_WritesBalanceOfContractCreatedInTransactionByRevision(t
 func TestStateDB_SuicideCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// this test will cause one call to the DB to check for the existence of the account
 	b12 := amount.New(12)
@@ -1117,7 +1118,7 @@ func TestStateDB_SuicideCanBeRolledBack(t *testing.T) {
 func TestStateDB_SuicideIsExecutedAtEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// the nonce and code will be set at the end of the block since suicide is canceled.
 	mock.EXPECT().Check().AnyTimes()
@@ -1140,7 +1141,7 @@ func TestStateDB_SuicideIsExecutedAtEndOfTransaction(t *testing.T) {
 func TestStateDB_SuicideCanBeCanceledThroughRollback(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// the nonce and code will be set at the end of the block since suicide is canceled.
 	mock.EXPECT().Check().AnyTimes()
@@ -1164,7 +1165,7 @@ func TestStateDB_SuicideCanBeCanceledThroughRollback(t *testing.T) {
 func TestStateDB_CreatedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The new account is created at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
@@ -1183,7 +1184,7 @@ func TestStateDB_CreatedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 func TestStateDB_CreatedAccountsAreForgottenAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The created account is only created once, and nonces and code are initialized.
 	mock.EXPECT().Check().AnyTimes()
@@ -1204,7 +1205,7 @@ func TestStateDB_CreatedAccountsAreForgottenAtEndOfBlock(t *testing.T) {
 func TestStateDB_CreatedAccountsAreDiscardedOnEndOfAbortedTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Needs to check whether the account already existed before the creation.
 	mock.EXPECT().Check().AnyTimes()
@@ -1221,7 +1222,7 @@ func TestStateDB_CreatedAccountsAreDiscardedOnEndOfAbortedTransaction(t *testing
 func TestStateDB_DeletedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The new account is deleted at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
@@ -1240,7 +1241,7 @@ func TestStateDB_DeletedAccountsAreStoredAtEndOfBlock(t *testing.T) {
 func TestStateDB_DeletedAccountsRetainCodeUntilEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The new account is deleted at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
@@ -1276,7 +1277,7 @@ func TestStateDB_DeletedAccountsRetainCodeUntilEndOfTransaction(t *testing.T) {
 func TestStateDB_DeletedAccountsAreIgnoredAtAbortedTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a non-existing account.
 	mock.EXPECT().Check().AnyTimes()
@@ -1291,7 +1292,7 @@ func TestStateDB_DeletedAccountsAreIgnoredAtAbortedTransaction(t *testing.T) {
 func TestStateDB_CreatedAndDeletedAccountsAreDeletedAtEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The new account is deleted at the end of the transaction.
 	mock.EXPECT().Check().AnyTimes()
@@ -1307,7 +1308,7 @@ func TestStateDB_CreatedAndDeletedAccountsAreDeletedAtEndOfTransaction(t *testin
 func TestStateDB_CreatedAndDeletedAccountsAreIgnoredAtAbortedTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate a non-existing account.
 	mock.EXPECT().Check().AnyTimes()
@@ -1323,7 +1324,7 @@ func TestStateDB_CreatedAndDeletedAccountsAreIgnoredAtAbortedTransaction(t *test
 func TestStateDB_EmptyAccountsAreRecognized(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// An empty account must have its balance and nonce set to zero.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -1338,7 +1339,7 @@ func TestStateDB_EmptyAccountsAreRecognized(t *testing.T) {
 func TestStateDB_SettingTheBalanceMakesAccountNonEmpty(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// An empty account must have its balance and nonce set to zero.
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
@@ -1357,7 +1358,7 @@ func TestStateDB_SettingTheBalanceMakesAccountNonEmpty(t *testing.T) {
 func TestStateDB_SettingTheBalanceCreatesAccount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	addedBalance := amount.New(5)
 
@@ -1379,7 +1380,7 @@ func TestStateDB_SettingTheBalanceCreatesAccount(t *testing.T) {
 func TestStateDB_AddingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Initially, the account does not exist, and it is not created, since it remains empty.
 	mock.EXPECT().Check().AnyTimes()
@@ -1397,7 +1398,7 @@ func TestStateDB_AddingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *testi
 func TestStateDB_SubtractingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Initially, the account does not exist, and it is not created, since it remains empty.
 	mock.EXPECT().Check().AnyTimes()
@@ -1416,7 +1417,7 @@ func TestStateDB_SubtractingZeroBalanceCreatesAccountThatIsImplicitlyDeleted(t *
 func TestStateDB_ProducingANegativeBalanceCausesTheBlockToFail(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Check().AnyTimes()
@@ -1434,7 +1435,7 @@ func TestStateDB_ProducingANegativeBalanceCausesTheBlockToFail(t *testing.T) {
 func TestStateDB_IncreasingTheBalanceBeyondItsMaximumValueCausesTheBlockToFail(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 	mock.EXPECT().Check().AnyTimes()
@@ -1453,7 +1454,7 @@ func TestStateDB_IncreasingTheBalanceBeyondItsMaximumValueCausesTheBlockToFail(t
 func TestStateDB_SettingTheNonceMakesAccountNonEmpty(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// An empty account must have its nonce and code set to zero.
 	mock.EXPECT().Check().AnyTimes()
@@ -1478,7 +1479,7 @@ func TestStateDB_SettingTheNonceMakesAccountNonEmpty(t *testing.T) {
 func TestStateDB_SettingTheNonceToZeroMakesAccountEmpty(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// An empty account must have its nonce and code set to zero.
 	mock.EXPECT().Check().AnyTimes()
@@ -1501,7 +1502,7 @@ func TestStateDB_SettingTheNonceToZeroMakesAccountEmpty(t *testing.T) {
 func TestStateDB_CreatesAccountOnNonceSetting(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The account does not exist, is expected to be created automatically.
 	mock.EXPECT().Check().AnyTimes()
@@ -1521,7 +1522,7 @@ func TestStateDB_CreatesAccountOnNonceSetting(t *testing.T) {
 func TestStateDB_BalancesAreReadFromState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	want := amount.New(12)
@@ -1535,7 +1536,7 @@ func TestStateDB_BalancesAreReadFromState(t *testing.T) {
 func TestStateDB_BalancesAreOnlyReadOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	want := amount.New(12)
@@ -1551,7 +1552,7 @@ func TestStateDB_BalancesAreOnlyReadOnce(t *testing.T) {
 func TestStateDB_BalancesCanBeSnapshottedAndReverted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Balance is initially 10. This should only be fetched once.
 	want := amount.New(10)
@@ -1600,7 +1601,7 @@ func TestStateDB_BalancesCanBeSnapshottedAndReverted(t *testing.T) {
 func TestStateDB_BalanceIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1625,7 +1626,7 @@ func TestStateDB_BalanceIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 func TestStateDB_BalanceOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1649,7 +1650,7 @@ func TestStateDB_BalanceOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 func TestStateDB_BalanceUnchangedValuesAreNotWritten(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1668,7 +1669,7 @@ func TestStateDB_BalanceUnchangedValuesAreNotWritten(t *testing.T) {
 func TestStateDB_BalanceIsNotWrittenToStateIfTransactionIsAborted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1685,7 +1686,7 @@ func TestStateDB_BalanceIsNotWrittenToStateIfTransactionIsAborted(t *testing.T) 
 func TestStateDB_NoncesAreReadFromState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	var want uint64 = 12
@@ -1699,7 +1700,7 @@ func TestStateDB_NoncesAreReadFromState(t *testing.T) {
 func TestStateDB_NoncesAreOnlyReadOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	var want uint64 = 12
@@ -1715,7 +1716,7 @@ func TestStateDB_NoncesAreOnlyReadOnce(t *testing.T) {
 func TestStateDB_NoncesCanBeWrittenAndReadWithoutStateAccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -1734,7 +1735,7 @@ func TestStateDB_NoncesCanBeWrittenAndReadWithoutStateAccess(t *testing.T) {
 func TestStateDB_NoncesOfANonExistingAccountIsZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The nonce is fetched, and its default is zero.
 	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(0), nil)
@@ -1748,7 +1749,7 @@ func TestStateDB_NoncesOfANonExistingAccountIsZero(t *testing.T) {
 func TestStateDB_NonceOfADeletedAccountIsZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The side-effects of the creation of the account in the first transactions are expected.
 	mock.EXPECT().Check().AnyTimes()
@@ -1794,7 +1795,7 @@ func TestStateDB_NonceOfADeletedAccountIsZero(t *testing.T) {
 func TestStateDB_NonceOfADeletedAccountGetsResetAtEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an existing account.
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -1831,7 +1832,7 @@ func TestStateDB_NonceOfADeletedAccountGetsResetAtEndOfTransaction(t *testing.T)
 func TestStateDB_NoncesCanBeSnapshottedAndReverted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Nonce is initially 10. This should only be fetched once.
 	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(10), nil)
@@ -1880,7 +1881,7 @@ func TestStateDB_NoncesCanBeSnapshottedAndReverted(t *testing.T) {
 func TestStateDB_NoncesOnlySetCanBeReverted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Nonce is initially 10. This should only be fetched once.
 	mock.EXPECT().GetNonce(address1).Return(common.ToNonce(10), nil)
@@ -1904,7 +1905,7 @@ func TestStateDB_NoncesOnlySetCanBeReverted(t *testing.T) {
 func TestStateDB_NoncesIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1928,7 +1929,7 @@ func TestStateDB_NoncesIsWrittenToStateIfChangedAtEndOfBlock(t *testing.T) {
 func TestStateDB_NoncesOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1950,7 +1951,7 @@ func TestStateDB_NoncesOnlyFinalValueIsWrittenAtEndOfBlock(t *testing.T) {
 func TestStateDB_NoncesUnchangedValuesAreNotWritten(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -1969,7 +1970,7 @@ func TestStateDB_NoncesUnchangedValuesAreNotWritten(t *testing.T) {
 func TestStateDB_NoncesIsNotWrittenToStateIfTransactionIsAborted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// SetNonce create the account if it does not exist
 	mock.EXPECT().Check().AnyTimes()
@@ -1984,7 +1985,7 @@ func TestStateDB_NoncesIsNotWrittenToStateIfTransactionIsAborted(t *testing.T) {
 func TestStateDB_ValuesAreReadFromState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
@@ -1997,7 +1998,7 @@ func TestStateDB_ValuesAreReadFromState(t *testing.T) {
 func TestStateDB_CommittedValuesAreReadFromState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
@@ -2010,7 +2011,7 @@ func TestStateDB_CommittedValuesAreReadFromState(t *testing.T) {
 func TestStateDB_CommittedValuesAreOnlyFetchedOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Set up the expectation that the store will be called once.
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
@@ -2022,7 +2023,7 @@ func TestStateDB_CommittedValuesAreOnlyFetchedOnce(t *testing.T) {
 func TestStateDB_CommittedValuesCanBeFetchedAfterValueBeingWritten(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
@@ -2039,7 +2040,7 @@ func TestStateDB_CommittedValuesCanBeFetchedAfterValueBeingWritten(t *testing.T)
 func TestStateDB_SettingValuesCreatesAccountsImplicitly(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 
@@ -2052,7 +2053,7 @@ func TestStateDB_SettingValuesCreatesAccountsImplicitly(t *testing.T) {
 func TestStateDB_ImplicitAccountCreatedBySetStateIsDroppedSinceEmptyIfNothingElseIsSet(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The account is not created at the end of the transaction. For the
 	// written slot the stored value is unknown, so an explicit zero-write is
@@ -2074,7 +2075,7 @@ func TestStateDB_EmptyAccountsDeletedAtEndOfTransactionsAreCleaned(t *testing.T)
 	// storage values into empty accounts.
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 
@@ -2103,7 +2104,7 @@ func TestStateDB_EmptyAccountsDeletedAtEndOfTransactionsAreCleaned(t *testing.T)
 func TestStateDB_FetchedCommittedValueIsNotResetInRollback(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The committed state is only read ones
 	mock.EXPECT().GetStorage(address1, key1).Return(val1, nil)
@@ -2121,7 +2122,7 @@ func TestStateDB_FetchedCommittedValueIsNotResetInRollback(t *testing.T) {
 func TestStateDB_WrittenValuesCanBeRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -2134,7 +2135,7 @@ func TestStateDB_WrittenValuesCanBeRead(t *testing.T) {
 func TestStateDB_WrittenValuesCanBeUpdated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -2152,7 +2153,7 @@ func TestStateDB_WrittenValuesCanBeUpdated(t *testing.T) {
 func TestStateDB_WrittenValuesCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 	mock.EXPECT().GetStorage(address1, key1).Return(val0, nil)
@@ -2198,7 +2199,7 @@ func TestStateDB_WrittenValuesCanBeRolledBack(t *testing.T) {
 func TestStateDB_UpdatedValuesAreCommittedToStateAtEndBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2218,7 +2219,7 @@ func TestStateDB_UpdatedValuesAreCommittedToStateAtEndBlock(t *testing.T) {
 func TestStateDB_RevertedValuesAreNotCommitted(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2237,7 +2238,7 @@ func TestStateDB_RevertedValuesAreNotCommitted(t *testing.T) {
 func TestStateDB_NothingIsCommittedOnTransactionAbort(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Should test whether the account exists, nothing else.
 	mock.EXPECT().Check().AnyTimes()
@@ -2253,7 +2254,7 @@ func TestStateDB_NothingIsCommittedOnTransactionAbort(t *testing.T) {
 func TestStateDB_OnlyFinalValueIsStored(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2272,7 +2273,7 @@ func TestStateDB_OnlyFinalValueIsStored(t *testing.T) {
 func TestStateDB_UndoneValueUpdateIsNotStored(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Only expect a read but no update.
 	mock.EXPECT().Check().AnyTimes()
@@ -2291,7 +2292,7 @@ func TestStateDB_UndoneValueUpdateIsNotStored(t *testing.T) {
 func TestStateDB_ValueIsCommittedAtEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Only expect a read but no update.
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2328,7 +2329,7 @@ func TestStateDB_ValueIsCommittedAtEndOfTransaction(t *testing.T) {
 func TestStateDB_CanBeUsedForMultipleBlocks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Times(3).Return(balance1, nil)
@@ -2356,7 +2357,7 @@ func TestStateDB_CanBeUsedForMultipleBlocks(t *testing.T) {
 func TestStateDB_CodesCanBeRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	want := []byte{0xAC, 0xDC}
 	mock.EXPECT().GetCode(address1).Return(want, nil)
@@ -2369,7 +2370,7 @@ func TestStateDB_CodesCanBeRead(t *testing.T) {
 func TestStateDB_CodesCanBeSet(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 
@@ -2384,7 +2385,7 @@ func TestStateDB_CodesCanBeSet(t *testing.T) {
 func TestStateDB_CodeUpdatesCoveredByRollbacks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 
@@ -2414,7 +2415,7 @@ func TestStateDB_CodeUpdatesCoveredByRollbacks(t *testing.T) {
 func TestStateDB_ReadCodesAreNotStored(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -2430,7 +2431,7 @@ func TestStateDB_ReadCodesAreNotStored(t *testing.T) {
 func TestStateDB_UpdatedCodesAreStored(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -2450,7 +2451,7 @@ func TestStateDB_UpdatedCodesAreStored(t *testing.T) {
 func TestStateDB_UpdatedCodesAreStoredOnlyOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -2476,7 +2477,7 @@ func TestStateDB_CodeCanBeUpdated_In_Each_Block(t *testing.T) {
 	mock := NewMockState(ctrl)
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil).AnyTimes()
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
 	hashes := make([]common.Hash, 0, len(codes))
@@ -2514,7 +2515,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Block(t *testing.T) {
 	mock := NewMockState(ctrl)
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil).AnyTimes()
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
 	hashes := make([]common.Hash, 0, len(codes))
@@ -2548,7 +2549,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Transaction(t *testing.T) {
 	mock := NewMockState(ctrl)
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil).AnyTimes()
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	codes := [][]byte{{0xAA, 0xAA}, {0xBB, 0xBB, 0xBB}, {0xCC, 0xCC, 0xCC, 0xCC}}
 	hashes := make([]common.Hash, 0, len(codes))
@@ -2579,7 +2580,7 @@ func TestStateDB_CodeCanBeUpdated_In_One_Transaction(t *testing.T) {
 func TestStateDB_SettingCodesCreatesAccountsImplicitly(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -2598,7 +2599,7 @@ func TestStateDB_SettingCodesCreatesAccountsImplicitly(t *testing.T) {
 func TestStateDB_CodeSizeCanBeRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	want := 2
 	mock.EXPECT().GetCodeSize(address1).Return(want, nil)
@@ -2611,7 +2612,7 @@ func TestStateDB_CodeSizeCanBeRead(t *testing.T) {
 func TestStateDB_CodeSizeCanBeReadAfterModification(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// SetCode creates the account if it does not exist
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2627,7 +2628,7 @@ func TestStateDB_CodeSizeCanBeReadAfterModification(t *testing.T) {
 func TestStateDB_CodeSizeOfANonExistingAccountIsZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	want := 0
 	mock.EXPECT().GetCodeSize(address1).Return(0, nil)
@@ -2640,7 +2641,7 @@ func TestStateDB_CodeSizeOfANonExistingAccountIsZero(t *testing.T) {
 func TestStateDB_CodeSizeOfADeletedAccountIsZeroAfterEndOfTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an existing account.
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2666,7 +2667,7 @@ func TestStateDB_CodeSizeOfADeletedAccountIsZeroAfterEndOfTransaction(t *testing
 func TestStateDB_CodeHashOfNonExistingAccountIsZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// The state DB is asked for the accounts existence, but not for the hash.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -2680,7 +2681,7 @@ func TestStateDB_CodeHashOfNonExistingAccountIsZero(t *testing.T) {
 func TestStateDB_CodeHashOfAnExistingAccountIsTheHashOfTheEmptyCode(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// Simulate an existing account with empty code.
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2695,7 +2696,7 @@ func TestStateDB_CodeHashOfAnExistingAccountIsTheHashOfTheEmptyCode(t *testing.T
 func TestStateDB_CodeHashOfNewlyCreatedAccountIsTheHashOfTheEmptyCode(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// At the start the account does not exist.
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -2710,7 +2711,7 @@ func TestStateDB_CodeHashOfNewlyCreatedAccountIsTheHashOfTheEmptyCode(t *testing
 func TestStateDB_CodeHashCanBeRead(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	want := common.Hash{0xAC, 0xDC}
 	mock.EXPECT().GetCodeHash(address1).Return(want, nil)
@@ -2724,7 +2725,7 @@ func TestStateDB_CodeHashCanBeRead(t *testing.T) {
 func TestStateDB_SetCodeSizeCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// SetCode creates the account if it does not exist
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
@@ -2747,7 +2748,7 @@ func TestStateDB_SetCodeSizeCanBeRolledBack(t *testing.T) {
 func TestStateDB_CodeHashCanBeReadAfterModification(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(address1).Return(balance1, nil)
 
@@ -2763,7 +2764,7 @@ func TestStateDB_CodeHashCanBeReadAfterModification(t *testing.T) {
 func TestStateDB_InitialRefundIsZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	if got := db.GetRefund(); got != 0 {
 		t.Errorf("initial refund is not 0, got: %v", got)
@@ -2773,7 +2774,7 @@ func TestStateDB_InitialRefundIsZero(t *testing.T) {
 func TestStateDB_RefundCanBeModified(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	var want uint64 = 0
 	if got := db.GetRefund(); got != want {
@@ -2799,7 +2800,7 @@ func TestStateDB_RefundCanBeModified(t *testing.T) {
 func TestStateDB_RefundBelowZeroIsAnError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 
@@ -2826,7 +2827,7 @@ func TestStateDB_RefundBelowZeroIsAnError(t *testing.T) {
 func TestStateDB_AddedRefundCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	var want uint64 = 0
 	if got := db.GetRefund(); got != want {
@@ -2868,7 +2869,7 @@ func TestStateDB_AddedRefundCanBeRolledBack(t *testing.T) {
 func TestStateDB_RemovedRefundCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	var want uint64 = 0
 	if got := db.GetRefund(); got != want {
@@ -2910,7 +2911,7 @@ func TestStateDB_RemovedRefundCanBeRolledBack(t *testing.T) {
 func TestStateDB_RefundIsResetAtTransactionEnd(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	var want uint64 = 12
 	db.AddRefund(12)
@@ -2926,7 +2927,7 @@ func TestStateDB_RefundIsResetAtTransactionEnd(t *testing.T) {
 func TestStateDB_RefundIsResetAtTransactionAbort(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	var want uint64 = 12
 	db.AddRefund(12)
@@ -2942,7 +2943,7 @@ func TestStateDB_RefundIsResetAtTransactionAbort(t *testing.T) {
 func TestStateDB_AccessedAddressesCanBeAdded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	if db.IsAddressInAccessList(address1) {
 		t.Errorf("Accessed address list initially not empty")
@@ -2971,7 +2972,7 @@ func TestStateDB_AccessedAddressesCanBeAdded(t *testing.T) {
 func TestStateDB_AccessedAddressesCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	snapshot1 := db.Snapshot()
 
@@ -3007,7 +3008,7 @@ func TestStateDB_AccessedAddressesCanBeRolledBack(t *testing.T) {
 func TestStateDB_AccessedAddressesAreResetAtTransactionEnd(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.AddAddressToAccessList(address1)
 	db.EndTransaction(LatestRevision())
@@ -3019,7 +3020,7 @@ func TestStateDB_AccessedAddressesAreResetAtTransactionEnd(t *testing.T) {
 func TestStateDB_AccessedAddressesAreResetAtTransactionAbort(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.AddAddressToAccessList(address1)
 	db.AbortTransaction()
@@ -3031,7 +3032,7 @@ func TestStateDB_AccessedAddressesAreResetAtTransactionAbort(t *testing.T) {
 func TestStateDB_AccessedSlotsCanBeAdded(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	if _, b := db.IsSlotInAccessList(address1, key1); b {
 		t.Errorf("Accessed slot list initially not empty")
@@ -3080,7 +3081,7 @@ func TestStateDB_AccessedSlotsCanBeAdded(t *testing.T) {
 func TestStateDB_AddingSlotToAccessListAddsAddress(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.AddSlotToAccessList(address1, key1)
 	if !db.IsAddressInAccessList(address1) {
@@ -3094,7 +3095,7 @@ func TestStateDB_AddingSlotToAccessListAddsAddress(t *testing.T) {
 func TestStateDB_AccessedSlotsCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	snapshot1 := db.Snapshot()
 	db.AddSlotToAccessList(address1, key1)
@@ -3148,7 +3149,7 @@ func TestStateDB_AccessedSlotsCanBeRolledBack(t *testing.T) {
 func TestStateDB_AccessedSlotsAreResetAtTransactionEnd(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.AddSlotToAccessList(address1, key1)
 	db.EndTransaction(LatestRevision())
@@ -3160,7 +3161,7 @@ func TestStateDB_AccessedSlotsAreResetAtTransactionEnd(t *testing.T) {
 func TestStateDB_AccessedAddressedAreResetAtTransactionAbort(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.AddSlotToAccessList(address1, key1)
 	db.AbortTransaction()
@@ -3175,7 +3176,7 @@ func TestStateDB_AccessedAddressedAreResetAtTransactionAbort(t *testing.T) {
 func TestStateDB_DeletesEmptyAccountsEip161(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	b12 := amount.New(12)
 
@@ -3208,7 +3209,7 @@ func TestStateDB_DeletesEmptyAccountsEip161(t *testing.T) {
 func TestStateDB_NeverCreatesEmptyAccountsEip161(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -3253,7 +3254,7 @@ func TestStateDB_StateDBCanNotEndABlockIfCommitIsNotAllowed(t *testing.T) {
 func TestStateDB_EndTransaction_RecreatedAccountDoesNotStopDeletionOfOthers(t *testing.T) {
 	require := require.New(t)
 	mock := NewMockState(gomock.NewController(t))
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 	mock.EXPECT().GetBalance(address1).Return(amount.New(), nil)
 	mock.EXPECT().GetBalance(address2).Return(amount.New(), nil)
 	for _, addr := range []common.Address{address1, address2} {
@@ -3455,7 +3456,7 @@ func TestStateDB_CreateWitnessProofCallsAreForwarded(t *testing.T) {
 func TestStateDB_LogsCanBeAddedAndRetrieved(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	log1 := &common.Log{Address: address1}
 	log2 := &common.Log{Address: address2}
@@ -3488,7 +3489,7 @@ func TestStateDB_LogsCanBeAddedAndRetrieved(t *testing.T) {
 func TestStateDB_LogsAreResetAtEndOfBlock(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Apply(uint64(0), common.Update{}).Return(NewMockStagedBlock(ctrl), nil)
@@ -3517,7 +3518,7 @@ func TestStateDB_LogsAreResetAtEndOfBlock(t *testing.T) {
 func TestStateDB_LogsAreCoveredByRollbacks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	log1 := &common.Log{Address: address1}
 	log2 := &common.Log{Address: address2}
@@ -3557,7 +3558,7 @@ func TestStateDB_LogsAreCoveredByRollbacks(t *testing.T) {
 func TestStateDB_BeginAndEndEpochsHaveNoEffect(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// All this test does is making sure that those calls do not trigger
 	// any operation on the underlying state.
@@ -3568,7 +3569,7 @@ func TestStateDB_BeginAndEndEpochsHaveNoEffect(t *testing.T) {
 func TestStateDB_GetHashObtainsHashFromUnderlyingState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	hash := common.Hash{1, 2, 3}
 	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(hash)))
@@ -3581,7 +3582,7 @@ func TestStateDB_GetHashObtainsHashFromUnderlyingState(t *testing.T) {
 func TestStateDB_GetCommitmentObtainsCommitmentFromUnderlyingState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	want := common.Hash{1, 2, 3}
 	mock.EXPECT().GetCommitment().Return(future.Immediate(result.Ok(want)))
@@ -3692,7 +3693,7 @@ func TestStateDB_CollectsErrorsAndReportsThemDuringACheck(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			state := NewMockState(ctrl)
 			state.EXPECT().Check().AnyTimes()
-			db := CreateStateDBUsing(state)
+			db := CreateTestStateDBUsing(state)
 
 			if err := db.Check(); err != nil {
 				t.Errorf("unexpected error at begin of test: %v", err)
@@ -3710,7 +3711,7 @@ func TestStateDB_CollectsErrorsAndReportsThemDuringACheck(t *testing.T) {
 func TestStateDB_CanCollectMoreThanOneError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().Check().AnyTimes()
 
@@ -3740,7 +3741,7 @@ func TestStateDB_CanCollectMoreThanOneError(t *testing.T) {
 func TestStateDB_NoApplyWhenErrorsHaveBeenEncountered(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().Check().AnyTimes()
 
@@ -3762,7 +3763,7 @@ func TestStateDB_NoApplyWhenErrorsHaveBeenEncountered(t *testing.T) {
 func TestStateDB_ErrorsAreReportedDuringFlush(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().Check().AnyTimes()
 
@@ -3785,7 +3786,7 @@ func TestStateDB_ErrorsAreReportedDuringFlush(t *testing.T) {
 func TestStateDB_ErrorsAreReportedDuringClose(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().Check().AnyTimes()
 
@@ -3814,7 +3815,7 @@ func TestStateDB_GetArchiveStateDbCanProduceArchiveAccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
 	archive := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().GetArchiveState(uint64(12)).Return(archive, nil)
 	archive.EXPECT().GetNonce(address1).Return(common.ToNonce(10), nil)
@@ -3833,7 +3834,7 @@ func TestStateDB_GetArchiveStateDbProducesDistinctStateDbInstances(t *testing.T)
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
 	archive := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().GetArchiveState(gomock.Any()).AnyTimes().Return(archive, nil)
 
@@ -3858,7 +3859,7 @@ func TestStateDB_GetArchiveStateDbRecyclesNonCommittableStateDbInstances(t *test
 	ctrl := gomock.NewController(t)
 	state := NewMockState(ctrl)
 	archive := NewMockState(ctrl)
-	db := CreateStateDBUsing(state)
+	db := CreateTestStateDBUsing(state)
 
 	state.EXPECT().GetArchiveState(gomock.Any()).AnyTimes().Return(archive, nil)
 
@@ -3889,7 +3890,7 @@ func TestStateDB_GetArchiveStateDbRecyclesNonCommittableStateDbInstances(t *test
 func TestStateDB_NonCommittableStateDbCanBeReleasedMultipleTimes(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	state := CreateStateDBUsing(mock)
+	state := CreateTestStateDBUsing(mock)
 
 	db := nonCommittableStateDB{state.(*stateDB)}
 	db.Release()
@@ -3902,7 +3903,7 @@ func TestStateDB_NonCommittableStateDbCanBeReleasedMultipleTimes(t *testing.T) {
 func TestStateDB_GetArchiveStateDbFailsIfThereTheArchiveAccessFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	injectedError := fmt.Errorf("injected error")
 	mock.EXPECT().GetArchiveState(uint64(12)).Return(nil, injectedError)
@@ -3927,7 +3928,7 @@ func TestStateDB_GetArchiveBlockHeightReturnsHeightOfArchive(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			state := NewMockState(ctrl)
-			db := CreateStateDBUsing(state)
+			db := CreateTestStateDBUsing(state)
 
 			state.EXPECT().GetArchiveBlockHeight().Return(test.height, test.empty, test.err)
 
@@ -3949,7 +3950,7 @@ func TestStateDB_GetArchiveBlockHeightReturnsHeightOfArchive(t *testing.T) {
 func TestStateDB_ProvidesTransactionChanges(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().GetBalance(gomock.Any()).Return(balance1, nil).AnyTimes()
 
@@ -3982,7 +3983,7 @@ func bulkStaged(ctrl *gomock.Controller) *MockStagedBlock {
 func TestStateDB_BulkLoadReachesState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	balance := amount.New(12)
 	code := []byte{1, 2, 3}
@@ -4131,7 +4132,7 @@ func TestStateDB_ThereCanBeMultipleBulkLoadPhases(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// A bulk loaded block is committed as it is applied.
 	staged := NewMockStagedBlock(ctrl)
@@ -4155,7 +4156,7 @@ func TestStateDB_ThereCanBeMultipleBulkLoadPhases(t *testing.T) {
 func TestStateDB_GetMemoryFootprintIsReturnedAndNotZero(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address2)
 	mock.EXPECT().GetBalance(address1).Return(amount.New(10), nil)
@@ -4336,7 +4337,7 @@ func TestSlotIdOrder(t *testing.T) {
 func TestStateDB_SetTransientState_RollbackRemovesValue(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	s := db.Snapshot()
 	db.SetTransientState(address1, key1, val1)
@@ -4354,7 +4355,7 @@ func TestStateDB_SetTransientState_RollbackRemovesValue(t *testing.T) {
 func TestStateDB_SetTransientState_RollbackToPreviousValue(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.SetTransientState(address1, key1, val1)
 	// Check that value was correctly set
@@ -4405,7 +4406,7 @@ func TestStateDB_TransientStorage_IsClearedAfterCallingEndTransaction(t *testing
 func TestStateDB_SetTransientState_NewestValueCanBeObtained(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	db.SetTransientState(address1, key1, val1)
 	if got, want := db.GetTransientState(address1, key1), val1; got != want {
@@ -4445,7 +4446,7 @@ func TestStateDB_SetTransientState_SettingSameValueReturnsEarly(t *testing.T) {
 func TestStateDB_SetTransientState_RollbackWithMultipleSteps(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	s1 := db.Snapshot()
 
@@ -4492,7 +4493,7 @@ func TestNonCommittableStateDB_resetState_ClearsTransientStorage(t *testing.T) {
 func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// the account should not exist prior to CreateContract call
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -4525,7 +4526,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInTheSameTransaction(t *testing.T
 func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// the account should not exist prior to CreateContract call
 	setExpectationForEmptyAccount(t, mock, address1)
@@ -4568,7 +4569,7 @@ func TestStateDB_ContractCanBeCreatedAndDeletedInDifferentTransactions(t *testin
 func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// create snapshot of current state
 	ss := db.Snapshot()
@@ -4597,7 +4598,7 @@ func TestStateDB_ContractCreationAndDeletionCanBeRolledBack(t *testing.T) {
 func TestStateDB_ContractIsNoLongerMarkedAsNewAfterRollback(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	// create snapshot of current state
 	snapshot := db.Snapshot()
@@ -4678,7 +4679,7 @@ func TestStateDB_ResetTransactionContext_ClearsTransactionState(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock).(*stateDB)
+	db := CreateTestStateDBUsing(mock).(*stateDB)
 
 	mock.EXPECT().GetBalance(address1).Return(amount.New(10), nil)
 	setExpectationForEmptyAccount(t, mock, address2)
@@ -4936,7 +4937,7 @@ func checkCode(t *testing.T, db VmStateDB, address common.Address, code []byte, 
 func TestStateDB_EndBlock_ReturnsTheStagedBlockOfTheState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	staged := NewMockStagedBlock(ctrl)
 	staged.EXPECT().Commit().Return(NewWaitHandle(nil), nil)
@@ -4960,7 +4961,7 @@ func TestStateDB_EndBlock_ReportsAMissingStagedBlockInsteadOfWrappingIt(t *testi
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	mock.EXPECT().Check().AnyTimes()
 	mock.EXPECT().Apply(uint64(1), gomock.Any()).Return(nil, nil)
@@ -4976,7 +4977,7 @@ func TestStateDB_EndBlock_ReportsAMissingStagedBlockInsteadOfWrappingIt(t *testi
 func TestStateDB_EndBlock_ReportsAndCollectsApplyError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	injectedError := fmt.Errorf("injected error")
 
@@ -4998,7 +4999,7 @@ func TestStateDB_EndBlock_ReportsAndCollectsApplyError(t *testing.T) {
 func TestStateDB_EndBlock_IsRefusedAfterAnArchiveError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	injectedError := fmt.Errorf("injected error")
 
@@ -5044,7 +5045,7 @@ func TestStateDbStagedBlock_Commit_CommitsTheStagedBlock(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	staged := NewMockStagedBlock(ctrl)
 	staged.EXPECT().Commit().Return(NewWaitHandle(nil), nil)
@@ -5063,7 +5064,7 @@ func TestStateDbStagedBlock_Commit_CollectsAnArchiveFailureAsAnIssue(t *testing.
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	injectedError := fmt.Errorf("injected error")
 
@@ -5087,7 +5088,7 @@ func TestStateDbStagedBlock_Commit_ReportsMisuseWithoutCollectingIt(t *testing.T
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	misuse := fmt.Errorf("%w: injected", ErrStagedBlockMisuse)
 	staged := NewMockStagedBlock(ctrl)
@@ -5163,7 +5164,7 @@ func TestStateDbStagedBlock_Rollback_ReportsAFailureWithItsBlock(t *testing.T) {
 	require := require.New(t)
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	injected := fmt.Errorf("injected error")
 	staged := NewMockStagedBlock(ctrl)
@@ -5199,7 +5200,7 @@ func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			mock := NewMockState(ctrl)
-			db := CreateStateDBUsing(mock)
+			db := CreateTestStateDBUsing(mock)
 			setExpectationForEmptyAccount(t, mock, address1)
 
 			testCase.op(db, address1)
@@ -5212,7 +5213,7 @@ func TestStateDB_Exist_ReturnsTrueForNonEmptyAccount(t *testing.T) {
 func TestStateDB_Exist_ReturnsFalseForEmptyAccount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mock := NewMockState(ctrl)
-	db := CreateStateDBUsing(mock)
+	db := CreateTestStateDBUsing(mock)
 
 	setExpectationForEmptyAccount(t, mock, address1)
 

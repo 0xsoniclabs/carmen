@@ -35,6 +35,12 @@ type OpArgs struct {
 	Key     common.Key
 }
 
+// CreateTestStateDBUsing creates a StateDB with a small stored data cache,
+// keeping the memory usage of tests low.
+func CreateTestStateDBUsing(state State) StateDB {
+	return CreateCustomStateDBUsing(state, 10_000)
+}
+
 func SetStateOp(db StateDB, rng *rand.Rand, args OpArgs) {
 	randomValue := common.Value(RandomByteArrayWithPrefix(rng, 32, []byte{0x2}))
 	db.SetState(args.Address, args.Key, randomValue)
