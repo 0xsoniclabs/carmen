@@ -7985,6 +7985,7 @@ func testActions_Pass(t *testing.T, frozen bool) {
 }
 
 func TestActions_AllErrorsAreForwardedByMutableNodes(t *testing.T) {
+	t.Parallel()
 	testActions_AllErrorsAreForwarded(t, false)
 }
 

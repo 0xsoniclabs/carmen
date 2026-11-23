@@ -178,6 +178,7 @@ func TestForest_Cannot_Open_Meta_DoesNot_Match(t *testing.T) {
 }
 
 func TestForest_OpenAndClose(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -196,6 +197,7 @@ func TestForest_OpenAndClose(t *testing.T) {
 }
 
 func TestForest_ClosedAndReOpened(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -242,6 +244,7 @@ func TestForest_ClosedAndReOpened(t *testing.T) {
 }
 
 func TestForest_GettingAccountInfo_Fails(t *testing.T) {
+	t.Parallel()
 	var injectedErr = errors.New("failed to get value from stock")
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
@@ -297,6 +300,7 @@ func TestForest_GettingAccountInfo_Fails(t *testing.T) {
 }
 
 func TestForest_CreatingAccountInfo_Fails(t *testing.T) {
+	t.Parallel()
 	var injectedErr = errors.New("failed to call New")
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
@@ -348,6 +352,7 @@ func TestForest_CreatingAccountInfo_Fails(t *testing.T) {
 }
 
 func TestForest_setHashesFor_Getting_Node_Fails(t *testing.T) {
+	t.Parallel()
 	var injectedErr = errors.New("failed to call Get")
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
@@ -425,6 +430,7 @@ func TestForest_Freeze_Fails(t *testing.T) {
 }
 
 func TestForest_CreatingNodes_Fails(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -495,6 +501,7 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 }
 
 func TestForest_Cannot_Release_Node(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -523,6 +530,7 @@ func TestForest_Cannot_Release_Node(t *testing.T) {
 }
 
 func TestForest_Release_Queue_Error_Get_Node(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -607,6 +615,7 @@ func TestForest_Release_Queue_Error_Release_Node(t *testing.T) {
 }
 
 func TestForest_getAccess_Fails(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -672,6 +681,7 @@ func TestForest_getAccess_Fails(t *testing.T) {
 }
 
 func TestForest_getSharedNode_Fails_Get_Copy(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -736,6 +746,7 @@ func TestForest_getSharedNode_Fails_Get_Copy(t *testing.T) {
 }
 
 func TestForest_Flush_Fail_MissingCachedNode(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -774,6 +785,7 @@ func TestForest_Flush_Fail_MissingCachedNode(t *testing.T) {
 }
 
 func TestForest_Flush_Fail_CannotReadNode(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -926,6 +938,7 @@ func TestForest_Flush_DoesNotAccumulateRecordedErrors(t *testing.T) {
 }
 
 func TestForest_flushNode_EmptyId(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -952,6 +965,7 @@ func TestForest_flushNode_EmptyId(t *testing.T) {
 }
 
 func TestForest_getMutableNodeByPath_CannotReadNode(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -991,6 +1005,7 @@ func TestForest_getMutableNodeByPath_CannotReadNode(t *testing.T) {
 }
 
 func TestForest_getMutableNodeByPath_TypeOfNodesReachable(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1062,6 +1077,7 @@ func TestForest_getMutableNodeByPath_TypeOfNodesReachable(t *testing.T) {
 }
 
 func TestForest_Dump(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1100,6 +1116,7 @@ func TestForest_Dump(t *testing.T) {
 }
 
 func TestForest_ArchiveInfoCanBeSetAndRetrieved(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1141,6 +1158,7 @@ func TestForest_ArchiveInfoCanBeSetAndRetrieved(t *testing.T) {
 }
 
 func TestForest_ValueCanBeSetAndRetrieved(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1199,6 +1217,7 @@ func TestForest_ValueCanBeSetAndRetrieved(t *testing.T) {
 }
 
 func TestForest_TreesCanBeHashedAndNavigatedInParallel(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1356,6 +1375,7 @@ func TestForest_InArchiveModeHistoryIsPreserved(t *testing.T) {
 }
 
 func TestForest_ProvidesMemoryFoodPrint(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1388,6 +1408,7 @@ func TestForest_ProvidesMemoryFoodPrint(t *testing.T) {
 }
 
 func TestForest_ConcurrentReadsAreRaceFree(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1449,6 +1470,7 @@ func TestForest_ConcurrentReadsAreRaceFree(t *testing.T) {
 }
 
 func TestForest_ConcurrentWritesAreRaceFree(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -1920,6 +1942,7 @@ func TestForest_ReadForestMetadata_Fails(t *testing.T) {
 }
 
 func TestForest_ErrorsAreForwardedAndCollected(t *testing.T) {
+	t.Parallel()
 	type mocks struct {
 		branches   *stock.MockStock[uint64, BranchNode]
 		extensions *stock.MockStock[uint64, ExtensionNode]
@@ -2336,6 +2359,7 @@ func TestForest_FailingFlush_Invalidates_Forest(t *testing.T) {
 }
 
 func TestForest_CloseMultipleTimes(t *testing.T) {
+	t.Parallel()
 	for _, variant := range variants {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
@@ -2499,6 +2523,7 @@ func TestForest_VisitPathToAccount(t *testing.T) {
 }
 
 func TestForest_VisitPathToStorage(t *testing.T) {
+	t.Parallel()
 	const num = 100
 
 	keys := getTestKeys(num)
@@ -2561,6 +2586,7 @@ func TestForest_VisitPathToStorage(t *testing.T) {
 }
 
 func TestForest_HasEmptyStorage(t *testing.T) {
+	t.Parallel()
 	strategies := []struct {
 		delete func(*Forest, *NodeReference, common.Address, []common.Key) (NodeReference, error)
 	}{
@@ -2674,6 +2700,7 @@ func TestForest_HasEmptyStorage(t *testing.T) {
 }
 
 func TestVisitPathTo_Node_Hashes_Same_S5_Archive_non_Archive_Config_For_Witness_Proof(t *testing.T) {
+	t.Parallel()
 	addresses := getTestAddresses(61)
 	keys := getTestKeys(63)
 	for _, variant := range fileAndMemVariants {

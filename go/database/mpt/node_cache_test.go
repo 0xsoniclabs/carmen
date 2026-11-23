@@ -459,6 +459,7 @@ func TestNodeCache_GetOrSet_PresentPathHintStaysConsistentUnderEviction(t *testi
 }
 
 func TestNodeCache_GetAndSetIsThreadSafe(t *testing.T) {
+	t.Parallel()
 	nodes := []*shared.Shared[Node]{}
 	for i := range 256 {
 		nodes = append(nodes, shared.MakeShared[Node](&ValueNode{pathLength: byte(i)}))

@@ -153,6 +153,7 @@ func TestWriteBuffer_AllQueuedEntriesArePresentUntilWritten(t *testing.T) {
 }
 
 func TestWriteBuffer_CheckThatLockedNodesAreWaitedFor(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	sink := NewMockNodeSink(ctrl)
 
