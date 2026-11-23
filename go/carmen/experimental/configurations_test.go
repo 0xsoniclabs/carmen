@@ -31,11 +31,10 @@ func TestConfiguration_RegisteredConfigurationsCanBeUsed(t *testing.T) {
 	for config := range carmen.GetAllConfigurations() {
 		t.Run(config.String(), func(t *testing.T) {
 			t.Parallel()
-			// The smallest possible caches keep the memory usage low.
 			db, err := carmen.OpenDatabase(t.TempDir(), config, carmen.Properties{
-				carmen.LiveDBCache:  "1",
-				carmen.ArchiveCache: "1",
-				carmen.StorageCache: "1",
+				carmen.LiveDBCache:  "10",
+				carmen.ArchiveCache: "10",
+				carmen.StorageCache: "10",
 			})
 			if err != nil {
 				t.Fatalf("failed to open database: %v", err)
