@@ -31,6 +31,7 @@ import (
 
 	"github.com/0xsoniclabs/carmen/go/backend/archive"
 	"github.com/0xsoniclabs/carmen/go/backend/kv_file"
+	"github.com/0xsoniclabs/carmen/go/backend/stock/file"
 	"github.com/0xsoniclabs/carmen/go/backend/utils"
 	"github.com/0xsoniclabs/carmen/go/backend/utils/checkpoint"
 	"github.com/0xsoniclabs/carmen/go/common"
@@ -292,6 +293,35 @@ func TestArchiveTrie_Open_Fails_Wrong_Codes(t *testing.T) {
 	}
 }
 
+func TestArchiveTrie_Open_AddsTheDeltaStockToAnArchiveWithCheckpoints(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{CheckpointInterval: 1})
+	require.NoError(err)
+	require.NoError(archive.Add(3, common.Update{
+		Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(4)}},
+	}, nil))
+	for block := range uint64(4) {
+		balance, err := archive.GetBalance(block, common.Address{1})
+		require.NoError(err)
+		require.Equal(amount.New(block+1), balance)
+	}
+	require.NoError(archive.Close())
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
+
+func TestArchiveTrie_Open_FailsIfTheDeltaStockCanNotBeAdded(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(dir, fileNameArchiveCheckpointDirectory), nil, 0600))
+
+	_, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.ErrorContains(err, "failed to create directory")
+}
+
 func TestArchiveTrie_Open_Fails_InconsistentCheckpoints(t *testing.T) {
 	openForest := func(dir string) (*Forest, error) {
 		cacheConfig := NodeCacheConfig{Capacity: 1024}
@@ -434,6 +464,36 @@ func TestArchiveTrie_VerifyArchiveTrie_TreatsMissingRootsFileAsEmptyArchive(t *t
 			require.NoError(VerifyArchiveTrie(context.Background(), dir, config, NilVerificationObserver{}))
 		})
 	}
+}
+
+func TestArchiveTrie_VerifyArchiveTrie_DoesNotAddTheDeltaStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
+}
+
+func TestArchiveTrie_VerifyArchiveTrie_DetectsALostDeltaStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	require.NoError(archive.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	err = VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
+	require.ErrorContains(err, "the stock of delta branches is missing")
+}
+
+func TestArchiveTrie_VerifyArchiveTrie_FailsIfTheForestMetadataCanNotBeRead(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(dir, "forest.json"), []byte("corrupted"), 0600))
+
+	err := VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
+	require.ErrorContains(err, "invalid character")
 }
 
 func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
@@ -2972,6 +3032,105 @@ func TestArchiveTrie_RestoreBlockHeightRestoresArchiveMetaData(t *testing.T) {
 	}
 }
 
+func TestArchiveTrie_RestoreBlockHeight_RestoresAnArchiveWithoutDeltaStockCheckpoint(t *testing.T) {
+	tests := map[string]func(dir string) error{
+		"missing delta stock": func(string) error { return nil },
+		"interrupted creation of the delta stock": func(dir string) error {
+			return os.MkdirAll(filepath.Join(dir, "branch_deltas.tmp", "sub"), 0700)
+		},
+		"delta stock added at the last checkpoint": func(dir string) error {
+			archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{CheckpointInterval: 100})
+			if err != nil {
+				return err
+			}
+			return errors.Join(
+				archive.Add(3, common.Update{
+					Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(4)}},
+				}, nil),
+				archive.Close(),
+			)
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			createArchiveWithoutDeltaStock(t, dir)
+			require.NoError(setup(dir))
+
+			require.NoError(RestoreBlockHeight(dir, S5ArchiveConfig, 2))
+
+			archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+			require.NoError(err)
+			defer func() { require.NoError(archive.Close()) }()
+			height, empty, err := archive.GetBlockHeight()
+			require.NoError(err)
+			require.False(empty)
+			require.EqualValues(2, height)
+			balance, err := archive.GetBalance(2, common.Address{1})
+			require.NoError(err)
+			require.Equal(amount.New(3), balance)
+		})
+	}
+}
+
+func TestArchiveTrie_OpenAndRestoreBlockHeight_DetectADeltaStockWithoutCheckpoint(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+	_, _, encoder, _, _ := S5ArchiveConfig.GetEncoders()
+	stock, err := file.OpenStock[uint64, BranchNode](encoder, filepath.Join(dir, "branch_deltas"))
+	require.NoError(err)
+	require.NoError(stock.Close())
+
+	_, err = OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.ErrorContains(err, "unable to guarantee availability of checkpoint 2")
+	require.NoError(ForceUnlockDirectory(dir))
+	err = RestoreBlockHeight(dir, S5ArchiveConfig, 2)
+	require.ErrorContains(err, "unable to locate checkpoint data for checkpoint 2")
+}
+
+func TestArchiveTrie_RestoreBlockHeight_RecoversAnArchiveWithoutDeltaStockAfterAFailedOpen(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+	// The corrupted metadata of the trie makes the open fail after the
+	// stocks are opened.
+	require.NoError(os.WriteFile(getLiveTrieMetadataPath(dir), []byte("corrupted"), 0600))
+	_, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.Error(err)
+	require.NoError(ForceUnlockDirectory(dir))
+	_, err = OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.ErrorContains(err, "dirty")
+
+	require.NoError(RestoreBlockHeight(dir, S5ArchiveConfig, 2))
+
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	balance, err := archive.GetBalance(2, common.Address{1})
+	require.NoError(err)
+	require.Equal(amount.New(3), balance)
+	require.NoError(archive.Close())
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
+}
+
+// createArchiveWithoutDeltaStock creates an archive with a checkpoint at its
+// last block, 2, as it was created before the introduction of delta branches.
+func createArchiveWithoutDeltaStock(t *testing.T, dir string) {
+	t.Helper()
+	require := require.New(t)
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{CheckpointInterval: 1})
+	require.NoError(err)
+	for block := range uint64(3) {
+		require.NoError(archive.Add(block, common.Update{
+			Balances: []common.BalanceUpdate{{Account: common.Address{1}, Balance: amount.New(block + 1)}},
+		}, nil))
+	}
+	require.NoError(archive.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+	require.NoError(utils.WriteJsonFile(filepath.Join(dir, "forest.json"), ForestMetadata{Configuration: S5ArchiveConfig.Name}))
+}
+
 func TestArchiveTrie_RestoreBlockHeight_DetectsIssuesAndForwardsThose(t *testing.T) {
 	tests := map[string]struct {
 		sabotage                     func(t *testing.T, dir string) error
@@ -3024,6 +3183,13 @@ func TestArchiveTrie_RestoreBlockHeight_DetectsIssuesAndForwardsThose(t *testing
 				return os.Mkdir(filepath.Join(dir, dirtyFileName), 0700)
 			},
 			expectedErrorMessageFragment: "failed to mark directory",
+		},
+		"lost delta stock": {
+			sabotage: func(_ *testing.T, dir string) error {
+				return os.RemoveAll(filepath.Join(dir, "branch_deltas"))
+			},
+			expectedErrorMessageFragment: "failed to add delta stock to checkpoint",
+			directoryShouldBeDirtyAfter:  true,
 		},
 	}
 
@@ -3167,6 +3333,149 @@ func TestArchiveTrie_RestoredTrieCanBeReused(t *testing.T) {
 
 	if err := archive.Close(); err != nil {
 		t.Fatalf("failed to close archive: %v", err)
+	}
+}
+
+func TestArchiveTrie_addDeltaStockToCheckpoint_AddsAStockCoveringTheLastCheckpoint(t *testing.T) {
+	tests := map[string]struct {
+		setup func(t *testing.T, dir string)
+		last  checkpoint.Checkpoint
+	}{
+		"archive without checkpoints": {
+			setup: func(*testing.T, string) {},
+			last:  0,
+		},
+		"archive with checkpoints": {
+			setup: createArchiveWithoutDeltaStock,
+			last:  2,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			test.setup(t, dir)
+
+			require.NoError(addDeltaStockToCheckpoint(dir, S5ArchiveConfig))
+
+			_, _, encoder, _, _ := S5ArchiveConfig.GetEncoders()
+			stock, err := file.OpenStock[uint64, BranchNode](encoder, filepath.Join(dir, "branch_deltas"))
+			require.NoError(err)
+			defer func() { require.NoError(stock.Close()) }()
+			coordinator, err := checkpoint.NewCoordinator(filepath.Join(dir, fileNameArchiveCheckpointDirectory), stock)
+			require.NoError(err)
+			require.Equal(test.last, coordinator.GetCurrentCheckpoint())
+		})
+	}
+}
+
+func TestArchiveTrie_addDeltaStockToCheckpoint_RecordsTheStockInTheForestMetadata(t *testing.T) {
+	tests := map[string]func(t *testing.T, dir string){
+		"missing stock": func(*testing.T, string) {},
+		"stock created by an interrupted attempt": func(t *testing.T, dir string) {
+			_, _, encoder, _, _ := S5ArchiveConfig.GetEncoders()
+			require.NoError(t, file.JoinCheckpoint[uint64](encoder, filepath.Join(dir, "branch_deltas"), 2))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			createArchiveWithoutDeltaStock(t, dir)
+			setup(t, dir)
+
+			require.NoError(addDeltaStockToCheckpoint(dir, S5ArchiveConfig))
+
+			meta, _, err := ReadForestMetadata(filepath.Join(dir, "forest.json"))
+			require.NoError(err)
+			require.Equal(ForestMetadata{Configuration: S5ArchiveConfig.Name, DeltaBranches: true}, meta)
+		})
+	}
+}
+
+func TestArchiveTrie_addDeltaStockToCheckpoint_LeavesAnExistingDirectoryUntouched(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+	deltasDir := filepath.Join(dir, "branch_deltas")
+	require.NoError(os.Mkdir(deltasDir, 0700))
+	dummyFile := []byte("dummy")
+	require.NoError(os.WriteFile(filepath.Join(deltasDir, "dummy"), dummyFile, 0600))
+
+	require.NoError(addDeltaStockToCheckpoint(dir, S5ArchiveConfig))
+
+	entries, err := os.ReadDir(deltasDir)
+	require.NoError(err)
+	require.Len(entries, 1)
+	data, err := os.ReadFile(filepath.Join(deltasDir, "dummy"))
+	require.NoError(err)
+	require.Equal(dummyFile, data)
+}
+
+func TestArchiveTrie_addDeltaStockToCheckpoint_RejectsAnArchiveOfAnotherConfiguration(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	createArchiveWithoutDeltaStock(t, dir)
+
+	err := addDeltaStockToCheckpoint(dir, S5LiveConfig)
+	require.ErrorContains(err, "unexpected MPT configuration in directory, wanted S5-Live, got S5-Archive")
+	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
+}
+
+func TestArchiveTrie_addDeltaStockToCheckpoint_RejectsALostStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	require.NoError(archive.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	err = addDeltaStockToCheckpoint(dir, S5ArchiveConfig)
+	require.ErrorContains(err, "the stock of delta branches is missing")
+	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
+}
+
+func TestArchiveTrie_addDeltaStockToCheckpoint_ForwardsIssues(t *testing.T) {
+	tests := map[string]struct {
+		sabotage func(t *testing.T, dir string) error
+		issue    string
+	}{
+		"checkpoint directory can not be created": {
+			sabotage: func(_ *testing.T, dir string) error {
+				return os.WriteFile(filepath.Join(dir, fileNameArchiveCheckpointDirectory), nil, 0600)
+			},
+			issue: "failed to create directory",
+		},
+		"forest configuration can not be read": {
+			sabotage: func(_ *testing.T, dir string) error {
+				return os.WriteFile(filepath.Join(dir, "forest.json"), []byte("corrupted"), 0600)
+			},
+			issue: "invalid character",
+		},
+		"stock can not be created": {
+			sabotage: func(t *testing.T, dir string) error {
+				createArchiveWithoutDeltaStock(t, dir)
+				t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+				return os.Chmod(dir, 0500)
+			},
+			issue: "permission denied",
+		},
+		"forest metadata can not be updated": {
+			sabotage: func(t *testing.T, dir string) error {
+				createArchiveWithoutDeltaStock(t, dir)
+				return os.Mkdir(filepath.Join(dir, "forest.json.tmp"), 0700)
+			},
+			issue: "is a directory",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			require.NoError(test.sabotage(t, dir))
+
+			require.ErrorContains(addDeltaStockToCheckpoint(dir, S5ArchiveConfig), test.issue)
+		})
 	}
 }
 

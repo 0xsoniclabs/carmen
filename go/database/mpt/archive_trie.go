@@ -90,6 +90,10 @@ func OpenArchiveTrie(
 		return nil, err
 	}
 
+	if err := addDeltaStockToCheckpoint(directory, config); err != nil {
+		return nil, errors.Join(err, roots.Close())
+	}
+
 	forestConfig := ForestConfig{Mode: Immutable, NodeCacheConfig: cacheConfig}
 	forest, err := OpenFileForest(directory, config, forestConfig)
 	if err != nil {
@@ -121,6 +125,7 @@ func OpenArchiveTrie(
 		checkpointDir,
 		forest.accounts,
 		forest.branches,
+		forest.branchDeltas,
 		forest.extensions,
 		forest.values,
 		state.codes,
@@ -162,6 +167,17 @@ func OpenArchiveTrie(
 // If the test passes, the data stored in the respective directory
 // can be considered a valid archive database of the given configuration.
 func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, observer VerificationObserver) (res error) {
+	// A stock recorded in the metadata that is missing was lost, which makes
+	// the archive fail to open.
+	meta, _, err := ReadForestMetadata(directory + "/forest.json")
+	if err != nil {
+		return err
+	}
+	_, _, branchDeltasDir, _, _ := getForestDirectories(directory)
+	if _, err := os.Stat(branchDeltasDir); err != nil && meta.DeltaBranches {
+		return fmt.Errorf("the stock of delta branches is missing in %v", branchDeltasDir)
+	}
+
 	roots, err := loadRoots(directory)
 	if err != nil {
 		return err
@@ -573,12 +589,17 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retEr
 		}
 	}()
 
+	if err := addDeltaStockToCheckpoint(directory, config); err != nil {
+		return fmt.Errorf("failed to add delta stock to checkpoint: %w", err)
+	}
+
 	// Restore the last checkpoint created by the archive.
 	rootRestorer := getRootListRestorer(directory)
-	accountsDir, branchesDir, extensionsDir, valuesDir := getForestDirectories(directory)
+	accountsDir, branchesDir, branchDeltasDir, extensionsDir, valuesDir := getForestDirectories(directory)
 	restorers := []checkpoint.Restorer{
 		file.GetRestorer(accountsDir),
 		file.GetRestorer(branchesDir),
+		file.GetRestorer(branchDeltasDir),
 		file.GetRestorer(extensionsDir),
 		file.GetRestorer(valuesDir),
 		getCodeRestorer(directory),
@@ -599,6 +620,55 @@ func RestoreBlockHeight(directory string, config MptConfig, block uint64) (retEr
 		rootRestorer.truncate(int(block+1)),
 		utils.WriteJsonFile(metaDataFile, metadata{}),
 	)
+}
+
+// addDeltaStockToCheckpoint creates the stock of delta branches for an archive
+// created before this stock was introduced, such that it takes part in the last
+// checkpoint of the archive.
+func addDeltaStockToCheckpoint(directory string, config MptConfig) error {
+	metaFile := directory + "/forest.json"
+	meta, present, err := ReadForestMetadata(metaFile)
+	if err != nil {
+		return err
+	}
+	// A stock created for another configuration could not be opened with the
+	// one of the archive.
+	if present && meta.Configuration != config.Name {
+		return fmt.Errorf("unexpected MPT configuration in directory, wanted %v, got %v", config.Name, meta.Configuration)
+	}
+
+	// An existing stock is covered by the regular checks of the archive. If an
+	// earlier attempt stopped after creating it, the record is still missing.
+	_, _, branchDeltasDir, _, _ := getForestDirectories(directory)
+	if _, err := os.Stat(branchDeltasDir); err == nil {
+		if present && !meta.DeltaBranches {
+			meta.DeltaBranches = true
+			return writeForestMetadata(metaFile, meta)
+		}
+		return nil
+	}
+
+	// A recorded stock that is missing was lost with all of its delta nodes.
+	if meta.DeltaBranches {
+		return fmt.Errorf("the stock of delta branches is missing in %v", branchDeltasDir)
+	}
+
+	checkpointDir := filepath.Join(directory, fileNameArchiveCheckpointDirectory)
+	coordinator, err := checkpoint.NewCoordinator(checkpointDir)
+	if err != nil {
+		return err
+	}
+	_, _, deltaEncoder, _, _ := config.GetEncoders()
+	if err := file.JoinCheckpoint[uint64](deltaEncoder, branchDeltasDir, coordinator.GetCurrentCheckpoint()); err != nil {
+		return err
+	}
+
+	// A new archive records the stock when its forest is created.
+	if !present {
+		return nil
+	}
+	meta.DeltaBranches = true
+	return writeForestMetadata(metaFile, meta)
 }
 
 func (a *ArchiveTrie) getView(block uint64) (*LiveTrie, error) {

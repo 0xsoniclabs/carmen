@@ -120,7 +120,7 @@ func verifyForest(directory string, config MptConfig, roots iter_utils.ResultSeq
 
 	// Verify stock data structures.
 	observer.Progress("Checking meta-data ...")
-	accountEncoder, branchEncoder, extensionEncoder, valueEncoder := config.GetEncoders()
+	accountEncoder, branchEncoder, _, extensionEncoder, valueEncoder := config.GetEncoders()
 	if err := file.VerifyStock[uint64](directory+"/accounts", accountEncoder); err != nil {
 		return err
 	}
@@ -736,7 +736,7 @@ func openVerificationNodeSource(ctx context.Context, directory string, config Mp
 	}
 
 	success := false
-	accountEncoder, branchEncoder, extensionEncoder, valueEncoder := config.GetEncoders()
+	accountEncoder, branchEncoder, _, extensionEncoder, valueEncoder := config.GetEncoders()
 	branches, err := file.OpenStock[uint64, BranchNode](branchEncoder, directory+"/branches")
 	if err != nil {
 		return nil, err
@@ -820,6 +820,8 @@ func (s *verificationNodeSource) getShared(id NodeId) (*shared.Shared[Node], err
 	} else if id.IsAccount() {
 		account, e := s.accounts.Get(id.Index())
 		node, err = &account, e
+	} else if id.IsDeltaBranch() {
+		err = fmt.Errorf("delta branch node %v is not supported", id)
 	} else if id.IsBranch() {
 		branch, e := s.branches.Get(id.Index())
 		node, err = &branch, e
@@ -886,6 +888,10 @@ func (s *verificationNodeSource) isValid(id NodeId) bool {
 	}
 	if id.IsAccount() {
 		return s.accountIds.Contains(id.Index())
+	}
+	// The stock of delta branches is not read, so delta nodes are not known.
+	if id.IsDeltaBranch() {
+		return false
 	}
 	if id.IsBranch() {
 		return s.branchIds.Contains(id.Index())

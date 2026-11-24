@@ -156,7 +156,7 @@ func TestVerification_ModifiedFileIsDetected(t *testing.T) {
 
 func TestVerification_ModifiedRootIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		_, encoder, _, _ := config.GetEncoders()
+		_, encoder, _, _, _ := config.GetEncoders()
 
 		root := NewNodeReference(EmptyId())
 		for i := range roots {
@@ -203,7 +203,7 @@ func TestVerification_ModifiedRootIsDetected(t *testing.T) {
 
 func TestVerification_AccountBalanceModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.info.Balance = amount.Add(node.info.Balance, amount.New(1))
@@ -217,7 +217,7 @@ func TestVerification_AccountBalanceModificationIsDetected(t *testing.T) {
 
 func TestVerification_AccountNonceModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.info.Nonce[2]++
@@ -231,7 +231,7 @@ func TestVerification_AccountNonceModificationIsDetected(t *testing.T) {
 
 func TestVerification_AccountCodeHashModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.info.CodeHash[2]++
@@ -245,7 +245,7 @@ func TestVerification_AccountCodeHashModificationIsDetected(t *testing.T) {
 
 func TestVerification_AccountStorageModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.storage = NewNodeReference(ValueId(123456789)) // invalid in test forest
@@ -262,7 +262,7 @@ func TestVerification_AccountNodeHashModificationIsDetected(t *testing.T) {
 		if config.HashStorageLocation != HashStoredWithNode {
 			return
 		}
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.hash[3]++
@@ -279,7 +279,7 @@ func TestVerification_AccountStorageHashModificationIsDetected(t *testing.T) {
 		if config.HashStorageLocation != HashStoredWithParent {
 			return
 		}
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.storageHash[3]++
@@ -293,7 +293,7 @@ func TestVerification_AccountStorageHashModificationIsDetected(t *testing.T) {
 
 func TestVerification_BranchChildIdModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		_, encoder, _, _ := config.GetEncoders()
+		_, encoder, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/branches", encoder, func(node *BranchNode) {
 			node.children[8] = NewNodeReference(ValueId(123456789)) // does not exist in test forest
@@ -305,12 +305,40 @@ func TestVerification_BranchChildIdModificationIsDetected(t *testing.T) {
 	})
 }
 
+func TestVerification_ReferenceToADeltaBranchIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		_, encoder, _, _, _ := config.GetEncoders()
+
+		// Branch 0 exists, such that only the type of the reference is wrong.
+		modifyNode(t, dir+"/branches", encoder, func(node *BranchNode) {
+			node.children[8] = NewNodeReference(DeltaBranchId(0))
+		})
+
+		err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
+		require.ErrorContains(err, "contains invalid reference to node D-0")
+	})
+}
+
+func TestVerificationNodeSource_getReadAccess_FailsForADeltaBranch(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		source, err := openVerificationNodeSource(t.Context(), dir, config)
+		require.NoError(err)
+		defer func() { require.NoError(source.Close()) }()
+
+		ref := NewNodeReference(DeltaBranchId(0))
+		_, err = source.getReadAccess(&ref)
+		require.ErrorContains(err, "delta branch node D-0 is not supported")
+	})
+}
+
 func TestVerification_BranchNodeHashModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
 		if config.HashStorageLocation != HashStoredWithNode {
 			return
 		}
-		_, encoder, _, _ := config.GetEncoders()
+		_, encoder, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/branches", encoder, func(node *BranchNode) {
 			node.hash[4]++
@@ -327,7 +355,7 @@ func TestVerification_BranchChildHashModificationIsDetected(t *testing.T) {
 		if config.HashStorageLocation != HashStoredWithParent {
 			return
 		}
-		_, encoder, _, _ := config.GetEncoders()
+		_, encoder, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/branches", encoder, func(node *BranchNode) {
 			for i := range node.children {
@@ -347,7 +375,7 @@ func TestVerification_BranchChildHashModificationIsDetected(t *testing.T) {
 
 func TestVerification_ExtensionPathModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		_, _, encoder, _ := config.GetEncoders()
+		_, _, _, encoder, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/extensions", encoder, func(node *ExtensionNode) {
 			node.path.path[0] = ^node.path.path[0]
@@ -361,7 +389,7 @@ func TestVerification_ExtensionPathModificationIsDetected(t *testing.T) {
 
 func TestVerification_ExtensionNextModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		_, _, encoder, _ := config.GetEncoders()
+		_, _, _, encoder, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/extensions", encoder, func(node *ExtensionNode) {
 			node.next = NewNodeReference(BranchId(123456789))
@@ -378,7 +406,7 @@ func TestVerification_ExtensionNodeHashModificationIsDetected(t *testing.T) {
 		if config.HashStorageLocation != HashStoredWithNode {
 			return
 		}
-		_, _, encoder, _ := config.GetEncoders()
+		_, _, _, encoder, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/extensions", encoder, func(node *ExtensionNode) {
 			node.hash[24]++
@@ -395,7 +423,7 @@ func TestVerification_ExtensionNextHashModificationIsDetected(t *testing.T) {
 		if config.HashStorageLocation != HashStoredWithParent {
 			return
 		}
-		_, _, encoder, _ := config.GetEncoders()
+		_, _, _, encoder, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/extensions", encoder, func(node *ExtensionNode) {
 			node.nextHash[24]++
@@ -409,7 +437,7 @@ func TestVerification_ExtensionNextHashModificationIsDetected(t *testing.T) {
 
 func TestVerification_ValueKeyModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		_, _, _, encoder := config.GetEncoders()
+		_, _, _, _, encoder := config.GetEncoders()
 
 		modifyNode(t, dir+"/values", encoder, func(node *ValueNode) {
 			node.key[5]++
@@ -423,7 +451,7 @@ func TestVerification_ValueKeyModificationIsDetected(t *testing.T) {
 
 func TestVerification_ValueModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		_, _, _, encoder := config.GetEncoders()
+		_, _, _, _, encoder := config.GetEncoders()
 
 		modifyNode(t, dir+"/values", encoder, func(node *ValueNode) {
 			node.value[12]++
@@ -440,7 +468,7 @@ func TestVerification_ValueNodeHashModificationIsDetected(t *testing.T) {
 		if config.HashStorageLocation != HashStoredWithNode {
 			return
 		}
-		_, _, _, encoder := config.GetEncoders()
+		_, _, _, _, encoder := config.GetEncoders()
 
 		modifyNode(t, dir+"/values", encoder, func(node *ValueNode) {
 			node.hash[12]++
@@ -454,7 +482,7 @@ func TestVerification_ValueNodeHashModificationIsDetected(t *testing.T) {
 
 func TestVerification_MissingCodeHashInCodeFileIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		missingHash := common.Keccak256([]byte{2})
 
@@ -685,7 +713,7 @@ func TestVerification_ForestVerificationObserverReportsError(t *testing.T) {
 			observer.EXPECT().EndVerification(gomock.Not(nil)),
 		)
 
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.info.Balance = amount.Add(node.info.Balance, amount.New(1))
@@ -708,7 +736,7 @@ func TestVerification_VerificationObserverReportsError(t *testing.T) {
 			observer.EXPECT().EndVerification(gomock.Not(nil)),
 		)
 
-		encoder, _, _, _ := config.GetEncoders()
+		encoder, _, _, _, _ := config.GetEncoders()
 
 		modifyNode(t, dir+"/accounts", encoder, func(node *AccountNode) {
 			node.info.Balance = amount.Add(node.info.Balance, amount.New(1))

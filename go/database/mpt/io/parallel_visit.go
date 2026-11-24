@@ -516,7 +516,7 @@ func (f *stockNodeSourceFactory) open() (nodeSource, error) {
 		return err
 	}
 
-	aEncoder, bEncoder, eEncoder, vEncoder := f.config.GetEncoders()
+	aEncoder, bEncoder, _, eEncoder, vEncoder := f.config.GetEncoders()
 
 	accounts, err := file.OpenReadOnlyStock[uint64, mpt.AccountNode](path.Join(f.directory, "accounts"), aEncoder)
 	if err != nil {
@@ -566,6 +566,10 @@ func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
 	if id.IsAccount() {
 		res, err := s.accounts.Get(pos)
 		return &res, err
+	}
+	// The stock of delta branches is not read, so delta nodes can not be loaded.
+	if id.IsDeltaBranch() {
+		return nil, fmt.Errorf("delta branch node %v is not supported", id)
 	}
 	if id.IsBranch() {
 		res, err := s.branches.Get(pos)
