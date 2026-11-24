@@ -271,6 +271,7 @@ func checkForestMetadata(directory string, config MptConfig, mode StorageMode) (
 	meta = ForestMetadata{
 		Configuration: config.Name,
 		Mutable:       mode == Mutable,
+		DeltaBranches: true,
 	}
 
 	// Update on-disk meta-data.
@@ -1145,6 +1146,7 @@ func (s writeBufferSink) Write(id NodeId, handle shared.ViewHandle[Node]) error 
 type ForestMetadata struct {
 	Configuration string
 	Mutable       bool
+	DeltaBranches bool // the forest has a stock of delta branches
 }
 
 // ReadForestMetadata parses the content of the given file if it exists or returns
@@ -1167,4 +1169,18 @@ func ReadForestMetadata(filename string) (ForestMetadata, bool, error) {
 		return meta, false, err
 	}
 	return meta, true, nil
+}
+
+// writeForestMetadata replaces the metadata in the given file, such that an
+// interrupted write leaves the previous content in place.
+func writeForestMetadata(filename string, meta ForestMetadata) error {
+	temp := filename + ".tmp"
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(temp, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(temp, filename)
 }

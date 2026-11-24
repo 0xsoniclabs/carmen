@@ -189,6 +189,9 @@ func TestForest_OpenFileForest_CreatesTheDeltaStock(t *testing.T) {
 
 			_, _, deltaEncoder, _, _ := config.GetEncoders()
 			require.NoError(file.VerifyStock[uint64](filepath.Join(dir, "branch_deltas"), deltaEncoder))
+			meta, _, err := ReadForestMetadata(filepath.Join(dir, "forest.json"))
+			require.NoError(err)
+			require.True(meta.DeltaBranches)
 		})
 	}
 }
@@ -2260,6 +2263,43 @@ func TestForest_ReadForestMetadata_Fails(t *testing.T) {
 	if _, _, err := ReadForestMetadata(dir); err == nil {
 		t.Errorf("reading file which is directory should fail")
 	}
+}
+
+func TestForest_writeForestMetadata_ReplacesTheMetadata(t *testing.T) {
+	require := require.New(t)
+	file := filepath.Join(t.TempDir(), "forest.json")
+	require.NoError(writeForestMetadata(file, ForestMetadata{Configuration: "old"}))
+	want := ForestMetadata{Configuration: "new", Mutable: true, DeltaBranches: true}
+
+	require.NoError(writeForestMetadata(file, want))
+
+	got, present, err := ReadForestMetadata(file)
+	require.NoError(err)
+	require.True(present)
+	require.Equal(want, got)
+	require.NoFileExists(file + ".tmp")
+}
+
+func TestForest_writeForestMetadata_KeepsTheMetadataIfItCanNotBeWritten(t *testing.T) {
+	require := require.New(t)
+	file := filepath.Join(t.TempDir(), "forest.json")
+	want := ForestMetadata{Configuration: "old"}
+	require.NoError(writeForestMetadata(file, want))
+	require.NoError(os.Mkdir(file+".tmp", 0700))
+
+	require.ErrorContains(writeForestMetadata(file, ForestMetadata{Configuration: "new"}), "is a directory")
+
+	got, _, err := ReadForestMetadata(file)
+	require.NoError(err)
+	require.Equal(want, got)
+}
+
+func TestForest_writeForestMetadata_FailsIfTheMetadataCanNotBeReplaced(t *testing.T) {
+	require := require.New(t)
+	file := filepath.Join(t.TempDir(), "forest.json")
+	require.NoError(os.MkdirAll(filepath.Join(file, "content"), 0700))
+
+	require.ErrorContains(writeForestMetadata(file, ForestMetadata{}), "file exists")
 }
 
 func TestForest_ErrorsAreForwardedAndCollected(t *testing.T) {

@@ -475,6 +475,27 @@ func TestArchiveTrie_VerifyArchiveTrie_DoesNotAddTheDeltaStock(t *testing.T) {
 	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
 }
 
+func TestArchiveTrie_VerifyArchiveTrie_DetectsALostDeltaStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	require.NoError(archive.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	err = VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
+	require.ErrorContains(err, "the stock of delta branches is missing")
+}
+
+func TestArchiveTrie_VerifyArchiveTrie_FailsIfTheForestMetadataCanNotBeRead(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(dir, "forest.json"), []byte("corrupted"), 0600))
+
+	err := VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
+	require.ErrorContains(err, "invalid character")
+}
+
 func TestArchiveTrie_CanTrackBlocksHeight(t *testing.T) {
 	for _, config := range allMptConfigs {
 		t.Run(config.Name, func(t *testing.T) {
@@ -3107,6 +3128,7 @@ func createArchiveWithoutDeltaStock(t *testing.T, dir string) {
 	}
 	require.NoError(archive.Close())
 	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+	require.NoError(utils.WriteJsonFile(filepath.Join(dir, "forest.json"), ForestMetadata{Configuration: S5ArchiveConfig.Name}))
 }
 
 func TestArchiveTrie_RestoreBlockHeight_DetectsIssuesAndForwardsThose(t *testing.T) {
@@ -3162,14 +3184,9 @@ func TestArchiveTrie_RestoreBlockHeight_DetectsIssuesAndForwardsThose(t *testing
 			},
 			expectedErrorMessageFragment: "failed to mark directory",
 		},
-		"unable to add the delta stock": {
+		"lost delta stock": {
 			sabotage: func(_ *testing.T, dir string) error {
-				// A dangling link is a missing stock that can not be created.
-				deltasDir := filepath.Join(dir, "branch_deltas")
-				return errors.Join(
-					os.RemoveAll(deltasDir),
-					os.Symlink("missing", deltasDir),
-				)
+				return os.RemoveAll(filepath.Join(dir, "branch_deltas"))
 			},
 			expectedErrorMessageFragment: "failed to add delta stock to checkpoint",
 			directoryShouldBeDirtyAfter:  true,
@@ -3352,6 +3369,30 @@ func TestArchiveTrie_addDeltaStockToCheckpoint_AddsAStockCoveringTheLastCheckpoi
 	}
 }
 
+func TestArchiveTrie_addDeltaStockToCheckpoint_RecordsTheStockInTheForestMetadata(t *testing.T) {
+	tests := map[string]func(t *testing.T, dir string){
+		"missing stock": func(*testing.T, string) {},
+		"stock created by an interrupted attempt": func(t *testing.T, dir string) {
+			_, _, encoder, _, _ := S5ArchiveConfig.GetEncoders()
+			require.NoError(t, file.JoinCheckpoint[uint64](encoder, filepath.Join(dir, "branch_deltas"), 2))
+		},
+	}
+	for name, setup := range tests {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			dir := t.TempDir()
+			createArchiveWithoutDeltaStock(t, dir)
+			setup(t, dir)
+
+			require.NoError(addDeltaStockToCheckpoint(dir, S5ArchiveConfig))
+
+			meta, _, err := ReadForestMetadata(filepath.Join(dir, "forest.json"))
+			require.NoError(err)
+			require.Equal(ForestMetadata{Configuration: S5ArchiveConfig.Name, DeltaBranches: true}, meta)
+		})
+	}
+}
+
 func TestArchiveTrie_addDeltaStockToCheckpoint_LeavesAnExistingDirectoryUntouched(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
@@ -3381,6 +3422,19 @@ func TestArchiveTrie_addDeltaStockToCheckpoint_RejectsAnArchiveOfAnotherConfigur
 	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
 }
 
+func TestArchiveTrie_addDeltaStockToCheckpoint_RejectsALostStock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	archive, err := OpenArchiveTrie(dir, S5ArchiveConfig, NodeCacheConfig{Capacity: 1000}, ArchiveConfig{})
+	require.NoError(err)
+	require.NoError(archive.Close())
+	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
+
+	err = addDeltaStockToCheckpoint(dir, S5ArchiveConfig)
+	require.ErrorContains(err, "the stock of delta branches is missing")
+	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
+}
+
 func TestArchiveTrie_addDeltaStockToCheckpoint_ForwardsIssues(t *testing.T) {
 	tests := map[string]struct {
 		sabotage func(t *testing.T, dir string) error
@@ -3405,6 +3459,13 @@ func TestArchiveTrie_addDeltaStockToCheckpoint_ForwardsIssues(t *testing.T) {
 				return os.Chmod(dir, 0500)
 			},
 			issue: "permission denied",
+		},
+		"forest metadata can not be updated": {
+			sabotage: func(t *testing.T, dir string) error {
+				createArchiveWithoutDeltaStock(t, dir)
+				return os.Mkdir(filepath.Join(dir, "forest.json.tmp"), 0700)
+			},
+			issue: "is a directory",
 		},
 	}
 	for name, test := range tests {
