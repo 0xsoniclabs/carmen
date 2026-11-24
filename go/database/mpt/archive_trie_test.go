@@ -466,25 +466,12 @@ func TestArchiveTrie_VerifyArchiveTrie_TreatsMissingRootsFileAsEmptyArchive(t *t
 	}
 }
 
-func TestArchiveTrie_VerifyArchiveTrie_FailsIfTheDeltaStockCanNotBeAdded(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-	require.NoError(os.WriteFile(filepath.Join(dir, fileNameArchiveCheckpointDirectory), nil, 0600))
-
-	err := VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
-	require.ErrorContains(err, "failed to create directory")
-}
-
-func TestArchiveTrie_VerifyArchiveTrie_DoesNotAddTheDeltaStockToAnArchiveInUse(t *testing.T) {
+func TestArchiveTrie_VerifyArchiveTrie_DoesNotAddTheDeltaStock(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	createArchiveWithoutDeltaStock(t, dir)
-	lock, err := LockDirectory(dir)
-	require.NoError(err)
-	defer func() { require.NoError(lock.Release()) }()
 
-	err = VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{})
-	require.ErrorContains(err, "unable to gain exclusive access")
+	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
 	require.NoDirExists(filepath.Join(dir, "branch_deltas"))
 }
 
@@ -3119,10 +3106,6 @@ func createArchiveWithoutDeltaStock(t *testing.T, dir string) {
 		}, nil))
 	}
 	require.NoError(archive.Close())
-	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
-	// The archive is valid, meaning no delta nodes were introduced
-	require.NoError(VerifyArchiveTrie(context.Background(), dir, S5ArchiveConfig, NilVerificationObserver{}))
-	// Verification creates the delta nodes folder, remove it again
 	require.NoError(os.RemoveAll(filepath.Join(dir, "branch_deltas")))
 }
 

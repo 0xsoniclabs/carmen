@@ -167,17 +167,6 @@ func OpenArchiveTrie(
 // If the test passes, the data stored in the respective directory
 // can be considered a valid archive database of the given configuration.
 func VerifyArchiveTrie(ctx context.Context, directory string, config MptConfig, observer VerificationObserver) (res error) {
-	lock, err := LockDirectory(directory)
-	if err != nil {
-		return err
-	}
-	err = errors.Join(
-		addDeltaStockToCheckpoint(directory, config),
-		lock.Release(),
-	)
-	if err != nil {
-		return err
-	}
 	roots, err := loadRoots(directory)
 	if err != nil {
 		return err
