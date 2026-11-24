@@ -454,7 +454,6 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 		for _, config := range allMptConfigs {
 			for forestConfigName, forestConfig := range forestConfigs {
 				t.Run(fmt.Sprintf("%s-%s-%s", variant.name, config.Name, forestConfigName), func(t *testing.T) {
-					require := require.New(t)
 					directory := t.TempDir()
 
 					forest, err := variant.factory(directory, config, forestConfig)
@@ -517,8 +516,9 @@ func TestForest_CreatingNodes_Fails(t *testing.T) {
 					if _, _, err := forest.createBranch(); !errors.Is(err, injectedErr) {
 						t.Errorf("creating node should fail")
 					}
-					_, _, err = forest.createDeltaBranch()
-					require.ErrorIs(err, injectedErr)
+					if _, _, err := forest.createDeltaBranch(); !errors.Is(err, injectedErr) {
+						t.Errorf("creating node should fail")
+					}
 					if _, _, err := forest.createExtension(); !errors.Is(err, injectedErr) {
 						t.Errorf("creating node should fail")
 					}
