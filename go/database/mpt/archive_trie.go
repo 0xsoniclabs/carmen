@@ -637,8 +637,8 @@ func addDeltaStockToCheckpoint(directory string, config MptConfig) error {
 		return fmt.Errorf("unexpected MPT configuration in directory, wanted %v, got %v", config.Name, meta.Configuration)
 	}
 
-	// An existing stock is covered by the regular checks of the archive. It is
-	// not yet recorded if an earlier attempt was interrupted after creating it.
+	// An existing stock is covered by the regular checks of the archive. If an
+	// earlier attempt stopped after creating it, the record is still missing.
 	_, _, branchDeltasDir, _, _ := getForestDirectories(directory)
 	if _, err := os.Stat(branchDeltasDir); err == nil {
 		if present && !meta.DeltaBranches {
