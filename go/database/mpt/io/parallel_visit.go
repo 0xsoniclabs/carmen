@@ -567,6 +567,10 @@ func (s *stockNodeSource) get(id mpt.NodeId) (mpt.Node, error) {
 		res, err := s.accounts.Get(pos)
 		return &res, err
 	}
+	// The stock of delta branches is not read, so delta nodes can not be loaded.
+	if id.IsDeltaBranch() {
+		return nil, fmt.Errorf("delta branch node %v is not supported", id)
+	}
 	if id.IsBranch() {
 		res, err := s.branches.Get(pos)
 		return &res, err

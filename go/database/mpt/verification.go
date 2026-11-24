@@ -820,6 +820,8 @@ func (s *verificationNodeSource) getShared(id NodeId) (*shared.Shared[Node], err
 	} else if id.IsAccount() {
 		account, e := s.accounts.Get(id.Index())
 		node, err = &account, e
+	} else if id.IsDeltaBranch() {
+		err = fmt.Errorf("delta branch node %v is not supported", id)
 	} else if id.IsBranch() {
 		branch, e := s.branches.Get(id.Index())
 		node, err = &branch, e
@@ -886,6 +888,10 @@ func (s *verificationNodeSource) isValid(id NodeId) bool {
 	}
 	if id.IsAccount() {
 		return s.accountIds.Contains(id.Index())
+	}
+	// The stock of delta branches is not read, so delta nodes are not known.
+	if id.IsDeltaBranch() {
+		return false
 	}
 	if id.IsBranch() {
 		return s.branchIds.Contains(id.Index())

@@ -305,6 +305,34 @@ func TestVerification_BranchChildIdModificationIsDetected(t *testing.T) {
 	})
 }
 
+func TestVerification_ReferenceToADeltaBranchIsDetected(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		_, encoder, _, _, _ := config.GetEncoders()
+
+		// Branch 0 exists, such that only the type of the reference is wrong.
+		modifyNode(t, dir+"/branches", encoder, func(node *BranchNode) {
+			node.children[8] = NewNodeReference(DeltaBranchId(0))
+		})
+
+		err := verifyFileForest(context.Background(), dir, config, rootsFromSlice(roots), NilVerificationObserver{})
+		require.ErrorContains(err, "contains invalid reference to node D-0")
+	})
+}
+
+func TestVerificationNodeSource_getReadAccess_FailsForADeltaBranch(t *testing.T) {
+	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
+		require := require.New(t)
+		source, err := openVerificationNodeSource(t.Context(), dir, config)
+		require.NoError(err)
+		defer func() { require.NoError(source.Close()) }()
+
+		ref := NewNodeReference(DeltaBranchId(0))
+		_, err = source.getReadAccess(&ref)
+		require.ErrorContains(err, "delta branch node D-0 is not supported")
+	})
+}
+
 func TestVerification_BranchNodeHashModificationIsDetected(t *testing.T) {
 	runVerificationTest(t, func(t *testing.T, dir string, config MptConfig, roots []Root) {
 		if config.HashStorageLocation != HashStoredWithNode {
