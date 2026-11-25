@@ -1296,18 +1296,26 @@ func TestBranchNode_CheckDetectsIssues(t *testing.T) {
 	}
 }
 
-func TestBranchNode_Check_AcceptsADeltaOfAFullBranch(t *testing.T) {
-	require := require.New(t)
-	ctrl := gomock.NewController(t)
-	ctxt := newNodeContext(t, ctrl)
-	ref, node := ctxt.Build(&Branch{children: Children{1: &Value{}, 2: &Value{}}})
-	handle := node.GetWriteHandle()
-	defer handle.Release()
-	branch := handle.Get().(*BranchNode)
-	branch.base = BranchId(7)
-	branch.deltaMask = 0b11
+func TestBranchNode_Check_AcceptsADeltaOfABranch(t *testing.T) {
+	bases := map[string]NodeId{
+		"full branch":  BranchId(7),
+		"delta branch": DeltaBranchId(7),
+	}
+	for name, base := range bases {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctrl := gomock.NewController(t)
+			ctxt := newNodeContext(t, ctrl)
+			ref, node := ctxt.Build(&Branch{children: Children{1: &Value{}, 2: &Value{}}})
+			handle := node.GetWriteHandle()
+			defer handle.Release()
+			branch := handle.Get().(*BranchNode)
+			branch.base = base
+			branch.deltaMask = 0b10
 
-	require.NoError(branch.Check(ctxt, &ref, nil))
+			require.NoError(branch.Check(ctxt, &ref, nil))
+		})
+	}
 }
 
 func TestBranchNode_Check_DetectsInvalidDeltas(t *testing.T) {
@@ -1316,9 +1324,8 @@ func TestBranchNode_Check_DetectsInvalidDeltas(t *testing.T) {
 		deltaMask uint16
 		issue     string
 	}{
-		"delta branch base":    {DeltaBranchId(7), 0b11, "has an invalid delta base D-7"},
-		"account base":         {AccountId(7), 0b11, "has an invalid delta base A-7"},
-		"too many delta slots": {BranchId(7), 0b111, "exceeds the delta slots: 0000000000000111"},
+		"account base":         {AccountId(7), 0b10, "has an invalid delta base A-7"},
+		"too many delta slots": {BranchId(7), 0b11, "exceeds the delta slots: 0000000000000011"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -4836,8 +4843,8 @@ func TestBranchDeltaNodeEncoders_GetEncodedSize_FitsHeaderAndDeltaSlots(t *testi
 		encoder interface{ GetEncodedSize() int }
 		size    int
 	}{
-		"with node hash":    {encoder: BranchDeltaNodeEncoderWithNodeHash{}, size: 52},
-		"with child hashes": {encoder: BranchDeltaNodeEncoderWithChildHashes{}, size: 86},
+		"with node hash":    {encoder: BranchDeltaNodeEncoderWithNodeHash{}, size: 46},
+		"with child hashes": {encoder: BranchDeltaNodeEncoderWithChildHashes{}, size: 48},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -4902,8 +4909,7 @@ func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_RestoresDeltaChildren(t
 
 func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_KeepsHashOfRemovedChildClean(t *testing.T) {
 	require := require.New(t)
-	node := BranchNode{base: BranchId(7), deltaMask: 1<<3 | 1<<12}
-	node.children[3] = NewNodeReference(ValueId(4))
+	node := BranchNode{base: BranchId(7), deltaMask: 1 << 12}
 	encoder := BranchDeltaNodeEncoderWithNodeHash{}
 	buffer := make([]byte, encoder.GetEncodedSize())
 	require.NoError(encoder.Store(buffer, &node))
@@ -4911,7 +4917,7 @@ func TestBranchDeltaNodeEncoderWithNodeHash_StoreAndLoad_KeepsHashOfRemovedChild
 	require.NoError(encoder.Load(buffer, &recovered))
 
 	require.True(recovered.children[12].Id().IsEmpty())
-	require.Equal(uint16(1<<3), recovered.dirtyHashes)
+	require.Zero(recovered.dirtyHashes)
 }
 
 func TestBranchDeltaNodeEncoders_Load_FailsIfDeltaSlotsAreExceeded(t *testing.T) {
